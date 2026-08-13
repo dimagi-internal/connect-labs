@@ -747,7 +747,6 @@ def _run_ai_review_on_sessions(
                         data_access=data_access,
                         access_token=access_token,
                         opportunity_id=session.opportunity_id,
-                        visit_ids=session.visit_ids or [],
                         visit_images=session.data.get("visit_images", {}),
                     )
                 except Exception:

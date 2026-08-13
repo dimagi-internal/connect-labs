@@ -121,7 +121,6 @@ def resolve_urls_by_blob(
     data_access,
     access_token: str,
     opportunity_id,
-    visit_ids: list,
     visit_images: dict,
     request=None,
 ) -> dict[str, dict]:
@@ -149,18 +148,19 @@ def resolve_urls_by_blob(
         access_token: OAuth token for the HQ-metadata and org-slug lookups.
         opportunity_id: Default/primary opportunity for images that don't carry
             their own "opportunity_id" key.
-        visit_ids: Visit ids scoping the session -- only used to short-circuit
-            when the session has none; per-opportunity visit ids are derived
-            from visit_images itself (see grouping above).
         visit_images: {visit_id_str: [image_dict, ...]} (session.data["visit_images"] shape).
+            Per-opportunity visit ids for get_visits_batch are derived directly
+            from this (see grouping above) -- there's no separate visit_ids
+            input to keep in sync, so it can't silently diverge from what's
+            actually being resolved.
         request: Live HttpRequest if available; None in background contexts.
 
-    Returns {} if visit_ids is empty, or a partial mapping if resolving one
+    Returns {} if visit_images is empty, or a partial mapping if resolving one
     opportunity's group fails while another's succeeds -- each group is
     isolated in its own try/except, so a failure never discards URLs a prior
     group in the same call already resolved (failures are logged, not raised).
     """
-    if not visit_ids:
+    if not visit_images:
         return {}
 
     # {opportunity_id: {visit_id_str: [image_dict, ...]}}

@@ -86,7 +86,6 @@ def _resolve_urls(session, request, data_access, opportunity_id) -> dict[str, di
         data_access=data_access,
         access_token=data_access.access_token,
         opportunity_id=opportunity_id,
-        visit_ids=session.visit_ids or [],
         visit_images=session.data.get("visit_images", {}),
         request=request,
     )
