@@ -13,6 +13,7 @@ history) and must never stall the live tail behind it.
 from __future__ import annotations
 
 import logging
+import time
 
 from config import celery_app
 from connect_labs.pulse import ingest
@@ -90,34 +91,65 @@ def poll_slow_maintenance(rate_sample_limit: int = 25) -> dict:
         raise
 
 
-@celery_app.task(name="connect_labs.pulse.tasks.poll_visit_tail")
-def poll_visit_tail(limit: int = 40) -> dict:
-    """Tail user_visits for every cursor that is due."""
-    cursors = ingest.due_cursors(limit=limit)
-    if not cursors:
-        ingest.record_success(TIER_TAIL)
-        return {"polled": 0, "stored": 0}
+# One invocation sweeps repeatedly instead of the beat firing more often.
+#
+# Measured on prod: Celery costs 3-7s of dispatch overhead per invocation --
+# calling poll_cheap_tier directly took 5.2-7.6s while Celery reported 8.3-14.1s
+# for the same work. So buying freshness by shortening the beat would spend most
+# of the extra budget on dispatch, not on polling. Sweeping inside one
+# invocation pays that overhead once a minute however fresh the view gets.
+#
+# Bounded well under the 60s beat so two invocations can never overlap and
+# double-poll the same cursors.
+SWEEP_INTERVAL_SECONDS = 15
+SWEEP_DEADLINE_SECONDS = 50
 
-    stored = polled = 0
+
+@celery_app.task(name="connect_labs.pulse.tasks.poll_visit_tail")
+def poll_visit_tail(
+    limit: int = 40,
+    sweep_interval: float = SWEEP_INTERVAL_SECONDS,
+    deadline: float = SWEEP_DEADLINE_SECONDS,
+) -> dict:
+    """Tail user_visits for every due cursor, sweeping repeatedly for ~50s.
+
+    The live view claims to show delivery as it happens, so what matters is the
+    lag between a visit reaching Connect and reaching this screen. That is the
+    cursor's due interval plus the wait for the next sweep -- previously 60 + 60
+    at worst. Now 15 + 15.
+    """
+    started = time.monotonic()
+    stored = polled = sweeps = 0
     try:
         with get_client() as client:
-            for cursor in cursors:
-                try:
-                    result = ingest.tail_visits(client, cursor)
-                    stored += result["stored"]
-                    polled += 1
-                except Exception as exc:
-                    # Isolate per-opportunity failures: one opp erroring must
-                    # not stop the rest of the sweep or freeze the display.
-                    cursor.consecutive_failures += 1
-                    cursor.last_error = str(exc)[:2000]
-                    cursor.save(update_fields=["consecutive_failures", "last_error"])
-                    logger.warning("[pulse] tail failed for opp %s: %s", cursor.opportunity_id, exc)
+            while True:
+                cursors = ingest.due_cursors(limit=limit)
+                for cursor in cursors:
+                    try:
+                        result = ingest.tail_visits(client, cursor)
+                        stored += result["stored"]
+                        polled += 1
+                    except Exception as exc:
+                        # Isolate per-opportunity failures: one opp erroring must
+                        # not stop the rest of the sweep or freeze the display.
+                        cursor.consecutive_failures += 1
+                        cursor.last_error = str(exc)[:2000]
+                        cursor.save(update_fields=["consecutive_failures", "last_error"])
+                        logger.warning("[pulse] tail failed for opp %s: %s", cursor.opportunity_id, exc)
+                sweeps += 1
 
-        ingest.record_success(TIER_TAIL)
+                # Recorded per sweep, not once at the end: health should reflect
+                # the most recent sweep, not the start of a minute-long task.
+                ingest.record_success(TIER_TAIL)
+
+                elapsed = time.monotonic() - started
+                if elapsed + sweep_interval >= deadline:
+                    break
+                time.sleep(sweep_interval)
+
         if stored:
             ingest.rebuild_rollups(since=_recent_window())
-        return {"polled": polled, "stored": stored}
+        return {"polled": polled, "stored": stored, "sweeps": sweeps}
     except PulseAuthError as exc:
         ingest.record_failure(TIER_TAIL, f"auth: {exc}")
         raise
