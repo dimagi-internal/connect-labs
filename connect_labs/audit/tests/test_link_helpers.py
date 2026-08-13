@@ -164,7 +164,6 @@ def test_resolve_urls_by_blob_builds_all_three_urls_per_image(monkeypatch):
         data_access=data_access,
         access_token="tok",
         opportunity_id=42,
-        visit_ids=[1],
         visit_images=visit_images,
     )
 
@@ -208,7 +207,6 @@ def test_resolve_urls_by_blob_groups_by_each_images_own_opportunity(monkeypatch)
         data_access=_MultiOppDataAccess(),
         access_token="tok",
         opportunity_id=1,  # neither image's real opportunity -- fallback only
-        visit_ids=[1, 2],
         visit_images=visit_images,
     )
 
@@ -246,7 +244,6 @@ def test_resolve_urls_by_blob_one_groups_failure_does_not_discard_another_groups
         data_access=_MultiOppDataAccess(),
         access_token="tok",
         opportunity_id=1,
-        visit_ids=[1, 2],
         visit_images=visit_images,
     )
 
@@ -268,21 +265,27 @@ def test_resolve_urls_by_blob_falls_back_to_default_opportunity_when_image_has_n
         data_access=data_access,
         access_token="tok",
         opportunity_id=42,
-        visit_ids=[1],
         visit_images={"1": [{"blob_id": "blobA"}]},  # no "opportunity_id" key on the image
     )
     assert urls["blobA"]["form_url"] == "https://hq/42/xf1/"
 
 
-def test_resolve_urls_by_blob_empty_visit_ids_returns_empty_dict():
+def test_resolve_urls_by_blob_empty_visit_images_returns_empty_dict():
+    """The short-circuit gates on visit_images directly (not a separate
+    visit_ids input that could silently diverge from it -- see
+    test_resolve_urls_by_blob_builds_all_three_urls_per_image for the case
+    this replaces: there's no longer a way for a caller's visit_ids to be
+    empty/stale while visit_images still holds real images)."""
     data_access = _FakeDataAccess(visits=[])
-    assert link_helpers.resolve_urls_by_blob(
-        data_access=data_access,
-        access_token="tok",
-        opportunity_id=42,
-        visit_ids=[],
-        visit_images={"1": [{"blob_id": "blobA"}]},
-    ) == {}
+    assert (
+        link_helpers.resolve_urls_by_blob(
+            data_access=data_access,
+            access_token="tok",
+            opportunity_id=42,
+            visit_images={},
+        )
+        == {}
+    )
 
 
 def test_resolve_urls_by_blob_returns_empty_dict_when_visit_batch_fetch_fails():
@@ -296,7 +299,6 @@ def test_resolve_urls_by_blob_returns_empty_dict_when_visit_batch_fetch_fails():
         data_access=_BoomingDataAccess(),
         access_token="tok",
         opportunity_id=42,
-        visit_ids=[1],
         visit_images={"1": [{"blob_id": "blobA"}]},
     )
     assert urls == {}

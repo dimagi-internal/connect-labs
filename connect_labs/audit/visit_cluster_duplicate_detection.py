@@ -305,7 +305,6 @@ def run_grouping_duplicate_detection(
                         data_access=data_access,
                         access_token=access_token,
                         opportunity_id=opp_id,
-                        visit_ids=session.visit_ids or [],
                         visit_images=session.data.get("visit_images", {}),
                     )
                 except Exception:
