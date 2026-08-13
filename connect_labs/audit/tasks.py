@@ -517,8 +517,13 @@ def _run_ai_review_on_sessions(
             def _fetch_and_review(item):
                 v_id, b_id, reading_by_field, q_id, img_qid = item
                 resolved_reviewers = resolve(img_qid)
+                # This image's OWN opportunity when it carries one -- a multi-opp
+                # session can review images sourced from a different opportunity
+                # than session.opportunity_id (same fallback blob_opportunity_id
+                # above uses for the classifier-fail row's own attribution).
+                img_opp_id = blob_opportunity_id.get(b_id) or opp_id
                 try:
-                    img_bytes = data_access.download_image_from_connect(b_id, opp_id)
+                    img_bytes = data_access.download_image_from_connect(b_id, img_opp_id)
                     if not img_bytes:
                         return FetchReviewOutcome(v_id, b_id, q_id, img_qid, None, None, None, None, True)
                 except Exception as exc:
@@ -547,7 +552,7 @@ def _run_ai_review_on_sessions(
                         metadata={
                             "visit_id": v_id,
                             "blob_id": b_id,
-                            "opportunity_id": opp_id,
+                            "opportunity_id": img_opp_id,
                             "session_id": session_id,
                         },
                     )

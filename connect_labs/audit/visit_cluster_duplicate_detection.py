@@ -251,18 +251,22 @@ def run_grouping_duplicate_detection(
                     duplicate_of_visit_ids = _counterpart_visit_ids(
                         blob_id, blobs_by_component[group_id], blob_meta_by_id
                     )
+                    # flag_potential_duplicate_and_tag only sets result to
+                    # "duplicate_fake" when the assessment had NO result yet --
+                    # capture that BEFORE the call, since reading the result
+                    # only afterward can't tell "this call just auto-tagged it"
+                    # apart from "it was already duplicate_fake from an earlier
+                    # detection run over this same session" (that prior value
+                    # is left untouched, not reapplied, by the guard above).
+                    pre_meta = blob_meta_by_id.get(blob_id, {})
+                    result_before = session.get_assessments(pre_meta.get("visit_id")).get(blob_id, {}).get("result")
                     if _mark_duplicate(session, blob_meta_by_id, blob_id, group_id, duplicate_of_visit_ids):
                         images_flagged += 1
                         meta = blob_meta_by_id.get(blob_id, {})
-                        # flag_potential_duplicate_and_tag sets result exactly
-                        # to "duplicate_fake" only when it just auto-tagged an
-                        # untouched assessment (its own implied verdict) --
-                        # never overwrites an existing manual/AI verdict, and
-                        # no other code path ever writes this exact string, so
-                        # this check is an unambiguous signal that the value
-                        # is this classifier's own, not a misattributed
-                        # earlier reviewer's result.
-                        current_result = session.get_assessments(meta.get("visit_id")).get(blob_id, {}).get("result")
+                        # A falsy result_before guarantees flag_potential_duplicate_and_tag
+                        # just set it to "duplicate_fake" -- that's the only value it
+                        # ever assigns, and only when there was nothing there before.
+                        just_auto_tagged = not result_before
                         # blob_meta_by_id doesn't carry a per-image opportunity_id
                         # today (unlike duplicate_detection.py's img dicts), so
                         # this always falls back to opp_id -- kept consistent
@@ -285,16 +289,17 @@ def run_grouping_duplicate_detection(
                                 "classifier_id": DUPLICATE_CLASSIFIER_ID,
                                 "classifier_label": DUPLICATE_FLAG_LABEL,
                                 "ai_confidence": None,
-                                # "duplicate_fake" (see current_result above) is this
-                                # classifier's own genuinely-auto-applied verdict; any
-                                # OTHER value means the assessment already had a real
-                                # prior verdict (from a different classifier or a human)
-                                # that flag_potential_duplicate_and_tag correctly left
-                                # untouched -- reporting THAT here would misattribute a
-                                # different reviewer's result to duplicate_detector, so
-                                # it's None in that case, matching the sibling
+                                # just_auto_tagged (see result_before above) is True only
+                                # when THIS call caused the "duplicate_fake" auto-tag.
+                                # Otherwise the assessment already had a real prior
+                                # verdict (from a different classifier, a human, or an
+                                # earlier detection run's own auto-tag) that
+                                # flag_potential_duplicate_and_tag correctly left
+                                # untouched -- reporting that here would misattribute a
+                                # different run/reviewer's result to duplicate_detector,
+                                # so it's None in that case, matching the sibling
                                 # duplicate_detection.py module's flag-only contract.
-                                "ai_implied_result": current_result if current_result == "duplicate_fake" else None,
+                                "ai_implied_result": "duplicate_fake" if just_auto_tagged else None,
                             }
                         )
 
