@@ -37,7 +37,7 @@ from connect_labs.audit.duplicate_detection import (
     _counterpart_visit_ids,
     assign_group_ids,
 )
-from connect_labs.audit.link_helpers import resolve_urls_by_blob
+from connect_labs.audit.link_helpers import resolve_opportunity_attribution, resolve_urls_by_blob
 from connect_labs.labs import s3_export
 
 logger = logging.getLogger(__name__)
@@ -270,13 +270,15 @@ def run_grouping_duplicate_detection(
                         # module's own resolve_urls_by_blob call below) so a
                         # future per-image opportunity_id here doesn't silently
                         # mis-stamp rows the way the sibling modules did.
-                        opp_for_row = meta.get("opportunity_id") or opp_id
+                        opp_for_row, opp_name_for_row = resolve_opportunity_attribution(
+                            meta.get("opportunity_id"), opp_id, session.opportunity_name
+                        )
                         target_classifier_fail_rows.append(
                             {
                                 "session_id": session.id,
                                 "workflow_run_id": session.workflow_run_id,
                                 "opportunity_id": opp_for_row,
-                                "opportunity_name": session.opportunity_name if opp_for_row == opp_id else "",
+                                "opportunity_name": opp_name_for_row,
                                 "visit_id": meta.get("visit_id"),
                                 "blob_id": blob_id,
                                 "question_id": meta.get("question_id", ""),

@@ -69,13 +69,34 @@ def _coerce_opportunity_id(value):
     or str depending on its source (raw session/image JSON vs. typed record
     properties) -- keeps resolve_urls_by_blob's per-opportunity grouping from
     silently splitting one opportunity into two groups over a type mismatch.
-    Falsy/unparseable input (None, "", non-numeric) returns None unchanged."""
+    Falsy/unparseable input (None, "", non-numeric) returns None, so callers'
+    `_coerce_opportunity_id(value) or default` pattern falls back cleanly."""
     if not value:
         return None
     try:
         return int(value)
     except (TypeError, ValueError):
-        return value
+        return None
+
+
+def resolve_opportunity_attribution(raw_opportunity_id, default_opportunity_id, default_opportunity_name):
+    """Return (opportunity_id, opportunity_name) for a classifier-fail training row.
+
+    An image/target can carry its own opportunity_id distinct from the
+    producer's default (a multi-opp session can flag images belonging to a
+    different opportunity than the session's primary one). Falls back to the
+    default when the row doesn't carry its own (or it's unparseable). Both
+    sides are coerced the same way before comparing so a str/int mismatch for
+    what is really the same opportunity doesn't look like a different one.
+
+    opportunity_name is only ever the default's own name -- it's blanked
+    when the row's opportunity differs from the default, since no
+    per-opportunity name lookup is available at this layer.
+    """
+    default_id = _coerce_opportunity_id(default_opportunity_id) or default_opportunity_id
+    opportunity_id = _coerce_opportunity_id(raw_opportunity_id) or default_id
+    opportunity_name = default_opportunity_name if opportunity_id == default_id else ""
+    return opportunity_id, opportunity_name
 
 
 def _find_org_slug(org_data: dict | None, opportunity_id) -> str | None:

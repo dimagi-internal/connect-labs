@@ -29,7 +29,7 @@ import httpx
 from django.conf import settings
 
 from connect_labs.audit.data_access import is_audit_creation_cancelled
-from connect_labs.audit.link_helpers import resolve_urls_by_blob
+from connect_labs.audit.link_helpers import resolve_opportunity_attribution, resolve_urls_by_blob
 from connect_labs.labs import s3_export
 
 logger = logging.getLogger(__name__)
@@ -516,17 +516,15 @@ def run_duplicate_detection(
                 # step above), not session.opportunity_id -- a multi-opp
                 # session (e.g. muac_picture_audit) can flag images belonging
                 # to a different opportunity than the session's primary one.
-                opp_for_row = img.get("opportunity_id") or session.opportunity_id
+                opp_for_row, opp_name_for_row = resolve_opportunity_attribution(
+                    img.get("opportunity_id"), session.opportunity_id, session.opportunity_name
+                )
                 classifier_fail_rows.append(
                     {
                         "session_id": session.id,
                         "workflow_run_id": session.workflow_run_id,
                         "opportunity_id": opp_for_row,
-                        # session.opportunity_name only actually names opp_for_row
-                        # when they're the same opportunity -- no per-opportunity
-                        # name lookup is available here, so leave it blank rather
-                        # than mislabel a different opportunity with this one's name.
-                        "opportunity_name": session.opportunity_name if opp_for_row == session.opportunity_id else "",
+                        "opportunity_name": opp_name_for_row,
                         "visit_id": int(img["visit_id"]),
                         "blob_id": blob_id,
                         "question_id": question_id,
