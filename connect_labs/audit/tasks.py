@@ -19,6 +19,7 @@ from connect_labs.audit.data_access import (
     create_mock_request,
     is_audit_creation_cancelled,
 )
+from connect_labs.audit.link_helpers import resolve_opportunity_attribution, resolve_urls_by_blob
 from connect_labs.audit.models import AI_NOTES_JOIN_SEP
 from connect_labs.audit.visit_cluster_duplicate_detection import run_grouping_duplicate_detection
 from connect_labs.audit.visit_clustering import build_flw_visit_clusters
@@ -159,7 +160,8 @@ class FetchReviewOutcome(NamedTuple):
     ai_confidence: float | None
     human_result: str | None
     skipped: bool
-    # Individual no_match/error ReviewerVerdicts for this image, BEFORE
+    # Individual no_match ReviewerVerdicts for this image (error verdicts are
+    # deliberately excluded -- see the fail_verdicts filter below), BEFORE
     # _combine_reviewer_results collapses them into the single winning verdict
     # above. Two independent reviewers (e.g. MUAC OverZoom + MUAC Match) can
     # each fail the same image -- this is what lets the classifier-fail export
@@ -445,6 +447,23 @@ def _run_ai_review_on_sessions(
             # Track if we made any updates to this session
             session_updated = False
 
+            # Rows this session contributes to classifier_fail_rows -- kept separate
+            # from that run-level list so the URL resolution below (once per session,
+            # not once per run) only has to touch this session's own new rows.
+            session_classifier_fail_rows: list[dict] = []
+
+            # blob_id -> that image's OWN opportunity_id, when it carries one --
+            # a multi-opp session (e.g. muac_picture_audit) can flag images
+            # sourced from a different opportunity than session.opportunity_id
+            # (same fallback duplicate_detection.py's img.get("opportunity_id")
+            # already uses for the identical shape of data).
+            blob_opportunity_id = {
+                image.get("blob_id"): image.get("opportunity_id")
+                for images in visit_images.values()
+                for image in images
+                if image.get("blob_id")
+            }
+
             # Phase 1: collect reviewable work items, skip the rest.
             # Each item: (visit_id_str, blob_id, reading_by_field, question_id, image_qid)
             #   image_qid -> the image's own question path, used to resolve its reviewer(s)
@@ -498,8 +517,13 @@ def _run_ai_review_on_sessions(
             def _fetch_and_review(item):
                 v_id, b_id, reading_by_field, q_id, img_qid = item
                 resolved_reviewers = resolve(img_qid)
+                # This image's OWN opportunity when it carries one -- a multi-opp
+                # session can review images sourced from a different opportunity
+                # than session.opportunity_id (same fallback blob_opportunity_id
+                # above uses for the classifier-fail row's own attribution).
+                img_opp_id = blob_opportunity_id.get(b_id) or opp_id
                 try:
-                    img_bytes = data_access.download_image_from_connect(b_id, opp_id)
+                    img_bytes = data_access.download_image_from_connect(b_id, img_opp_id)
                     if not img_bytes:
                         return FetchReviewOutcome(v_id, b_id, q_id, img_qid, None, None, None, None, True)
                 except Exception as exc:
@@ -528,7 +552,7 @@ def _run_ai_review_on_sessions(
                         metadata={
                             "visit_id": v_id,
                             "blob_id": b_id,
-                            "opportunity_id": opp_id,
+                            "opportunity_id": img_opp_id,
                             "session_id": session_id,
                         },
                     )
@@ -654,19 +678,30 @@ def _run_ai_review_on_sessions(
                         # independent reviewers (e.g. MUAC OverZoom + MUAC Match)
                         # can each fail the same image, and each is its own row.
                         for verdict in outcome.fail_verdicts:
-                            classifier_fail_rows.append(
+                            opp_for_row, opp_name_for_row = resolve_opportunity_attribution(
+                                blob_opportunity_id.get(outcome.blob_id),
+                                session.opportunity_id,
+                                session.opportunity_name,
+                            )
+                            session_classifier_fail_rows.append(
                                 {
                                     "session_id": session.id,
                                     "workflow_run_id": session.workflow_run_id,
-                                    "opportunity_id": session.opportunity_id,
-                                    "opportunity_name": session.opportunity_name,
+                                    "opportunity_id": opp_for_row,
+                                    "opportunity_name": opp_name_for_row,
                                     "visit_id": int(outcome.visit_id_str),
                                     "blob_id": outcome.blob_id,
                                     "question_id": outcome.question_id,
                                     "classifier_id": verdict.agent_id,
                                     "classifier_label": verdict.ai_notes,
                                     "ai_confidence": verdict.ai_confidence,
-                                    "ai_implied_result": outcome.human_result,
+                                    # This verdict's OWN implied result, not the
+                                    # combined outcome.human_result -- if another
+                                    # reviewer on this image errored, the combine
+                                    # step lets that error win and human_result
+                                    # comes back None even though THIS reviewer's
+                                    # own no_match verdict has a real implied fail.
+                                    "ai_implied_result": verdict.ai_to_human_map.get(verdict.ai_result),
                                 }
                             )
 
@@ -688,6 +723,40 @@ def _run_ai_review_on_sessions(
                             pending_fut.cancel()
                         logger.info(f"[AIReview] Cancelled mid-session {session_id} — stopping remaining images")
                         break
+
+            # Resolve image/form/Connect URLs for this session's new classifier-fail
+            # rows now, rather than waiting on a human to save/complete the session
+            # (see classifier_fail_sync.py, which still backfills these as a safety
+            # net if resolution fails here). One resolve call per session, not per
+            # row -- matches resolve_urls_by_blob's own batching.
+            if session_classifier_fail_rows:
+                # session.opportunity_id (NOT the batch-level opp_id -- in a
+                # per-FLW multi-opportunity run, a session's real opportunity
+                # can differ from the primary opp_id this function was called
+                # with, see is_multi_opp_per_flw) is passed as the DEFAULT;
+                # resolve_urls_by_blob itself groups by each image's own
+                # opportunity_id when present (a multi-opp combined session's
+                # images can carry one), same fallback as blob_opportunity_id
+                # above.
+                # Never let a failure resolving these best-effort training-data
+                # URLs prevent the (already-computed, expensive) AI review
+                # results below from being saved -- this must not be able to
+                # throw out of the try/except this whole session's processing
+                # is already wrapped in, or session_updated's save gets skipped
+                # even though the actual review succeeded.
+                try:
+                    urls_by_blob = resolve_urls_by_blob(
+                        data_access=data_access,
+                        access_token=access_token,
+                        opportunity_id=session.opportunity_id,
+                        visit_images=session.data.get("visit_images", {}),
+                    )
+                except Exception:
+                    logger.exception(f"[AIReview] Failed to resolve classifier-fail URLs for session {session_id}")
+                    urls_by_blob = {}
+                for row in session_classifier_fail_rows:
+                    row.update(urls_by_blob.get(row["blob_id"], {}))
+                classifier_fail_rows.extend(session_classifier_fail_rows)
 
             # Save when there are assessments to write OR when the session ran
             # to completion (not cancelled) so a restart skips it entirely.
@@ -821,7 +890,12 @@ def _run_duplicate_detection_on_sessions(
                     logger.warning(f"[DuplicateDetection] Per-bucket save failed for session {_sid}: {_exc}")
 
             summary = run_duplicate_detection(
-                session, access_token, progress_callback=_cb, cancel_key=cancel_key, save_callback=_save_now
+                session,
+                access_token,
+                progress_callback=_cb,
+                cancel_key=cancel_key,
+                data_access=data_access,
+                save_callback=_save_now,
             )
             # Always save to capture the per-session summary written after the
             # bucket loop. Only set the completion flag when not cancelled
