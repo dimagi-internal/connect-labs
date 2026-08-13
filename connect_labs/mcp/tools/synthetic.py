@@ -1142,14 +1142,19 @@ def synthetic_profile_opps_bulk(user, *, source_opportunity_ids: list[int], out_
         "synthetic opportunity from a profile bundle written by synthetic_profile_opp. "
         "Idempotent: if a SyntheticOpportunity cloned from the same source already "
         "exists and fresh=False, returns the existing row immediately (skipped=True). "
-        "Pass fresh=True to regenerate from scratch."
+        "Pass fresh=True to regenerate from scratch, or target_opportunity_id to "
+        "register onto a specific labs-only opp (bypasses the cloned_from lookup — "
+        "how a source whose twin is claimed elsewhere gets a second, explicitly-placed twin)."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "bundle_dir": {
                 "type": "string",
-                "description": "Path to the bundle directory (e.g. /tmp/bundles/523).",
+                "description": (
+                    "Path to the bundle directory (e.g. /tmp/bundles/523), or "
+                    "'gdrive:<subfolder_id>' for a bundle subfolder in Drive."
+                ),
             },
             "program_id": {
                 "type": "integer",
@@ -1161,6 +1166,13 @@ def synthetic_profile_opps_bulk(user, *, source_opportunity_ids: list[int], out_
                 "type": "boolean",
                 "default": False,
                 "description": "If True, regenerate even if a row for this source already exists.",
+            },
+            "target_opportunity_id": {
+                "type": "integer",
+                "description": (
+                    "Register onto THIS labs-only opp id, bypassing the cloned_from "
+                    "idempotency lookup entirely; the existing twin (if any) is untouched."
+                ),
             },
         },
         "required": ["bundle_dir", "program_id"],
@@ -1176,6 +1188,7 @@ def synthetic_generate_opp(
     program_name: str = "Labs Synthetic",
     org_name: str = "Labs Synthetic",
     fresh: bool = False,
+    target_opportunity_id: int | None = None,
 ) -> dict[str, Any]:
     drive = DriveClient()
     result = generate_opp_from_bundle(
@@ -1185,6 +1198,7 @@ def synthetic_generate_opp(
         program_name=program_name,
         org_name=org_name,
         fresh=fresh,
+        target_opportunity_id=target_opportunity_id,
     )
     return {
         "source_opportunity_id": result.source_opportunity_id,
