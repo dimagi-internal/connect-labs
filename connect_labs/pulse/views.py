@@ -139,6 +139,14 @@ class PulseIndexView(LoginRequiredMixin, View):
                 "ingest": _ingest_state(),
                 "scope": (PulseScalar.objects.filter(key="scope").first() or PulseScalar(value={})).value,
                 "tokens": PulsePublicToken.objects.filter(revoked=False).order_by("-created_at")[:20],
+                # Every engagement, ordered the way the display menus order
+                # things: running first, then by lifetime volume. Feeds the
+                # dossier picker; ~600 rows of id+name is cheap to render.
+                "dossier_opps": list(
+                    PulseOpportunity.objects.order_by("-is_active", "-lifetime_visit_count").values(
+                        "opportunity_id", "name", "is_active", "lifetime_visit_count"
+                    )
+                ),
             },
         )
 
@@ -148,6 +156,32 @@ class PulseDisplayView(LoginRequiredMixin, View):
         if layout not in LAYOUTS:
             raise Http404("Unknown layout")
         return render(request, "pulse/display.html", _display_context(layout, public=False))
+
+
+class PulseOppView(LoginRequiredMixin, View):
+    """The opportunity dossier: one engagement's full record, on one page.
+
+    Server-renders only the identity (name, id); everything quantitative comes
+    from ``/api/opp/`` so the page opens instantly and the data arrives keyed
+    on the indexed opportunity_id. Authenticated-only -- the dossier names the
+    partner and itemises money, which no public link is entitled to.
+    """
+
+    def get(self, request, opp_id: int):
+        from django.conf import settings
+
+        opp = PulseOpportunity.objects.filter(opportunity_id=opp_id).first()
+        if opp is None:
+            raise Http404("No such opportunity")
+        return render(
+            request,
+            "pulse/opp.html",
+            {
+                "opp_id": opp.opportunity_id,
+                "opp_name": opp.name or f"Opportunity {opp.opportunity_id}",
+                "mapbox_token": getattr(settings, "MAPBOX_TOKEN", "") or "",
+            },
+        )
 
 
 class PulsePublicView(View):

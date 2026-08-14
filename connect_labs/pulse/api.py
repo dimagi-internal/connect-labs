@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 
 from django.conf import settings
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Count, Max, Min, Q, Sum
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views import View
@@ -1552,5 +1552,153 @@ class WorkerView(View):
                     }
                     for e in events.order_by("-field_ts")[:60]
                 ],
+            }
+        )
+
+
+class OpportunityView(View):
+    """Everything the opportunity dossier shows, for one engagement.
+
+    Authenticated-only: the dossier names the partner and itemises money, so a
+    public token never reaches it. Every query here is keyed on the indexed
+    ``opportunity_id`` -- the full-history event table is large, and this page
+    must stay fast enough to open casually.
+    """
+
+    def get(self, request):
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "not_authorised"}, status=403)
+        try:
+            opp_id = int(request.GET.get("id", ""))
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "bad_id"}, status=400)
+        opp = PulseOpportunity.objects.filter(opportunity_id=opp_id).first()
+        if opp is None:
+            return JsonResponse({"error": "unknown_opportunity"}, status=404)
+
+        from django.db.models.functions import Round, TruncWeek
+
+        events = PulseEvent.objects.filter(opportunity_id=opp_id)
+        works = PulseWork.objects.filter(opportunity_id=opp_id)
+
+        ev = events.aggregate(
+            n=Count("id"),
+            flagged=Count("id", filter=Q(flagged=True)),
+            workers=Count("worker_hash", distinct=True),
+            first_ts=Min("field_ts"),
+            last_ts=Max("field_ts"),
+        )
+        money = works.aggregate(
+            works=Count("id"),
+            approved=Count("id", filter=Q(status="approved")),
+            usd_workers=Sum("usd_to_worker"),
+            usd_org=Sum("usd_to_org"),
+        )
+        usd_workers = float(money["usd_workers"] or 0)
+        usd_org = float(money["usd_org"] or 0)
+        approved_works = money["approved"] or 0
+
+        # Full history in one pass -- the point of holding the fact store.
+        weekly = [
+            {
+                "t": int(r["bucket"].timestamp()),
+                "n": r["n"],
+                "approved": r["approved"],
+                "flagged": r["flagged"],
+            }
+            for r in events.annotate(bucket=TruncWeek("field_ts"))
+            .values("bucket")
+            .annotate(
+                n=Count("id"),
+                approved=Count("id", filter=Q(status="approved")),
+                flagged=Count("id", filter=Q(flagged=True)),
+            )
+            .order_by("bucket")
+            if r["bucket"] is not None
+        ]
+
+        statuses = {r["status"]: r["n"] for r in events.values("status").annotate(n=Count("id")).order_by("-n")}
+        flags = {
+            r["flag_type"]: r["n"]
+            for r in events.exclude(flag_type="").values("flag_type").annotate(n=Count("id")).order_by("-n")[:8]
+        }
+
+        paid_by_worker = {
+            r["worker_hash"]: float(r["usd"] or 0)
+            for r in works.exclude(worker_hash="").values("worker_hash").annotate(usd=Sum("usd_to_worker"))
+        }
+        workers = [
+            {
+                "w": r["worker_hash"][:6],
+                "events": r["n"],
+                "flagged": r["flagged"],
+                "usd": round(paid_by_worker.get(r["worker_hash"], 0), 2),
+                "last_ts": int(r["last_ts"].timestamp()) if r["last_ts"] else None,
+            }
+            for r in events.exclude(worker_hash="")
+            .values("worker_hash")
+            .annotate(n=Count("id"), flagged=Count("id", filter=Q(flagged=True)), last_ts=Max("field_ts"))
+            .order_by("-n")[:12]
+        ]
+
+        # Town scale (~1.1 km), the same resolution the public grid uses; the
+        # dossier map shows footprint, never households.
+        points = [
+            [r["la"], r["lo"], r["n"]]
+            for r in events.filter(lat__isnull=False)
+            .annotate(la=Round("lat", 2), lo=Round("lon", 2))
+            .values("la", "lo")
+            .annotate(n=Count("id"))
+            .order_by("-n")[:3000]
+        ]
+
+        org = _resolve_org(opp.org_slug) if opp.org_slug else None
+        partner = resolve_partner(opp.org_slug, org.display_name if org is not None and org.named else "")
+        program = PulseProgram.objects.filter(program_id=opp.program_id).first() if opp.program_id else None
+
+        n = ev["n"] or 0
+        return JsonResponse(
+            {
+                "generated_at": timezone.now().isoformat(),
+                "opp": {
+                    "id": opp.opportunity_id,
+                    "name": opp.name or f"Opportunity {opp.opportunity_id}",
+                    "service": opp.service_slug,
+                    "service_name": service_label(opp.service_slug),
+                    "country": opp.country,
+                    "country_name": COUNTRY_NAMES.get(opp.country, opp.country),
+                    "active": bool(opp.is_active),
+                    "end_date": opp.end_date.isoformat() if opp.end_date else None,
+                    # A resolved parent is a real name; otherwise the slug is
+                    # shown verbatim (see _UnnamedOrg for why it is never
+                    # title-cased into a plausible-looking wrong name).
+                    "partner": partner["parent"]
+                    or (org.display_name if org is not None and org.named else opp.org_slug or None),
+                    "partner_slug": opp.org_slug or None,
+                    "program": program.name if program else None,
+                    "program_id": opp.program_id,
+                    "lifetime_visits": opp.lifetime_visit_count or 0,
+                },
+                "totals": {
+                    "events": n,
+                    "flagged": ev["flagged"] or 0,
+                    "flag_rate": ((ev["flagged"] or 0) / n) if n else None,
+                    "workers": ev["workers"] or 0,
+                    "first_ts": int(ev["first_ts"].timestamp()) if ev["first_ts"] else None,
+                    "last_ts": int(ev["last_ts"].timestamp()) if ev["last_ts"] else None,
+                },
+                "money": {
+                    "works": money["works"] or 0,
+                    "approved": approved_works,
+                    "usd_workers": round(usd_workers, 2),
+                    "usd_org": round(usd_org, 2),
+                    "usd_total": round(usd_workers + usd_org, 2),
+                    "rate": ((usd_workers + usd_org) / approved_works) if approved_works else None,
+                },
+                "statuses": statuses,
+                "flags": {k: {"n": v, "label": FLAG_LABELS.get(k, k)} for k, v in flags.items()},
+                "weekly": weekly,
+                "workers": workers,
+                "points": points,
             }
         )

@@ -2047,3 +2047,372 @@
     rgba(254, 175, 49, 0.1) 2px 4px
   );
 }
+
+/* ── opportunity dossier ─────────────────────────────────────────────
+   One engagement's full record as a *document*: the same night-map tokens,
+   but a reading register — a scrolling page, generous rules, no polling
+   chrome. The signature is the delivery rhythm strip: one bar per week of
+   the engagement's whole life, which the local fact store makes possible. */
+.opp-body {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.opp-body::before {
+  display: none; /* the display vignette; a document doesn't fall off at the edges */
+}
+.opp-page {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 26px 32px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.opp-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 22px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--rule);
+}
+.opp-back {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  text-decoration: none;
+  padding: 5px 0;
+  white-space: nowrap;
+}
+.opp-back:hover {
+  color: var(--ink-2);
+}
+.opp-title {
+  flex: 1;
+  min-width: 0;
+}
+.opp-title h1 {
+  margin: 4px 0 0;
+  font-size: clamp(19px, 2.2vw, 27px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.opp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.opp-chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 3px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--ink-2);
+}
+.opp-standing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  white-space: nowrap;
+}
+.opp-state {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 3px;
+  border: 1px solid var(--rule);
+}
+.opp-state.is-active {
+  color: var(--ok);
+  border-color: #17352a;
+  background: #0a2a26;
+}
+.opp-state.is-ended {
+  color: var(--ink-3);
+  background: var(--panel);
+}
+
+.opp-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 1px;
+  background: var(--rule-soft);
+  border: 1px solid var(--rule-soft);
+}
+.opp-kpi {
+  background: var(--panel);
+  padding: 13px 15px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.opp-kpi-v {
+  font-size: clamp(19px, 1.9vw, 25px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.opp-kpi-note {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+.opp-panel {
+  background: var(--panel);
+  border: 1px solid var(--rule-soft);
+  padding: 14px 16px 16px;
+}
+.opp-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.opp-panel-note {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+/* rhythm strip */
+.opp-rhythm-chart {
+  position: relative;
+}
+.opp-rhythm-chart svg {
+  display: block;
+  width: 100%;
+  height: 190px;
+}
+.rh-bar {
+  fill: var(--light-dim);
+  opacity: 0.45;
+}
+.rh-bar-ok {
+  fill: var(--light);
+}
+.rh-year {
+  stroke: var(--rule);
+  stroke-width: 1;
+}
+.rh-year-lbl {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  fill: var(--ink-3);
+}
+.opp-rhythm-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+}
+.opp-rhythm-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.opp-rhythm-legend i.sw {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: block;
+}
+.sw-approved {
+  background: var(--light);
+}
+.sw-other {
+  background: var(--light-dim);
+  opacity: 0.45;
+}
+.opp-tip {
+  position: absolute;
+  top: -6px;
+  transform: translateY(-100%);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 5px 9px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.opp-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 18px;
+  align-items: start;
+}
+
+/* shared bar rows (verification, money, workers) */
+.opp-bar-row {
+  margin-bottom: 11px;
+}
+.opp-bar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.opp-bar-lbl {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.opp-bar-n {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+.opp-bar-track {
+  height: 6px;
+  background: var(--panel-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.opp-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  min-width: 0;
+}
+.f-ok {
+  background: var(--ok);
+}
+.f-warn {
+  background: var(--warn);
+}
+.f-crit {
+  background: var(--crit);
+}
+.f-idle {
+  background: var(--idle);
+}
+.f-light {
+  background: var(--light);
+}
+.f-c2 {
+  background: var(--c-2);
+}
+.opp-flag-detail,
+.opp-money-note {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  color: var(--ink-3);
+  line-height: 1.6;
+  margin: 8px 0 0;
+}
+.opp-empty {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin: 4px 0;
+}
+
+/* workers roster */
+.opp-workers {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.opp-worker-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 62px 78px 92px;
+  gap: 10px;
+  align-items: center;
+}
+.opp-worker-row .opp-bar-track {
+  height: 5px;
+}
+.opp-worker-head {
+  margin-bottom: 2px;
+}
+.opp-worker-id {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+}
+.opp-worker-n,
+.opp-worker-usd {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+  text-align: right;
+}
+.opp-worker-ts {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  text-align: right;
+}
+
+/* map */
+.opp-map-panel {
+  padding-bottom: 0;
+}
+#opp-map {
+  height: 320px;
+  margin: 0 -16px;
+}
+
+.opp-foot {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  padding-top: 6px;
+}
+
+@media (max-width: 1000px) {
+  .opp-kpis {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .opp-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 620px) {
+  .opp-page {
+    padding: 18px 14px 40px;
+  }
+  .opp-head {
+    flex-wrap: wrap;
+  }
+  .opp-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.pulse-opp-dossier {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  text-decoration: none;
+  margin-top: 7px;
+  display: inline-block;
+}
+.pulse-opp-dossier:hover {
+  color: var(--light);
+}
