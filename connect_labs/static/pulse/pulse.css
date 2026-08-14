@@ -2430,3 +2430,84 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* ── page-drawn filter dropdowns ─────────────────────────────────────
+   The native <select> stays in the DOM as the hidden source of truth; the
+   button + listbox below are what a viewer sees, because the OS-drawn menu
+   panel follows the SYSTEM appearance -- a white translucent sheet over the
+   night display on a light-mode Mac -- and CSS cannot reach it. */
+.pulse-dd {
+  position: relative;
+}
+.pulse-dd .pulse-dd-native {
+  display: none;
+}
+.pulse-dd-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  appearance: none;
+  -webkit-appearance: none;
+  max-width: 260px;
+  min-width: 118px;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  padding: 5px 24px 5px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background-color: var(--panel-2);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%236d76b5' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.18s;
+}
+.pulse-dd-btn:hover {
+  border-color: var(--ink-3);
+}
+.pulse-dd-btn:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 1px;
+}
+.pulse-dd-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(440px, 80vw);
+  max-height: min(480px, 70vh);
+  overflow-y: auto;
+  background: var(--panel-2);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow: 0 12px 32px rgba(2, 1, 14, 0.75);
+  padding: 4px;
+}
+.pulse-dd-opt {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  padding: 6px 9px;
+  border-radius: 3px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.pulse-dd-opt:hover,
+.pulse-dd-opt:focus-visible {
+  background: var(--rule-soft);
+  color: var(--ink);
+  outline: none;
+}
+.pulse-dd-opt[aria-selected='true'] {
+  color: var(--light);
+}
+.pulse-dd-opt[aria-selected='true']::before {
+  content: '✓ ';
+}

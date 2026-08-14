@@ -1401,9 +1401,124 @@
     return { apply, write };
   })();
 
+  /* ═══ filter dropdowns, drawn by the page ═══════════════════════════
+     CSS can style a closed <select>, but the OPEN menu is drawn by the OS
+     and follows the system appearance -- on a light-mode Mac it is a white
+     translucent panel over the night display, and no amount of CSS (or
+     color-scheme) reaches it in Safari at all. So the menu is ours: each
+     filter keeps its native <select> as the hidden source of truth (options,
+     value, change events -- everything the rest of this file already talks
+     to), and a button + listbox drawn from page styles fronts it. */
+  function enhanceFilter(sel) {
+    const holder = sel.closest('.pulse-progfilter');
+    if (!holder) return;
+    holder.classList.add('pulse-dd');
+    sel.classList.add('pulse-dd-native');
+    sel.tabIndex = -1;
+    sel.setAttribute('aria-hidden', 'true');
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pulse-dd-btn';
+    btn.setAttribute('aria-haspopup', 'listbox');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-label', sel.getAttribute('aria-label') || '');
+    const menu = document.createElement('div');
+    menu.className = 'pulse-dd-menu';
+    menu.setAttribute('role', 'listbox');
+    menu.hidden = true;
+    holder.appendChild(btn);
+    holder.appendChild(menu);
+
+    const current = () => sel.selectedOptions[0] || sel.options[0];
+    const syncLabel = () => {
+      const opt = current();
+      btn.textContent = opt ? opt.textContent : '—';
+      btn.title = opt ? opt.title || opt.textContent : '';
+    };
+
+    const close = () => {
+      menu.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    };
+    const build = () => {
+      menu.replaceChildren();
+      for (const opt of sel.options) {
+        const row = document.createElement('div');
+        row.className = 'pulse-dd-opt';
+        row.setAttribute('role', 'option');
+        row.setAttribute('aria-selected', String(opt.value === sel.value));
+        row.tabIndex = -1;
+        row.textContent = opt.textContent;
+        if (opt.title) row.title = opt.title;
+        row.addEventListener('click', () => {
+          sel.value = opt.value;
+          // The rest of the page listens on the select, not on this UI.
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+          syncLabel();
+          close();
+          btn.focus();
+        });
+        menu.appendChild(row);
+      }
+    };
+    const open = () => {
+      build();
+      menu.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+      const sel1 =
+        menu.querySelector('[aria-selected="true"]') || menu.firstChild;
+      if (sel1) {
+        sel1.focus();
+        sel1.scrollIntoView({ block: 'nearest' });
+      }
+    };
+
+    btn.addEventListener('click', () => (menu.hidden ? open() : close()));
+    btn.addEventListener('keydown', (ev) => {
+      if (ev.key === 'ArrowDown' || ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        open();
+      }
+    });
+    menu.addEventListener('keydown', (ev) => {
+      const rows = [...menu.children];
+      const i = rows.indexOf(document.activeElement);
+      if (ev.key === 'ArrowDown' && rows[i + 1]) {
+        ev.preventDefault();
+        rows[i + 1].focus();
+      } else if (ev.key === 'ArrowUp' && rows[i - 1]) {
+        ev.preventDefault();
+        rows[i - 1].focus();
+      } else if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        if (i >= 0) rows[i].click();
+      } else if (ev.key === 'Escape') {
+        close();
+        btn.focus();
+      }
+    });
+    document.addEventListener('click', (ev) => {
+      if (!menu.hidden && !holder.contains(ev.target)) close();
+    });
+
+    // Options arrive later (the summary builds the menus) and values are set
+    // programmatically (URL state) -- keep the label honest through both.
+    sel.addEventListener('change', syncLabel);
+    new MutationObserver(() => {
+      syncLabel();
+      if (!menu.hidden) build();
+    }).observe(sel, { childList: true });
+    setInterval(syncLabel, 2000);
+    syncLabel();
+  }
+
   async function boot() {
     buildActPanel();
     wireControls();
+    document
+      .querySelectorAll('.pulse-progfilter select')
+      .forEach(enhanceFilter);
     addEventListener('resize', size);
     size();
     map = initBasemap();
