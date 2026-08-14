@@ -128,17 +128,17 @@ def _production_grants_access(user, opportunity_id: int) -> bool:
     if cached is not None and (now - cached[0]) < _ACCESS_CACHE_TTL_SECONDS:
         return cached[1]
 
-    url = f"{settings.CONNECT_PRODUCTION_URL.rstrip('/')}/export/opportunity/{opportunity_id}/"
+    # Reuse `_fetch_endpoint` rather than hand-rolling the request: it is the exact
+    # call the profiler already makes successfully against this endpoint, including
+    # follow_redirects=True, which production needs (see the note in
+    # integrations/connect/export_client.py — a redirect there is not a denial, but a
+    # bare httpx.get reads one as a non-200 and denies a caller who does have access).
     try:
-        resp = httpx.get(
-            url,
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json; version=2.0"},
-            timeout=20,
-        )
-        granted = resp.status_code == 200
-    except Exception:  # noqa: BLE001 — an unreachable authority is not a grant
-        logger.warning("Access probe failed for opportunity_id=%s; leaving the denial in place", opportunity_id)
-        return False
+        detail = _fetch_endpoint(settings.CONNECT_PRODUCTION_URL, opportunity_id, "", token)
+        granted = bool(detail)
+    except Exception:  # noqa: BLE001 — an unreachable or refusing authority is not a grant
+        logger.info("Access probe did not confirm opportunity_id=%s; leaving the denial in place", opportunity_id)
+        granted = False
 
     _PROBE_CACHE[key] = (now, granted)
     return granted
