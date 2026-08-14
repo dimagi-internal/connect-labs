@@ -450,8 +450,9 @@ def _assemble(
     """Shared tail: images, tasks, user_data, works/modules, opportunity. Both the
     legacy slot-based path and the mirror path build a ``visits`` list and assemble
     the five fixture endpoints the same way from here."""
+    image_stats = None
     if manifest.image_config:
-        assign_visit_images(visits, manifest.image_config, rng)
+        image_stats = assign_visit_images(visits, manifest.image_config, rng)
 
     persona_names = {p.id: p.display_name or p.id for p in personas}
     task_records = build_task_records(
@@ -474,4 +475,8 @@ def _assemble(
         "completed_module": modules,
         "task_records": task_records,
         "app_structure": app_structure,
+        # Not a fixture endpoint -- a generation diagnostic, so a caller can
+        # report "0 images assigned" instead of handing back a dataset whose
+        # missing photos only surface when someone runs an image audit on it.
+        "image_stats": image_stats,
     }
