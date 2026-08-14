@@ -118,9 +118,34 @@ class AnalysisPipeline:
 
     @property
     def visit_count(self) -> int:
-        """Get expected visit count from labs context."""
+        """Get expected visit count from labs context.
+
+        NOTE: this is the count of the opportunity in the REQUEST's context — the
+        workflow's primary opp. Use :meth:`expected_visits_for` when acting on a
+        specific opportunity; a multi-opp workflow runs against many.
+        """
         opportunity = self.labs_context.get("opportunity", {})
         return opportunity.get("visit_count", 0)
+
+    def expected_visits_for(self, opp_id: int) -> int:
+        """Expected visit count for ``opp_id``, or 0 when it cannot be known.
+
+        A multi-opp workflow executes this pipeline against every opportunity in
+        its set, but ``visit_count`` only ever describes the primary one. Applying
+        the primary's count to a different opportunity is not a harmless
+        approximation — it is used to validate cached results, so every opp
+        SMALLER than the primary fails ``visit_count >= expected`` forever and
+        re-downloads its entire dataset on every page view.
+
+        Measured on an 11-opp KMC workflow (primary = 2,491 visits): the 4 opps at
+        or above that count hit cache 8/8; the 7 below it missed 14/14; the page
+        spent ~49s almost entirely re-fetching. It also produced the tell-tale
+        "Fetching visits: 11,604 / 2,491 rows (465%)" progress line.
+
+        0 means "unknown" — callers fall back to the TTL for staleness, exactly as
+        they already do for cchq / ocs / filtered configs.
+        """
+        return self.visit_count if opp_id == self.opportunity_id else 0
 
     @property
     def cache_tolerance_pct(self) -> int:
@@ -185,7 +210,7 @@ class AnalysisPipeline:
         return self.backend.fetch_raw_visits(
             opportunity_id=opp_id,
             access_token=self.access_token,
-            expected_visit_count=self.visit_count,
+            expected_visit_count=self.expected_visits_for(opp_id),
             force_refresh=force_refresh,
             skip_form_json=skip_form_json,
             filter_visit_ids=filter_visit_ids,
@@ -198,7 +223,9 @@ class AnalysisPipeline:
         opp_id = opportunity_id or self.opportunity_id
         if not opp_id:
             return False
-        return self.backend.has_valid_raw_cache(opp_id, self.visit_count, tolerance_pct=self.cache_tolerance_pct)
+        return self.backend.has_valid_raw_cache(
+            opp_id, self.expected_visits_for(opp_id), tolerance_pct=self.cache_tolerance_pct
+        )
 
     def has_valid_processed_cache(self, config: AnalysisPipelineConfig, opportunity_id: int | None = None) -> bool:
         """
@@ -283,7 +310,7 @@ class AnalysisPipeline:
         return self.backend.filter_visits_for_audit(
             opportunity_id=opp_id,
             access_token=self.access_token,
-            expected_visit_count=self.visit_count,
+            expected_visit_count=self.expected_visits_for(opp_id),
             usernames=usernames,
             start_date=start_date,
             end_date=end_date,
@@ -313,7 +340,7 @@ class AnalysisPipeline:
         return self.backend.get_deliver_unit_types_for_opportunity(
             opportunity_id=opp_id,
             access_token=self.access_token,
-            expected_visit_count=self.visit_count,
+            expected_visit_count=self.expected_visits_for(opp_id),
         )
 
     # -------------------------------------------------------------------------
@@ -421,7 +448,7 @@ class AnalysisPipeline:
         for event in self.backend.stream_raw_visits(
             opportunity_id=opp_id,
             access_token=self.access_token,
-            expected_visit_count=self.visit_count,
+            expected_visit_count=self.expected_visits_for(opp_id),
             force_refresh=force_refresh,
             tolerance_pct=tolerance_pct,
             pipeline_id=pipeline_id,
@@ -493,7 +520,7 @@ class AnalysisPipeline:
             stage_name = _stage_name(terminal_stage)
             logger.info(
                 f"[Pipeline/{self.backend_name}] Checking {stage_name}-level cache for opp {opp_id} "
-                f"(expected visits: {self.visit_count})"
+                f"(expected visits: {self.expected_visits_for(opp_id)})"
             )
 
             # CRITICAL FIX: Detect if we have filters - we'll need to handle specially
@@ -510,7 +537,7 @@ class AnalysisPipeline:
             # existing cache, not re-download. The expires_at TTL handles staleness.
             is_cchq = config.data_source.type in ("cchq_forms", "cchq_cases")
             is_ocs = config.data_source.type == "ocs_sessions"
-            expected_count = 0 if (is_cchq or is_ocs or has_filters) else self.visit_count
+            expected_count = 0 if (is_cchq or is_ocs or has_filters) else self.expected_visits_for(opp_id)
             if not force_refresh:
                 cached_result = _get_cached_for_stage(expected_count)
 
