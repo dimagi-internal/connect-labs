@@ -238,15 +238,36 @@
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.06em;
-  padding: 4px 8px;
+  /* Custom-drawn, not the OS control: the native macOS select is a white
+     rounded box that reads as a foreign object on this surface. The chevron
+     is inline SVG in --ink-3 so it dims with the rest of the chrome. */
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 5px 24px 5px 9px;
   max-width: 260px;
   min-width: 0;
   flex: 1 1 auto;
+  text-overflow: ellipsis;
   border: 1px solid var(--rule);
   border-radius: 3px;
-  background: var(--panel);
+  background-color: var(--panel-2);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%236d76b5' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
   color: var(--ink);
   cursor: pointer;
+  transition:
+    border-color 0.18s,
+    color 0.18s;
+}
+.pulse-progfilter select:hover {
+  border-color: var(--ink-3);
+}
+/* The open menu is still OS-drawn; a dark option list keeps the handoff
+   from looking like a glitch on macOS. */
+.pulse-progfilter option {
+  background: var(--panel-2);
+  color: var(--ink);
 }
 .pulse-progfilter select:focus-visible {
   outline: 2px solid var(--light);
@@ -388,27 +409,35 @@
   pointer-events: none;
   z-index: 2;
 }
+/* The claim is a caption for the map, not a headline over it. At full
+   headline weight it fought the lit points for attention and physically
+   overlapped them; the data is the statement, the words annotate it. */
 .pulse-claim {
-  max-width: 470px;
+  max-width: 400px;
 }
 .pulse-claim h1 {
-  margin: 6px 0 0;
-  font-size: clamp(17px, 1.55vw, 23px);
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  line-height: 1.22;
+  margin: 5px 0 0;
+  font-size: clamp(13px, 1.05vw, 15.5px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--ink-2);
   text-wrap: balance;
+  text-shadow: 0 1px 8px rgba(4, 2, 20, 0.9);
 }
 .pulse-claim p {
-  margin: 7px 0 0;
-  font-size: 12.5px;
+  margin: 5px 0 0;
+  font-size: 11px;
   line-height: 1.5;
-  color: var(--ink-2);
+  color: var(--ink-3);
   max-width: 46ch;
+  text-shadow: 0 1px 8px rgba(4, 2, 20, 0.9);
 }
 
 .pulse-focus {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 1px;
   pointer-events: auto;
   background: var(--rule);
@@ -421,7 +450,10 @@
   font-size: 9.5px;
   letter-spacing: 0.13em;
   text-transform: uppercase;
-  padding: 6px 11px;
+  /* Region names stay on one line each; the group wraps as a whole instead
+     of clipping its last tab off the edge. */
+  white-space: nowrap;
+  padding: 6px 10px;
   border: 0;
   background: var(--panel);
   color: var(--ink-3);
@@ -445,7 +477,9 @@
 .pulse-map-foot {
   position: absolute;
   left: 18px;
-  bottom: 14px;
+  /* Above Mapbox's own bottom strip (wordmark left, attribution right), so
+     the legend and privacy note stop colliding with it. */
+  bottom: 34px;
   right: 18px;
   display: flex;
   align-items: flex-end;
@@ -477,12 +511,12 @@
 }
 .pulse-privacy {
   font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
   color: var(--ink-3);
-  opacity: 0.8;
+  opacity: 0.6;
   text-align: right;
-  max-width: 32ch;
+  max-width: 44ch;
   line-height: 1.5;
 }
 
@@ -1254,11 +1288,6 @@
   .h-worker {
     display: none;
   }
-  /* The select keeps its aria-label, so dropping the visible caption costs
-     nothing to a screen reader and buys back ~120px. */
-  .pulse-progfilter .pulse-lbl {
-    display: none;
-  }
   .pulse-progfilter select {
     max-width: 116px;
   }
@@ -1413,6 +1442,7 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3);
+  opacity: 0.75;
   white-space: nowrap;
 }
 .pulse-maphint b {
@@ -2016,4 +2046,373 @@
     rgba(254, 175, 49, 0.45) 0 2px,
     rgba(254, 175, 49, 0.1) 2px 4px
   );
+}
+
+/* ── opportunity dossier ─────────────────────────────────────────────
+   One engagement's full record as a *document*: the same night-map tokens,
+   but a reading register — a scrolling page, generous rules, no polling
+   chrome. The signature is the delivery rhythm strip: one bar per week of
+   the engagement's whole life, which the local fact store makes possible. */
+.opp-body {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.opp-body::before {
+  display: none; /* the display vignette; a document doesn't fall off at the edges */
+}
+.opp-page {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 26px 32px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.opp-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 22px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--rule);
+}
+.opp-back {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  text-decoration: none;
+  padding: 5px 0;
+  white-space: nowrap;
+}
+.opp-back:hover {
+  color: var(--ink-2);
+}
+.opp-title {
+  flex: 1;
+  min-width: 0;
+}
+.opp-title h1 {
+  margin: 4px 0 0;
+  font-size: clamp(19px, 2.2vw, 27px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.opp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.opp-chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 3px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--ink-2);
+}
+.opp-standing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  white-space: nowrap;
+}
+.opp-state {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 3px;
+  border: 1px solid var(--rule);
+}
+.opp-state.is-active {
+  color: var(--ok);
+  border-color: #17352a;
+  background: #0a2a26;
+}
+.opp-state.is-ended {
+  color: var(--ink-3);
+  background: var(--panel);
+}
+
+.opp-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 1px;
+  background: var(--rule-soft);
+  border: 1px solid var(--rule-soft);
+}
+.opp-kpi {
+  background: var(--panel);
+  padding: 13px 15px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.opp-kpi-v {
+  font-size: clamp(19px, 1.9vw, 25px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.opp-kpi-note {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+.opp-panel {
+  background: var(--panel);
+  border: 1px solid var(--rule-soft);
+  padding: 14px 16px 16px;
+}
+.opp-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.opp-panel-note {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+/* rhythm strip */
+.opp-rhythm-chart {
+  position: relative;
+}
+.opp-rhythm-chart svg {
+  display: block;
+  width: 100%;
+  height: 190px;
+}
+.rh-bar {
+  fill: var(--light-dim);
+  opacity: 0.45;
+}
+.rh-bar-ok {
+  fill: var(--light);
+}
+.rh-year {
+  stroke: var(--rule);
+  stroke-width: 1;
+}
+.rh-year-lbl {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  fill: var(--ink-3);
+}
+.opp-rhythm-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+}
+.opp-rhythm-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.opp-rhythm-legend i.sw {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: block;
+}
+.sw-approved {
+  background: var(--light);
+}
+.sw-other {
+  background: var(--light-dim);
+  opacity: 0.45;
+}
+.opp-tip {
+  position: absolute;
+  top: -6px;
+  transform: translateY(-100%);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 5px 9px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.opp-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 18px;
+  align-items: start;
+}
+
+/* shared bar rows (verification, money, workers) */
+.opp-bar-row {
+  margin-bottom: 11px;
+}
+.opp-bar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.opp-bar-lbl {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.opp-bar-n {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+.opp-bar-track {
+  height: 6px;
+  background: var(--panel-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.opp-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  min-width: 0;
+}
+.f-ok {
+  background: var(--ok);
+}
+.f-warn {
+  background: var(--warn);
+}
+.f-crit {
+  background: var(--crit);
+}
+.f-idle {
+  background: var(--idle);
+}
+.f-light {
+  background: var(--light);
+}
+.f-c2 {
+  background: var(--c-2);
+}
+.opp-flag-detail,
+.opp-money-note {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  color: var(--ink-3);
+  line-height: 1.6;
+  margin: 8px 0 0;
+}
+.opp-empty {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin: 4px 0;
+}
+
+/* workers roster */
+.opp-workers {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.opp-worker-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 62px 78px 92px;
+  gap: 10px;
+  align-items: center;
+}
+.opp-worker-row .opp-bar-track {
+  height: 5px;
+}
+.opp-worker-head {
+  margin-bottom: 2px;
+}
+.opp-worker-id {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+}
+.opp-worker-n,
+.opp-worker-usd {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+  text-align: right;
+}
+.opp-worker-ts {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  text-align: right;
+}
+
+/* map */
+.opp-map-panel {
+  padding-bottom: 0;
+}
+#opp-map {
+  height: 320px;
+  margin: 0 -16px;
+}
+
+.opp-foot {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  padding-top: 6px;
+}
+
+@media (max-width: 1000px) {
+  .opp-kpis {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .opp-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 620px) {
+  .opp-page {
+    padding: 18px 14px 40px;
+  }
+  .opp-head {
+    flex-wrap: wrap;
+  }
+  .opp-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.pulse-opp-dossier {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  text-decoration: none;
+  margin-top: 7px;
+  display: inline-block;
+}
+.pulse-opp-dossier:hover {
+  color: var(--light);
 }

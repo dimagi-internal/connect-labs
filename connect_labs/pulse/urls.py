@@ -13,9 +13,11 @@ urlpatterns = [
     # Drill-down, fetched on click rather than polled with the summary.
     path("api/partner/", api.PartnerView.as_view(), name="api_partner"),
     path("api/worker/", api.WorkerView.as_view(), name="api_worker"),
+    path("api/opp/", api.OpportunityView.as_view(), name="api_opp"),
     # Authenticated views.
     path("", views.PulseIndexView.as_view(), name="index"),
     path("v/<slug:layout>/", views.PulseDisplayView.as_view(), name="display"),
+    path("opp/<int:opp_id>/", views.PulseOppView.as_view(), name="opp"),
     # Donor reports: authenticated authoring, public rendering.
     path("reports/", views.PulseReportListView.as_view(), name="report_list"),
     path("reports/<str:slug>/edit/", views.PulseReportEditView.as_view(), name="report_edit"),

@@ -23,6 +23,16 @@
 
   const { nf, usd, usdCompact, nearestTown } = global.PulseCards.helpers;
 
+  // The dossier is a full authenticated page; a public token has no route to
+  // it, so its link only renders on the authenticated display.
+  const DOSSIERS = !(global.PULSE_CONFIG || {}).isPublic;
+  const dossierLink = (id) =>
+    DOSSIERS
+      ? '<a class="pulse-opp-dossier" href="/labs/pulse/opp/' +
+        id +
+        '/" title="Open the full dossier page">dossier ↗</a>'
+      : '';
+
   const REFRESH_MS = 12000;
   const esc = (s) =>
     String(s == null ? '' : s).replace(
@@ -219,6 +229,7 @@
         ' \u00b7 last delivery ' +
         esc(ago(o.last_ts)) +
         '</span>' +
+        dossierLink(o.id) +
         '</div></div>'
       );
     }
@@ -261,6 +272,7 @@
             '</span></div>' +
             '</div>' +
             spark(o) +
+            dossierLink(o.id) +
             '</div>',
         )
         .join('') +
@@ -397,6 +409,10 @@
         if (typeof onChange === 'function') onChange();
         load();
       };
+      // The dossier link navigates; it must not also toggle the row it sits in.
+      win.body.querySelectorAll('.pulse-opp-dossier').forEach((a) => {
+        a.addEventListener('click', (ev) => ev.stopPropagation());
+      });
       win.body.querySelectorAll('.pulse-opp[data-opp]').forEach((el2) => {
         el2.addEventListener('click', () => pick(el2));
         el2.addEventListener('keydown', (ev) => {

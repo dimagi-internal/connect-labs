@@ -115,6 +115,32 @@
     {% endfor %}
   </div>
 
+  <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Opportunity dossiers</h2>
+  <div class="bg-white rounded-lg shadow-sm p-4 mb-8">
+    <p class="text-xs text-gray-500 mb-3 max-w-2xl">
+      One page per engagement: full delivery history, verification record, money
+      split, worker roster and footprint map.
+    </p>
+    <div class="flex flex-wrap gap-3 items-center">
+      <select id="dossier-pick" class="border-gray-300 rounded-md text-sm max-w-md">
+        {% for o in dossier_opps %}
+          <option value="{{ o.opportunity_id }}">{{ o.name|default:o.opportunity_id }}{% if not o.is_active %} (ended){% endif %}</option>
+        {% endfor %}
+      </select>
+      <a id="dossier-open" class="button button-md bg-brand-indigo hover:bg-brand-deep-purple text-white"
+         href="#">Open dossier</a>
+    </div>
+    <script>
+      (function () {
+        var pick = document.getElementById('dossier-pick');
+        var open = document.getElementById('dossier-open');
+        function sync() { open.href = '/labs/pulse/opp/' + pick.value + '/'; }
+        pick.addEventListener('change', sync);
+        sync();
+      })();
+    </script>
+  </div>
+
   <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Public links</h2>
   <p class="text-xs text-gray-500 mb-3 max-w-2xl">
     Each link is separately revocable, so one handed to a funder can be killed

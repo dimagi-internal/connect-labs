@@ -1,0 +1,90 @@
+{% load static %}<!doctype html>
+{% comment %}
+The opportunity dossier — one engagement's full record on one page.
+
+Standalone document like display.html: it shares Pulse's night-map identity,
+not the labs shell. Reached from the Pulse index and from partner windows;
+always authenticated (see PulseOppView).
+{% endcomment %}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ opp_name }} — Connect Pulse</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'pulse/pulse.css' %}">
+</head>
+<body class="pulse-body opp-body">
+
+  <div class="opp-page">
+
+    <header class="opp-head">
+      <a class="opp-back" href="{% url 'pulse:index' %}">&larr; Pulse</a>
+      <div class="opp-title">
+        <span class="pulse-lbl">Opportunity {{ opp_id }}</span>
+        <h1 id="opp-name">{{ opp_name }}</h1>
+        <div class="opp-chips" id="opp-chips"></div>
+      </div>
+      <div class="opp-standing" id="opp-standing"></div>
+    </header>
+
+    <section class="opp-kpis" id="opp-kpis" aria-label="Headline figures"></section>
+
+    {# The signature: one bar per week since the first delivery. The full   #}
+    {# history exists locally now, so the engagement's whole life fits in   #}
+    {# a single glance — ramp-up, rhythm, gaps and wind-down included.      #}
+    <section class="opp-panel opp-rhythm">
+      <div class="opp-panel-head">
+        <span class="pulse-lbl">Delivery rhythm</span>
+        <span class="opp-panel-note" id="rhythm-note"></span>
+      </div>
+      <div class="opp-rhythm-chart" id="rhythm"></div>
+      <div class="opp-rhythm-legend">
+        <span><i class="sw sw-approved"></i>Approved</span>
+        <span><i class="sw sw-other"></i>Awaiting or failed review</span>
+      </div>
+    </section>
+
+    <div class="opp-grid">
+      <section class="opp-panel">
+        <div class="opp-panel-head"><span class="pulse-lbl">Verification</span></div>
+        <div id="verification"></div>
+      </section>
+
+      <section class="opp-panel opp-map-panel">
+        <div class="opp-panel-head">
+          <span class="pulse-lbl">Delivery footprint</span>
+          <span class="opp-panel-note">town scale &middot; no household coordinates</span>
+        </div>
+        <div id="opp-map"></div>
+      </section>
+
+      <section class="opp-panel">
+        <div class="opp-panel-head"><span class="pulse-lbl">Money</span></div>
+        <div id="money"></div>
+      </section>
+
+      <section class="opp-panel">
+        <div class="opp-panel-head">
+          <span class="pulse-lbl">Workers</span>
+          <span class="opp-panel-note" id="workers-note"></span>
+        </div>
+        <div id="workers"></div>
+      </section>
+    </div>
+
+    <footer class="opp-foot" id="opp-foot"></footer>
+  </div>
+
+  <script>
+    window.PULSE_CONFIG = { base: "/labs/pulse", oppId: {{ opp_id }} };
+    window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
+  </script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+  <script src="{% static 'maps/connect_map.js' %}"></script>
+  <script src="{% static 'pulse/opp.js' %}"></script>
+</body>
+</html>
