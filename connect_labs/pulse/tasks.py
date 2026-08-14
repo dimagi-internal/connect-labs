@@ -303,10 +303,18 @@ def _backfill_one(
         if page_pause:
             time.sleep(page_pause)
     else:
-        # The generator ended on its own: this opportunity has no more history.
-        # Recognising exhaustion as completion matters, because otherwise an opp
-        # walked back to its first visit is re-walked on every future run.
-        finished = True
+        # The generator ended on its own. That is only evidence of "no more
+        # history" if we actually SAW something -- an empty response is
+        # ambiguous, and `backfill_complete` is sticky, so guessing wrong stops
+        # an opportunity being walked ever again.
+        #
+        # This exact mistake cost a run: 409 opportunities returned zero rows
+        # and were marked complete, including ones holding 100k+ unfetched
+        # visits (opp 411: 1,000 held against 101,458 lifetime). Requiring a
+        # page makes the failure mode "re-check an exhausted opp once per run",
+        # which is one cheap empty request, instead of "silently stop pulling
+        # real data", which is unrecoverable without a manual reset.
+        finished = pages > 0
 
     if finished:
         cursor.backfill_complete = True

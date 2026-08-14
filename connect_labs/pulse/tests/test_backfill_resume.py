@@ -102,6 +102,25 @@ class TestResume:
         cursor.refresh_from_db()
         assert cursor.backfill_complete
 
+    def test_an_empty_response_is_never_treated_as_complete(self, cursor, opp):
+        """The regression that cost a run.
+
+        A request returning nothing is ambiguous, and `backfill_complete` is
+        sticky -- marking it stopped 409 opportunities being walked ever again,
+        including ones holding 100k+ unfetched visits. Re-checking an exhausted
+        opportunity costs one empty request; guessing wrong is unrecoverable.
+        """
+        tasks._backfill_one(_Client([]), cursor, datetime(2020, 1, 1, tzinfo=dt_timezone.utc))
+
+        cursor.refresh_from_db()
+        assert not cursor.backfill_complete
+
+    def test_only_empty_pages_is_not_completion_either(self, cursor, opp):
+        tasks._backfill_one(_Client([[], []]), cursor, datetime(2020, 1, 1, tzinfo=dt_timezone.utc))
+
+        cursor.refresh_from_db()
+        assert not cursor.backfill_complete
+
     def test_cutoff_still_stops_the_walk(self, cursor, opp):
         # Page one is entirely older than the cutoff, so the walk has gone as
         # deep as it was asked to and should not request page two.
