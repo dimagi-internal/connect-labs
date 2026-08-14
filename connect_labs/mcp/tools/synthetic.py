@@ -47,6 +47,9 @@ logger = logging.getLogger(__name__)
 # is picked up promptly.
 _ACCESS_CACHE: dict[int, tuple[float, set[int]]] = {}
 _ACCESS_CACHE_TTL_SECONDS = 60
+# (user_id, opportunity_id) -> (timestamp, granted). Shares the access cache's
+# clock so a bulk operation costs at most one probe per opportunity.
+_PROBE_CACHE: dict[tuple, tuple[float, bool]] = {}
 
 
 def _accessible_opp_ids_for_user(user) -> set[int]:
@@ -98,6 +101,49 @@ def _accessible_opp_ids_for_user(user) -> set[int]:
     return ids
 
 
+def _production_grants_access(user, opportunity_id: int) -> bool:
+    """Ask production Connect whether this caller may read this opportunity.
+
+    The accessible-opportunity list is a local COPY of a decision production owns
+    and enforces on every export call. When that copy is incomplete the honest move
+    is to ask the authority rather than infer from the copy: a 200 here means the
+    caller genuinely has access; anything else leaves the denial standing.
+
+    This can only ever GRANT access production itself confirms — it can never
+    override a denial — so it is strictly safer than trusting a partial list.
+
+    Needed because the list really is partial: it returned 273 entries whose lowest
+    id was 948, so every older opportunity looked inaccessible, while labs_context
+    listed those same opportunities and production served their exports 200 OK
+    (connect-labs#1195).
+    """
+    try:
+        token = require_connect_token(user)
+    except MCPToolError:
+        return False
+
+    key = (getattr(user, "id", None), opportunity_id)
+    now = time.monotonic()
+    cached = _PROBE_CACHE.get(key)
+    if cached is not None and (now - cached[0]) < _ACCESS_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    url = f"{settings.CONNECT_PRODUCTION_URL.rstrip('/')}/export/opportunity/{opportunity_id}/"
+    try:
+        resp = httpx.get(
+            url,
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json; version=2.0"},
+            timeout=20,
+        )
+        granted = resp.status_code == 200
+    except Exception:  # noqa: BLE001 — an unreachable authority is not a grant
+        logger.warning("Access probe failed for opportunity_id=%s; leaving the denial in place", opportunity_id)
+        return False
+
+    _PROBE_CACHE[key] = (now, granted)
+    return granted
+
+
 def _require_opportunity_access(user, opportunity_id: int) -> None:
     """Raise PERMISSION_DENIED if the user has no access to ``opportunity_id``.
 
@@ -133,6 +179,12 @@ def _require_opportunity_access(user, opportunity_id: int) -> None:
     # Connect membership.)
     accessible = _accessible_opp_ids_for_user(user)
     if opportunity_id not in accessible:
+        # The list is only a copy — production is the authority, and it enforces this
+        # on every export call anyway. Ask it before turning a partial list into a
+        # permission decision (connect-labs#1195).
+        if _production_grants_access(user, opportunity_id):
+            return
+
         # Say how big the set was. "Not in your accessible set" is indistinguishable
         # between "production says you may not touch this opportunity" and "we asked
         # and got back nothing useful" — and the second one sends people hunting for
@@ -153,7 +205,8 @@ def _require_opportunity_access(user, opportunity_id: int) -> None:
         )
         raise MCPToolError(
             "PERMISSION_DENIED",
-            f"opportunity_id {opportunity_id} is not in your accessible set ({detail})",
+            f"opportunity_id {opportunity_id} is not in your accessible set ({detail}), "
+            f"and production Connect did not confirm access to it",
         )
 
 
