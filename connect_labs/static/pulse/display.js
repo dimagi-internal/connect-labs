@@ -255,6 +255,24 @@
       size();
     });
     m.on('load', () => {
+      // The dark-v11 basemap ships place labels at reading brightness, which
+      // makes the geography compete with the data. Dim what anchors the eye
+      // (country and settlement names) and drop what only adds noise at these
+      // zooms (POIs, roads, transit). Guard on source === 'composite' so only
+      // Mapbox's own layers are touched, never ones this page adds later.
+      try {
+        for (const layer of m.getStyle().layers) {
+          if (layer.type !== 'symbol' || layer.source !== 'composite') continue;
+          if (/poi|road|transit|airport/.test(layer.id)) {
+            m.setLayoutProperty(layer.id, 'visibility', 'none');
+            continue;
+          }
+          m.setPaintProperty(layer.id, 'text-opacity', 0.4);
+          m.setPaintProperty(layer.id, 'icon-opacity', 0.3);
+        }
+      } catch (err) {
+        console.warn('[pulse] basemap label dimming skipped', err);
+      }
       baseDirty = true;
       setFocus(focus, true);
     });
