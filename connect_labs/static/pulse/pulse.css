@@ -413,7 +413,7 @@
    headline weight it fought the lit points for attention and physically
    overlapped them; the data is the statement, the words annotate it. */
 .pulse-claim {
-  max-width: 400px;
+  max-width: 360px;
 }
 .pulse-claim h1 {
   margin: 5px 0 0;
@@ -448,12 +448,12 @@
 .pulse-focus button {
   font-family: var(--mono);
   font-size: 9.5px;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   /* Region names stay on one line each; the group wraps as a whole instead
      of clipping its last tab off the edge. */
   white-space: nowrap;
-  padding: 6px 10px;
+  padding: 6px 8px;
   border: 0;
   background: var(--panel);
   color: var(--ink-3);

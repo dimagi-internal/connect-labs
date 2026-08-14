@@ -231,13 +231,13 @@
     trial: 'Trial',
   };
 
-  function bar(label, n, total, cls, note) {
+  // `display` is the printed figure -- a count with a share, a currency
+  // amount, whatever reads best; the track only needs n/total for width.
+  function bar(label, n, total, cls, display) {
     const row = el('div', 'opp-bar-row');
     const head = el('div', 'opp-bar-head');
     head.appendChild(el('span', 'opp-bar-lbl', label));
-    head.appendChild(
-      el('span', 'opp-bar-n num', nf.format(n) + (note ? ` · ${note}` : '')),
-    );
+    head.appendChild(el('span', 'opp-bar-n num', display));
     row.appendChild(head);
     const track = el('div', 'opp-bar-track');
     const fill = el('div', 'opp-bar-fill ' + cls);
@@ -272,7 +272,7 @@
           n,
           total,
           CLS[status] || 'f-idle',
-          pct(total ? n / total : null),
+          nf.format(n) + ' · ' + pct(total ? n / total : null),
         ),
       );
     }
@@ -287,7 +287,7 @@
           d.totals.flagged,
           total,
           'f-warn',
-          pct(d.totals.flag_rate),
+          nf.format(d.totals.flagged) + ' · ' + pct(d.totals.flag_rate),
         ),
       );
       if (detail) root.appendChild(el('p', 'opp-flag-detail', detail));
