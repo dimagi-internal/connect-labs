@@ -83,6 +83,10 @@ class TestPIIBoundary:
             "service_slug",
             "worker_hash",
             "usd_to_worker",
+            # Bookkeeping, not data about anyone: records that this row's
+            # coordinates have already been added to the anonymous grid, so a
+            # second fold cannot double-count them.
+            "folded_at",
         }
 
     def test_worker_hash_is_the_upstream_hash_not_a_name(self):

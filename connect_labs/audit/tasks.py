@@ -19,10 +19,12 @@ from connect_labs.audit.data_access import (
     create_mock_request,
     is_audit_creation_cancelled,
 )
+from connect_labs.audit.link_helpers import resolve_opportunity_attribution, resolve_urls_by_blob
 from connect_labs.audit.models import AI_NOTES_JOIN_SEP
 from connect_labs.audit.visit_cluster_duplicate_detection import run_grouping_duplicate_detection
 from connect_labs.audit.visit_clustering import build_flw_visit_clusters
 from connect_labs.labs import s3_export
+from connect_labs.labs.ai_review_agents.base import ERROR_KIND_AGENT_EXCEPTION, ERROR_KIND_UNKNOWN
 from connect_labs.utils.celery import set_task_progress
 from connect_labs.utils.progress_relays import _RELAYS as AUDIT_PROGRESS_RELAYS  # noqa: F401  (back-compat alias)
 from connect_labs.utils.progress_relays import get_relay
@@ -144,6 +146,12 @@ class ReviewerVerdict(NamedTuple):
     ai_notes: str | None
     ai_confidence: float | None
     ai_to_human_map: dict[str, str]
+    # Machine-readable cause when ai_result == "error" (one of the ERROR_KIND_*
+    # constants in connect_labs.labs.ai_review_agents.base), else "". The
+    # auditor-facing note is deliberately generic prose, so this is what lets a
+    # run summary say WHICH failure produced its error count instead of just
+    # how many there were.
+    error_kind: str = ""
 
 
 class FetchReviewOutcome(NamedTuple):
@@ -159,7 +167,8 @@ class FetchReviewOutcome(NamedTuple):
     ai_confidence: float | None
     human_result: str | None
     skipped: bool
-    # Individual no_match/error ReviewerVerdicts for this image, BEFORE
+    # Individual no_match ReviewerVerdicts for this image (error verdicts are
+    # deliberately excluded -- see the fail_verdicts filter below), BEFORE
     # _combine_reviewer_results collapses them into the single winning verdict
     # above. Two independent reviewers (e.g. MUAC OverZoom + MUAC Match) can
     # each fail the same image -- this is what lets the classifier-fail export
@@ -167,6 +176,29 @@ class FetchReviewOutcome(NamedTuple):
     # per failing classifier instead of one row for the merged outcome. Empty
     # for images that were skipped or had no runnable reviewer.
     fail_verdicts: tuple = ()
+    # Why this image was skipped, when skipped is True. "skipped" used to
+    # conflate two unrelated situations that need opposite responses -- a
+    # CONFIGURATION problem (no reviewer had a reading it could use, so the run
+    # silently produces nothing) and an INFRASTRUCTURE problem (the image could
+    # not be downloaded). Tallied by reason in the run summary so they are
+    # distinguishable without re-reading the source.
+    skip_reason: str = ""
+    # ERROR_KIND_* for every reviewer on this image that errored, pre-collapse.
+    error_kinds: tuple = ()
+
+
+# skip_reason values (see FetchReviewOutcome.skip_reason).
+SKIP_NO_REVIEWER_READING = "no_reviewer_reading"
+SKIP_IMAGE_DOWNLOAD_FAILED = "image_download_failed"
+SKIP_IMAGE_EMPTY = "image_empty"
+
+# Cap on distinct (image path, reading field) pairs named in the misconfiguration
+# diagnostics. The pairs come from admin-configured reviewer specs crossed with
+# whatever field paths the data happens to carry, so the count is not bounded by
+# anything validated -- log the worst offenders rather than risking one line per
+# distinct combination. Ordered by descending image count, so the cap only ever
+# drops the rarest cases.
+_MAX_LOGGED_MISSING_FIELDS = 10
 
 
 def _combine_reviewer_results(
@@ -294,6 +326,7 @@ def _run_ai_review_on_sessions(
     ai_reviewers: dict | None = None,
     progress_callback=None,
     cancel_key: str | None = None,
+    log_tag: str = "",
 ) -> dict:
     """
     Run AI review agent on the specified audit sessions.
@@ -312,14 +345,21 @@ def _run_ai_review_on_sessions(
             legacy per-agent default; a list (possibly empty) selects exactly which
             action keys pre-tag. See ``_build_ai_to_human_result``.
         cancel_key: If set, checked cooperatively between sessions (and between
-            images within a session) via ``is_audit_creation_cancelled`` so a
+            images within a session, including during the post-pass retry
+            sweep described below) via ``is_audit_creation_cancelled`` so a
             large review can be stopped mid-run. Sessions already created and
             images already reviewed are left as-is -- only remaining work stops.
+        log_tag: Short correlation id (the Celery task id) stamped on every log
+            line this function emits. Without it the only way to isolate one
+            run's lines is the worker-process number, which Celery reuses across
+            tasks -- so concurrent audits interleave indistinguishably.
 
     Returns:
         Dict with review results summary
     """
     from connect_labs.labs.ai_review_agents.registry import get_agent
+
+    tag = f"[AIReview{':' + log_tag if log_tag else ''}]"
 
     # Resolve the reviewer(s) for a given image question_id. Unifies two modes:
     #   * per-type (ai_reviewers given): look up the agent list by question_id.
@@ -359,9 +399,9 @@ def _run_ai_review_on_sessions(
             return [_cache_reviewer(("global",), ai_agent_id, auto_apply_actions, None)]
 
     if ai_reviewers is not None:
-        logger.info(f"[AIReview] Per-image-type review on {len(session_ids)} sessions: {ai_reviewers}")
+        logger.info(f"{tag} Per-image-type review on {len(session_ids)} sessions: {ai_reviewers}")
     else:
-        logger.info(f"[AIReview] Running agent '{ai_agent_id}' on {len(session_ids)} sessions")
+        logger.info(f"{tag} Running agent '{ai_agent_id}' on {len(session_ids)} sessions")
 
     # First pass: count only images that have a reviewer AND meet its reading requirement
     total_images_to_review = 0
@@ -402,25 +442,48 @@ def _run_ai_review_on_sessions(
     total_skipped = 0
     images_processed = 0
     cancelled = False
+    review_started_at = time.monotonic()
+    # Error causes and skip causes, tallied across the whole run. These are the
+    # two numbers that were previously opaque: a bare "errors=160, skipped=475"
+    # says something went wrong but not what, and answering that meant querying
+    # per-agent log lines that carry no session or blob id to join on.
+    error_kind_counts: dict[str, int] = {}
+    skip_reason_counts: dict[str, int] = {}
+    # For SKIP_NO_REVIEWER_READING only: (image_question_id, wanted_field) ->
+    # {"count": n, "present": [field paths that DID have values]}. This is the
+    # payload that turns "everything was skipped" into "you configured field X
+    # on image Y, but the data carries fields A/B" -- i.e. a fixable statement.
+    missing_reading_fields: dict[tuple[str, str], dict] = {}
     # Collected across every session in this run, written to S3 once at the end
     # (see connect_labs.labs.s3_export.record_classifier_fails) rather than once
     # per row -- this is a training-data export, not part of the review flow.
     classifier_fail_rows: list[dict] = []
 
+    def _note_skip(reason: str) -> None:
+        skip_reason_counts[reason] = skip_reason_counts.get(reason, 0) + 1
+
     for session_id in session_ids:
         if cancel_key and is_audit_creation_cancelled(cancel_key):
-            logger.info(f"[AIReview] Cancelled — stopping before session {session_id}")
+            logger.info(f"{tag} Cancelled — stopping before session {session_id}")
             cancelled = True
             break
         try:
+            # Per-session wall clock. Sessions are processed one after another,
+            # so this is what shows a small session costing as much as a large
+            # one (a single hung classifier call stalls a session that has only
+            # a couple of images and cannot fill the pool).
+            session_started_at = time.monotonic()
+            session_reviewed_before = total_reviewed
+            session_errors_before = total_errors
+
             # Get session data
             session = data_access.get_audit_session(session_id)
             if not session:
-                logger.warning(f"[AIReview] Session {session_id} not found")
+                logger.warning(f"{tag} Session {session_id} not found")
                 continue
 
             if session.data.get("ai_review_complete"):
-                logger.info(f"[AIReview] Session {session_id} already reviewed — skipping (resumed run)")
+                logger.info(f"{tag} Session {session_id} already reviewed — skipping (resumed run)")
                 skipped_count = session_image_counts.get(session_id, 0)
                 images_processed += skipped_count
                 if progress_callback:
@@ -435,15 +498,32 @@ def _run_ai_review_on_sessions(
             # This contains the images and their related field data
             visit_images = session.data.get("visit_images", {})
             logger.info(
-                f"[AIReview] Session {session_id}: found {len(visit_images)} visits with images, "
+                f"{tag} Session {session_id}: found {len(visit_images)} visits with images, "
                 f"data keys: {list(session.data.keys())}"
             )
             if not visit_images:
-                logger.info(f"[AIReview] Session {session_id} has no visit_images")
+                logger.info(f"{tag} Session {session_id} has no visit_images")
                 continue
 
             # Track if we made any updates to this session
             session_updated = False
+
+            # Rows this session contributes to classifier_fail_rows -- kept separate
+            # from that run-level list so the URL resolution below (once per session,
+            # not once per run) only has to touch this session's own new rows.
+            session_classifier_fail_rows: list[dict] = []
+
+            # blob_id -> that image's OWN opportunity_id, when it carries one --
+            # a multi-opp session (e.g. muac_picture_audit) can flag images
+            # sourced from a different opportunity than session.opportunity_id
+            # (same fallback duplicate_detection.py's img.get("opportunity_id")
+            # already uses for the identical shape of data).
+            blob_opportunity_id = {
+                image.get("blob_id"): image.get("opportunity_id")
+                for images in visit_images.values()
+                for image in images
+                if image.get("blob_id")
+            }
 
             # Phase 1: collect reviewable work items, skip the rest.
             # Each item: (visit_id_str, blob_id, reading_by_field, question_id, image_qid)
@@ -455,7 +535,7 @@ def _run_ai_review_on_sessions(
             #     field with a value, if any, else the image's own path)
             work_items = []
             for visit_id_str, images in visit_images.items():
-                logger.debug(f"[AIReview] Visit {visit_id_str}: {len(images)} images")
+                logger.debug(f"{tag} Visit {visit_id_str}: {len(images)} images")
                 for image_data in images:
                     blob_id = image_data.get("blob_id")
                     if not blob_id:
@@ -481,7 +561,22 @@ def _run_ai_review_on_sessions(
                     if all(
                         r.requires_reading and not _reading_for(r.comparison_field, reading_by_field) for r in resolved
                     ):
-                        logger.debug(f"[AIReview] Skipping blob={blob_id}: no reviewer has a reading it can use")
+                        # Record WHICH field each reviewer wanted and which ones the
+                        # data actually carried. A whole run can end up here with
+                        # zero reviews and still report success, so the misconfigured
+                        # field path is the single most useful thing to capture.
+                        present = sorted(reading_by_field)
+                        for r in resolved:
+                            wanted = r.comparison_field or "<any related field>"
+                            entry = missing_reading_fields.setdefault(
+                                (image_qid, wanted), {"count": 0, "present": present}
+                            )
+                            entry["count"] += 1
+                        logger.debug(
+                            f"{tag} Skipping blob={blob_id} ({image_qid}): "
+                            f"no reviewer has a reading it can use; present fields={present}"
+                        )
+                        _note_skip(SKIP_NO_REVIEWER_READING)
                         total_skipped += 1
                         images_processed += 1
                         continue
@@ -498,13 +593,32 @@ def _run_ai_review_on_sessions(
             def _fetch_and_review(item):
                 v_id, b_id, reading_by_field, q_id, img_qid = item
                 resolved_reviewers = resolve(img_qid)
+                # This image's OWN opportunity when it carries one -- a multi-opp
+                # session can review images sourced from a different opportunity
+                # than session.opportunity_id (same fallback blob_opportunity_id
+                # above uses for the classifier-fail row's own attribution).
+                img_opp_id = blob_opportunity_id.get(b_id) or opp_id
                 try:
-                    img_bytes = data_access.download_image_from_connect(b_id, opp_id)
+                    img_bytes = data_access.download_image_from_connect(b_id, img_opp_id)
                     if not img_bytes:
-                        return FetchReviewOutcome(v_id, b_id, q_id, img_qid, None, None, None, None, True)
+                        logger.warning(f"{tag} Empty image body for blob={b_id} (opp {img_opp_id})")
+                        return FetchReviewOutcome(
+                            v_id, b_id, q_id, img_qid, None, None, None, None, True, skip_reason=SKIP_IMAGE_EMPTY
+                        )
                 except Exception as exc:
-                    logger.warning(f"[AIReview] Failed to fetch image {b_id}: {exc}")
-                    return FetchReviewOutcome(v_id, b_id, q_id, img_qid, None, None, None, None, True)
+                    logger.warning(f"{tag} Failed to fetch image {b_id}: {type(exc).__name__}: {exc}")
+                    return FetchReviewOutcome(
+                        v_id,
+                        b_id,
+                        q_id,
+                        img_qid,
+                        None,
+                        None,
+                        None,
+                        None,
+                        True,
+                        skip_reason=SKIP_IMAGE_DOWNLOAD_FAILED,
+                    )
 
                 from connect_labs.labs.ai_review_agents.types import ReviewContext
 
@@ -528,12 +642,13 @@ def _run_ai_review_on_sessions(
                         metadata={
                             "visit_id": v_id,
                             "blob_id": b_id,
-                            "opportunity_id": opp_id,
+                            "opportunity_id": img_opp_id,
                             "session_id": session_id,
                         },
                     )
                     ai_n = None
                     ai_c = None
+                    err_kind = ""
                     try:
                         rv = reviewer.agent.review(ctx)
                         ai_c = rv.confidence
@@ -550,21 +665,29 @@ def _run_ai_review_on_sessions(
                         else:
                             ai_r = "error"
                             ai_n = "; ".join(rv.errors) if rv.errors else None
+                            # Agents that predate the taxonomy simply report unknown
+                            # rather than silently vanishing from the run tally.
+                            err_kind = rv.details.get("error_kind") or ERROR_KIND_UNKNOWN
                     except Exception as exc:
-                        logger.exception(f"[AIReview] Agent raised exception for blob={b_id}")
+                        logger.exception(f"{tag} Agent raised exception for blob={b_id}")
                         ai_r = "error"
                         ai_n = str(exc)
+                        err_kind = ERROR_KIND_AGENT_EXCEPTION
                     # Per-reviewer trace, logged BEFORE combination collapses the losing
                     # verdicts away — otherwise "muac_overzoom passed but muac_match
                     # failed" is unrecoverable after the fact (see review finding).
                     logger.debug(
-                        f"[AIReview] {reviewer.agent.agent_id}: visit={v_id}, blob={b_id}, "
+                        f"{tag} {reviewer.agent.agent_id}: visit={v_id}, blob={b_id}, "
                         f"reading={rdg}, result={ai_r}, notes={ai_n!r}"
                     )
-                    return ReviewerVerdict(reviewer.agent.agent_id, ai_r, ai_n, ai_c, reviewer.ai_to_human_map)
+                    return ReviewerVerdict(
+                        reviewer.agent.agent_id, ai_r, ai_n, ai_c, reviewer.ai_to_human_map, err_kind
+                    )
 
                 if not runnable:
-                    return FetchReviewOutcome(v_id, b_id, q_id, img_qid, None, None, None, None, True)
+                    return FetchReviewOutcome(
+                        v_id, b_id, q_id, img_qid, None, None, None, None, True, skip_reason=SKIP_NO_REVIEWER_READING
+                    )
 
                 # Independent reviewers on the same image (e.g. MUAC OverZoom +
                 # MUAC Match) each make their own blocking HTTP call. Running them
@@ -602,9 +725,97 @@ def _run_ai_review_on_sessions(
                 # "error" verdict (rate limit, gateway hiccup) isn't an AI judgment
                 # about the image and would just be noise in classifier_fails.csv.
                 fail_verdicts = tuple(v for v in per_agent_results if v.ai_result == "no_match")
+                # Every erroring reviewer's cause, not just the winning one --
+                # two reviewers on the same image can fail for different reasons
+                # and the run tally should see both.
+                error_kinds = tuple(v.error_kind for v in per_agent_results if v.ai_result == "error" and v.error_kind)
                 return FetchReviewOutcome(
-                    v_id, b_id, q_id, img_qid, ai_result, ai_notes, ai_confidence, human_result, False, fail_verdicts
+                    v_id,
+                    b_id,
+                    q_id,
+                    img_qid,
+                    ai_result,
+                    ai_notes,
+                    ai_confidence,
+                    human_result,
+                    False,
+                    fail_verdicts,
+                    error_kinds=error_kinds,
                 )
+
+            def _persist_outcome(outcome):
+                # Persist the combined AI result so the classification label is
+                # always available to display in the tile footer. human_result is
+                # None unless some resolved reviewer's verdict was opted into
+                # auto-apply for this image type.
+                session.set_assessment(
+                    visit_id=int(outcome.visit_id_str),
+                    blob_id=outcome.blob_id,
+                    question_id=outcome.question_id,
+                    result=outcome.human_result,
+                    notes="",
+                    ai_result=outcome.ai_result,
+                    ai_notes=outcome.ai_notes,
+                    ai_confidence=outcome.ai_confidence,
+                )
+
+            # Session-scoped set of (visit_id_str, blob_id, classifier_id) keys
+            # already contributed to session_classifier_fail_rows -- the retry
+            # sweep below re-runs EVERY reviewer on a retried image, including
+            # one that already produced a definitive no_match on the first
+            # pass (only a co-located reviewer's "error" made the image a
+            # retry candidate). Without this, a deterministic classifier's
+            # same verdict gets exported to classifier_fails.csv a second
+            # time whenever its sibling reviewer's error clears on retry.
+            exported_fail_keys: set[tuple[str, str, str]] = set()
+
+            def _classifier_fail_rows_for(outcome):
+                # One training-data row per failing classifier -- two
+                # independent reviewers (e.g. MUAC OverZoom + MUAC Match)
+                # can each fail the same image, and each is its own row.
+                rows = []
+                for verdict in outcome.fail_verdicts:
+                    key = (outcome.visit_id_str, outcome.blob_id, verdict.agent_id)
+                    if key in exported_fail_keys:
+                        continue
+                    exported_fail_keys.add(key)
+                    opp_for_row, opp_name_for_row = resolve_opportunity_attribution(
+                        blob_opportunity_id.get(outcome.blob_id),
+                        session.opportunity_id,
+                        session.opportunity_name,
+                    )
+                    rows.append(
+                        {
+                            "session_id": session.id,
+                            "workflow_run_id": session.workflow_run_id,
+                            "opportunity_id": opp_for_row,
+                            "opportunity_name": opp_name_for_row,
+                            "visit_id": int(outcome.visit_id_str),
+                            "blob_id": outcome.blob_id,
+                            "question_id": outcome.question_id,
+                            "classifier_id": verdict.agent_id,
+                            "classifier_label": verdict.ai_notes,
+                            "ai_confidence": verdict.ai_confidence,
+                            # This verdict's OWN implied result, not the
+                            # combined outcome.human_result -- if another
+                            # reviewer on this image errored, the combine
+                            # step lets that error win and human_result
+                            # comes back None even though THIS reviewer's
+                            # own no_match verdict has a real implied fail.
+                            "ai_implied_result": verdict.ai_to_human_map.get(verdict.ai_result),
+                        }
+                    )
+                return rows
+
+            # Images that end this session's first pass with ai_result="error" (a
+            # gateway hiccup post_with_retry's own retries didn't clear -- see
+            # base.py) get exactly one more attempt after the rest of the batch
+            # has run, rather than being a dead end until a human intervenes.
+            # Not unbounded: the time already spent on the rest of this
+            # session's (and prior sessions') images gives a transient outage
+            # room to clear, and a persistent outage shouldn't loop or block
+            # the batch -- see the retry sweep below.
+            retry_candidates = []
 
             with ThreadPoolExecutor(max_workers=_MAX_CONCURRENT_IMAGES_PER_SESSION) as pool:
                 fut_map = {pool.submit(_fetch_and_review, item): item for item in work_items}
@@ -614,61 +825,41 @@ def _run_ai_review_on_sessions(
                     except Exception as exc:
                         failed_item = fut_map.get(fut)
                         blob_hint = failed_item[1] if failed_item else "unknown"
-                        logger.warning(f"[AIReview] Unexpected error reviewing image {blob_hint}: {exc}")
+                        logger.warning(f"{tag} Unexpected error reviewing image {blob_hint}: {exc}")
                         total_errors += 1
+                        error_kind_counts[ERROR_KIND_AGENT_EXCEPTION] = (
+                            error_kind_counts.get(ERROR_KIND_AGENT_EXCEPTION, 0) + 1
+                        )
                         images_processed += 1
                         continue
 
                     images_processed += 1
+                    # Tallied here rather than inside the pool threads: these are
+                    # read-modify-write updates on shared dicts and this consumer
+                    # loop is single-threaded, so the counts can't race.
+                    for kind in outcome.error_kinds:
+                        error_kind_counts[kind] = error_kind_counts.get(kind, 0) + 1
                     if outcome.skipped:
                         total_skipped += 1
+                        _note_skip(outcome.skip_reason or SKIP_NO_REVIEWER_READING)
                     else:
                         total_reviewed += 1
                         if outcome.ai_result == "match":
                             total_passed += 1
-                            logger.debug(f"[AIReview] PASS: blob={outcome.blob_id}")
+                            logger.debug(f"{tag} PASS: blob={outcome.blob_id}")
                         elif outcome.ai_result == "no_match":
                             total_failed += 1
-                            logger.debug(f"[AIReview] FAIL: blob={outcome.blob_id}")
+                            logger.debug(f"{tag} FAIL: blob={outcome.blob_id}")
                         else:
                             total_errors += 1
-                            logger.error(f"[AIReview] ERROR: blob={outcome.blob_id}, reason={outcome.ai_notes!r}")
+                            logger.error(f"{tag} ERROR: blob={outcome.blob_id}, reason={outcome.ai_notes!r}")
 
-                        # Persist the combined AI result so the classification label is
-                        # always available to display in the tile footer. human_result is
-                        # None unless some resolved reviewer's verdict was opted into
-                        # auto-apply for this image type.
-                        session.set_assessment(
-                            visit_id=int(outcome.visit_id_str),
-                            blob_id=outcome.blob_id,
-                            question_id=outcome.question_id,
-                            result=outcome.human_result,
-                            notes="",
-                            ai_result=outcome.ai_result,
-                            ai_notes=outcome.ai_notes,
-                            ai_confidence=outcome.ai_confidence,
-                        )
+                        _persist_outcome(outcome)
                         session_updated = True
+                        session_classifier_fail_rows.extend(_classifier_fail_rows_for(outcome))
 
-                        # One training-data row per failing classifier -- two
-                        # independent reviewers (e.g. MUAC OverZoom + MUAC Match)
-                        # can each fail the same image, and each is its own row.
-                        for verdict in outcome.fail_verdicts:
-                            classifier_fail_rows.append(
-                                {
-                                    "session_id": session.id,
-                                    "workflow_run_id": session.workflow_run_id,
-                                    "opportunity_id": session.opportunity_id,
-                                    "opportunity_name": session.opportunity_name,
-                                    "visit_id": int(outcome.visit_id_str),
-                                    "blob_id": outcome.blob_id,
-                                    "question_id": outcome.question_id,
-                                    "classifier_id": verdict.agent_id,
-                                    "classifier_label": verdict.ai_notes,
-                                    "ai_confidence": verdict.ai_confidence,
-                                    "ai_implied_result": outcome.human_result,
-                                }
-                            )
+                        if outcome.ai_result == "error":
+                            retry_candidates.append((fut_map[fut], outcome.error_kinds))
 
                     if progress_callback:
                         progress_callback(
@@ -686,8 +877,114 @@ def _run_ai_review_on_sessions(
                         # ignored (the pool still awaits them on __exit__).
                         for pending_fut in fut_map:
                             pending_fut.cancel()
-                        logger.info(f"[AIReview] Cancelled mid-session {session_id} — stopping remaining images")
+                        logger.info(f"{tag} Cancelled mid-session {session_id} — stopping remaining images")
                         break
+
+            # A cancellation that arrives between the first pass ending and here
+            # must still be honored -- otherwise the retry sweep runs to completion
+            # (and the session below gets marked ai_review_complete) even though the
+            # user asked to stop.
+            if retry_candidates and not cancelled and cancel_key and is_audit_creation_cancelled(cancel_key):
+                cancelled = True
+                logger.info(
+                    f"{tag} Cancelled before retry sweep for session {session_id} — "
+                    f"skipping {len(retry_candidates)} pending retries"
+                )
+
+            if retry_candidates and not cancelled:
+                logger.info(
+                    f"{tag} Retry sweep: re-attempting {len(retry_candidates)} "
+                    f"errored image(s) in session {session_id}"
+                )
+                with ThreadPoolExecutor(
+                    max_workers=min(len(retry_candidates), _MAX_CONCURRENT_IMAGES_PER_SESSION)
+                ) as retry_pool:
+                    retry_fut_map = {
+                        retry_pool.submit(_fetch_and_review, item): (item, first_pass_error_kinds)
+                        for item, first_pass_error_kinds in retry_candidates
+                    }
+                    for fut in as_completed(retry_fut_map):
+                        if cancel_key and is_audit_creation_cancelled(cancel_key):
+                            cancelled = True
+                            for pending_fut in retry_fut_map:
+                                pending_fut.cancel()
+                            logger.info(
+                                f"{tag} Cancelled during retry sweep for session {session_id} — "
+                                f"stopping remaining retries"
+                            )
+                            break
+
+                        retry_item, first_pass_error_kinds = retry_fut_map[fut]
+                        try:
+                            outcome = fut.result()
+                        except Exception as exc:
+                            blob_hint = retry_item[1] if retry_item else "unknown"
+                            logger.warning(f"{tag} Retry sweep: unexpected error reviewing image {blob_hint}: {exc}")
+                            continue
+
+                        if outcome.skipped:
+                            continue
+
+                        if outcome.ai_result == "error":
+                            # Still an error after the extra attempt -- leave the counts
+                            # and persisted message as the first pass left them, so a
+                            # persistent outage stays visible instead of being retried
+                            # forever.
+                            logger.warning(
+                                f"{tag} Retry sweep: blob={outcome.blob_id} still errored: " f"{outcome.ai_notes!r}"
+                            )
+                            continue
+
+                        total_errors -= 1
+                        # Retract the first pass's error tally now that it recovered --
+                        # mirrors the total_errors decrement above so the run summary's
+                        # error breakdown doesn't keep blaming a failure that cleared.
+                        for kind in first_pass_error_kinds:
+                            if error_kind_counts.get(kind):
+                                error_kind_counts[kind] -= 1
+                                if error_kind_counts[kind] <= 0:
+                                    del error_kind_counts[kind]
+                        if outcome.ai_result == "match":
+                            total_passed += 1
+                        elif outcome.ai_result == "no_match":
+                            total_failed += 1
+                        logger.info(f"{tag} Retry sweep recovered blob={outcome.blob_id}: now {outcome.ai_result}")
+                        _persist_outcome(outcome)
+                        session_classifier_fail_rows.extend(_classifier_fail_rows_for(outcome))
+
+            # Resolve image/form/Connect URLs for this session's new classifier-fail
+            # rows now, rather than waiting on a human to save/complete the session
+            # (see classifier_fail_sync.py, which still backfills these as a safety
+            # net if resolution fails here). One resolve call per session, not per
+            # row -- matches resolve_urls_by_blob's own batching.
+            if session_classifier_fail_rows:
+                # session.opportunity_id (NOT the batch-level opp_id -- in a
+                # per-FLW multi-opportunity run, a session's real opportunity
+                # can differ from the primary opp_id this function was called
+                # with, see is_multi_opp_per_flw) is passed as the DEFAULT;
+                # resolve_urls_by_blob itself groups by each image's own
+                # opportunity_id when present (a multi-opp combined session's
+                # images can carry one), same fallback as blob_opportunity_id
+                # above.
+                # Never let a failure resolving these best-effort training-data
+                # URLs prevent the (already-computed, expensive) AI review
+                # results below from being saved -- this must not be able to
+                # throw out of the try/except this whole session's processing
+                # is already wrapped in, or session_updated's save gets skipped
+                # even though the actual review succeeded.
+                try:
+                    urls_by_blob = resolve_urls_by_blob(
+                        data_access=data_access,
+                        access_token=access_token,
+                        opportunity_id=session.opportunity_id,
+                        visit_images=session.data.get("visit_images", {}),
+                    )
+                except Exception:
+                    logger.exception(f"{tag} Failed to resolve classifier-fail URLs for session {session_id}")
+                    urls_by_blob = {}
+                for row in session_classifier_fail_rows:
+                    row.update(urls_by_blob.get(row["blob_id"], {}))
+                classifier_fail_rows.extend(session_classifier_fail_rows)
 
             # Save when there are assessments to write OR when the session ran
             # to completion (not cancelled) so a restart skips it entirely.
@@ -699,21 +996,29 @@ def _run_ai_review_on_sessions(
                         visit_results = session.data.get("visit_results", {})
                         assessment_count = sum(len(vr.get("assessments", {})) for vr in visit_results.values())
                         logger.info(
-                            f"[AIReview] Saving session {session_id} with {assessment_count} assessments "
+                            f"{tag} Saving session {session_id} with {assessment_count} assessments "
                             f"in {len(visit_results)} visits"
                         )
                     else:
-                        logger.info(f"[AIReview] No assessments for session {session_id} — checkpointing")
+                        logger.info(f"{tag} No assessments for session {session_id} — checkpointing")
                     if not cancelled:
                         session.data["ai_review_complete"] = True
                     data_access.save_audit_session(session)
                     if session_updated:
-                        logger.info(f"[AIReview] Successfully saved AI results for session {session_id}")
+                        logger.info(f"{tag} Successfully saved AI results for session {session_id}")
                 except Exception as e:
-                    logger.warning(f"[AIReview] Failed to save session {session_id}: {e}")
+                    logger.warning(f"{tag} Failed to save session {session_id}: {e}")
+
+            session_images = total_reviewed - session_reviewed_before
+            session_elapsed = time.monotonic() - session_started_at
+            logger.info(
+                f"{tag} Session {session_id} done in {session_elapsed:.1f}s: "
+                f"images={session_images} errors={total_errors - session_errors_before} "
+                f"per_image_s={(session_elapsed / session_images if session_images else 0):.1f}"
+            )
 
         except Exception as e:
-            logger.warning(f"[AIReview] Failed to process session {session_id}: {e}")
+            logger.warning(f"{tag} Failed to process session {session_id}: {e}")
 
         if cancelled:
             break
@@ -721,11 +1026,54 @@ def _run_ai_review_on_sessions(
     if classifier_fail_rows:
         s3_export.record_classifier_fails(classifier_fail_rows)
 
+    elapsed = time.monotonic() - review_started_at
+
+    def _breakdown(counts: dict[str, int]) -> str:
+        return ", ".join(f"{k}={v}" for k, v in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+
+    # "reviewed" counts every image an agent was RUN on, so it already includes
+    # the errors -- passed + failed + errors == reviewed. That reads as "263
+    # reviewed" when only 103 produced a verdict, which has actively misled
+    # readers into treating the difference as missing work rather than failures.
+    # Say the relationship explicitly instead of leaving it to be inferred.
     logger.info(
-        f"[AIReview] Complete: reviewed={total_reviewed}, "
-        f"passed={total_passed}, failed={total_failed}, errors={total_errors}, skipped={total_skipped}"
+        f"{tag} Complete in {elapsed:.1f}s: attempted={total_reviewed} "
+        f"(passed={total_passed}, failed={total_failed}, errors={total_errors}), "
+        f"skipped={total_skipped}, "
+        f"per_image_s={(elapsed / total_reviewed if total_reviewed else 0):.1f}"
         + (" (cancelled)" if cancelled else "")
     )
+    if error_kind_counts:
+        logger.warning(f"{tag} Error breakdown: {_breakdown(error_kind_counts)}")
+    if skip_reason_counts:
+        logger.info(f"{tag} Skip breakdown: {_breakdown(skip_reason_counts)}")
+
+    # A run that attempted nothing but skipped everything completes "successfully"
+    # and produces an empty audit. That is nearly always a misconfigured
+    # comparison field rather than an empty dataset, so it is surfaced at ERROR
+    # with the exact field paths involved instead of being left to be discovered
+    # by a human opening the audit and finding it blank.
+    if total_reviewed == 0 and total_skipped > 0:
+        logger.error(
+            f"{tag} NO IMAGES REVIEWED: all {total_skipped} image(s) were skipped "
+            f"({_breakdown(skip_reason_counts)}). This audit will be empty."
+        )
+        for (image_qid, wanted), info in sorted(missing_reading_fields.items(), key=lambda kv: -kv[1]["count"])[
+            :_MAX_LOGGED_MISSING_FIELDS
+        ]:
+            logger.error(
+                f"{tag}   image={image_qid!r} needs reading field {wanted!r} "
+                f"-> not present on {info['count']} image(s); fields with values: {info['present'] or 'none'}"
+            )
+    elif missing_reading_fields:
+        # Partial misconfiguration: some images reviewed, others silently dropped.
+        for (image_qid, wanted), info in sorted(missing_reading_fields.items(), key=lambda kv: -kv[1]["count"])[
+            :_MAX_LOGGED_MISSING_FIELDS
+        ]:
+            logger.warning(
+                f"{tag} Skipped {info['count']} image(s) for image={image_qid!r}: "
+                f"reading field {wanted!r} had no value; fields with values: {info['present'] or 'none'}"
+            )
 
     if ai_reviewers is not None:
         summary_agent_id = ",".join(
@@ -746,6 +1094,12 @@ def _run_ai_review_on_sessions(
         "total_errors": total_errors,
         "total_skipped": total_skipped,
         "cancelled": cancelled,
+        # Carried on the job record too, not just in the logs -- the run summary
+        # is what a human actually reads, and "errors=160" there is as opaque as
+        # it was in CloudWatch.
+        "error_kinds": dict(error_kind_counts),
+        "skip_reasons": dict(skip_reason_counts),
+        "elapsed_seconds": round(elapsed, 1),
     }
 
 
@@ -821,7 +1175,12 @@ def _run_duplicate_detection_on_sessions(
                     logger.warning(f"[DuplicateDetection] Per-bucket save failed for session {_sid}: {_exc}")
 
             summary = run_duplicate_detection(
-                session, access_token, progress_callback=_cb, cancel_key=cancel_key, save_callback=_save_now
+                session,
+                access_token,
+                progress_callback=_cb,
+                cancel_key=cancel_key,
+                data_access=data_access,
+                save_callback=_save_now,
             )
             # Always save to capture the per-session summary written after the
             # bucket loop. Only set the completion flag when not cancelled
@@ -1000,6 +1359,20 @@ def run_audit_creation(
         stage_name="Initializing",
     )
 
+    # Wall clock per stage. Previously the only way to tell whether a long run
+    # was spent fetching, extracting, creating sessions or classifying was to
+    # diff the timestamps of unrelated log lines -- and stages that emit no line
+    # of their own were invisible entirely.
+    _run_started_at = time.monotonic()
+    _stage_clock = {"at": _run_started_at}
+
+    def _stage_took() -> float:
+        """Seconds since the previous stage boundary, and reset the mark."""
+        now = time.monotonic()
+        took = now - _stage_clock["at"]
+        _stage_clock["at"] = now
+        return took
+
     def _relay(processed, total, message):
         """Forward fine-grained progress to an external relay so the program creator
         can render a per-opp bar that glides per FLW/image, in addition to this
@@ -1087,7 +1460,7 @@ def run_audit_creation(
             visit_ids = data_access.get_visit_ids_for_audit(
                 opportunity_ids, criteria=audit_criteria, progress_callback=on_visit_fetch_progress
             )
-            logger.info(f"[AuditCreation] Fetched {len(visit_ids)} visit IDs")
+            logger.info(f"[AuditCreation] Stage 'fetch visits' took {_stage_took():.1f}s: {len(visit_ids)} visit IDs")
 
             current_stage += 1
 
@@ -1166,7 +1539,10 @@ def run_audit_creation(
                 visit_ids, opp_id, related_fields=related_fields, progress_callback=on_extraction_progress
             )
         image_count = sum(len(imgs) for imgs in all_visit_images.values())
-        logger.info(f"[AuditCreation] Extracted {image_count} images from {len(visit_ids)} visits")
+        logger.info(
+            f"[AuditCreation] Stage 'extract images' took {_stage_took():.1f}s: "
+            f"{image_count} images from {len(visit_ids)} visits"
+        )
 
         # Visit Clustering (optional 3rd filter): fetch visit_date + location once
         # for every visit in this batch, when either checkbox is enabled. Zero cost
@@ -1442,7 +1818,10 @@ def run_audit_creation(
                 )
                 _relay(idx + 1, total_flws, f"Creating audits · {idx + 1}/{total_flws} field workers")
 
-            logger.info(f"[AuditCreation] Created {len(sessions_created)} per-FLW sessions")
+            logger.info(
+                f"[AuditCreation] Stage 'create sessions' took {_stage_took():.1f}s: "
+                f"{len(sessions_created)} per-FLW sessions"
+            )
         elif not resumed_from_existing and not is_per_flw:
             # Create single combined session
             opp_name = opportunities[0].get("name") if opportunities else ""
@@ -1472,7 +1851,9 @@ def run_audit_creation(
                 }
             )
 
-            logger.info(f"[AuditCreation] Created combined session {session.id}")
+            logger.info(
+                f"[AuditCreation] Stage 'create sessions' took {_stage_took():.1f}s: " f"combined session {session.id}"
+            )
 
         current_stage += 1
 
@@ -1542,8 +1923,12 @@ def run_audit_creation(
                     ai_reviewers=ai_reviewers,
                     progress_callback=on_ai_review_progress,
                     cancel_key=cancel_key,
+                    log_tag=str(task_id or "")[:8],
                 )
-                logger.info(f"[AuditCreation] AI review complete: {ai_review_results}")
+                logger.info(
+                    f"[AuditCreation] Stage 'AI review' took {_stage_took():.1f}s "
+                    f"(total run {time.monotonic() - _run_started_at:.1f}s): {ai_review_results}"
+                )
                 if ai_review_results.get("cancelled"):
                     _update_job_progress(
                         data_access,

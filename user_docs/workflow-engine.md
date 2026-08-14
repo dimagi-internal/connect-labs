@@ -31,6 +31,18 @@ Each row shows:
 
 Click any workflow to open its dashboard.
 
+### The PERIOD column
+
+The **PERIOD** column in the workflow list shows the date window that was actually audited for each run. Once a run has fired and audited data, this reflects the real window that was processed — which may differ from the date range that was set when the run was first created (for example, when you used the generic **Create Run** button).
+
+When the audited window differs from the original creation-time range, the column shows an **ⓘ info icon** next to the date. Hovering over or tapping the icon shows the original creation-time range for reference. If the two windows are the same, no icon appears.
+
+This means the PERIOD column is the authoritative record of what was actually covered by a run, not just what was intended when it was set up.
+
+### Run failure reasons
+
+If a scheduled or unattended run fails, the run now records the reason for the failure alongside the failed status. Previously, a failure was logged with no error message, making it impossible to diagnose the problem without accessing production logs. You can now see what went wrong directly on the run record, which makes it easier to decide whether to retry, adjust settings, or contact support.
+
 ### Deep-linking to a specific workflow card
 
 If someone shares a direct link to a specific workflow card — for example, a URL ending in `#workflow-5110` — the page will smoothly scroll to that card and briefly highlight it so you can spot it immediately, even on a long list. This works the same way in both the program view and the opportunity view.
@@ -235,24 +247,4 @@ stateDiagram-v2
     [*] --> Active
     Active --> "Review Needed": Flag raised
     "Review Needed" --> "Action Taken": Intervention done
-    "Action Taken" --> Closed: Case resolved
-    Active --> Closed: Graduated
-```
-
-Program managers can update a case's status directly from the workflow view. Status changes are stored in Connect Labs and visible to all team members with access to the program.
-
----
-
-## Weekly Dual-Track Image Audit
-
-The Weekly Dual-Track Image Audit workflow reviews photos submitted by field workers using two independent tracks: AI classifiers that examine each image, and visit clustering that groups visits by time and location to spot suspicious patterns. Both tracks feed into the AI summary and bulk assessment tools.
-
-### Opportunities & image types tile — choosing AI classifiers per path
-
-The **Opportunities & image types** tile lets you choose, for each image path, which AI classifiers should review it. The three available classifiers are:
-
-| Classifier | What it checks |
-|---|---|
-| **Hyperzoom** | Whether the photo appears to have been taken with abnormal digital zoom, which can indicate a photo was not taken in the field |
-| **MUAC Mismatch** | Whether the MUAC tape reading visible in the image is inconsistent with the value recorded in the form |
-| **KM
+    "

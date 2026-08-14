@@ -1,18 +1,8 @@
 from django.conf import settings
-from django.contrib.sites.models import Site
 from django.urls import reverse
 from twilio.rest import Client
 
-
-def _build_absolute_uri(path):
-    """Replacement for allauth.utils.build_absolute_uri (removed during labs simplification)."""
-    protocol = "https"
-    try:
-        site = Site.objects.get_current()
-        domain = site.domain
-    except Exception:
-        domain = "localhost"
-    return f"{protocol}://{domain}{path}"
+from connect_labs.utils.urls import build_absolute_url as _build_absolute_uri
 
 
 class SMSException(Exception):

@@ -1,19 +1,7 @@
-from django.contrib.sites.models import Site
 from django.db.models import Q
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext as _
-
-
-def _build_absolute_uri(path):
-    """Replacement for allauth.utils.build_absolute_uri (removed during labs simplification)."""
-    try:
-        site = Site.objects.get_current()
-        domain = site.domain
-    except Exception:
-        domain = "localhost"
-    return f"https://{domain}{path}"
-
 
 from config import celery_app  # noqa: E402
 from connect_labs.opportunity.models import (  # noqa: E402
@@ -26,6 +14,7 @@ from connect_labs.opportunity.models import (  # noqa: E402
 from connect_labs.organization.models import Organization, UserOrganizationMembership  # noqa: E402
 from connect_labs.program.models import ManagedOpportunity, ProgramApplication  # noqa: E402
 from connect_labs.utils.tasks import send_mail_async  # noqa: E402
+from connect_labs.utils.urls import build_absolute_url as _build_absolute_uri
 
 
 def send_program_invite_applied_email(application_id):

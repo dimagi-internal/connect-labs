@@ -29,6 +29,7 @@ import httpx
 from django.conf import settings
 
 from connect_labs.audit.data_access import is_audit_creation_cancelled
+from connect_labs.audit.link_helpers import resolve_opportunity_attribution, resolve_urls_by_blob
 from connect_labs.labs import s3_export
 
 logger = logging.getLogger(__name__)
@@ -319,6 +320,7 @@ def run_duplicate_detection(
     max_per_day: int | None = None,
     progress_callback=None,
     cancel_key: str | None = None,
+    data_access=None,
     save_callback=None,
 ) -> dict:
     """Run per-(FLW, day, photo-type) duplicate detection on one audit session.
@@ -326,6 +328,13 @@ def run_duplicate_detection(
     Mutates ``session`` in place (writes flags + raw groups); the caller is
     responsible for persisting via ``data_access.save_audit_session``. Returns a
     summary dict for progress/logging.
+
+    ``data_access``, when given, is used to resolve image/form/Connect URLs for
+    any new classifier-fail rows before they're written -- see
+    connect_labs.audit.link_helpers.resolve_urls_by_blob. Optional (defaults to
+    skipping resolution here) so existing callers/tests that don't have a
+    data_access handy keep working; classifier_fail_sync.py still backfills URLs
+    later as a safety net either way.
 
     CONCURRENCY -- INTENTIONALLY SEQUENTIAL: the batches below are processed
     one at a time, and each ``/detect_duplicates`` call completes before the next
@@ -503,12 +512,19 @@ def run_duplicate_detection(
                     duplicate_of_visit_ids=duplicate_of_visit_ids,
                 )
                 summary["images_flagged"] += 1
+                # This image's OWN opportunity (same fallback as the presign
+                # step above), not session.opportunity_id -- a multi-opp
+                # session (e.g. muac_picture_audit) can flag images belonging
+                # to a different opportunity than the session's primary one.
+                opp_for_row, opp_name_for_row = resolve_opportunity_attribution(
+                    img.get("opportunity_id"), session.opportunity_id, session.opportunity_name
+                )
                 classifier_fail_rows.append(
                     {
                         "session_id": session.id,
                         "workflow_run_id": session.workflow_run_id,
-                        "opportunity_id": session.opportunity_id,
-                        "opportunity_name": session.opportunity_name,
+                        "opportunity_id": opp_for_row,
+                        "opportunity_name": opp_name_for_row,
                         "visit_id": int(img["visit_id"]),
                         "blob_id": blob_id,
                         "question_id": question_id,
@@ -537,6 +553,29 @@ def run_duplicate_detection(
         client.close()
 
     if classifier_fail_rows:
+        if data_access is not None:
+            # resolve_urls_by_blob groups internally by each image's own
+            # opportunity_id (falling back to the one passed here) -- a
+            # multi-opp session (e.g. muac_picture_audit) can flag images
+            # sourced from a different opportunity than session.opportunity_id.
+            # Never let a failure here propagate: this function's caller
+            # (_run_duplicate_detection_on_sessions) still needs to save every
+            # duplicate flag already applied to `session` in memory above, and
+            # an uncaught exception here would lose all of it.
+            try:
+                urls_by_blob = resolve_urls_by_blob(
+                    data_access=data_access,
+                    access_token=access_token,
+                    opportunity_id=session.opportunity_id,
+                    visit_images=session.data.get("visit_images", {}),
+                )
+            except Exception:
+                logger.exception(
+                    "[DuplicateDetection] Failed to resolve classifier-fail URLs for session %s", session.id
+                )
+                urls_by_blob = {}
+            for row in classifier_fail_rows:
+                row.update(urls_by_blob.get(row["blob_id"], {}))
         s3_export.record_classifier_fails(classifier_fail_rows)
 
     # Stash a per-session summary + human note on the session so the bulk

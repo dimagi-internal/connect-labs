@@ -80,12 +80,32 @@ class Command(BaseCommand):
                 if want_countries:
                     self._run("countries", lambda: ingest.sample_opportunity_countries(client, limit=1000))
 
+        # Rollups BEFORE the fold, and this order is load-bearing.
+        #
+        # `fold_events_to_grid` deletes every event older than
+        # PULSE_EVENT_RETENTION_DAYS (30). Rebuilding rollups afterwards means
+        # a `--visits --days 365 --fold` run reads its own aggregates out of a
+        # table the fold has already emptied from day 31 back -- so days 31-365
+        # get no rollup rows at all, permanently, while the command reports
+        # success because the fold printed a large "folded" count.
+        #
+        # That matters because rollups are the ONLY permanent record of visit
+        # volume by status: events expire, and works count payment units rather
+        # than visits. Rolling up first is also privacy-neutral -- a rollup is
+        # an hourly count keyed on (opportunity, status) and holds nothing at
+        # beneficiary level, which is precisely why it may outlive the rows.
+        ingest.rebuild_rollups(since=timezone.now() - timezone.timedelta(days=options["days"]))
+
         if want_fold:
             self._run("fold to grid", lambda: ingest.fold_events_to_grid()["folded"])
+            # Retention is the destructive half and is applied separately, so
+            # `--fold` still means "age these out" under the configured policy
+            # while PULSE_EVENT_RETENTION_DAYS=0 keeps the rows for re-deriving
+            # future aggregates without another full pull.
+            self._run("prune folded", ingest.prune_folded_events)
 
         ingest.refresh_opportunity_countries()
         ingest.resync_service_slugs()
-        ingest.rebuild_rollups(since=timezone.now() - timezone.timedelta(days=options["days"]))
         self._report()
 
     def _run(self, label, fn):

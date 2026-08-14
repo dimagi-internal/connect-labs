@@ -229,6 +229,165 @@ def test_calls_api_once_per_grouping_and_flags_returned_ids():
     data_access.save_audit_session.assert_called_once_with(session)
 
 
+def test_url_resolution_failure_on_one_target_does_not_abort_remaining_targets(monkeypatch):
+    """Regression: this runs inside a `for target in targets` loop with no
+    per-target try/except elsewhere -- if resolve_urls_by_blob raised
+    uncaught, it would abort every REMAINING target too (e.g. every other
+    FLW's session in the same weekly_dual_track_audit run), not just lose
+    the failing target's training-data URLs."""
+    session1 = _session(opportunity_id=100)
+    session2 = _session(opportunity_id=200)
+    clusters = [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]}]
+    blob_meta = {
+        "a": {"visit_id": 111, "question_id": "form/muac"},
+        "b": {"visit_id": 112, "question_id": "form/muac"},
+    }
+    client = Mock()
+    client.detect.return_value = [["a", "b"]]
+
+    data_access1 = Mock()
+    data_access2 = Mock()
+
+    def _resolve_urls_by_blob(**kwargs):
+        if kwargs["opportunity_id"] == 100:
+            raise RuntimeError("Connect API down")
+        return {}
+
+    monkeypatch.setattr(
+        "connect_labs.audit.visit_cluster_duplicate_detection.resolve_urls_by_blob", _resolve_urls_by_blob
+    )
+    monkeypatch.setattr(
+        "connect_labs.audit.visit_cluster_duplicate_detection.s3_export.record_classifier_fails", lambda rows: None
+    )
+
+    run_grouping_duplicate_detection(
+        [
+            _target(session1, clusters, blob_meta, opp_id=100, data_access=data_access1),
+            _target(session2, clusters, blob_meta, opp_id=200, data_access=data_access2),
+        ],
+        get_signed_url=lambda bid, oid: f"https://x/{bid}",
+        client=client,
+    )
+
+    # Both targets' duplicate flags were applied and saved -- target 1's
+    # URL-resolution failure didn't abort target 2's processing.
+    assert session1.data["visit_results"]["111"]["assessments"]["a"]["duplicate_group"] == 0
+    assert session2.data["visit_results"]["111"]["assessments"]["a"]["duplicate_group"] == 0
+    data_access1.save_audit_session.assert_called_once_with(session1)
+    data_access2.save_audit_session.assert_called_once_with(session2)
+
+
+def test_classifier_fail_row_ai_implied_result_reflects_only_this_classifiers_own_auto_tag(monkeypatch):
+    """ai_implied_result must show "duplicate_fake" when
+    flag_potential_duplicate_and_tag genuinely auto-tagged an untouched
+    assessment (this classifier's own implied verdict) -- but stay None when
+    the assessment already carried an UNRELATED prior verdict (e.g. a real
+    AI-review classifier fail) that flag_potential_duplicate_and_tag
+    correctly left untouched. Regression (in both directions): this used to
+    either always read back assessment["result"] (misattributing a
+    DIFFERENT classifier's verdict) or always report None (losing this
+    classifier's own genuine auto-tag)."""
+    session = _session(
+        {
+            "111": {
+                "assessments": {
+                    "a": {
+                        "question_id": "form/muac",
+                        "result": "fail",
+                        "notes": "",
+                        "ai_result": "no_match",
+                        "ai_notes": "MUAC Mismatch (strict tolerance)",
+                    }
+                }
+            }
+        }
+    )
+    clusters = [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]}]
+    blob_meta = {
+        "a": {"visit_id": 111, "question_id": "form/muac"},
+        "b": {"visit_id": 112, "question_id": "form/muac"},
+    }
+    client = Mock()
+    client.detect.return_value = [["a", "b"]]
+    data_access = Mock()
+
+    captured_rows = {}
+    monkeypatch.setattr("connect_labs.audit.visit_cluster_duplicate_detection.resolve_urls_by_blob", lambda **k: {})
+    monkeypatch.setattr(
+        "connect_labs.audit.visit_cluster_duplicate_detection.s3_export.record_classifier_fails",
+        lambda rows: captured_rows.setdefault("rows", rows),
+    )
+
+    run_grouping_duplicate_detection(
+        [_target(session, clusters, blob_meta, data_access=data_access)],
+        get_signed_url=lambda bid, oid: f"https://x/{bid}",
+        client=client,
+    )
+
+    # "a" keeps its real prior result "fail" (unchanged, per
+    # test_mark_duplicate_preserves_a_real_classifier_fail_but_still_records_the_group)
+    # -- the exported row must not claim THAT verdict as its own.
+    assert session.data["visit_results"]["111"]["assessments"]["a"]["result"] == "fail"
+    # "b" had no prior assessment, so flag_potential_duplicate_and_tag auto-tagged
+    # it "duplicate_fake" -- that IS this classifier's own genuine implied verdict.
+    assert session.data["visit_results"]["112"]["assessments"]["b"]["result"] == "duplicate_fake"
+
+    rows_by_blob = {r["blob_id"]: r for r in captured_rows["rows"]}
+    assert rows_by_blob["a"]["ai_implied_result"] is None
+    assert rows_by_blob["b"]["ai_implied_result"] == "duplicate_fake"
+
+
+def test_ai_implied_result_none_when_duplicate_fake_predates_this_run(monkeypatch):
+    """Regression: if an assessment already carries result="duplicate_fake" from an
+    EARLIER detection run over this same session (re-run, resumed job, etc.),
+    flag_potential_duplicate_and_tag leaves it untouched -- THIS run didn't do the
+    auto-tagging, so ai_implied_result must be None, not "duplicate_fake". Reading
+    the result only AFTER the call can't tell the two apart; the fix reads it
+    before too."""
+    session = _session(
+        {
+            "111": {
+                "assessments": {
+                    "a": {
+                        "question_id": "form/muac",
+                        "result": "duplicate_fake",
+                        "notes": "",
+                    }
+                }
+            }
+        }
+    )
+    clusters = [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]}]
+    blob_meta = {
+        "a": {"visit_id": 111, "question_id": "form/muac"},
+        "b": {"visit_id": 112, "question_id": "form/muac"},
+    }
+    client = Mock()
+    client.detect.return_value = [["a", "b"]]
+    data_access = Mock()
+
+    captured_rows = {}
+    monkeypatch.setattr("connect_labs.audit.visit_cluster_duplicate_detection.resolve_urls_by_blob", lambda **k: {})
+    monkeypatch.setattr(
+        "connect_labs.audit.visit_cluster_duplicate_detection.s3_export.record_classifier_fails",
+        lambda rows: captured_rows.setdefault("rows", rows),
+    )
+
+    run_grouping_duplicate_detection(
+        [_target(session, clusters, blob_meta, data_access=data_access)],
+        get_signed_url=lambda bid, oid: f"https://x/{bid}",
+        client=client,
+    )
+
+    # "a"'s pre-existing duplicate_fake is preserved, but it's a leftover from
+    # before this run, not something this run just applied.
+    assert session.data["visit_results"]["111"]["assessments"]["a"]["result"] == "duplicate_fake"
+
+    rows_by_blob = {r["blob_id"]: r for r in captured_rows["rows"]}
+    assert rows_by_blob["a"]["ai_implied_result"] is None
+    assert rows_by_blob["b"]["ai_implied_result"] == "duplicate_fake"
+
+
 def test_flagged_images_record_which_other_visit_they_duplicate():
     """Each flagged blob's assessment gets duplicate_of_visit_ids -- the OTHER
     visit(s) in its connected component -- so the review UI can say "this

@@ -128,6 +128,7 @@ def generate_opp_from_bundle(
     label: str | None = None,
     allowed_domains=None,
     fresh: bool = False,
+    target_opportunity_id: int | None = None,
 ) -> CloneResult:
     """Generate fixtures and register a labs-only opp from a profile bundle.
 
@@ -141,7 +142,8 @@ def generate_opp_from_bundle(
     the existing row is returned immediately with ``skipped=True``.
 
     Args:
-        bundle_dir: Path to the bundle directory written by :func:`profile_opp_to_bundle`.
+        bundle_dir: Path to the bundle directory written by :func:`profile_opp_to_bundle`,
+            or ``gdrive:<subfolder_id>`` for a bundle subfolder in Drive (read via *drive*).
         drive: Drive client (``create_folder`` + ``upload_file``).
         program_id: Labs-only program id to file this opp under.
         program_name: Display program name.
@@ -149,12 +151,23 @@ def generate_opp_from_bundle(
         label: Override the opportunity label. Defaults to ``[Synthetic] <opp_name>``.
         allowed_domains: Email-domain allowlist. Defaults to ``["@dimagi.com", "@dimagi-ai.com"]``.
         fresh: If ``True``, regenerate even if a row already exists.
+        target_opportunity_id: Register onto THIS labs-only opp id, bypassing the
+            ``cloned_from`` idempotency lookup entirely. This is how a source that
+            already has a twin elsewhere (e.g. one claimed by an env-owned opp)
+            gets a second, explicitly-placed twin without clobbering the first.
 
     Returns:
         :class:`CloneResult` describing the created (or skipped) opportunity.
     """
+    s = str(bundle_dir)
+    if s.startswith("gdrive:"):
+        from .bundle import GDriveBundleStore
+
+        bundle = GDriveBundleStore(drive, "").read(s[len("gdrive:") :])
+    else:
+        bundle = read_bundle(bundle_dir)
     return _generate_one(
-        read_bundle(bundle_dir),
+        bundle,
         drive=drive,
         program_id=program_id,
         program_name=program_name,
@@ -162,6 +175,7 @@ def generate_opp_from_bundle(
         label=label,
         allowed_domains=allowed_domains,
         fresh=fresh,
+        target_opportunity_id=target_opportunity_id,
     )
 
 
@@ -175,15 +189,22 @@ def _generate_one(
     label: str | None = None,
     allowed_domains=None,
     fresh: bool = False,
+    target_opportunity_id: int | None = None,
 ) -> CloneResult:
     """Generate fixtures + register a labs-only opp from an already-read bundle.
 
     Backend-agnostic core shared by the single-opp and bulk entry points; makes
-    no prod calls. Idempotent on ``cloned_from_opportunity_id``.
+    no prod calls. Idempotent on ``cloned_from_opportunity_id`` — unless
+    ``target_opportunity_id`` pins the destination row explicitly, which skips
+    the lookup so an existing twin (e.g. an env-owned opp) is never touched.
     """
     source = bundle.source_opp_id
 
-    existing = SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=source).first()
+    existing = (
+        None
+        if target_opportunity_id is not None
+        else SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=source).first()
+    )
     if existing and not fresh:
         return CloneResult(
             source_opportunity_id=source,
@@ -204,7 +225,12 @@ def _generate_one(
         app_structure=bundle.app_structure,
     )
 
-    opp_id = existing.opportunity_id if existing else max(SyntheticOpportunity.next_labs_only_opp_id(), program_id + 1)
+    if target_opportunity_id is not None:
+        opp_id = target_opportunity_id
+    elif existing:
+        opp_id = existing.opportunity_id
+    else:
+        opp_id = max(SyntheticOpportunity.next_labs_only_opp_id(), program_id + 1)
     upload = upload_fixtures(drive=drive, opportunity_id=opp_id, fixtures=fixtures)
 
     row = register_labs_only_opp(
@@ -239,6 +265,7 @@ def generate_opps_bulk(
     org_name: str = "Dimagi-KMC (Synthetic)",
     fresh: bool = False,
     program_id: int | None = None,
+    only_source_ids=None,
 ) -> list[CloneResult]:
     """Generate fixtures for every bundle subdirectory under *bundle_root*.
 
@@ -253,6 +280,10 @@ def generate_opps_bulk(
         program_name: Display program name shared by all generated opps.
         org_name: Display org name shared by all generated opps.
         fresh: Passed through to :func:`generate_opp_from_bundle`.
+        only_source_ids: When given, ONLY bundles whose ``source_opp_id`` is in
+            this collection are generated; the rest are logged and skipped.
+            Without it a root shared by several cohorts regenerates everything —
+            with ``fresh=True`` that trampled opps the caller never named (#1166).
 
     Returns:
         List of :class:`CloneResult` for every bundle that succeeded.
@@ -260,12 +291,21 @@ def generate_opps_bulk(
     store = make_bundle_store(bundle_root, drive=drive)
     if program_id is None:
         program_id = allocate_shared_program_id()
+    scope = {int(x) for x in only_source_ids} if only_source_ids else None
     results: list[CloneResult] = []
     for handle in store.list_handles():
         try:
+            bundle = store.read(handle)
+            if scope is not None and bundle.source_opp_id not in scope:
+                logger.info(
+                    "generate_opps_bulk: bundle %s (source %s) outside requested scope — skipped",
+                    handle,
+                    bundle.source_opp_id,
+                )
+                continue
             results.append(
                 _generate_one(
-                    store.read(handle),
+                    bundle,
                     drive=drive,
                     program_id=program_id,
                     program_name=program_name,
@@ -348,9 +388,12 @@ def profile_cohort(spec: CohortSpec, *, base_url: str, oauth_token: str, drive=N
 def generate_cohort(spec: CohortSpec, *, drive, fresh: bool = False) -> tuple[CohortSpec, list[CloneResult]]:
     """Phase 2 (offline) for a whole cohort spec.
 
-    Generates every bundle under ``spec.bundle_root`` and registers the opps under
-    ``spec.program_id`` (allocated + recorded back on the spec if it was unset) with
-    ``spec.program_name`` / ``spec.org_name``. Returns ``(spec, results)``.
+    Generates the bundles under ``spec.bundle_root`` **named by
+    ``spec.opportunity_ids``** and registers the opps under ``spec.program_id``
+    (allocated + recorded back on the spec if it was unset) with
+    ``spec.program_name`` / ``spec.org_name``. Bundles under the root for sources
+    the spec does not name are left untouched — the spec is the scope, not just
+    the profile-phase input (#1166). Returns ``(spec, results)``.
     """
     if spec.program_id is None:
         spec.program_id = allocate_shared_program_id()
@@ -361,5 +404,6 @@ def generate_cohort(spec: CohortSpec, *, drive, fresh: bool = False) -> tuple[Co
         org_name=spec.org_name,
         program_id=spec.program_id,
         fresh=fresh,
+        only_source_ids=spec.opportunity_ids,
     )
     return spec, results
