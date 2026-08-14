@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -41,6 +42,12 @@ from ..tool_registry import MCPToolError, register
 
 logger = logging.getLogger(__name__)
 
+# user_id -> (monotonic timestamp, accessible opportunity ids). Short-lived: long
+# enough to cover one bulk operation, short enough that a real membership change
+# is picked up promptly.
+_ACCESS_CACHE: dict[int, tuple[float, set[int]]] = {}
+_ACCESS_CACHE_TTL_SECONDS = 60
+
 
 def _accessible_opp_ids_for_user(user) -> set[int]:
     """Return the set of opportunity IDs the user has Connect access to.
@@ -51,8 +58,14 @@ def _accessible_opp_ids_for_user(user) -> set[int]:
     the user's stored Connect access token. This is the same upstream
     endpoint (``/export/opp_org_program_list/``) the OAuth callback hits.
 
-    Returns an empty set if the user has no Connect token, or if the
-    upstream call fails — callers must treat empty as "deny everything".
+    Returns an empty set if the user has no Connect token. If the upstream call
+    itself fails this raises UPSTREAM_ERROR rather than returning empty: an empty
+    set means "denied", and reporting a network blip as a denial sends the caller
+    hunting for an access problem that does not exist.
+
+    The result is cached briefly per user. A bulk operation gates every opportunity
+    it touches, and without this an 11-opp cohort made 11 full production org-list
+    round-trips purely to authorize — 11 chances for one blip to fail the whole run.
     """
     from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data
 
@@ -61,8 +74,28 @@ def _accessible_opp_ids_for_user(user) -> set[int]:
     except MCPToolError:
         return set()
 
-    org_data = fetch_user_organization_data(token) or {}
-    return {int(o["id"]) for o in org_data.get("opportunities", []) if o.get("id") is not None}
+    key = getattr(user, "id", None)
+    now = time.monotonic()
+    if key is not None:
+        cached = _ACCESS_CACHE.get(key)
+        if cached is not None and (now - cached[0]) < _ACCESS_CACHE_TTL_SECONDS:
+            return cached[1]
+
+    org_data = fetch_user_organization_data(token)
+    if org_data is None:
+        # Distinguish "we could not ask" from "you may not". Collapsing the two
+        # made a transient upstream blip surface as a confident PERMISSION_DENIED
+        # naming a specific opportunity the caller demonstrably owns.
+        raise MCPToolError(
+            "UPSTREAM_ERROR",
+            "Could not reach production Connect to check opportunity access. "
+            "This is not a permission denial — retry.",
+        )
+
+    ids = {int(o["id"]) for o in org_data.get("opportunities", []) if o.get("id") is not None}
+    if key is not None:
+        _ACCESS_CACHE[key] = (now, ids)
+    return ids
 
 
 def _require_opportunity_access(user, opportunity_id: int) -> None:
