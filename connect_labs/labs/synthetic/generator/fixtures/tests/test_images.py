@@ -193,3 +193,16 @@ def test_zero_assignments_are_reported_not_silent(caplog):
 
     assert stats == {"eligible_visits": 0, "images_assigned": 0}
     assert "NO images were assigned" in caplog.text
+
+
+def test_eligible_visits_that_all_get_skipped_blame_the_config_not_the_fields(caplog):
+    """A cohort WITH MUAC readings that still produces no images has a
+    different cause — probability, or an empty pool — and pointing at the
+    manifest's fields would send the reader looking in the wrong place."""
+    visits = [{"id": "v1", "form_json": {"form": {"case": {"update": {"soliciter_muac_cm": "14.2"}}}}, "images": []}]
+
+    with caplog.at_level("WARNING"):
+        stats = assign_visit_images(visits, ImageConfig(stock_image_count=5, probability=0.0), random.Random(1))
+
+    assert stats == {"eligible_visits": 1, "images_assigned": 0}
+    assert "Check probability=0.0" in caplog.text
