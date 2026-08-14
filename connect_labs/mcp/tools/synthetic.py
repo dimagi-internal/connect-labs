@@ -133,9 +133,27 @@ def _require_opportunity_access(user, opportunity_id: int) -> None:
     # Connect membership.)
     accessible = _accessible_opp_ids_for_user(user)
     if opportunity_id not in accessible:
+        # Say how big the set was. "Not in your accessible set" is indistinguishable
+        # between "production says you may not touch this opportunity" and "we asked
+        # and got back nothing useful" — and the second one sends people hunting for
+        # a permissions problem that does not exist (connect-labs#1195, where the same
+        # opportunity profiles fine through the single-opp tool seconds later).
+        sample = sorted(accessible)[:8]
+        logger.warning(
+            "Access denied for opportunity_id=%s — accessible set had %d entries (sample: %s)",
+            opportunity_id,
+            len(accessible),
+            sample,
+        )
+        detail = (
+            "your accessible set came back EMPTY, which usually means the upstream "
+            "opportunity list could not be read rather than that you lack access"
+            if not accessible
+            else f"{len(accessible)} opportunities are visible to you"
+        )
         raise MCPToolError(
             "PERMISSION_DENIED",
-            f"opportunity_id {opportunity_id} is not in your accessible set",
+            f"opportunity_id {opportunity_id} is not in your accessible set ({detail})",
         )
 
 
