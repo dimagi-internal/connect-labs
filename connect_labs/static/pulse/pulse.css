@@ -2482,12 +2482,37 @@
   width: max-content;
   max-width: min(440px, 80vw);
   max-height: min(480px, 70vh);
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   background: var(--panel-2);
   border: 1px solid var(--rule);
   border-radius: 4px;
   box-shadow: 0 12px 32px rgba(2, 1, 14, 0.75);
   padding: 4px;
+}
+.pulse-dd-search {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0 0 4px;
+  padding: 6px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--ink);
+}
+.pulse-dd-search::placeholder {
+  color: var(--ink-3);
+}
+.pulse-dd-search:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 1px;
+}
+.pulse-dd-list {
+  overflow-y: auto;
+  min-height: 0;
 }
 .pulse-dd-opt {
   font-family: var(--mono);

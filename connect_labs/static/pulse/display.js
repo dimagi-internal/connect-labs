@@ -1425,8 +1425,20 @@
     btn.setAttribute('aria-label', sel.getAttribute('aria-label') || '');
     const menu = document.createElement('div');
     menu.className = 'pulse-dd-menu';
-    menu.setAttribute('role', 'listbox');
     menu.hidden = true;
+    // Search sits inside the menu: with ninety programmes, finding one by
+    // scrolling is a chore. Focus lands here on open, so the interaction is
+    // click-type-Enter.
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'pulse-dd-search';
+    search.placeholder = 'Type to filter…';
+    search.setAttribute('aria-label', 'Filter this menu');
+    const list = document.createElement('div');
+    list.className = 'pulse-dd-list';
+    list.setAttribute('role', 'listbox');
+    menu.appendChild(search);
+    menu.appendChild(list);
     holder.appendChild(btn);
     holder.appendChild(menu);
 
@@ -1441,8 +1453,15 @@
       menu.hidden = true;
       btn.setAttribute('aria-expanded', 'false');
     };
+    const applyFilter = () => {
+      const q = search.value.trim().toLowerCase();
+      for (const row of list.children) {
+        row.hidden = q !== '' && !row.textContent.toLowerCase().includes(q);
+      }
+    };
+    const visibleRows = () => [...list.children].filter((r) => !r.hidden);
     const build = () => {
-      menu.replaceChildren();
+      list.replaceChildren();
       for (const opt of sel.options) {
         const row = document.createElement('div');
         row.className = 'pulse-dd-opt';
@@ -1459,19 +1478,18 @@
           close();
           btn.focus();
         });
-        menu.appendChild(row);
+        list.appendChild(row);
       }
+      applyFilter();
     };
     const open = () => {
+      search.value = '';
       build();
       menu.hidden = false;
       btn.setAttribute('aria-expanded', 'true');
-      const sel1 =
-        menu.querySelector('[aria-selected="true"]') || menu.firstChild;
-      if (sel1) {
-        sel1.focus();
-        sel1.scrollIntoView({ block: 'nearest' });
-      }
+      search.focus();
+      const sel1 = list.querySelector('[aria-selected="true"]');
+      if (sel1) sel1.scrollIntoView({ block: 'nearest' });
     };
 
     btn.addEventListener('click', () => (menu.hidden ? open() : close()));
@@ -1481,15 +1499,32 @@
         open();
       }
     });
-    menu.addEventListener('keydown', (ev) => {
-      const rows = [...menu.children];
+    search.addEventListener('input', applyFilter);
+    search.addEventListener('keydown', (ev) => {
+      const rows = visibleRows();
+      if (ev.key === 'ArrowDown' && rows[0]) {
+        ev.preventDefault();
+        rows[0].focus();
+      } else if (ev.key === 'Enter') {
+        // Enter picks the only sensible reading of what was typed: the first
+        // match still showing.
+        ev.preventDefault();
+        if (rows[0]) rows[0].click();
+      } else if (ev.key === 'Escape') {
+        close();
+        btn.focus();
+      }
+    });
+    list.addEventListener('keydown', (ev) => {
+      const rows = visibleRows();
       const i = rows.indexOf(document.activeElement);
       if (ev.key === 'ArrowDown' && rows[i + 1]) {
         ev.preventDefault();
         rows[i + 1].focus();
-      } else if (ev.key === 'ArrowUp' && rows[i - 1]) {
+      } else if (ev.key === 'ArrowUp') {
         ev.preventDefault();
-        rows[i - 1].focus();
+        if (rows[i - 1]) rows[i - 1].focus();
+        else search.focus();
       } else if (ev.key === 'Enter' || ev.key === ' ') {
         ev.preventDefault();
         if (i >= 0) rows[i].click();
