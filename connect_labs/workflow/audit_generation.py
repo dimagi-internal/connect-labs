@@ -266,11 +266,14 @@ def run_this_week_batch(
 
 # Per-run criteria the handler persists onto run state before it starts work
 # (see weekly_dual_track_audit_create's effective_criteria). A resume replays
-# THESE rather than re-deriving from the definition, so a run that was started
-# with per-run choices (a pass threshold, a visit-status filter, an FLW cap)
-# finishes under the same criteria it began with. Sampling/clustering are
-# excluded deliberately: they have their own definition-derived helpers, and a
-# run predating this write has neither key on state.
+# THESE over the definition-derived defaults, so a run that was started with
+# per-run choices (a pass threshold, a visit-status filter, an FLW cap, a
+# one-off sampling rate) finishes under the same criteria it began with.
+# Sampling and clustering appear here as well as in sample_overrides_for /
+# clustering_overrides_for on purpose: those helpers read the definition's
+# CURRENT pinned config, which may have been edited since this run started,
+# and the run's own recorded values are the truthful ones. A run predating
+# this write simply has none of these keys, and falls back to the helpers.
 _RESUMABLE_CRITERIA_KEYS = (
     "pass_threshold",
     "deliver_unit_types",

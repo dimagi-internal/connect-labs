@@ -87,17 +87,21 @@ def workflow_resume_dual_track_run(
         raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
 
     from connect_labs.workflow.audit_generation import resume_batch_run
+    from connect_labs.workflow.resumable_runs import is_resumable, resumable_template_types
 
     wda = _wda_for_user(user, opportunity_id=opportunity_id, program_id=program_id)
     try:
         definition = wda.get_definition(definition_id)
         if definition is None:
             raise MCPToolError("NOT_FOUND", f"workflow definition {definition_id} not found")
-        if definition.template_type != "weekly_dual_track_audit":
+        # Resumability is a per-handler property (it has to recognise the work a
+        # previous invocation finished), so the set of templates this can safely
+        # re-fire lives in one audited registry rather than being named here.
+        if not is_resumable(definition.template_type):
             raise MCPToolError(
                 "INVALID_SCHEMA",
-                f"workflow_resume_dual_track_run only supports weekly_dual_track_audit "
-                f"definitions, got {definition.template_type!r}",
+                f"{definition.template_type!r} has no resumable job handler; "
+                f"resumable templates: {sorted(resumable_template_types())}",
             )
 
         run = wda.get_run(run_id)

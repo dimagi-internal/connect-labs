@@ -614,6 +614,20 @@ AUDIT_TRAIL_HOT_RETENTION_DAYS = env.int("AUDIT_TRAIL_HOT_RETENTION_DAYS", defau
 # Periodic audit-pipeline jobs. django_celery_beat's DatabaseScheduler syncs
 # these entries into its DB-backed schedule at beat startup.
 CELERY_BEAT_SCHEDULE = {
+    # Resume scheduled workflow runs whose worker died mid-job. Every deploy
+    # hard-kills every task on both services with no drain (see
+    # deploy-labs.yml's "Deploy services (hard cutover)" step -- a deliberate
+    # tradeoff after three overlapping graceful deploys left 0 healthy tasks
+    # behind the ALB), and dual-track audit batches run for hours, so a batch
+    # being killed part-way through is routine rather than exceptional. Ten
+    # minutes because the cost of a tick is one read per enabled schedule, and
+    # the sweep can only act once a run has already been silent for
+    # JOB_STALE_SECONDS (45m) anyway -- a finer tick wouldn't notice anything
+    # sooner.
+    "resume-stale-workflow-runs": {
+        "task": "connect_labs.workflow.tasks.sweep_stale_workflow_runs",
+        "schedule": crontab(minute="*/10"),
+    },
     "audit-trail-archive": {
         "task": "connect_labs.audit_trail.tasks.archive_audit_events",
         "schedule": crontab(hour=2, minute=15),
