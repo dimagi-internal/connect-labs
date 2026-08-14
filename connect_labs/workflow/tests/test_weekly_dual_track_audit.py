@@ -7,18 +7,16 @@ from connect_labs.workflow.templates.weekly_dual_track_audit import build_track_
 
 @pytest.fixture(autouse=True)
 def _no_existing_sessions():
-    """The handler now checks for already-existing sessions (idempotent
-    resume) before building its call list, and after. Every handler test
-    below exercises a FRESH run, so default that lookup to "nothing exists
-    yet" -- this also keeps the real AuditDataAccess from making a live HTTP
-    call with a fake access token in every one of these tests. Tests that
-    specifically exercise the skip-already-done behavior override the
-    return value themselves."""
+    """The handler checks for already-completed work (idempotent resume)
+    before building its call list. Every handler test below exercises a FRESH
+    run, so default that lookup to "nothing exists yet" -- this also keeps the
+    real AuditDataAccess from making a live HTTP call with a fake access token
+    in every one of these tests. Tests that specifically exercise the
+    skip-already-complete behaviour patch _sessions_for_run themselves."""
     from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
 
-    with mock.patch.object(h, "AuditDataAccess") as ada:
-        ada.return_value.get_sessions_by_workflow_run.return_value = []
-        yield ada
+    with mock.patch.object(h, "_sessions_for_run", return_value=[]) as sessions_for_run:
+        yield sessions_for_run
 
 
 TRACK_A = {
@@ -191,8 +189,6 @@ def test_handler_invokes_run_audit_creation_per_call_and_writes_summary():
     from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
 
     run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
-    eager = mock.Mock()
-    eager.result = {"sessions": [1, 2, 3]}  # 3 FLWs
 
     with (
         mock.patch.object(h, "WorkflowDataAccess") as WDA,
@@ -201,28 +197,60 @@ def test_handler_invokes_run_audit_creation_per_call_and_writes_summary():
         wda = WDA.return_value
         wda.get_run.return_value = run
         wda.get_definition.return_value = _fake_definition()
-        rac.apply.return_value = eager
+        rac.apply.side_effect = _eager_with_sessions(3)  # 3 FLWs per call
 
         result = h.weekly_dual_track_audit_create({"run_id": 555, "opportunity_id": 101}, access_token="tok")
 
     assert rac.apply.call_count == 4  # 2 opps x 2 tracks
     assert result["successful"] == 4
     assert result["sessions_created"] == 12  # 4 calls x 3 sessions
-    wda.update_run_state.assert_called_once()
+    # Two writes: the resolved criteria BEFORE any work (so a run killed
+    # mid-batch can be resumed under the criteria it started with), and the
+    # summary after.
+    assert wda.update_run_state.call_count == 2
+    assert wda.update_run_state.call_args_list[0][0][1]["window_start"] == "2026-06-22"
     written = wda.update_run_state.call_args[0][1]
     assert written["window_start"] == "2026-06-22"  # window persisted onto the run for the PAR + reload
     assert written["last_batch"]["window_start"] == "2026-06-22"
     assert written["last_batch"]["calls"] == 4
 
 
-def _fake_session(opportunity_id, tag):
+_SESSION_SEQ = iter(range(1000, 9999))
+
+
+def _eager_with_sessions(n=3):
+    """run_audit_creation's return shape: this call's sessions as
+    ``{"id": ...}`` dicts. Distinct ids per call, because the handler now
+    totals sessions by id (a re-entered call re-reports the sessions it
+    already had, so counting them would double-count)."""
+
+    def _apply(*_args, **_kwargs):
+        eager = mock.Mock()
+        eager.result = {"sessions": [{"id": next(_SESSION_SEQ)} for _ in range(n)]}
+        return eager
+
+    return _apply
+
+
+def _fake_session(opportunity_id, tag, *, complete=True, start="2026-06-22", end="2026-06-28"):
+    """A session as run_checkpoints reads it: identity from data (opportunity,
+    tag, window) and completeness from the flags each stage writes on itself.
+
+    ``complete=False`` models the common mid-batch death -- sessions created,
+    AI review interrupted -- which must NOT count as a done call."""
     s = mock.Mock()
-    s.opportunity_id = opportunity_id
-    s.tag = tag
+    s.id = next(_SESSION_SEQ)
+    s.data = {
+        "opportunity_id": opportunity_id,
+        "tag": tag,
+        "criteria": {"start_date": start, "end_date": end},
+        "has_ai_reviewer": True,
+        "ai_review_complete": complete,
+    }
     return s
 
 
-def test_handler_skips_calls_that_already_have_a_session_for_this_run(_no_existing_sessions):
+def test_handler_skips_calls_already_completed_for_this_run(_no_existing_sessions):
     """Resuming a run that died mid-batch must not redo (opportunity, track)
     calls a PRIOR invocation already completed -- that's what makes any
     repeat invocation for the same run_id (manual resume or the sweep) safe
@@ -230,11 +258,9 @@ def test_handler_skips_calls_that_already_have_a_session_for_this_run(_no_existi
     from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
 
     run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
-    eager = mock.Mock()
-    eager.result = {"sessions": [1, 2, 3]}
     # opp 101's "muac" call already has a session from a prior invocation;
     # the other 3 (opp 101/rest, opp 102/muac, opp 102/rest) do not.
-    _no_existing_sessions.return_value.get_sessions_by_workflow_run.return_value = [_fake_session(101, "muac")]
+    _no_existing_sessions.return_value = [_fake_session(101, "muac")]
 
     with (
         mock.patch.object(h, "WorkflowDataAccess") as WDA,
@@ -243,7 +269,7 @@ def test_handler_skips_calls_that_already_have_a_session_for_this_run(_no_existi
         wda = WDA.return_value
         wda.get_run.return_value = run
         wda.get_definition.return_value = _fake_definition()
-        rac.apply.return_value = eager
+        rac.apply.side_effect = _eager_with_sessions(3)
 
         result = h.weekly_dual_track_audit_create({"run_id": 555, "opportunity_id": 101}, access_token="tok")
 
@@ -256,6 +282,10 @@ def test_handler_skips_calls_that_already_have_a_session_for_this_run(_no_existi
     assert result["successful"] == 3
     # 1 pre-existing session (from the skipped call) + 3 x 3 newly created.
     assert result["sessions_created"] == 10
+    # The summary describes the RUN, not just this invocation.
+    written = wda.update_run_state.call_args[0][1]
+    assert written["last_batch"]["calls"] == 4  # the RUN's total, not this invocation's
+    assert written["last_batch"]["calls_skipped_complete"] == 1
 
 
 def test_handler_sessions_created_reflects_only_prior_when_all_calls_skipped(_no_existing_sessions):
@@ -266,7 +296,7 @@ def test_handler_sessions_created_reflects_only_prior_when_all_calls_skipped(_no
     from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
 
     run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
-    _no_existing_sessions.return_value.get_sessions_by_workflow_run.return_value = [
+    _no_existing_sessions.return_value = [
         _fake_session(101, "muac"),
         _fake_session(101, "rest"),
         _fake_session(102, "muac"),
@@ -299,8 +329,6 @@ def test_handler_stops_between_calls_when_cancelled():
     from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
 
     run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
-    eager = mock.Mock()
-    eager.result = {"sessions": [1, 2, 3]}
 
     with (
         mock.patch.object(h, "WorkflowDataAccess") as WDA,
@@ -310,7 +338,7 @@ def test_handler_stops_between_calls_when_cancelled():
         wda = WDA.return_value
         wda.get_run.return_value = run
         wda.get_definition.return_value = _fake_definition()
-        rac.apply.return_value = eager
+        rac.apply.side_effect = _eager_with_sessions(3)
         # Not cancelled before call #1; cancelled by the time call #2 is checked.
         cancelled.side_effect = [False, True, True, True]
 
@@ -1232,10 +1260,10 @@ def test_handler_resolves_max_flws_into_selected_flw_user_ids_shared_across_ever
     assert rac.apply.call_count == 4  # 2 opps (101, 102 from _fake_definition) x 2 tracks
     for c in rac.apply.call_args_list:
         assert c.kwargs["kwargs"]["criteria"]["selected_flw_user_ids"] == ["flwA", "flwB"]  # sorted, first 2
-    # 2, not 1: the mocked AuditDataAccess class is shared by TWO separate call
-    # sites in the handler now -- the idempotent-resume existing-sessions check
-    # and this FLW-cap resolution -- each opening and closing its own instance.
-    assert ada.close.call_count == 2
+    # The FLW-cap resolution is the only AuditDataAccess this handler body opens
+    # directly; the existing-session lookup moved into _sessions_for_run (patched
+    # out here), which opens and closes one per opportunity of its own.
+    assert ada.close.call_count == 1
 
 
 def test_handler_skips_flw_resolution_when_max_flws_not_set():
