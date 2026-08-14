@@ -734,10 +734,7 @@ def test_truncated_list_does_not_deny_access_production_confirms(user, monkeypat
         _oauth, "fetch_user_organization_data", lambda tok: {"opportunities": [{"id": i} for i in (948, 1116, 1739)]}
     )
 
-    class _Resp:
-        status_code = 200
-
-    monkeypatch.setattr(syn.httpx, "get", lambda *a, **k: _Resp())
+    monkeypatch.setattr(syn, "_fetch_endpoint", lambda *a, **k: {"id": 523, "name": "NAMA"})
     # 523 is absent from the list, but production confirms it — must be allowed.
     _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, 523)
     syn._ACCESS_CACHE.clear()
@@ -755,10 +752,10 @@ def test_a_real_denial_is_still_a_denial(user, monkeypatch):
     monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
     monkeypatch.setattr(_oauth, "fetch_user_organization_data", lambda tok: {"opportunities": [{"id": 948}]})
 
-    class _Denied:
-        status_code = 403
+    def _refuse(*a, **k):
+        raise RuntimeError("403 Forbidden")
 
-    monkeypatch.setattr(syn.httpx, "get", lambda *a, **k: _Denied())
+    monkeypatch.setattr(syn, "_fetch_endpoint", _refuse)
     with pytest.raises(MCPToolError) as exc:
         _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, 99999)
     assert exc.value.code == "PERMISSION_DENIED"
@@ -780,7 +777,7 @@ def test_unreachable_production_is_not_a_grant(user, monkeypatch):
     def _boom(*a, **k):
         raise RuntimeError("network down")
 
-    monkeypatch.setattr(syn.httpx, "get", _boom)
+    monkeypatch.setattr(syn, "_fetch_endpoint", _boom)
     with pytest.raises(MCPToolError):
         _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, 523)
     syn._ACCESS_CACHE.clear()
