@@ -1175,7 +1175,11 @@
                                 </td>
                                 <td class="py-3">
                                     <span class="text-sm text-gray-600">
-                                        {{ run.period_start|default:"-" }} - {{ run.period_end|default:"-" }}
+                                        {{ run.display_period_start|default:"-" }} - {{ run.display_period_end|default:"-" }}
+                                        {% if run.display_period_start != run.period_start or run.display_period_end != run.period_end %}
+                                        <i class="fa-solid fa-circle-info text-gray-400 ml-1"
+                                           title="Actual audited window -- this run's shell was created with period {{ run.period_start|default:'-' }} - {{ run.period_end|default:'-' }}, but the batch it fired covered the window shown above"></i>
+                                        {% endif %}
                                     </span>
                                 </td>
                                 <td class="py-3 text-center">
