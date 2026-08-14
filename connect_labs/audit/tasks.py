@@ -1641,6 +1641,7 @@ def run_audit_creation(
         # reported the FIRST audit's sessions as its own.
         # -------------------------------------------------------------------------
         resumed_from_existing = False
+        existing_flw_usernames: set = set()
         if workflow_run_id:
             # Keyed off the PARSED criteria, because that is the object
             # create_audit_session persists onto the session (see its
@@ -1723,10 +1724,26 @@ def run_audit_creation(
                                     _exc,
                                 )
                 resumed_from_existing = True
+                # Per-FLW granularity checkpoints per FLW, not per call. A call
+                # that died PART of the way through creation (the process was
+                # killed between two of its FLWs) has some sessions and not
+                # others; treating "some exist" as "this call is done" would
+                # strand every FLW it never reached, permanently. Non-per-FLW
+                # granularities produce a single session, so for them existence
+                # really is completion.
+                existing_flw_usernames = {s.flw_username for s in existing_sessions} if is_per_flw else set()
 
-        # Fetch FLW display names for use in session titles
+        # Fetch FLW display names for use in session titles. Loaded lazily,
+        # because a resume that turns out to have nothing left to create
+        # shouldn't pay for a per-opportunity name fetch it won't use.
         flw_display_names = {}
-        if not resumed_from_existing:
+        _names_loaded = False
+
+        def _load_flw_display_names():
+            nonlocal _names_loaded
+            if _names_loaded:
+                return
+            _names_loaded = True
             try:
                 name_opp_ids = set(visits_by_opp) if is_multi_opp_per_flw else {opp_id}
                 for name_opp_id in name_opp_ids:
@@ -1739,7 +1756,7 @@ def run_audit_creation(
         # (flw_opportunity_ids) isn't opportunities[0].
         opp_names_by_id = {o["id"]: o.get("name") for o in opportunities}
 
-        if not resumed_from_existing and is_per_flw:
+        if is_per_flw:
             # Create one session per FLW
             # If flw_visit_ids is provided, use it; otherwise group from extracted images
             if flw_visit_ids and selected_flw_user_ids:
@@ -1758,6 +1775,34 @@ def run_audit_creation(
                         flw_groups[flw_username] = []
                     flw_groups[flw_username].append(visit_id)
                 logger.info(f"[AuditCreation] Grouped visits into {len(flw_groups)} FLWs from image data")
+
+            # Whatever a prior invocation already created for this call is kept
+            # (its sessions are already in sessions_created, and the review
+            # stages resume them from their own completion flags); only the
+            # FLWs it never reached are created now.
+            if existing_flw_usernames and "" not in existing_flw_usernames:
+                flw_groups = {f: v for f, v in flw_groups.items() if f not in existing_flw_usernames}
+                logger.info(
+                    "[AuditCreation] Resuming per-FLW creation: %d FLW(s) already have a session, %d to create",
+                    len(existing_flw_usernames),
+                    len(flw_groups),
+                )
+            elif existing_flw_usernames:
+                # At least one existing session's FLW can't be identified
+                # (flw_username reads the username off the session's first
+                # image, and this one has none). Filling in "the rest" would
+                # then mean guessing, and guessing wrong duplicates a real
+                # FLW's audit -- worse than leaving a gap a human can close by
+                # firing a fresh run. Fall back to creating nothing, which is
+                # how this call behaved before per-FLW resume existed.
+                logger.warning(
+                    "[AuditCreation] Resuming call with %d session(s) whose FLW is unidentifiable; "
+                    "skipping creation entirely rather than risk duplicates",
+                    len(existing_sessions),
+                )
+                flw_groups = {}
+            if flw_groups:
+                _load_flw_display_names()
 
             total_flws = len(flw_groups)
             for idx, (flw_id, flw_visit_list) in enumerate(flw_groups.items()):
@@ -1853,6 +1898,9 @@ def run_audit_creation(
                 f"{len(sessions_created)} per-FLW sessions"
             )
         elif not resumed_from_existing and not is_per_flw:
+            # Non-per-FLW granularities produce ONE session, so an existing one
+            # really does mean this call finished creating.
+            _load_flw_display_names()
             # Create single combined session
             opp_name = opportunities[0].get("name") if opportunities else ""
             combined_title = f"{opp_name} - {session_title}" if session_title else opp_name
