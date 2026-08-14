@@ -940,6 +940,7 @@
 }
 .pulse-privacy-line {
   font-family: var(--mono);
+  margin-left: 16px;
   font-size: 8.5px;
   letter-spacing: 0.05em;
   color: var(--ink-3);
