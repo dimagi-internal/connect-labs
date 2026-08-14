@@ -46,8 +46,22 @@ TIER_CHOICES = [
     (TIER_DORMANT, "Dormant — nothing recent"),
 ]
 
+# How often each INGEST tier's beat actually fires. Distinct from
+# TIER_INTERVALS_SECONDS below, which is the per-opportunity CURSOR cadence --
+# they were conflated, and health was judged against the wrong one.
+# Keep in step with CELERY_BEAT_SCHEDULE.
+TIER_CADENCE_SECONDS = {
+    "tail": 60,
+    "works": 2 * 60,
+    "cheap": 15 * 60,
+}
+
 TIER_INTERVALS_SECONDS = {
-    TIER_HOT: 60,
+    # 15s, not 60. This is the floor on how fresh the live view can be: a hot
+    # opportunity is only re-polled once its cursor is due, so at 60 a visit
+    # could sit for a minute before the map knew about it. The live view's whole
+    # claim is that it is happening now.
+    TIER_HOT: 15,
     TIER_WARM: 15 * 60,
     TIER_COLD: 24 * 60 * 60,
     TIER_DORMANT: 7 * 24 * 60 * 60,
@@ -216,6 +230,19 @@ class PulseEvent(models.Model):
     # whole table, and a worker window selects on it directly.
     worker_hash = models.CharField(max_length=64, blank=True, db_index=True)
     usd_to_worker = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+
+    # When this row's coordinates were folded into PulseGridCell. Separating
+    # "folded" from "deleted" is what lets the rows be KEPT as a local fact
+    # store: the fold used to guarantee it could not double-count by deleting
+    # in the same transaction, and this timestamp provides that guarantee
+    # instead. Retention then becomes a second, independent step that can be
+    # turned off (PULSE_EVENT_RETENTION_DAYS = None) without breaking the map.
+    #
+    # Why keep them at all: re-deriving a new aggregate from local rows is a
+    # query, whereas re-pulling them is ~1.6M rows over an API that ships each
+    # visit's full form JSON -- about an hour and ~2 GB. The rows themselves are
+    # cheap (no form_json is ever stored, so ~300 MB for all history).
+    folded_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
         indexes = [
@@ -430,17 +457,155 @@ class PulseIngestHealth(models.Model):
         return f"{self.tier}: {'ok' if self.is_healthy else 'UNHEALTHY'}"
 
     @property
-    def is_healthy(self) -> bool:
-        """Healthy = a success recently enough to trust what's on screen.
+    def stale_after_seconds(self) -> int:
+        """How old a success may get on THIS tier before it means anything.
 
-        Deliberately generous (6x the hot interval) so a single transient
-        failure doesn't red-flag a wall display, but bounded so a dead token
-        can't masquerade as live for a whole afternoon.
+        Each ingest tier runs on its own beat, so one shared threshold is only
+        ever right for the fastest of them. It used to be 6x the hot interval --
+        six minutes -- which held while every tier ran at least every five. When
+        the cheap tier moved to every fifteen (it is one ~4.5s upstream call
+        against a list that changes daily), it spent nine minutes out of every
+        fifteen looking dead, and the whole display said "Data is not live" over
+        data that was thirty seconds old.
+
+        Six times the tier's OWN cadence keeps the original intent: generous
+        enough that one transient failure does not red-flag a wall display,
+        bounded enough that a dead token cannot masquerade as live all
+        afternoon.
         """
+        return 6 * TIER_CADENCE_SECONDS.get(self.tier, TIER_INTERVALS_SECONDS[TIER_HOT])
+
+    @property
+    def is_healthy(self) -> bool:
+        """Healthy = a success recently enough to trust what's on screen."""
         if self.last_success_at is None:
             return False
         age = (timezone.now() - self.last_success_at).total_seconds()
-        return age < 6 * TIER_INTERVALS_SECONDS[TIER_HOT] and self.consecutive_failures < 5
+        return age < self.stale_after_seconds and self.consecutive_failures < 5
+
+
+class PulseReport(models.Model):
+    """A donor stewardship report — a saved scope, window and set of manual copy.
+
+    The report holds *only* what Pulse cannot compute. Every figure that can be
+    derived is derived at render time from the works spine, so a report reopened
+    six months later reflects corrected data rather than a stale copy taken the
+    day it was written. That is the opposite of the usual "snapshot the numbers"
+    instinct, and it is deliberate: a donor report whose figures silently
+    disagree with the platform is worse than one that has to be re-read.
+
+    **Everything counted here is verified, reimbursed delivery.** The spine is
+    ``PulseWork`` filtered to ``status="approved"``, not ``PulseEvent``, for two
+    independent reasons that happen to point the same way:
+
+    * It is the reimbursement record. Counting recorded-but-unapproved visits
+      would put work we did not pay for into a funder's total.
+    * Events are retained ~30 days (``PULSE_EVENT_RETENTION_DAYS``) because they
+      carry ``form_json`` at 1,346 B/row; works are 53 B/row and are kept in
+      full. Keying the report on events would make any window older than a month
+      silently report zero.
+
+    Note that a work is *not* a visit: measured ratios run ~0.92 for simple
+    programmes and ~0.23 for KMC, where one payment unit spans several follow-up
+    visits. So this reports units of service delivered and paid for, which is
+    what a funder is being told about, and never claims to be a visit count.
+    """
+
+    # Basis for a derived deliverable line. Deliberately short: every option is
+    # a verified, reimbursed quantity. There is no "recorded visits" basis --
+    # see the class docstring.
+    BASIS_SERVICES = "services"
+    BASIS_WORKS = "works"
+    BASIS_WORKERS = "workers"
+    BASIS_MANUAL = "manual"
+
+    BASIS_CHOICES = [
+        (BASIS_SERVICES, "Verified service deliveries"),
+        (BASIS_WORKS, "Completed care episodes (payment units)"),
+        (BASIS_WORKERS, "Frontline workers"),
+        (BASIS_MANUAL, "Entered by hand"),
+    ]
+
+    # URL identity. Unguessable so the same row can back both the authenticated
+    # editor and a shared read-only link without a second identifier.
+    slug = models.CharField(max_length=64, unique=True, db_index=True)
+
+    eyebrow = models.CharField(max_length=120, blank=True, default="Donor stewardship report")
+    title = models.CharField(max_length=300, blank=True)
+    prepared_for = models.CharField(max_length=300, blank=True)
+
+    # The gift is the funder's own figure; Connect never sees it. Stored as
+    # text, not a decimal, because reports say "$20,000" and also "£15k over two
+    # years" and coercing the second into a number would lose the report.
+    gift_line = models.CharField(max_length=300, blank=True)
+
+    window_start = models.DateField(null=True, blank=True)
+    window_end = models.DateField(null=True, blank=True)
+
+    # Scope. Composes exactly as the display filters do -- these are handed
+    # straight to the same `_program_scope` the live API uses, so a report can
+    # never drift from what the dashboard would show for the same selection.
+    program_id = models.IntegerField(null=True, blank=True, db_index=True)
+    org_slug = models.CharField(max_length=120, blank=True)
+    opportunity_id = models.IntegerField(null=True, blank=True)
+    service_slug = models.CharField(max_length=48, blank=True)
+
+    intro = models.TextField(blank=True)
+    where_we_worked = models.TextField(blank=True)
+    partner_funding = models.TextField(blank=True)
+    footnote = models.TextField(blank=True)
+
+    photo = models.ImageField(upload_to="pulse_reports/", null=True, blank=True)
+    photo_caption = models.TextField(blank=True)
+
+    # [{"label", "description", "basis", "multiplier", "override", "emphasis"}]
+    # A line with basis=manual, or with a non-null override, is human-entered
+    # and is badged as such in the editor -- the reader of a donor report is
+    # entitled to know which figures the platform stands behind.
+    deliverables = models.JSONField(default=list, blank=True)
+    # Free-text site names (camps, wards, facilities). Connect does not model
+    # these, so they are typed.
+    site_chips = models.JSONField(default=list, blank=True)
+
+    show_partner_names = models.BooleanField(default=True)
+    revoked = models.BooleanField(default=False)
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="pulse_reports"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+    def __str__(self) -> str:
+        return f"{self.title or 'Untitled report'}{' (revoked)' if self.revoked else ''}"
+
+    @property
+    def is_usable(self) -> bool:
+        return not self.revoked
+
+    def scope_params(self) -> dict:
+        """The report's scope as the GET params ``_program_scope`` expects.
+
+        Expressed as query params rather than as a bespoke filter path so the
+        report and the dashboard cannot disagree: both run the same resolver.
+        """
+        params = {}
+        if self.program_id:
+            params["program"] = str(self.program_id)
+        if self.org_slug:
+            params["org"] = self.org_slug
+        if self.opportunity_id:
+            params["opportunity"] = str(self.opportunity_id)
+        if self.service_slug:
+            params["service"] = self.service_slug
+        if self.window_start:
+            params["from"] = self.window_start.isoformat()
+        if self.window_end:
+            params["to"] = self.window_end.isoformat()
+        return params
 
 
 class PulsePublicToken(models.Model):

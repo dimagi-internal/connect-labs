@@ -131,6 +131,82 @@ def test_status_for_requires_both_active_flag_and_future_end_date(db):
 
 
 # ---------------------------------------------------------------------------
+# Test/demo opportunity exclusion
+# ---------------------------------------------------------------------------
+
+
+def test_filtered_opportunities_excludes_test_named_opportunities(db):
+    """A global cross-workspace report is exactly the place a stray
+    "[TEST] ..." row would be mistaken for real delivery -- excluded
+    unconditionally, same convention PulseProgram.is_test already uses."""
+    real = _make_opp(1, name="Mother Baby Wellness (Nigeria)")
+    _make_opp(2, name="[TEST 02] Dimagi-GW CHC Program")
+    _make_opp(3, name="CHC Sandbox Run")
+
+    opps = ot.filtered_opportunities()
+    assert [o.opportunity_id for o in opps] == [real.opportunity_id]
+
+
+def test_filtered_opportunities_does_not_exclude_names_that_merely_contain_test_as_a_substring(db):
+    """looks_like_test() matches whole words only -- an opp legitimately named
+    e.g. "Contest Outreach" or "Latest Cohort" must not be swept up."""
+    contest = _make_opp(1, name="Contest Outreach Nigeria")
+    latest = _make_opp(2, name="Latest Cohort - Kenya")
+
+    opps = {o.opportunity_id for o in ot.filtered_opportunities()}
+    assert opps == {contest.opportunity_id, latest.opportunity_id}
+
+
+def test_opportunity_filter_choices_excludes_menu_entries_only_present_on_test_opportunities(db):
+    """Regression: a country/delivery type that only ever appears on internal
+    scaffolding must not show up as a selectable filter that resolves to a
+    screen full of test data."""
+    _make_opp(1, name="Real Delivery", country="NG", service_slug="chc")
+    _make_opp(2, name="[TEST] Only Here", country="ZZ", service_slug="only-on-test")
+
+    choices = ot.opportunity_filter_choices()
+    assert "ZZ" not in {c["code"] for c in choices["countries"]}
+    assert "only-on-test" not in {d["slug"] for d in choices["delivery_types"]}
+    assert "NG" in {c["code"] for c in choices["countries"]}
+
+
+# ---------------------------------------------------------------------------
+# Top-level metrics
+# ---------------------------------------------------------------------------
+
+
+def test_top_level_metrics_counts_active_opps_visits_and_countries(db):
+    today = timezone.now().date()
+    active_ng = _make_opp(1, country="NG", is_active=True, end_date=today + timedelta(days=10))
+    active_ke = _make_opp(2, country="KE", is_active=True, end_date=today + timedelta(days=10))
+    inactive = _make_opp(3, country="UG", is_active=False, end_date=today + timedelta(days=10))
+    _make_rollup(1, status="approved", n=5, hours_ago=2)  # inside 7d
+    _make_rollup(2, status="approved", n=100, hours_ago=24 * 30)  # outside 7d
+    _make_rollup(3, status="approved", n=999, hours_ago=1)  # inactive opp, but still inside 7d
+
+    metrics = ot.top_level_metrics([active_ng, active_ke, inactive])
+    assert metrics["active_opps"] == 2
+    # visits_7d deliberately is NOT narrowed to active opportunities -- same
+    # all-time/cumulative scope as the Visit Stats charts, which count an
+    # opportunity's historical work whether or not it has since gone
+    # Inactive. 5 (opp 1, in-window) + 999 (opp 3, in-window) -- opp 2's 100
+    # is excluded only because it's outside the 7-day window, not because
+    # of status.
+    assert metrics["visits_7d"] == 1004
+    assert metrics["active_countries"] == 2  # opp 3 (UG, inactive) correctly excluded here
+
+
+def test_top_level_metrics_dedupes_active_countries(db):
+    """Two active opportunities in the same country count as one active country."""
+    today = timezone.now().date()
+    opp1 = _make_opp(1, country="NG", is_active=True, end_date=today + timedelta(days=10))
+    opp2 = _make_opp(2, country="NG", is_active=True, end_date=today + timedelta(days=10))
+
+    metrics = ot.top_level_metrics([opp1, opp2])
+    assert metrics["active_countries"] == 1
+
+
+# ---------------------------------------------------------------------------
 # Detail rows -- the PulseRollup-vs-PulseWork correction
 # ---------------------------------------------------------------------------
 
@@ -588,6 +664,38 @@ def test_monthly_visits_by_country_buckets_blank_country_as_unknown(db):
     result = ot.monthly_visits_by_country([opp])
     assert result["countries"] == ["Unknown"]
     assert result["series"][0]["values"]["Unknown"] == 9  # not silently dropped
+
+
+@override_settings(**LABS_SETTINGS)
+def test_opportunity_tracker_excludes_test_opportunity_end_to_end(client, dimagi_user, db):
+    """The exclusion isn't just a unit-tested helper -- a test-named opp must
+    not reach the rendered page (detail table, pivot, or metrics) at all."""
+    _make_opp(1, name="Real Delivery Program", country="NG")
+    _make_opp(2, name="[TEST] Internal Scaffolding", country="NG")
+    _make_rollup(1, status="approved", n=5)
+    _make_rollup(2, status="approved", n=999)  # would inflate metrics if not excluded
+    client.force_login(dimagi_user)
+
+    resp = client.get(reverse("labs_admin:opportunity_tracker"), {"status": "all"})
+    assert resp.status_code == 200
+    assert b"Real Delivery Program" in resp.content
+    assert b"[TEST] Internal Scaffolding" not in resp.content
+    assert resp.context["metrics"]["visits_7d"] == 5
+
+
+@override_settings(**LABS_SETTINGS)
+def test_opportunity_tracker_renders_top_level_metric_tiles(client, dimagi_user, db):
+    today = timezone.now().date()
+    _make_opp(1, country="NG", is_active=True, end_date=today + timedelta(days=10))
+    _make_rollup(1, status="approved", n=5, hours_ago=2)
+    client.force_login(dimagi_user)
+
+    resp = client.get(reverse("labs_admin:opportunity_tracker"))
+    assert resp.status_code == 200
+    assert resp.context["metrics"] == {"active_opps": 1, "visits_7d": 5, "active_countries": 1}
+    assert b"Active Opportunities" in resp.content
+    assert b"Visits, Last 7 Days" in resp.content
+    assert b"Active Countries" in resp.content
 
 
 @override_settings(**LABS_SETTINGS)

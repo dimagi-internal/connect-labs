@@ -18,9 +18,16 @@ import httpx
 from django.conf import settings
 
 from connect_labs.labs.ai_review_agents.base import (
+    ERROR_KIND_GATEWAY_ERROR,
+    ERROR_KIND_INVALID_CONTEXT,
+    ERROR_KIND_NOT_CONFIGURED,
+    ERROR_KIND_RATE_LIMITED,
+    ERROR_KIND_TIMEOUT,
+    ERROR_KIND_UNREACHABLE,
     GATEWAY_ERROR_MESSAGE,
     GATEWAY_NOT_CONFIGURED_MESSAGE,
     GATEWAY_RATE_LIMITED_MESSAGE,
+    GATEWAY_TIMEOUT_MESSAGE,
     GATEWAY_UNREACHABLE_MESSAGE,
     AIReviewAgentError,
     BaseAIReviewAgent,
@@ -153,11 +160,11 @@ class ScaleValidationAgent(BaseAIReviewAgent):
         # Validate context
         validation_errors = self.validate_context(context)
         if validation_errors:
-            return ReviewResult.error("; ".join(validation_errors))
+            return ReviewResult.error("; ".join(validation_errors), error_kind=ERROR_KIND_INVALID_CONTEXT)
 
         # Check API key
         if not self.api_key:
-            return ReviewResult.error(GATEWAY_NOT_CONFIGURED_MESSAGE)
+            return ReviewResult.error(GATEWAY_NOT_CONFIGURED_MESSAGE, error_kind=ERROR_KIND_NOT_CONFIGURED)
 
         # Get image - prefer "scale" key, fall back to first available
         image_bytes = context.get_image("scale")
@@ -176,10 +183,11 @@ class ScaleValidationAgent(BaseAIReviewAgent):
                 f"{self.api_url}/predict",
                 json={"image": encoded_image, "reading": reading},
                 logger=self.logger,
+                agent_id=self.agent_id,
             )
 
             if response.status_code == 429:
-                return ReviewResult.error(GATEWAY_RATE_LIMITED_MESSAGE)
+                return ReviewResult.error(GATEWAY_RATE_LIMITED_MESSAGE, error_kind=ERROR_KIND_RATE_LIMITED)
 
             response.raise_for_status()
             result = response.json()
@@ -199,12 +207,20 @@ class ScaleValidationAgent(BaseAIReviewAgent):
                 error_detail = error_data.get("details", str(error_data))
             except Exception:
                 error_detail = e.response.text
-            self.logger.error(f"Scale validation API error: {error_detail}")
-            return ReviewResult.error(GATEWAY_ERROR_MESSAGE)
+            self.logger.error(f"Scale validation API error: status={e.response.status_code} {error_detail}")
+            return ReviewResult.error(GATEWAY_ERROR_MESSAGE, error_kind=ERROR_KIND_GATEWAY_ERROR)
+
+        # Ordered before the generic httpx.HTTPError below, which it subclasses.
+        # A timeout means the gateway accepted the request and never answered --
+        # operationally different from "could not connect", and the one that
+        # costs a full client timeout of wall-clock per image.
+        except httpx.TimeoutException as e:
+            self.logger.error(f"Scale validation timeout after {self.DEFAULT_TIMEOUT}s: {e}")
+            return ReviewResult.error(GATEWAY_TIMEOUT_MESSAGE, error_kind=ERROR_KIND_TIMEOUT)
 
         except httpx.HTTPError as e:
             self.logger.error(f"Scale validation connection error: {e}")
-            return ReviewResult.error(GATEWAY_UNREACHABLE_MESSAGE)
+            return ReviewResult.error(GATEWAY_UNREACHABLE_MESSAGE, error_kind=ERROR_KIND_UNREACHABLE)
 
     def validate_reading(self, image_bytes: bytes, reading: str) -> dict:
         """

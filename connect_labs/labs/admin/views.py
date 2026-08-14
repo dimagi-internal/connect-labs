@@ -29,6 +29,7 @@ from connect_labs.labs.admin.opportunity_tracker import (
     running_user_total,
     running_visit_total,
     status_for,
+    top_level_metrics,
 )
 from connect_labs.labs.admin.sql_validator import build_safe_query
 from connect_labs.labs.admin.tables import LabsRecordTable
@@ -110,6 +111,7 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
         context["detail_rows"] = []
         context["pivot"] = None
         context["chart_data"] = {}
+        context["metrics"] = {"active_opps": 0, "visits_7d": 0, "active_countries": 0}
 
         try:
             filter_choices = opportunity_filter_choices()
@@ -143,6 +145,13 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
             opps = filtered_opportunities(delivery_type=delivery_type, country=country, funder=funder)
             opps_tab_opps = [o for o in opps if status == "all" or status_for(o) == status]
             opp_ids = [o.opportunity_id for o in opps]
+
+            # Isolated the same way the tables/charts below are: the headline
+            # strip failing shouldn't blank the rest of an otherwise-working page.
+            try:
+                context["metrics"] = top_level_metrics(opps)
+            except Exception:
+                logger.exception("[OpportunityTracker] Failed to build top-level metrics")
 
             # Isolated from the chart-building below the same way the four
             # charts are isolated from each other: the Opportunities tab's

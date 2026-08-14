@@ -37,6 +37,7 @@ from connect_labs.audit.duplicate_detection import (
     _counterpart_visit_ids,
     assign_group_ids,
 )
+from connect_labs.audit.link_helpers import resolve_opportunity_attribution, resolve_urls_by_blob
 from connect_labs.labs import s3_export
 
 logger = logging.getLogger(__name__)
@@ -174,6 +175,10 @@ def run_grouping_duplicate_detection(
                 continue
             opp_id = target["opp_id"]
             blob_meta_by_id = target["blob_meta_by_id"]
+            # Rows from THIS target/session only -- resolved and merged into
+            # classifier_fail_rows once the cluster loop below finishes, so the
+            # URL lookup (one per session) doesn't run once per flagged image.
+            target_classifier_fail_rows: list[dict] = []
             # Raw /detect_duplicates responses, keyed by this grouping's own
             # group_id -- mirrors duplicate_detection.py's raw_groups_store
             # (keyed by username|question_id|day there). Named distinctly from
@@ -246,27 +251,55 @@ def run_grouping_duplicate_detection(
                     duplicate_of_visit_ids = _counterpart_visit_ids(
                         blob_id, blobs_by_component[group_id], blob_meta_by_id
                     )
+                    # flag_potential_duplicate_and_tag only sets result to
+                    # "duplicate_fake" when the assessment had NO result yet --
+                    # capture that BEFORE the call, since reading the result
+                    # only afterward can't tell "this call just auto-tagged it"
+                    # apart from "it was already duplicate_fake from an earlier
+                    # detection run over this same session" (that prior value
+                    # is left untouched, not reapplied, by the guard above).
+                    pre_meta = blob_meta_by_id.get(blob_id, {})
+                    result_before = session.get_assessments(pre_meta.get("visit_id")).get(blob_id, {}).get("result")
                     if _mark_duplicate(session, blob_meta_by_id, blob_id, group_id, duplicate_of_visit_ids):
                         images_flagged += 1
                         meta = blob_meta_by_id.get(blob_id, {})
-                        classifier_fail_rows.append(
+                        # A falsy result_before guarantees flag_potential_duplicate_and_tag
+                        # just set it to "duplicate_fake" -- that's the only value it
+                        # ever assigns, and only when there was nothing there before.
+                        just_auto_tagged = not result_before
+                        # blob_meta_by_id doesn't carry a per-image opportunity_id
+                        # today (unlike duplicate_detection.py's img dicts), so
+                        # this always falls back to opp_id -- kept consistent
+                        # with the sibling producers' pattern (and this
+                        # module's own resolve_urls_by_blob call below) so a
+                        # future per-image opportunity_id here doesn't silently
+                        # mis-stamp rows the way the sibling modules did.
+                        opp_for_row, opp_name_for_row = resolve_opportunity_attribution(
+                            meta.get("opportunity_id"), opp_id, session.opportunity_name
+                        )
+                        target_classifier_fail_rows.append(
                             {
                                 "session_id": session.id,
                                 "workflow_run_id": session.workflow_run_id,
-                                "opportunity_id": session.opportunity_id,
-                                "opportunity_name": session.opportunity_name,
+                                "opportunity_id": opp_for_row,
+                                "opportunity_name": opp_name_for_row,
                                 "visit_id": meta.get("visit_id"),
                                 "blob_id": blob_id,
                                 "question_id": meta.get("question_id", ""),
                                 "classifier_id": DUPLICATE_CLASSIFIER_ID,
                                 "classifier_label": DUPLICATE_FLAG_LABEL,
                                 "ai_confidence": None,
-                                # flag_potential_duplicate_and_tag auto-tags `result` as
-                                # "duplicate_fake" only when the assessment was untouched --
-                                # read back what actually landed rather than assuming it.
-                                "ai_implied_result": session.get_assessments(meta.get("visit_id"))
-                                .get(blob_id, {})
-                                .get("result"),
+                                # just_auto_tagged (see result_before above) is True only
+                                # when THIS call caused the "duplicate_fake" auto-tag.
+                                # Otherwise the assessment already had a real prior
+                                # verdict (from a different classifier, a human, or an
+                                # earlier detection run's own auto-tag) that
+                                # flag_potential_duplicate_and_tag correctly left
+                                # untouched -- reporting that here would misattribute a
+                                # different run/reviewer's result to duplicate_detector,
+                                # so it's None in that case, matching the sibling
+                                # duplicate_detection.py module's flag-only contract.
+                                "ai_implied_result": "duplicate_fake" if just_auto_tagged else None,
                             }
                         )
 
@@ -274,6 +307,28 @@ def run_grouping_duplicate_detection(
                     progress_callback(
                         processed, total_groupings, f"Checked {processed}/{total_groupings} groupings for duplicates"
                     )
+
+            if target_classifier_fail_rows:
+                # Never let a failure here propagate: this runs inside the
+                # `for target in targets` loop with no per-target try/except,
+                # so an uncaught exception would abort every REMAINING
+                # target too, not just lose this one's training-data URLs.
+                try:
+                    access_token = data_access.access_token
+                    urls_by_blob = resolve_urls_by_blob(
+                        data_access=data_access,
+                        access_token=access_token,
+                        opportunity_id=opp_id,
+                        visit_images=session.data.get("visit_images", {}),
+                    )
+                except Exception:
+                    logger.exception(
+                        "[DuplicateDetection] Failed to resolve classifier-fail URLs for session %s", session.id
+                    )
+                    urls_by_blob = {}
+                for row in target_classifier_fail_rows:
+                    row.update(urls_by_blob.get(row["blob_id"], {}))
+                classifier_fail_rows.extend(target_classifier_fail_rows)
 
             # Save the session. Only set the completion flag when the cluster
             # loop ran to completion -- if cancelled mid-session, leave the

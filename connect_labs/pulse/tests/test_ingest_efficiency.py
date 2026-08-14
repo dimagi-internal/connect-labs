@@ -215,3 +215,96 @@ class TestTheSlowUpstreamCallIsNotOnAFastCadence:
         sched = settings.CELERY_BEAT_SCHEDULE
         assert sched["pulse-visit-tail"]["schedule"].minute == set(range(60))
         assert len(sched["pulse-works"]["schedule"].minute) >= 30
+
+
+@pytest.mark.django_db
+class TestTheLiveTailSweepsRepeatedly:
+    """Freshness comes from sweeping often, not from dispatching often.
+
+    Celery costs 3-7s of dispatch per invocation, measured on prod: calling
+    poll_cheap_tier directly took 5.2-7.6s while Celery reported 8.3-14.1s for
+    the same work. Shortening the beat would spend most of the extra budget on
+    dispatch. Sweeping inside one invocation pays it once a minute however fresh
+    the view gets.
+    """
+
+    def test_it_sweeps_more_than_once_per_invocation(self, monkeypatch):
+        from connect_labs.pulse import tasks
+
+        sweeps = []
+        monkeypatch.setattr(tasks.ingest, "due_cursors", lambda limit=40: sweeps.append(1) or [])
+        monkeypatch.setattr(tasks.ingest, "record_success", lambda tier: None)
+        monkeypatch.setattr(tasks, "get_client", lambda: _NullClient())
+
+        result = tasks.poll_visit_tail(sweep_interval=0.01, deadline=0.05)
+        assert result["sweeps"] > 1, "one sweep per invocation is the old behaviour"
+
+    def test_it_stops_before_the_next_beat_could_start(self):
+        """Two overlapping invocations would double-poll the same cursors."""
+        from connect_labs.pulse import tasks
+
+        assert tasks.SWEEP_DEADLINE_SECONDS < 60, "must finish inside its own minute"
+        assert tasks.SWEEP_INTERVAL_SECONDS < tasks.SWEEP_DEADLINE_SECONDS
+
+    def test_the_deadline_is_honoured(self, monkeypatch):
+        import time as _time
+
+        from connect_labs.pulse import tasks
+
+        monkeypatch.setattr(tasks.ingest, "due_cursors", lambda limit=40: [])
+        monkeypatch.setattr(tasks.ingest, "record_success", lambda tier: None)
+        monkeypatch.setattr(tasks, "get_client", lambda: _NullClient())
+
+        t0 = _time.monotonic()
+        tasks.poll_visit_tail(sweep_interval=0.02, deadline=0.1)
+        assert _time.monotonic() - t0 < 1.0
+
+    def test_health_is_recorded_per_sweep_not_once_at_the_end(self, monkeypatch):
+        """A minute-long task that only records at the end would report health
+        as of when it started."""
+        from connect_labs.pulse import tasks
+
+        recorded = []
+        monkeypatch.setattr(tasks.ingest, "due_cursors", lambda limit=40: [])
+        monkeypatch.setattr(tasks.ingest, "record_success", lambda tier: recorded.append(tier))
+        monkeypatch.setattr(tasks, "get_client", lambda: _NullClient())
+
+        tasks.poll_visit_tail(sweep_interval=0.01, deadline=0.05)
+        assert len(recorded) > 1
+
+
+class _NullClient:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class TestTheFreshnessBudgetAddsUp:
+    """What a viewer actually waits, end to end."""
+
+    def test_the_cursor_interval_is_the_floor_on_freshness(self):
+        from connect_labs.pulse.models import TIER_HOT, TIER_INTERVALS_SECONDS
+
+        assert TIER_INTERVALS_SECONDS[TIER_HOT] <= 15, (
+            "a hot opportunity is only re-polled once its cursor is due, so this is the "
+            "floor on how fresh the live view can be"
+        )
+
+    def test_the_client_does_not_double_the_server_lag(self):
+        import re
+        from pathlib import Path as P
+
+        from django.conf import settings
+
+        from connect_labs.pulse.models import TIER_HOT, TIER_INTERVALS_SECONDS
+        from connect_labs.pulse.tasks import SWEEP_INTERVAL_SECONDS
+
+        src = (P(settings.APPS_DIR) / "static" / "pulse" / "store.js").read_text()
+        poll_ms = int(re.search(r"livePollMs:\s*(\d+)", src).group(1))
+        server = TIER_INTERVALS_SECONDS[TIER_HOT] + SWEEP_INTERVAL_SECONDS
+        assert poll_ms / 1000 <= server / 2, (
+            f"client polls every {poll_ms / 1000}s against a ~{server}s server pipeline; "
+            "it should not be a material share of the total lag"
+        )

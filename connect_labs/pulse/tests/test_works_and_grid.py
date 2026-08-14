@@ -149,7 +149,7 @@ class TestGridFold:
             status="approved",
         )
 
-    def test_folds_old_events_and_deletes_them(self):
+    def test_folds_old_events_and_marks_them(self):
         for i in range(5):
             self._event(i, 11.0330, 7.6380, days_old=60)
         self._event(99, 11.0330, 7.6380, days_old=1)  # inside retention
@@ -157,9 +157,39 @@ class TestGridFold:
         result = ingest.fold_events_to_grid()
 
         assert result["folded"] == 5
-        assert PulseEvent.objects.count() == 1  # recent one survives
-        cell = PulseGridCell.objects.get()
-        assert cell.n == 5
+        assert PulseGridCell.objects.get().n == 5
+        # Folding no longer destroys: it records that the point reached the map.
+        assert PulseEvent.objects.filter(folded_at__isnull=False).count() == 5
+        assert PulseEvent.objects.filter(folded_at__isnull=True).count() == 1
+
+    def test_pruning_deletes_folded_rows_past_retention(self):
+        for i in range(5):
+            self._event(i, 11.0330, 7.6380, days_old=60)
+        self._event(99, 11.0330, 7.6380, days_old=1)
+
+        ingest.fold_events_to_grid()
+        deleted = ingest.prune_folded_events(retention_days=30)
+
+        assert deleted == 5
+        assert PulseEvent.objects.count() == 1  # the recent one survives
+        assert PulseGridCell.objects.get().n == 5  # map is unaffected
+
+    def test_retention_of_zero_keeps_the_rows_as_a_fact_store(self):
+        """The whole point of splitting fold from prune: opt out of deleting."""
+        for i in range(3):
+            self._event(i, 11.03, 7.63, days_old=60)
+
+        ingest.fold_events_to_grid()
+
+        assert ingest.prune_folded_events(retention_days=0) == 0
+        assert PulseEvent.objects.count() == 3
+        assert PulseGridCell.objects.get().n == 3
+
+    def test_unfolded_rows_are_never_pruned(self):
+        """Deleting a row whose point never reached the grid would lose it."""
+        self._event(1, 11.03, 7.63, days_old=60)
+        assert ingest.prune_folded_events(retention_days=30) == 0
+        assert PulseEvent.objects.count() == 1
 
     def test_nearby_points_share_a_cell(self):
         """~1km binning: a village is one cell, not fifty households."""
@@ -188,17 +218,25 @@ class TestGridFold:
         for i in range(3):
             self._event(i, 11.03, 7.63, 60)
         ingest.fold_events_to_grid()
+        ingest.prune_folded_events(retention_days=30)
         for i in range(10, 12):
             self._event(i, 11.03, 7.63, 60)
         ingest.fold_events_to_grid()
+        ingest.prune_folded_events(retention_days=30)
         assert PulseGridCell.objects.get().n == 5
         assert PulseEvent.objects.count() == 0
 
     def test_events_without_gps_are_still_expired(self):
-        """No coordinate means nothing to fold, but the row must not linger."""
+        """No coordinate means nothing to fold, but the row must not linger.
+
+        It is still marked folded: there was nothing to add to the grid, so the
+        row is fully accounted for and must not be re-examined on every pass.
+        """
         ts = timezone.now() - timedelta(days=60)
         PulseEvent.objects.create(connect_visit_id=500, opportunity_id=765, field_ts=ts, sync_ts=ts, status="approved")
         ingest.fold_events_to_grid()
+        assert PulseEvent.objects.filter(folded_at__isnull=False).count() == 1
+        ingest.prune_folded_events(retention_days=30)
         assert PulseEvent.objects.count() == 0
         assert PulseGridCell.objects.count() == 0
 

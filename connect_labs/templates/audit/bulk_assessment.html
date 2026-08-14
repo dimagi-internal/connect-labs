@@ -4,7 +4,8 @@
 {% block content %}
 <div class="max-w-full mx-auto px-4" x-data="bulkAssessmentInterface()"
      @update-assessment="handleAssessmentUpdate($event.detail)"
-     @save-notes="handleNotesUpdate($event.detail)">
+     @save-notes="handleNotesUpdate($event.detail)"
+     @retry-ai-review="handleRetryAiReview($event.detail)">
   {% if duplicate_detection_note %}
   <!-- Duplicate-detection warning: shown only when some images were skipped or a
        detect call failed for this session (see AuditSessionRecord.data.duplicate_detection_summary). -->
@@ -335,6 +336,7 @@
                questionId: assessment.question_id || '',
                notes: assessment.notes || '',
                saving: false,
+               retryingAi: false,
                // Use getters so they stay in sync with parent assessment object
                get result() { return assessment.result || ''; },
                set result(v) { assessment.result = v; },
@@ -452,6 +454,15 @@
                    notes: this.notes,
                    aiResult: this.aiResult,
                    aiNotes: this.aiNotes
+                 });
+               },
+               retryAiReview() {
+                 if (this.retryingAi) return;
+                 this.retryingAi = true;
+                 this.$dispatch('retry-ai-review', {
+                   visitId: this.visitId,
+                   blobId: this.blobId,
+                   callback: () => { this.retryingAi = false; }
                  });
                },
                handleKeydown(event, currentId) {
@@ -622,6 +633,18 @@
                           'text-gray-600': aiResult === 'error'
                         }"
                         x-text="aiResultSectionText"></span>
+                  <!-- Manual backstop for a real (non-429) gateway failure that outlasted
+                       both the in-call retry (post_with_retry) and the batch's own
+                       one-extra-attempt sweep (see tasks.py) -- lets an auditor retry just
+                       this image without re-running the whole session. Error-only: a
+                       no_match is a genuine classifier verdict, not a failure to retry. -->
+                  <button x-show="aiResult === 'error'"
+                          @click="retryAiReview()"
+                          :disabled="retryingAi"
+                          class="ml-auto shrink-0 px-2 py-0.5 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50">
+                    <i class="fa-solid fa-rotate-right mr-1" :class="{ 'fa-spin': retryingAi }"></i>
+                    <span x-text="retryingAi ? 'Retrying…' : 'Retry'"></span>
+                  </button>
                 </div>
               </div>
             </template>
@@ -1727,6 +1750,66 @@ function bulkAssessmentInterface() {
         detail.aiResult,
         detail.aiNotes
       );
+    },
+    // Manual backstop for one image stuck at ai_result="error" -- reuses the
+    // same per-image endpoint runBulkAiReview calls, but for exactly the one
+    // assessment the auditor clicked Retry on. Always resolves (never leaves
+    // the tile's retryingAi spinner stuck) via detail.callback in `finally`.
+    async handleRetryAiReview(detail) {
+      const assessment = this.allAssessments.find(
+        (a) => a.visit_id === detail.visitId && a.blob_id === detail.blobId
+      );
+      if (!assessment) {
+        if (detail.callback) detail.callback();
+        return;
+      }
+      try {
+        const relatedFields = assessment.related_fields || [];
+        const readingField = relatedFields.find((f) => f.value);
+        const imageBase64 = await this.fetchImageAsBase64(assessment.image_url);
+
+        const response = await fetch(this.aiReviewUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': this.csrfToken
+          },
+          body: JSON.stringify({
+            opportunity_id: opportunityId,
+            agent_id: this.aiAgentId || 'scale_validation',
+            assessments: [{
+              visit_id: assessment.visit_id,
+              blob_id: assessment.blob_id,
+              reading: readingField ? readingField.value : '',
+              image_base64: imageBase64
+            }]
+          })
+        });
+
+        const data = await response.json();
+        const result = data.results && data.results[0];
+        // AIReviewAPIView returns {error: ...} with a 4xx/5xx status on a
+        // request-level failure (e.g. an unresolvable agent_id) -- data.results
+        // is absent in that case, and silently doing nothing would leave the
+        // auditor thinking the retry ran with no visible outcome either way.
+        if (!response.ok || !result) {
+          throw new Error(data.error || `Retry failed (HTTP ${response.status})`);
+        }
+        this.updateAssessmentLocal(
+          result.visit_id,
+          result.blob_id,
+          undefined,  // questionId - keep existing
+          undefined,  // result - keep existing
+          undefined,  // notes - keep existing
+          result.ai_result,
+          result.ai_notes
+        );
+      } catch (e) {
+        console.error('Retry AI review failed:', e);
+        alert('Retry AI review failed: ' + e.message);
+      } finally {
+        if (detail.callback) detail.callback();
+      }
     },
     openTaskModal(flw) {
       this.taskModal = {

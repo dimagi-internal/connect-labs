@@ -13,6 +13,7 @@ history) and must never stall the live tail behind it.
 from __future__ import annotations
 
 import logging
+import time
 
 from config import celery_app
 from connect_labs.pulse import ingest
@@ -90,34 +91,65 @@ def poll_slow_maintenance(rate_sample_limit: int = 25) -> dict:
         raise
 
 
-@celery_app.task(name="connect_labs.pulse.tasks.poll_visit_tail")
-def poll_visit_tail(limit: int = 40) -> dict:
-    """Tail user_visits for every cursor that is due."""
-    cursors = ingest.due_cursors(limit=limit)
-    if not cursors:
-        ingest.record_success(TIER_TAIL)
-        return {"polled": 0, "stored": 0}
+# One invocation sweeps repeatedly instead of the beat firing more often.
+#
+# Measured on prod: Celery costs 3-7s of dispatch overhead per invocation --
+# calling poll_cheap_tier directly took 5.2-7.6s while Celery reported 8.3-14.1s
+# for the same work. So buying freshness by shortening the beat would spend most
+# of the extra budget on dispatch, not on polling. Sweeping inside one
+# invocation pays that overhead once a minute however fresh the view gets.
+#
+# Bounded well under the 60s beat so two invocations can never overlap and
+# double-poll the same cursors.
+SWEEP_INTERVAL_SECONDS = 15
+SWEEP_DEADLINE_SECONDS = 50
 
-    stored = polled = 0
+
+@celery_app.task(name="connect_labs.pulse.tasks.poll_visit_tail")
+def poll_visit_tail(
+    limit: int = 40,
+    sweep_interval: float = SWEEP_INTERVAL_SECONDS,
+    deadline: float = SWEEP_DEADLINE_SECONDS,
+) -> dict:
+    """Tail user_visits for every due cursor, sweeping repeatedly for ~50s.
+
+    The live view claims to show delivery as it happens, so what matters is the
+    lag between a visit reaching Connect and reaching this screen. That is the
+    cursor's due interval plus the wait for the next sweep -- previously 60 + 60
+    at worst. Now 15 + 15.
+    """
+    started = time.monotonic()
+    stored = polled = sweeps = 0
     try:
         with get_client() as client:
-            for cursor in cursors:
-                try:
-                    result = ingest.tail_visits(client, cursor)
-                    stored += result["stored"]
-                    polled += 1
-                except Exception as exc:
-                    # Isolate per-opportunity failures: one opp erroring must
-                    # not stop the rest of the sweep or freeze the display.
-                    cursor.consecutive_failures += 1
-                    cursor.last_error = str(exc)[:2000]
-                    cursor.save(update_fields=["consecutive_failures", "last_error"])
-                    logger.warning("[pulse] tail failed for opp %s: %s", cursor.opportunity_id, exc)
+            while True:
+                cursors = ingest.due_cursors(limit=limit)
+                for cursor in cursors:
+                    try:
+                        result = ingest.tail_visits(client, cursor)
+                        stored += result["stored"]
+                        polled += 1
+                    except Exception as exc:
+                        # Isolate per-opportunity failures: one opp erroring must
+                        # not stop the rest of the sweep or freeze the display.
+                        cursor.consecutive_failures += 1
+                        cursor.last_error = str(exc)[:2000]
+                        cursor.save(update_fields=["consecutive_failures", "last_error"])
+                        logger.warning("[pulse] tail failed for opp %s: %s", cursor.opportunity_id, exc)
+                sweeps += 1
 
-        ingest.record_success(TIER_TAIL)
+                # Recorded per sweep, not once at the end: health should reflect
+                # the most recent sweep, not the start of a minute-long task.
+                ingest.record_success(TIER_TAIL)
+
+                elapsed = time.monotonic() - started
+                if elapsed + sweep_interval >= deadline:
+                    break
+                time.sleep(sweep_interval)
+
         if stored:
             ingest.rebuild_rollups(since=_recent_window())
-        return {"polled": polled, "stored": stored}
+        return {"polled": polled, "stored": stored, "sweeps": sweeps}
     except PulseAuthError as exc:
         ingest.record_failure(TIER_TAIL, f"auth: {exc}")
         raise
@@ -133,38 +165,102 @@ def _recent_window():
 
 
 @celery_app.task(name="connect_labs.pulse.tasks.backfill_visits", bind=True)
-def backfill_visits(self, days: int = 90, opportunity_ids: list[int] | None = None) -> dict:
-    """Walk history backwards for the chosen opportunities.
+def backfill_visits(
+    self,
+    days: int = 90,
+    opportunity_ids: list[int] | None = None,
+    page_pause: float | None = None,
+    max_seconds: int | None = None,
+    max_pages_per_opp: int | None = None,
+) -> dict:
+    """Walk history backwards, one opportunity at a time, resumably.
 
     Manual and one-shot, and the expensive part of the whole system: ~4.6 KB
-    gzipped per row, because ``user_visits`` ships every form's full JSON and
-    offers no way to ask for less.
+    per row, because ``user_visits`` ships every form's full JSON and offers no
+    way to ask for less. Measured against production: ~330 rows/sec, ~2.25 GB
+    and ~84 minutes of pulling for the full 1.67M-visit history.
 
-    90 days is the default because it covers every currently-live programme.
-    Full history is ~7.5 GB and, at the ~470 events/sec measured against
-    production, roughly 1-2 hours — tractable if the denser map is worth it.
+    Three properties make that survivable, and all three are deliberate:
+
+    * **Per opportunity.** Each opportunity has its own cursor, so the unit of
+      work is small and a failure is contained to one programme.
+    * **Resumable at page granularity.** ``_backfill_one`` commits its cursor
+      after every page, so an interrupted run resumes where it stopped rather
+      than restarting the opportunity.
+    * **Paced.** ``page_pause`` seconds between requests, so a full walk is a
+      steady trickle against a production endpoint rather than a flood.
+
+    ``max_seconds`` bounds a single invocation so this can be run repeatedly in
+    modest slices; opportunities not reached simply stay incomplete and are
+    picked up next time.
     """
+    from django.conf import settings
     from django.utils import timezone
 
+    if page_pause is None:
+        page_pause = float(getattr(settings, "PULSE_BACKFILL_PAGE_PAUSE", 0.25))
+
+    started = time.monotonic()
     cutoff = timezone.now() - timezone.timedelta(days=days)
     qs = PulseCursor.objects.filter(endpoint=ingest.VISITS_ENDPOINT, backfill_complete=False)
     if opportunity_ids:
         qs = qs.filter(opportunity_id__in=opportunity_ids)
 
     total = 0
+    done = 0
+    failed = 0
+    stopped_early = False
+
     with get_client(timeout=300.0) as client:
+        # Ordered oldest-activity-last so the programmes a funder is most
+        # likely to ask about are filled in first, and a bounded slice is still
+        # useful rather than arbitrary.
         for cursor in qs.order_by("-newest_sync_ts"):
+            if max_seconds is not None and (time.monotonic() - started) >= max_seconds:
+                stopped_early = True
+                break
             try:
-                total += _backfill_one(client, cursor, cutoff)
+                total += _backfill_one(client, cursor, cutoff, page_pause=page_pause, max_pages=max_pages_per_opp)
+                done += 1
             except Exception as exc:
+                failed += 1
                 logger.warning("[pulse] backfill failed for opp %s: %s", cursor.opportunity_id, exc)
 
-    ingest.rebuild_rollups(since=cutoff)
-    return {"stored": total, "cutoff": cutoff.isoformat()}
+    # Roll up everything just pulled, not merely the requested window: the rows
+    # are about to age out into the grid, and the rollups are the only permanent
+    # record of visit volume by status. Scoping this to `cutoff` was how a deep
+    # pull could leave no trace of the history it had just fetched.
+    ingest.rebuild_rollups(since=cutoff if days <= 90 else None)
+
+    remaining = PulseCursor.objects.filter(endpoint=ingest.VISITS_ENDPOINT, backfill_complete=False).count()
+    return {
+        "stored": total,
+        "opportunities_completed": done,
+        "opportunities_failed": failed,
+        "opportunities_remaining": remaining,
+        "stopped_early": stopped_early,
+        "elapsed_seconds": round(time.monotonic() - started, 1),
+        "cutoff": cutoff.isoformat(),
+    }
 
 
-def _backfill_one(client, cursor: PulseCursor, cutoff) -> int:
-    """Page backwards from newest until we cross the cutoff."""
+def _backfill_one(
+    client, cursor: PulseCursor, cutoff, *, page_pause: float = 0.0, max_pages: int | None = None
+) -> int:
+    """Page backwards from newest until we cross the cutoff or run out.
+
+    Progress is committed **after every page**, not at the end. The previous
+    version saved once the whole opportunity was done, which meant a task killed
+    mid-opportunity -- a deploy, an OOM, a lost token -- threw away everything it
+    had pulled for that opportunity and restarted from the same place next time.
+    On the largest programme (chc, ~1.25M visits) that is not a slow recovery,
+    it is a run that can never finish. Saving per page makes the walk genuinely
+    resumable: re-running continues from the oldest id already seen.
+
+    ``page_pause`` puts a deliberate gap between requests. A full history walk
+    is ~1.6M rows off a production export endpoint that serialises every visit's
+    form JSON, so the polite pace matters more than the elapsed time.
+    """
     opp = PulseOpportunity.objects.filter(opportunity_id=cursor.opportunity_id).first()
     endpoint = f"/export/opportunity/{cursor.opportunity_id}/{ingest.VISITS_ENDPOINT}/"
     params = {"cursor_order": "reverse", "page_size": ingest.PAGE_SIZE}
@@ -172,7 +268,9 @@ def _backfill_one(client, cursor: PulseCursor, cutoff) -> int:
         params["last_id"] = cursor.backfill_oldest_id
 
     stored = 0
-    reached_cutoff = False
+    finished = False
+    pages = 0
+
     for page in client.paginate(endpoint, params=params, partial_ok=True):
         if not page:
             continue
@@ -187,14 +285,32 @@ def _backfill_one(client, cursor: PulseCursor, cutoff) -> int:
             # Forward cursor must also know about these rows, or the tail would
             # re-fetch history it already has.
             cursor.last_id = max(cursor.last_id or 0, max(ids))
+            cursor.save(update_fields=["backfill_oldest_id", "last_id"])
 
-        oldest_ts = min((r.get("date_created") or "") for r in page)
-        if oldest_ts and oldest_ts < cutoff.isoformat():
-            reached_cutoff = True
+        pages += 1
+
+        # Only consider timestamps that actually parsed. `min()` over the raw
+        # values returns "" when any row lacks date_created, and "" is falsy --
+        # so the cutoff check silently never fired and the walk ran past it.
+        stamps = [r.get("date_created") for r in page if r.get("date_created")]
+        if stamps and min(stamps) < cutoff.isoformat():
+            finished = True
             break  # declared via partial_ok
 
-    cursor.backfill_complete = reached_cutoff
-    cursor.save(update_fields=["backfill_oldest_id", "last_id", "backfill_complete"])
+        if max_pages is not None and pages >= max_pages:
+            break  # bounded slice; not finished, so the cursor stays resumable
+
+        if page_pause:
+            time.sleep(page_pause)
+    else:
+        # The generator ended on its own: this opportunity has no more history.
+        # Recognising exhaustion as completion matters, because otherwise an opp
+        # walked back to its first visit is re-walked on every future run.
+        finished = True
+
+    if finished:
+        cursor.backfill_complete = True
+        cursor.save(update_fields=["backfill_complete"])
     return stored
 
 
@@ -244,9 +360,14 @@ def poll_works(limit: int = 40) -> dict:
 
 @celery_app.task(name="connect_labs.pulse.tasks.fold_events_to_grid")
 def fold_events_to_grid() -> dict:
-    """Age out visit-level rows into the anonymous grid.
+    """Age out visit-level rows into the anonymous grid, then apply retention.
 
-    Runs nightly. The map keeps getting denser; labs stops holding the records
-    that made it dense.
+    Runs nightly. Two steps, deliberately separate: folding makes the map
+    denser and is always safe to run, while pruning is the destructive half and
+    obeys ``PULSE_EVENT_RETENTION_DAYS``. Setting that to ``None`` keeps the
+    visit rows as a local, re-derivable fact store -- the map is unaffected
+    either way, because it reads the grid.
     """
-    return ingest.fold_events_to_grid()
+    result = ingest.fold_events_to_grid()
+    result["deleted"] = ingest.prune_folded_events()
+    return result
