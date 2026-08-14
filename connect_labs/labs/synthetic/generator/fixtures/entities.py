@@ -45,7 +45,49 @@ def _series_ranges(visits: list[dict]) -> dict[str, tuple[float, float]]:
     return {path: (min(vals), max(vals)) for path, vals in acc.items()}
 
 
-def _series_constants(visits: list[dict]) -> tuple[dict[str, float], dict[str, int]]:
+def _time_varying_paths(pool: list[dict], *, min_cases: int = 5, vary_share: float = 0.10) -> set[str]:
+    """Paths the COHORT shows to be time-varying, so they are never overlaid as constants.
+
+    ``_series_constants`` decides constancy from one entity's own visits, where a path
+    recorded exactly ONCE is trivially "identical everywhere it appears". That is right
+    for a registration-only attribute (DOB, birth weight) and wrong for a clinical
+    measure the child happened to have taken once: stamping that single reading onto
+    every visit invents readings and flattens the child's curve — on the KMC cohort,
+    18.9% of babies with a visit-weight had exactly one, producing 1,433 phantom weights,
+    1,183 fake-flat growth series, and a clone that over-reported weight-consistency
+    while under-reporting growth velocity (connect-labs#1189).
+
+    Evidence beats per-entity coincidence: look across every entity that recorded the
+    path at least twice. If a meaningful share of those vary, the path is time-varying
+    for this programme and stays strictly per-visit. Absent evidence (no entity ever
+    recorded it twice — the DOB case) the path keeps the old constant treatment, so
+    #734's age-vs-weight anchor is preserved.
+    """
+    multi: dict[str, int] = {}
+    varied: dict[str, int] = {}
+    for series in pool:
+        seen: dict[str, set[float]] = {}
+        for v in series.get("visits") or []:
+            for path, val in (v.get("values") or {}).items():
+                try:
+                    seen.setdefault(path, set()).add(float(val))
+                except (TypeError, ValueError):
+                    continue
+        counts: dict[str, int] = {}
+        for v in series.get("visits") or []:
+            for path in v.get("values") or {}:
+                counts[path] = counts.get(path, 0) + 1
+        for path, n in counts.items():
+            if n >= 2:
+                multi[path] = multi.get(path, 0) + 1
+                if len(seen.get(path, ())) > 1:
+                    varied[path] = varied.get(path, 0) + 1
+    return {path for path, n in multi.items() if n >= min_cases and (varied.get(path, 0) / n) >= vary_share}
+
+
+def _series_constants(
+    visits: list[dict], time_varying: set[str] | None = None
+) -> tuple[dict[str, float], dict[str, int]]:
     """Per-entity constant numeric values and date offsets to propagate to EVERY visit.
 
     A real KMC child records its birth weight and DOB only at registration, so a
@@ -66,8 +108,9 @@ def _series_constants(visits: list[dict]) -> tuple[dict[str, float], dict[str, i
             val_seen.setdefault(path, set()).add(float(val))
         for path, off in (v.get("dates") or {}).items():
             date_seen.setdefault(path, set()).add(int(off))
-    const_values = {p: next(iter(s)) for p, s in val_seen.items() if len(s) == 1}
-    const_dates = {p: next(iter(s)) for p, s in date_seen.items() if len(s) == 1}
+    tv = time_varying or set()
+    const_values = {p: next(iter(s)) for p, s in val_seen.items() if len(s) == 1 and p not in tv}
+    const_dates = {p: next(iter(s)) for p, s in date_seen.items() if len(s) == 1 and p not in tv}
     return const_values, const_dates
 
 
@@ -81,6 +124,7 @@ def plan_mirror_visits(spec: LongitudinalSpec, *, seed: int) -> list[PlannedVisi
     plausible per case while not being a verbatim copy.
     """
     rng = random.Random(seed ^ 0x713C10E)
+    time_varying = _time_varying_paths(spec.transplant_pool)
     planned: list[PlannedVisit] = []
     for idx, series in enumerate(spec.transplant_pool, start=1):
         entity_id = str(uuid.UUID(int=rng.getrandbits(128)))  # one stable id per case
@@ -89,7 +133,7 @@ def plan_mirror_visits(spec: LongitudinalSpec, *, seed: int) -> list[PlannedVisi
         start = dt.date.fromisoformat(series["start_date"])
         series_visits = series["visits"]
         ranges = _series_ranges(series_visits)
-        const_values, const_dates = _series_constants(series_visits)
+        const_values, const_dates = _series_constants(series_visits, time_varying)
         for vj, visit in enumerate(sorted(series_visits, key=lambda v: v["day"]), start=1):
             vdate = start + dt.timedelta(days=int(visit["day"]))
             forced: dict[str, Any] = {}
