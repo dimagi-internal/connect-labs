@@ -295,6 +295,14 @@ def test_resolve_window_last_month():
     assert end == "2026-06-30"
 
 
+def test_resolve_window_today():
+    from connect_labs.workflow.audit_generation import resolve_window
+
+    start, end = resolve_window("today", date(2026, 7, 2))
+    assert start == "2026-07-02"
+    assert end == "2026-07-02"
+
+
 # ── window_preset_for_cadence ────────────────────────────────────────────────
 
 
@@ -373,6 +381,42 @@ def test_creator_run_default_window_follows_cadence(monkeypatch, cadence, expect
     run_default_for_definition(_creator_def(), access_token="t", cadence=cadence)
 
     assert captured["window"] == g.resolve_window(expected_preset, date.today())
+
+
+def test_creator_run_default_uses_same_day_window_when_pinned(monkeypatch):
+    """A definition pinning config.audit_batch.window_mode == "same_day"
+    resolves "today" instead of the cadence-derived preset -- for a schedule
+    that fires late enough in the local day to see that day's own submitted
+    visits, rather than waiting for a full completed prior day. This is an
+    opt-in read directly off the definition, NOT a change to what "daily"
+    cadence resolves to for every other schedule (program_audit_creator's
+    daily schedules share window_preset_for_cadence and must be unaffected)."""
+    from connect_labs.workflow import audit_generation as g
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    d = _creator_def()
+    d.data["config"]["audit_batch"]["window_mode"] = "same_day"
+    captured = _make_captured_window_wda(monkeypatch, g)
+
+    run_default_for_definition(d, access_token="t", cadence="daily")
+
+    assert captured["window"] == g.resolve_window("today", date.today())
+
+
+def test_creator_run_default_ignores_window_mode_when_not_same_day(monkeypatch):
+    """Any value other than the exact "same_day" opt-in (absent, or some
+    other string) falls back to the normal cadence-derived preset -- only an
+    explicit "same_day" pin changes behavior."""
+    from connect_labs.workflow import audit_generation as g
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    d = _creator_def()
+    d.data["config"]["audit_batch"]["window_mode"] = "previous_day"
+    captured = _make_captured_window_wda(monkeypatch, g)
+
+    run_default_for_definition(d, access_token="t", cadence="daily")
+
+    assert captured["window"] == g.resolve_window("yesterday", date.today())
 
 
 def test_creator_run_default_passes_visit_clustering_criteria_overrides(monkeypatch):
