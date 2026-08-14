@@ -3682,7 +3682,11 @@ def read_active_job(request, run_id):
 # audit_generation, and the stale-run sweep when it lands) can reach them
 # without importing this views module. Re-exported here because this is where
 # they have always been imported from.
-from connect_labs.workflow.job_state import JOB_STALE_SECONDS, active_job_age_seconds  # noqa: E402
+from connect_labs.workflow.job_state import (  # noqa: E402
+    JOB_STALE_SECONDS,
+    active_job_age_seconds,
+    job_worker_confirmed_gone,
+)
 
 
 def job_status_snapshot(task_id, active_job):
@@ -3709,7 +3713,14 @@ def job_status_snapshot(task_id, active_job):
             "error": (active_job or {}).get("error") or "Job did not complete",
         }
     age = active_job_age_seconds(active_job)
-    if aj_status == "running" and age is not None and age > JOB_STALE_SECONDS:
+    # Either the job's own process is gone (a fact — see job_worker_confirmed_gone)
+    # or it has been silent long enough to infer it. Reporting the first case
+    # promptly is what stops the page insisting a job is running for another
+    # 45 minutes after a deploy already killed it.
+    stopped = aj_status == "running" and (
+        job_worker_confirmed_gone(active_job) or (age is not None and age > JOB_STALE_SECONDS)
+    )
+    if stopped:
         return {
             "status": "failed",
             "message": "Failed",

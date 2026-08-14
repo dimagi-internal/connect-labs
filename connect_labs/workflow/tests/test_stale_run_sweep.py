@@ -354,3 +354,82 @@ def test_endless_uncharged_resumes_still_stop_at_the_ceiling(_schedule, monkeypa
 
     dispatch.assert_not_called()
     assert f"Resumed {tasks.MAX_TOTAL_RESUMES} times" in marked.call_args.kwargs["summary"]
+
+
+# --------------------------------------------- worker liveness beats the timer
+
+
+def test_a_killed_worker_is_detected_without_waiting_out_the_timer(monkeypatch):
+    """The timer was only ever a proxy for "is the process alive?", and a
+    stamped worker answers that directly. Waiting 45 minutes to act on a fact
+    we already have is 45 minutes of a run sitting dead for no reason."""
+    _this_worker_booted(monkeypatch, seconds_ago=60)
+    run = _run(_job_from_another_worker(heartbeat_age=8 * 60))  # nowhere near JOB_STALE_SECONDS
+
+    eligible, reason = tasks._resume_eligibility(run)
+
+    assert eligible is True
+    assert "its worker is gone" in reason
+
+
+def test_a_just_killed_job_is_given_a_moment_before_being_declared_gone(monkeypatch):
+    """The identity check compares against THIS process's boot, so a process
+    that started seconds ago can briefly look "newer than" a live job that
+    simply hasn't ticked yet. The grace window is what keeps that race from
+    resuming a run out from under a worker that is still going."""
+    from connect_labs.workflow.job_state import WORKER_GONE_GRACE_SECONDS
+
+    _this_worker_booted(monkeypatch, seconds_ago=5)
+    run = _run(_job_from_another_worker(heartbeat_age=WORKER_GONE_GRACE_SECONDS - 30))
+
+    eligible, reason = tasks._resume_eligibility(run)
+
+    assert eligible is False
+    assert reason == "job is still ticking"
+
+
+def test_a_hang_inside_a_live_worker_still_waits_for_the_timer(monkeypatch):
+    """Nothing killed this one, so the worker check has nothing to say and the
+    staleness timer remains the only evidence available."""
+    from connect_labs.workflow.job_state import worker_identity
+
+    mine, _ = worker_identity()
+    fresh = _run({"status": "running", "worker_id": mine, "updated_at": _iso(10 * 60)})
+    stale = _run({"status": "running", "worker_id": mine, "updated_at": _iso(JOB_STALE_SECONDS + 60)})
+
+    assert tasks._resume_eligibility(fresh)[0] is False
+    assert tasks._resume_eligibility(stale)[0] is True
+
+
+def test_a_job_with_no_worker_stamp_still_waits_for_the_timer():
+    """Runs recorded before workers stamped themselves keep the old behaviour
+    exactly — there is no identity to reason from."""
+    fresh = _run({"status": "running", "updated_at": _iso(10 * 60)})
+    stale = _run({"status": "running", "updated_at": _iso(JOB_STALE_SECONDS + 60)})
+
+    assert tasks._resume_eligibility(fresh)[0] is False
+    assert tasks._resume_eligibility(stale)[0] is True
+
+
+def test_the_resume_guard_agrees_that_a_killed_job_is_not_live(monkeypatch):
+    """If these two disagreed, the sweep would dispatch a resume for a
+    killed-worker run and the guard would refuse it — nothing would ever
+    recover, which is worse than either rule alone."""
+    from connect_labs.workflow import audit_generation
+
+    _this_worker_booted(monkeypatch, seconds_ago=60)
+    run = _run(_job_from_another_worker(heartbeat_age=8 * 60))
+
+    assert tasks._resume_eligibility(run)[0] is True
+    assert audit_generation.job_is_live(run) is False
+
+
+def test_the_run_page_reports_a_killed_job_as_stopped(monkeypatch):
+    """Same signal, same answer: the page shouldn't insist a job is running for
+    another 45 minutes after a deploy already killed it."""
+    from connect_labs.workflow.views import job_status_snapshot
+
+    _this_worker_booted(monkeypatch, seconds_ago=60)
+    snapshot = job_status_snapshot("task-1", _job_from_another_worker(heartbeat_age=8 * 60))
+
+    assert snapshot["status"] == "failed"
