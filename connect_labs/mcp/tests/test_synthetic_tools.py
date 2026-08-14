@@ -667,3 +667,48 @@ def test_fidelity_vs_source_errors_when_source_has_no_visits(user, tmp_path, mon
             user=user, bundle_dir=str(_fidelity_bundle(tmp_path, opp_id=999))
         )
     assert exc.value.code == "UPSTREAM_ERROR"
+
+
+@pytest.mark.django_db
+def test_access_set_is_fetched_once_per_bulk_operation(user, monkeypatch):
+    """A bulk operation must not re-fetch the whole production org list per opp.
+
+    `synthetic_clone_profile` gates every opportunity in the spec, and each gate call
+    used to make its own full `/export/opp_org_program_list/` round-trip: an 11-opp
+    cohort meant 11 production fetches purely to authorize, so a single transient
+    failure among them failed the whole run — reported as "opportunity_id 523 is not
+    in your accessible set" for an opp the caller demonstrably owns.
+    """
+    from connect_labs.mcp.tools import synthetic as syn
+
+    syn._ACCESS_CACHE.clear()
+    calls = []
+    monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
+    import connect_labs.labs.integrations.connect.oauth as _oauth
+
+    monkeypatch.setattr(
+        _oauth,
+        "fetch_user_organization_data",
+        lambda tok: (calls.append(1), {"opportunities": [{"id": i} for i in (523, 524, 675)]})[1],
+    )
+    monkeypatch.setattr(syn, "_require_opportunity_access", _REAL_REQUIRE_OPPORTUNITY_ACCESS)
+    for opp in (523, 524, 675):
+        syn._require_opportunity_access(user, opp)
+    assert len(calls) == 1, f"expected one org-list fetch for the whole operation, got {len(calls)}"
+    syn._ACCESS_CACHE.clear()
+
+
+@pytest.mark.django_db
+def test_upstream_failure_is_not_reported_as_permission_denied(user, monkeypatch):
+    """A network blip must not masquerade as a denial (see above)."""
+    from connect_labs.mcp.tools import synthetic as syn
+
+    syn._ACCESS_CACHE.clear()
+    monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
+    import connect_labs.labs.integrations.connect.oauth as _oauth
+
+    monkeypatch.setattr(_oauth, "fetch_user_organization_data", lambda tok: None)
+    with pytest.raises(MCPToolError) as exc:
+        syn._accessible_opp_ids_for_user(user)
+    assert exc.value.code == "UPSTREAM_ERROR"
+    syn._ACCESS_CACHE.clear()
