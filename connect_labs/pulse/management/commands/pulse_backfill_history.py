@@ -102,9 +102,9 @@ class Command(BaseCommand):
             )
             self.stdout.write(
                 self.style.SUCCESS(
-                    "  stored {stored:,} rows · {opportunities_completed} opps done · "
-                    "{opportunities_failed} failed · {opportunities_remaining} remaining "
-                    "({elapsed_seconds}s)".format(**result)
+                    "  stored {stored:,} rows · {opportunities_completed} opps checked · "
+                    "{opportunities_satisfied} advanced · {opportunities_failed} failed · "
+                    "{opportunities_remaining} remaining ({elapsed_seconds}s)".format(**result)
                 )
             )
 
@@ -113,10 +113,12 @@ class Command(BaseCommand):
             if not result["opportunities_remaining"]:
                 self.stdout.write(self.style.SUCCESS("  All opportunities complete."))
                 break
-            # A pass that completes nothing and stores nothing will not complete
-            # anything next time either -- looping on it would spin against prod
-            # forever. Stop and let an operator look.
-            if not result["stored"] and not result["opportunities_completed"]:
+            # A pass that stores nothing and moves no cursor forward will do the
+            # same next time -- looping on it would spin against prod forever.
+            # "Checked without error" is NOT progress: a run was observed making
+            # ~530 requests per pass indefinitely because the old guard counted
+            # every re-checked opportunity as work done.
+            if not result["stored"] and not result["opportunities_satisfied"]:
                 self.stderr.write(self.style.WARNING("  A pass made no progress; stopping rather than spinning."))
                 break
             if time.monotonic() - started < 1:
