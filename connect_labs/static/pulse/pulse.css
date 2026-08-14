@@ -2473,6 +2473,11 @@
   outline: 2px solid var(--light);
   outline-offset: 1px;
 }
+/* An explicit display beats the UA's [hidden] rule, so restate it -- without
+   this every menu renders open all the time. */
+.pulse-dd-menu[hidden] {
+  display: none;
+}
 .pulse-dd-menu {
   position: absolute;
   top: calc(100% + 4px);
