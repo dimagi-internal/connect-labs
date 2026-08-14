@@ -511,10 +511,16 @@ class TestPhoneLayout:
 
     def test_the_privacy_note_survives_on_a_phone(self):
         """It states that household coordinates and names are never shown. It is
-        a compliance statement, so shrinking the layout must not drop it."""
+        a compliance statement, so shrinking the layout must not drop it.
+
+        The note lives in the bottom bar as .pulse-privacy-line (it moved off
+        the map when the overlays were cleared); it must exist, and no phone
+        rule may hide it the way .pulse-kbd legitimately is hidden."""
         css = self._css()
+        assert ".pulse-privacy-line" in css
         phone = css[css.index("@media (max-width: 620px)") :]
-        assert "display: none" not in phone.split(".pulse-privacy")[1].split("}")[0]
+        for chunk in phone.split(".pulse-privacy-line")[1:]:
+            assert "display: none" not in chunk.split("}")[0]
 
 
 class TestStylesheetStructuralClasses:

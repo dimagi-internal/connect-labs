@@ -136,3 +136,16 @@ class TestCoverage:
     )
     def test_the_largest_partners_resolve(self, slug, expected):
         assert resolve(slug)["parent"] == expected
+
+
+def test_connectives_do_not_demote_a_match():
+    """The defect that hid PRIDE: Connect's slug drops the "And" from
+    "Peace Restoration And Integral Global Development Initiative", which
+    left an obviously-identical name at review-only confidence -- shown as
+    a raw slug and unfindable by the name anyone knows the partner by."""
+    from connect_labs.pulse.partner_names import resolve
+
+    r = resolve("peace-restoration-integral-global-development-initiative")
+    assert r["tier"] == "same-tokens"
+    assert r["short"] == "PRIDE"
+    assert r["parent"] == "Peace Restoration And Integral Global Development Initiative"

@@ -91,31 +91,16 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
     <section class="pulse-map">
       <div id="basemap"></div>
       <canvas id="sky"></canvas>
+      {# The map carries no text of its own: the act narration lives in the  #}
+      {# act panel and the privacy note in the bottom bar, so the only thing #}
+      {# on the geography is the geography. The focus group stays -- it is a #}
+      {# control, not a caption.                                             #}
       <div class="pulse-map-head">
-        <div class="pulse-claim">
-          <span class="pulse-lbl" id="act-eyebrow">The pulse</span>
-          <h1 id="act-title">Every point of light is a service someone actually received.</h1>
-          <p id="act-note">Positions are the worker's GPS at the moment of delivery.</p>
-        </div>
         <div class="pulse-focus" role="group" aria-label="Map focus">
           <button data-focus="world" aria-pressed="true">Everywhere</button>
           <button data-focus="ng" aria-pressed="false">Nigeria</button>
           <button data-focus="ea" aria-pressed="false">East Africa</button>
           <button data-focus="in" aria-pressed="false">India</button>
-        </div>
-      </div>
-      <div class="pulse-map-foot">
-        <div class="pulse-legend">
-          <span><i style="background:#8a6418"></i>Delivered before</span>
-          <span><i style="background:var(--light)"></i>Arriving now</span>
-          <span><i style="background:var(--warn)"></i>Flagged for review</span>
-          <span><i style="background:var(--crit)"></i>Rejected</span>
-        </div>
-        {# Discoverability: without this the click target is invisible. #}
-        <div class="pulse-maphint" id="maphint"><b>Click</b> a lit area, or a partner in the feed, to open its record</div>
-        <div class="pulse-privacy">
-          Household coordinates are never shown below town scale. No beneficiary
-          names or phone numbers appear on this screen.
         </div>
       </div>
     </section>
@@ -157,6 +142,7 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
           <span class="pulse-speed" id="speed-read">240&times;</span>
         </div>
         <span class="pulse-kbd"><b>1</b>&ndash;<b>4</b> acts &middot; <b>space</b> pause &middot; <b>F</b> focus</span>
+        <span class="pulse-privacy-line">No household coordinates, beneficiary names or phone numbers on this screen</span>
       </div>
     </section>
 
