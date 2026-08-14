@@ -1159,6 +1159,16 @@ def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, An
         "type": "object",
         "properties": {
             "source_opportunity_id": {"type": "integer"},
+            "curate": {
+                "type": "boolean",
+                "default": False,
+                "description": "Floor flag rates and give degenerate clinical categoricals minority mass so derived rates have variance to model (#670). Outcome fields such as child_alive are never curated (#1189).",
+            },
+            "mirror": {
+                "type": "boolean",
+                "default": False,
+                "description": "High-fidelity close mirror (#713): carry a de-identified per-entity transplant pool so the clone reproduces the source opp's exact visits-per-case, cases-per-FLW, timing and per-entity value trajectories rather than re-sampling from marginals.",
+            },
             "out_dir": {
                 "type": "string",
                 "description": (
@@ -1173,7 +1183,9 @@ def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, An
     },
     is_write=False,
 )
-def synthetic_profile_opp(user, *, source_opportunity_id: int, out_dir: str) -> dict[str, Any]:
+def synthetic_profile_opp(
+    user, *, source_opportunity_id: int, out_dir: str, curate: bool = False, mirror: bool = False
+) -> dict[str, Any]:
     _require_opportunity_access(user, source_opportunity_id)
     try:
         token = require_connect_token(user)
@@ -1183,6 +1195,8 @@ def synthetic_profile_opp(user, *, source_opportunity_id: int, out_dir: str) -> 
     store = make_bundle_store(out_dir, drive=drive)
     handle = profile_opp_to_bundle(
         source_opportunity_id,
+        curate=curate,
+        mirror=mirror,
         base_url=settings.CONNECT_PRODUCTION_URL,
         oauth_token=token,
         store=store,
@@ -1213,6 +1227,16 @@ def synthetic_profile_opp(user, *, source_opportunity_id: int, out_dir: str) -> 
                 "items": {"type": "integer"},
                 "description": "List of real opportunity IDs to profile.",
             },
+            "curate": {
+                "type": "boolean",
+                "default": False,
+                "description": "Floor flag rates and give degenerate clinical categoricals minority mass so derived rates have variance to model (#670). Outcome fields such as child_alive are never curated (#1189).",
+            },
+            "mirror": {
+                "type": "boolean",
+                "default": False,
+                "description": "High-fidelity close mirror (#713): carry a de-identified per-entity transplant pool so the clone reproduces the source opp's exact visits-per-case, cases-per-FLW, timing and per-entity value trajectories rather than re-sampling from marginals.",
+            },
             "out_dir": {
                 "type": "string",
                 "description": (
@@ -1227,7 +1251,9 @@ def synthetic_profile_opp(user, *, source_opportunity_id: int, out_dir: str) -> 
     },
     is_write=False,
 )
-def synthetic_profile_opps_bulk(user, *, source_opportunity_ids: list[int], out_dir: str) -> dict[str, Any]:
+def synthetic_profile_opps_bulk(
+    user, *, source_opportunity_ids: list[int], out_dir: str, curate: bool = False, mirror: bool = False
+) -> dict[str, Any]:
     for opp_id in source_opportunity_ids:
         _require_opportunity_access(user, opp_id)
     try:
@@ -1237,6 +1263,8 @@ def synthetic_profile_opps_bulk(user, *, source_opportunity_ids: list[int], out_
     drive = DriveClient() if str(out_dir).startswith("gdrive:") else None
     resolved, handles = profile_opps_bulk(
         source_opportunity_ids,
+        curate=curate,
+        mirror=mirror,
         base_url=settings.CONNECT_PRODUCTION_URL,
         oauth_token=token,
         bundle_root=out_dir,
