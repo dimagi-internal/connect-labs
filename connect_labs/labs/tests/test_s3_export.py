@@ -266,3 +266,215 @@ def test_row_count_in_metadata(mock_boto3, settings):
 
     second_call = mock_s3.put_object.call_args_list[1][1]
     assert second_call["Metadata"]["row-count"] == "2"
+
+
+# ── record_classifier_fails ────────────────────────────────────────────────────
+
+
+def _classifier_fail_item(session_id=5, blob_id="blob1", classifier_id="muac_match", **extra):
+    item = {
+        "session_id": session_id,
+        "workflow_run_id": 1,
+        "opportunity_id": 42,
+        "opportunity_name": "Test Opp",
+        "visit_id": 101,
+        "blob_id": blob_id,
+        "question_id": "form.q1",
+        "classifier_id": classifier_id,
+        "classifier_label": "MUAC Mismatch",
+        "ai_confidence": 0.9,
+        "ai_implied_result": "fail",
+    }
+    item.update(extra)
+    return item
+
+
+@patch("connect_labs.labs.s3_export.boto3")
+def test_record_classifier_fails_new_row_picks_up_supplied_urls(mock_boto3, settings):
+    """A brand-new row stores the caller-resolved URLs immediately, not blank."""
+    settings.LABS_EXPORTS_BUCKET = "test-bucket"
+    mock_s3 = MagicMock()
+    mock_boto3.client.return_value = mock_s3
+    mock_s3.get_object.side_effect = _no_such_key_error()
+
+    s3_export.record_classifier_fails(
+        [
+            _classifier_fail_item(
+                image_url="https://labs/image/blob1",
+                form_url="https://hq/form/x",
+                connect_url="https://connect/visit/x",
+            )
+        ]
+    )
+
+    body = mock_s3.put_object.call_args[1]["Body"].decode("utf-8")
+    reader = list(csv.DictReader(io.StringIO(body)))
+    assert len(reader) == 1
+    assert reader[0]["image_url"] == "https://labs/image/blob1"
+    assert reader[0]["form_url"] == "https://hq/form/x"
+    assert reader[0]["connect_url"] == "https://connect/visit/x"
+
+
+@patch("connect_labs.labs.s3_export.boto3")
+def test_record_classifier_fails_new_row_without_urls_stays_blank(mock_boto3, settings):
+    """A caller that couldn't resolve URLs (no image_url/form_url/connect_url keys)
+    still gets a row -- just with blank URLs, same as before this feature."""
+    settings.LABS_EXPORTS_BUCKET = "test-bucket"
+    mock_s3 = MagicMock()
+    mock_boto3.client.return_value = mock_s3
+    mock_s3.get_object.side_effect = _no_such_key_error()
+
+    s3_export.record_classifier_fails([_classifier_fail_item()])
+
+    body = mock_s3.put_object.call_args[1]["Body"].decode("utf-8")
+    reader = list(csv.DictReader(io.StringIO(body)))
+    assert reader[0]["image_url"] == ""
+    assert reader[0]["form_url"] == ""
+    assert reader[0]["connect_url"] == ""
+
+
+@patch("connect_labs.labs.s3_export.boto3")
+def test_record_classifier_fails_does_not_clobber_populated_url_with_blank(mock_boto3, settings):
+    """Re-running AI review (e.g. a re-review pass) must not blank out a URL that
+    was already resolved for this row."""
+    settings.LABS_EXPORTS_BUCKET = "test-bucket"
+
+    existing_row = {f: "" for f in s3_export.CLASSIFIER_FAIL_FIELDS}
+    existing_row.update(
+        {
+            "row_id": "5:blob1:muac_match",
+            "session_id": "5",
+            "blob_id": "blob1",
+            "classifier_id": "muac_match",
+            "image_url": "https://labs/image/blob1",
+            "form_url": "https://hq/form/x",
+            "connect_url": "https://connect/visit/x",
+            "human_result": "fail",
+            "was_overridden": "false",
+        }
+    )
+
+    mock_s3 = MagicMock()
+    mock_boto3.client.return_value = mock_s3
+    mock_s3.get_object.return_value = {
+        "Body": MagicMock(read=lambda: _csv_body([existing_row], s3_export.CLASSIFIER_FAIL_FIELDS))
+    }
+
+    # A second AI-review pass that (for whatever reason) resolved no URLs this time.
+    s3_export.record_classifier_fails([_classifier_fail_item()])
+
+    body = mock_s3.put_object.call_args[1]["Body"].decode("utf-8")
+    reader = list(csv.DictReader(io.StringIO(body)))
+    assert reader[0]["image_url"] == "https://labs/image/blob1"
+    assert reader[0]["form_url"] == "https://hq/form/x"
+    assert reader[0]["connect_url"] == "https://connect/visit/x"
+
+
+@patch("connect_labs.labs.s3_export.boto3")
+def test_record_classifier_fails_backfills_blank_url_on_existing_row(mock_boto3, settings):
+    """An existing row created before URL resolution succeeded (e.g. a legacy row,
+    or a transient HQ-metadata failure) picks up URLs the next time they resolve."""
+    settings.LABS_EXPORTS_BUCKET = "test-bucket"
+
+    existing_row = {f: "" for f in s3_export.CLASSIFIER_FAIL_FIELDS}
+    existing_row.update(
+        {
+            "row_id": "5:blob1:muac_match",
+            "session_id": "5",
+            "blob_id": "blob1",
+            "classifier_id": "muac_match",
+            "human_result": "fail",
+            "was_overridden": "false",
+        }
+    )
+
+    mock_s3 = MagicMock()
+    mock_boto3.client.return_value = mock_s3
+    mock_s3.get_object.return_value = {
+        "Body": MagicMock(read=lambda: _csv_body([existing_row], s3_export.CLASSIFIER_FAIL_FIELDS))
+    }
+
+    s3_export.record_classifier_fails(
+        [_classifier_fail_item(image_url="https://labs/image/blob1", form_url="https://hq/form/x")]
+    )
+
+    body = mock_s3.put_object.call_args[1]["Body"].decode("utf-8")
+    reader = list(csv.DictReader(io.StringIO(body)))
+    assert reader[0]["image_url"] == "https://labs/image/blob1"
+    assert reader[0]["form_url"] == "https://hq/form/x"
+
+
+# ── sync_classifier_fail_outcomes ───────────────────────────────────────────────
+
+
+def _existing_classifier_fail_row(**overrides):
+    row = {f: "" for f in s3_export.CLASSIFIER_FAIL_FIELDS}
+    row.update(
+        {
+            "row_id": "5:blob1:duplicate_detector",
+            "session_id": "5",
+            "blob_id": "blob1",
+            "classifier_id": "duplicate_detector",
+            "human_result": "",
+            "was_overridden": "false",
+        }
+    )
+    row.update(overrides)
+    return row
+
+
+@patch("connect_labs.labs.s3_export.boto3")
+def test_sync_first_human_verdict_on_flag_only_row_is_not_an_override(mock_boto3, settings):
+    """A flag-only classifier (e.g. duplicate detector) seeds human_result as
+    "" -- the human's very first answer must be recorded, not flagged as an
+    override of a verdict that never existed. reviewed_by IS stamped though --
+    it tracks who last touched the row's human_result, override or not."""
+    settings.LABS_EXPORTS_BUCKET = "test-bucket"
+    existing_row = _existing_classifier_fail_row()  # human_result == "" (no prior verdict)
+
+    mock_s3 = MagicMock()
+    mock_boto3.client.return_value = mock_s3
+    mock_s3.get_object.return_value = {
+        "Body": MagicMock(read=lambda: _csv_body([existing_row], s3_export.CLASSIFIER_FAIL_FIELDS))
+    }
+
+    s3_export.sync_classifier_fail_outcomes(
+        session_id=5,
+        human_result_by_blob={"blob1": "duplicate_fake"},
+        human_notes_by_blob={},
+        reviewed_by="reviewer1",
+    )
+
+    body = mock_s3.put_object.call_args[1]["Body"].decode("utf-8")
+    reader = list(csv.DictReader(io.StringIO(body)))
+    assert reader[0]["human_result"] == "duplicate_fake"
+    assert reader[0]["was_overridden"] == "false"
+    assert reader[0]["overridden_at"] == ""
+    assert reader[0]["reviewed_by"] == "reviewer1"
+
+
+@patch("connect_labs.labs.s3_export.boto3")
+def test_sync_changing_a_prior_verdict_is_still_flagged_as_override(mock_boto3, settings):
+    """Once a row has a real prior verdict (AI-implied or previously
+    human-set), changing it away from that value is still a genuine override."""
+    settings.LABS_EXPORTS_BUCKET = "test-bucket"
+    existing_row = _existing_classifier_fail_row(human_result="fail")  # a real prior verdict
+
+    mock_s3 = MagicMock()
+    mock_boto3.client.return_value = mock_s3
+    mock_s3.get_object.return_value = {
+        "Body": MagicMock(read=lambda: _csv_body([existing_row], s3_export.CLASSIFIER_FAIL_FIELDS))
+    }
+
+    s3_export.sync_classifier_fail_outcomes(
+        session_id=5,
+        human_result_by_blob={"blob1": "pass"},
+        human_notes_by_blob={},
+        reviewed_by="reviewer1",
+    )
+
+    body = mock_s3.put_object.call_args[1]["Body"].decode("utf-8")
+    reader = list(csv.DictReader(io.StringIO(body)))
+    assert reader[0]["human_result"] == "pass"
+    assert reader[0]["was_overridden"] == "true"
+    assert reader[0]["reviewed_by"] == "reviewer1"

@@ -1,0 +1,399 @@
+{% load humanize %}
+{# Donor stewardship report: one surface serving both the web page and the      #}
+{# printed PDF. The reference artefact this is modelled on was produced by      #}
+{# "Print To PDF" from a laid-out page, so printing IS the export path -- there #}
+{# is no server-side renderer, no headless browser in the image, and no second  #}
+{# layout that could drift from what the author reviewed on screen.             #}
+<!-- Self-contained on purpose: a report may be opened from a public link with
+     no session, and must render identically with nothing else loaded. -->
+<title>{{ report.title|default:"Donor report" }}</title>
+<style>
+  :root {
+    --navy: #1b1464;
+    --ink: #14142b;
+    --muted: #6b7280;
+    --rule: #e5e7eb;
+    --accent: #2f5fd0;
+    --page: 7.5in;             /* US Letter (612pt) less 0.5in margins */
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #f3f4f6;
+    color: var(--ink);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 10.5px;
+    line-height: 1.45;
+  }
+
+  .sheet {
+    width: var(--page);
+    margin: 24px auto;
+    padding: 0.42in 0.5in 0.3in;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.12);
+  }
+
+  /* Print: the sheet becomes the page. Letter matches the reference exactly
+     (its MediaBox is 612x792pt); the shadow and grey surround are screen-only
+     affordances that would otherwise waste toner and shift the layout. */
+  @page { size: letter; margin: 0.42in 0.5in 0.3in; }
+  @media print {
+    body { background: #fff; }
+    .sheet { width: auto; margin: 0; padding: 0; box-shadow: none; }
+    .no-print { display: none !important; }
+    /* Keep a tile or a delivery block from being split across a page break. */
+    .kpi, .block, .chip-row, figure { break-inside: avoid; }
+  }
+
+  .topbar { height: 5px; background: var(--navy); margin: -0.42in -0.5in 14px; }
+  @media print { .topbar { margin: 0 0 14px; } }
+
+  header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+  .eyebrow {
+    font-size: 8px; font-weight: 700; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  h1 { font-size: 26px; line-height: 1.12; font-weight: 400; color: var(--navy); margin: 4px 0 6px; }
+  .prepared { font-weight: 700; font-size: 10.5px; margin: 0; }
+  .brand { text-align: right; flex: 0 0 auto; }
+  .wordmark { font-size: 25px; font-weight: 700; color: var(--navy); letter-spacing: -.02em; }
+  .window-label { font-size: 8px; color: var(--muted); margin-top: 8px; }
+  .window-dates { font-size: 9px; font-weight: 700; color: var(--navy); }
+
+  .gift {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--navy); color: #fff; padding: 10px 14px; margin: 14px 0 12px;
+  }
+  .gift-label {
+    font-size: 8px; font-weight: 700; letter-spacing: .14em;
+    text-transform: uppercase; color: #f5c451;
+  }
+  .gift-text { font-size: 12px; margin-top: 2px; }
+  .gift-text strong { font-weight: 700; }
+  .connect-mark { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+
+  .intro { margin: 0 0 14px; }
+
+  /* The colour rule above the headline tiles, as four weighted segments. */
+  .rule { display: flex; height: 3px; margin-bottom: 10px; }
+  .rule i { display: block; height: 100%; }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; }
+  .kpi { padding: 0 12px 10px 0; }
+  .kpi + .kpi { padding-left: 12px; }
+  .kpi-value { font-size: 25px; font-weight: 300; color: var(--navy); line-height: 1.05; }
+  .kpi-value.muted { color: var(--muted); }
+  .kpi-label {
+    font-size: 7.5px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: #4b5563; margin-top: 3px;
+  }
+  .kpis.second { border-top: 1px solid var(--rule); padding-top: 10px; margin-top: 2px; }
+
+  .footnote {
+    border-left: 2px solid var(--rule); padding-left: 8px; margin: 10px 0 16px;
+    font-size: 8.5px; color: var(--muted);
+  }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  h2 {
+    font-size: 13px; font-weight: 700; color: var(--navy); margin: 0 0 10px;
+    padding-left: 8px; border-left: 3px solid var(--accent);
+  }
+  h2 + p { margin-top: 0; }
+
+  .block { border-left: 2px solid var(--accent); padding-left: 8px; margin-bottom: 11px; }
+  .block h3 { font-size: 10.5px; font-weight: 700; color: var(--navy); margin: 0 0 2px; }
+  .block p { margin: 0; font-size: 9.5px; color: #374151; }
+  .block .figure { font-weight: 700; color: var(--ink); }
+
+  .chip-row { margin-top: 10px; }
+  .chip-row h4 {
+    font-size: 7.5px; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 5px;
+  }
+  .chip {
+    display: inline-block; border: 1px solid var(--rule); border-radius: 9px;
+    padding: 2px 8px; margin: 0 3px 3px 0; font-size: 8.5px;
+  }
+
+  /* Maps. Fill/stroke live here rather than on the elements so the same SVG
+     builder serves the locator, the detail and the density panel. */
+  .map { margin: 6px 0 4px; }
+  .svg-area { fill: #ede9fe; stroke: #fff; stroke-width: .5; }
+  .svg-area--served { fill: var(--navy); }
+  .svg-dot { fill: var(--accent); fill-opacity: .55; }
+  .legend { font-size: 8px; color: #4b5563; margin-top: 4px; }
+  .swatch {
+    display: inline-block; width: 8px; height: 8px; margin-right: 4px;
+    vertical-align: -1px;
+  }
+
+  figure { margin: 10px 0 0; }
+  figure img { width: 100%; display: block; }
+  figcaption { font-size: 8.5px; color: var(--muted); margin-top: 4px; }
+
+  .verify-bar { display: flex; height: 7px; margin: 6px 0 5px; border-radius: 2px; overflow: hidden; }
+  .verify-bar i { display: block; height: 100%; }
+  .k-verified { background: #16a34a; }
+  .k-over     { background: #f59e0b; }
+  .k-failed   { background: #dc2626; }
+  .k-open     { background: #9ca3af; }
+  .verify-key { font-size: 8.5px; color: #374151; }
+  .verify-key span { margin-right: 10px; white-space: nowrap; }
+
+  .partner {
+    border-top: 2px solid var(--navy); margin-top: 16px; padding-top: 8px;
+  }
+  .partner h4 {
+    font-size: 7.5px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 4px;
+  }
+  .partner p { margin: 0; font-size: 9px; color: #374151; }
+
+  footer {
+    display: flex; justify-content: space-between;
+    border-top: 1px solid var(--rule); margin-top: 14px; padding-top: 6px;
+    font-size: 8px; color: var(--muted);
+  }
+  footer .left { font-weight: 700; letter-spacing: .12em; color: var(--navy); }
+
+  .toolbar {
+    width: var(--page); margin: 16px auto -8px; display: flex; gap: 8px;
+    justify-content: flex-end;
+  }
+  .toolbar a, .toolbar button {
+    font: inherit; font-size: 11px; padding: 6px 12px; border-radius: 5px;
+    border: 1px solid var(--rule); background: #fff; color: var(--ink);
+    cursor: pointer; text-decoration: none;
+  }
+  .toolbar button { background: var(--navy); color: #fff; border-color: var(--navy); }
+</style>
+
+<div class="toolbar no-print">
+  <a href="{% url 'pulse:report_edit' slug=report.slug %}">Edit</a>
+  <button onclick="window.print()">Save as PDF</button>
+</div>
+
+<div class="sheet">
+  <div class="topbar"></div>
+
+  <header>
+    <div>
+      <div class="eyebrow">{{ report.eyebrow|default:"Donor stewardship report" }}</div>
+      <h1>{{ report.title|default:"Untitled report" }}</h1>
+      {% if report.prepared_for %}<p class="prepared">Prepared for {{ report.prepared_for }}.</p>{% endif %}
+    </div>
+    <div class="brand">
+      <div class="wordmark">dimagi</div>
+      {% if report.window_start and report.window_end %}
+        <div class="window-label">Response window</div>
+        <div class="window-dates">
+          {{ report.window_start|date:"j F Y" }} &ndash; {{ report.window_end|date:"j F Y" }}
+        </div>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if report.gift_line %}
+    <div class="gift">
+      <div>
+        <div class="gift-label">Your gift at work</div>
+        <div class="gift-text">{{ report.gift_line }}</div>
+      </div>
+      <div class="connect-mark">Connect</div>
+    </div>
+  {% endif %}
+
+  {% if report.intro %}<p class="intro">{{ report.intro|linebreaksbr }}</p>{% endif %}
+
+  {# Headline tiles. Every value here is derived from verified, reimbursed
+     delivery -- nothing on this row is typed by hand. #}
+  <div class="rule">
+    <i style="background:#1b1464;width:26%"></i>
+    <i style="background:#6d8ad6;width:24%"></i>
+    <i style="background:#f2b134;width:26%"></i>
+    <i style="background:#e2603f;width:24%"></i>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi">
+      <div class="kpi-value">{{ metrics.services|intcomma }}</div>
+      <div class="kpi-label">
+        {% if metrics.services_are_visits %}Verified service deliveries{% else %}Verified units of service{% endif %}
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-value">{{ metrics.workers|intcomma }}</div>
+      <div class="kpi-label">Frontline workers deployed</div>
+    </div>
+    <div class="kpi">
+      {% if metrics.verification.headline_rate_pct %}
+        <div class="kpi-value">{{ metrics.verification.headline_rate_pct|floatformat:1 }}%</div>
+        <div class="kpi-label">Passed Connect verification</div>
+      {% else %}
+        <div class="kpi-value muted">&mdash;</div>
+        <div class="kpi-label">Verification rate unavailable</div>
+      {% endif %}
+    </div>
+    <div class="kpi">
+      {% if metrics.cost_per_service %}
+        <div class="kpi-value">${{ metrics.cost_per_service|floatformat:2 }}</div>
+        <div class="kpi-label">Cost per verified delivery</div>
+      {% else %}
+        <div class="kpi-value muted">&mdash;</div>
+        <div class="kpi-label">Cost per verified delivery</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if deliverables %}
+    <div class="kpis second">
+      {% for d in deliverables|slice:":4" %}
+        <div class="kpi">
+          <div class="kpi-value">
+            {% if d.value != None %}{{ d.value|floatformat:"-0"|intcomma }}{% else %}&mdash;{% endif %}
+          </div>
+          <div class="kpi-label">{{ d.label }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="footnote">
+    {% if report.footnote %}
+      {{ report.footnote|linebreaksbr }}
+    {% else %}
+      Every figure above counts work that Connect verified and reimbursed
+      &mdash; delivery that was recorded but not approved is excluded.
+      {% if not metrics.services_are_visits %}
+        Delivery is counted in payment units rather than individual visits for this window.
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="cols">
+    <section>
+      <h2>Where we worked</h2>
+      {% if report.where_we_worked %}
+        <p>{{ report.where_we_worked|linebreaksbr }}</p>
+      {% elif geography.districts %}
+        <p>
+          Services were delivered across
+          {{ geography.districts|length }} district{{ geography.districts|pluralize }}
+          {% if geography.regions %}
+            in {% for r in geography.regions %}{{ r.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+          {% endif %}{% if geography.country_names %},
+            {% for c in geography.country_names %}{{ c }}{% if not forloop.last %} and {% endif %}{% endfor %}{% endif %}.
+        </p>
+      {% endif %}
+
+      {% if geography.locator_svg %}
+        <div class="map">{{ geography.locator_svg|safe }}</div>
+      {% endif %}
+      {% if geography.detail_svg %}
+        <div class="map">{{ geography.detail_svg|safe }}</div>
+      {% endif %}
+
+      {% if geography.districts %}
+        <div class="legend">
+          <span class="swatch" style="background:var(--navy)"></span>Districts served &mdash;
+          {% for d in geography.districts|slice:":8" %}{{ d.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+          <br>
+          <span class="swatch" style="background:#ede9fe"></span>Other districts
+        </div>
+      {% endif %}
+
+      {% if geography.density_svg %}
+        <div class="map">{{ geography.density_svg|safe }}</div>
+        <div class="legend">
+          Each point is a ~1&nbsp;km area where services were delivered, sized by volume.
+          {% if geography.is_all_time %}
+            Shows all recorded coverage, which may extend beyond this report&rsquo;s window.
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {% if report.site_chips %}
+        <div class="chip-row">
+          <h4>Sites &amp; facilities</h4>
+          {% for c in report.site_chips %}<span class="chip">{{ c }}</span>{% endfor %}
+        </div>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>What we delivered</h2>
+
+      {% for d in deliverables %}
+        <div class="block">
+          <h3>{{ d.label }}</h3>
+          {% if d.description or d.value != None %}
+            <p>
+              {{ d.description }}
+              {% if d.value != None %}
+                <span class="figure">{{ d.value|floatformat:"-0"|intcomma }} delivered.</span>
+              {% endif %}
+            </p>
+          {% endif %}
+        </div>
+      {% endfor %}
+
+      {% if metrics.verification.rows %}
+        <h2 style="margin-top:14px">How we verified it</h2>
+        <div class="verify-bar">
+          {% for r in metrics.verification.rows %}
+            <i class="k-{{ r.kind }}" style="width:{% widthratio r.share 1 100 %}%"></i>
+          {% endfor %}
+        </div>
+        <div class="verify-key">
+          {% for r in metrics.verification.rows %}
+            <span>
+              <span class="swatch k-{{ r.kind }}"></span>{{ r.meaning }} &mdash;
+              {% widthratio r.share 1 100 %}%
+            </span>
+          {% endfor %}
+        </div>
+        <p style="font-size:8.5px;color:var(--muted);margin-top:6px">
+          Connect checks every submission for location, timing, duration and duplication
+          before any payment is released.
+          {% if quality.available and quality.median_sync_lag_minutes %}
+            Verified work reached Connect a median of
+            {{ quality.median_sync_lag_minutes|floatformat:0 }} minutes after it was delivered.
+          {% endif %}
+        </p>
+      {% endif %}
+
+      {% if report.photo %}
+        <figure>
+          <img src="{{ report.photo.url }}" alt="">
+          {% if report.photo_caption %}<figcaption>{{ report.photo_caption }}</figcaption>{% endif %}
+        </figure>
+      {% endif %}
+    </section>
+  </div>
+
+  {% if report.partner_funding or partner %}
+    <div class="partner">
+      <h4>Partner &amp; funding</h4>
+      <p>
+        {% if report.partner_funding %}
+          {{ report.partner_funding|linebreaksbr }}
+        {% else %}
+          Delivered by {% if partner %}<strong>{{ partner.name }}</strong>{% else %}our delivery partner{% endif %}
+          through Dimagi&rsquo;s Connect platform.
+          {% if metrics.total_paid %}
+            ${{ metrics.total_paid|floatformat:0|intcomma }} was disbursed for verified delivery
+            over this period.
+          {% endif %}
+        {% endif %}
+      </p>
+    </div>
+  {% endif %}
+
+  <footer>
+    <span class="left">DIMAGI &middot; CONNECT</span>
+    <span>{{ report.title }}</span>
+  </footer>
+</div>

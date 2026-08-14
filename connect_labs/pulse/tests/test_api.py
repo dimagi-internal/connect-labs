@@ -772,3 +772,91 @@ class TestShareableUrlContract:
         """Otherwise closing a window leaves `?worker=` behind and the next
         person to copy the link shares a broken one."""
         assert "q.delete(k)" in self._js()
+
+
+@pytest.mark.django_db
+class TestHealthThresholdFollowsEachTiersCadence:
+    """A tier is judged against its OWN beat, not the fastest tier's.
+
+    The threshold was a single `6 x hot interval` = 6 minutes, which held only
+    while every ingest tier ran at least every five. Moving the cheap tier to
+    every fifteen made it spend nine minutes out of every fifteen "unhealthy",
+    and the whole display showed "Data is not live" over data that was thirty
+    seconds old. Confirmed on prod: cheap at 443s against a 360s threshold while
+    tail was 30s and works 87s.
+
+    The existing staleness test did not catch it because it ages a tier by five
+    HOURS, which is stale under any threshold.
+    """
+
+    def test_the_cheap_tier_is_healthy_between_its_own_runs(self, client, populated):
+        """Seven minutes is normal for a fifteen-minute beat and must not raise
+        an alarm on a funder-facing screen."""
+        ingest.record_success("tail")
+        ingest.record_success("works")
+        ingest.record_success("cheap")
+        row = PulseIngestHealth.objects.get(tier="cheap")
+        row.last_success_at = timezone.now() - timedelta(minutes=7)
+        row.save()
+
+        assert PulseIngestHealth.objects.get(tier="cheap").is_healthy is True
+        assert client.get(reverse("pulse:api_summary")).json()["ingest"]["live_ok"] is True
+
+    def test_a_genuinely_dead_cheap_tier_is_still_caught(self):
+        """Generosity must stay bounded — a dead token cannot look live."""
+        row = PulseIngestHealth.objects.create(tier="cheap", last_success_at=timezone.now() - timedelta(hours=3))
+        assert row.is_healthy is False
+
+    def test_the_fast_tiers_keep_a_tight_threshold(self):
+        """The tail carries the display's freshness, so it must not inherit the
+        cheap tier's slack."""
+        row = PulseIngestHealth.objects.create(tier="tail", last_success_at=timezone.now() - timedelta(minutes=7))
+        assert row.is_healthy is False
+        assert row.stale_after_seconds == 6 * 60
+
+    def test_the_thresholds_stay_in_step_with_the_beat_schedule(self):
+        """The root cause: the schedule moved and the threshold did not. These
+        are two places that have to agree, so assert they do."""
+        from django.conf import settings
+
+        from connect_labs.pulse.models import TIER_CADENCE_SECONDS
+
+        beat = settings.CELERY_BEAT_SCHEDULE
+        for tier, entry in (("tail", "pulse-visit-tail"), ("works", "pulse-works"), ("cheap", "pulse-cheap-tier")):
+            minutes = beat[entry]["schedule"].minute
+            # A crontab firing N times an hour has a cadence of 3600/N seconds.
+            expected = int(3600 / len(minutes))
+            assert TIER_CADENCE_SECONDS[tier] == expected, (
+                f"{tier} runs every {expected}s per CELERY_BEAT_SCHEDULE but its health "
+                f"threshold assumes {TIER_CADENCE_SECONDS[tier]}s. A tier judged against the "
+                "wrong cadence reports the whole display as not live."
+            )
+
+
+@pytest.mark.django_db
+class TestTheNotLiveMessageNamesWhatIsWrong:
+    def test_it_names_the_stale_stream(self, client, populated):
+        ingest.record_success("tail")
+        ingest.record_success("works")
+        ingest.record_success("cheap")
+        row = PulseIngestHealth.objects.get(tier="cheap")
+        row.last_success_at = timezone.now() - timedelta(hours=3)
+        row.save()
+
+        msg = client.get(reverse("pulse:api_summary")).json()["ingest"]["message"]
+        assert "cheap" in msg, msg
+        assert "180 minutes" in msg, msg
+
+    def test_it_never_claims_zero_minutes(self, client, populated):
+        """It used to quote the age of the NEWEST success across all tiers, so a
+        stale stream rendered as "No successful ingest for 0 minutes" — alarming
+        and self-contradicting at the same time."""
+        ingest.record_success("tail")  # fresh
+        PulseIngestHealth.objects.create(tier="cheap", last_success_at=timezone.now() - timedelta(seconds=30))
+        row = PulseIngestHealth.objects.get(tier="cheap")
+        row.consecutive_failures = 9  # unhealthy despite a recent success
+        row.save()
+
+        msg = client.get(reverse("pulse:api_summary")).json()["ingest"]["message"]
+        assert "0 minutes" not in msg, msg
+        assert "under a minute" in msg or "cheap" in msg, msg

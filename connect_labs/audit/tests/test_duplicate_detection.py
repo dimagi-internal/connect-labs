@@ -626,6 +626,139 @@ def test_run_counts_detect_failure(monkeypatch):
     assert "u1|form/muac_photo|2026-07-30" not in session.data.get("duplicate_detection", {})
 
 
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_resolves_urls_before_human_review_when_data_access_given(monkeypatch):
+    """classifier_fail_rows should carry image/form/connect URLs resolved right
+    now (via data_access), not wait for a human to save/complete the session."""
+    session = _session({"100": [_img("a")]})
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "b"]])
+    session.data["visit_images"]["101"] = [_img("b")]
+
+    fake_data_access = object()
+    captured_resolve_kwargs = {}
+
+    def _fake_resolve_urls_by_blob(**kwargs):
+        captured_resolve_kwargs.update(kwargs)
+        return {
+            "a": {"image_url": "https://labs/image/a", "form_url": "https://hq/a", "connect_url": "https://cx/a"},
+            "b": {"image_url": "https://labs/image/b", "form_url": "https://hq/b", "connect_url": "https://cx/b"},
+        }
+
+    captured_rows = {}
+
+    def _fake_record_classifier_fails(rows):
+        captured_rows["rows"] = rows
+
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.resolve_urls_by_blob", _fake_resolve_urls_by_blob)
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.s3_export.record_classifier_fails", _fake_record_classifier_fails
+    )
+
+    run_duplicate_detection(session, access_token="tok", data_access=fake_data_access)
+
+    assert captured_resolve_kwargs["data_access"] is fake_data_access
+    assert captured_resolve_kwargs["access_token"] == "tok"
+    assert captured_resolve_kwargs["opportunity_id"] == session.opportunity_id
+
+    rows_by_blob = {row["blob_id"]: row for row in captured_rows["rows"]}
+    assert rows_by_blob["a"]["image_url"] == "https://labs/image/a"
+    assert rows_by_blob["b"]["form_url"] == "https://hq/b"
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_completes_normally_when_url_resolution_raises(monkeypatch):
+    """Regression: if resolve_urls_by_blob raises, run_duplicate_detection must
+    not propagate -- its caller still needs to call save_audit_session for the
+    duplicate flags already applied to `session` in memory, and an uncaught
+    exception here would prevent that entirely."""
+    session = _session({"100": [_img("a")]})
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "b"]])
+    session.data["visit_images"]["101"] = [_img("b")]
+
+    def _boom(**kwargs):
+        raise RuntimeError("Connect API down")
+
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.resolve_urls_by_blob", _boom)
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.s3_export.record_classifier_fails", lambda rows: None)
+
+    summary = run_duplicate_detection(session, access_token="tok", data_access=object())
+
+    assert summary["images_flagged"] == 2  # the actual duplicate-flagging work, unaffected
+    assert session.get_assessments(100)["a"]["duplicate_group"] == 0  # flag still applied in memory
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_stamps_each_row_with_its_own_image_opportunity_in_multi_opp_session(monkeypatch):
+    """Regression: a multi-opp session (e.g. muac_picture_audit) can flag
+    images belonging to DIFFERENT opportunities in the same duplicate group.
+    Each row must be stamped with its OWN image's opportunity_id, not the
+    session's primary opportunity_id. (URL resolution's own per-opportunity
+    grouping is covered directly in test_link_helpers.py -- this just checks
+    that duplicate_detection.py passes the right opportunity_id through to
+    the stored row and to the single resolve_urls_by_blob call it makes.)"""
+    session = _session({"100": [_img("a", opportunity_id=555)]}, opportunity_id=1)
+    session.data["visit_images"]["101"] = [_img("b", opportunity_id=777)]
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "b"]])
+
+    fake_data_access = object()
+    resolve_calls = []
+
+    def _fake_resolve_urls_by_blob(**kwargs):
+        resolve_calls.append(kwargs)
+        return {
+            "a": {"image_url": "https://labs/image/a-opp555"},
+            "b": {"image_url": "https://labs/image/b-opp777"},
+        }
+
+    captured_rows = {}
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.resolve_urls_by_blob", _fake_resolve_urls_by_blob)
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.s3_export.record_classifier_fails",
+        lambda rows: captured_rows.setdefault("rows", rows),
+    )
+
+    run_duplicate_detection(session, access_token="tok", data_access=fake_data_access)
+
+    # One resolve_urls_by_blob call for the whole session -- it does its own
+    # internal per-opportunity grouping (see test_link_helpers.py).
+    assert len(resolve_calls) == 1
+    assert resolve_calls[0]["opportunity_id"] == session.opportunity_id  # the DEFAULT/fallback, not per-image
+
+    rows_by_blob = {row["blob_id"]: row for row in captured_rows["rows"]}
+    assert rows_by_blob["a"]["opportunity_id"] == 555
+    assert rows_by_blob["a"]["image_url"] == "https://labs/image/a-opp555"
+    assert rows_by_blob["b"]["opportunity_id"] == 777
+    assert rows_by_blob["b"]["image_url"] == "https://labs/image/b-opp777"
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_skips_url_resolution_without_data_access(monkeypatch):
+    """Without a data_access (e.g. an older caller/test), resolution is skipped
+    entirely -- rows go through with no image_url/form_url/connect_url keys,
+    same behavior as before this feature."""
+    session = _session({"100": [_img("a")]})
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "b"]])
+    session.data["visit_images"]["101"] = [_img("b")]
+
+    def _boom(**kwargs):
+        raise AssertionError("resolve_urls_by_blob should not be called without data_access")
+
+    captured_rows = {}
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.resolve_urls_by_blob", _boom)
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.s3_export.record_classifier_fails",
+        lambda rows: captured_rows.setdefault("rows", rows),
+    )
+
+    run_duplicate_detection(session, access_token="tok")
+
+    assert "image_url" not in captured_rows["rows"][0]
+
+
 # --------------------------------------------------------------------------- #
 # save_callback — per-bucket incremental persistence
 # --------------------------------------------------------------------------- #
@@ -720,7 +853,9 @@ def test_session_with_dup_detection_complete_is_skipped(monkeypatch):
 
     calls = []
 
-    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+    def _fake_run(
+        session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None
+    ):
         calls.append(session)
         return {
             "groups_detected": 0,
@@ -750,7 +885,9 @@ def test_dup_detection_complete_flag_set_after_successful_session(monkeypatch):
         def save_audit_session(self, session):
             saved.append(dict(session.data))
 
-    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+    def _fake_run(
+        session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None
+    ):
         return {
             "groups_detected": 0,
             "images_flagged": 0,
@@ -804,7 +941,9 @@ class _FakeDataAccess:
 def test_run_summary_note_lists_every_failure_kind(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+    def _fake_run(
+        session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None
+    ):
         return {
             "groups_detected": 0,
             "images_flagged": 0,
@@ -830,7 +969,7 @@ def test_run_summary_note_lists_every_failure_kind(monkeypatch):
 def test_run_summary_note_counts_session_errors(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _boom(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+    def _boom(session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None):
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr("connect_labs.audit.duplicate_detection.run_duplicate_detection", _boom)
@@ -844,7 +983,7 @@ def test_run_summary_note_counts_session_errors(monkeypatch):
 def test_run_summary_note_empty_on_clean_run(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _clean(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+    def _clean(session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None):
         return {
             "groups_detected": 1,
             "images_flagged": 2,
@@ -870,7 +1009,9 @@ def test_run_stops_between_sessions_when_cancelled(monkeypatch):
 
     calls = []
 
-    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+    def _fake_run(
+        session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None
+    ):
         calls.append(session)
         return {
             "groups_detected": 0,

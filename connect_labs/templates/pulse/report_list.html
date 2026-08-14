@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-screen-lg mx-auto px-4 py-8">
+
+  <h1 class="text-2xl font-semibold text-brand-deep-purple">Donor reports</h1>
+  <p class="text-sm text-gray-500 mt-1 mb-6">
+    One-page stewardship reports. Figures derive from verified, reimbursed delivery;
+    narrative and programme-specific quantities are yours to write.
+  </p>
+
+  {% if messages %}
+    {% for m in messages %}
+      <div class="mb-4 text-sm px-3 py-2 rounded bg-blue-50 text-blue-900">{{ m }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="bg-white rounded-lg shadow-sm p-4 mb-6">
+    <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">New report</h2>
+    <form method="post" class="flex gap-2 items-end">
+      {% csrf_token %}
+      <label class="flex-1 text-sm">
+        <span class="text-gray-600">Title</span>
+        <input name="title" placeholder="Emergency Cholera Response in Borno State"
+               class="mt-1 w-full border rounded px-2 py-1.5">
+      </label>
+      <label class="flex-1 text-sm">
+        <span class="text-gray-600">Programme</span>
+        <select name="program" class="mt-1 w-full border rounded px-2 py-1.5">
+          <option value="">All programmes</option>
+          {% for p in programs %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <button class="text-sm px-3 py-2 rounded bg-brand-deep-purple text-white">Create</button>
+    </form>
+  </div>
+
+  <div class="bg-white rounded-lg shadow-sm">
+    {% if reports %}
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-xs text-gray-500 uppercase tracking-wider text-left border-b">
+            <th class="p-3">Report</th>
+            <th class="p-3">Window</th>
+            <th class="p-3">Updated</th>
+            <th class="p-3"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in reports %}
+            <tr class="border-b last:border-0">
+              <td class="p-3">
+                <div class="font-medium">{{ r.title|default:"Untitled report" }}</div>
+                {% if r.prepared_for %}
+                  <div class="text-xs text-gray-500">for {{ r.prepared_for }}</div>
+                {% endif %}
+              </td>
+              <td class="p-3 text-gray-600">
+                {% if r.window_start and r.window_end %}
+                  {{ r.window_start|date:"j M Y" }} &ndash; {{ r.window_end|date:"j M Y" }}
+                {% else %}
+                  <span class="text-gray-400">All time</span>
+                {% endif %}
+              </td>
+              <td class="p-3 text-gray-600">{{ r.updated_at|date:"j M Y" }}</td>
+              <td class="p-3 text-right whitespace-nowrap">
+                <a href="{% url 'pulse:report_edit' slug=r.slug %}" class="text-blue-700">Edit</a>
+                <a href="{% url 'pulse:report' slug=r.slug %}" class="text-blue-700 ml-3">View</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="p-4 text-sm text-gray-500">No reports yet.</p>
+    {% endif %}
+  </div>
+
+  <p class="text-xs text-gray-500 mt-4">
+    A report&rsquo;s view link is unauthenticated and unguessable, so it can be sent to a funder
+    directly. Revoking one from its editor makes the link 404, indistinguishably from a URL that
+    never existed.
+  </p>
+</div>
+{% endblock %}

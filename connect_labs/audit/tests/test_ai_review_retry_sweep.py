@@ -122,6 +122,10 @@ def _run_with_agent(agent, monkeypatch, session=None):
     from connect_labs.labs.ai_review_agents import registry
 
     monkeypatch.setattr(registry, "get_agent", lambda aid: agent)
+    # resolve_urls_by_blob is a best-effort training-data annotation that hits
+    # HQ/Connect over the network -- irrelevant to what these tests check, and
+    # not something a fake data_access here can satisfy.
+    monkeypatch.setattr(tasks, "resolve_urls_by_blob", lambda **kwargs: {})
     session = session or _one_image_session()
     data_access = _FakeDataAccess(session)
     ai_reviewers = {"form/photo_a": [{"agent_id": agent.agent_id, "auto_apply_actions": list(agent.result_actions)}]}
@@ -142,6 +146,7 @@ def test_retry_sweep_recovers_a_transient_error(monkeypatch):
     assert agent.calls == 2  # first pass errors, retry sweep succeeds
     assert result["total_errors"] == 0
     assert result["total_passed"] == 1
+    assert result["error_kinds"] == {}
 
     assert len(session.assessments) == 2  # first-pass error persisted, then overwritten by the retry
     _visit_id, _blob_id, _qid, result_field, ai_result, _ai_notes, _ai_confidence = session.assessments[-1]
@@ -184,3 +189,101 @@ def test_retry_sweep_no_match_reaches_classifier_fail_export(monkeypatch):
     assert row["blob_id"] == "blobA"
     assert row["classifier_label"] == "Distinctly Failed"
     assert row["session_id"] == 10
+
+
+def test_retry_sweep_does_not_duplicate_an_already_exported_classifier_fail(monkeypatch):
+    """Two independent reviewers on one image: one genuinely fails on the
+    first pass, the other errors (making the image a retry candidate). The
+    retry re-runs BOTH reviewers -- if the already-failing one produces the
+    same no_match again, it must not be exported a second time."""
+    from connect_labs.labs.ai_review_agents import registry
+
+    class _AlwaysFailsAgent:
+        agent_id = "agent_fail_always"
+        name = "Always Fails"
+        requires_reading = False
+        result_actions = {"nope": {"ai_result": "no_match", "human_result": "fail", "button_label": "Fail"}}
+
+        def review(self, ctx):
+            return ReviewResult.failure(badge_label="Distinctly Failed")
+
+    always_fails = _AlwaysFailsAgent()
+    recovers = _RecoversOnRetryAgent()  # agent_id "agent_flaky", per its own class definition
+
+    agents = {"agent_fail_always": always_fails, "agent_flaky": recovers}
+    monkeypatch.setattr(registry, "get_agent", lambda aid: agents[aid])
+    monkeypatch.setattr(tasks, "resolve_urls_by_blob", lambda **kwargs: {})
+
+    calls = []
+    monkeypatch.setattr(tasks.s3_export, "record_classifier_fails", lambda rows: calls.append(rows))
+
+    session = _one_image_session()
+    data_access = _FakeDataAccess(session)
+    ai_reviewers = {
+        "form/photo_a": [
+            {"agent_id": "agent_fail_always", "auto_apply_actions": ["nope"]},
+            {"agent_id": "agent_flaky", "auto_apply_actions": ["ok"]},
+        ]
+    }
+
+    result = tasks._run_ai_review_on_sessions(
+        data_access=data_access,
+        session_ids=[10],
+        access_token="tok",
+        opp_id=42,
+        ai_reviewers=ai_reviewers,
+    )
+
+    # First pass: agent_flaky errors, agent_fail_always fails -> combined "error"
+    # (errors win). Retry: agent_flaky now succeeds, agent_fail_always fails
+    # again -> combined "no_match". The no_match classifier fail must appear
+    # exactly once, not once per pass.
+    assert result["total_failed"] == 1
+    assert result["total_errors"] == 0
+    assert calls and len(calls[0]) == 1
+    assert calls[0][0]["classifier_id"] == "agent_fail_always"
+
+
+def test_retry_sweep_honors_cancellation_and_does_not_complete_session(monkeypatch):
+    """A cancellation that lands after the first pass but before the retry
+    sweep starts must stop the sweep and leave the session un-completed, same
+    as a cancellation mid-first-pass would.
+
+    is_audit_creation_cancelled is stubbed to return False on its first call
+    (the first pass's own check, made once for this session's single image)
+    and True on every call after -- i.e. cancellation lands exactly at the
+    boundary between the first pass finishing and the retry sweep's own
+    pre-start check, which is the new code path this test exists to cover."""
+    agent = _RecoversOnRetryAgent()
+    from connect_labs.labs.ai_review_agents import registry
+
+    monkeypatch.setattr(registry, "get_agent", lambda aid: agent)
+    monkeypatch.setattr(tasks, "resolve_urls_by_blob", lambda **kwargs: {})
+
+    call_count = {"n": 0}
+
+    def _fake_cancelled(key):
+        call_count["n"] += 1
+        return call_count["n"] > 1
+
+    monkeypatch.setattr(tasks, "is_audit_creation_cancelled", _fake_cancelled)
+
+    session = _one_image_session()
+    data_access = _FakeDataAccess(session)
+    ai_reviewers = {"form/photo_a": [{"agent_id": agent.agent_id, "auto_apply_actions": ["ok"]}]}
+
+    result = tasks._run_ai_review_on_sessions(
+        data_access=data_access,
+        session_ids=[10],
+        access_token="tok",
+        opp_id=42,
+        ai_reviewers=ai_reviewers,
+        cancel_key="cancel-me",
+    )
+
+    assert result["cancelled"] is True
+    # The retry never got to run -- the first-pass "error" is what's persisted.
+    _visit_id, _blob_id, _qid, _result_field, ai_result, _ai_notes, _ai_confidence = session.assessments[-1]
+    assert ai_result == "error"
+    # Cancelled sessions must not be marked complete, so a restart can resume them.
+    assert not data_access.saved_data or not data_access.saved_data[-1].get("ai_review_complete")

@@ -19,7 +19,7 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views import View
 
-from connect_labs.pulse.models import PulseOpportunity, PulsePublicToken, PulseScalar
+from connect_labs.pulse.models import PulseOpportunity, PulsePublicToken, PulseReport, PulseScalar
 
 # Registered layouts. A layout is an arrangement of cards; adding one is a
 # template plus an entry here, which is the point of the card/layout split.
@@ -171,6 +171,178 @@ class PulsePublicView(View):
         context["public_token"] = row.token
         response = render(request, "pulse/display.html", context)
         # Labs already serves Disallow: / — belt and braces for a public URL.
+        response["X-Robots-Tag"] = "noindex, nofollow"
+        return response
+
+
+def _report_scope(report: PulseReport):
+    """Resolve a report's stored scope through the live API's own resolver.
+
+    Deliberately routed through ``_program_scope`` rather than reimplemented:
+    the report and the dashboard must agree about what "this programme, this
+    window" selects, and the only way to guarantee that is one resolver.
+    """
+    from connect_labs.pulse.api import _program_scope
+
+    class _Req:
+        # `_program_scope` reads request.GET and, for partner scoping, consults
+        # `_partner_names_allowed`. A report carries its own disclosure setting,
+        # so it answers that question itself rather than borrowing a session's.
+        GET = {}
+        pulse_partner_names_allowed = True
+
+    req = _Req()
+    req.GET = report.scope_params()
+    req.pulse_partner_names_allowed = report.show_partner_names
+    return _program_scope(req)
+
+
+class PulseReportListView(LoginRequiredMixin, View):
+    """Index of donor reports, and the place new ones are started."""
+
+    def get(self, request):
+        from connect_labs.pulse import reports as reports_module
+
+        return render(
+            request,
+            "pulse/report_list.html",
+            {
+                "reports": PulseReport.objects.filter(revoked=False)[:50],
+                "programs": reports_module.programs_for_picker(),
+            },
+        )
+
+    def post(self, request):
+        from connect_labs.pulse import reports as reports_module
+
+        program_id = (request.POST.get("program") or "").strip()
+        report = PulseReport.objects.create(
+            slug=secrets.token_urlsafe(18),
+            title=(request.POST.get("title") or "").strip() or "Untitled report",
+            program_id=int(program_id) if program_id.isdigit() else None,
+            deliverables=reports_module.default_deliverables(),
+            created_by=request.user,
+        )
+        messages.success(request, "Report created. Fill in what Pulse can't compute.")
+        return redirect("pulse:report_edit", slug=report.slug)
+
+
+class PulseReportEditView(LoginRequiredMixin, View):
+    """The editor: derived figures shown read-only, manual copy editable."""
+
+    def _get_report(self, slug) -> PulseReport:
+        report = PulseReport.objects.filter(slug=slug, revoked=False).first()
+        if report is None:
+            raise Http404("No such report")
+        return report
+
+    def get(self, request, slug):
+        from django.conf import settings
+
+        from connect_labs.pulse import reports as reports_module
+
+        report = self._get_report(slug)
+        context = reports_module.compute(report, _report_scope(report))
+        context.update(
+            {
+                "programs": reports_module.programs_for_picker(),
+                "basis_choices": PulseReport.BASIS_CHOICES,
+                "retention_days": getattr(settings, "PULSE_EVENT_RETENTION_DAYS", 30),
+            }
+        )
+        return render(request, "pulse/report_edit.html", context)
+
+    def post(self, request, slug):
+        report = self._get_report(slug)
+
+        if request.POST.get("action") == "revoke":
+            report.revoked = True
+            report.save(update_fields=["revoked", "updated_at"])
+            messages.success(request, "Report revoked — its share link now 404s.")
+            return redirect("pulse:report_list")
+
+        for f in ("eyebrow", "title", "prepared_for", "gift_line", "org_slug", "service_slug"):
+            setattr(report, f, (request.POST.get(f) or "").strip())
+        for f in ("intro", "where_we_worked", "partner_funding", "footnote", "photo_caption"):
+            setattr(report, f, (request.POST.get(f) or "").strip())
+
+        for f in ("program_id", "opportunity_id"):
+            raw = (request.POST.get(f) or "").strip()
+            setattr(report, f, int(raw) if raw.isdigit() else None)
+        for f in ("window_start", "window_end"):
+            setattr(report, f, (request.POST.get(f) or "").strip() or None)
+
+        report.show_partner_names = bool(request.POST.get("show_partner_names"))
+        report.site_chips = [c.strip() for c in (request.POST.get("site_chips") or "").split(",") if c.strip()]
+        report.deliverables = _deliverables_from_post(request.POST)
+
+        if request.FILES.get("photo"):
+            report.photo = request.FILES["photo"]
+
+        report.save()
+        messages.success(request, "Saved.")
+        return redirect("pulse:report_edit", slug=report.slug)
+
+
+def _deliverables_from_post(post) -> list[dict]:
+    """Rebuild the deliverable list from the editor's parallel field arrays.
+
+    Rows with no label are dropped rather than saved blank: an empty tile on a
+    donor report reads as a number nobody bothered to fill in.
+    """
+    labels = post.getlist("d_label")
+    descriptions = post.getlist("d_description")
+    bases = post.getlist("d_basis")
+    multipliers = post.getlist("d_multiplier")
+    overrides = post.getlist("d_override")
+    emphases = set(post.getlist("d_emphasis"))
+
+    rows = []
+    for i, label in enumerate(labels):
+        label = (label or "").strip()
+        if not label:
+            continue
+
+        def at(seq, idx=i, default=""):
+            return (seq[idx] if idx < len(seq) else default) or default
+
+        try:
+            multiplier = float(at(multipliers, default="1") or 1)
+        except (TypeError, ValueError):
+            multiplier = 1.0
+        override_raw = at(overrides).strip()
+
+        rows.append(
+            {
+                "label": label,
+                "description": at(descriptions).strip(),
+                "basis": at(bases, default=PulseReport.BASIS_SERVICES),
+                "multiplier": multiplier,
+                "override": override_raw or None,
+                "emphasis": str(i) in emphases,
+            }
+        )
+    return rows
+
+
+class PulseReportView(View):
+    """The report itself — web page and print surface in one.
+
+    Unauthenticated and slug-scoped, matching ``PulsePublicView``: a donor
+    report exists to be sent to a donor. Revoking is the same one-way switch,
+    and a revoked report is indistinguishable from one that never existed.
+    """
+
+    def get(self, request, slug):
+        from connect_labs.pulse import reports as reports_module
+
+        report = PulseReport.objects.filter(slug=slug).first()
+        if report is None or not report.is_usable:
+            raise Http404("No such report")
+
+        context = reports_module.compute(report, _report_scope(report))
+        context["is_print_surface"] = True
+        response = render(request, "pulse/report.html", context)
         response["X-Robots-Tag"] = "noindex, nofollow"
         return response
 
