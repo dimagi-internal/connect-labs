@@ -252,3 +252,97 @@ class TestCompletionDepth:
         monkeypatch.setattr(tasks.ingest, "rebuild_rollups", lambda **kw: 0)
         tasks.backfill_visits(days=days, page_pause=0)
         return seen
+
+
+class TestConvergence:
+    """Depth-unknown re-checks must resolve, or every run repeats them forever.
+
+    Observed in production the day depth tracking shipped: ~420 opportunities
+    marked complete by the pre-depth code returned an empty re-check each pass,
+    could never record a depth (completion requires seeing a page), and so were
+    re-requested on every pass -- while the loop guard counted each re-check as
+    work done and kept looping. ~530 requests per pass, indefinitely.
+    """
+
+    def _cutoff(self, days):
+        from django.utils import timezone
+
+        return timezone.now() - timezone.timedelta(days=days)
+
+    def test_an_empty_recheck_records_the_depth_it_verified(self, cursor, opp):
+        cursor.backfill_complete = True
+        cursor.backfill_complete_to = None
+        cursor.backfill_oldest_id = 29
+        cursor.save()
+        cutoff = self._cutoff(3650)
+
+        tasks._backfill_one(_Client([]), cursor, cutoff)
+
+        cursor.refresh_from_db()
+        assert cursor.backfill_complete
+        assert cursor.backfill_complete_to == cutoff, "the re-check verified this depth and must record it"
+
+    def test_an_empty_response_still_never_completes_a_fresh_cursor(self, cursor, opp):
+        """The empty-response hazard is unchanged for cursors not yet complete."""
+        tasks._backfill_one(_Client([]), cursor, self._cutoff(3650))
+
+        cursor.refresh_from_db()
+        assert not cursor.backfill_complete
+        assert cursor.backfill_complete_to is None
+
+    def test_a_recheck_that_finds_data_walks_to_exhaustion(self, cursor, opp):
+        """A wrongly-capped opportunity (the opp-411 case) still gets re-walked."""
+        cursor.backfill_complete = True
+        cursor.backfill_complete_to = None
+        cursor.save()
+
+        tasks._backfill_one(_Client([[_visit(30, 10)]]), cursor, self._cutoff(3650))
+
+        cursor.refresh_from_db()
+        assert cursor.backfill_complete_to == tasks._EPOCH
+
+    def test_rechecks_converge_instead_of_spinning(self, cursor, opp, monkeypatch):
+        """Pass one resolves the depth; pass two must not re-request the opp."""
+        cursor.backfill_complete = True
+        cursor.backfill_complete_to = None
+        cursor.save()
+
+        first = self._pass(monkeypatch)
+        second = self._pass(monkeypatch)
+
+        assert first["seen"] == [cursor.opportunity_id]
+        assert first["result"]["opportunities_satisfied"] == 1
+        assert second["seen"] == [], "a resolved re-check must not be requested again"
+
+    def test_a_pass_that_moves_nothing_reports_no_progress(self, cursor, opp, monkeypatch):
+        """What the loop guard watches: re-checking is not progress."""
+        cursor.backfill_complete = True
+        cursor.backfill_complete_to = None
+        cursor.save()
+
+        self._pass(monkeypatch)
+        cursor.refresh_from_db()
+        cursor.backfill_complete_to = None
+        cursor.save()  # force a second depth-unknown re-check of the same opp
+
+        # The stamp is progress; a pass where nothing changes state would be 0.
+        assert self._pass(monkeypatch)["result"]["opportunities_satisfied"] == 1
+
+    def _pass(self, monkeypatch):
+        seen = []
+
+        class _NullClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def paginate(self, endpoint, params=None, partial_ok=False):
+                seen.append(int(endpoint.split("/")[3]))
+                return iter([])
+
+        monkeypatch.setattr(tasks, "get_client", lambda **kw: _NullClient())
+        monkeypatch.setattr(tasks.ingest, "rebuild_rollups", lambda **kw: 0)
+        result = tasks.backfill_visits(days=3650, page_pause=0)
+        return {"seen": seen, "result": result}

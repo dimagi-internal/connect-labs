@@ -223,6 +223,7 @@ def backfill_visits(
 
     total = 0
     done = 0
+    satisfied = 0
     failed = 0
     stopped_early = False
 
@@ -234,9 +235,16 @@ def backfill_visits(
             if max_seconds is not None and (time.monotonic() - started) >= max_seconds:
                 stopped_early = True
                 break
+            before = (cursor.backfill_complete, cursor.backfill_complete_to)
             try:
                 total += _backfill_one(client, cursor, cutoff, page_pause=page_pause, max_pages=max_pages_per_opp)
                 done += 1
+                # "Processed without error" is not progress -- a pass that only
+                # re-checks the same opportunities looks identical every time.
+                # Progress is a cursor actually changing completion state, and
+                # it is what a caller must watch to know another pass can help.
+                if (cursor.backfill_complete, cursor.backfill_complete_to) != before:
+                    satisfied += 1
             except Exception as exc:
                 failed += 1
                 logger.warning("[pulse] backfill failed for opp %s: %s", cursor.opportunity_id, exc)
@@ -251,6 +259,7 @@ def backfill_visits(
     return {
         "stored": total,
         "opportunities_completed": done,
+        "opportunities_satisfied": satisfied,
         "opportunities_failed": failed,
         "opportunities_remaining": remaining,
         "stopped_early": stopped_early,
@@ -339,6 +348,16 @@ def _backfill_one(
         # the cutoff only satisfies requests no deeper than that cutoff.
         cursor.backfill_complete_to = _EPOCH if exhausted else cutoff
         cursor.save(update_fields=["backfill_complete", "backfill_complete_to"])
+    elif pages == 0 and cursor.backfill_complete and cursor.backfill_complete_to is None:
+        # A completion recorded before depth existed, re-checked at this cutoff,
+        # and the stream past backfill_oldest_id had nothing more. The
+        # completion claim is not new -- only the depth just verified is --
+        # so record it. Without this the cursor can never leave the
+        # depth-unknown state (marking complete requires seeing a page), and
+        # every run re-requests all such opportunities, forever: observed in
+        # production as ~420 empty requests per pass, every pass.
+        cursor.backfill_complete_to = cutoff
+        cursor.save(update_fields=["backfill_complete_to"])
     return stored
 
 
