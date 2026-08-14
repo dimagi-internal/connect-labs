@@ -18,7 +18,7 @@ from datetime import timezone as dt_timezone
 
 from django.conf import settings
 from django.db.models import Count, Max, Min, Q, Sum
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views import View
 
@@ -130,8 +130,8 @@ def _event_row(e: PulseEvent, partners: bool = False) -> list:
         # Two decimals is ~1.1 km -- the town scale the screen promises. Four
         # was ~11 m: household precision, readable out of the network tab on a
         # public link even though the map never *drew* it that precisely. Same
-        # fail-closed reasoning as partner names: what must not be shown must
-        # not be sent.
+        # fail-closed reasoning as partner names above: what must not be shown
+        # must not be sent.
         round(e.lat, 2) if e.lat is not None else None,
         round(e.lon, 2) if e.lon is not None else None,
         e.opportunity_id,
@@ -771,9 +771,41 @@ def _weekly_series(sc):
 
 
 class SummaryView(View):
-    """Scalars, rollups, scope and ingest health — everything a card needs at load."""
+    """Scalars, rollups, scope and ingest health — everything a card needs at load.
 
-    def get(self, request):
+    Cached briefly (``PULSE_SUMMARY_CACHE_SECONDS``): the payload aggregates the
+    full-history event table, which crossed 1.6M rows the day the fact store
+    was completed -- and with it this endpoint went from instant to ~18s, which
+    is what every display's "Connecting…" was waiting on. The data underneath
+    only changes on poller ticks, so a short cache loses nothing a wall display
+    could show, and ``warm_summary_cache`` recomputes it on a timer so nobody
+    pays the cold cost interactively. The key carries the full query string and
+    the caller's naming entitlement, so scoped and anonymised variants can
+    never serve each other.
+    """
+
+    def get(self, request, refresh=False):
+        import hashlib
+        from urllib.parse import urlencode
+
+        from django.core.cache import cache
+
+        ttl = getattr(settings, "PULSE_SUMMARY_CACHE_SECONDS", 180)
+        key = None
+        if ttl:
+            raw = urlencode(sorted(request.GET.items())) + f"|names={int(_partner_names_allowed(request))}"
+            key = "pulse:summary:" + hashlib.md5(raw.encode()).hexdigest()
+            if not refresh:
+                hit = cache.get(key)
+                if hit is not None:
+                    return HttpResponse(hit, content_type="application/json")
+
+        response = self._build(request)
+        if key is not None and response.status_code == 200:
+            cache.set(key, response.content, ttl)
+        return response
+
+    def _build(self, request):
         window_hours = min(int(request.GET.get("hours", 72)), 24 * 30)
         since = timezone.now() - timedelta(hours=window_hours)
 

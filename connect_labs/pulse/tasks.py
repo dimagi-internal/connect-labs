@@ -418,3 +418,37 @@ def fold_events_to_grid() -> dict:
     result = ingest.fold_events_to_grid()
     result["deleted"] = ingest.prune_folded_events()
     return result
+
+
+@celery_app.task(name="connect_labs.pulse.tasks.warm_summary_cache")
+def warm_summary_cache() -> int:
+    """Recompute the summary the displays open with, so no viewer pays cold.
+
+    The summary aggregates the full-history event table (~18s cold). The cache
+    on SummaryView makes repeat loads instant, but somebody still has to be
+    first -- and "first" is exactly the funder opening a public link. Warming
+    the two unscoped variants (partner names on and off, the only entitlement
+    axis) on a timer means the interactive path is always a cache hit; scoped
+    requests (a filter applied) are rarer, warm on first use, and ride the
+    same TTL.
+    """
+    from django.http import QueryDict
+
+    from connect_labs.pulse.api import SummaryView
+
+    class _User:
+        is_authenticated = True
+
+    class _Anon:
+        is_authenticated = False
+
+    class _Req:
+        def __init__(self, user):
+            self.GET = QueryDict("")
+            self.user = user
+
+    warmed = 0
+    for user in (_User(), _Anon()):
+        SummaryView().get(_Req(user), refresh=True)
+        warmed += 1
+    return warmed

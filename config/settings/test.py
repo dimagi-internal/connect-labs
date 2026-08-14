@@ -44,3 +44,9 @@ MIDDLEWARE.insert(_auth_idx + 1, "connect_labs.campaign.middleware.CampaignOAuth
 
 # CommCareConnect
 # ------------------------------------------------------------------------------
+
+# Pulse
+# ------------------------------------------------------------------------------
+# Summary caching off: tests assert the payload tracks DB changes within a
+# single run, which a TTL cache would (correctly, in prod) prevent.
+PULSE_SUMMARY_CACHE_SECONDS = 0

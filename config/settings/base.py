@@ -694,7 +694,18 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.pulse.tasks.fold_events_to_grid",
         "schedule": crontab(hour=3, minute=20),
     },
+    # Recompute the cached display summary before its TTL lapses, so the
+    # ~18s full-history aggregation never runs on a viewer's first paint.
+    "pulse-summary-warm": {
+        "task": "connect_labs.pulse.tasks.warm_summary_cache",
+        "schedule": 60.0,
+    },
 }
+
+# How long a computed display summary may be served from cache. The warmer
+# refreshes every 60s, so viewers see data at most ~1 minute older than the
+# poller has; 0 disables caching entirely (tests).
+PULSE_SUMMARY_CACHE_SECONDS = env.int("PULSE_SUMMARY_CACHE_SECONDS", default=180)
 
 # Seconds to wait between pages of a history backfill. A full walk is ~1.6M rows
 # off a production export endpoint that serialises every visit's form JSON, so
