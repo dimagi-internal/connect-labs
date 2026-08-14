@@ -175,9 +175,35 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
             selected_flw_user_ids=selected_flw_user_ids,
         )
 
+        # Idempotency: skip any (opportunity, track) call that already has a
+        # session from a PRIOR invocation against this same run_id. Makes any
+        # re-invocation for the same run_id (a manual resume, or the future
+        # stale-run sweep) safe to call without duplicating already-completed
+        # work -- a fresh run's first invocation just finds nothing to skip.
+        audit_data_access = AuditDataAccess(
+            opportunity_id=opportunity_ids[0], request=create_mock_request(access_token, opportunity_ids[0])
+        )
+        try:
+            existing_sessions = audit_data_access.get_sessions_by_workflow_run(run_id)
+        finally:
+            audit_data_access.close()
+        already_done = {(s.opportunity_id, s.tag) for s in existing_sessions}
+        # Seed sessions_created from what a PRIOR invocation already made (0 on
+        # a fresh run) -- calls skipped below as already-done never re-enter
+        # run_audit_creation, so their sessions would otherwise go uncounted.
+        sessions_created = len(existing_sessions)
+        if already_done:
+            calls = [c for c in calls if (c["opportunities"][0]["id"], c["criteria"]["tag"]) not in already_done]
+            logger.info(
+                "[WeeklyDualTrackAudit] run %s: %d call(s) already have sessions, %d remaining",
+                run_id,
+                len(already_done),
+                len(calls),
+            )
+
         from connect_labs.utils.progress_relays import pop_relay, register_relay
 
-        successful, failed, sessions_created = 0, 0, 0
+        successful, failed = 0, 0
         for idx, call in enumerate(calls):
             # Cooperative cancellation (the "Cancel" button on the run).
             # Checked between calls (not just inside AI review) so a cancel
