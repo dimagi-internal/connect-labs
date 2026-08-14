@@ -24,7 +24,10 @@
     mode: 'replay',
     speed: 240,
     replayHours: 48,
-    livePollMs: 15000,
+    // The server now ingests every ~15s; a 15s client poll on top of that
+    // doubled the worst-case lag for no reason. Empty polls are a few
+    // hundred bytes.
+    livePollMs: 5000,
     // Replay-seconds of silence tolerated before jumping to the next event.
     // 20 min keeps natural gaps between visits feeling real while collapsing
     // the overnight dead zone.

@@ -9,9 +9,18 @@ _LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache
 
 
 class _FakeSession:
-    def __init__(self, data):
+    def __init__(self, data, id=1, workflow_run_id=None, opportunity_id=42, opportunity_name="Test Opp"):
         self.data = data
         self.assessments = []  # (visit_id, blob_id, question_id, result, ai_result, ai_notes, ai_confidence)
+        # Only needed by the classifier_fail_rows path (session.id/etc. -- see
+        # tasks.py's fail_verdicts loop) -- other tests in this file don't
+        # exercise that path far enough to touch these, but a fail-producing
+        # test needs real values rather than a crash-and-swallow AttributeError.
+        self.id = id
+        self.workflow_run_id = workflow_run_id
+        self.opportunity_id = opportunity_id
+        self.opportunity_name = opportunity_name
+        self.visit_ids = list(data.get("visit_images", {}).keys())
 
     def set_assessment(
         self, visit_id, blob_id, question_id, result, notes, ai_result=None, ai_notes=None, ai_confidence=None
@@ -68,6 +77,22 @@ class _FailAgent:
         return ReviewResult.failure(badge_label="Distinctly Failed")
 
 
+class _ErrorAgent:
+    """Stand-in agent that always errors -- used to verify a co-occurring
+    error verdict from one reviewer doesn't blank out another reviewer's own
+    implied result in the classifier-fail export."""
+
+    agent_id = "agent_error"
+    name = "Error Agent"
+    requires_reading = False
+    result_actions = {}
+    seen = []
+
+    def review(self, ctx):
+        type(self).seen.append(ctx.metadata["blob_id"])
+        return ReviewResult.error("boom")
+
+
 class _ReadingAgent:
     """Stand-in agent that requires a reading and records what it received —
     used to verify each reviewer gets its OWN configured comparison_field's
@@ -90,11 +115,13 @@ def patched_registry(monkeypatch):
         "agent_a": _MatchAgent(),
         "agent_b": _OtherAgent(),
         "agent_fail": _FailAgent(),
+        "agent_error": _ErrorAgent(),
         "agent_reading": _ReadingAgent(),
     }
     _MatchAgent.seen = []
     _OtherAgent.seen = []
     _FailAgent.seen = []
+    _ErrorAgent.seen = []
     _ReadingAgent.seen_readings = []
     from connect_labs.labs.ai_review_agents import registry
 
@@ -190,6 +217,197 @@ def test_two_independent_reviewers_on_one_path_both_run_and_fail_wins(patched_re
     assert ai_result == "no_match"
     assert ai_notes == "Distinctly Failed"
     assert result == "fail"
+
+
+def test_session_still_saved_when_url_resolution_raises(patched_registry, monkeypatch):
+    """Regression: if resolve_urls_by_blob raises (e.g. a malformed visit_id,
+    or a Connect API error), the already-computed AI review results for this
+    session must still be saved -- a failure in this best-effort training-data
+    feature must never discard real review work."""
+    session = _FakeSession(
+        {
+            "visit_images": {
+                "1": [{"blob_id": "blobA", "question_id": "form/photo_a", "related_fields": []}],
+            }
+        }
+    )
+    data_access = _FakeDataAccess(session)
+    ai_reviewers = {"form/photo_a": [{"agent_id": "agent_fail", "auto_apply_actions": ["nope"]}]}
+
+    save_calls = []
+    data_access.save_audit_session = lambda s: save_calls.append(s)
+
+    def _boom(**kwargs):
+        raise RuntimeError("Connect API down")
+
+    monkeypatch.setattr("connect_labs.audit.tasks.resolve_urls_by_blob", _boom)
+    monkeypatch.setattr("connect_labs.audit.tasks.s3_export.record_classifier_fails", lambda rows: None)
+
+    tasks._run_ai_review_on_sessions(
+        data_access=data_access,
+        session_ids=[10],
+        access_token="tok",
+        opp_id=42,
+        ai_reviewers=ai_reviewers,
+    )
+
+    assert len(save_calls) == 1
+    assert len(session.assessments) == 1  # the actual review result, unaffected
+
+
+def test_classifier_fail_rows_get_urls_resolved_before_human_review(patched_registry, monkeypatch):
+    """A freshly-recorded classifier-fail row should carry image/form/connect
+    URLs resolved right now (once per session), not wait for a human to
+    save/complete the session (see connect_labs/audit/classifier_fail_sync.py
+    for the pre-existing post-review-only path this feature no longer depends
+    on exclusively).
+
+    Uses a session.opportunity_id that DIFFERS from the batch-level opp_id
+    (as in a per-FLW multi-opportunity run) -- regression coverage for a bug
+    where URL resolution used the wrong opportunity_id, which a same-value
+    session/opp_id pairing would silently pass."""
+    session = _FakeSession(
+        {
+            "visit_images": {
+                "1": [{"blob_id": "blobA", "question_id": "form/photo_a", "related_fields": []}],
+            }
+        },
+        opportunity_id=99,
+    )
+    data_access = _FakeDataAccess(session)
+    ai_reviewers = {"form/photo_a": [{"agent_id": "agent_fail", "auto_apply_actions": ["nope"]}]}
+
+    captured_resolve_kwargs = {}
+
+    def _fake_resolve_urls_by_blob(**kwargs):
+        captured_resolve_kwargs.update(kwargs)
+        return {"blobA": {"image_url": "https://labs/image/blobA", "form_url": "https://hq/blobA"}}
+
+    captured_rows = {}
+    monkeypatch.setattr("connect_labs.audit.tasks.resolve_urls_by_blob", _fake_resolve_urls_by_blob)
+    monkeypatch.setattr(
+        "connect_labs.audit.tasks.s3_export.record_classifier_fails",
+        lambda rows: captured_rows.setdefault("rows", rows),
+    )
+
+    tasks._run_ai_review_on_sessions(
+        data_access=data_access,
+        session_ids=[10],
+        access_token="tok",
+        opp_id=42,  # primary/batch opp_id -- deliberately different from session.opportunity_id
+        ai_reviewers=ai_reviewers,
+    )
+
+    assert captured_resolve_kwargs["data_access"] is data_access
+    assert captured_resolve_kwargs["access_token"] == "tok"
+    assert captured_resolve_kwargs["opportunity_id"] == 99  # session's own opp, not the batch opp_id
+    assert len(captured_rows["rows"]) == 1
+    assert captured_rows["rows"][0]["image_url"] == "https://labs/image/blobA"
+    assert captured_rows["rows"][0]["form_url"] == "https://hq/blobA"
+
+
+def test_classifier_fail_row_uses_its_own_image_opportunity_id(patched_registry, monkeypatch):
+    """Regression: a multi-opp combined session (e.g. muac_picture_audit) can
+    flag images sourced from different opportunities -- each row's stored
+    opportunity_id must be that image's own, not session.opportunity_id. The
+    actual image download/review must use that same per-image opportunity
+    too, not just the exported row -- a prior bug used session's default
+    opp_id for download_image_from_connect and ReviewContext.metadata even
+    though the per-image opportunity_id was already available."""
+    session = _FakeSession(
+        {
+            "visit_images": {
+                "1": [
+                    {"blob_id": "blobA", "question_id": "form/photo_a", "related_fields": [], "opportunity_id": 555},
+                    {"blob_id": "blobB", "question_id": "form/photo_b", "related_fields": [], "opportunity_id": 777},
+                ],
+            }
+        },
+        opportunity_id=1,
+    )
+
+    class _TrackingDataAccess(_FakeDataAccess):
+        def __init__(self, session):
+            super().__init__(session)
+            self.download_calls = []
+
+        def download_image_from_connect(self, blob_id, opp_id):
+            self.download_calls.append((blob_id, opp_id))
+            return super().download_image_from_connect(blob_id, opp_id)
+
+    data_access = _TrackingDataAccess(session)
+    ai_reviewers = {
+        "form/photo_a": [{"agent_id": "agent_fail", "auto_apply_actions": ["nope"]}],
+        "form/photo_b": [{"agent_id": "agent_fail", "auto_apply_actions": ["nope"]}],
+    }
+
+    captured_rows = {}
+    monkeypatch.setattr("connect_labs.audit.tasks.resolve_urls_by_blob", lambda **kwargs: {})
+    monkeypatch.setattr(
+        "connect_labs.audit.tasks.s3_export.record_classifier_fails",
+        lambda rows: captured_rows.setdefault("rows", rows),
+    )
+
+    tasks._run_ai_review_on_sessions(
+        data_access=data_access,
+        session_ids=[10],
+        access_token="tok",
+        opp_id=1,
+        ai_reviewers=ai_reviewers,
+    )
+
+    rows_by_blob = {row["blob_id"]: row for row in captured_rows["rows"]}
+    assert rows_by_blob["blobA"]["opportunity_id"] == 555
+    assert rows_by_blob["blobB"]["opportunity_id"] == 777
+
+    downloads_by_blob = dict(data_access.download_calls)
+    assert downloads_by_blob["blobA"] == 555
+    assert downloads_by_blob["blobB"] == 777
+
+
+def test_classifier_fail_row_uses_its_own_verdicts_implied_result_not_combined(patched_registry, monkeypatch):
+    """When a co-occurring reviewer errors on the same image, the combine step
+    lets the error win and outcome.human_result comes back None -- but the
+    genuinely-failing reviewer's own exported row should still carry ITS OWN
+    implied result (from its own auto_apply_actions mapping), not the blanked
+    combined value."""
+    session = _FakeSession(
+        {
+            "visit_images": {
+                "1": [{"blob_id": "blobA", "question_id": "form/photo_a", "related_fields": []}],
+            }
+        }
+    )
+    data_access = _FakeDataAccess(session)
+    ai_reviewers = {
+        "form/photo_a": [
+            {"agent_id": "agent_fail", "auto_apply_actions": ["nope"]},
+            {"agent_id": "agent_error", "auto_apply_actions": []},
+        ],
+    }
+
+    captured_rows = {}
+    monkeypatch.setattr(
+        "connect_labs.audit.tasks.s3_export.record_classifier_fails",
+        lambda rows: captured_rows.setdefault("rows", rows),
+    )
+
+    tasks._run_ai_review_on_sessions(
+        data_access=data_access,
+        session_ids=[10],
+        access_token="tok",
+        opp_id=42,
+        ai_reviewers=ai_reviewers,
+    )
+
+    # The combined ai_result is "error" (error wins over no_match), so the
+    # assessment's own human_result is None -- but agent_fail's row must still
+    # show its own implied "fail", not that blanked combined value.
+    assert len(session.assessments) == 1
+    assert session.assessments[0][3] is None  # combined human `result` on the assessment
+    fail_rows = [r for r in captured_rows["rows"] if r["classifier_id"] == "agent_fail"]
+    assert len(fail_rows) == 1
+    assert fail_rows[0]["ai_implied_result"] == "fail"
 
 
 def test_two_reviewers_on_one_image_run_concurrently_not_sequentially(patched_registry, monkeypatch):

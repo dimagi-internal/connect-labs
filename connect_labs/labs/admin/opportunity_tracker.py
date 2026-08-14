@@ -32,7 +32,7 @@ from django.db.models.functions import TruncDate, TruncMonth
 from django.utils import timezone
 
 from connect_labs.pulse.models import PulseEvent, PulseOpportunity, PulseOrganization, PulseRollup, PulseWork
-from connect_labs.pulse.normalize import COUNTRY_NAMES, service_label
+from connect_labs.pulse.normalize import COUNTRY_NAMES, looks_like_test, service_label
 from connect_labs.utils.datetime import get_month_series
 
 
@@ -86,11 +86,22 @@ def status_for(opp: PulseOpportunity) -> str:
 def opportunity_filter_choices() -> dict:
     """Menus built from what's actually in the mirror, not a static list --
     same philosophy as ``_program_scope``'s menus in connect_labs/pulse/api.py,
-    so a filter can never resolve to a guaranteed-empty screen."""
-    delivery_types = sorted(
-        PulseOpportunity.objects.exclude(service_slug="").values_list("service_slug", flat=True).distinct()
-    )
-    countries = sorted(PulseOpportunity.objects.exclude(country="").values_list("country", flat=True).distinct())
+    so a filter can never resolve to a guaranteed-empty screen.
+
+    Excludes test/demo opportunities from the menus themselves (not just from
+    the filtered results below) -- otherwise a country or delivery type that
+    only ever appears on internal scaffolding would show up as a selectable
+    filter that resolves to a screen full of test data.
+    """
+    # .values(...) rather than full model instances -- this only needs three
+    # string columns to dedupe, not every field on ~500 PulseOpportunity rows.
+    real_rows = [
+        row
+        for row in PulseOpportunity.objects.values("name", "service_slug", "country")
+        if not looks_like_test(row["name"])
+    ]
+    delivery_types = sorted({row["service_slug"] for row in real_rows if row["service_slug"]})
+    countries = sorted({row["country"] for row in real_rows if row["country"]})
     return {
         "delivery_types": [{"slug": s, "label": service_label(s)} for s in delivery_types],
         "countries": [{"code": c, "label": country_label(c)} for c in countries],
@@ -105,16 +116,50 @@ def filtered_opportunities(*, delivery_type=None, country=None, funder=None) -> 
     functions below -- they take opportunities/ids directly rather than
     filter kwargs, so nothing re-queries or re-scans funder_for() a second time
     for the same combination.
+
+    Test/demo opportunities are always excluded, unconditionally -- this
+    mirrors ``connect_labs/pulse/api.py``'s own ``is_test`` exclusion for
+    programmes (same ``looks_like_test()`` helper, applied to the opportunity's
+    own name since ``PulseOpportunity`` carries no ``is_test`` column of its
+    own). There is deliberately no filter toggle to bring them back: a global
+    cross-workspace report is exactly the place a stray "[TEST] ..." row would
+    be mistaken for real delivery.
     """
     qs = PulseOpportunity.objects.all()
     if delivery_type:
         qs = qs.filter(service_slug=delivery_type)
     if country:
         qs = qs.filter(country=country)
-    opps = list(qs)
+    opps = [o for o in qs if not looks_like_test(o.name)]
     if funder:
         opps = [o for o in opps if funder_for(o.name) == funder]
     return opps
+
+
+def top_level_metrics(opportunities: list[PulseOpportunity]) -> dict:
+    """Headline counts for the strip shown above the tabs.
+
+    Takes the same delivery_type/country/funder-filtered scope as the rest of
+    the page, but -- like the Visit Stats tab's charts -- is NOT further
+    narrowed by the Opportunities tab's own Status filter: "Active
+    Opportunities" and "Active Countries" already encode their own notion of
+    active via ``status_for()``, and "Visits, Last 7 Days" is an all-time-scope
+    figure the same way the running-total charts are.
+    """
+    opp_ids = [o.opportunity_id for o in opportunities]
+    active = [o for o in opportunities if status_for(o) == "Active"]
+    since_7d = timezone.now() - timedelta(days=7)
+    visits_7d = (
+        PulseRollup.objects.filter(opportunity_id__in=opp_ids, status="approved", bucket_hour__gte=since_7d).aggregate(
+            total=Sum("n")
+        )["total"]
+        or 0
+    )
+    return {
+        "active_opps": len(active),
+        "visits_7d": visits_7d,
+        "active_countries": len({o.country for o in active if o.country}),
+    }
 
 
 def opportunity_detail_rows(opportunities: list[PulseOpportunity]) -> list[dict]:

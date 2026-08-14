@@ -78,6 +78,37 @@ def test_ensure_opp_data_registers_opp_and_stashes_manifest(tmp_path):
 
 
 @pytest.mark.django_db
+def test_ensure_opp_data_clears_clone_registry_claim(tmp_path):
+    """Ensuring an env-owned opp divorces it from the clone registry: a row the
+    clone pipeline claimed via cloned_from_opportunity_id is reclaimed as authored
+    env data, so a later synthetic_clone_generate can't find and trample it
+    (#1166 — the KMC cohort regenerated nutrition-demo's Eastern Cluster this way).
+    This also makes env ensure the one-call restore after such a trample."""
+    _write_manifest(tmp_path)
+    invalidate_cache()
+
+    # As left behind by a clone run: claimed by a source opp, re-filed, re-labelled.
+    SyntheticOpportunity.objects.create(
+        opportunity_id=OPP_ID,
+        label="[Synthetic] KMC - NG - BERI - P1 - May 26",
+        labs_only=True,
+        enabled=True,
+        gdrive_folder_id="clone-fixture-folder",
+        program_id=10011,
+        cloned_from_opportunity_id=1790,
+    )
+
+    resource = OppDataResource(kind="opp_data", opportunity_id=OPP_ID, manifest="opp.yaml", program_id=10110)
+    ensure_opp_data(resource, EnsureContext(env_dir=tmp_path))
+
+    row = SyntheticOpportunity.objects.get(opportunity_id=OPP_ID)
+    assert row.cloned_from_opportunity_id is None
+    assert row.label == "PAR Demo Opp"
+    assert row.program_id == 10110
+    assert row.gdrive_folder_id == ""
+
+
+@pytest.mark.django_db
 def test_ensure_opp_data_is_idempotent(tmp_path):
     _write_manifest(tmp_path)
     invalidate_cache()

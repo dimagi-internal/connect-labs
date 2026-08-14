@@ -65,7 +65,11 @@ def test_export_csv_returns_one_row_per_image_in_the_group(labs_client, monkeypa
 
     class FakeDataAccess:
         def __init__(self, *a, **k):
-            pass
+            # AuditDataAccess normally derives this from request.session["labs_oauth"] --
+            # _resolve_visit_cluster_group reads data_access.access_token unconditionally
+            # (resolve_org_slug's request-based path never actually uses the value, but
+            # accessing the attribute happens regardless of that short-circuit).
+            self.access_token = "test-token-abc"
 
         def get_audit_session(self, session_id, try_multiple_opportunities=False):
             return session
@@ -140,7 +144,11 @@ def test_export_csv_degrades_gracefully_when_visit_batch_fetch_fails(labs_client
 
     class FakeDataAccess:
         def __init__(self, *a, **k):
-            pass
+            # AuditDataAccess normally derives this from request.session["labs_oauth"] --
+            # _resolve_visit_cluster_group reads data_access.access_token unconditionally
+            # (resolve_org_slug's request-based path never actually uses the value, but
+            # accessing the attribute happens regardless of that short-circuit).
+            self.access_token = "test-token-abc"
 
         def get_audit_session(self, session_id, try_multiple_opportunities=False):
             return session

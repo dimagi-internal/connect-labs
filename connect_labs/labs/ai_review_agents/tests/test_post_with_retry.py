@@ -1,8 +1,8 @@
 """Tests for post_with_retry (connect_labs.labs.ai_review_agents.base).
 
-Shared by the MUAC OverZoom / MUAC Match / Scale Validation agents, all of
-which call the same classifier gateway and previously treated a single 429
-(rate limited / cold start) as a terminal error with no retry.
+Shared by the MUAC OverZoom / MUAC Match / Scale Validation / Scale Dial
+agents, all of which call the same classifier gateway and previously treated
+a single 429 (rate limited / cold start) as a terminal error with no retry.
 """
 
 from unittest.mock import MagicMock, call
@@ -168,9 +168,18 @@ def test_logs_a_warning_on_each_retry(monkeypatch):
     logger.warning.assert_called_once()
 
 
+# ---------------------------------------------------------------------------
+# Retry-on-unreachable: a fast connection failure (refused, DNS, reset -- NOT
+# a timeout, see the timeout tests further down) gets the same retry treatment
+# as a 429. Previously any connection failure bypassed this helper's retry
+# loop entirely and raised straight out to the caller's generic
+# `except httpx.HTTPError` on the very first attempt.
+# ---------------------------------------------------------------------------
+
+
 def test_retries_on_connect_error_then_succeeds():
-    """A dropped connection (timeout, DNS, refused) previously bypassed this
-    helper's retry loop entirely -- it must now be retried like a 429."""
+    """A dropped connection (refused, DNS) previously bypassed this helper's
+    retry loop entirely -- it must now be retried like a 429."""
     client = MagicMock()
     client.post.side_effect = [httpx.ConnectError("connection refused"), _response(200)]
 
@@ -183,12 +192,12 @@ def test_retries_on_connect_error_then_succeeds():
 def test_raises_after_exhausting_retries_on_persistent_connect_error():
     client = MagicMock()
     client.post.side_effect = [
-        httpx.ConnectTimeout("timed out"),
-        httpx.ConnectTimeout("timed out"),
-        httpx.ConnectTimeout("timed out"),
+        httpx.ConnectError("connection refused"),
+        httpx.ConnectError("connection refused"),
+        httpx.ConnectError("connection refused"),
     ]
 
-    with pytest.raises(httpx.ConnectTimeout):
+    with pytest.raises(httpx.ConnectError):
         post_with_retry(client, "http://x/classify", json={"a": 1}, max_retries=2, backoff_seconds=0)
 
     assert client.post.call_count == 3  # initial attempt + 2 retries
@@ -199,7 +208,7 @@ def test_connect_error_backoff_matches_429_schedule(monkeypatch):
     sleeps = []
     monkeypatch.setattr(base.time, "sleep", lambda s: sleeps.append(s))
     client = MagicMock()
-    client.post.side_effect = [httpx.ReadTimeout("slow"), httpx.ReadTimeout("slow"), _response(200)]
+    client.post.side_effect = [httpx.ConnectError("refused"), httpx.ConnectError("refused"), _response(200)]
 
     post_with_retry(client, "http://x/classify", json={}, max_retries=3, backoff_seconds=2.0)
 
@@ -207,8 +216,8 @@ def test_connect_error_backoff_matches_429_schedule(monkeypatch):
 
 
 def test_mixed_connect_error_then_429_then_success():
-    """A transport error and a 429 can both occur across retries of the same
-    call -- the loop must handle either failure mode on any attempt."""
+    """A connection failure and a 429 can both occur across retries of the
+    same call -- the loop must handle either failure mode on any attempt."""
     client = MagicMock()
     client.post.side_effect = [httpx.ConnectError("refused"), _response(429), _response(200)]
 
@@ -227,3 +236,126 @@ def test_logs_a_warning_on_connect_error_retry(monkeypatch):
     post_with_retry(client, "http://x/classify", json={}, backoff_seconds=0, logger=logger)
 
     logger.warning.assert_called_once()
+
+
+def test_timeout_is_never_retried(monkeypatch):
+    """A timeout already costs a full client timeout of wall-clock per
+    attempt -- retrying it would multiply that cost by max_retries+1 for the
+    single most expensive failure mode, so unlike a plain connection failure
+    it gets exactly one attempt."""
+    monkeypatch.setattr(base.time, "sleep", lambda s: None)
+    client = MagicMock()
+    client.post.side_effect = httpx.ReadTimeout("The read operation timed out")
+
+    with pytest.raises(httpx.ReadTimeout):
+        post_with_retry(client, "http://x/classify", json={}, backoff_seconds=0)
+
+    assert client.post.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Per-call timing / outcome record.
+#
+# This is the only place classifier latency is captured anywhere. Without these
+# lines, "why was that run slow?" can only be answered by dividing total
+# wall-clock by an ASSUMED pool width, because no per-call duration is recorded.
+# ---------------------------------------------------------------------------
+
+
+def _classifier_lines(logger):
+    """The rendered [classifier] records emitted to a mock logger."""
+    return [c.args[0] % c.args[1:] for c in logger.info.call_args_list if c.args and "[classifier]" in str(c.args[0])]
+
+
+def test_logs_one_timing_record_per_successful_call():
+    client = MagicMock()
+    client.post.return_value = _response(200)
+    logger = MagicMock()
+
+    post_with_retry(client, "http://x/predict", json={}, logger=logger, agent_id="scale_validation")
+
+    lines = _classifier_lines(logger)
+    assert len(lines) == 1, lines
+    assert "agent=scale_validation" in lines[0]
+    assert "endpoint=/predict" in lines[0]
+    assert "outcome=ok" in lines[0]
+    assert "status=200" in lines[0]
+    assert "attempts=1" in lines[0]
+    assert "elapsed_ms=" in lines[0]
+
+
+def test_non_2xx_is_recorded_as_a_gateway_error_not_ok():
+    """raise_for_status() happens in the caller, so a 500 reaches the caller as
+    a normal return -- the timing record must still name it a failure."""
+    client = MagicMock()
+    client.post.return_value = _response(500)
+    logger = MagicMock()
+
+    post_with_retry(client, "http://x/predict", json={}, logger=logger, agent_id="muac_match")
+
+    (line,) = _classifier_lines(logger)
+    assert "outcome=gateway_error" in line
+    assert "status=500" in line
+
+
+def test_timeout_is_recorded_and_reraised():
+    """The dominant production failure. It must be named a timeout (not lumped
+    in with connect failures) and must still propagate to the agent's own
+    except block, which is what turns it into a ReviewResult."""
+    client = MagicMock()
+    client.post.side_effect = httpx.ReadTimeout("The read operation timed out")
+    logger = MagicMock()
+
+    with pytest.raises(httpx.ReadTimeout):
+        post_with_retry(client, "http://x/predict", json={}, logger=logger, agent_id="scale_validation")
+
+    (line,) = _classifier_lines(logger)
+    assert "outcome=timeout" in line
+    assert "detail=ReadTimeout" in line
+    assert "elapsed_ms=" in line
+
+
+def test_connect_failure_is_recorded_as_unreachable_not_timeout():
+    """Pinned with max_retries=0: a connect failure now retries by default
+    (see the retry-on-unreachable tests above), which would otherwise produce
+    one [classifier] line per attempt instead of the single line this test
+    checks. The classification itself -- unreachable, not timeout -- is the
+    same regardless of how many attempts are made."""
+    client = MagicMock()
+    client.post.side_effect = httpx.ConnectError("nope")
+    logger = MagicMock()
+
+    with pytest.raises(httpx.ConnectError):
+        post_with_retry(client, "http://x/predict", json={}, logger=logger, agent_id="scale_validation", max_retries=0)
+
+    (line,) = _classifier_lines(logger)
+    assert "outcome=unreachable" in line
+
+
+def test_exhausted_rate_limit_is_recorded_once_with_the_attempt_count(monkeypatch):
+    monkeypatch.setattr(base.time, "sleep", lambda s: None)
+    client = MagicMock()
+    client.post.side_effect = [_response(429), _response(429), _response(429)]
+    logger = MagicMock()
+
+    post_with_retry(client, "http://x/predict", json={}, max_retries=2, backoff_seconds=0, logger=logger)
+
+    (line,) = _classifier_lines(logger)
+    assert "outcome=rate_limited" in line
+    assert "attempts=3" in line
+
+
+def test_timing_record_is_skipped_when_no_logger_is_passed():
+    """post_with_retry is called with logger=None in some paths -- the record
+    must not become a required argument."""
+    client = MagicMock()
+    client.post.return_value = _response(200)
+
+    assert post_with_retry(client, "http://x/predict", json={}).status_code == 200
+
+
+def test_is_timeout_recognises_the_wrapped_socket_message():
+    """The production logs show 'The read operation timed out' surfacing from
+    the socket layer, which is not always an httpx.TimeoutException."""
+    assert base._is_timeout(OSError("The read operation timed out")) is True
+    assert base._is_timeout(OSError("connection refused")) is False
