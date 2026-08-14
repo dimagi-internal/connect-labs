@@ -40,7 +40,9 @@ def test_resume_happy_path_opp_owned(user, monkeypatch):
     result = tool.handler(user=user, run_id=13364, definition_id=100, opportunity_id=4242)
 
     assert result == {"run_id": 13364, "task_id": "celery-abc", "status": "running"}
-    fake_resume.assert_called_once_with(fake_definition, fake_run, access_token="tok")
+    # force defaults off: a run whose job is still ticking must be refused, not
+    # resumed alongside itself (see audit_generation.job_is_live).
+    fake_resume.assert_called_once_with(fake_definition, fake_run, access_token="tok", force=False)
     fake_wda.close.assert_called_once()
 
 

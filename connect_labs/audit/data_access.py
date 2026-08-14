@@ -1389,27 +1389,35 @@ class AuditDataAccess(BaseDataAccess):
         sessions = [s for s in self.get_audit_sessions() if s.opportunity_id == opportunity_id]
         return build_prior_audit_index(sessions, exclude_session_id=exclude_session_id)
 
-    def _query_audit_sessions(self, username: str | None = None, **kwargs) -> list[AuditSessionRecord]:
-        """Fetch every AuditSession record visible to this DataAccess's scope.
+    def _query_audit_sessions(
+        self, username: str | None = None, labs_record_id: int | None = None, **kwargs
+    ) -> list[AuditSessionRecord]:
+        """Fetch AuditSession records visible to this DataAccess's scope.
 
-        Shared by get_audit_sessions() and get_sessions_by_workflow_run() —
-        both need the full unfiltered set in scope before applying their own
-        client-side filter (query params / labs_record_id match). See
+        Shared by get_audit_sessions() and get_sessions_by_workflow_run(). See
         get_audit_sessions's docstring for why program-scoped callers fan out
         across member opportunities instead of a single scoped query.
+
+        ``labs_record_id`` is pushed down to the API as a real query param (it
+        is a first-class filter on the records endpoint, not a data__ JSON
+        lookup) so a caller wanting one workflow run's sessions doesn't drag
+        every session in scope over the wire first.
         """
         if self.program_id and not self.opportunity_id:
-            return self._get_audit_sessions_for_program(username=username, **kwargs)
+            return self._get_audit_sessions_for_program(username=username, labs_record_id=labs_record_id, **kwargs)
 
         return self.labs_api.get_records(
             experiment="audit",
             type="AuditSession",
             username=username,
+            labs_record_id=labs_record_id,
             model_class=AuditSessionRecord,
             **kwargs,
         )
 
-    def _get_audit_sessions_for_program(self, username: str | None = None, **kwargs) -> list[AuditSessionRecord]:
+    def _get_audit_sessions_for_program(
+        self, username: str | None = None, labs_record_id: int | None = None, **kwargs
+    ) -> list[AuditSessionRecord]:
         """Fan out across every opportunity in self.program_id and merge, deduped by id.
 
         Also includes anything already queryable under self.program_id
@@ -1430,6 +1438,7 @@ class AuditDataAccess(BaseDataAccess):
             experiment="audit",
             type="AuditSession",
             username=username,
+            labs_record_id=labs_record_id,
             model_class=AuditSessionRecord,
             **kwargs,
         ):
@@ -1442,6 +1451,7 @@ class AuditDataAccess(BaseDataAccess):
                     experiment="audit",
                     type="AuditSession",
                     username=username,
+                    labs_record_id=labs_record_id,
                     model_class=AuditSessionRecord,
                     **kwargs,
                 ):
@@ -1456,9 +1466,12 @@ class AuditDataAccess(BaseDataAccess):
         Get all audit sessions linked to a workflow run.
 
         Sessions created from a workflow have their labs_record_id pointing to
-        the workflow run record. This method queries all sessions in scope
-        and filters by that link — the API doesn't support filtering by
-        labs_record_id server-side. Uses the same program-scoped fan-out as
+        the workflow run record. That link is pushed down to the API as a real
+        query filter (the records endpoint takes labs_record_id directly — see
+        LabsRecordAPIClient.get_records), so this no longer pulls every session
+        in scope over the wire to filter client-side. The client-side match is
+        kept as a cheap belt-and-braces on the server's answer. Uses the same
+        program-scoped fan-out as
         get_audit_sessions(): a multi-opp workflow run's linked sessions are
         each individually opportunity-tagged (whichever opp was active when
         that particular session was created), so a program-scoped caller
@@ -1471,10 +1484,10 @@ class AuditDataAccess(BaseDataAccess):
         Returns:
             List of AuditSessionRecord objects linked to the workflow run
         """
-        all_sessions = self._query_audit_sessions()
+        candidates = self._query_audit_sessions(labs_record_id=workflow_run_id)
 
         # Filter to sessions linked to this workflow run
-        return [s for s in all_sessions if s.labs_record_id == workflow_run_id]
+        return [s for s in candidates if s.labs_record_id == workflow_run_id]
 
     def save_audit_session(self, session: AuditSessionRecord) -> AuditSessionRecord:
         """Persist an audit session, scoped to the session's OWN opportunity.

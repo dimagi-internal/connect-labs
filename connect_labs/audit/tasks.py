@@ -21,6 +21,7 @@ from connect_labs.audit.data_access import (
 )
 from connect_labs.audit.link_helpers import resolve_opportunity_attribution, resolve_urls_by_blob
 from connect_labs.audit.models import AI_NOTES_JOIN_SEP
+from connect_labs.audit.run_checkpoints import call_key, session_key
 from connect_labs.audit.visit_cluster_duplicate_detection import run_grouping_duplicate_detection
 from connect_labs.audit.visit_clustering import build_flw_visit_clusters
 from connect_labs.labs import s3_export
@@ -1628,9 +1629,36 @@ def run_audit_creation(
         # they left off (each stage checks its own per-session completion flag).
         # Direct/wizard runs (no workflow_run_id) have no stable run identity
         # across re-triggers, so resume is skipped for those.
+        #
+        # Matched by run_checkpoints.call_key -- (opportunity, tag, window) --
+        # NOT by "any session on this run_id". A workflow run may legitimately
+        # create several DIFFERENT audits: the dual-track template's Track A
+        # and Track B are separate invocations sharing one run_id (see
+        # connect_labs/audit/visit_cluster_duplicate_detection.py's header),
+        # and a long-lived creator run (Muac Picture Audit) creates a fresh
+        # audit every time the button is pressed. Matching on run_id alone
+        # made every one of those after the first a silent no-op that
+        # reported the FIRST audit's sessions as its own.
         # -------------------------------------------------------------------------
         resumed_from_existing = False
         if workflow_run_id:
+            # Keyed off the PARSED criteria, because that is the object
+            # create_audit_session persists onto the session (see its
+            # criteria_dict branch) -- keying off the raw dict here would risk
+            # comparing a normalised value against an unnormalised one.
+            #
+            # One key per opportunity this call SPANS, not just opportunities[0]:
+            # a multi-opp per_flw call files each FLW's session under that FLW's
+            # own opportunity (see flw_opportunity_ids), so a call whose first
+            # opportunity happened to contribute no FLWs would otherwise fail to
+            # recognise the sessions it created under the others -- and
+            # duplicate every one of them on re-entry.
+            this_call_criteria = {
+                "tag": session_tag,
+                "start_date": audit_criteria.start_date,
+                "end_date": audit_criteria.end_date,
+            }
+            this_call_keys = {call_key(oid, this_call_criteria) for oid in opportunity_ids}
             existing_sessions: list = []
             search_opp_ids = opportunity_ids  # check every opp in this run
             for _oid in search_opp_ids:
@@ -1638,13 +1666,15 @@ def run_audit_creation(
                     existing_sessions.extend(_data_access_for_opp(_oid).get_sessions_by_workflow_run(workflow_run_id))
                 except Exception as _exc:
                     logger.warning("[AuditCreation] resume check failed for opp %s: %s", _oid, _exc)
-            # Deduplicate by id (a session may be returned by more than one opp scope).
+            # Deduplicate by id (a session may be returned by more than one opp scope),
+            # then keep only the sessions THIS call would have created.
             seen: set[int] = set()
             deduped = []
             for s in existing_sessions:
-                if s.id not in seen:
-                    seen.add(s.id)
-                    deduped.append(s)
+                if s.id in seen or session_key(s) not in this_call_keys:
+                    continue
+                seen.add(s.id)
+                deduped.append(s)
             existing_sessions = deduped
 
             if existing_sessions:

@@ -19,11 +19,47 @@ from connect_labs.audit.data_access import (
     create_mock_request,
     is_audit_creation_cancelled,
 )
+from connect_labs.audit.run_checkpoints import call_key, completed_call_keys
 from connect_labs.audit.tasks import run_audit_creation
 from connect_labs.workflow.data_access import WorkflowDataAccess
 from connect_labs.workflow.tasks import register_job_handler
 
 logger = logging.getLogger(__name__)
+
+
+def _sessions_for_run(access_token, opportunity_ids, run_id):
+    """Every audit session linked to ``run_id``, across EVERY opportunity the
+    batch spans — deduplicated by id.
+
+    An ``AuditDataAccess`` scoped to one opportunity sends that opportunity_id
+    as a query scope (see ``LabsRecordAPIClient.get_records``), so a client
+    pinned to ``opportunity_ids[0]`` cannot see sessions filed under any of the
+    others. Reading only the first opportunity left a multi-opp run's resume
+    blind to everything a prior invocation finished in opportunities 2..N — it
+    would re-enter each of them and redo the expensive discovery fetch.
+
+    Same per-opportunity fan-out ``run_audit_creation``'s own resume check uses
+    (connect_labs/audit/tasks.py). A failed read for one opportunity is logged
+    and skipped rather than raised: treating it as "nothing exists here" only
+    ever costs redundant work, whereas failing the whole batch over a transient
+    read would strand the run entirely.
+    """
+    sessions_by_id = {}
+    for opp_id in opportunity_ids:
+        data_access = AuditDataAccess(opportunity_id=opp_id, request=create_mock_request(access_token, opp_id))
+        try:
+            for session in data_access.get_sessions_by_workflow_run(run_id):
+                sessions_by_id[session.id] = session
+        except Exception:
+            logger.warning(
+                "[WeeklyDualTrackAudit] run %s: existing-session lookup failed for opp %s",
+                run_id,
+                opp_id,
+                exc_info=True,
+            )
+        finally:
+            data_access.close()
+    return list(sessions_by_id.values())
 
 
 def _coerce_max_flws(value):
@@ -175,29 +211,60 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
             selected_flw_user_ids=selected_flw_user_ids,
         )
 
-        # Idempotency: skip any (opportunity, track) call that already has a
-        # session from a PRIOR invocation against this same run_id. Makes any
+        # Persist the resolved inputs BEFORE doing any work, so a resume can
+        # re-derive exactly this invocation's criteria. create_batch_run only
+        # seeds window_start/window_end at create_run time, and the summary
+        # write at the bottom of this handler never happens on a run that gets
+        # killed mid-batch -- which is precisely the run someone resumes. A
+        # manual run's per-run choices (pass threshold, visit statuses, FLW
+        # cap, sampling) live only in the job payload until this write.
+        effective_criteria = {
+            "window_start": window_start,
+            "window_end": window_end,
+            "pass_threshold": pass_threshold,
+            "deliver_unit_types": deliver_unit_types,
+            "visit_statuses": visit_statuses,
+            "enable_time_gap": enable_time_gap,
+            "time_gap_minutes": time_gap_minutes,
+            "enable_distance": enable_distance,
+            "distance_meters": distance_meters,
+            "enable_duplicate_detection": enable_duplicate_detection,
+            "max_flws": max_flws,
+            "muac_sample_percentage": track_a.get("sample_percentage"),
+            "other_sample_percentage": track_b.get("sample_percentage"),
+        }
+        wda.update_run_state(run_id, effective_criteria)
+
+        # Idempotency: skip any (opportunity, track) call that a PRIOR
+        # invocation against this same run_id already COMPLETED. Makes any
         # re-invocation for the same run_id (a manual resume, or the future
-        # stale-run sweep) safe to call without duplicating already-completed
-        # work -- a fresh run's first invocation just finds nothing to skip.
-        audit_data_access = AuditDataAccess(
-            opportunity_id=opportunity_ids[0], request=create_mock_request(access_token, opportunity_ids[0])
-        )
-        try:
-            existing_sessions = audit_data_access.get_sessions_by_workflow_run(run_id)
-        finally:
-            audit_data_access.close()
-        already_done = {(s.opportunity_id, s.tag) for s in existing_sessions}
-        # Seed sessions_created from what a PRIOR invocation already made (0 on
-        # a fresh run) -- calls skipped below as already-done never re-enter
-        # run_audit_creation, so their sessions would otherwise go uncounted.
-        sessions_created = len(existing_sessions)
+        # stale-run sweep) safe to call without redoing finished work -- a
+        # fresh run's first invocation just finds nothing to skip.
+        #
+        # "Completed" is the operative word: a call whose sessions exist but
+        # are still mid-AI-review is NOT skipped. That's the dominant way a
+        # batch dies (review is where the hours go, so a deploy cutover almost
+        # always lands inside a call, not between two), and skipping it would
+        # strand those sessions unreviewed forever. Letting it through costs
+        # one cheap re-entry: run_audit_creation recognises its own sessions,
+        # skips re-creation, and its review/detection stages resume per-session
+        # from their own completion flags.
+        existing_sessions = _sessions_for_run(access_token, opportunity_ids, run_id)
+        already_done = completed_call_keys(existing_sessions)
+        # Session ids, not a count: a re-entered call returns its PRE-EXISTING
+        # sessions alongside any new ones, so counting returned sessions would
+        # double-count them. A set of ids is inherently idempotent, which is
+        # what makes last_batch.sessions_created a run TOTAL rather than a
+        # per-invocation tally.
+        session_ids = {s.id for s in existing_sessions}
+        calls_total = len(calls)
         if already_done:
-            calls = [c for c in calls if (c["opportunities"][0]["id"], c["criteria"]["tag"]) not in already_done]
+            calls = [c for c in calls if call_key(c["opportunities"][0]["id"], c["criteria"]) not in already_done]
             logger.info(
-                "[WeeklyDualTrackAudit] run %s: %d call(s) already have sessions, %d remaining",
+                "[WeeklyDualTrackAudit] run %s: %d of %d call(s) already complete, %d remaining",
                 run_id,
-                len(already_done),
+                calls_total - len(calls),
+                calls_total,
                 len(calls),
             )
 
@@ -231,9 +298,11 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
             try:
                 eager = run_audit_creation.apply(kwargs={"access_token": access_token, "cancel_key": task_id, **call})
                 res = eager.result if isinstance(eager.result, dict) else {}
-                # run_audit_creation returns created sessions under "sessions"
-                # (a list of {id, title, ...}); count those.
-                sessions_created += len(res.get("sessions", []) or [])
+                # run_audit_creation returns this call's sessions under
+                # "sessions" (a list of {id, title, ...}) -- which on a
+                # re-entered call includes the ones it already had. Union by
+                # id so the total stays correct either way.
+                session_ids.update(s["id"] for s in (res.get("sessions") or []) if isinstance(s, dict) and "id" in s)
                 successful += 1
             except Exception:
                 logger.warning(
@@ -246,10 +315,17 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
             finally:
                 pop_relay(run_id)
 
+        # Every count here describes the RUN's total state after this
+        # invocation, not just what this invocation happened to do -- a
+        # resumed run's summary (and anything downstream reading it, e.g. the
+        # FLW day-by-day perf report) would otherwise under-report by
+        # everything a prior invocation already finished.
+        sessions_created = len(session_ids)
         last_batch = {
             "window_start": window_start,
             "window_end": window_end,
-            "calls": len(calls),
+            "calls": calls_total,
+            "calls_skipped_complete": calls_total - len(calls),
             "successful": successful,
             "failed": failed,
             "sessions_created": sessions_created,
@@ -257,31 +333,18 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
         # Persist the batch window onto the run so the render (on reload) and
         # the Audit PAR (week bucketing) can read it — the handler runs under the
         # run's owning opp, so this write is reliable, and it lets the render
-        # skip its own fragile session-scoped state write.
-        wda.update_run_state(
-            run_id,
-            {
-                "window_start": window_start,
-                "window_end": window_end,
-                "last_batch": last_batch,
-                "pass_threshold": pass_threshold,
-                "deliver_unit_types": deliver_unit_types,
-                "visit_statuses": visit_statuses,
-                "enable_time_gap": enable_time_gap,
-                "time_gap_minutes": time_gap_minutes,
-                "enable_distance": enable_distance,
-                "distance_meters": distance_meters,
-                "enable_duplicate_detection": enable_duplicate_detection,
-                "max_flws": max_flws,
-            },
-        )
+        # skip its own fragile session-scoped state write. Re-writes
+        # effective_criteria verbatim (already written before the loop) so the
+        # two writes can't drift into disagreeing about the same run.
+        wda.update_run_state(run_id, {**effective_criteria, "last_batch": last_batch})
     finally:
         wda.close()
 
     logger.info(
-        "[WeeklyDualTrackAudit] run %s: %d calls, %d sessions",
+        "[WeeklyDualTrackAudit] run %s: %d of %d calls attempted this invocation, %d sessions total",
         run_id,
-        len(calls),
+        successful + failed,
+        calls_total,
         sessions_created,
     )
     return {
