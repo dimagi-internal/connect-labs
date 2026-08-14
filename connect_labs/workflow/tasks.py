@@ -964,22 +964,28 @@ def _resume_charge(run) -> tuple[bool, str]:
 def _resume_eligibility(run) -> tuple[bool, str]:
     """Should this run be resumed? Returns (eligible, reason).
 
-    Eligible when its job died without finishing, in either of the two ways a
+    Eligible when its job died without finishing, in any of the three ways a
     job can die:
 
-    - ``running`` with no heartbeat for JOB_STALE_SECONDS — the worker vanished
-      without ever writing a terminal status (a deploy cutover, an OOM kill).
-      This is the common one and the reason nothing self-heals today: the run
-      sits at "running" forever and only a human notices.
     - ``failed`` — it raised, and the handler recorded that. Retrying is still
       right for a transient upstream error, and the attempt budget is what
       stops a permanently-broken run from retrying forever.
+    - ``running``, but the process that owned it is GONE (see
+      ``job_worker_confirmed_gone``). This is the common case — every deploy
+      kills every worker with no drain — and it is a FACT rather than an
+      inference, so it needn't wait out the staleness timer. Recovery drops
+      from ~55 minutes (45 stale + up to 10 for the next tick) to about one
+      tick.
+    - ``running`` with no heartbeat for JOB_STALE_SECONDS. The fallback now,
+      not the primary signal: it covers a job that hung inside a process that
+      is still alive (nothing killed it, so the worker check says nothing to
+      begin with), and jobs recorded before workers stamped their identity.
 
     ``completed`` and ``cancelled`` are deliberate terminal states: a completed
     run has nothing outstanding, and a cancelled one was stopped by a human who
     does not want it continuing behind their back.
     """
-    from connect_labs.workflow.job_state import JOB_STALE_SECONDS, active_job_age_seconds
+    from connect_labs.workflow.job_state import JOB_STALE_SECONDS, active_job_age_seconds, job_worker_confirmed_gone
 
     state = (getattr(run, "data", None) or {}).get("state") or {}
     active_job = state.get("active_job") or {}
@@ -999,6 +1005,8 @@ def _resume_eligibility(run) -> tuple[bool, str]:
         return False, f"job is {status or 'in an unknown state'}"
 
     age = active_job_age_seconds(active_job)
+    if job_worker_confirmed_gone(active_job):
+        return True, f"its worker is gone{f' (quiet {int(age // 60)}m)' if age is not None else ''}"
     if age is None:
         return False, "job has no readable heartbeat"
     if age < JOB_STALE_SECONDS:
