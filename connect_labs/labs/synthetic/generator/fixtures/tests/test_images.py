@@ -136,3 +136,60 @@ def test_legacy_mode_when_good_count_unset():
         # Legacy ids never contain "good" or "bad" segments.
         assert "-good-" not in bid and "-bad-" not in bid
         assert bid.startswith("synth-muac-")
+
+
+def test_muac_is_recognised_wherever_the_manifest_puts_it():
+    """Eligibility used to be an allowlist of three exact paths, so every
+    manifest that names its MUAC field anything else generated ZERO images
+    while still declaring a full image_config. That is what the checked-in
+    PAR and nutrition-demo manifests do — they measure at
+    form.service_delivery.muac_group.soliciter_muac — so their opportunities
+    were built with no photos at all, discovered only by running an image
+    audit against one and finding nothing to audit."""
+    visits = [
+        {
+            "id": "v1",
+            "form_json": {"form": {"service_delivery": {"muac_group": {"soliciter_muac": "13.4"}}}},
+            "images": [],
+        },
+        {
+            "id": "v2",
+            "form_json": {"form": {"anthro": {"child_muac_reading": "12.8"}}},
+            "images": [],
+        },
+    ]
+    stats = assign_visit_images(visits, ImageConfig(stock_image_count=5, probability=1.0), random.Random(1))
+
+    assert [len(v["images"]) for v in visits] == [1, 1]
+    assert stats == {"eligible_visits": 2, "images_assigned": 2}
+
+
+def test_a_muac_group_with_no_reading_inside_is_not_eligible():
+    """A GROUP named muac_* is structure, not a measurement — attaching a
+    photo to a visit that never recorded one would invent data."""
+    visits = [{"id": "v1", "form_json": {"form": {"muac_group": {"note": "skipped"}}}, "images": []}]
+
+    stats = assign_visit_images(visits, ImageConfig(stock_image_count=5, probability=1.0), random.Random(1))
+
+    assert visits[0]["images"] == []
+    assert stats["images_assigned"] == 0
+
+
+def test_empty_muac_value_is_not_eligible():
+    visits = [{"id": "v1", "form_json": {"form": {"case": {"update": {"soliciter_muac_cm": ""}}}}, "images": []}]
+
+    stats = assign_visit_images(visits, ImageConfig(stock_image_count=5, probability=1.0), random.Random(1))
+
+    assert stats["images_assigned"] == 0
+
+
+def test_zero_assignments_are_reported_not_silent(caplog):
+    """The failure mode being fixed is silence: a declared image_config that
+    produces nothing must say so at generation time."""
+    visits = [{"id": "v1", "form_json": {"form": {"height_cm": "88"}}, "images": []}]
+
+    with caplog.at_level("WARNING"):
+        stats = assign_visit_images(visits, ImageConfig(stock_image_count=5, probability=1.0), random.Random(1))
+
+    assert stats == {"eligible_visits": 0, "images_assigned": 0}
+    assert "NO images were assigned" in caplog.text
