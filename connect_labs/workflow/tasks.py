@@ -15,6 +15,7 @@ from django.utils import timezone as dj_timezone
 
 from config import celery_app
 from connect_labs.utils.celery import set_task_progress
+from connect_labs.workflow.job_state import worker_identity
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +263,7 @@ def run_workflow_job(
     )
 
     # Initialize job state
+    _worker_id, _worker_boot_at = worker_identity()
     _update_job_state(
         run_id,
         access_token,
@@ -284,6 +286,12 @@ def run_workflow_job(
             "stage_name": "Loading pipeline data" if needs_pipeline_stage else "Processing",
             "processed": 0,
             "total": 0,
+            # Which process is running this. Lets the stale-run sweep tell a
+            # job whose worker was killed under it (a deploy cutover -- routine,
+            # and not the run's fault) from one that hung inside a process that
+            # is still alive. See job_state.job_died_with_its_worker.
+            "worker_id": _worker_id,
+            "worker_boot_at": _worker_boot_at,
         },
         program_id=program_id,
     )
@@ -907,19 +915,50 @@ def run_due_workflow_schedules() -> dict:
 # Stale-run sweep (see docs/superpowers/specs/2026-08-14-dual-track-audit-resume-design.md)
 # =============================================================================
 
-# A run may be automatically resumed this many times before it is treated as
-# terminally broken. The point is to separate "the worker died" (which a retry
-# fixes, and which happens on any deploy) from "this run fails every time"
-# (which retrying forever only hides). On exhaustion the run is marked failed
-# with an explicit reason rather than left looking merely stale, so the next
-# person to look at it sees a decision, not an ambiguity.
+# How many times a run may be resumed for reasons the RUN is accountable for --
+# it raised, or it hung -- before being treated as terminally broken. Retrying
+# those forever only hides a real defect, so on exhaustion the run is marked
+# failed with an explicit reason rather than left looking merely stale.
 MAX_RESUME_ATTEMPTS = 3
+
+# Resumes after the worker was killed out from under the job are NOT charged
+# against that budget. Every deploy hard-kills every task with no drain
+# (deploy-labs.yml), and dual-track batches run for hours, so meeting a deploy
+# is a routine hazard of running long -- not evidence the run is broken. A run
+# unlucky enough to be interrupted three times would otherwise be condemned for
+# something entirely outside itself, which is the opposite of what this budget
+# is for. Confirmed in the wild on 2026-08-14: run 13745 was killed twice by
+# worker restarts inside one afternoon, each one charging a strike it hadn't
+# earned.
+#
+# Uncharged is not unlimited. This ceiling bounds TOTAL resumes so a run that
+# somehow attracts endless restarts still stops, loudly, instead of being
+# retried forever; it is set well above any plausible run of bad luck so it
+# only ever catches a pathology.
+MAX_TOTAL_RESUMES = 25
 
 
 def _latest_run(data_access, definition_id):
     """Most recently created run for a definition, or None."""
     runs = data_access.list_runs(definition_id=definition_id) or []
     return max(runs, key=lambda r: r.id, default=None)
+
+
+def _resume_charge(run) -> tuple[bool, str]:
+    """Should this resume count against the run's own budget, and why?
+
+    Returns ``(charged, cause)``. A job whose WORKER was killed under it is not
+    the run's fault (see MAX_TOTAL_RESUMES), so it resumes for free; anything
+    else -- a raised exception, or a hang inside a live process -- is charged.
+    """
+    from connect_labs.workflow.job_state import job_died_with_its_worker
+
+    active_job = ((getattr(run, "data", None) or {}).get("state") or {}).get("active_job") or {}
+    if active_job.get("status") == "failed":
+        return True, "job failed"
+    if job_died_with_its_worker(active_job):
+        return False, "worker restarted under the job (deploy or task replacement)"
+    return True, "job stopped responding inside a live worker"
 
 
 def _resume_eligibility(run) -> tuple[bool, str]:
@@ -952,6 +991,8 @@ def _resume_eligibility(run) -> tuple[bool, str]:
         return False, "resume budget already exhausted"
     if state.get("resume_attempts", 0) >= MAX_RESUME_ATTEMPTS:
         return False, "resume budget exhausted"
+    if state.get("resume_total_attempts", 0) >= MAX_TOTAL_RESUMES:
+        return False, f"hit the {MAX_TOTAL_RESUMES}-resume ceiling"
     if status == "failed":
         return True, "job failed"
     if status != "running":
@@ -1006,23 +1047,49 @@ def sweep_stale_workflow_runs() -> dict:
             eligible, reason = _resume_eligibility(run)
             if not eligible:
                 logger.debug("[ResumeSweep] run %s not eligible: %s", run.id, reason)
+                # A run that has run out of resumes must be left in a state that
+                # SAYS so. Skipping it silently leaves it reading as "running,
+                # just stale" to whoever opens it next -- indistinguishable from
+                # a run the sweep is about to rescue.
+                if reason.endswith("ceiling") and not (
+                    ((run.data.get("state") or {}).get("active_job") or {}).get("resume_exhausted")
+                ):
+                    _mark_resume_exhausted(
+                        sched,
+                        run.id,
+                        "still incomplete",
+                        summary=f"Resumed {MAX_TOTAL_RESUMES} times without finishing",
+                    )
                 continue
 
-            # Claim BEFORE dispatch by writing the incremented attempt count:
+            # Claim BEFORE dispatch by writing the incremented attempt counts:
             # the resumed job's own first heartbeat is what makes the run
             # ineligible on subsequent ticks, and that lands a moment after
             # dispatch, not before it. Writing the claim first means an
-            # overlapping tick sees the higher count (and, at the ceiling,
-            # stops) instead of dispatching a second resume into the same run.
-            attempt = (run.data.get("state", {}) or {}).get("resume_attempts", 0) + 1
-            da.update_run_state(run.id, {"resume_attempts": attempt})
+            # overlapping tick sees the higher count (and, at a ceiling, stops)
+            # instead of dispatching a second resume into the same run.
+            prior = run.data.get("state", {}) or {}
+            charged, cause = _resume_charge(run)
+            attempt = prior.get("resume_attempts", 0) + (1 if charged else 0)
+            total = prior.get("resume_total_attempts", 0) + 1
+            da.update_run_state(
+                run.id,
+                {
+                    "resume_attempts": attempt,
+                    "resume_total_attempts": total,
+                    # Recorded so the run itself can answer "why did this keep
+                    # restarting?" without a log dig.
+                    "resume_last_cause": cause,
+                },
+            )
             logger.info(
-                "[ResumeSweep] resuming run %s (definition %s, attempt %d/%d): %s",
+                "[ResumeSweep] resuming run %s (definition %s, %s, resume %d overall): %s -- %s",
                 run.id,
                 sched.definition_id,
-                attempt,
-                MAX_RESUME_ATTEMPTS,
+                f"attempt {attempt}/{MAX_RESUME_ATTEMPTS}" if charged else "not charged",
+                total,
                 reason,
+                cause,
             )
             resume_stale_workflow_run.delay(sched.pk, run.id, attempt)
             dispatched += 1
@@ -1087,8 +1154,8 @@ def resume_stale_workflow_run(schedule_id: int, run_id: int, attempt: int) -> di
                 pass
 
 
-def _mark_resume_exhausted(sched, run_id: int, error: str) -> None:
-    """Stamp a run as terminally failed after its last automatic attempt.
+def _mark_resume_exhausted(sched, run_id: int, error: str, *, summary: str | None = None) -> None:
+    """Stamp a run as terminally failed once automatic recovery gives up.
 
     Without this the run keeps reading as "stale, running" forever: the sweep
     would skip it on the budget check but a human opening the page would see a
@@ -1105,8 +1172,8 @@ def _mark_resume_exhausted(sched, run_id: int, error: str) -> None:
                 "status": "failed",
                 "resume_exhausted": True,
                 "error": (
-                    f"Exhausted {MAX_RESUME_ATTEMPTS} automatic resume attempts; still incomplete "
-                    f"— manual investigation needed. Last error: {error}"
+                    f"{summary or f'Exhausted {MAX_RESUME_ATTEMPTS} automatic resume attempts'}; "
+                    f"still incomplete — manual investigation needed. Last error: {error}"
                 )[:2000],
             },
             program_id=None if sched.opportunity_id else sched.program_id,
