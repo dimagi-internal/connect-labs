@@ -314,19 +314,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     // ── Config from the DEFINITION (pinned at create time, read-only here) ────
     const batch = (definition.config && definition.config.audit_batch) || {};
     const perOpp = batch.per_opp || {};
-    // Names come from the #user-opportunities blob the base template embeds for
-    // any multi_opp workflow (real LLO names, e.g. "CHC PRE-RCT (Nigeria) - EHA") —
-    // same convention as flw_audit_trend_dashboard.py. batch.opp_names can still
-    // override a specific id if ever manually seeded.
-    const oppNamesFromPage = React.useMemo(() => {
-        const m = {};
-        try {
-            const el = document.getElementById('user-opportunities');
-            if (el) JSON.parse(el.textContent).forEach(o => { m[o.id] = o.name; });
-        } catch (e) { console.error('Weekly dual-track audit: failed to parse user-opportunities', e); }
-        return m;
-    }, []);
-    const oppNames = Object.assign({}, oppNamesFromPage, batch.opp_names || {});
+    const oppNames = batch.opp_names || {};
     const trackA = batch.track_a || {};
     const trackB = batch.track_b || {};
     const oppIds = (instance.opportunity_ids && instance.opportunity_ids.length)
@@ -650,7 +638,12 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             },
             (err) => {
                 setIsRunning(false); setJobError(err || 'Job failed'); setProgress(null);
-                onUpdateState({ active_job: { job_id: taskId, status: 'failed' } }).catch(() => {});
+                // Persist the actual reason, not just the terminal status -- this was
+                // previously dropped, so a run that failed while nobody was watching
+                // (a stale/zombie job caught by JOB_STALE_SECONDS, or a genuine
+                // background exception) showed "failed" with no explanation for
+                // anyone who opened it later.
+                onUpdateState({ active_job: { job_id: taskId, status: 'failed', error: err || 'Job failed' } }).catch(() => {});
             },
             () => { setIsRunning(false); setIsCancelling(false); setProgress({ status: 'cancelled' }); },
             instance.id // run_id — lets the server unstick a reconnect to a dead job
@@ -804,6 +797,30 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 <h1 className="text-2xl font-bold text-gray-900">{definition.name}</h1>
                 <p className="text-gray-600 mt-1">{definition.description}</p>
             </div>
+
+            {/* ── Last job's stored error (visible even for a scheduled/headless
+                fire nobody was watching live -- active_job.error is written by
+                run_workflow_job's own failure handler but was never surfaced
+                anywhere in this render before) ──────────────────────────────── */}
+            {(view && view.state && view.state.active_job && view.state.active_job.status === 'failed'
+                ? view.state.active_job
+                : (instance.state && instance.state.active_job && instance.state.active_job.status === 'failed'
+                    ? instance.state.active_job
+                    : null)) && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
+                    <div className="font-medium"><i className="fa-solid fa-circle-exclamation mr-2"></i>Last job failed</div>
+                    <div className="mt-1 font-mono text-xs whitespace-pre-wrap">
+                        {(view && view.state && view.state.active_job && view.state.active_job.error)
+                            || (instance.state && instance.state.active_job && instance.state.active_job.error)
+                            || 'No error message was recorded.'}
+                    </div>
+                    {(() => {
+                        const failedAt = (view && view.state && view.state.active_job && view.state.active_job.failed_at)
+                            || (instance.state && instance.state.active_job && instance.state.active_job.failed_at);
+                        return failedAt ? <div className="mt-1 text-xs text-red-500">at {failedAt}</div> : null;
+                    })()}
+                </div>
+            )}
 
             {/* ── View-only summary (audits already created) ──────────────── */}
             {viewOnly && (

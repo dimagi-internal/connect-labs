@@ -187,6 +187,24 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
         """
         runs = sorted(runs, key=lambda r: r.id, reverse=True)
 
+        # Display-only period override: `period_start`/`period_end` are frozen
+        # at create_run time (often the generic "+Create Run" button's ISO-week
+        # default) and update_run_state deliberately never touches them ("Status
+        # and period_* are managed by create_run / complete_run" -- see its
+        # docstring). But several audit-window templates (weekly_dual_track_audit,
+        # program_audit_creator, program_admin_report, audit_par) persist the
+        # window they ACTUALLY fired into state.window_start/window_end once a
+        # batch runs -- which can be a completely different range than the
+        # creation-time shell period. Showing the stale creation-time period next
+        # to the run's own "Audit window" (which reads state.window_start
+        # directly) looks like a bug even though both values are individually
+        # correct for what they represent. Prefer the fired window for display
+        # once one exists; templates that never write these keys are unaffected.
+        for run in runs:
+            state = run.data.get("state", {}) or {}
+            run.display_period_start = state.get("window_start") or run.period_start
+            run.display_period_end = state.get("window_end") or run.period_end
+
         pipelines = []
         for source in definition.pipeline_sources:
             pipeline_id = source.get("pipeline_id")
