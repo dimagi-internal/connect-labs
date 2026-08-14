@@ -168,6 +168,16 @@ When you resume a run, the system:
 
 When you resume a run that was started with custom settings — pass threshold, visit statuses, FLW cap, sampling — those settings are carried forward automatically. The run does not revert to the workflow's saved defaults partway through.
 
+### How quickly an interrupted run recovers
+
+When a system deployment restarts background workers, any audit batch that was running at that moment is killed. The run page will reflect this promptly — it no longer shows a run as still in progress for up to 45 minutes after a deploy has already ended it.
+
+The system can now detect almost immediately that a deploy killed a particular batch, because each job records which server process is running it. Once that process is gone, the system knows the job is dead rather than merely slow, and picks it up at the next check — roughly **ten minutes** after the interruption rather than up to an hour.
+
+A run that is simply slow — still actively processing inside a live server process — is still given the full waiting period before being considered stuck. Only deploy-killed runs benefit from the faster recovery.
+
+In practice this means that if a run is interrupted during a routine deployment, you can expect it to resume automatically within about ten minutes. If a run does not recover on its own, use the manual **Resume** option as described below.
+
 ### Resume is blocked while a run is still active
 
 If a run is still processing, the resume option is unavailable. This prevents two copies of the same batch running at the same time and producing duplicate audit sessions. Wait for the current batch to finish (or fail) before resuming.
@@ -237,15 +247,4 @@ The dropdown menus display each option as an outlined button so every option is 
 - **View Audit** — appears in place of the Create Audit menu when an audit already exists for that worker in this run; clicking it opens that audit record directly
 - **View Task** — appears in place of the Create Task menu when a task already exists for that worker in this run; clicking it opens that task record directly
 
-**On a completed (saved) run**, rows that have no existing audit or task show greyed-out, non-interactive Create Audit and Create Task buttons. A saved run is a historical record — no new work can be started from it. Rows that already produced an audit or task still show working **View Audit / View Task** links so you can always navigate back to those records.
-
-This means the Actions cell always reflects the current state of the row: rows with no prior action offer the create menus (on an in-progress run) or greyed-out buttons (on a completed run), and rows where action has already been taken show direct links to those records. This applies whether you are viewing the current week's run or replaying a historical run.
-
-### CHC Nutrition Analysis flags
-
-The CHC Nutrition Analysis dashboard uses the following flag catalog:
-
-| Flag                            | What it means                                                                                                                     |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **SAM rate < 1%**               | The FLW's SAM case rate is below 1% — a signal they may be visiting easier-to-reach households and missing the most at-risk cases |
-|
+**On a completed (saved) run**, rows that have no existing audit or task show greyed-out, non-interactive Create Audit and Create Task buttons. A saved run is
