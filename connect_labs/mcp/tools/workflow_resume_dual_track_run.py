@@ -38,8 +38,12 @@ def _wda_for_user(user, opportunity_id: int | None = None, program_id: int | Non
         "track) calls. Re-derives the window from the run's persisted state and "
         "sampling/clustering overrides from the definition's current pinned "
         "config, then re-dispatches the SAME batch job against the SAME run_id "
-        "async -- the job handler skips any call that already has a session for "
-        "this run_id, so it's safe to call even if the run actually finished. "
+        "async -- the job handler skips any call it already COMPLETED for this "
+        "run_id, so it's safe to call even if the run actually finished, while a "
+        "call whose audits exist but are still mid-review is re-entered and "
+        "finished. Refused if the run's job is still alive (fresh heartbeat), "
+        "since a second invocation alongside a live one duplicates work; pass "
+        "force=true only when you know the worker is gone. "
         "Only works for weekly_dual_track_audit definitions; raises INVALID_SCHEMA "
         "otherwise. Returns immediately with a task_id to poll -- does not wait "
         "for the batch to finish."
@@ -57,6 +61,13 @@ def _wda_for_user(user, opportunity_id: int | None = None, program_id: int | Non
                 "type": "integer",
                 "description": "Scope by owning program. Provide this OR opportunity_id.",
             },
+            "force": {
+                "type": "boolean",
+                "description": (
+                    "Resume even if the run's job still looks alive. Only for when the worker "
+                    "is known to be gone but its heartbeat is younger than the staleness window."
+                ),
+            },
         },
         "required": ["run_id", "definition_id"],
         "additionalProperties": False,
@@ -70,6 +81,7 @@ def workflow_resume_dual_track_run(
     definition_id: int,
     opportunity_id: int | None = None,
     program_id: int | None = None,
+    force: bool = False,
 ) -> dict[str, Any]:
     if (opportunity_id is None) == (program_id is None):
         raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
@@ -97,7 +109,7 @@ def workflow_resume_dual_track_run(
             )
 
         try:
-            return resume_batch_run(definition, run, access_token=wda.access_token)
+            return resume_batch_run(definition, run, access_token=wda.access_token, force=force)
         except ValueError as e:
             raise MCPToolError("INVALID_SCHEMA", str(e)) from e
     finally:

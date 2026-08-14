@@ -44,6 +44,7 @@ from datetime import date, timedelta
 
 from connect_labs.workflow import schedules
 from connect_labs.workflow.data_access import WorkflowDataAccess
+from connect_labs.workflow.job_state import JOB_STALE_SECONDS, active_job_age_seconds
 from connect_labs.workflow.program_view import program_id_of
 from connect_labs.workflow.tasks import run_workflow_job
 
@@ -263,7 +264,47 @@ def run_this_week_batch(
     }
 
 
-def resume_batch_run(definition, run, *, access_token):
+# Per-run criteria the handler persists onto run state before it starts work
+# (see weekly_dual_track_audit_create's effective_criteria). A resume replays
+# THESE rather than re-deriving from the definition, so a run that was started
+# with per-run choices (a pass threshold, a visit-status filter, an FLW cap)
+# finishes under the same criteria it began with. Sampling/clustering are
+# excluded deliberately: they have their own definition-derived helpers, and a
+# run predating this write has neither key on state.
+_RESUMABLE_CRITERIA_KEYS = (
+    "pass_threshold",
+    "deliver_unit_types",
+    "visit_statuses",
+    "enable_time_gap",
+    "time_gap_minutes",
+    "enable_distance",
+    "distance_meters",
+    "enable_duplicate_detection",
+    "max_flws",
+    "muac_sample_percentage",
+    "other_sample_percentage",
+)
+
+
+def job_is_live(run) -> bool:
+    """Is this run's job still ticking (so a resume would collide with it)?
+
+    A "running" active_job whose heartbeat is younger than JOB_STALE_SECONDS
+    is a job that is genuinely still working. Firing a second invocation at it
+    is not idempotent: both invocations read the same "what's already done" set
+    before either writes anything, so both would go on to create sessions for
+    every call the other is about to do — the exact duplication resume exists
+    to avoid. Same threshold the run page uses to tell a human whether a job is
+    alive, so the tool and the UI can't disagree.
+    """
+    active_job = ((getattr(run, "data", None) or {}).get("state") or {}).get("active_job") or {}
+    if active_job.get("status") != "running":
+        return False
+    age = active_job_age_seconds(active_job)
+    return age is not None and age < JOB_STALE_SECONDS
+
+
+def resume_batch_run(definition, run, *, access_token, force=False):
     """Re-fire the batch job against an EXISTING run, instead of creating a new
     one -- for resuming a run whose process died mid-batch (deploy kill, OOM,
     crash) before it finished every (opportunity, track) call.
@@ -284,13 +325,22 @@ def resume_batch_run(definition, run, *, access_token):
     must not block the caller.
 
     Raises ``ValueError`` if the run has no persisted window (nothing was ever
-    created for it — resuming isn't meaningful, a fresh run is what's needed).
+    created for it — resuming isn't meaningful, a fresh run is what's needed),
+    or if the run's job is still alive (see ``job_is_live``) and ``force``
+    wasn't passed.
     """
     state = run.data.get("state", {}) or {}
     window_start = state.get("window_start")
     window_end = state.get("window_end")
     if not window_start or not window_end:
         raise ValueError(f"run {run.id} has no window_start/window_end in state; nothing to resume")
+    if not force and job_is_live(run):
+        raise ValueError(
+            f"run {run.id} still has a live job (heartbeat under "
+            f"{JOB_STALE_SECONDS // 60}m old); resuming it now would duplicate the work "
+            f"it is currently doing. Wait for it to finish or go stale, or pass force=True "
+            f"if you know the worker is gone."
+        )
 
     program_id = program_id_of(definition)
     owner_kwargs = (
@@ -307,6 +357,12 @@ def resume_batch_run(definition, run, *, access_token):
         **owner_kwargs,
         **sample_overrides_for(definition),
         **clustering_overrides_for(definition),
+        # Last, so a run's OWN persisted criteria beat the definition-derived
+        # defaults: a manually-started run may have been fired with per-run
+        # choices that the pinned config knows nothing about, and finishing it
+        # under different criteria than it started with would leave one run
+        # holding two incompatible halves.
+        **{k: state[k] for k in _RESUMABLE_CRITERIA_KEYS if state.get(k) is not None},
     }
     task = run_workflow_job.delay(job_config=job_config, access_token=access_token, run_id=run.id, **owner_kwargs)
     return {"run_id": run.id, "task_id": task.id, "status": "running"}
