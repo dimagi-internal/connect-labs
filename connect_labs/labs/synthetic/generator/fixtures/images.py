@@ -131,13 +131,27 @@ def assign_visit_images(
     # mistake -- almost certainly its visits carry no MUAC field for images to
     # hang off. Saying so here is the whole difference between "my audit has no
     # photos, why?" a week later and a one-line answer at generation time.
-    if not assigned:
+    if not assigned and not eligible:
         logger.warning(
-            "[SyntheticImages] image_config is set but NO images were assigned "
-            "to %d visit(s): %d had a MUAC measurement to attach one to. Check "
-            "that the manifest's cohort generates a MUAC field.",
+            "[SyntheticImages] image_config is set but NO images were assigned: none of "
+            "%d visit(s) recorded a MUAC measurement to attach one to. Check that the "
+            "manifest's cohort generates a MUAC field.",
             len(visits),
+        )
+    elif not assigned:
+        # Different cause, so a different message: the visits DO have MUAC
+        # readings and every one was still skipped, which points at the config
+        # (probability, or an empty pool) rather than the cohort's fields.
+        logger.warning(
+            "[SyntheticImages] image_config is set and %d of %d visit(s) had a MUAC "
+            "measurement, but NO images were assigned. Check probability=%s and the "
+            "pool sizes (stock=%s, good=%s, bad=%s).",
             eligible,
+            len(visits),
+            config.probability,
+            config.stock_image_count,
+            config.good_image_count,
+            config.bad_image_count,
         )
     else:
         logger.info("[SyntheticImages] assigned %d image(s) across %d MUAC visit(s)", assigned, eligible)
