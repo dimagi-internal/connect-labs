@@ -192,3 +192,104 @@ def test_a_multi_opp_call_recognises_sessions_filed_under_any_of_its_opportuniti
 
     assert created == []
     assert [s["id"] for s in result["sessions"]] == [7]
+
+
+def _existing_per_flw(session_id, flw_username, tag="muac"):
+    """A per-FLW session, identified by the username on its images (which is
+    what AuditSessionRecord.flw_username reads)."""
+    session = _existing(session_id, tag)
+    session.data["visit_images"] = {"101": [{"blob_id": "a", "username": flw_username}]}
+    return session
+
+
+def test_a_call_killed_part_way_through_creation_creates_only_the_missing_flws(monkeypatch):
+    """Per-FLW granularity checkpoints per FLW: a process killed between two of
+    a call's FLWs left the rest with no session at all, and "some sessions
+    exist" would strand them permanently."""
+    created = []
+    _patch_audit_stack(monkeypatch, created, [_existing_per_flw(5, "flwA")])
+    # Both FLWs are in scope; only flwA has a session.
+    monkeypatch.setattr(
+        tasks,
+        "AuditDataAccess",
+        tasks.AuditDataAccess,  # keep the patched factory installed above
+    )
+
+    result = tasks.run_audit_creation.apply(
+        kwargs={
+            "access_token": "tok",
+            "username": "nm1",
+            "opportunities": [{"id": OPP, "name": "EHA"}],
+            "criteria": {
+                "audit_type": "date_range",
+                **WINDOW,
+                "sample_percentage": 100,
+                "granularity": "per_flw",
+                "tag": "muac",
+                "selected_flw_user_ids": ["flwA", "flwB"],
+            },
+            "visit_ids": [101, 102],
+            "flw_visit_ids": {"flwA": [101], "flwB": [102]},
+            "workflow_run_id": RUN_ID,
+        }
+    ).result
+
+    # flwB created, flwA reused rather than duplicated.
+    assert [c["title"] for c in created] == ["flwB"]
+    assert sorted(s["id"] for s in result["sessions"]) == [5, 901]
+
+
+def test_a_fully_covered_call_creates_nothing(monkeypatch):
+    created = []
+    _patch_audit_stack(monkeypatch, created, [_existing_per_flw(5, "flwA"), _existing_per_flw(6, "flwB")])
+
+    result = tasks.run_audit_creation.apply(
+        kwargs={
+            "access_token": "tok",
+            "username": "nm1",
+            "opportunities": [{"id": OPP, "name": "EHA"}],
+            "criteria": {
+                "audit_type": "date_range",
+                **WINDOW,
+                "sample_percentage": 100,
+                "granularity": "per_flw",
+                "tag": "muac",
+                "selected_flw_user_ids": ["flwA", "flwB"],
+            },
+            "visit_ids": [101, 102],
+            "flw_visit_ids": {"flwA": [101], "flwB": [102]},
+            "workflow_run_id": RUN_ID,
+        }
+    ).result
+
+    assert created == []
+    assert sorted(s["id"] for s in result["sessions"]) == [5, 6]
+
+
+def test_unidentifiable_existing_sessions_fall_back_to_creating_nothing(monkeypatch):
+    """flw_username reads the username off a session's first image. When a
+    session has none, "which FLWs are still missing?" is a guess — and guessing
+    wrong duplicates a real FLW's audit. Create nothing instead."""
+    created = []
+    _patch_audit_stack(monkeypatch, created, [_existing(5, "muac")])  # no visit_images
+
+    tasks.run_audit_creation.apply(
+        kwargs={
+            "access_token": "tok",
+            "username": "nm1",
+            "opportunities": [{"id": OPP, "name": "EHA"}],
+            "criteria": {
+                "audit_type": "date_range",
+                **WINDOW,
+                "sample_percentage": 100,
+                "granularity": "per_flw",
+                "tag": "muac",
+                "selected_flw_user_ids": ["flwA", "flwB"],
+            },
+            "visit_ids": [101, 102],
+            "flw_visit_ids": {"flwA": [101], "flwB": [102]},
+            "workflow_run_id": RUN_ID,
+        }
+    )
+
+    assert created == []

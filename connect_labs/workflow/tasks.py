@@ -901,3 +901,215 @@ def run_due_workflow_schedules() -> dict:
             run_scheduled_workflow.delay(sched.pk)
             dispatched += 1
     return {"dispatched": dispatched}
+
+
+# =============================================================================
+# Stale-run sweep (see docs/superpowers/specs/2026-08-14-dual-track-audit-resume-design.md)
+# =============================================================================
+
+# A run may be automatically resumed this many times before it is treated as
+# terminally broken. The point is to separate "the worker died" (which a retry
+# fixes, and which happens on any deploy) from "this run fails every time"
+# (which retrying forever only hides). On exhaustion the run is marked failed
+# with an explicit reason rather than left looking merely stale, so the next
+# person to look at it sees a decision, not an ambiguity.
+MAX_RESUME_ATTEMPTS = 3
+
+
+def _latest_run(data_access, definition_id):
+    """Most recently created run for a definition, or None."""
+    runs = data_access.list_runs(definition_id=definition_id) or []
+    return max(runs, key=lambda r: r.id, default=None)
+
+
+def _resume_eligibility(run) -> tuple[bool, str]:
+    """Should this run be resumed? Returns (eligible, reason).
+
+    Eligible when its job died without finishing, in either of the two ways a
+    job can die:
+
+    - ``running`` with no heartbeat for JOB_STALE_SECONDS — the worker vanished
+      without ever writing a terminal status (a deploy cutover, an OOM kill).
+      This is the common one and the reason nothing self-heals today: the run
+      sits at "running" forever and only a human notices.
+    - ``failed`` — it raised, and the handler recorded that. Retrying is still
+      right for a transient upstream error, and the attempt budget is what
+      stops a permanently-broken run from retrying forever.
+
+    ``completed`` and ``cancelled`` are deliberate terminal states: a completed
+    run has nothing outstanding, and a cancelled one was stopped by a human who
+    does not want it continuing behind their back.
+    """
+    from connect_labs.workflow.job_state import JOB_STALE_SECONDS, active_job_age_seconds
+
+    state = (getattr(run, "data", None) or {}).get("state") or {}
+    active_job = state.get("active_job") or {}
+    status = active_job.get("status")
+
+    if not active_job:
+        return False, "no job has ever run"
+    if active_job.get("resume_exhausted"):
+        return False, "resume budget already exhausted"
+    if state.get("resume_attempts", 0) >= MAX_RESUME_ATTEMPTS:
+        return False, "resume budget exhausted"
+    if status == "failed":
+        return True, "job failed"
+    if status != "running":
+        return False, f"job is {status or 'in an unknown state'}"
+
+    age = active_job_age_seconds(active_job)
+    if age is None:
+        return False, "job has no readable heartbeat"
+    if age < JOB_STALE_SECONDS:
+        return False, "job is still ticking"
+    return True, f"no heartbeat for {int(age // 60)}m"
+
+
+@celery_app.task
+def sweep_stale_workflow_runs() -> dict:
+    """Beat ticker: find scheduled runs whose job died and resume them.
+
+    Only covers runs created by an enabled WorkflowSchedule, and only for
+    templates registered as resumable (see connect_labs.workflow.resumable_runs)
+    — a handler that isn't idempotent would duplicate its own work on a re-fire.
+    Manually-created runs are out of scope: a human is already at the keyboard
+    for those, and the manual resume tool is the entry point for them.
+
+    Each schedule is checked in its own try/except: one broken schedule (a
+    deleted definition, an expired token, a flaky read) must never stop the
+    others from being swept. Nothing is written on a failed read, so a transient
+    error simply means "try again next tick".
+    """
+    from connect_labs.labs.models import WorkflowSchedule
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+    from connect_labs.workflow.resumable_runs import is_resumable
+
+    checked = dispatched = 0
+    for sched in WorkflowSchedule.objects.filter(enabled=True):
+        da = None
+        try:
+            token = get_valid_access_token(sched.owner)
+            da = WorkflowDataAccess(
+                access_token=token,
+                opportunity_id=sched.opportunity_id,
+                program_id=None if sched.opportunity_id else sched.program_id,
+            )
+            definition = da.get_definition(sched.definition_id)
+            if definition is None or not is_resumable(definition.template_type):
+                continue
+
+            run = _latest_run(da, sched.definition_id)
+            if run is None:
+                continue
+            checked += 1
+
+            eligible, reason = _resume_eligibility(run)
+            if not eligible:
+                logger.debug("[ResumeSweep] run %s not eligible: %s", run.id, reason)
+                continue
+
+            # Claim BEFORE dispatch by writing the incremented attempt count:
+            # the resumed job's own first heartbeat is what makes the run
+            # ineligible on subsequent ticks, and that lands a moment after
+            # dispatch, not before it. Writing the claim first means an
+            # overlapping tick sees the higher count (and, at the ceiling,
+            # stops) instead of dispatching a second resume into the same run.
+            attempt = (run.data.get("state", {}) or {}).get("resume_attempts", 0) + 1
+            da.update_run_state(run.id, {"resume_attempts": attempt})
+            logger.info(
+                "[ResumeSweep] resuming run %s (definition %s, attempt %d/%d): %s",
+                run.id,
+                sched.definition_id,
+                attempt,
+                MAX_RESUME_ATTEMPTS,
+                reason,
+            )
+            resume_stale_workflow_run.delay(sched.pk, run.id, attempt)
+            dispatched += 1
+        except Exception:  # noqa: BLE001 — one bad schedule must not stop the sweep
+            logger.warning("[ResumeSweep] check failed for schedule %s", sched.pk, exc_info=True)
+        finally:
+            if da is not None:
+                try:
+                    da.close()
+                except Exception:
+                    pass
+
+    return {"checked": checked, "dispatched": dispatched}
+
+
+@celery_app.task
+def resume_stale_workflow_run(schedule_id: int, run_id: int, attempt: int) -> dict:
+    """Re-fire one dead run's job, or mark it terminally failed if the attempt
+    that just ran was the last one the budget allows.
+
+    Dispatched by the sweep rather than run inline in it, so one long resume
+    can't hold up the tick for every other schedule.
+    """
+    from connect_labs.labs.models import WorkflowSchedule
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+    from connect_labs.workflow.resumable_runs import resume_handler_for
+
+    try:
+        sched = WorkflowSchedule.objects.get(pk=schedule_id)
+    except WorkflowSchedule.DoesNotExist:
+        return {"status": "gone", "run_id": run_id}
+
+    da = None
+    try:
+        token = get_valid_access_token(sched.owner)
+        da = WorkflowDataAccess(
+            access_token=token,
+            opportunity_id=sched.opportunity_id,
+            program_id=None if sched.opportunity_id else sched.program_id,
+        )
+        definition = da.get_definition(sched.definition_id)
+        run = da.get_run(run_id)
+        if definition is None or run is None:
+            return {"status": "gone", "run_id": run_id}
+
+        resume = resume_handler_for(definition.template_type)
+        if resume is None:
+            return {"status": "not_resumable", "run_id": run_id}
+
+        result = resume(definition, run, access_token=token)
+        return {"status": "resumed", "run_id": run_id, "attempt": attempt, **(result or {})}
+    except Exception as e:  # noqa: BLE001 — recorded on the run, not raised into the worker
+        logger.warning("[ResumeSweep] resume failed for run %s (attempt %d)", run_id, attempt, exc_info=True)
+        if attempt >= MAX_RESUME_ATTEMPTS:
+            _mark_resume_exhausted(sched, run_id, str(e))
+        return {"status": "failed", "run_id": run_id, "attempt": attempt, "error": str(e)}
+    finally:
+        if da is not None:
+            try:
+                da.close()
+            except Exception:
+                pass
+
+
+def _mark_resume_exhausted(sched, run_id: int, error: str) -> None:
+    """Stamp a run as terminally failed after its last automatic attempt.
+
+    Without this the run keeps reading as "stale, running" forever: the sweep
+    would skip it on the budget check but a human opening the page would see a
+    job that still looks like it might be going. ``resume_exhausted`` also lets
+    the sweep skip it on every future tick without a second, age-based rule.
+    """
+    try:
+        token = get_valid_access_token(sched.owner)
+        _update_job_state(
+            run_id,
+            token,
+            sched.opportunity_id,
+            {
+                "status": "failed",
+                "resume_exhausted": True,
+                "error": (
+                    f"Exhausted {MAX_RESUME_ATTEMPTS} automatic resume attempts; still incomplete "
+                    f"— manual investigation needed. Last error: {error}"
+                )[:2000],
+            },
+            program_id=None if sched.opportunity_id else sched.program_id,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("[ResumeSweep] could not mark run %s resume-exhausted", run_id, exc_info=True)
