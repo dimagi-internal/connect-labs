@@ -276,6 +276,21 @@ _AFFIRMATIVE_FOR = {
 }
 
 
+# Outcome-defining leaves are NEVER curated. Curation exists to give a degenerate
+# clinical FLAG some minority mass so derived rates have variance to model (#670) —
+# but it cannot tell a flag apart from the programme's headline OUTCOME. Real KMC
+# `child_alive` is ~99% "yes", which trips the >=95% degenerate test, so curation was
+# injecting deaths at 5-18% and producing a ~4x mortality rate (35.6% of babies vs a
+# real ~8%). Bands or dashboards calibrated on that are confidently wrong. A clone may
+# invent variance in how work is RECORDED; it must not invent whether babies lived.
+# connect-labs#1189.
+_OUTCOME_LEAVES = frozenset({"child_alive", "alive", "baby_alive", "is_alive", "child_died", "died", "death"})
+
+
+def _is_outcome_path(path: str) -> bool:
+    return path.rsplit(".", 1)[-1].lower() in _OUTCOME_LEAVES
+
+
 def _curate_categorical(values: dict[str, float], target_minority: float) -> dict[str, float]:
     """Give a degenerate categorical realistic minority mass so it carries signal.
 
@@ -684,7 +699,7 @@ def profile(
             if kind in {"select", "multiselect"} and path not in field_dists:
                 values = _profile_categorical(user_visits, path)
                 if values:
-                    if curate:
+                    if curate and not _is_outcome_path(path):
                         target = round(min(0.3, opp_rng.uniform(0.05, 0.18) * opp_jitter), 4)
                         values = _curate_categorical(values, target)
                     field_dists[path] = {

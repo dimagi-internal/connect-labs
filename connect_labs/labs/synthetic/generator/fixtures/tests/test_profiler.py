@@ -352,6 +352,82 @@ def test_curate_categorical_injects_minority():
     assert _curate_categorical({"a": 0.6, "b": 0.4}, 0.1) == {"a": 0.6, "b": 0.4}
 
 
+def test_outcome_fields_are_never_curated():
+    """Curation gives degenerate clinical FLAGS minority mass, but must never
+    invent an OUTCOME. Real child_alive is ~99% yes, which trips the degenerate
+    test — curating it injected deaths at 5-18% and produced a ~4x mortality
+    rate on the KMC clone cohort (connect-labs#1189)."""
+    from connect_labs.labs.synthetic.generator.fixtures.profiler import _is_outcome_path
+
+    assert _is_outcome_path("form.child_alive")
+    assert _is_outcome_path("form.case.update.child_alive")
+    assert _is_outcome_path("form.subcase_0.case.update.CHILD_ALIVE")
+    # A clinical flag is still fair game for curation.
+    assert not _is_outcome_path("form.danger_signs_checklist.jaundice")
+    assert not _is_outcome_path("form.referral_status")
+
+
+def test_profile_curate_leaves_child_alive_at_its_real_rate():
+    """End-to-end: a 99%-alive source stays ~99% alive in a CURATED manifest,
+    while a genuinely degenerate flag on the same visits still gets signal."""
+    import yaml
+
+    from connect_labs.labs.synthetic.generator.fixtures.profiler import profile
+
+    visits = []
+    for i in range(200):
+        visits.append(
+            {
+                "id": i,
+                "username": f"flw_{i % 4:03d}",
+                "entity_id": f"case-{i % 50}",
+                "visit_date": f"2026-05-{(i % 28) + 1:02d}",
+                "status": "approved",
+                "form_json": {
+                    "form": {
+                        # 1 death in 200 visits — the real KMC shape.
+                        "child_alive": "no" if i == 7 else "yes",
+                        # A genuinely degenerate flag: never positive.
+                        "danger_sign_positive": "no",
+                    }
+                },
+            }
+        )
+    schema = {
+        "deliver_app": {
+            "modules": [
+                {
+                    "forms": [
+                        {
+                            "name": {"en": "Record Visit Details"},
+                            "questions": [
+                                {"value": "/data/child_alive", "tag": "select1", "type": "Select"},
+                                {"value": "/data/danger_sign_positive", "tag": "select1", "type": "Select"},
+                            ],
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+    manifest = yaml.safe_load(
+        profile(
+            opportunity_id=1,
+            user_visits=visits,
+            user_data=[],
+            opportunity_detail={"id": 1, "name": "KMC"},
+            app_structure=schema,
+            curate=True,
+        )
+    )
+    dists = manifest["beneficiary_cohorts"][0]["field_distributions"]
+    alive = dists.get("form.child_alive", {}).get("values", {})
+    assert alive, "child_alive should be profiled"
+    # Untouched by curation: still ~0.5% deaths, not the 5-18% curation injects.
+    assert alive.get("yes", 0) > 0.95, alive
+    assert alive.get("no", 0) < 0.02, alive
+
+
 def test_seed_anomalies_targets_real_flws_and_numeric_field():
     from connect_labs.labs.synthetic.generator.fixtures.profiler import _seed_anomalies
 
