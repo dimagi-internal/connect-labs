@@ -141,7 +141,9 @@ def test_sweep_dispatches_and_claims_the_attempt_first(_schedule, monkeypatch):
     result = tasks.sweep_stale_workflow_runs()
 
     assert result == {"checked": 1, "dispatched": 1}
-    da.update_run_state.assert_called_once_with(13364, {"resume_attempts": 1})
+    written = da.update_run_state.call_args[0][1]
+    assert written["resume_attempts"] == 1
+    assert written["resume_total_attempts"] == 1
     dispatch.assert_called_once_with(_schedule.pk, 13364, 1)
 
 
@@ -242,3 +244,113 @@ def test_an_earlier_failed_attempt_leaves_the_budget_open(_schedule, monkeypatch
     tasks.resume_stale_workflow_run(_schedule.pk, 13364, 1)
 
     marked.assert_not_called()
+
+
+# ------------------------------------------------- what the run is charged for
+
+
+def _job_from_another_worker(*, heartbeat_age, worker_id="old-host:123:2026-08-14T18:00:00"):
+    return {"status": "running", "worker_id": worker_id, "updated_at": _iso(heartbeat_age)}
+
+
+def _this_worker_booted(monkeypatch, *, seconds_ago):
+    """Pin THIS process's boot stamp so the ordering under test is explicit
+    rather than a race against how long the test session took to start."""
+    boot = _iso(seconds_ago)
+    monkeypatch.setattr("connect_labs.workflow.job_state.worker_identity", lambda: (f"this-host:1:{boot}", boot))
+
+
+def test_a_worker_restart_is_not_charged_to_the_run(monkeypatch):
+    """A deploy hard-kills every task with no drain, so meeting one is a hazard
+    of running long — not evidence the run is broken. Charging it would condemn
+    a healthy run for something entirely outside itself."""
+    _this_worker_booted(monkeypatch, seconds_ago=60)  # booted after the job fell silent
+    charged, cause = tasks._resume_charge(_run(_job_from_another_worker(heartbeat_age=JOB_STALE_SECONDS + 600)))
+
+    assert charged is False
+    assert "worker restarted" in cause
+
+
+def test_a_hang_inside_a_live_worker_is_charged():
+    """Same stale "running" record, opposite meaning: nothing killed this one,
+    it stopped moving on its own, and retrying that forever hides a defect."""
+    from connect_labs.workflow.job_state import worker_identity
+
+    mine, _ = worker_identity()  # the job says it belongs to THIS process
+    run = _run({"status": "running", "worker_id": mine, "updated_at": _iso(JOB_STALE_SECONDS + 600)})
+
+    charged, cause = tasks._resume_charge(run)
+
+    assert charged is True
+    assert "live worker" in cause
+
+
+def test_a_failed_job_is_charged():
+    charged, cause = tasks._resume_charge(_run({"status": "failed", "updated_at": _iso(30)}))
+
+    assert charged is True
+    assert cause == "job failed"
+
+
+def test_a_worker_that_booted_before_the_job_went_quiet_cannot_have_killed_it(monkeypatch):
+    """The restart has to have happened at or after the job fell silent. An
+    older worker being the one to notice says nothing about how the job died,
+    so the run keeps being accountable rather than being quietly excused."""
+    _this_worker_booted(monkeypatch, seconds_ago=7200)  # long before the job went quiet
+    run = _run(_job_from_another_worker(heartbeat_age=JOB_STALE_SECONDS + 600))
+
+    charged, _ = tasks._resume_charge(run)
+
+    assert charged is True
+
+
+def test_a_job_with_no_worker_stamp_is_charged():
+    """Runs from before the stamp existed: an unclear case is treated as the
+    run's own failure rather than silently excused."""
+    charged, _ = tasks._resume_charge(_run({"status": "running", "updated_at": _iso(JOB_STALE_SECONDS + 600)}))
+
+    assert charged is True
+
+
+@pytest.mark.django_db
+def test_an_uncharged_resume_leaves_the_budget_untouched(_schedule, monkeypatch):
+    _this_worker_booted(monkeypatch, seconds_ago=60)
+    run = _run(_job_from_another_worker(heartbeat_age=JOB_STALE_SECONDS + 600), resume_attempts=2)
+    da, dispatch = _patch_sweep(monkeypatch, "weekly_dual_track_audit", run)
+
+    tasks.sweep_stale_workflow_runs()
+
+    written = da.update_run_state.call_args[0][1]
+    assert written["resume_attempts"] == 2  # unchanged — the run didn't earn this one
+    assert written["resume_total_attempts"] == 1  # but it IS recorded
+    assert "worker restarted" in written["resume_last_cause"]
+    assert dispatch.call_args[0][2] == 2
+
+
+@pytest.mark.django_db
+def test_a_charged_resume_advances_the_budget(_schedule, monkeypatch):
+    run = _run({"status": "failed", "updated_at": _iso(30)}, resume_attempts=2)
+    da, dispatch = _patch_sweep(monkeypatch, "weekly_dual_track_audit", run)
+
+    tasks.sweep_stale_workflow_runs()
+
+    written = da.update_run_state.call_args[0][1]
+    assert written["resume_attempts"] == 3
+    assert written["resume_total_attempts"] == 1
+
+
+@pytest.mark.django_db
+def test_endless_uncharged_resumes_still_stop_at_the_ceiling(_schedule, monkeypatch):
+    """Uncharged is not unlimited: a run that somehow attracts restarts forever
+    must still stop, and say why, rather than being retried indefinitely."""
+    _this_worker_booted(monkeypatch, seconds_ago=60)
+    run = _run(_job_from_another_worker(heartbeat_age=JOB_STALE_SECONDS + 600))
+    run.data["state"]["resume_total_attempts"] = tasks.MAX_TOTAL_RESUMES
+    _, dispatch = _patch_sweep(monkeypatch, "weekly_dual_track_audit", run)
+    marked = mock.Mock()
+    monkeypatch.setattr(tasks, "_mark_resume_exhausted", marked)
+
+    tasks.sweep_stale_workflow_runs()
+
+    dispatch.assert_not_called()
+    assert f"Resumed {tasks.MAX_TOTAL_RESUMES} times" in marked.call_args.kwargs["summary"]
