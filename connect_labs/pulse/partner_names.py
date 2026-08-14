@@ -79,9 +79,17 @@ def _slugify(value: str, drop_apostrophe: bool = False) -> str:
     return _norm(value, drop_apostrophe).replace(" ", "-")
 
 
+# Connectives carry no identity: "Peace Restoration And Integral Global
+# Development Initiative" and its slug (which drops the "and") are the same
+# organisation, and keeping such words demoted real partners like PRIDE to a
+# review-only subset match -- shown as a raw slug, unfindable by their name.
+_STOPWORDS = frozenset({"and", "of", "the", "for", "a", "an", "de", "du", "des", "la", "le", "les", "et", "da", "di"})
+
+
 def _stems(value: str) -> set:
-    """Plural-insensitive words, so "preterm-infants-…" meets "Preterm Infant …"."""
-    return {t[:-1] if len(t) > 3 and t.endswith("s") else t for t in _norm(value).split()}
+    """Plural- and connective-insensitive words, so "preterm-infants-…" meets
+    "Preterm Infant …" and a slug that drops an "and" still meets its name."""
+    return {t[:-1] if len(t) > 3 and t.endswith("s") else t for t in _norm(value).split() if t not in _STOPWORDS}
 
 
 @lru_cache(maxsize=1)
@@ -148,7 +156,7 @@ def _match_text(text: str):
         stems = _stems(value.replace("-", " "))
         for cand in _candidates():
             if stems and stems == cand["stems"]:
-                return cand, "same-tokens", "identical words, ignoring plurals"
+                return cand, "same-tokens", "identical words, ignoring plurals and connectives"
 
     # Below here is advisory only.
     best = None

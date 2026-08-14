@@ -427,6 +427,14 @@
         ).join('')}
       </div>`;
     panel.appendChild(head);
+    // The act narration used to sit ON the map, where it fought the lit
+    // points and overlapped them. It belongs with the act it narrates.
+    const claim = document.createElement('div');
+    claim.className = 'act-claim';
+    claim.innerHTML = `<span class="pulse-lbl" id="act-eyebrow">—</span>
+      <h2 id="act-title"></h2>
+      <p id="act-note"></p>`;
+    panel.appendChild(claim);
     panel.appendChild(actBody);
     head
       .querySelectorAll('[data-act]')
@@ -596,18 +604,27 @@
         orgWrap.hidden = true;
       } else {
         orgWrap.hidden = false;
+        // The menu is a picker, not a dossier: the master list's short name
+        // ("PRIDE", "C-WINS") is what people scan for, so it leads. The full
+        // name only comes back when two Connect orgs share a parent and the
+        // short alone could not tell them apart.
+        const shortOf = (o) =>
+          o.partner_short ||
+          o.partner ||
+          (o.named === false ? `${o.name} (identifier)` : o.name);
+        const dupes = {};
+        for (const o of s.orgs)
+          dupes[shortOf(o)] = (dupes[shortOf(o)] || 0) + 1;
         for (const o of s.orgs) {
           const opt = document.createElement('option');
           opt.value = o.slug;
-          // Connect's own partner name, verbatim. Say which partners are
-          // dormant rather than letting someone pick one and get a blank map.
-          const label = o.partner
-            ? o.partner === o.name
-              ? o.partner
-              : `${o.partner} · ${o.name}`
-            : o.named === false
-            ? `${o.name} (identifier)`
-            : o.name;
+          // Say which partners are dormant rather than letting someone pick
+          // one and get a blank map.
+          const base = shortOf(o);
+          const label =
+            dupes[base] > 1 && o.name && o.name !== base
+              ? `${base} · ${o.name}`
+              : base;
           opt.textContent = o.recent_events
             ? label
             : `${label} — no recent delivery`;
