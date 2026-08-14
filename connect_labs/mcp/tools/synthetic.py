@@ -22,8 +22,13 @@ from connect_labs.labs.synthetic.cohort import CohortSpec
 from connect_labs.labs.synthetic.dump import _fetch_endpoint
 from connect_labs.labs.synthetic.gdrive import DriveClient
 from connect_labs.labs.synthetic.generator.fixtures.engine import generate as _generate
-from connect_labs.labs.synthetic.generator.fixtures.fidelity import compare
-from connect_labs.labs.synthetic.generator.fixtures.manifest import Manifest, ManifestValidationError
+from connect_labs.labs.synthetic.generator.fixtures.fidelity import compare, compare_to_source
+from connect_labs.labs.synthetic.generator.fixtures.manifest import (
+    Manifest,
+    ManifestValidationError,
+    NormalDistribution,
+    UniformDistribution,
+)
 from connect_labs.labs.synthetic.generator.fixtures.profiler import profile as _profile
 from connect_labs.labs.synthetic.generator.fixtures.schema_loader import FormSchema, parse_form_schema_from_app_json
 from connect_labs.labs.synthetic.generator.io.uploader import upload_and_register
@@ -1132,6 +1137,98 @@ def synthetic_profile_opps_bulk(user, *, source_opportunity_ids: list[int], out_
         "bundle_dirs": handles,
         "succeeded": len(handles),
         "requested": len(source_opportunity_ids),
+    }
+
+
+@register(
+    name="synthetic_fidelity_vs_source",
+    description=(
+        "PROD-TOUCHING. Score a clone against the REAL opportunity it was cloned from — "
+        "the measurement that answers 'would an analysis run on this clone reach the same "
+        "conclusion as on real data'. Regenerates the clone deterministically from its "
+        "profile bundle, fetches the real opp's visits, and returns an overall 0-1 fidelity "
+        "score plus its components: per-field normalized Wasserstein distance and "
+        "out-of-range leakage, per-entity trajectory slope deltas (the growth-curve axis), "
+        "and total-variation distance on visits-per-case and cases-per-FLW. "
+        "Distinct from synthetic_fidelity_report, which only checks a clone against its OWN "
+        "manifest (did generation hit its targets) and so cannot detect drift from reality. "
+        "Output is aggregate statistics only — no row-level data leaves the source."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "bundle_dir": {
+                "type": "string",
+                "description": (
+                    "The clone's profile bundle: a local path, or 'gdrive:<subfolder_id>'. "
+                    "The clone is regenerated from it deterministically (same seed), so the "
+                    "scored fixtures match what was registered."
+                ),
+            },
+            "top_n_fields": {
+                "type": "integer",
+                "description": "Cap per-field detail in the response (default 15). The score always uses every field.",
+            },
+        },
+        "required": ["bundle_dir"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_fidelity_vs_source(user, *, bundle_dir: str, top_n_fields: int = 15) -> dict[str, Any]:
+    try:
+        token = require_connect_token(user)
+    except Exception:
+        raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch the real source opportunity.")
+
+    drive = DriveClient() if str(bundle_dir).startswith("gdrive:") else None
+    if drive is not None:
+        from connect_labs.labs.synthetic.bundle import GDriveBundleStore
+
+        bundle = GDriveBundleStore(drive, "").read(str(bundle_dir)[len("gdrive:") :])
+    else:
+        bundle = read_bundle(bundle_dir)
+
+    try:
+        manifest = Manifest.from_yaml(bundle.manifest_yaml)
+    except ManifestValidationError as exc:
+        raise MCPToolError("INVALID_SCHEMA", str(exc))
+
+    source_visits = _fetch_endpoint(settings.CONNECT_PRODUCTION_URL, bundle.source_opp_id, "user_visits", token)
+    if not isinstance(source_visits, list) or not source_visits:
+        raise MCPToolError("UPSTREAM_ERROR", f"No user_visits returned for source opp {bundle.source_opp_id}.")
+
+    form_schema = parse_form_schema_from_app_json(bundle.app_structure, app_type="deliver")
+    clone_visits = _generate(
+        manifest=manifest,
+        opportunity_detail=bundle.opportunity,
+        form_schema=form_schema,
+        app_structure=bundle.app_structure,
+    ).get("user_visits", [])
+
+    cohort = manifest.beneficiary_cohorts[0]
+    numeric_paths = {
+        path
+        for path, dist in cohort.field_distributions.items()
+        if isinstance(dist, (NormalDistribution, UniformDistribution))
+    }
+    if not numeric_paths:
+        raise MCPToolError("INVALID_SCHEMA", "Bundle manifest declares no numeric fields to score.")
+
+    report = compare_to_source(source_visits, clone_visits, numeric_paths=numeric_paths)
+
+    fields = report.get("fields", {})
+    worst = sorted(fields.items(), key=lambda kv: -kv[1].get("wasserstein_norm", 0.0))[:top_n_fields]
+    return {
+        "source_opportunity_id": bundle.source_opp_id,
+        "score": report.get("score"),
+        "source_visit_count": len(source_visits),
+        "clone_visit_count": len(clone_visits),
+        "visits_per_case_tvd": report.get("visits_per_case_tvd"),
+        "cases_per_flw_tvd": report.get("cases_per_flw_tvd"),
+        "fields_scored": len(fields),
+        "worst_fields": dict(worst),
+        "trajectory": report.get("trajectory", {}),
     }
 
 

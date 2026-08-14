@@ -372,6 +372,19 @@ def fill_form_json(
         dist, consumed_key = _resolve_dist(effective, spec, leaf_question_counts=leaf_question_counts)
         if consumed_key is not None:
             consumed_keys.add(consumed_key)
+        if dist is None and mirror and spec.kind not in {"select", "multiselect"}:
+            # Faithful sparsity (mirror), free-text half of the rule above. No
+            # distribution means the profiler never saw this question answered in
+            # ANY real submission, so the honest clone leaves it blank too.
+            # Fabricating here makes a field that is 100% empty in reality read as
+            # 100% populated — worse than a wrong value, because it makes an unused
+            # field look like a usable signal. Real case: every KMC app defines
+            # `danger_sign_list` as a hidden DataBindOnly calculate, no opp ever
+            # populates it, and the generic-text pool ("see notes" / "not recorded")
+            # made it look like a recorded danger-sign feed (connect-labs#1189).
+            # Selects keep filling from their declared choices — that is #713's
+            # deliberate call, so a clone retains categorical texture.
+            continue
         if dist is None:
             value = _default_for_kind(spec, rng)
         elif getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:

@@ -579,3 +579,45 @@ def test_mirror_group_question_does_not_clobber_forced_child():
         mirror=True,
     )
     assert out["form"]["anthropometric"]["child_weight_visit"] == 2900  # survives the group-question fill
+
+
+def test_mirror_omits_questions_the_source_never_answered():
+    """Faithful sparsity, non-numeric half (connect-labs#1189).
+
+    A free-text/hidden question the app DEFINES but no real submission ever ANSWERS
+    has no profiled distribution. Under mirror the clone leaves it blank rather than
+    fabricating text:
+    filling it makes a field that is 100% empty in reality read as 100% populated,
+    which is worse than a wrong value because it makes an unused field look like a
+    usable signal. Real case: every KMC app defines `danger_sign_list`, none of the
+    11 opps populates it, and the generic-text filler ("see notes" / "not recorded")
+    made it look like a recorded danger-sign feed.
+    """
+    rng = random.Random(11)
+    schema = FormSchema(
+        questions=[
+            QuestionSpec("form.weight_kg", "decimal"),          # profiled
+            QuestionSpec("form.danger_sign_list", "text"),      # defined, never answered
+            QuestionSpec("form.referral_note", "text"),         # defined, never answered
+        ]
+    )
+    out = fill_form_json(
+        schema=schema, cohort=_cohort(), anomalies_for_visit=[], rng=rng,
+        mirror=True, forced_values={"form.weight_kg": 1800.0},
+    )
+    form = out["form"]
+    assert form.get("weight_kg") is not None, "transplanted value must still land"
+    assert "danger_sign_list" not in form, form
+    assert "referral_note" not in form, form
+
+    # Non-mirror generation is unchanged — it still fabricates, as demo cohorts expect.
+    loose = fill_form_json(schema=schema, cohort=_cohort(), anomalies_for_visit=[], rng=random.Random(11))
+    assert "danger_sign_list" in loose["form"]
+
+    # Selects keep filling even under mirror (#713's deliberate call) — a clone
+    # should still carry categorical texture.
+    sel = FormSchema(questions=[QuestionSpec("form.status", "select", choices=["ok", "bad"])])
+    out_sel = fill_form_json(
+        schema=sel, cohort=_cohort(), anomalies_for_visit=[], rng=random.Random(3), mirror=True
+    )
+    assert out_sel["form"]["status"] in ("ok", "bad")

@@ -596,3 +596,74 @@ def test_require_access_real_opp_denies_non_member(user, monkeypatch):
     with pytest.raises(MCPToolError) as exc:
         _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, real_opp_id)
     assert exc.value.code == "PERMISSION_DENIED"
+
+
+def _fidelity_bundle(tmp_path, opp_id=523):
+    from connect_labs.labs.synthetic.bundle import write_bundle
+
+    return write_bundle(
+        tmp_path,
+        opp_id,
+        manifest_yaml=(
+            f"opportunity_id: {opp_id}\n"
+            "opportunity_name: KMC\n"
+            "random_seed: 42\n"
+            "timeline: {start_date: 2026-05-04, end_date: 2026-06-01, weeks: 4,"
+            " visit_cadence_per_week_per_flw: {mean: 5, stddev: 1}}\n"
+            "flw_personas: [{id: a, archetype: steady,"
+            " accuracy_distribution: {mean: 0.8, stddev: 0.05},"
+            " completeness_distribution: {mean: 0.8, stddev: 0.05}, flag_rate: 0.1}]\n"
+            "beneficiary_cohorts: [{id: primary, size: 20, progression: flat,"
+            ' field_distributions: {"form.w": {distribution: normal, mean: 12.0, stddev: 2.0}}}]\n'
+            "kpi_config: [{kpi: a, field_path: form.w, aggregation: mean, threshold_underperform: 1.0}]\n"
+        ),
+        app_structure={"learn_app": None, "deliver_app": {"modules": []}},
+        opportunity={"id": opp_id, "name": "KMC"},
+    )
+
+
+@pytest.mark.django_db
+def test_fidelity_vs_source_scores_clone_against_real_opp(user, tmp_path, monkeypatch):
+    """The clone-vs-REAL scorer is exposed and returns a score plus its components.
+
+    ``fidelity.compare_to_source`` has existed and been unit-tested since #713 but
+    was never wired to a caller, so no clone had ever been measured against its
+    source. Only ``synthetic_fidelity_report`` was exposed, and that compares a clone
+    to its OWN manifest — which by construction cannot detect drift from reality.
+    """
+    from connect_labs.mcp.tools import synthetic as syn
+
+    real_visits = [
+        {
+            "id": i,
+            "username": f"flw_{i % 3}",
+            "entity_id": f"case-{i % 7}",
+            "visit_date": f"2026-05-{(i % 28) + 1:02d}",
+            "form_json": {"form": {"w": 12.0 + (i % 5) * 0.4}},
+        }
+        for i in range(60)
+    ]
+    monkeypatch.setattr(syn, "_fetch_endpoint", lambda *a, **k: real_visits)
+    monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
+
+    out = get_tool("synthetic_fidelity_vs_source").handler(user=user, bundle_dir=str(_fidelity_bundle(tmp_path)))
+    assert out["source_opportunity_id"] == 523
+    assert 0.0 <= out["score"] <= 1.0
+    assert out["source_visit_count"] == 60
+    assert out["clone_visit_count"] > 0
+    assert "visits_per_case_tvd" in out and "cases_per_flw_tvd" in out
+    # Aggregate only — no row-level payload leaves the source.
+    assert "rows" not in out and "visits" not in out
+
+
+@pytest.mark.django_db
+def test_fidelity_vs_source_errors_when_source_has_no_visits(user, tmp_path, monkeypatch):
+    from connect_labs.mcp.tools import synthetic as syn
+
+    monkeypatch.setattr(syn, "_fetch_endpoint", lambda *a, **k: [])
+    monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
+    with pytest.raises(MCPToolError) as exc:
+        get_tool("synthetic_fidelity_vs_source").handler(
+            user=user, bundle_dir=str(_fidelity_bundle(tmp_path, opp_id=999))
+        )
+    assert exc.value.code == "UPSTREAM_ERROR"
