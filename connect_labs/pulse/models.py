@@ -383,6 +383,23 @@ class PulseCursor(models.Model):
     backfill_complete = models.BooleanField(default=False)
     backfill_oldest_id = models.BigIntegerField(null=True, blank=True)
 
+    # How deep the completed walk actually went. `backfill_complete` alone is a
+    # boolean with no notion of depth, and that is not a nuance -- it silently
+    # caps every future backfill at the shallowest one ever run.
+    #
+    # Observed on prod: a `--days 37` pass walked each opportunity back 37 days.
+    # For a large one the newest page of 1,000 visits already spans more than
+    # that, so it hit the cutoff after a single page and was marked complete --
+    # correct for 37 days. A later all-history pass then SKIPPED those
+    # opportunities entirely, because complete-is-complete. They were the
+    # opportunities holding almost all the volume: opp 411 sat at 1,000 stored
+    # against 101,458 lifetime, flagged done.
+    #
+    # Storing the cutoff reached lets a deeper request re-open a shallower
+    # completion. NULL means "completed at an unknown depth" (rows predating
+    # this column) and is therefore always re-checked rather than trusted.
+    backfill_complete_to = models.DateTimeField(null=True, blank=True)
+
     consecutive_failures = models.IntegerField(default=0)
     last_error = models.TextField(blank=True)
 
