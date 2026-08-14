@@ -184,3 +184,47 @@ class TestNoPIISurvivesIngest:
         )
         assert "child_weight" not in blob
         assert "anthropometric" not in blob
+
+
+@pytest.mark.django_db
+class TestCoordinatePrecision:
+    """What must not be shown must not be sent.
+
+    The screen promises "household coordinates are never shown below town
+    scale", and the events/replay APIs serve unauthenticated public links --
+    so the payload itself is the boundary, not the rendering. Storage keeps
+    full precision (the map and any future server-side resolution need it);
+    every serialized coordinate is rounded to two decimals, ~1.1 km. Four
+    decimals -- what these endpoints used to ship -- is ~11 m: a household.
+    """
+
+    def _assert_town_scale(self, coords):
+        assert coords, "expected coordinates in the payload"
+        for value in coords:
+            assert value == round(value, 2), f"{value} is finer than town scale"
+
+    def test_event_feed_is_town_scale(self, client, ingested):
+        body = json.loads(client.get(reverse("pulse:api_events"), {"limit": 500}).content)
+        lat_i, lon_i = body["fields"].index("lat"), body["fields"].index("lon")
+        rows = body["events"]
+        self._assert_town_scale([r[i] for r in rows for i in (lat_i, lon_i) if r[i] is not None])
+
+    def test_replay_is_town_scale(self, client, ingested):
+        # Explicit range: the corpus is timestamped in fixed July 2026, which
+        # the rolling window (capped at 14 days) can't be relied on to reach.
+        import time as _time
+
+        body = json.loads(
+            client.get(
+                reverse("pulse:api_replay"),
+                {"from": 1750000000, "to": int(_time.time())},
+            ).content
+        )
+        lat_i, lon_i = body["fields"].index("lat"), body["fields"].index("lon")
+        rows = body["events"]
+        self._assert_town_scale([r[i] for r in rows for i in (lat_i, lon_i) if r[i] is not None])
+
+    def test_stored_precision_is_untouched(self, ingested):
+        """Rounding belongs at the boundary, never in the store."""
+        event = PulseEvent.objects.exclude(lat=None).first()
+        assert event.lat != round(event.lat, 2)

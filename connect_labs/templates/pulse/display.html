@@ -176,6 +176,8 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
   </script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
   <script src="{% static 'maps/connect_map.js' %}"></script>
+  {# Before cards.js: it swaps the 42-city fallback for the real town list. #}
+  <script src="{% static 'pulse/towns.js' %}"></script>
   <script src="{% static 'pulse/store.js' %}"></script>
   <script src="{% static 'pulse/cards.js' %}"></script>
   <script src="{% static 'pulse/windows.js' %}"></script>

@@ -860,3 +860,72 @@ class TestTheNotLiveMessageNamesWhatIsWrong:
         msg = client.get(reverse("pulse:api_summary")).json()["ingest"]["message"]
         assert "0 minutes" not in msg, msg
         assert "under a minute" in msg or "cheap" in msg, msg
+
+
+@pytest.mark.django_db
+class TestSummaryCache:
+    """The summary is cached briefly, keyed by scope AND naming entitlement.
+
+    The endpoint aggregates the full-history event table (~18s at 1.6M rows),
+    so repeat loads must not recompute -- but a cached entitled payload leaking
+    to an anonymous caller would be a partner-naming hole, so the variants may
+    never share an entry.
+    """
+
+    def _spy(self, monkeypatch):
+        from connect_labs.pulse import api
+
+        calls = []
+        orig = api.SummaryView._build
+
+        def spy(self, request):
+            calls.append(1)
+            return orig(self, request)
+
+        monkeypatch.setattr(api.SummaryView, "_build", spy)
+        return calls
+
+    def test_repeat_loads_hit_the_cache(self, client, populated, settings, monkeypatch):
+        from django.core.cache import cache
+
+        settings.PULSE_SUMMARY_CACHE_SECONDS = 60
+        cache.clear()
+        calls = self._spy(monkeypatch)
+        url = reverse("pulse:api_summary")
+
+        first = client.get(url).content
+        second = client.get(url).content
+
+        assert len(calls) == 1, "the second load should be served from cache"
+        assert first == second
+
+    def test_entitlement_variants_never_share_an_entry(
+        self, client, populated, settings, monkeypatch, django_user_model
+    ):
+        from django.core.cache import cache
+
+        settings.PULSE_SUMMARY_CACHE_SECONDS = 60
+        cache.clear()
+        calls = self._spy(monkeypatch)
+        url = reverse("pulse:api_summary")
+
+        client.get(url)  # anonymous -- no partner names
+        client.force_login(django_user_model.objects.create_user("staff", password="pw"))
+        client.get(url)  # entitled -- must not receive the anonymous entry
+
+        assert len(calls) == 2, "an entitled caller must never be served the anonymous payload"
+        client.get(url)
+        assert len(calls) == 2, "but its own variant is cached like any other"
+
+    def test_warmer_precomputes_both_variants(self, populated, settings, client, monkeypatch):
+        from django.core.cache import cache
+
+        from connect_labs.pulse import tasks
+
+        settings.PULSE_SUMMARY_CACHE_SECONDS = 60
+        cache.clear()
+        assert tasks.warm_summary_cache() == 2
+
+        calls = self._spy(monkeypatch)
+        client.get(reverse("pulse:api_summary"))
+        assert calls == [], "a warmed cache means the first viewer never computes"

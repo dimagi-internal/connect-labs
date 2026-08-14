@@ -26,12 +26,23 @@
   // The dossier is a full authenticated page; a public token has no route to
   // it, so its link only renders on the authenticated display.
   const DOSSIERS = !(global.PULSE_CONFIG || {}).isPublic;
+  // target=_blank: windows live on a running display, and the whole point of
+  // overlays is that the display survives them -- navigating the kiosk tab
+  // away to a document page would throw that away.
   const dossierLink = (id) =>
     DOSSIERS
-      ? '<a class="pulse-opp-dossier" href="/labs/pulse/opp/' +
+      ? '<a class="pulse-opp-dossier" target="_blank" rel="noopener" href="/labs/pulse/opp/' +
         id +
         '/" title="Open the full dossier page">dossier ↗</a>'
       : '';
+  const dossierName = (id, name) =>
+    DOSSIERS
+      ? '<a class="pulse-opp-namelink" target="_blank" rel="noopener" href="/labs/pulse/opp/' +
+        id +
+        '/" title="Open the full dossier page">' +
+        esc(name) +
+        '</a>'
+      : esc(name);
 
   const REFRESH_MS = 12000;
   const esc = (s) =>
@@ -205,7 +216,7 @@
         '<div class="pulse-win-sect"><span class="pulse-lbl">Its opportunity</span>' +
         '<div class="pulse-opp-solo">' +
         '<span class="os-name">' +
-        esc(o.name) +
+        dossierName(o.id, o.name) +
         '</span>' +
         '<span class="os-f">' +
         esc(where(o)) +
@@ -252,7 +263,7 @@
             esc(o.name) +
             '">' +
             '<div class="pulse-opp-name">' +
-            esc(o.name) +
+            dossierName(o.id, o.name) +
             '</div>' +
             '<div class="pulse-opp-meta">' +
             '<i class="pulse-opp-dot" data-live="' +
@@ -409,10 +420,13 @@
         if (typeof onChange === 'function') onChange();
         load();
       };
-      // The dossier link navigates; it must not also toggle the row it sits in.
-      win.body.querySelectorAll('.pulse-opp-dossier').forEach((a) => {
-        a.addEventListener('click', (ev) => ev.stopPropagation());
-      });
+      // The dossier links navigate; they must not also toggle the row they
+      // sit in.
+      win.body
+        .querySelectorAll('.pulse-opp-dossier, .pulse-opp-namelink')
+        .forEach((a) => {
+          a.addEventListener('click', (ev) => ev.stopPropagation());
+        });
       win.body.querySelectorAll('.pulse-opp[data-opp]').forEach((el2) => {
         el2.addEventListener('click', () => pick(el2));
         el2.addEventListener('keydown', (ev) => {
