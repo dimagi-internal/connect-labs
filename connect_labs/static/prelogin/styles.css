@@ -5522,8 +5522,19 @@ footer.site-footer {
   overflow-y: visible;
 }
 /* Standalone dark band (home page, above Explore): same --ink black as the
-   header. The section owns the vertical padding, so drop the marquee's
-   hero-hugging offsets and let it center in the band. */
+   header. A compact band — overrides the big default section padding — with a
+   centered eyebrow above the row, and the marquee's hero-hugging offsets
+   dropped so it centers cleanly. */
+.testimonial-band {
+  padding: clamp(38px, 4.2vw, 60px) 0;
+}
+.testimonial-band-head {
+  text-align: center;
+  margin-bottom: clamp(22px, 2.6vw, 34px);
+}
+.testimonial-band-head .eyebrow {
+  margin-bottom: 0;
+}
 .testimonial-band .testimonial-carousel {
   margin-top: 0;
   margin-bottom: 0;
