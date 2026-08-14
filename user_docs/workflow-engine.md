@@ -152,6 +152,31 @@ The custom name replaces the generic label everywhere the run appears: the workf
 
 ---
 
+## Resuming an Audit Run
+
+Audit runs — such as the Weekly Dual-Track Image Audit and the Muac Picture Audit — can be interrupted mid-way through, most commonly when a system deployment restarts the background workers while AI review is in progress. You can resume an interrupted run to pick up exactly where it left off.
+
+### What resume does
+
+When you resume a run, the system:
+
+- **Completes any audits that were started but not finished.** If an audit was created and AI review began but did not finish, resume picks up image-by-image from where it stopped rather than skipping or restarting those audits.
+- **Skips work that is already fully done.** Opportunities and audits that were completed before the interruption are not redone.
+- **Creates any audits that were never started.** Previously, if a run asked for more than one audit — for example, the two tracks of a Weekly Dual-Track Image Audit, or a second audit on a Muac Picture Audit run — only the first was actually created. Resume (and new runs) now ensure every audit the run is configured to produce is created.
+
+### Settings are preserved on resume
+
+When you resume a run that was started with custom settings — pass threshold, visit statuses, FLW cap, sampling — those settings are carried forward automatically. The run does not revert to the workflow's saved defaults partway through.
+
+### Resume is blocked while a run is still active
+
+If a run is still processing, the resume option is unavailable. This prevents two copies of the same batch running at the same time and producing duplicate audit sessions. Wait for the current batch to finish (or fail) before resuming.
+
+!!! note "Audits shown in the run list reflect the full set now being created"
+    Because all requested audits are now created — not just the first — you may see more audit entries on a run than you did before for workflows that produce multiple audits per run. This is expected and correct behaviour.
+
+---
+
 ## Reading a Workflow Dashboard
 
 A typical workflow dashboard shows a **table of field workers** with performance columns:
@@ -223,28 +248,4 @@ The CHC Nutrition Analysis dashboard uses the following flag catalog:
 | Flag                            | What it means                                                                                                                     |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | **SAM rate < 1%**               | The FLW's SAM case rate is below 1% — a signal they may be visiting easier-to-reach households and missing the most at-risk cases |
-| **MAM rate < 3%**               | The FLW's MAM case rate is below 3% — same pattern as the SAM flag but for moderate acute malnutrition                            |
-| **Gender split outside 40–60%** | The gender split of the FLW's caseload falls outside the 40–60% range, in either direction                                        |
-
-Percentage values in the CHC Nutrition table are formatted consistently throughout: one decimal place with the underlying counts shown in parentheses — for example, **92.0% (27/30)**. This applies to every percentage column in the table so figures are always directly comparable.
-
-Worker names appear as full display names (for example, "Jumoke Balogun") everywhere in the CHC Nutrition table, in task and audit headers, and in the PAR drill-down — not as raw system usernames.
-
-!!! note "SAM/MAM flags signal too few at-risk cases, not too many"
-These flags trigger when an FLW's rate is **below** the expected threshold. A very low SAM or MAM rate suggests the worker is not reaching the households most likely to have malnourished children, not that their caseload is unusually healthy.
-
-!!! note "Flags appear immediately when opening a new weekly run"
-    When you open a brand-new CHC Nutrition weekly review, auto-detected flags (SAM rate < 1%, MAM rate < 3%, gender split) appear on each row the moment the table loads. You do not need to reload the page to see the system's findings — they are ready as soon as the dashboard is visible.
-
----
-
-## Workflow Statuses
-
-Many workflows include a status column that tracks where a case is in a program process:
-
-```mermaid
-stateDiagram-v2
-    [*] --> Active
-    Active --> "Review Needed": Flag raised
-    "Review Needed" --> "Action Taken": Intervention done
-    "
+|

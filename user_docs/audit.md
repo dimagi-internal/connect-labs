@@ -134,6 +134,19 @@ Leave this option unticked if you only want the standard time-and-location group
 
 While audit creation or AI review is running, a **Stop** button appears on the run screen. Clicking it halts the remaining work immediately. Any sessions that have already been created and any images that have already been reviewed are kept — only the work that had not yet started is cancelled. This is useful if you realise you have selected a sample that is larger than intended and want to stop before it completes.
 
+**Resuming an interrupted run:**
+
+Workflow runs can be interrupted mid-way — most often during AI review, which is where the bulk of processing time is spent. When you resume an interrupted run, Labs picks up exactly where it left off:
+
+- **All audits are created.** A run that covers multiple audits (such as both tracks in a dual-track session, or a second audit on a Muac Picture Audit run) now creates every audit the run asked for. Previously, only the first audit was really made; the rest reported success but produced nothing.
+- **Partially-reviewed sessions are completed.** If a session was created but its AI review was cut short, resuming picks up image-by-image from where the review stopped, rather than skipping that session as already done.
+- **Already-finished work is not repeated.** When a multi-opportunity run is resumed, opportunities that were fully completed are skipped. Only the work that was not yet finished is picked back up.
+- **A run cannot be resumed while it is still running.** If a run is already active, Labs will refuse a second resume attempt. This prevents duplicate audit sessions from being created by two overlapping jobs.
+- **Settings are preserved on resume.** If you started a run manually with specific settings — such as a custom pass threshold, visit status filters, FLW cap, or sampling rate — those settings are kept when the run is resumed. They are not silently replaced by the workflow's saved defaults.
+
+!!! tip "If a run appears stuck"
+    Check whether it is still actively running before attempting to resume. If the run screen shows no progress after several minutes and no **Stop** button is visible, it is safe to resume.
+
 **Viewing clustering parameters for a saved run:**
 
 When you reopen a run that used Visit Clustering, the run screen now shows the exact time-gap and distance-grouping values that were used when that run was created. This reflects the settings that were actually applied, rather than the current template defaults, so you have an accurate record of how visits were grouped.
@@ -150,35 +163,5 @@ The **Muac Picture Audit** workflow is a full audit-creation tool scoped to the 
 
 All other steps — AI reviewer selection, pass threshold, exclude already-audited images, and so on — work the same way as described in the sections above.
 
-#### FLW Image Audit Table
-
-Program 176 (CHC PRE-RCT Nigeria) also has a dedicated **FLW Image Audit Table** that gives supervisors a quick overview of image quality across the workforce over the past 14 days.
-
-**Reading the grid:**
-
-- The table shows one row per field worker and one dot per day.
-- A day's dot turns **red** when either of the following is true for that worker on that day:
-    - Any single AI classifier flagged 3 or more of that day's images, or
-    - More than 3 images were marked fail, duplicate, or fake in total.
-- Days with no issues show a neutral dot.
-
-**Drilling down by classifier:**
-
-Clicking to expand a row breaks each red day down by the specific classifier that fired:
-
-- **MUAC Mismatch** — the MUAC Reading Match reviewer found the tape photo inconsistent with the recorded value.
-- **Hyperzoomed** — the MUAC OverZoom reviewer found the photo taken too close to read reliably.
-- **Potential Duplicate** — the duplicate detection check identified the image as a near-duplicate of another submission.
-
-The expanded view also shows the raw fail count and duplicate/fake count for the day alongside the per-classifier breakdown. Every cell in the expanded view links directly to that field worker's images for that day, so you can open the relevant bulk assessment view without having to search for it manually.
-
-!!! note "Earlier sessions"
-    Before this update, the table could show that images failed but displayed *"per-classifier AI split unavailable"* instead of naming the specific classifier. Sessions created from this point forward will always show the full per-classifier breakdown.
-
----
-
-## Reviewing Images
-
-Once a session is created, open it to start the bulk assessment.
-
-The bulk assessment page header identifies the field worker being reviewed. For a **combined session** — a bulk image audit covering every field worker
+!!! note "Multiple audits on the same run"
+    If you create a second audit on a Muac Picture Audit run you have already used, both audits are now created correctly. Previously, the second audit reported success but produced nothing, showing the first audit's results as if
