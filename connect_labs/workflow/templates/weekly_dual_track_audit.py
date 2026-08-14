@@ -1320,11 +1320,20 @@ def run_default(*, definition, access_token, request=None, window=None, cadence=
 
     ``window`` defaults to a preset resolved from ``cadence`` via
     ``window_preset_for_cadence`` (``"last_week"`` for a manual/no-schedule
-    call); the per-track sampling rates and visit-clustering /
-    duplicate-detection settings come from the definition's
-    ``config.audit_batch`` defaults (the same values the UI pre-fills).
-    Always creates a fresh run and fires it (no reuse). Returns
-    ``{"run_id", "sessions_created", "status"}``.
+    call) -- UNLESS the definition pins ``config.audit_batch.window_mode ==
+    "same_day"``, in which case it resolves to "today" instead (a same-day,
+    partial-data window: whatever's been submitted by whenever this fires,
+    not a full completed prior day). That pin is deliberately read here, not
+    threaded into the shared ``window_preset_for_cadence``/
+    ``_WINDOW_PRESET_BY_CADENCE`` table in audit_generation.py -- that table
+    is shared with ``program_audit_creator``'s own daily-cadence schedules,
+    and this opt-in must not change what "daily" resolves to for any
+    definition that hasn't explicitly pinned same-day mode.
+
+    The per-track sampling rates and visit-clustering / duplicate-detection
+    settings come from the definition's ``config.audit_batch`` defaults (the
+    same values the UI pre-fills). Always creates a fresh run and fires it
+    (no reuse). Returns ``{"run_id", "sessions_created", "status"}``.
     """
     from datetime import date
 
@@ -1337,7 +1346,9 @@ def run_default(*, definition, access_token, request=None, window=None, cadence=
     )
 
     if window is None:
-        window_start, window_end = resolve_window(window_preset_for_cadence(cadence), date.today())
+        batch = (definition.data.get("config") or {}).get("audit_batch") or {}
+        preset = "today" if batch.get("window_mode") == "same_day" else window_preset_for_cadence(cadence)
+        window_start, window_end = resolve_window(preset, date.today())
     else:
         window_start, window_end = window
 

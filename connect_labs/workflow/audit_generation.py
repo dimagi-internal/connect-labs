@@ -63,6 +63,8 @@ def resolve_window(preset: str, today: date) -> tuple[str, str]:
 
     if preset == "yesterday":
         start = end = today - timedelta(days=1)
+    elif preset == "today":
+        start = end = today
     elif preset == "last_week":
         this_sun = today - timedelta(days=dow)
         end = this_sun - timedelta(days=1)
