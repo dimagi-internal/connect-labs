@@ -1788,17 +1788,22 @@ function bulkAssessmentInterface() {
 
         const data = await response.json();
         const result = data.results && data.results[0];
-        if (result) {
-          this.updateAssessmentLocal(
-            result.visit_id,
-            result.blob_id,
-            undefined,  // questionId - keep existing
-            undefined,  // result - keep existing
-            undefined,  // notes - keep existing
-            result.ai_result,
-            result.ai_notes
-          );
+        // AIReviewAPIView returns {error: ...} with a 4xx/5xx status on a
+        // request-level failure (e.g. an unresolvable agent_id) -- data.results
+        // is absent in that case, and silently doing nothing would leave the
+        // auditor thinking the retry ran with no visible outcome either way.
+        if (!response.ok || !result) {
+          throw new Error(data.error || `Retry failed (HTTP ${response.status})`);
         }
+        this.updateAssessmentLocal(
+          result.visit_id,
+          result.blob_id,
+          undefined,  // questionId - keep existing
+          undefined,  // result - keep existing
+          undefined,  // notes - keep existing
+          result.ai_result,
+          result.ai_notes
+        );
       } catch (e) {
         console.error('Retry AI review failed:', e);
         alert('Retry AI review failed: ' + e.message);
