@@ -596,14 +596,18 @@ def test_mirror_omits_questions_the_source_never_answered():
     rng = random.Random(11)
     schema = FormSchema(
         questions=[
-            QuestionSpec("form.weight_kg", "decimal"),          # profiled
-            QuestionSpec("form.danger_sign_list", "text"),      # defined, never answered
-            QuestionSpec("form.referral_note", "text"),         # defined, never answered
+            QuestionSpec("form.weight_kg", "decimal"),  # profiled
+            QuestionSpec("form.danger_sign_list", "text"),  # defined, never answered
+            QuestionSpec("form.referral_note", "text"),  # defined, never answered
         ]
     )
     out = fill_form_json(
-        schema=schema, cohort=_cohort(), anomalies_for_visit=[], rng=rng,
-        mirror=True, forced_values={"form.weight_kg": 1800.0},
+        schema=schema,
+        cohort=_cohort(),
+        anomalies_for_visit=[],
+        rng=rng,
+        mirror=True,
+        forced_values={"form.weight_kg": 1800.0},
     )
     form = out["form"]
     assert form.get("weight_kg") is not None, "transplanted value must still land"
@@ -617,7 +621,5 @@ def test_mirror_omits_questions_the_source_never_answered():
     # Selects keep filling even under mirror (#713's deliberate call) — a clone
     # should still carry categorical texture.
     sel = FormSchema(questions=[QuestionSpec("form.status", "select", choices=["ok", "bad"])])
-    out_sel = fill_form_json(
-        schema=sel, cohort=_cohort(), anomalies_for_visit=[], rng=random.Random(3), mirror=True
-    )
+    out_sel = fill_form_json(schema=sel, cohort=_cohort(), anomalies_for_visit=[], rng=random.Random(3), mirror=True)
     assert out_sel["form"]["status"] in ("ok", "bad")
