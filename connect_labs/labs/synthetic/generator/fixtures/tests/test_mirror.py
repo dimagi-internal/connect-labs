@@ -146,3 +146,55 @@ def test_transplant_pool_omits_dates_key_when_no_date_paths_given():
     assert struct.transplant_pool == [
         {"owner": "flwA", "start_date": "2026-01-01", "visits": [{"day": 0, "values": {"weight": 1200.0}}]}
     ]
+
+
+def test_single_reading_of_a_time_varying_measure_is_not_stamped_across_the_series():
+    """A child weighed ONCE must not appear weighed at every visit (connect-labs#1189).
+
+    `_series_constants` decides constancy from one entity's own visits, so a path
+    recorded exactly once is trivially "identical everywhere it appears" — correct for
+    a registration-only attribute (DOB, birth weight), wrong for a clinical measure.
+    On the KMC cohort 18.9% of babies with a visit-weight had exactly one, and stamping
+    it across their series created 1,433 phantom weights and 1,183 fake-flat growth
+    curves: the clone over-reported weight-consistency and under-reported growth
+    velocity. Cohort evidence, not per-entity coincidence, decides.
+    """
+    from connect_labs.labs.synthetic.generator.fixtures.entities import (
+        _series_constants,
+        _time_varying_paths,
+    )
+
+    W = "form.anthropometric.child_weight_visit"
+    BW = "form.case.update.child_weight_birth"
+
+    # A cohort where weight plainly varies within a child, and birth weight plainly doesn't.
+    pool = []
+    for i in range(10):
+        pool.append(
+            {
+                "owner": "flw_1",
+                "start_date": "2026-05-04",
+                "visits": [
+                    {"day": 0, "values": {W: 1500.0 + i, BW: 1400.0 + i}},
+                    {"day": 14, "values": {W: 1700.0 + i, BW: 1400.0 + i}},
+                    {"day": 28, "values": {W: 1900.0 + i, BW: 1400.0 + i}},
+                ],
+            }
+        )
+    tv = _time_varying_paths(pool)
+    assert W in tv, "weight varies within a child -> time-varying"
+    assert BW not in tv, "birth weight is identical within a child -> per-child constant"
+
+    # The single-reading child: one weight at day 0, three visits.
+    single = [
+        {"day": 0, "values": {W: 1600.0, BW: 1450.0}},
+        {"day": 14, "values": {BW: 1450.0}},
+        {"day": 28, "values": {BW: 1450.0}},
+    ]
+    const_values, _ = _series_constants(single, tv)
+    assert W not in const_values, "a lone weight reading must not become a per-child constant"
+    assert const_values.get(BW) == 1450.0, "#734's birth-weight anchor must still hold"
+
+    # With no cohort evidence at all (nothing recorded twice), the old constant
+    # treatment stands — this is the DOB case #734 fixed.
+    assert _series_constants(single, _time_varying_paths([{"visits": single}]))[0].get(W) == 1600.0
