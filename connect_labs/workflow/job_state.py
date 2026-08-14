@@ -78,6 +78,37 @@ def worker_identity() -> tuple[str, str]:
     return _WORKER_ID, _WORKER_BOOT_AT
 
 
+# How long a job whose worker looks gone is still given the benefit of the
+# doubt. The worker-identity check answers "is the process that owned this job
+# still here?" directly, which is far better evidence than a timer -- but the
+# comparison is against THIS process's boot, and a process that booted moments
+# ago can briefly look "newer than" a live job that simply hasn't ticked in the
+# last few seconds (a slow upstream fetch, a long classifier call). A few
+# minutes of grace removes that race while still detecting a killed worker in
+# a fraction of JOB_STALE_SECONDS.
+WORKER_GONE_GRACE_SECONDS = 5 * 60
+
+
+def job_worker_confirmed_gone(active_job, grace_seconds: int = WORKER_GONE_GRACE_SECONDS) -> bool:
+    """Is this job's process definitively gone, quietly enough to act on?
+
+    The whole point of stamping the worker is that "the process is gone" is a
+    FACT, where a stale heartbeat is only an inference. Acting on the fact lets
+    a run killed by a deploy be recovered in minutes instead of waiting out
+    JOB_STALE_SECONDS -- 45 minutes chosen to be long enough that a healthy,
+    slow batch is never mistaken for a dead one, which is a cost worth paying
+    only when guessing.
+
+    Still conservative: it requires the job to have been quiet for
+    ``grace_seconds`` as well, so nothing is resumed out from under a process
+    that is merely between heartbeats.
+    """
+    if not job_died_with_its_worker(active_job):
+        return False
+    age = active_job_age_seconds(active_job)
+    return age is not None and age >= grace_seconds
+
+
 def job_died_with_its_worker(active_job) -> bool:
     """Was this job's process killed out from under it, rather than hanging?
 

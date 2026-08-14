@@ -44,7 +44,7 @@ from datetime import date, timedelta
 
 from connect_labs.workflow import schedules
 from connect_labs.workflow.data_access import WorkflowDataAccess
-from connect_labs.workflow.job_state import JOB_STALE_SECONDS, active_job_age_seconds
+from connect_labs.workflow.job_state import JOB_STALE_SECONDS, active_job_age_seconds, job_worker_confirmed_gone
 from connect_labs.workflow.program_view import program_id_of
 from connect_labs.workflow.tasks import run_workflow_job
 
@@ -297,11 +297,19 @@ def job_is_live(run) -> bool:
     is not idempotent: both invocations read the same "what's already done" set
     before either writes anything, so both would go on to create sessions for
     every call the other is about to do — the exact duplication resume exists
-    to avoid. Same threshold the run page uses to tell a human whether a job is
-    alive, so the tool and the UI can't disagree.
+    to avoid.
+
+    Unless the process that owned it is gone, in which case the young heartbeat
+    is a fossil rather than a sign of life: it stopped moving the instant the
+    worker was killed. Checked FIRST so this agrees with the sweep's own
+    eligibility rule — otherwise the sweep would dispatch a resume for a
+    killed-worker run and this guard would refuse it, and nothing would ever
+    recover.
     """
     active_job = ((getattr(run, "data", None) or {}).get("state") or {}).get("active_job") or {}
     if active_job.get("status") != "running":
+        return False
+    if job_worker_confirmed_gone(active_job):
         return False
     age = active_job_age_seconds(active_job)
     return age is not None and age < JOB_STALE_SECONDS
