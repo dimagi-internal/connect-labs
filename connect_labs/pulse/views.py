@@ -153,15 +153,30 @@ class PulseIndexView(LoginRequiredMixin, View):
     def _dossier_opps() -> list:
         from connect_labs.pulse.models import PulseProgram
         from connect_labs.pulse.normalize import looks_like_test
+        from connect_labs.pulse.partner_names import resolve as resolve_partner
 
         test_pids = set(PulseProgram.objects.filter(is_test=True).values_list("program_id", flat=True))
-        return [
-            o
-            for o in PulseOpportunity.objects.order_by("-is_active", "-lifetime_visit_count").values(
-                "opportunity_id", "name", "is_active", "lifetime_visit_count", "program_id"
-            )
-            if o["program_id"] not in test_pids and not looks_like_test(o["name"])
-        ]
+        partner_of: dict = {}
+        rows = []
+        for o in PulseOpportunity.objects.order_by("-is_active", "-lifetime_visit_count").values(
+            "opportunity_id", "name", "is_active", "lifetime_visit_count", "program_id", "org_slug"
+        ):
+            if o["program_id"] in test_pids or looks_like_test(o["name"]):
+                continue
+            slug = o["org_slug"] or ""
+            if slug not in partner_of:
+                partner_of[slug] = resolve_partner(slug)
+            partner = partner_of[slug]
+            o["partner_short"] = partner["short"] or partner["parent"] or slug
+            # Searchable identity: the opp is findable by anything someone
+            # knows it by -- its name, its partner's short or full name, the
+            # Connect workspace slug, or the bare id. "pride" finding nothing
+            # while PRIDE ran two engagements is the failure this prevents.
+            o["search"] = " ".join(
+                filter(None, [o["name"], slug, partner["short"], partner["parent"], str(o["opportunity_id"])])
+            ).lower()
+            rows.append(o)
+        return rows
 
 
 class PulseDisplayView(LoginRequiredMixin, View):

@@ -2474,3 +2474,34 @@
 .pulse-dd-opt[aria-selected='true']::before {
   content: '✓ ';
 }
+
+.pulse-dd-opt-sub {
+  font-size: 8.5px;
+  letter-spacing: 0.03em;
+  color: var(--ink-3);
+  margin-top: 2px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.pulse-opp-narrow {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-top: 7px;
+  padding: 3px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.pulse-opp-narrow:hover {
+  color: var(--ink-2);
+  border-color: var(--ink-3);
+}
+.pulse-opp-narrow[aria-pressed='true'] {
+  color: var(--light);
+  border-color: var(--light-dim);
+}

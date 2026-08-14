@@ -248,7 +248,9 @@
     return (
       '<div class="pulse-win-sect"><span class="pulse-lbl">' +
       nf.format(rows.length) +
-      ' opportunities \u00b7 click one to narrow this window' +
+      (DOSSIERS
+        ? ' opportunities \u00b7 click one to open its dossier \u00b7 narrow scopes this window'
+        : ' opportunities \u00b7 click one to narrow this window') +
       (selected ? ' \u00b7 showing one' : '') +
       '</span>' +
       '<div class="pulse-opp-grid">' +
@@ -263,7 +265,7 @@
             esc(o.name) +
             '">' +
             '<div class="pulse-opp-name">' +
-            dossierName(o.id, o.name) +
+            esc(o.name) +
             '</div>' +
             '<div class="pulse-opp-meta">' +
             '<i class="pulse-opp-dot" data-live="' +
@@ -283,7 +285,15 @@
             '</span></div>' +
             '</div>' +
             spark(o) +
-            dossierLink(o.id) +
+            (DOSSIERS
+              ? '<button type="button" class="pulse-opp-narrow" data-narrow="' +
+                o.id +
+                '" aria-pressed="' +
+                (selected === o.id ? 'true' : 'false') +
+                '">' +
+                (selected === o.id ? 'unnarrow' : 'narrow') +
+                '</button>'
+              : '') +
             '</div>',
         )
         .join('') +
@@ -413,20 +423,33 @@
          held: the roster, the chart and the KPIs are all server-side
          aggregates, so a client-side filter would leave the partner's totals
          above one opportunity's workers. */
-      const pick = (el2) => {
-        const id = Number(el2.dataset.opp);
+      const narrow = (id) => {
         selectedOpp = selectedOpp === id ? null : id;
         openState.opportunity = selectedOpp;
         if (typeof onChange === 'function') onChange();
         load();
       };
-      // The dossier links navigate; they must not also toggle the row they
-      // sit in.
+      // Clicking an opportunity opens its dedicated page -- the dossier is
+      // the answer to "how is this engagement doing", and that is what a
+      // click on an engagement asks. Scoping the window is the secondary
+      // action, on its own button. Public links have no dossier route, so
+      // there the click narrows as before.
+      const pick = (el2) => {
+        const id = Number(el2.dataset.opp);
+        if (DOSSIERS) location.href = '/labs/pulse/opp/' + id + '/';
+        else narrow(id);
+      };
       win.body
         .querySelectorAll('.pulse-opp-dossier, .pulse-opp-namelink')
         .forEach((a) => {
           a.addEventListener('click', (ev) => ev.stopPropagation());
         });
+      win.body.querySelectorAll('.pulse-opp-narrow').forEach((b) => {
+        b.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          narrow(Number(b.dataset.narrow));
+        });
+      });
       win.body.querySelectorAll('.pulse-opp[data-opp]').forEach((el2) => {
         el2.addEventListener('click', () => pick(el2));
         el2.addEventListener('keydown', (ev) => {
