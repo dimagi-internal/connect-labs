@@ -12,6 +12,7 @@ import time
 from abc import ABC, abstractmethod
 from urllib.parse import urlparse
 
+import httpx
 from django.conf import settings
 
 from connect_labs.labs.ai_review_agents.types import ReviewContext, ReviewResult
@@ -78,8 +79,6 @@ def _is_timeout(exc) -> bool:
     timed out", which originates in the socket/ssl layer and can surface wrapped
     in a non-httpx exception type depending on where it is raised.
     """
-    import httpx
-
     if isinstance(exc, httpx.TimeoutException):
         return True
     return "timed out" in str(exc).lower()
@@ -112,32 +111,48 @@ def _log_classifier_call(logger, agent_id, url, *, outcome, status, attempts, el
 
 
 def post_with_retry(client, url, *, json, max_retries=3, backoff_seconds=2.0, logger=None, agent_id=""):
-    """POST with retry-on-429 (linear backoff: ~2s, ~4s, ~6s by default).
+    """POST with retry-on-429 and retry-on-unreachable (linear backoff: ~2s,
+    ~4s, ~6s by default).
 
-    The MUAC OverZoom / MUAC Match / Scale Validation classifiers share one
-    gateway that returns 429 both when genuinely busy and during a cold
-    start -- both conditions typically clear within seconds, so a short
+    The MUAC OverZoom / MUAC Match / Scale Validation / Scale Dial classifiers
+    share one gateway that returns 429 both when genuinely busy and during a
+    cold start -- both conditions typically clear within seconds, so a short
     retry recovers automatically instead of permanently erroring the image
     (previously: a single 429 was treated as terminal, with no retry at all).
+
+    A fast connection failure (refused, DNS failure, reset -- ERROR_KIND_UNREACHABLE,
+    an httpx.TransportError that _is_timeout says is NOT a timeout) gets the same
+    retry treatment: it is often the same cold-start/overload condition surfacing
+    as a dropped connection instead of a 429 response. A TIMEOUT is deliberately
+    excluded from this retry: it already costs a full client timeout of wall-clock
+    per attempt (the dominant real-world failure -- see _is_timeout), so retrying
+    it would multiply that cost by max_retries+1 for the single most expensive
+    failure mode. A timeout still gets exactly one attempt, same as before.
 
     Real production usage calls this from up to ~10 concurrently-reviewed
     images x up to ~4 reviewers per image (see tasks.py's
     _MAX_CONCURRENT_IMAGES_PER_SESSION / _MAX_REVIEWERS_PER_IMAGE) -- if the
-    gateway is genuinely saturated, every one of those callers hits 429 at
-    roughly the same moment. Two things keep the retry from making that
-    worse: honoring the gateway's own ``Retry-After`` header when present
-    (it knows its load better than a fixed guess), and jittering whichever
-    wait is used so concurrent callers don't all wake and retry in lockstep.
+    gateway is genuinely saturated, every one of those callers hits 429 (or an
+    unreachable failure) at roughly the same moment. Two things keep the retry
+    from making that worse: honoring the gateway's own ``Retry-After`` header
+    when present for 429s (there's no equivalent header for a connection
+    failure, so those always use the computed backoff), and jittering
+    whichever wait is used so concurrent callers don't all wake and retry in
+    lockstep.
 
     Returns the last response received, which may still be a 429 if every
-    retry was exhausted -- callers check response.status_code exactly as
-    they did before this helper existed.
+    retry was exhausted -- callers check response.status_code exactly as they
+    did before this helper existed. Re-raises the last exception if every
+    retry was exhausted on the unreachable path (or immediately, for a
+    timeout or any other exception), since there's no response object to
+    return.
 
-    Every call is timed and logged exactly once via _log_classifier_call --
-    including the failure paths, which re-raise afterwards so each agent's own
-    except blocks behave exactly as before. This is the single choke point all
-    four gateway agents share, so instrumenting it here covers all of them
-    without four copies of the same timing code.
+    Every call is timed and logged exactly once per attempt via
+    _log_classifier_call -- including the failure paths, which re-raise
+    afterwards so each agent's own except blocks behave exactly as before.
+    This is the single choke point all four gateway agents share, so
+    instrumenting it here covers all of them without four copies of the same
+    timing code.
     """
     response = None
     started = time.monotonic()
@@ -152,7 +167,8 @@ def post_with_retry(client, url, *, json, max_retries=3, backoff_seconds=2.0, lo
             # client timeout of wall-clock per image -- naming it in the log
             # (rather than lumping every transport fault under one label) is
             # what makes "the run was slow because calls hung" visible.
-            outcome = ERROR_KIND_TIMEOUT if _is_timeout(exc) else ERROR_KIND_UNREACHABLE
+            is_timeout = _is_timeout(exc)
+            outcome = ERROR_KIND_TIMEOUT if is_timeout else ERROR_KIND_UNREACHABLE
             _log_classifier_call(
                 logger,
                 agent_id,
@@ -164,7 +180,20 @@ def post_with_retry(client, url, *, json, max_retries=3, backoff_seconds=2.0, lo
                 attempt_ms=int((now - attempt_started) * 1000),
                 detail=type(exc).__name__,
             )
-            raise
+            # Only a fast connection failure is worth retrying -- see the
+            # timeout-cost rationale above. Anything else (a timeout, or a
+            # non-transport exception) raises immediately, same as before.
+            retryable = isinstance(exc, httpx.TransportError) and not is_timeout
+            if not retryable or attempt >= max_retries:
+                raise
+            wait = backoff_seconds * (attempt + 1)
+            wait *= random.uniform(0.75, 1.25)
+            if logger:
+                logger.warning(
+                    f"Unreachable ({exc!r}) on attempt {attempt + 1}/{max_retries + 1}, retrying in {wait:.1f}s"
+                )
+            time.sleep(wait)
+            continue
         if response.status_code != 429:
             now = time.monotonic()
             status = response.status_code
