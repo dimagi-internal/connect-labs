@@ -139,16 +139,29 @@ class PulseIndexView(LoginRequiredMixin, View):
                 "ingest": _ingest_state(),
                 "scope": (PulseScalar.objects.filter(key="scope").first() or PulseScalar(value={})).value,
                 "tokens": PulsePublicToken.objects.filter(revoked=False).order_by("-created_at")[:20],
-                # Every engagement, ordered the way the display menus order
-                # things: running first, then by lifetime volume. Feeds the
-                # dossier picker; ~600 rows of id+name is cheap to render.
-                "dossier_opps": list(
-                    PulseOpportunity.objects.order_by("-is_active", "-lifetime_visit_count").values(
-                        "opportunity_id", "name", "is_active", "lifetime_visit_count"
-                    )
-                ),
+                # Every real engagement, ordered the way the display menus
+                # order things: running first, then by lifetime volume. Test
+                # scaffolding is excluded by the same two rules the partner
+                # menu uses -- drop opportunities under a test programme, and
+                # drop ones whose own name is scaffolding -- because a funder
+                # picking "[TEST 02] ..." out of this list is a bad moment.
+                "dossier_opps": self._dossier_opps(),
             },
         )
+
+    @staticmethod
+    def _dossier_opps() -> list:
+        from connect_labs.pulse.models import PulseProgram
+        from connect_labs.pulse.normalize import looks_like_test
+
+        test_pids = set(PulseProgram.objects.filter(is_test=True).values_list("program_id", flat=True))
+        return [
+            o
+            for o in PulseOpportunity.objects.order_by("-is_active", "-lifetime_visit_count").values(
+                "opportunity_id", "name", "is_active", "lifetime_visit_count", "program_id"
+            )
+            if o["program_id"] not in test_pids and not looks_like_test(o["name"])
+        ]
 
 
 class PulseDisplayView(LoginRequiredMixin, View):

@@ -2420,3 +2420,13 @@
 .pulse-opp-dossier:hover {
   color: var(--light);
 }
+
+.pulse-opp-namelink {
+  color: inherit;
+  text-decoration: none;
+}
+.pulse-opp-namelink:hover {
+  color: var(--light);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

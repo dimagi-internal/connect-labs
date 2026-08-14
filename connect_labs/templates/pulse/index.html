@@ -119,24 +119,35 @@
   <div class="bg-white rounded-lg shadow-sm p-4 mb-8">
     <p class="text-xs text-gray-500 mb-3 max-w-2xl">
       One page per engagement: full delivery history, verification record, money
-      split, worker roster and footprint map.
+      split, worker roster and footprint map. Click an opportunity to open it.
     </p>
-    <div class="flex flex-wrap gap-3 items-center">
-      <select id="dossier-pick" class="border-gray-300 rounded-md text-sm max-w-md">
-        {% for o in dossier_opps %}
-          <option value="{{ o.opportunity_id }}">{{ o.name|default:o.opportunity_id }}{% if not o.is_active %} (ended){% endif %}</option>
-        {% endfor %}
-      </select>
-      <a id="dossier-open" class="button button-md bg-brand-indigo hover:bg-brand-deep-purple text-white"
-         href="#">Open dossier</a>
+    <input id="dossier-filter" type="search" placeholder="Filter by name&hellip;"
+           class="border-gray-300 rounded-md text-sm w-full max-w-md mb-3"
+           aria-label="Filter opportunities by name">
+    <div id="dossier-list" class="max-h-80 overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-md">
+      {% for o in dossier_opps %}
+        <a class="flex items-baseline justify-between gap-3 px-3 py-2 text-sm hover:bg-gray-50"
+           data-name="{{ o.name|default:o.opportunity_id|lower }}"
+           href="{% url 'pulse:opp' o.opportunity_id %}">
+          <span class="truncate {% if o.is_active %}text-gray-900{% else %}text-gray-500{% endif %}">
+            {{ o.name|default:o.opportunity_id }}
+          </span>
+          <span class="text-xs text-gray-400 whitespace-nowrap">
+            {{ o.lifetime_visit_count|default:0 }} services{% if not o.is_active %} &middot; ended{% endif %}
+          </span>
+        </a>
+      {% endfor %}
     </div>
     <script>
       (function () {
-        var pick = document.getElementById('dossier-pick');
-        var open = document.getElementById('dossier-open');
-        function sync() { open.href = '/labs/pulse/opp/' + pick.value + '/'; }
-        pick.addEventListener('change', sync);
-        sync();
+        var input = document.getElementById('dossier-filter');
+        var rows = document.querySelectorAll('#dossier-list a');
+        input.addEventListener('input', function () {
+          var q = input.value.trim().toLowerCase();
+          rows.forEach(function (row) {
+            row.hidden = q !== '' && row.dataset.name.indexOf(q) === -1;
+          });
+        });
       })();
     </script>
   </div>
