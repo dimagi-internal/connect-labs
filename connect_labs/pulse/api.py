@@ -127,8 +127,13 @@ def _event_row(e: PulseEvent, partners: bool = False) -> list:
         e.connect_visit_id,
         int(e.field_ts.timestamp()),
         int(e.sync_ts.timestamp()),
-        round(e.lat, 4) if e.lat is not None else None,
-        round(e.lon, 4) if e.lon is not None else None,
+        # Two decimals is ~1.1 km -- the town scale the screen promises. Four
+        # was ~11 m: household precision, readable out of the network tab on a
+        # public link even though the map never *drew* it that precisely. Same
+        # fail-closed reasoning as partner names: what must not be shown must
+        # not be sent.
+        round(e.lat, 2) if e.lat is not None else None,
+        round(e.lon, 2) if e.lon is not None else None,
         e.opportunity_id,
         e.status,
         e.flag_type or None,
@@ -1539,13 +1544,13 @@ class WorkerView(View):
                     .order_by("-n")[:6]
                 ],
                 "weekly": weekly,
-                # Same shape and same town-scale treatment the ticker already
-                # applies; adds no exposure beyond what /api/events/ returns.
+                # Same shape and same town-scale rounding as /api/events/,
+                # so this adds no location exposure beyond the ticker.
                 "recent": [
                     {
                         "t": int(e.field_ts.timestamp()),
-                        "lat": round(e.lat, 4) if e.lat is not None else None,
-                        "lon": round(e.lon, 4) if e.lon is not None else None,
+                        "lat": round(e.lat, 2) if e.lat is not None else None,
+                        "lon": round(e.lon, 2) if e.lon is not None else None,
                         "status": e.status,
                         "flag": e.flag_type or None,
                         "service": e.service_slug or None,
