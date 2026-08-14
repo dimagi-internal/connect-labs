@@ -712,3 +712,76 @@ def test_upstream_failure_is_not_reported_as_permission_denied(user, monkeypatch
         syn._accessible_opp_ids_for_user(user)
     assert exc.value.code == "UPSTREAM_ERROR"
     syn._ACCESS_CACHE.clear()
+
+
+@pytest.mark.django_db
+def test_truncated_list_does_not_deny_access_production_confirms(user, monkeypatch):
+    """A partial opportunity list must not read as a permission decision.
+
+    The list is a local copy of something production owns. It came back with 273
+    entries whose lowest id was 948, so every older opportunity looked inaccessible
+    — while labs_context listed those same opportunities and production served
+    their exports 200 OK (connect-labs#1195). The gate now asks production.
+    """
+    import connect_labs.labs.integrations.connect.oauth as _oauth
+    from connect_labs.mcp.tools import synthetic as syn
+
+    syn._ACCESS_CACHE.clear()
+    syn._PROBE_CACHE.clear()
+    monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
+    # The truncated list: everything below 948 is missing.
+    monkeypatch.setattr(
+        _oauth, "fetch_user_organization_data", lambda tok: {"opportunities": [{"id": i} for i in (948, 1116, 1739)]}
+    )
+
+    class _Resp:
+        status_code = 200
+
+    monkeypatch.setattr(syn.httpx, "get", lambda *a, **k: _Resp())
+    # 523 is absent from the list, but production confirms it — must be allowed.
+    _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, 523)
+    syn._ACCESS_CACHE.clear()
+    syn._PROBE_CACHE.clear()
+
+
+@pytest.mark.django_db
+def test_a_real_denial_is_still_a_denial(user, monkeypatch):
+    """The probe may only GRANT what production confirms — never override a denial."""
+    import connect_labs.labs.integrations.connect.oauth as _oauth
+    from connect_labs.mcp.tools import synthetic as syn
+
+    syn._ACCESS_CACHE.clear()
+    syn._PROBE_CACHE.clear()
+    monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
+    monkeypatch.setattr(_oauth, "fetch_user_organization_data", lambda tok: {"opportunities": [{"id": 948}]})
+
+    class _Denied:
+        status_code = 403
+
+    monkeypatch.setattr(syn.httpx, "get", lambda *a, **k: _Denied())
+    with pytest.raises(MCPToolError) as exc:
+        _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, 99999)
+    assert exc.value.code == "PERMISSION_DENIED"
+    syn._ACCESS_CACHE.clear()
+    syn._PROBE_CACHE.clear()
+
+
+@pytest.mark.django_db
+def test_unreachable_production_is_not_a_grant(user, monkeypatch):
+    """If we cannot ask the authority, the denial stands — fail closed."""
+    import connect_labs.labs.integrations.connect.oauth as _oauth
+    from connect_labs.mcp.tools import synthetic as syn
+
+    syn._ACCESS_CACHE.clear()
+    syn._PROBE_CACHE.clear()
+    monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
+    monkeypatch.setattr(_oauth, "fetch_user_organization_data", lambda tok: {"opportunities": [{"id": 948}]})
+
+    def _boom(*a, **k):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(syn.httpx, "get", _boom)
+    with pytest.raises(MCPToolError):
+        _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, 523)
+    syn._ACCESS_CACHE.clear()
+    syn._PROBE_CACHE.clear()
