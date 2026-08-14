@@ -487,6 +487,73 @@ def test_clustering_overrides_for_leaves_duplicate_detection_when_gates_are_abse
     assert "enable_distance" not in overrides
 
 
+# ── resume_batch_run: manual/sweep resume of an existing run ────────────────
+
+
+def test_resume_batch_run_refires_against_the_same_run_id(monkeypatch):
+    """Resume must dispatch the SAME job_type against the EXISTING run_id --
+    never create a new run — and derive the window from the run's persisted
+    state (set once at create_run time, so it survives even a kill on the
+    very first call)."""
+    from connect_labs.workflow import audit_generation as g
+
+    wda_factory = mock.Mock()
+    monkeypatch.setattr(g, "WorkflowDataAccess", wda_factory)
+    fake_job = mock.Mock()
+    fake_job.delay.return_value.id = "celery-task-resume"
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
+
+    run = _run(13364, "2026-08-13")
+    run.data["state"]["window_end"] = "2026-08-13"
+
+    result = g.resume_batch_run(_creator_def(), run, access_token="t")
+
+    assert result == {"run_id": 13364, "task_id": "celery-task-resume", "status": "running"}
+    wda_factory.assert_not_called()  # no new WorkflowDataAccess / run created
+    fake_job.delay.assert_called_once()
+    kw = fake_job.delay.call_args.kwargs
+    assert kw["run_id"] == 13364
+    assert kw["opportunity_id"] == 1973
+    assert kw["job_config"]["run_id"] == 13364
+    assert kw["job_config"]["job_type"] == "weekly_dual_track_audit_create"
+    assert kw["job_config"]["window_start"] == "2026-08-13"
+    assert kw["job_config"]["window_end"] == "2026-08-13"
+    # Sampling/clustering overrides ride through identically to a fresh fire.
+    assert kw["job_config"]["muac_sample_percentage"] == 100
+    assert kw["job_config"]["other_sample_percentage"] == 10
+
+
+def test_resume_batch_run_scopes_program_owned_definition_by_program(monkeypatch):
+    from connect_labs.workflow import audit_generation as g
+
+    fake_job = mock.Mock()
+    fake_job.delay.return_value.id = "celery-task-resume-2"
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
+
+    run = _run(13412, "2026-08-13")
+    run.data["state"]["window_end"] = "2026-08-13"
+
+    result = g.resume_batch_run(_creator_def(program_id=217), run, access_token="t")
+
+    assert result == {"run_id": 13412, "task_id": "celery-task-resume-2", "status": "running"}
+    kw = fake_job.delay.call_args.kwargs
+    assert kw.get("program_id") == 217
+    assert "opportunity_id" not in kw
+    assert kw["job_config"]["program_id"] == 217
+    assert "opportunity_id" not in kw["job_config"]
+
+
+def test_resume_batch_run_raises_when_run_has_no_window():
+    """A run with no persisted window (nothing was ever fired for it) has
+    nothing to resume — a fresh run is what's needed instead."""
+    from connect_labs.workflow import audit_generation as g
+
+    run = _run(999, None)
+
+    with pytest.raises(ValueError):
+        g.resume_batch_run(_creator_def(), run, access_token="t")
+
+
 # ── Management command: run_workflow_default ──────────────────────────────────
 
 

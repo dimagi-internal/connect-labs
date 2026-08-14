@@ -261,6 +261,55 @@ def run_this_week_batch(
     }
 
 
+def resume_batch_run(definition, run, *, access_token):
+    """Re-fire the batch job against an EXISTING run, instead of creating a new
+    one -- for resuming a run whose process died mid-batch (deploy kill, OOM,
+    crash) before it finished every (opportunity, track) call.
+
+    Re-derives ``window_start``/``window_end`` from ``run.data.state`` (written
+    once at ``create_run`` time by ``create_batch_run``, so it survives even a
+    kill on the very first call) and sampling/clustering overrides from the
+    definition's CURRENT pinned config via the same ``sample_overrides_for`` /
+    ``clustering_overrides_for`` helpers ``create_batch_run`` uses -- a resumed
+    invocation applies identically to what a fresh one would.
+
+    Idempotency (skipping (opportunity, track) calls that already produced a
+    session on a prior invocation for this run_id) lives in the
+    ``weekly_dual_track_audit_create`` handler itself, not here -- this
+    function only re-fires the SAME job against the SAME run_id; it is what
+    makes any repeat call safe. Always dispatches async (``.delay``), matching
+    ``dispatch_batch`` -- a resumed run can have hundreds of calls left and
+    must not block the caller.
+
+    Raises ``ValueError`` if the run has no persisted window (nothing was ever
+    created for it — resuming isn't meaningful, a fresh run is what's needed).
+    """
+    state = run.data.get("state", {}) or {}
+    window_start = state.get("window_start")
+    window_end = state.get("window_end")
+    if not window_start or not window_end:
+        raise ValueError(f"run {run.id} has no window_start/window_end in state; nothing to resume")
+
+    program_id = program_id_of(definition)
+    owner_kwargs = (
+        {"program_id": program_id}
+        if program_id is not None
+        else {"opportunity_id": definition.opportunity_id or definition.opportunity_ids[0]}
+    )
+
+    job_config = {
+        "job_type": JOB_TYPE,
+        "run_id": run.id,
+        "window_start": window_start,
+        "window_end": window_end,
+        **owner_kwargs,
+        **sample_overrides_for(definition),
+        **clustering_overrides_for(definition),
+    }
+    task = run_workflow_job.delay(job_config=job_config, access_token=access_token, run_id=run.id, **owner_kwargs)
+    return {"run_id": run.id, "task_id": task.id, "status": "running"}
+
+
 def dispatch_batch(
     definition, window_start, window_end, *, access_token, sample_overrides=None, criteria_overrides=None
 ):
