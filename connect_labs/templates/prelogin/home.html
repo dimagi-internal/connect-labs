@@ -61,7 +61,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'prelogin/styles.css' %}?v=4">
+<link rel="stylesheet" href="{% static 'prelogin/styles.css' %}?v=5">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to main content</a>
@@ -234,7 +234,8 @@
   </div>
 
 
-  <!-- ── Frontline voices: testimonial marquee ── -->
+  <!-- ── Frontline voices: testimonial marquee (own dark band, above Explore) ── -->
+  <div class="section dark testimonial-band">
   <div class="testimonial-carousel" data-testimonial-marquee>
       <div class="testimonial-cards">
 
@@ -361,6 +362,7 @@
 
       </div><!-- /.testimonial-cards -->
     </div><!-- /.testimonial-carousel -->
+  </div><!-- /.testimonial-band -->
 
   <!-- ── Explore: Portfolio, Insights & Frontline Network ── -->
   <div class="section warm">
@@ -4389,7 +4391,7 @@
   </div>
 </footer>
 
-<script src="{% static 'prelogin/app.js' %}?v=4"></script>
+<script src="{% static 'prelogin/app.js' %}?v=5"></script>
 
 </body>
 </html>
