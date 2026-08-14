@@ -57,6 +57,10 @@
           "value": "redis://labs-jj-redis.aceivh.0001.use1.cache.amazonaws.com:6379/0"
         },
         {
+          "name": "PULSE_EVENT_RETENTION_DAYS",
+          "value": "0"
+        },
+        {
           "name": "LABS_EMAIL_ENABLED",
           "value": "True"
         },
