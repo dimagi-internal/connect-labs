@@ -177,3 +177,78 @@ class TestPacing:
         tasks._backfill_one(client, cursor, datetime(2020, 1, 1, tzinfo=dt_timezone.utc), page_pause=0)
 
         assert slept == []
+
+
+class TestCompletionDepth:
+    """A shallow completion must not cap a deeper request.
+
+    This is the defect that cost the first full-history run: `--days 37` marked
+    the largest opportunities complete after one page, and the later all-history
+    pass skipped them entirely. They held almost all the volume -- opp 411 sat
+    at 1,000 stored against 101,458 lifetime.
+    """
+
+    def _cutoff(self, days):
+        from django.utils import timezone
+
+        return timezone.now() - timezone.timedelta(days=days)
+
+    def test_stopping_at_a_cutoff_records_that_depth(self, cursor, opp):
+        client = _Client([[_visit(30, 5)]])
+        cutoff = datetime(2026, 7, 10, tzinfo=dt_timezone.utc)
+
+        tasks._backfill_one(client, cursor, cutoff)
+
+        cursor.refresh_from_db()
+        assert cursor.backfill_complete
+        assert cursor.backfill_complete_to == cutoff
+
+    def test_exhaustion_records_completion_to_the_epoch(self, cursor, opp):
+        """Nothing older exists, so no future depth should re-walk it."""
+        tasks._backfill_one(_Client([[_visit(30, 10)]]), cursor, self._cutoff(37))
+
+        cursor.refresh_from_db()
+        assert cursor.backfill_complete_to == tasks._EPOCH
+
+    def test_a_deeper_request_reopens_a_shallow_completion(self, cursor, opp, monkeypatch):
+        cursor.backfill_complete = True
+        cursor.backfill_complete_to = self._cutoff(37)
+        cursor.save()
+
+        picked = self._selected(monkeypatch, days=3650)
+        assert cursor.opportunity_id in picked, "a deeper pass must re-walk a shallow completion"
+
+    def test_a_shallower_request_skips_a_deeper_completion(self, cursor, opp, monkeypatch):
+        cursor.backfill_complete = True
+        cursor.backfill_complete_to = self._cutoff(3650)
+        cursor.save()
+
+        assert cursor.opportunity_id not in self._selected(monkeypatch, days=37)
+
+    def test_unknown_depth_is_always_rechecked(self, cursor, opp, monkeypatch):
+        """Rows predating the column must not be trusted as fully complete."""
+        cursor.backfill_complete = True
+        cursor.backfill_complete_to = None
+        cursor.save()
+
+        assert cursor.opportunity_id in self._selected(monkeypatch, days=3650)
+
+    def _selected(self, monkeypatch, *, days):
+        """Which opportunities a backfill pass would actually walk."""
+        seen = []
+
+        class _NullClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def paginate(self, endpoint, params=None, partial_ok=False):
+                seen.append(int(endpoint.split("/")[3]))
+                return iter([])
+
+        monkeypatch.setattr(tasks, "get_client", lambda **kw: _NullClient())
+        monkeypatch.setattr(tasks.ingest, "rebuild_rollups", lambda **kw: 0)
+        tasks.backfill_visits(days=days, page_pause=0)
+        return seen

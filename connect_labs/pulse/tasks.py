@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
+from datetime import timezone as dt_timezone
 
 from config import celery_app
 from connect_labs.pulse import ingest
@@ -21,6 +23,10 @@ from connect_labs.pulse.client import PulseAuthError, get_client
 from connect_labs.pulse.models import PulseCursor, PulseOpportunity
 
 logger = logging.getLogger(__name__)
+
+# "Complete to the beginning of time" — recorded when a stream is exhausted, so
+# no future request, however deep, re-walks an opportunity with no more history.
+_EPOCH = datetime(1970, 1, 1, tzinfo=dt_timezone.utc)
 
 TIER_CHEAP = "cheap"
 TIER_TAIL = "tail"
@@ -200,9 +206,18 @@ def backfill_visits(
     if page_pause is None:
         page_pause = float(getattr(settings, "PULSE_BACKFILL_PAGE_PAUSE", 0.25))
 
+    from django.db.models import Q
+
     started = time.monotonic()
     cutoff = timezone.now() - timezone.timedelta(days=days)
-    qs = PulseCursor.objects.filter(endpoint=ingest.VISITS_ENDPOINT, backfill_complete=False)
+
+    # Skip only what is provably complete to AT LEAST this depth. Selecting on
+    # `backfill_complete` alone let a shallow pass permanently cap every deeper
+    # one -- see PulseCursor.backfill_complete_to. A NULL depth is treated as
+    # unknown and re-checked, which costs one request and cannot hide history.
+    qs = PulseCursor.objects.filter(endpoint=ingest.VISITS_ENDPOINT).exclude(
+        Q(backfill_complete=True) & Q(backfill_complete_to__isnull=False) & Q(backfill_complete_to__lte=cutoff)
+    )
     if opportunity_ids:
         qs = qs.filter(opportunity_id__in=opportunity_ids)
 
@@ -269,6 +284,7 @@ def _backfill_one(
 
     stored = 0
     finished = False
+    exhausted = False
     pages = 0
 
     for page in client.paginate(endpoint, params=params, partial_ok=True):
@@ -314,11 +330,15 @@ def _backfill_one(
         # page makes the failure mode "re-check an exhausted opp once per run",
         # which is one cheap empty request, instead of "silently stop pulling
         # real data", which is unrecoverable without a manual reset.
-        finished = pages > 0
+        finished = exhausted = pages > 0
 
     if finished:
         cursor.backfill_complete = True
-        cursor.save(update_fields=["backfill_complete"])
+        # Record how deep this counts as. Exhausting the stream means there is
+        # genuinely nothing older, so it satisfies any future depth; stopping at
+        # the cutoff only satisfies requests no deeper than that cutoff.
+        cursor.backfill_complete_to = _EPOCH if exhausted else cutoff
+        cursor.save(update_fields=["backfill_complete", "backfill_complete_to"])
     return stored
 
 
