@@ -243,6 +243,10 @@
      is inline SVG in --ink-3 so it dims with the rest of the chrome. */
   appearance: none;
   -webkit-appearance: none;
+  /* The OPEN menu is still OS-drawn and CSS cannot restyle it -- but it
+     follows the element's color-scheme, so pinning dark here makes macOS
+     render the dropdown panel dark instead of a white system box. */
+  color-scheme: dark;
   padding: 5px 24px 5px 9px;
   max-width: 260px;
   min-width: 0;
