@@ -5521,6 +5521,13 @@ footer.site-footer {
   overflow-x: clip;
   overflow-y: visible;
 }
+/* Standalone dark band (home page, above Explore): same --ink black as the
+   header. The section owns the vertical padding, so drop the marquee's
+   hero-hugging offsets and let it center in the band. */
+.testimonial-band .testimonial-carousel {
+  margin-top: 0;
+  margin-bottom: 0;
+}
 .testimonial-cards {
   display: flex;
   --tgap: 28px;
