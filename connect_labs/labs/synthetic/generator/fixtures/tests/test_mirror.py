@@ -159,10 +159,7 @@ def test_single_reading_of_a_time_varying_measure_is_not_stamped_across_the_seri
     curves: the clone over-reported weight-consistency and under-reported growth
     velocity. Cohort evidence, not per-entity coincidence, decides.
     """
-    from connect_labs.labs.synthetic.generator.fixtures.entities import (
-        _series_constants,
-        _time_varying_paths,
-    )
+    from connect_labs.labs.synthetic.generator.fixtures.entities import _series_constants, _time_varying_paths
 
     W = "form.anthropometric.child_weight_visit"
     BW = "form.case.update.child_weight_birth"
