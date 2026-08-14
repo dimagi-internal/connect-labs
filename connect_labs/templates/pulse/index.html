@@ -127,13 +127,13 @@
     <div id="dossier-list" class="max-h-80 overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-md">
       {% for o in dossier_opps %}
         <a class="flex items-baseline justify-between gap-3 px-3 py-2 text-sm hover:bg-gray-50"
-           data-name="{{ o.name|default:o.opportunity_id|lower }}"
+           data-name="{{ o.search }}"
            href="{% url 'pulse:opp' o.opportunity_id %}">
           <span class="truncate {% if o.is_active %}text-gray-900{% else %}text-gray-500{% endif %}">
             {{ o.name|default:o.opportunity_id }}
           </span>
           <span class="text-xs text-gray-400 whitespace-nowrap">
-            {{ o.lifetime_visit_count|default:0 }} services{% if not o.is_active %} &middot; ended{% endif %}
+            {% if o.partner_short %}{{ o.partner_short }} &middot; {% endif %}{{ o.lifetime_visit_count|default:0 }} services{% if not o.is_active %} &middot; ended{% endif %}
           </span>
         </a>
       {% endfor %}

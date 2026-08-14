@@ -605,29 +605,29 @@
       } else {
         orgWrap.hidden = false;
         // The menu is a picker, not a dossier: the master list's short name
-        // ("PRIDE", "C-WINS") is what people scan for, so it leads. The full
-        // name only comes back when two Connect orgs share a parent and the
-        // short alone could not tell them apart.
+        // ("PRIDE", "C-WINS") is what people scan for, so it leads -- and the
+        // full name and slug ride underneath on a sub-line, so nothing is
+        // lost and the menu search matches all three.
         const shortOf = (o) =>
           o.partner_short ||
           o.partner ||
           (o.named === false ? `${o.name} (identifier)` : o.name);
-        const dupes = {};
-        for (const o of s.orgs)
-          dupes[shortOf(o)] = (dupes[shortOf(o)] || 0) + 1;
         for (const o of s.orgs) {
           const opt = document.createElement('option');
           opt.value = o.slug;
           // Say which partners are dormant rather than letting someone pick
           // one and get a blank map.
           const base = shortOf(o);
-          const label =
-            dupes[base] > 1 && o.name && o.name !== base
-              ? `${base} · ${o.name}`
-              : base;
           opt.textContent = o.recent_events
-            ? label
-            : `${label} — no recent delivery`;
+            ? base
+            : `${base} — no recent delivery`;
+          opt.dataset.sub = [
+            o.partner && o.partner !== base ? o.partner : null,
+            o.name && o.name !== base && o.name !== o.partner ? o.name : null,
+            o.slug,
+          ]
+            .filter(Boolean)
+            .join(' · ');
           opt.title = `${nf.format(o.visits)} services all-time · ${nf.format(
             o.opportunities,
           )} opportunities${o.funder ? ' · funded by ' + o.funder : ''}`;
@@ -1486,6 +1486,14 @@
         row.setAttribute('aria-selected', String(opt.value === sel.value));
         row.tabIndex = -1;
         row.textContent = opt.textContent;
+        // Secondary identity (full registered name, slug) rides on a dim
+        // sub-line. It is part of textContent, so the menu search matches it.
+        if (opt.dataset.sub) {
+          const sub = document.createElement('div');
+          sub.className = 'pulse-dd-opt-sub';
+          sub.textContent = opt.dataset.sub;
+          row.appendChild(sub);
+        }
         if (opt.title) row.title = opt.title;
         row.addEventListener('click', () => {
           sel.value = opt.value;
