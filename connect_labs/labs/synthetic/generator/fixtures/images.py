@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import random
 import uuid
 from typing import Any
@@ -9,7 +10,12 @@ from typing import Any
 from .fields import _set_nested
 from .manifest import ImageConfig
 
-_MUAC_PATHS = [
+logger = logging.getLogger(__name__)
+
+# Exact paths this module used to require. Kept only as documentation of the
+# three shapes that were hardcoded here: eligibility is now decided by
+# _has_muac, which recognises MUAC wherever a manifest actually puts it.
+_LEGACY_MUAC_PATHS = [
     ("form", "case", "update", "soliciter_muac_cm"),
     ("form", "subcase_0", "case", "update", "soliciter_muac"),
     ("form", "muac_group", "muac_display_group_1", "soliciter_muac_cm"),
@@ -17,15 +23,38 @@ _MUAC_PATHS = [
 
 
 def _has_muac(form_json: dict) -> bool:
-    for path_parts in _MUAC_PATHS:
-        node = form_json
-        for part in path_parts:
-            if not isinstance(node, dict):
-                break
-            node = node.get(part)
-        else:
-            if node is not None:
+    """Does this visit carry a MUAC measurement anywhere in its form_json?
+
+    Matched on the FIELD NAME (any key containing "muac", case-insensitive)
+    rather than on an allowlist of three exact paths. The allowlist silently
+    produced zero images for every manifest that names its MUAC field
+    anything else -- which is all of the current ones: the PAR and
+    nutrition-demo manifests measure at
+    ``form.service_delivery.muac_group.soliciter_muac``, so despite each
+    declaring a full ``image_config`` (pool sizes, per-FLW bad rates), their
+    opportunities were generated with no images at all. Nothing failed; the
+    photos just weren't there, which surfaces much later as an image audit
+    with nothing to audit.
+
+    The match is on the LEAF field's own name, not on any ancestor: a group
+    named ``muac_group`` is structure, and a visit that entered that group
+    without recording a reading has no measurement to photograph. Attaching an
+    image there would invent data the visit doesn't have.
+    """
+    return _find_muac_leaf(form_json)
+
+
+def _find_muac_leaf(node: Any) -> bool:
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if isinstance(value, (dict, list)):
+                if _find_muac_leaf(value):
+                    return True
+            elif "muac" in str(key).lower() and value is not None and value != "":
                 return True
+        return False
+    if isinstance(node, list):
+        return any(_find_muac_leaf(item) for item in node)
     return False
 
 
@@ -41,8 +70,11 @@ def assign_visit_images(
     visits: list[dict[str, Any]],
     config: ImageConfig,
     rng: random.Random,
-) -> None:
+) -> dict[str, int]:
     """Mutate visits in-place: add synthetic image entries to MUAC visits.
+
+    Returns ``{"eligible_visits", "images_assigned"}`` so the caller can
+    surface the count instead of a generation that quietly produced none.
 
     Two modes:
 
@@ -56,6 +88,7 @@ def assign_visit_images(
     """
     use_pools = config.good_image_count is not None
     legacy_count = config.stock_image_count
+    eligible = assigned = 0
 
     # Per-pool round-robin counters (used in two-pool mode).
     good_index = 0
@@ -67,6 +100,7 @@ def assign_visit_images(
         fj = visit.get("form_json") or {}
         if not _has_muac(fj):
             continue
+        eligible += 1
         if rng.random() > config.probability:
             continue
 
@@ -91,3 +125,20 @@ def assign_visit_images(
         filename = f"muac_photo_{uuid.UUID(int=rng.getrandbits(128)).hex[:12]}.jpg"
         visit["images"] = [{"blob_id": blob_id, "name": filename}]
         _set_nested(visit["form_json"], config.question_path, filename)
+        assigned += 1
+
+    # A manifest that declares image_config and gets NOTHING is always a
+    # mistake -- almost certainly its visits carry no MUAC field for images to
+    # hang off. Saying so here is the whole difference between "my audit has no
+    # photos, why?" a week later and a one-line answer at generation time.
+    if not assigned:
+        logger.warning(
+            "[SyntheticImages] image_config is set but NO images were assigned "
+            "to %d visit(s): %d had a MUAC measurement to attach one to. Check "
+            "that the manifest's cohort generates a MUAC field.",
+            len(visits),
+            eligible,
+        )
+    else:
+        logger.info("[SyntheticImages] assigned %d image(s) across %d MUAC visit(s)", assigned, eligible)
+    return {"eligible_visits": eligible, "images_assigned": assigned}

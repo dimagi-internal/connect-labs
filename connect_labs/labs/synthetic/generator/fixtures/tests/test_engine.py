@@ -28,6 +28,9 @@ def test_generate_returns_all_endpoints():
         "completed_module",
         "task_records",
         "app_structure",
+        # Generation diagnostic, not a fixture endpoint — lets a caller report
+        # "image_config declared but 0 images assigned" at generation time.
+        "image_stats",
     }
 
 

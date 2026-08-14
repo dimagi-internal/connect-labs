@@ -482,12 +482,18 @@ def synthetic_generate_from_manifest(
     except Exception:  # noqa: BLE001
         logger.exception("synthetic_generate_from_manifest: visit_count cache failed for opp %s", opportunity_id)
 
+    # Surfaced so a manifest that declares image_config but produced no images
+    # (its visits carry no MUAC field to hang one off) is visible HERE, rather
+    # than a week later as an image audit with nothing in it.
+    image_stats = fixtures.get("image_stats")
+
     return {
         "folder_id": result.folder_id,
         "folder_url": result.folder_url,
         "record_counts": result.record_counts,
         "form_schema_questions": len(form_schema.questions),
         "tasks_created": tasks_created,
+        "image_stats": image_stats,
     }
 
 
