@@ -41,7 +41,10 @@
 
   /* Nearest town, so a row reads as a place rather than a coordinate.
      Town scale only — household GPS is never surfaced as text. */
-  const TOWNS = [
+  /* Fallback only. The real list is towns.js (GeoNames cities15000, ~4.7k
+     entries for Connect's countries) loaded before this file; snapping to
+     this 42-city list made every rural delivery read as its state capital. */
+  const FALLBACK_TOWNS = [
     ['Kano', 'NG', 12.0, 8.52],
     ['Zaria', 'NG', 11.07, 7.72],
     ['Kaduna', 'NG', 10.52, 7.44],
@@ -84,6 +87,10 @@
     ['Udaipur', 'IN', 24.58, 73.71],
     ['Indore', 'IN', 22.72, 75.86],
   ];
+  const TOWNS =
+    global.PULSE_TOWNS && global.PULSE_TOWNS.length
+      ? global.PULSE_TOWNS
+      : FALLBACK_TOWNS;
   function nearestTown(lat, lon) {
     if (lat == null || lon == null) return { t: '—', c: '' };
     let best = null,
