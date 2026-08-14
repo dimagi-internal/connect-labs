@@ -1149,6 +1149,51 @@ def test_update_opportunity_ids_rejects_ids_outside_user_access(mock_wda_cls, mo
 @pytest.mark.django_db
 @patch("connect_labs.mcp.tools.workflows.fetch_user_organization_data")
 @patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_opportunity_ids_accepts_visible_labs_only_opps(mock_wda_cls, mock_fetch, client, auth_user):
+    """Labs-only synthetic opps visible to the caller pass validation even though
+    production Connect has never heard of them — the validator unions the registry
+    (mirroring labs_context's merge). Without this, a synthetic cohort can't be
+    attached to a multi-opp workflow via the MCP at all."""
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+    user, raw = auth_user
+    user.view_synthetic_opps = True
+    user.email = "ace@dimagi-ai.com"
+    user.save()
+    for oid in (10042, 10016):
+        SyntheticOpportunity.objects.create(
+            opportunity_id=oid,
+            label=f"[Synthetic] {oid}",
+            labs_only=True,
+            enabled=True,
+            gdrive_folder_id="f",
+            allowed_domains=["@dimagi.com", "@dimagi-ai.com"],
+        )
+    # Prod knows only 100; the labs-only ids come from the registry.
+    mock_fetch.return_value = {"opportunities": [{"id": 100}]}
+    current = MagicMock(data={"version": 3, "name": "KMC", "statuses": []})
+    updated = MagicMock(data={"version": 4, "name": "KMC", "statuses": [], "opportunity_ids": [10042, 10016]})
+    mock_wda_cls.return_value.get_definition.return_value = current
+    mock_wda_cls.return_value.update_definition.return_value = updated
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_opportunity_ids",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 10042,
+            "opportunity_ids": [10042, 10016],
+            "expected_version": 3,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    assert data["result"]["structuredContent"]["opportunity_ids"] == [10042, 10016]
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.fetch_user_organization_data")
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
 def test_update_opportunity_ids_empty_list_skips_validation(mock_wda_cls, mock_fetch, client, auth_user):
     """An empty list is allowed (revert to single-opp) and doesn't need access validation."""
     _, raw = auth_user

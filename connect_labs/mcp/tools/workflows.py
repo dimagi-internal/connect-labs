@@ -26,6 +26,23 @@ def _collect_user_opportunity_ids(access_token: str) -> set[int]:
     return {opp.get("id") for opp in data.get("opportunities") or [] if opp.get("id") is not None}
 
 
+def _collect_labs_only_opp_ids(user) -> set[int]:
+    """Labs-only synthetic opp IDs visible to the caller (registry-backed, no prod call).
+
+    Mirrors the merge ``labs/context.py:_merge_labs_only_opps`` performs for
+    labs_context — without this, multi-opp validation rejects the very synthetic
+    opps the caller can see and run workflows on (e.g. a clone cohort under a
+    labs-only program), because they never appear in production's opp list.
+    """
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+    try:
+        candidates = SyntheticOpportunity.objects.filter(labs_only=True, enabled=True)
+        return {o.opportunity_id for o in candidates if o.is_visible_to(user)}
+    except Exception:  # noqa: BLE001 — registry trouble must not break validation of real opps
+        return set()
+
+
 def _data_access(user, opportunity_id=None, program_id=None, organization_id=None) -> WorkflowDataAccess:
     """Build a WorkflowDataAccess for the user, carrying their Connect token.
 
@@ -505,7 +522,7 @@ def workflow_update_opportunity_ids(
         # Validate every id is something the caller can actually access. Mirrors
         # the check Labs does at workflow/views.py so we don't persist ids the
         # user couldn't otherwise set via the UI.
-        user_opp_ids = _collect_user_opportunity_ids(token)
+        user_opp_ids = _collect_user_opportunity_ids(token) | _collect_labs_only_opp_ids(user)
         if not user_opp_ids:
             raise MCPToolError(
                 "UPSTREAM_ERROR",
@@ -640,7 +657,7 @@ def workflow_create_from_template(
             if oid not in seen:
                 seen.add(oid)
                 cleaned_opp_ids.append(oid)
-        user_opp_ids = _collect_user_opportunity_ids(token)
+        user_opp_ids = _collect_user_opportunity_ids(token) | _collect_labs_only_opp_ids(user)
         if not user_opp_ids:
             raise MCPToolError(
                 "UPSTREAM_ERROR",
@@ -805,7 +822,7 @@ def workflow_create(
             if oid not in seen:
                 seen.add(oid)
                 cleaned_opp_ids.append(oid)
-        user_opp_ids = _collect_user_opportunity_ids(token)
+        user_opp_ids = _collect_user_opportunity_ids(token) | _collect_labs_only_opp_ids(user)
         if not user_opp_ids:
             raise MCPToolError(
                 "UPSTREAM_ERROR",
