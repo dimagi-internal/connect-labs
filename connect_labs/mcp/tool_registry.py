@@ -15,6 +15,7 @@ class Tool:
     input_schema: dict
     handler: Callable[..., Any]
     is_write: bool = False
+    wants_progress: bool = False
 
 
 _REGISTRY: dict[str, Tool] = {}
@@ -26,12 +27,22 @@ def register(
     description: str,
     input_schema: dict,
     is_write: bool = False,
+    wants_progress: bool = False,
 ) -> Callable[[Callable], Callable]:
     """Decorator that registers a tool handler.
 
     Set is_write=True for tools that mutate labs state. Write tools are
     subject to per-user rate limiting and have their full arguments captured
     in the audit log.
+
+    Set wants_progress=True for tools that iterate over a work list for minutes
+    at a time. The server then passes a ``progress`` callable as a keyword
+    argument, and the handler is expected to call it per item — MCP clients
+    apply an idle-output timeout (300s by default in Claude Code) and will kill
+    a silent call whose work has already succeeded (connect-labs#1220).
+    ``progress`` is passed OUT OF BAND, never through ``input_schema``: it is
+    not a caller-supplied argument and must not appear in the advertised schema
+    or the audit log.
     """
 
     def decorator(fn: Callable) -> Callable:
@@ -43,6 +54,7 @@ def register(
             input_schema=input_schema,
             handler=fn,
             is_write=is_write,
+            wants_progress=wants_progress,
         )
         return fn
 

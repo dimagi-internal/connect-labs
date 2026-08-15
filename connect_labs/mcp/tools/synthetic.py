@@ -38,6 +38,7 @@ from connect_labs.labs.synthetic.provisioning import register_labs_only_opp
 from connect_labs.labs.synthetic.registry import invalidate_cache
 
 from ..connect_token import require_connect_token
+from ..progress import NULL_PROGRESS
 from ..tool_registry import MCPToolError, register
 
 logger = logging.getLogger(__name__)
@@ -48,8 +49,13 @@ logger = logging.getLogger(__name__)
 _ACCESS_CACHE: dict[int, tuple[float, set[int]]] = {}
 _ACCESS_CACHE_TTL_SECONDS = 60
 # (user_id, opportunity_id) -> (timestamp, granted). Shares the access cache's
-# clock so a bulk operation costs at most one probe per opportunity.
+# clock so a bulk operation costs at most one probe per opportunity. Only a
+# CONFIRMED GRANT is ever stored — see _production_grants_access.
 _PROBE_CACHE: dict[tuple, tuple[float, bool]] = {}
+# user_id -> org labels the accessible set was derived from. Diagnostic only,
+# never a permission input: it is what lets a denial say which identity's org
+# tree produced the set (connect-labs#1195).
+_ORG_LABEL_CACHE: dict[int, list[str]] = {}
 
 
 def _accessible_opp_ids_for_user(user) -> set[int]:
@@ -98,6 +104,11 @@ def _accessible_opp_ids_for_user(user) -> set[int]:
     ids = {int(o["id"]) for o in org_data.get("opportunities", []) if o.get("id") is not None}
     if key is not None:
         _ACCESS_CACHE[key] = (now, ids)
+        _ORG_LABEL_CACHE[key] = [
+            str(o.get("slug") or o.get("name"))
+            for o in org_data.get("organizations", [])
+            if o.get("slug") or o.get("name")
+        ]
     return ids
 
 
@@ -140,7 +151,16 @@ def _production_grants_access(user, opportunity_id: int) -> bool:
         logger.info("Access probe did not confirm opportunity_id=%s; leaving the denial in place", opportunity_id)
         granted = False
 
-    _PROBE_CACHE[key] = (now, granted)
+    # Cache the GRANT only. A denial is the answer we are least sure of — it is
+    # what a transient 404, a redirect, or a slow upstream all look like — and
+    # caching it applies one bad reply to the rest of the TTL. That is how an
+    # 11-opp cohort refused all 11 opportunities the single-opp tool profiled
+    # fine seconds either side, and why re-driving the run could not recover
+    # inside 60s: the retry was answered from the cache, never from production
+    # (connect-labs#1195). Re-probing a denial costs one request against the
+    # authority; replaying it costs the whole run.
+    if granted:
+        _PROBE_CACHE[key] = (now, granted)
     return granted
 
 
@@ -191,11 +211,23 @@ def _require_opportunity_access(user, opportunity_id: int) -> None:
         # a permissions problem that does not exist (connect-labs#1195, where the same
         # opportunity profiles fine through the single-opp tool seconds later).
         sample = sorted(accessible)[:8]
+        # Name the identity the call actually resolved to. "Not in your accessible
+        # set" is equally true when the caller lacks access and when the call ran
+        # as a DIFFERENT identity than the caller believes — a second PAT, another
+        # labs account — and from outside the two are indistinguishable. That
+        # ambiguity, not the access decision, is what made connect-labs#1195 cost
+        # days: production answered consistently for each identity throughout,
+        # while the error named neither.
+        who = getattr(user, "username", None) or getattr(user, "email", None) or f"user_id={getattr(user, 'id', '?')}"
+        orgs = _ORG_LABEL_CACHE.get(getattr(user, "id", None), [])
         logger.warning(
-            "Access denied for opportunity_id=%s — accessible set had %d entries (sample: %s)",
+            "Access denied for opportunity_id=%s as labs user %s — accessible set had %d entries "
+            "(sample: %s) derived from orgs: %s",
             opportunity_id,
+            who,
             len(accessible),
             sample,
+            orgs or "(none reported)",
         )
         detail = (
             "your accessible set came back EMPTY, which usually means the upstream "
@@ -203,10 +235,13 @@ def _require_opportunity_access(user, opportunity_id: int) -> None:
             if not accessible
             else f"{len(accessible)} opportunities are visible to you"
         )
+        org_note = f", via orgs: {', '.join(orgs)}" if orgs else ""
         raise MCPToolError(
             "PERMISSION_DENIED",
             f"opportunity_id {opportunity_id} is not in your accessible set ({detail}), "
-            f"and production Connect did not confirm access to it",
+            f"and production Connect did not confirm access to it. "
+            f"This call resolved to labs user {who!r}{org_note} — if that is not the account you "
+            f"expected, the token in use belongs to someone else.",
         )
 
 
@@ -1268,9 +1303,16 @@ def synthetic_profile_opp(
         "additionalProperties": False,
     },
     is_write=False,
+    wants_progress=True,
 )
 def synthetic_profile_opps_bulk(
-    user, *, source_opportunity_ids: list[int], out_dir: str, curate: bool = False, mirror: bool = False
+    user,
+    *,
+    source_opportunity_ids: list[int],
+    out_dir: str,
+    curate: bool = False,
+    mirror: bool = False,
+    progress=NULL_PROGRESS,
 ) -> dict[str, Any]:
     for opp_id in source_opportunity_ids:
         _require_opportunity_access(user, opp_id)
@@ -1287,6 +1329,7 @@ def synthetic_profile_opps_bulk(
         oauth_token=token,
         bundle_root=out_dir,
         drive=drive,
+        progress=progress,
     )
     return {
         "bundle_root": resolved,
@@ -1596,8 +1639,9 @@ def synthetic_fidelity_report(user, *, bundle_dir: str) -> dict[str, Any]:
         "additionalProperties": False,
     },
     is_write=False,
+    wants_progress=True,
 )
-def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
+def synthetic_clone_profile(user, *, spec_yaml: str, progress=NULL_PROGRESS) -> dict[str, Any]:
     try:
         spec = CohortSpec.from_yaml(spec_yaml)
     except ValueError as exc:
@@ -1609,7 +1653,9 @@ def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
     drive = DriveClient() if str(spec.bundle_root).startswith("gdrive:") else None
-    spec = profile_cohort(spec, base_url=settings.CONNECT_PRODUCTION_URL, oauth_token=token, drive=drive)
+    spec = profile_cohort(
+        spec, base_url=settings.CONNECT_PRODUCTION_URL, oauth_token=token, drive=drive, progress=progress
+    )
     return {
         "spec_yaml": spec.to_yaml(),
         "bundle_root": spec.bundle_root,
@@ -1639,14 +1685,15 @@ def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
         "additionalProperties": False,
     },
     is_write=True,
+    wants_progress=True,
 )
-def synthetic_clone_generate(user, *, spec_yaml: str, fresh: bool = False) -> dict[str, Any]:
+def synthetic_clone_generate(user, *, spec_yaml: str, fresh: bool = False, progress=NULL_PROGRESS) -> dict[str, Any]:
     try:
         spec = CohortSpec.from_yaml(spec_yaml)
     except ValueError as exc:
         raise MCPToolError("INVALID_SCHEMA", str(exc))
     drive = DriveClient()
-    spec, results = generate_cohort(spec, drive=drive, fresh=fresh)
+    spec, results = generate_cohort(spec, drive=drive, fresh=fresh, progress=progress)
     return {
         "spec_yaml": spec.to_yaml(),
         "program_id": spec.program_id,

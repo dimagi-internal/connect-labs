@@ -34,6 +34,7 @@ The module exposes:
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import json
 import logging
@@ -46,13 +47,14 @@ from django.db import connections
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken, TokenVerifier
-from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.dependencies import get_access_token, get_context
 from fastmcp.tools.tool import Tool, ToolResult
 
 from connect_labs.audit_trail.context import audit_context, get_audit_context
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 
 from .models import MCPAccessToken, MCPAuditLog
+from .progress import NULL_PROGRESS, make_thread_safe_reporter
 from .rate_limit import enforce_write_limit
 from .tool_registry import _REGISTRY, MCPToolError
 from .tool_registry import Tool as RegistryToolSpec
@@ -234,7 +236,7 @@ def _write_audit(
 # ---------------------------------------------------------------------------
 
 
-def _run_registry_tool(spec: RegistryToolSpec, arguments: dict) -> ToolResult:
+def _run_registry_tool(spec: RegistryToolSpec, arguments: dict, progress=NULL_PROGRESS) -> ToolResult:
     """Execute a legacy registry tool. Runs synchronously (in FastMCP's
     threadpool) so the existing sync handlers + ORM work unchanged.
 
@@ -256,10 +258,10 @@ def _run_registry_tool(spec: RegistryToolSpec, arguments: dict) -> ToolResult:
         request_id=f"mcp:{uuid.uuid4().hex}",
         path=f"mcp:{spec.name}",
     ):
-        return _run_registry_tool_inner(spec, arguments, user)
+        return _run_registry_tool_inner(spec, arguments, user, progress)
 
 
-def _run_registry_tool_inner(spec: RegistryToolSpec, arguments: dict, user) -> ToolResult:
+def _run_registry_tool_inner(spec: RegistryToolSpec, arguments: dict, user, progress=NULL_PROGRESS) -> ToolResult:
     """The gate → run → audit body of a tool call, inside an open audit context."""
     # Central labs-only access gate. Any tool scoped to a labs-only opp/program
     # routes to the local backend with no downstream Connect membership check, so
@@ -284,8 +286,15 @@ def _run_registry_tool_inner(spec: RegistryToolSpec, arguments: dict, user) -> T
             _write_audit(user, spec.name, arguments, success=False, error_code=e.code, is_write=True)
             raise ToolError(e.message) from e
 
+    # `progress` is passed OUT OF BAND — it is not a caller-supplied argument, so
+    # it stays out of `arguments` and therefore out of both the advertised input
+    # schema and the audit log's captured arguments.
+    handler_kwargs = dict(arguments)
+    if spec.wants_progress:
+        handler_kwargs["progress"] = progress
+
     try:
-        result = spec.handler(user=user, **arguments)
+        result = spec.handler(user=user, **handler_kwargs)
     except MCPToolError as e:
         _write_audit(user, spec.name, arguments, success=False, error_code=e.code, is_write=spec.is_write)
         raise ToolError(e.message) from e
@@ -348,8 +357,18 @@ class RegistryTool(Tool):
     model_config = {"arbitrary_types_allowed": True}
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
+        # Build the progress bridge HERE, on the event loop that owns the MCP
+        # session — the handler itself runs in a worker thread and can neither
+        # await nor reach this loop on its own (connect-labs#1220). Tools that
+        # did not opt in get the no-op, so nothing else changes shape.
+        progress = NULL_PROGRESS
+        if self.spec.wants_progress:
+            try:
+                progress = make_thread_safe_reporter(get_context(), asyncio.get_running_loop())
+            except Exception:  # noqa: BLE001 — no context (tests, direct calls) is not an error
+                logger.debug("no MCP context for progress reporting on %s", self.spec.name, exc_info=True)
         return await sync_to_async(_closing_connections(_run_registry_tool), thread_sensitive=True)(
-            self.spec, arguments
+            self.spec, arguments, progress
         )
 
 
