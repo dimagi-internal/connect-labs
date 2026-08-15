@@ -29,8 +29,7 @@ CONNECT_ORIGIN = "https://connect.dimagi.com"
 # data-type guard is a second belt-and-braces filter. No <a> nests inside a card,
 # so the first </a> closes it.
 _CARD_RE = re.compile(
-    r'<a class="blog-card"\s+href="(?P<href>/blog/[^"]+)"[^>]*'
-    r'data-type="blog"(?P<attrs>[^>]*)>(?P<body>.*?)</a>',
+    r'<a class="blog-card"\s+href="(?P<href>/blog/[^"]+)"[^>]*' r'data-type="blog"(?P<attrs>[^>]*)>(?P<body>.*?)</a>',
     re.DOTALL,
 )
 _STATIC_RE = re.compile(r"{%\s*static\s+['\"]([^'\"]+)['\"]\s*%}")
