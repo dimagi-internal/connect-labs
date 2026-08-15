@@ -1344,6 +1344,112 @@ document.addEventListener('click', (e) => {
     }
     window.__applyInsightsDeepLink = applyDeepLink;
     applyDeepLink(location.search);
+
+    // Cross-site cards (Connect-tagged podcasts pulled live from dimagi.com)
+    // arrive after init. Fold them into the same cards/items/searchText the
+    // filter already uses, re-sort by date, and re-apply the current filter so
+    // they behave exactly like the server-rendered cards. Event listeners are
+    // bound once, above, so this never double-binds them.
+    window.__insightsAddCards = function (newCards) {
+      if (!newCards || !newCards.length || !cards.length) return;
+      const grid = cards[0].parentElement;
+      newCards.forEach((el) => {
+        grid.appendChild(el);
+        cards.push(el);
+        items.push(el);
+        const txt = ['h3', '.blog-card-excerpt', '.blog-tag']
+          .map((s) => {
+            const e = el.querySelector(s);
+            return e ? e.textContent : '';
+          })
+          .join(' ');
+        searchText.set(el, txt.toLowerCase());
+      });
+      const dateOf = (el) => {
+        const t = el.querySelector('time[datetime]');
+        return t ? t.getAttribute('datetime') : '';
+      };
+      cards
+        .slice()
+        .sort((a, b) => dateOf(b).localeCompare(dateOf(a)))
+        .forEach((el) => grid.appendChild(el));
+      apply();
+    };
+  }
+  if (document.readyState !== 'loading') init();
+  else document.addEventListener('DOMContentLoaded', init);
+})();
+
+// Connect-tagged podcasts, pulled LIVE from dimagi.com on page load instead of
+// a monthly cron that scraped the dimagi podcast page and opened a PR.
+// dimagi.com publishes /podcast/connect-manifest.json (CORS-open to this
+// origin); this fetches it, builds link-out cards, and hands them to the
+// Insights filter via __insightsAddCards, so a newly Connect-tagged episode
+// shows up here on the next page load with nothing to merge. If the fetch fails
+// (offline, or the feed isn't deployed yet) the page just shows the blog cards.
+(function loadConnectPodcasts() {
+  const MANIFEST_URL = 'https://dimagi.com/podcast/connect-manifest.json';
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : s;
+    return d.innerHTML;
+  }
+  // Light touch-ups so dimagi's wording reads in Connect's voice.
+  function clean(s) {
+    return (s || '')
+      .replace(/CommCare Connect/g, 'Connect')
+      .replace(/\s*[—–]\s*/g, ', ');
+  }
+  function buildCard(ep) {
+    const a = document.createElement('a');
+    a.className = 'blog-card blog-card--podcast';
+    a.href = ep.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.dataset.type = 'podcast';
+    a.dataset.program = '';
+    const tag = ep.episodeNumber
+      ? 'Podcast · Episode ' + ep.episodeNumber
+      : 'Podcast';
+    a.innerHTML =
+      '<div class="blog-card-media">' +
+      '<img src="' +
+      esc(ep.coverImage || '') +
+      '" alt="High-Impact Growth podcast cover art" loading="lazy">' +
+      '<span class="blog-card-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg></span>' +
+      '</div>' +
+      '<div class="blog-card-body">' +
+      '<div class="blog-card-meta">' +
+      '<span class="blog-tag">' +
+      esc(tag) +
+      '</span>' +
+      '<time datetime="' +
+      esc(ep.date || '') +
+      '">' +
+      esc((ep.dateLabel || '').toUpperCase()) +
+      '</time>' +
+      '</div>' +
+      '<h3>' +
+      esc(clean(ep.title)) +
+      '</h3>' +
+      '<p class="blog-card-excerpt">' +
+      esc(clean(ep.description)) +
+      '</p>' +
+      '<span class="blog-card-more">Listen on the Dimagi podcast ↗</span>' +
+      '</div>';
+    return a;
+  }
+  function init() {
+    const page = document.querySelector('[data-page="/insights"]');
+    if (!page || !page.querySelector('.blog-grid')) return;
+    fetch(MANIFEST_URL)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data || !data.episodes || !data.episodes.length) return;
+        const cards = data.episodes.map(buildCard);
+        if (window.__insightsAddCards) window.__insightsAddCards(cards);
+      })
+      .catch(() => {});
   }
   if (document.readyState !== 'loading') init();
   else document.addEventListener('DOMContentLoaded', init);
