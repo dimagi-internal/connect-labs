@@ -991,3 +991,12 @@ class TestTrendSeries:
         self._mk(9500, "worker-now", 1, weeks_ago=0)
         trends = client.get(reverse("pulse:api_summary")).json()["trends"]
         assert trends and trends[-1]["partial"] is True
+
+    def test_future_dated_visits_do_not_stretch_the_axis(self, client, populated):
+        """A wrong device clock produces visits dated months ahead (observed:
+        October 2027). They must not become buckets -- each empty future week
+        would stretch every trend chart's axis toward it."""
+        self._mk(9600, "time-traveller", 1, weeks_ago=-60)
+        trends = client.get(reverse("pulse:api_summary")).json()["trends"]
+        horizon = timezone.now() + timedelta(days=7)
+        assert all(w["t"] < horizon.timestamp() for w in trends)

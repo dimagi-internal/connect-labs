@@ -664,6 +664,12 @@ def _trend_series(sc) -> list:
     this_week = (this_week - timedelta(days=this_week.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
     out = []
     for bucket in sorted(set(quality) | set(connectivity)):
+        # field_ts comes from the device clock, and a wrong clock produces
+        # visits dated months into the future (observed: October 2027). Each
+        # would become its own bucket and stretch the axis with empty future.
+        # The current week is the last honest bucket; drop anything past it.
+        if bucket > this_week:
+            continue
         q = quality.get(bucket, {})
         workers, online = connectivity.get(bucket, (0, 0))
         works = q.get("works", 0)
