@@ -609,6 +609,80 @@ def _weekly_spark_by(field: str = "org_slug", qs=None) -> dict:
     return out
 
 
+ONLINE_SYNC_WINDOW = timedelta(hours=24)
+ONLINE_MOSTLY = 0.8
+
+
+def _trend_series(sc) -> list:
+    """Full-history weekly trends for the current scope: verification pass
+    rate and worker connectivity.
+
+    Pass rate comes off the works spine (claimed units vs approved), the same
+    ledger the money figures use, so the two can never disagree about what
+    "approved" means.
+
+    "Online" is a judgement about a *worker's week*, not about a submission:
+    a worker counts as online in a week when most (>= ONLINE_MOSTLY) of their
+    submissions that week reached the server within ONLINE_SYNC_WINDOW of the
+    visit happening. One overnight sync does not mark an online worker
+    offline, and one lucky fast sync does not mark an offline worker online
+    -- which is what a raw latency histogram got wrong: it described
+    submissions, when the operational question is about people.
+
+    Only whole weeks tell the truth; the current partial week is flagged the
+    same way the delivery series flags it.
+    """
+    from django.db.models import F
+    from django.db.models.functions import TruncWeek
+
+    quality = {}
+    for r in (
+        sc["works"]
+        .annotate(bucket=TruncWeek("created_ts"))
+        .values("bucket")
+        .annotate(works=Count("id"), approved=Count("id", filter=Q(status="approved")))
+    ):
+        if r["bucket"] is not None:
+            quality[r["bucket"]] = r
+
+    connectivity: dict = {}
+    for r in (
+        sc["events"]
+        .exclude(worker_hash="")
+        .annotate(bucket=TruncWeek("field_ts"))
+        .values("bucket", "worker_hash")
+        .annotate(n=Count("id"), timely=Count("id", filter=Q(sync_ts__lte=F("field_ts") + ONLINE_SYNC_WINDOW)))
+    ):
+        if r["bucket"] is None or not r["n"]:
+            continue
+        agg = connectivity.setdefault(r["bucket"], [0, 0])
+        agg[0] += 1
+        if r["timely"] / r["n"] >= ONLINE_MOSTLY:
+            agg[1] += 1
+
+    this_week = timezone.now()
+    this_week = (this_week - timedelta(days=this_week.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    out = []
+    for bucket in sorted(set(quality) | set(connectivity)):
+        q = quality.get(bucket, {})
+        workers, online = connectivity.get(bucket, (0, 0))
+        works = q.get("works", 0)
+        approved = q.get("approved", 0)
+        out.append(
+            {
+                "t": int(bucket.timestamp()),
+                "works": works,
+                "approved": approved,
+                "pass_rate": (approved / works) if works else None,
+                "workers": workers,
+                "online": online,
+                "online_rate": (online / workers) if workers else None,
+                "partial": bucket >= this_week,
+            }
+        )
+    return out
+
+
 def _service_menu():
     """Delivery types offered in the filter, largest first.
 
@@ -986,6 +1060,7 @@ class SummaryView(View):
                 "services": _service_menu(),
                 "orgs": _org_menu(request),
                 "weekly": _weekly_series(sc),
+                "trends": _trend_series(sc),
                 "activity": _activity_strip(sc),
                 "retention_days": getattr(settings, "PULSE_EVENT_RETENTION_DAYS", 30),
                 "money": {

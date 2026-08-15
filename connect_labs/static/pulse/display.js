@@ -311,11 +311,38 @@
         focus: 'world',
       },
       {
-        card: 'offline',
-        eyebrow: 'The tail',
-        title: "The work happens where the signal doesn't.",
-        note: 'Submissions arrive minutes — sometimes days — after the service was delivered.',
+        card: 'connectivity',
+        eyebrow: 'The signal',
+        title: (s) => {
+          const whole = (s?.trends || []).filter(
+            (w) => !w.partial && w.online_rate != null,
+          );
+          const latest = whole[whole.length - 1];
+          return latest
+            ? `${Math.round(
+                latest.online_rate * 100,
+              )}% of active workers were online last week.`
+            : 'Most workers are effectively online. The rest are offline-first, as designed.';
+        },
+        note: 'Online means most of that worker’s submissions reached the server within a day of the visit.',
         focus: 'ea',
+      },
+      {
+        card: 'quality_trend',
+        eyebrow: 'The bar',
+        title: (s) => {
+          const whole = (s?.trends || []).filter(
+            (w) => !w.partial && w.pass_rate != null,
+          );
+          const latest = whole[whole.length - 1];
+          return latest
+            ? `${Math.round(
+                latest.pass_rate * 100,
+              )}% of claimed work survived verification last week.`
+            : 'Verification holds a bar, week after week.';
+        },
+        note: 'The share of claimed units approved, over the whole life of the work — with the volume it was earned on.',
+        focus: 'world',
       },
     ],
 
@@ -395,11 +422,18 @@
         focus: 'world',
       },
       {
-        card: 'offline',
-        eyebrow: 'Sync',
-        title: 'Field time versus server time.',
-        note: 'The tail is offline-first working as designed.',
+        card: 'connectivity',
+        eyebrow: 'The signal',
+        title: 'How many workers are effectively online.',
+        note: 'Judged per worker-week, not per form — offline-first is a design, not a defect.',
         focus: 'ea',
+      },
+      {
+        card: 'quality_trend',
+        eyebrow: 'Quality',
+        title: 'The verification bar over time.',
+        note: 'Approved share of claimed work, weekly, over full history.',
+        focus: 'world',
       },
     ],
   };
@@ -436,6 +470,11 @@
       <p id="act-note"></p>`;
     panel.appendChild(claim);
     panel.appendChild(actBody);
+    // Layouts carry different act counts; a hardcoded "1–4" lies on most.
+    const kbd = document.querySelector('.pulse-kbd');
+    if (kbd) {
+      kbd.innerHTML = `<b>1</b>&ndash;<b>${ACTS.length}</b> acts &middot; <b>space</b> pause &middot; <b>F</b> focus`;
+    }
     head
       .querySelectorAll('[data-act]')
       .forEach((b) =>
