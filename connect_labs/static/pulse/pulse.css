@@ -2505,3 +2505,10 @@
   color: var(--light);
   border-color: var(--light-dim);
 }
+
+/* weekly trend chart inside act cards */
+.trend svg {
+  display: block;
+  width: 100%;
+  height: 76px;
+}

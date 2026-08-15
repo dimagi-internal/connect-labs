@@ -676,69 +676,157 @@
     );
   });
 
-  /* ── act 4 · offline ──────────────────────────────────────────── */
-  define('offline', 'Offline', (root, store) => {
+  /* ── shared weekly trend chart ────────────────────────────────────
+     Volume as dim bars, a rate as the line over them, drawn from the
+     summary's full-history `trends` series. The rate line alone would let a
+     100%-on-3-visits week read as triumph; the bars underneath keep it
+     honest. The current partial week draws dimmed — a live trend must not
+     look like it just fell off a cliff. */
+  function trendChart(node, weeks, opts) {
+    const W = 300;
+    const H = 76;
+    const PAD_B = 4;
+    const rows = weeks.filter((w) => opts.volume(w) != null);
+    if (rows.length < 2) {
+      node.innerHTML = '<p class="act-lede">Not enough history yet.</p>';
+      return null;
+    }
+    const maxV = Math.max(...rows.map((w) => opts.volume(w)), 1);
+    const bw = W / rows.length;
+    const bars = rows
+      .map((w, i) => {
+        const h = ((H - PAD_B) * opts.volume(w)) / maxV;
+        return `<rect x="${(i * bw).toFixed(2)}" y="${(H - PAD_B - h).toFixed(
+          2,
+        )}" width="${Math.max(bw - 1, 0.5).toFixed(2)}" height="${Math.max(
+          h,
+          opts.volume(w) ? 1 : 0,
+        ).toFixed(2)}" fill="var(--light-dim)" opacity="${
+          w.partial ? 0.14 : 0.3
+        }"/>`;
+      })
+      .join('');
+    const pts = rows
+      .map((w, i) => {
+        const r = opts.rate(w);
+        return r == null ? null : [i * bw + bw / 2, (H - PAD_B) * (1 - r) + 1];
+      })
+      .filter(Boolean);
+    const line = pts
+      .map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1))
+      .join(' ');
+    node.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+        aria-label="${opts.label}">
+      ${bars}
+      <path d="${line}" fill="none" stroke="${
+        opts.color
+      }" stroke-width="1.8" stroke-linejoin="round"/>
+      ${
+        pts.length
+          ? `<circle cx="${pts[pts.length - 1][0].toFixed(1)}" cy="${pts[
+              pts.length - 1
+            ][1].toFixed(1)}" r="2.6" fill="${opts.color}"/>`
+          : ''
+      }
+    </svg>`;
+    // Latest whole week is the honest headline; the partial week is still
+    // filling and always reads low.
+    const whole = rows.filter((w) => !w.partial && opts.rate(w) != null);
+    return whole.length ? whole[whole.length - 1] : null;
+  }
+
+  /* ── act 4 · connectivity ─────────────────────────────────────── */
+  define('connectivity', 'Online workers', (root, store) => {
     root.innerHTML = `
-      <p class="act-lede">These are not people at desks. Work happens where there is no
-        signal, and syncs when there is.</p>
-      <div class="sect">
-        <span class="pulse-lbl">Field time → server time</span>
-        <div class="lagchart" data-x="lag"></div>
-        <div class="axis"><span>&lt;5m</span><span>1h</span><span>6h</span><span>1d</span><span>3d+</span></div>
-      </div>
+      <p class="act-lede">These are not people at desks. The question is not how fast one
+        form synced — it is how many <b>workers</b> are effectively online.</p>
       <div class="sect">
         <div class="pairs">
-          <div><span class="pulse-lbl">Median sync</span><div class="pv num ok" data-x="median">—</div></div>
-          <div><span class="pulse-lbl">Slowest seen</span><div class="pv num" data-x="max">—</div></div>
+          <div><span class="pulse-lbl">Online last week</span><div class="pv num ok" data-x="now">—</div><div class="kpi-sub" data-x="nowsub">—</div></div>
+          <div><span class="pulse-lbl">Active workers</span><div class="pv num" data-x="active">—</div></div>
         </div>
       </div>
       <div class="sect">
-        <p class="act-lede" style="margin:0">This is why the feed replays on <b>field time</b>,
-          not arrival time. A visit delivered at 09:14 belongs at 09:14 — even if the phone
-          only found signal at 13:32.</p>
+        <span class="pulse-lbl">Share of active workers online, weekly</span>
+        <div class="trend" data-x="trend"></div>
+      </div>
+      <div class="sect">
+        <p class="act-lede" style="margin:0">A worker counts as online in a week when most of
+          their submissions arrived within a day of the visit. The rest are offline-first
+          working as designed — delivering all week, syncing when signal returns.</p>
       </div>`;
     const $ = (n) => root.querySelector(`[data-x="${n}"]`);
 
-    const recompute = () => {
-      const evs = store.events.length ? store.events : store.recent;
-      if (!evs.length) return;
-      const EDGES = [5, 30, 60, 360, 1440, 4320, Infinity];
-      const B = new Array(EDGES.length).fill(0);
-      const lags = [];
-      for (const e of evs) {
-        const m = (e.sync_ts - e.field_ts) / 60;
-        if (m < 0) continue;
-        lags.push(m);
-        for (let i = 0; i < EDGES.length; i++)
-          if (m < EDGES[i]) {
-            B[i]++;
-            break;
-          }
-      }
-      if (!lags.length) return;
-      lags.sort((a, b) => a - b);
-      const max = Math.max(...B, 1);
-      $('lag').innerHTML = B.map(
-        (v, i) =>
-          `<div class="${i >= 3 ? 'slow' : ''}" style="height:${(
-            (v / max) *
-            100
-          ).toFixed(1)}%" title="${nf.format(v)} submissions"></div>`,
-      ).join('');
-      const median = lags[Math.floor(lags.length / 2)];
-      $('median').textContent =
-        median < 60
-          ? Math.round(median) + ' min'
-          : (median / 60).toFixed(1) + ' h';
-      const worst = lags[lags.length - 1];
-      $('max').textContent =
-        worst > 1440
-          ? (worst / 1440).toFixed(1) + ' days'
-          : (worst / 60).toFixed(1) + ' h';
-    };
-    store.on('window', recompute);
-    store.on('backfill', recompute);
-    recompute();
+    bind(
+      store,
+      'summary',
+      (s) => {
+        const weeks = s.trends || [];
+        const latest = trendChart($('trend'), weeks, {
+          volume: (w) => w.workers,
+          rate: (w) => w.online_rate,
+          color: 'var(--ok)',
+          label: 'Share of active workers online per week',
+        });
+        if (latest) {
+          $('now').textContent = Math.round(latest.online_rate * 100) + '%';
+          $('nowsub').textContent = `${nf.format(latest.online)} of ${nf.format(
+            latest.workers,
+          )} active`;
+          $('active').textContent = nf.format(latest.workers);
+        }
+      },
+      () => store.summary,
+    );
+  });
+
+  /* ── verification pass rate over time ─────────────────────────── */
+  define('quality_trend', 'Verification rate', (root, store) => {
+    root.innerHTML = `
+      <p class="act-lede">The verification bar over the life of the work — the share of
+        claimed units that survived the checks, week by week.</p>
+      <div class="sect">
+        <div class="pairs">
+          <div><span class="pulse-lbl">Pass rate last week</span><div class="pv num gold" data-x="now">—</div><div class="kpi-sub" data-x="nowsub">—</div></div>
+          <div><span class="pulse-lbl">All-time</span><div class="pv num" data-x="alltime">—</div></div>
+        </div>
+      </div>
+      <div class="sect">
+        <span class="pulse-lbl">Approved share of claimed work, weekly</span>
+        <div class="trend" data-x="trend"></div>
+      </div>
+      <div class="sect">
+        <p class="act-lede" style="margin:0">Bars are claimed volume; the line is the share
+          approved. A quality dip on ten units and one on ten thousand are different
+          stories, and this chart tells them apart.</p>
+      </div>`;
+    const $ = (n) => root.querySelector(`[data-x="${n}"]`);
+
+    bind(
+      store,
+      'summary',
+      (s) => {
+        const weeks = s.trends || [];
+        const latest = trendChart($('trend'), weeks, {
+          volume: (w) => w.works,
+          rate: (w) => w.pass_rate,
+          color: 'var(--light)',
+          label: 'Approved share of claimed work per week',
+        });
+        if (latest) {
+          $('now').textContent = Math.round(latest.pass_rate * 100) + '%';
+          $('nowsub').textContent = `${nf.format(
+            latest.approved,
+          )} of ${nf.format(latest.works)} claimed`;
+        }
+        const m = s.money || {};
+        if (m.works) {
+          $('alltime').textContent =
+            Math.round(((m.approved_works || 0) / m.works) * 100) + '%';
+        }
+      },
+      () => store.summary,
+    );
   });
 
   global.PulseCards = {

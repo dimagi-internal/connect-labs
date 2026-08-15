@@ -935,3 +935,59 @@ class TestSummaryCache:
         calls = self._spy(monkeypatch)
         client.get(reverse("pulse:api_summary"))
         assert calls == [], "a warmed cache means the first viewer never computes"
+
+
+@pytest.mark.django_db
+class TestTrendSeries:
+    """Weekly full-history trends: pass rate and worker connectivity.
+
+    "Online" is a judgement about a worker's week -- most of their submissions
+    within the sync window -- not about any one form. One slow overnight sync
+    must not flip an online worker, and vice versa.
+    """
+
+    def _mk(self, vid, worker, lag_hours, weeks_ago=1):
+        ts = timezone.now() - timedelta(weeks=weeks_ago)
+        return PulseEvent.objects.create(
+            connect_visit_id=vid,
+            opportunity_id=765,
+            field_ts=ts,
+            sync_ts=ts + timedelta(hours=lag_hours),
+            status="approved",
+            service_slug="mbw",
+            worker_hash=worker,
+        )
+
+    def test_online_is_judged_per_worker_week(self, client, populated):
+        # fast-worker: 3 of 3 timely. slow-worker: 1 of 3 timely (one lucky
+        # fast sync must not make an offline worker online).
+        for i, lag in enumerate((1, 2, 3)):
+            self._mk(9000 + i, "fast-worker", lag)
+        for i, lag in enumerate((1, 60, 90)):
+            self._mk(9100 + i, "slow-worker", lag)
+
+        trends = client.get(reverse("pulse:api_summary")).json()["trends"]
+        week = [w for w in trends if w["workers"] >= 2][-1]
+
+        assert week["workers"] == 2
+        assert week["online"] == 1, "only the mostly-timely worker is online"
+        assert week["online_rate"] == 0.5
+
+    def test_pass_rate_comes_from_the_works_spine(self, client, populated):
+        now = timezone.now()
+        for i, status in enumerate(("approved", "approved", "rejected")):
+            PulseWork.objects.create(
+                work_key=f"trend-{i}",
+                opportunity_id=765,
+                status=status,
+                created_ts=now - timedelta(weeks=2),
+            )
+        trends = client.get(reverse("pulse:api_summary")).json()["trends"]
+        week = [w for w in trends if w["works"] == 3]
+        assert week and week[0]["approved"] == 2
+        assert week[0]["pass_rate"] == pytest.approx(2 / 3)
+
+    def test_the_partial_week_is_flagged(self, client, populated):
+        self._mk(9500, "worker-now", 1, weeks_ago=0)
+        trends = client.get(reverse("pulse:api_summary")).json()["trends"]
+        assert trends and trends[-1]["partial"] is True
