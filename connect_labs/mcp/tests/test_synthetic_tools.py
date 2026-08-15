@@ -782,3 +782,34 @@ def test_unreachable_production_is_not_a_grant(user, monkeypatch):
         _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, 523)
     syn._ACCESS_CACHE.clear()
     syn._PROBE_CACHE.clear()
+
+
+@pytest.mark.django_db
+def test_profile_tools_accept_curate_and_mirror(user, monkeypatch, tmp_path):
+    """curate/mirror must not be reachable only through the cohort-spec path.
+
+    They were exposed solely on synthetic_clone_profile, so when that path is
+    unavailable there is no way to produce a high-fidelity mirror bundle at all —
+    which left the KMC clones stuck with curation's invented deaths (connect-labs#1195).
+    The per-opp and bulk profilers now take the same two flags and pass them through.
+    """
+    from connect_labs.mcp.tools import synthetic as syn
+
+    seen = {}
+
+    def _fake_profile(opp_id, **kw):
+        seen.update({"opp": opp_id, "curate": kw.get("curate"), "mirror": kw.get("mirror")})
+        return f"/tmp/bundle/{opp_id}"
+
+    monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
+    monkeypatch.setattr(syn, "profile_opp_to_bundle", _fake_profile)
+
+    get_tool("synthetic_profile_opp").handler(
+        user=user, source_opportunity_id=523, out_dir=str(tmp_path), curate=True, mirror=True
+    )
+    assert seen == {"opp": 523, "curate": True, "mirror": True}
+
+    # Defaults stay faithful (no curation, no mirror) when the flags are omitted.
+    seen.clear()
+    get_tool("synthetic_profile_opp").handler(user=user, source_opportunity_id=524, out_dir=str(tmp_path))
+    assert seen == {"opp": 524, "curate": False, "mirror": False}
