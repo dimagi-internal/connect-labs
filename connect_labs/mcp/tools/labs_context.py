@@ -144,8 +144,21 @@ def labs_context(user, search: str = None) -> dict[str, Any]:
         }
     )
 
+    # Report the identity from the LABS user the PAT resolved to, not from the
+    # upstream payload: /export/opp_org_program_list/ returns only
+    # {organizations, opportunities, programs} (ProgramOpportunityOrganizationDataView),
+    # so `data.get("user")` was always None and this block was always {}.
+    #
+    # An empty identity here is what forced connect-labs#1195 to infer WHO a call
+    # ran as from the shape of its org tree — the inference that made two
+    # conflicting observations read as one flaky endpoint instead of two
+    # different accounts. `user` is the caller's own account, so returning it
+    # discloses nothing they cannot already see.
     return {
-        "user": data.get("user") or {},
+        "user": {
+            "username": getattr(user, "username", None),
+            "email": getattr(user, "email", None) or None,
+        },
         "organizations": filtered_tree,
         "totals": filtered_totals,
         "search": search or None,

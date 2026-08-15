@@ -39,6 +39,8 @@ def test_labs_context_builds_hierarchy(mock_fetch, client, auth_user):
     nest under their org's ``opportunities`` list."""
     _, raw = auth_user
     mock_fetch.return_value = {
+        # NOTE: production does NOT send a `user` key here (see
+        # ProgramOpportunityOrganizationDataView). Kept to prove it is ignored.
         "user": {"email": "a@b.com", "commcare_username": "a@b.com"},
         "organizations": [
             {"id": 1, "slug": "acme", "name": "Acme Org"},
@@ -97,7 +99,12 @@ def test_labs_context_builds_hierarchy(mock_fetch, client, auth_user):
     content = data["result"]["structuredContent"]
 
     assert content["totals"] == {"organizations": 2, "programs": 2, "opportunities": 4}
-    assert content["user"] == {"email": "a@b.com", "commcare_username": "a@b.com"}
+    # The identity comes from the labs user the PAT resolved to, NOT from the
+    # upstream payload — production's /export/opp_org_program_list/ has no
+    # `user` key, so echoing it always produced {} in real use. The mocked
+    # `user` below is ignored on purpose; see
+    # test_labs_context_reports_the_resolved_identity.
+    assert content["user"] == {"username": "labs-ctx-test", "email": None}
 
     orgs = {o["slug"]: o for o in content["organizations"]}
     assert set(orgs) == {"acme", "beta"}
@@ -343,3 +350,31 @@ def test_labs_context_does_not_merge_when_user_opted_out(mock_fetch, client, aut
     resp = _call_tool(client, raw, "labs_context", {})
     tree = resp["result"]["structuredContent"]["organizations"]
     assert {o["slug"] for o in tree} == {"acme"}
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.labs_context.fetch_user_organization_data")
+def test_labs_context_reports_the_resolved_identity(mock_fetch, client, auth_user):
+    """`user` must name the account the PAT resolved to.
+
+    It was built as ``data.get("user") or {}`` from the upstream payload — but
+    /export/opp_org_program_list/ returns only {organizations, opportunities,
+    programs} (ProgramOpportunityOrganizationDataView), so the key never existed
+    and the block was ALWAYS empty. Verified live against the deployed tool,
+    which returns ``"user": {}``. Note the mock in the test above supplies a
+    ``user`` key production does not send — which is how this survived.
+
+    That empty field is the diagnostic hole behind connect-labs#1195. The one
+    tool whose job is "who am I and what can I see" answered only the second
+    half, so identity had to be INFERRED from the shape of the org tree — and
+    that inference is what made two conflicting observations look like one flaky
+    endpoint rather than two different accounts.
+    """
+    _, raw = auth_user
+    mock_fetch.return_value = {"organizations": [], "programs": [], "opportunities": []}
+
+    result = _call_tool(client, raw, "labs_context", {})
+    payload = result["result"]["structuredContent"]
+
+    assert payload["user"], "labs_context reported no identity at all"
+    assert payload["user"]["username"] == "labs-ctx-test"
