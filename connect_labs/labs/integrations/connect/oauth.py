@@ -84,6 +84,13 @@ def fetch_user_organization_data(access_token: str) -> dict | None:
             f"{settings.CONNECT_PRODUCTION_URL}/export/opp_org_program_list/",
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=30,  # Increased timeout from 10 to 30 seconds
+            # Production emits http:// URLs behind its proxy (gunicorn without
+            # --forwarded-allow-ips) and the proxy 301s them back to https://.
+            # Every other caller of this API sets this for that reason — the
+            # export client, _fetch_endpoint, and the access probe after
+            # connect-labs#1214. Bare, a redirect arrives with an unparseable
+            # body, becomes None, and surfaces as a denial or UPSTREAM_ERROR.
+            follow_redirects=True,
         )
         response.raise_for_status()
         data = response.json()

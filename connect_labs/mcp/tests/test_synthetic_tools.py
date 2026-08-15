@@ -459,7 +459,7 @@ def test_clone_profile_tool_returns_updated_spec():
     class _User:
         email = "jjackson@dimagi.com"
 
-    def fake_profile_cohort(spec, *, base_url, oauth_token, drive=None):
+    def fake_profile_cohort(spec, *, base_url, oauth_token, drive=None, progress=None):
         spec.bundle_root = "gdrive:run123"
         return spec
 
@@ -813,3 +813,148 @@ def test_profile_tools_accept_curate_and_mirror(user, monkeypatch, tmp_path):
     seen.clear()
     get_tool("synthetic_profile_opp").handler(user=user, source_opportunity_id=524, out_dir=str(tmp_path))
     assert seen == {"opp": 524, "curate": False, "mirror": False}
+
+
+# -----------------------------------------------------------------------------
+# Access gate — a wrong answer must not become sticky (connect-labs#1195)
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_a_failed_probe_is_not_cached(user, monkeypatch):
+    """A DENIAL must never be cached. Only a confirmed grant may be.
+
+    The probe exists because the accessible-opportunity list is an unreliable copy
+    of a decision production owns. Caching its negative answer takes one bad reply
+    and applies it to every subsequent opportunity for the whole TTL — which is
+    exactly how an 11-opp cohort came to refuse all 11 opps that the single-opp
+    tool profiled fine seconds either side (connect-labs#1195). The retry the
+    caller reaches for is silently answered from the cache, so the run cannot
+    recover inside 60 seconds however many times it is re-driven.
+    """
+    from connect_labs.mcp.tools import synthetic as syn
+
+    syn._ACCESS_CACHE.clear()
+    syn._PROBE_CACHE.clear()
+    monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
+
+    attempts = []
+
+    def _flaky(*a, **k):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("transient 404 from production")
+        return {"id": 523, "name": "NAMA"}
+
+    monkeypatch.setattr(syn, "_fetch_endpoint", _flaky)
+
+    assert syn._production_grants_access(user, 523) is False
+    # Second call must ask production again rather than replay the denial.
+    assert syn._production_grants_access(user, 523) is True
+    assert len(attempts) == 2
+
+    syn._ACCESS_CACHE.clear()
+    syn._PROBE_CACHE.clear()
+
+
+@pytest.mark.django_db
+def test_a_confirmed_grant_is_cached(user, monkeypatch):
+    """A grant production confirmed is safe to reuse for the TTL — that is what
+    keeps a bulk operation to one probe per opportunity rather than one per gate.
+    """
+    from connect_labs.mcp.tools import synthetic as syn
+
+    syn._ACCESS_CACHE.clear()
+    syn._PROBE_CACHE.clear()
+    monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
+
+    attempts = []
+
+    def _grant(*a, **k):
+        attempts.append(1)
+        return {"id": 523}
+
+    monkeypatch.setattr(syn, "_fetch_endpoint", _grant)
+
+    assert syn._production_grants_access(user, 523) is True
+    assert syn._production_grants_access(user, 523) is True
+    assert len(attempts) == 1
+
+    syn._ACCESS_CACHE.clear()
+    syn._PROBE_CACHE.clear()
+
+
+@pytest.mark.django_db
+def test_denial_names_the_identity_labs_resolved(user, monkeypatch):
+    """The denial must say WHO labs thinks the caller is.
+
+    "opportunity_id 523 is not in your accessible set" is true of two very
+    different situations: the caller genuinely lacks access, or the call resolved
+    to a different identity than the caller believes (a second PAT, another
+    labs account). Without the resolved identity in the message the two are
+    indistinguishable from outside, and connect-labs#1195 burned days on exactly
+    that ambiguity — production answered consistently for each identity the whole
+    time. Name the user and the orgs the accessible set was derived from.
+    """
+    import connect_labs.labs.integrations.connect.oauth as _oauth
+    from connect_labs.mcp.tools import synthetic as syn
+
+    syn._ACCESS_CACHE.clear()
+    syn._PROBE_CACHE.clear()
+    user.username = "jjackson"
+    user.save()
+    monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
+    monkeypatch.setattr(
+        _oauth,
+        "fetch_user_organization_data",
+        lambda tok: {
+            "opportunities": [{"id": 948}],
+            "organizations": [{"slug": "dimagi-kmc", "name": "Dimagi KMC"}],
+        },
+    )
+
+    def _refuse(*a, **k):
+        raise RuntimeError("404")
+
+    monkeypatch.setattr(syn, "_fetch_endpoint", _refuse)
+
+    with pytest.raises(MCPToolError) as exc:
+        _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, 523)
+    message = exc.value.message
+    assert "jjackson" in message, f"denial must name the resolved labs user: {message}"
+    assert "dimagi-kmc" in message, f"denial must name the orgs behind the set: {message}"
+
+    syn._ACCESS_CACHE.clear()
+    syn._PROBE_CACHE.clear()
+
+
+def test_org_list_fetch_follows_redirects(monkeypatch):
+    """The org-list fetch must follow redirects, like every other caller here.
+
+    Production emits http:// URLs behind its proxy (gunicorn without
+    --forwarded-allow-ips) and the proxy 301s them back to https://. Every other
+    caller of this API sets follow_redirects=True for that reason — the export
+    client at integrations/connect/export_client.py, _fetch_endpoint, and the
+    access probe after connect-labs#1214. This one was left bare, so a redirect
+    reads as an unparseable body, becomes None, and surfaces as UPSTREAM_ERROR.
+    """
+    import connect_labs.labs.integrations.connect.oauth as _oauth
+
+    seen = {}
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"opportunities": []}
+
+    def _get(url, **kwargs):
+        seen.update(kwargs)
+        return _Resp()
+
+    monkeypatch.setattr(_oauth.httpx, "get", _get)
+    _oauth.fetch_user_organization_data("tok")
+    assert seen.get("follow_redirects") is True, f"bare httpx.get — kwargs were {seen}"

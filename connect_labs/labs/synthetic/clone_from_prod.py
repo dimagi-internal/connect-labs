@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from ..progress import NULL_PROGRESS, safe_call
 from .bundle import make_bundle_store, read_bundle
 from .cohort import CohortSpec
 from .dump import _fetch_endpoint
@@ -67,7 +68,15 @@ def profile_opp_to_bundle(
 
 
 def profile_opps_bulk(
-    source_ids, *, base_url: str, oauth_token: str, bundle_root, drive=None, curate: bool = False, mirror: bool = False
+    source_ids,
+    *,
+    base_url: str,
+    oauth_token: str,
+    bundle_root,
+    drive=None,
+    curate: bool = False,
+    mirror: bool = False,
+    progress=NULL_PROGRESS,
 ) -> tuple[str, list[str]]:
     """Profile multiple opportunities into one bundle store, isolating per-opp failures.
 
@@ -87,15 +96,26 @@ def profile_opps_bulk(
     """
     store = make_bundle_store(bundle_root, drive=drive)
     handles: list[str] = []
-    for sid in source_ids:
+    # Materialize so `total` is knowable up front — a progress notification with
+    # no total tells the client to keep waiting but not for how long.
+    ids = list(source_ids)
+    total = len(ids)
+    safe_call(progress, 0, total, f"Profiling {total} opportunities")
+    for done, sid in enumerate(ids, start=1):
         try:
             handles.append(
                 profile_opp_to_bundle(
                     sid, base_url=base_url, oauth_token=oauth_token, store=store, curate=curate, mirror=mirror
                 )
             )
+            outcome = f"profiled opportunity {sid}"
         except Exception:  # noqa: BLE001
             logger.exception("profile_opps_bulk: failed for opp %s", sid)
+            outcome = f"skipped opportunity {sid} (failed)"
+        # Emitted for skipped opps too: this loop deliberately survives a bad
+        # opp, so a counter that stalled on one would leave the client's idle
+        # timer running through every subsequent failure.
+        safe_call(progress, done, total, f"{outcome} ({done}/{total})")
     resolved = f"gdrive:{store.root_folder_id}" if hasattr(store, "root_folder_id") else str(bundle_root)
     return resolved, handles
 
@@ -266,6 +286,7 @@ def generate_opps_bulk(
     fresh: bool = False,
     program_id: int | None = None,
     only_source_ids=None,
+    progress=NULL_PROGRESS,
 ) -> list[CloneResult]:
     """Generate fixtures for every bundle subdirectory under *bundle_root*.
 
@@ -293,7 +314,11 @@ def generate_opps_bulk(
         program_id = allocate_shared_program_id()
     scope = {int(x) for x in only_source_ids} if only_source_ids else None
     results: list[CloneResult] = []
-    for handle in store.list_handles():
+    handles = list(store.list_handles())
+    total = len(handles)
+    safe_call(progress, 0, total, f"Generating from {total} bundles")
+    for done, handle in enumerate(handles, start=1):
+        outcome = f"bundle {handle}"
         try:
             bundle = store.read(handle)
             if scope is not None and bundle.source_opp_id not in scope:
@@ -302,6 +327,7 @@ def generate_opps_bulk(
                     handle,
                     bundle.source_opp_id,
                 )
+                safe_call(progress, done, total, f"out of scope: {bundle.source_opp_id} ({done}/{total})")
                 continue
             results.append(
                 _generate_one(
@@ -313,8 +339,13 @@ def generate_opps_bulk(
                     fresh=fresh,
                 )
             )
+            outcome = f"generated opportunity {bundle.source_opp_id}"
         except Exception:  # noqa: BLE001
             logger.exception("generate_opps_bulk: failed for bundle %s", handle)
+            outcome = f"skipped {handle} (failed)"
+        # Every bundle advances the counter, in scope or not — see the note in
+        # profile_opps_bulk: a counter that stalls is a client-side hang.
+        safe_call(progress, done, total, f"{outcome} ({done}/{total})")
     return results
 
 
@@ -364,7 +395,9 @@ def generate_fixtures_only(bundle_root, *, drive) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def profile_cohort(spec: CohortSpec, *, base_url: str, oauth_token: str, drive=None) -> CohortSpec:
+def profile_cohort(
+    spec: CohortSpec, *, base_url: str, oauth_token: str, drive=None, progress=NULL_PROGRESS
+) -> CohortSpec:
     """Phase 1 (safe mode) for a whole cohort spec.
 
     Profiles every ``spec.opportunity_ids`` into ``spec.bundle_root`` and records the
@@ -380,12 +413,15 @@ def profile_cohort(spec: CohortSpec, *, base_url: str, oauth_token: str, drive=N
         drive=drive,
         curate=spec.curate,
         mirror=spec.mirror,
+        progress=progress,
     )
     spec.bundle_root = resolved
     return spec
 
 
-def generate_cohort(spec: CohortSpec, *, drive, fresh: bool = False) -> tuple[CohortSpec, list[CloneResult]]:
+def generate_cohort(
+    spec: CohortSpec, *, drive, fresh: bool = False, progress=NULL_PROGRESS
+) -> tuple[CohortSpec, list[CloneResult]]:
     """Phase 2 (offline) for a whole cohort spec.
 
     Generates the bundles under ``spec.bundle_root`` **named by
@@ -405,5 +441,6 @@ def generate_cohort(spec: CohortSpec, *, drive, fresh: bool = False) -> tuple[Co
         program_id=spec.program_id,
         fresh=fresh,
         only_source_ids=spec.opportunity_ids,
+        progress=progress,
     )
     return spec, results
