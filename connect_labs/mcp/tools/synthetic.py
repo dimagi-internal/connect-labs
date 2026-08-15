@@ -1162,12 +1162,21 @@ def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, An
             "curate": {
                 "type": "boolean",
                 "default": False,
-                "description": "Floor flag rates and give degenerate clinical categoricals minority mass so derived rates have variance to model (#670). Outcome fields such as child_alive are never curated (#1189).",
+                "description": (
+                    "Floor flag rates and give degenerate clinical categoricals minority mass so "
+                    "derived rates have variance to model (#670). Outcome fields such as child_alive "
+                    "are never curated (#1189)."
+                ),
             },
             "mirror": {
                 "type": "boolean",
                 "default": False,
-                "description": "High-fidelity close mirror (#713): carry a de-identified per-entity transplant pool so the clone reproduces the source opp's exact visits-per-case, cases-per-FLW, timing and per-entity value trajectories rather than re-sampling from marginals.",
+                "description": (
+                    "High-fidelity close mirror (#713): carry a de-identified per-entity transplant "
+                    "pool so the clone reproduces the source opp's exact visits-per-case, "
+                    "cases-per-FLW, timing and per-entity value trajectories rather than "
+                    "re-sampling from marginals."
+                ),
             },
             "out_dir": {
                 "type": "string",
@@ -1230,12 +1239,21 @@ def synthetic_profile_opp(
             "curate": {
                 "type": "boolean",
                 "default": False,
-                "description": "Floor flag rates and give degenerate clinical categoricals minority mass so derived rates have variance to model (#670). Outcome fields such as child_alive are never curated (#1189).",
+                "description": (
+                    "Floor flag rates and give degenerate clinical categoricals minority mass so "
+                    "derived rates have variance to model (#670). Outcome fields such as child_alive "
+                    "are never curated (#1189)."
+                ),
             },
             "mirror": {
                 "type": "boolean",
                 "default": False,
-                "description": "High-fidelity close mirror (#713): carry a de-identified per-entity transplant pool so the clone reproduces the source opp's exact visits-per-case, cases-per-FLW, timing and per-entity value trajectories rather than re-sampling from marginals.",
+                "description": (
+                    "High-fidelity close mirror (#713): carry a de-identified per-entity transplant "
+                    "pool so the clone reproduces the source opp's exact visits-per-case, "
+                    "cases-per-FLW, timing and per-entity value trajectories rather than "
+                    "re-sampling from marginals."
+                ),
             },
             "out_dir": {
                 "type": "string",
