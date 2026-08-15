@@ -48,7 +48,7 @@ def blog_manifest(request):
     if not posts:
         raise RuntimeError(
             "blog/manifest.json extracted 0 posts from home.html. The Insights blog-card "
-            "markup (class, data-type=\"blog\", or the blog-tag/time/h3/excerpt structure "
+            'markup (class, data-type="blog", or the blog-tag/time/h3/excerpt structure '
             "blog_manifest.extract_posts parses) probably changed — update the regexes there."
         )
 
