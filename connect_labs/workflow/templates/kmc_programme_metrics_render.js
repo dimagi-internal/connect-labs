@@ -81,21 +81,32 @@ function WorkflowUI({
   var MIN_DEN = 25;
 
   // ── App-structure capability map ──────────────────────────────────────────
-  // Derived from each source opportunity's profile manifest (the app's actual
-  // question set), NOT from the data. This is what separates "this app never
-  // asked the question" from "the app asks it but the value is missing" — the
-  // two look identical in the data and only the first is honest to show as n/a.
-  // Three app generations exist across the 11 KMC opps: the Gen-1 pilots
-  // (523/524/675) predate the hospital-discharge and self-referral blocks.
+  // APP_ASKS is derived from each opportunity's app_structure.json — the app's
+  // ACTUAL question set (its /data/ paths), not from the observed data. That
+  // distinction is the whole point: a blank column has three very different
+  // causes and only one of them is benign.
+  //
+  //   not-in-app    the app never asks the question            -> n/a, benign
+  //   never-recorded the app asks and NOTHING was ever filled  -> data-quality flag
+  //   normal        asked and answered                         -> score it
+  //
+  // Deriving this from data instead of the app definition collapses the middle
+  // case into the first, which turns a collection failure into a benign n/a.
+  // Two real examples this map keeps honest: NAMA-523 and PIPN-524 both ASK for
+  // birth weight (/data/child_details/birth_weight_group/child_weight_birth) and
+  // recorded it zero times, and every one of the 11 apps asks for reg_date and
+  // kmc discharge and none of them has a single value.
   // Keyed by BOTH real and synthetic-clone opp ids so one map serves both.
-  var APP_COLLECTS = {
+  var APP_ASKS = {
     10013: {
       birth_weight_g: true,
       danger_visits: true,
-      days_discharge_to_reg: false,
+      days_discharge_to_reg: true,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -103,9 +114,11 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: true,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -113,9 +126,11 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: true,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -123,9 +138,11 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -133,9 +150,11 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -143,9 +162,11 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -153,9 +174,11 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -163,29 +186,35 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: false,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: false,
       weights: true,
     },
     10021: {
-      birth_weight_g: false,
+      birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: false,
       weights: true,
     },
     10022: {
-      birth_weight_g: false,
+      birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: false,
       weights: true,
     },
@@ -193,9 +222,11 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: true,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -203,9 +234,11 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -213,9 +246,11 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -223,9 +258,11 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: true,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -233,19 +270,23 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: true,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
     1739: {
       birth_weight_g: true,
       danger_visits: true,
-      days_discharge_to_reg: false,
+      days_discharge_to_reg: true,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -253,29 +294,35 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: true,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
     523: {
-      birth_weight_g: false,
+      birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: false,
       weights: true,
     },
     524: {
-      birth_weight_g: false,
+      birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: false,
       weights: true,
     },
@@ -283,9 +330,11 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: false,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: false,
       weights: true,
     },
@@ -293,9 +342,11 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -303,9 +354,11 @@ function WorkflowUI({
       birth_weight_g: true,
       danger_visits: true,
       days_discharge_to_reg: false,
+      discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
       referral_visits: true,
+      reg_date: true,
       self_referral_visits: true,
       weights: true,
     },
@@ -328,17 +381,42 @@ function WorkflowUI({
     C23: ['kmc_hours_mean'],
     C28: ['birth_weight_g', 'enrollment_weight_g'],
   };
-  // Collected if ANY opportunity in scope asks it — a mixed LLO still scores on
-  // the opps that do collect, and only a wholly-uncollecting scope reads n/a.
-  function collectsFor(indId, opps) {
-    var need = IND_INPUTS[indId];
-    if (!need || !opps || !opps.length) return true;
-    return need.every(function (f) {
-      return opps.some(function (o) {
-        var m = APP_COLLECTS[String(o)];
-        return !m || m[f];
-      });
+  var COUNT_FIELDS = {
+    danger_visits: 1,
+    referral_visits: 1,
+    self_referral_visits: 1,
+    discharge_visits: 1,
+    ebf_visits: 1,
+    death_visits: 1,
+  };
+  function anyAsks(field, opps) {
+    if (!opps || !opps.length) return true;
+    return opps.some(function (o) {
+      var m = APP_ASKS[String(o)];
+      return !m || m[field];
     });
+  }
+  // "Recorded" is computed from the rows in scope rather than baked in, so it
+  // stays true as the data changes. A count field sitting at 0 is not evidence
+  // that anything was recorded.
+  function anyRecorded(field, rows) {
+    for (var i = 0; i < rows.length; i++) {
+      var v = rows[i][field];
+      if (COUNT_FIELDS[field]) {
+        if ((v || 0) > 0) return true;
+      } else if (v !== null && v !== undefined && v !== '') return true;
+    }
+    return false;
+  }
+  // 'ok' | 'notinapp' | 'unrecorded'
+  function inputState(indId, rows, opps) {
+    var need = IND_INPUTS[indId];
+    if (!need) return 'ok';
+    for (var i = 0; i < need.length; i++) {
+      if (!anyAsks(need[i], opps)) return 'notinapp';
+      if (!anyRecorded(need[i], rows)) return 'unrecorded';
+    }
+    return 'ok';
   }
 
   // ── Targets & settings tab (the workbook's typed human inputs) ────────────
@@ -878,13 +956,13 @@ function WorkflowUI({
     {
       id: 'C03',
       name: 'Cases started per month',
-      why: 'anchors on reg_date, which no KMC opp records — use the Trend tab (first visit)',
+      why: 'every app asks for reg_date and none has recorded one — use the Trend tab (first visit)',
     },
     { id: 'C04', name: 'Visits per month', why: 'available on the Trend tab' },
     {
       id: 'C18',
       name: 'KMC completion rate',
-      why: 'needs kmc_graduated; gate is TBD in the workbook',
+      why: 'all 11 apps ask for kmc discharge (kmc_status_discharged) and none has recorded a single value; gate also TBD in the workbook',
     },
     { id: 'C22', name: '% EBF at completion', why: 'depends on C18' },
     { id: 'C25', name: '% thin', why: 'needs per-reading flag_thin' },
@@ -1002,8 +1080,14 @@ function WorkflowUI({
           return a.indexOf(v) === i;
         });
     IND.forEach(function (i) {
-      if (!collectsFor(i.id, scope)) {
-        m[i.id] = { id: i.id, n: 0, value: null, band: 'notcollected' };
+      var st = inputState(i.id, rows, scope);
+      if (st !== 'ok') {
+        m[i.id] = {
+          id: i.id,
+          n: 0,
+          value: null,
+          band: st === 'notinapp' ? 'notinapp' : 'unrecorded',
+        };
         return;
       }
       if (!credibleFor(i.id, llo === undefined ? null : llo)) {
@@ -1141,7 +1225,8 @@ function WorkflowUI({
     insufficient: 'bg-gray-50 text-gray-400',
     nodata: 'bg-gray-50 text-gray-300',
     notcredible: 'bg-slate-100 text-slate-500',
-    notcollected: 'bg-slate-100 text-slate-400 italic',
+    notinapp: 'bg-slate-100 text-slate-400 italic',
+    unrecorded: 'bg-amber-100 text-amber-900',
   };
   function fmt(ind, e) {
     if (e.value === null) return '—';
@@ -1151,7 +1236,8 @@ function WorkflowUI({
     return Number(e.value).toFixed(1);
   }
   function bandLabel(e) {
-    if (e.band === 'notcollected') return 'app does not collect';
+    if (e.band === 'notinapp') return 'not in this app';
+    if (e.band === 'unrecorded') return 'never recorded';
     if (e.band === 'notcredible') return 'recording not credible';
     if (e.band === 'insufficient') return 'n<' + MIN_DEN;
     if (e.band === 'nodata') return 'no data';
