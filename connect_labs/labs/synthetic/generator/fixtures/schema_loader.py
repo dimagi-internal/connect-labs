@@ -35,8 +35,16 @@ class _HqApi(Protocol):
         ...
 
 
+# HQ's question types. Anything missing here falls back to "text", which is not a
+# harmless default for a NUMBER: the mirror-mode faithful-sparsity rule keeps
+# int/decimal fields transplant-only, so a numeric question typed as text escapes it
+# and gets fabricated from the fitted distribution instead. "Double" was missing and
+# appears 59 times across the 11 KMC apps — one of them is birth weight, which came
+# back over-covered (87% of babies vs 52% in the source) with a p90 of 5798g against a
+# real 1900g, on a question the app itself validates to 600-2500g (connect-labs#1225).
 _KIND_MAP = {
     "Decimal": "decimal",
+    "Double": "decimal",
     "Int": "int",
     "Text": "text",
     "Select": "select",
