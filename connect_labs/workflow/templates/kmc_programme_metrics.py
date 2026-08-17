@@ -12,11 +12,18 @@ exists as a file rather than only as a DB row:
    rather than `form.mothers_details.child_DOB`. Every `paths` list below is a
    union across all three generations; dropping an entry silently blanks an LLO.
 
-2. **APP_COLLECTS in the render code.** Derived from each source opportunity's
-   profile manifest (the app's real question set), NOT from the data. It is what
-   separates "this app never asked the question" from "the app asks it but the
-   value is missing" — identical in the data, and only the first is honest to
-   render as n/a. Without it, the Gen-1 pilots read as bad data quality.
+2. **APP_ASKS in the render code.** Derived from each opportunity's
+   `app_structure.json` — the app's ACTUAL question set — NOT from observed data.
+   A blank column has three causes and only one is benign:
+
+     not-in-app      the app never asks it              -> n/a, benign
+     never-recorded  it asks and nothing was ever filled -> data-quality flag
+     normal          asked and answered                  -> score it
+
+   Deriving this from data collapses the middle case into the first, which turns a
+   collection failure into a benign n/a. Two live examples: NAMA-523 and PIPN-524
+   both ASK for birth weight and recorded it zero times, and all 11 apps ask for
+   reg_date and for kmc discharge with not one value recorded between them.
 
 The render layer derives only the weight-series triple (what SQL cannot express);
 everything else is computed in the entity pipeline.
