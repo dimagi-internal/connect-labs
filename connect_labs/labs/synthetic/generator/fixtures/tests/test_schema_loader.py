@@ -149,3 +149,19 @@ def test_parse_form_schema_from_app_json_skips_questions_without_value():
     }
     schema = parse_form_schema_from_app_json(app_json)
     assert [q.json_path for q in schema.questions] == ["form.real"]
+
+
+def test_double_is_a_number_not_text():
+    """HQ's Double type must map to decimal.
+
+    Unrecognised types fall back to "text", which is not harmless for a number:
+    mirror-mode faithful sparsity keeps int/decimal transplant-only, so a numeric
+    question typed as text escapes it and gets fabricated. Double was unmapped and
+    appears 59 times across the 11 KMC apps — birth weight among them, which came
+    back invented for 87% of babies against 52% in the source, p90 5798g against a
+    real 1900g, on a question the app validates to 600-2500g.
+    Regression for connect-labs#1225.
+    """
+    from connect_labs.labs.synthetic.generator.fixtures.schema_loader import _KIND_MAP
+
+    assert _KIND_MAP["Double"] == "decimal"

@@ -272,6 +272,22 @@ def _build_repeat_element(field_distributions: dict[str, Any], rng: random.Rando
     return element
 
 
+def _is_numeric_field(spec, effective) -> bool:
+    """Is this question a number, by declared kind OR by its fitted distribution?
+
+    Declared kind alone is too trusting. Unrecognised HQ question types fall back to
+    "text" in the schema loader, so one missing entry in _KIND_MAP silently drops a
+    numeric field out of mirror-mode faithful sparsity and lets it be fabricated —
+    which is exactly how birth weight ("Double", unmapped) ended up invented for 87%
+    of babies against 52% in the source (connect-labs#1225). A fitted Normal/Uniform
+    is direct evidence the profiler saw numbers there, whatever the app called it.
+    """
+    if spec.kind in {"int", "decimal"}:
+        return True
+    dist = effective.get(spec.json_path)
+    return isinstance(dist, (NormalDistribution, UniformDistribution))
+
+
 def _under_repeat(path: str, bases: set[str]) -> bool:
     """True if ``path`` is a repeat base or a scalar leaf nested under one — those are
     owned by the repeat array, not the flat scalar fill."""
@@ -357,7 +373,7 @@ def fill_form_json(
         if spec.json_path in written_forced:
             continue  # already set from the transplanted series
         covered_paths.add(spec.json_path)
-        if mirror and spec.kind in {"int", "decimal"}:
+        if mirror and _is_numeric_field(spec, effective):
             # Faithful sparsity (mirror): numeric fields come ONLY from the transplant
             # (forced). The real visit left this one blank, so leave it blank — don't
             # invent a value. Inventing at duplicate/sibling numeric paths buries the
