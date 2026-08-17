@@ -471,16 +471,24 @@ function WorkflowUI({
         return isNaN(d.getTime()) ? null : d;
       }
 
-      // weight series per (opp, entity) from the minimal visits pipeline
+      // Weight series per (opp, baby) from the minimal visits pipeline.
+      // Both pipelines key on the KMC beneficiary case (form.case.@case_id), NOT
+      // on entity_id: Connect's entity_id is per-VISIT here, so grouping on it put
+      // every visit in its own "entity" row and left every registration-form field
+      // — birth weight, DOB, enrolment weight — attached to nothing
+      // (connect-labs#1224). The entity query emits its group expression as
+      // `entity_id`, so the case side is c.entity_id and the visit side is the
+      // baby_case_id column the visit pipeline now carries.
       var series = {};
       wrows.forEach(function (r) {
-        if (!r.entity_id) return;
+        var rid = r.baby_case_id || r.entity_id;
+        if (!rid) return;
         var w =
           typeof r.weight_g === 'number' ? r.weight_g : parseFloat(r.weight_g);
         if (!w || w < WMIN || w > WMAX) return;
         var day = String(r.visit_date || '').slice(0, 10);
         if (!day) return;
-        var k = r.opportunity_id + '|' + r.entity_id;
+        var k = r.opportunity_id + '|' + rid;
         (series[k] = series[k] || {})[day] = (
           (series[k][day] || []).concat ? series[k][day] || [] : []
         ).concat([w]);
