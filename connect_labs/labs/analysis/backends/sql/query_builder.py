@@ -1325,7 +1325,34 @@ def _resolve_linking_field_outer_expr(config: AnalysisPipelineConfig) -> str:
         raise ValueError(
             f"linking_field FieldComputation {name!r} has no path or paths set; " f"cannot use as GROUP BY column."
         )
-    return _paths_to_coalesce_sql(paths)
+    return _linking_paths_to_coalesce_sql(paths)
+
+
+def _linking_paths_to_coalesce_sql(paths: list[str]) -> str:
+    """COALESCE for a linking field, allowing base columns alongside form_json paths.
+
+    A linking field often has to survive two differently-shaped sources. The KMC
+    case is the motivating one: on real Connect data the entity is the beneficiary
+    case (`form.case.@case_id`) because `entity_id` is per-VISIT there, while
+    synthetic clones carry no case block at all and only have `entity_id`. Without
+    a mixed coalesce, one pipeline config cannot serve both — grouping on
+    `entity_id` scatters each real baby across one row per visit (and strands every
+    registration-form field), and grouping on the case path collapses every
+    synthetic row into a single NULL bucket. See connect-labs#1224.
+
+    Entries naming a base column on labs_raw_visit_cache are emitted as the bare
+    column; everything else is treated as a form_json path.
+    """
+    if not paths:
+        return "NULL"
+
+    parts = []
+    for p in paths:
+        if p in RAW_VISIT_BASE_COLUMNS:
+            parts.append(f"NULLIF({p}::text, '')")
+        else:
+            parts.append(f"NULLIF({_jsonb_path_to_sql(p, 'form_json')}, '')")
+    return f"COALESCE({', '.join(parts)})"
 
 
 def build_entity_aggregation_query(
