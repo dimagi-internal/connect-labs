@@ -86,9 +86,17 @@ function WorkflowUI({
   // distinction is the whole point: a blank column has three very different
   // causes and only one of them is benign.
   //
-  //   not-in-app    the app never asks the question            -> n/a, benign
-  //   never-recorded the app asks and NOTHING was ever filled  -> data-quality flag
-  //   normal        asked and answered                         -> score it
+  //   not-in-app    the app never asks the question           -> n/a, benign
+  //   no-value      the app asks, but nothing reaches this row -> investigate
+  //   normal        asked and a value arrives                  -> score it
+  //
+  // The middle state deliberately says "reaches this row", NOT "was never
+  // recorded". Absence at entity stage is NOT evidence the field is uncollected:
+  // opp 524 records birth weight on 100% of its Register KMC Beneficiary forms
+  // and still reads 0% here, because registration forms carry form.case.@case_id
+  // with no subcase while visit forms carry both, so the registration values do
+  // not survive the entity_id join. Claiming "never recorded" there would blame
+  // the programme for a join defect.
   //
   // Deriving this from data instead of the app definition collapses the middle
   // case into the first, which turns a collection failure into a benign n/a.
@@ -1237,7 +1245,7 @@ function WorkflowUI({
   }
   function bandLabel(e) {
     if (e.band === 'notinapp') return 'not in this app';
-    if (e.band === 'unrecorded') return 'never recorded';
+    if (e.band === 'unrecorded') return 'no value reaches this row';
     if (e.band === 'notcredible') return 'recording not credible';
     if (e.band === 'insufficient') return 'n<' + MIN_DEN;
     if (e.band === 'nodata') return 'no data';
