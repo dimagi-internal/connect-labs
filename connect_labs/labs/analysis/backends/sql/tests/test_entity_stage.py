@@ -110,6 +110,36 @@ class TestResolveLinkingField:
         assert "case_id" in expr
         assert "COALESCE" in expr
 
+    def test_linking_field_coalesces_base_column_with_form_paths(self):
+        """A linking field must be able to fall back to a base column.
+
+        Real Connect data and synthetic clones are shaped differently: on real KMC
+        data the beneficiary is `form.case.@case_id` (entity_id there is per-VISIT,
+        so grouping on it scattered each baby across one row per visit and stranded
+        every registration-form field), while synthetic clones carry no case block
+        at all and only have entity_id. One config has to serve both.
+        Regression for connect-labs#1224.
+        """
+        config = AnalysisPipelineConfig(
+            grouping_key="username",
+            terminal_stage=CacheStage.ENTITY,
+            linking_field="baby_case_id",
+            fields=[
+                FieldComputation(
+                    name="baby_case_id",
+                    paths=["form.case.@case_id", "entity_id"],
+                    aggregation="first",
+                ),
+            ],
+        )
+        expr = _resolve_linking_field_outer_expr(config)
+        assert "COALESCE" in expr
+        # the form path is extracted from form_json ...
+        assert "form_json" in expr
+        # ... and the base column is referenced bare, not as a JSON path
+        assert "entity_id::text" in expr
+        assert "'entity_id'" not in expr
+
     def test_unknown_linking_field_raises(self):
         config = AnalysisPipelineConfig(
             grouping_key="username",
