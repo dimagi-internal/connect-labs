@@ -22,7 +22,7 @@ import pandas as pd
 import yaml
 
 from .manifest import Manifest, ManifestValidationError
-from .mirror import profile_entity_structure
+from .mirror import _entity_key, profile_entity_structure
 from .schema_loader import FormSchema, parse_form_schema_from_app_json
 
 
@@ -204,17 +204,75 @@ def _discover_numeric_paths(
     visits: list[dict],
     sample_size: int = 200,
 ) -> list[str]:
-    sample = visits[:sample_size]
+    """Numeric form paths worth profiling.
+
+    Two rules here used to make per-CASE fields invisible.
+
+    A field collected once per case — birth weight, DOB, enrolment weight, all of
+    which live on the registration form — appears in roughly 1/visits-per-case of
+    visits. At ~5 visits per baby that is ~20%, so a flat "must appear in 30% of
+    visits" cut excluded them structurally while keeping every per-visit field.
+    Coverage is therefore measured per case as well, and a path qualifies on
+    either axis. Registration-only fields have ~100% case coverage.
+
+    The sample was also the first ``sample_size`` visits. Exports arrive roughly
+    date-ordered, so a head slice is an early-period sample: it over-weights
+    whatever the programme was doing in its first weeks. Sampling with a stride
+    spreads it across the whole opportunity at the same cost.
+
+    Together these silently emptied the transplant pool of every registration
+    field, and the resulting clones had zero birth weights against 37.5% in the
+    source (connect-labs#1225).
+    """
+    if not visits:
+        return []
+
+    # Sample whole CASES, not loose visits. Per-case coverage is only meaningful
+    # if a sampled case brings all of its visits — otherwise a field recorded once
+    # per case looks absent from any case whose registration visit wasn't drawn.
+    by_entity: dict[str, list[dict]] = defaultdict(list)
+    loose: list[dict] = []
+    for v in visits:
+        eid = _entity_key(v)
+        (by_entity[eid] if eid else loose).append(v)
+
+    sample: list[dict] = []
+    sampled_entities: set[str] = set()
+    if by_entity:
+        eids = list(by_entity)
+        stride = max(1, len(eids) // max(1, sample_size // 4))
+        for eid in eids[::stride]:
+            sample.extend(by_entity[eid])
+            sampled_entities.add(eid)
+            if len(sample) >= sample_size:
+                break
+    if not sample:  # nothing carries an entity — fall back to a strided visit sample
+        stride = max(1, len(visits) // sample_size)
+        sample = visits[::stride][:sample_size]
+
     path_counts: Counter[str] = Counter()
     path_numeric: Counter[str] = Counter()
+    path_entities: dict[str, set[str]] = defaultdict(set)
 
     for v in sample:
         fj = v.get("form_json") or {}
-        _walk_paths(fj, "", path_counts, path_numeric)
+        seen: Counter[str] = Counter()
+        numeric_here: Counter[str] = Counter()
+        _walk_paths(fj, "", seen, numeric_here)
+        path_counts.update(seen)
+        path_numeric.update(numeric_here)
+        eid = _entity_key(v)
+        if eid:
+            for path in seen:
+                path_entities[path].add(eid)
 
+    visit_floor = len(sample) * 0.3
+    case_floor = len(sampled_entities) * 0.3
     paths = []
     for path, count in path_counts.items():
-        if count < len(sample) * 0.3:
+        covers_visits = count >= visit_floor
+        covers_cases = bool(sampled_entities) and len(path_entities.get(path, ())) >= case_floor
+        if not (covers_visits or covers_cases):
             continue
         if path_numeric[path] > count * 0.5:
             paths.append(path)
