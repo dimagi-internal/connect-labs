@@ -819,3 +819,35 @@ def test_profile_without_mirror_emits_no_longitudinal_block():
         profile(opportunity_id=10004, user_visits=visits, user_data=[], opportunity_detail={"name": "X"})
     )
     assert m.beneficiary_cohorts[0].longitudinal is None  # default unchanged
+
+
+def test_a_field_recorded_once_per_case_is_still_discovered():
+    """Per-case fields must not be filtered out for being rare across visits.
+
+    Birth weight, DOB and enrolment weight are collected once, on the registration
+    form. At ~5 visits per baby that is ~20% of visits, and the discovery rule
+    required a path to appear in 30% of VISITS — so every registration-only field
+    was excluded from numeric discovery, never entered the transplant pool, and
+    the resulting clones had zero birth weights against 37.5% in the source.
+    Regression for connect-labs#1225.
+    """
+    from connect_labs.labs.synthetic.generator.fixtures.profiler import _discover_numeric_paths
+
+    def visit(case_id, **vals):
+        return {"form_json": {"form": dict({"case": {"@case_id": case_id}}, **vals)}}
+
+    visits = []
+    for i in range(100):
+        case_id = f"case-{i}"
+        # one registration carrying birth weight ...
+        visits.append(visit(case_id, child_weight_birth=1000 + i))
+        # ... then four follow-ups carrying only the visit weight
+        for j in range(4):
+            visits.append(visit(case_id, child_weight_visit=1200 + j))
+
+    found = _discover_numeric_paths(visits)
+
+    # 20% of visits but 100% of cases — must be discovered
+    assert "form.child_weight_birth" in found
+    # the per-visit field must still be discovered
+    assert "form.child_weight_visit" in found
