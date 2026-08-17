@@ -204,8 +204,14 @@ class TestCompletionDepth:
         assert cursor.backfill_complete_to == cutoff
 
     def test_exhaustion_records_completion_to_the_epoch(self, cursor, opp):
-        """Nothing older exists, so no future depth should re-walk it."""
-        tasks._backfill_one(_Client([[_visit(30, 10)]]), cursor, self._cutoff(37))
+        """Nothing older exists, so no future depth should re-walk it.
+
+        The cutoff is a fixed date safely before the fixture's July 2026
+        visits: expressing it as "N days ago" made the test rot -- the day
+        "now - 37d" crossed the visit date, the walk hit the cutoff instead
+        of exhausting, and the assertion failed on pure calendar drift."""
+        cutoff = datetime(2026, 1, 1, tzinfo=dt_timezone.utc)
+        tasks._backfill_one(_Client([[_visit(30, 10)]]), cursor, cutoff)
 
         cursor.refresh_from_db()
         assert cursor.backfill_complete_to == tasks._EPOCH
@@ -346,3 +352,41 @@ class TestConvergence:
         monkeypatch.setattr(tasks.ingest, "rebuild_rollups", lambda **kw: 0)
         result = tasks.backfill_visits(days=3650, page_pause=0)
         return {"seen": seen, "result": result}
+
+
+class TestNightlyCatchup:
+    """The bounded nightly catch-up: new access arrives on its own.
+
+    Selection is already self-healing (anything not provably complete is
+    re-tried), so putting a bounded slice on beat is what turns "run a
+    command after every access grant" into "wait a night".
+    """
+
+    def test_the_beat_entry_is_bounded(self):
+        from django.conf import settings
+
+        entry = settings.CELERY_BEAT_SCHEDULE["pulse-backfill-catchup"]
+        assert entry["task"] == "connect_labs.pulse.tasks.backfill_visits"
+        assert entry["kwargs"]["max_seconds"] <= 3600, "the catch-up must never become the full walk"
+        assert entry["kwargs"]["days"] >= 3650, "a shallow catch-up would cap real history"
+
+    def test_a_fruitless_pass_skips_the_rollup_rebuild(self, db, monkeypatch):
+        """The common night: nothing new, so the 1.6M-row rollup rebuild must
+        not run. A pass that stored rows still rebuilds."""
+        calls = []
+        monkeypatch.setattr(tasks.ingest, "rebuild_rollups", lambda **kw: calls.append(kw))
+
+        class _NullClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def paginate(self, endpoint, params=None, partial_ok=False):
+                return iter([])
+
+        monkeypatch.setattr(tasks, "get_client", lambda **kw: _NullClient())
+        result = tasks.backfill_visits(days=3650, page_pause=0)
+        assert result["stored"] == 0
+        assert calls == [], "nothing stored, nothing to roll up"

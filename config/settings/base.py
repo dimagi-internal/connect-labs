@@ -638,8 +638,10 @@ CELERY_BEAT_SCHEDULE = {
     },
     # Pulse ingest. Two speeds because user_visits costs 16KB/row on the wire
     # (99% discarded form_json) while the metadata endpoints cost ~560B/row —
-    # see connect_labs/pulse/ingest.py. Backfill is deliberately NOT on beat:
-    # it is a slow manual one-shot that must never stall the live tail.
+    # see connect_labs/pulse/ingest.py. The FULL backfill remains a manual
+    # one-shot (pulse_backfill_history) that must never stall the live tail;
+    # the nightly entry below is its bounded catch-up sibling, sized for the
+    # incremental case only — see pulse-backfill-catchup.
     # Every 15 min, not every 5. Timed inside the running worker rather than
     # inferred from task duration, because the first attempt at this note got it
     # wrong twice:
@@ -699,6 +701,18 @@ CELERY_BEAT_SCHEDULE = {
     "pulse-summary-warm": {
         "task": "connect_labs.pulse.tasks.warm_summary_cache",
         "schedule": 60.0,
+    },
+    # Bounded nightly backfill catch-up. Selection is self-healing: it walks
+    # only cursors not provably complete -- opportunities that just appeared,
+    # and ones whose export previously 404d because the poller account lacked
+    # access. The night after an access grant, that partner's history arrives
+    # on its own; on a normal night this is ~a hundred cheap re-checks and an
+    # exit. Hard-bounded to an hour and finished before the 03:20 fold; the
+    # full-history walk stays a manual command.
+    "pulse-backfill-catchup": {
+        "task": "connect_labs.pulse.tasks.backfill_visits",
+        "schedule": crontab(hour=1, minute=30),
+        "kwargs": {"days": 3650, "max_seconds": 3600},
     },
 }
 

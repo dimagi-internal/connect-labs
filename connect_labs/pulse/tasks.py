@@ -252,8 +252,11 @@ def backfill_visits(
     # Roll up everything just pulled, not merely the requested window: the rows
     # are about to age out into the grid, and the rollups are the only permanent
     # record of visit volume by status. Scoping this to `cutoff` was how a deep
-    # pull could leave no trace of the history it had just fetched.
-    ingest.rebuild_rollups(since=cutoff if days <= 90 else None)
+    # pull could leave no trace of the history it had just fetched. A pass that
+    # stored nothing has nothing to roll up -- and this now runs nightly as the
+    # catch-up task, where the common case is exactly that.
+    if total:
+        ingest.rebuild_rollups(since=cutoff if days <= 90 else None)
 
     remaining = PulseCursor.objects.filter(endpoint=ingest.VISITS_ENDPOINT, backfill_complete=False).count()
     return {
