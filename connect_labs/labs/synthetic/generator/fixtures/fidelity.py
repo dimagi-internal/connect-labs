@@ -120,8 +120,21 @@ def compare_to_source(source_visits: list[dict], clone_visits: list[dict], *, nu
     fields: dict[str, dict] = {}
     marginal_scores, range_scores, traj_scores = [], [], []
     trajectory: dict[str, dict] = {}
+    dropped_fields: list[dict] = []
     for path in sorted(numeric_paths):
         s_vals, c_vals = _values_for(source_visits, path), _values_for(clone_visits, path)
+        if s_vals and not c_vals:
+            # The source records this and the clone has none of it. Skipping the
+            # comparison (which this loop used to do) makes a wholly missing field
+            # cost nothing, so a clone could drop a column entirely and still score
+            # ~1.0 — that is exactly how birth weight went 37.5% -> 0% unnoticed
+            # (connect-labs#1225). Score it as a total miss and name it in the
+            # report, because "absent from the clone" and "never collected by the
+            # programme" look identical downstream and only one of them is ours.
+            dropped_fields.append({"path": path, "source_n": len(s_vals), "clone_n": 0})
+            marginal_scores.append(0.0)
+            range_scores.append(0.0)
+            continue
         if not s_vals or not c_vals:
             continue
         lo, hi = min(s_vals), max(s_vals)
@@ -160,6 +173,9 @@ def compare_to_source(source_visits: list[dict], clone_visits: list[dict], *, nu
         "trajectory": trajectory,
         "visits_per_case_tvd": vpe_tvd,
         "cases_per_flw_tvd": cpf_tvd,
+        # Non-empty means the clone is missing something the source records. Treat
+        # it as a build failure, not a scoring nuance.
+        "dropped_fields": dropped_fields,
     }
 
 

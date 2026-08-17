@@ -216,3 +216,39 @@ def test_mirror_clone_round_trip_reproduces_structure_and_growth_curve():
     for vs in by_entity.values():
         weights = [w["form_json"]["form"]["weight"] for w in sorted(vs, key=lambda v: v["visit_date"])]
         assert weights == sorted(weights) and weights[-1] > weights[0]
+
+
+def test_a_field_the_clone_drops_entirely_is_reported_and_scored_as_a_miss():
+    """A column present in the source and absent from the clone must not score free.
+
+    compare_to_source used to `continue` past any path missing on either side, so a
+    clone could drop a field completely and still score ~1.0. Birth weight went
+    37.5% -> 0% between a KMC source opp and its clone without moving the number
+    (connect-labs#1225).
+    """
+    from connect_labs.labs.synthetic.generator.fixtures.fidelity import compare_to_source
+
+    def visit(eid, date, **vals):
+        return {"entity_id": eid, "username": "flwA", "visit_date": date, "form_json": {"form": vals}}
+
+    source = [
+        visit("e1", "2026-01-01", child_weight_visit=1000, child_weight_birth=900),
+        visit("e1", "2026-01-08", child_weight_visit=1100, child_weight_birth=900),
+        visit("e2", "2026-01-01", child_weight_visit=1200, child_weight_birth=1000),
+        visit("e2", "2026-01-08", child_weight_visit=1300, child_weight_birth=1000),
+    ]
+    # identical apart from birth weight, which the clone lost completely
+    clone = [
+        visit("c1", "2026-01-01", child_weight_visit=1000),
+        visit("c1", "2026-01-08", child_weight_visit=1100),
+        visit("c2", "2026-01-01", child_weight_visit=1200),
+        visit("c2", "2026-01-08", child_weight_visit=1300),
+    ]
+
+    report = compare_to_source(source, clone, numeric_paths={"form.child_weight_visit", "form.child_weight_birth"})
+
+    dropped = {d["path"] for d in report["dropped_fields"]}
+    assert "form.child_weight_birth" in dropped
+    assert "form.child_weight_visit" not in dropped
+    # and the loss actually costs something
+    assert report["score"] < 1.0
