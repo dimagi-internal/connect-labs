@@ -120,6 +120,32 @@ def _extract_nested(obj: dict, dotted_path: str) -> Any:
     return cur
 
 
+def _entity_key(visit: dict) -> str | None:
+    """Identify the beneficiary a visit belongs to.
+
+    Prefers the case the form was submitted against (``form.case.@case_id``) and
+    falls back to Connect's ``entity_id``.
+
+    Keying on ``entity_id`` alone silently truncated the transplant pool. On real
+    KMC data ``entity_id`` is per-VISIT, and the registration form — which is where
+    birth weight, DOB and enrolment weight are collected — carries no ``entity_id``
+    at all, so ``if not eid: continue`` discarded every registration in the cohort.
+    The resulting clone reproduced visit weights faithfully and had *zero* birth
+    weights, against 37.5% in the source (connect-labs#1225). Because a dropped
+    field looks exactly like a field the programme never collected, it read as a
+    data-quality finding about the programme rather than a defect in the clone.
+
+    The same identifier drives entity-stage grouping in the analysis pipeline
+    (connect-labs#1224), so a case series here matches a case row there.
+    """
+    fj = visit.get("form_json") or {}
+    case_id = _extract_nested(fj, "form.case.@case_id")
+    if isinstance(case_id, str) and case_id:
+        return case_id
+    eid = visit.get("entity_id")
+    return eid if eid else None
+
+
 def profile_entity_structure(
     visits: list[dict], *, numeric_paths: set[str] | None = None, date_paths: set[str] | None = None
 ) -> EntityStructure:
@@ -128,7 +154,7 @@ def profile_entity_structure(
     visits_by_entity_flw: dict[str, Counter[str]] = defaultdict(Counter)
     visits_by_entity: dict[str, list[dict]] = defaultdict(list)
     for v in visits:
-        eid = v.get("entity_id")
+        eid = _entity_key(v)
         if not eid:
             continue
         visits_by_entity_flw[eid][v.get("username") or ""] += 1

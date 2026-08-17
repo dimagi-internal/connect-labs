@@ -195,3 +195,62 @@ def test_single_reading_of_a_time_varying_measure_is_not_stamped_across_the_seri
     # With no cohort evidence at all (nothing recorded twice), the old constant
     # treatment stands — this is the DOB case #734 fixed.
     assert _series_constants(single, _time_varying_paths([{"visits": single}]))[0].get(W) == 1600.0
+
+
+def test_registration_forms_join_the_case_series_instead_of_being_dropped():
+    """A visit with no entity_id must still reach its case via form.case.@case_id.
+
+    On real KMC data entity_id is per-VISIT and the registration form carries none
+    at all, so keying the pool on entity_id discarded every registration — and with
+    them birth weight, DOB and enrolment weight. The clone then reproduced visit
+    weights faithfully with zero birth weights against 37.5% in the source, which
+    reads as a data-quality finding about the programme rather than a defect in the
+    clone. Regression for connect-labs#1225.
+    """
+    case_id = "c-1"
+    visits = [
+        # registration: has the case, no entity_id, carries birth weight
+        {
+            "username": "flwA",
+            "visit_date": "2026-01-01",
+            "form_json": {"form": {"case": {"@case_id": case_id}, "child_weight_birth": 1200}},
+        },
+        # follow-ups: same case, plus a per-visit entity_id
+        {
+            "entity_id": "visit-1",
+            "username": "flwA",
+            "visit_date": "2026-01-08",
+            "form_json": {"form": {"case": {"@case_id": case_id}, "child_weight_visit": 1400}},
+        },
+        {
+            "entity_id": "visit-2",
+            "username": "flwA",
+            "visit_date": "2026-01-15",
+            "form_json": {"form": {"case": {"@case_id": case_id}, "child_weight_visit": 1600}},
+        },
+    ]
+
+    struct = profile_entity_structure(visits)
+
+    # one baby with three visits — not three separate "entities", and nothing dropped
+    assert struct.visits_per_entity == {3: 1}
+    assert len(struct.transplant_pool) == 1
+
+    series = struct.transplant_pool[0]["visits"]
+    assert [v["day"] for v in series] == [0, 7, 14]
+    # the registration's birth weight survives into the series
+    assert series[0]["values"]["form.child_weight_birth"] == 1200
+
+
+def test_entity_id_still_keys_sources_that_carry_no_case_block():
+    """Synthetic clones have no case block at all, so entity_id must still work."""
+    visits = [
+        _visit("e1", "flwA", "2026-01-01", weight=1000),
+        _visit("e1", "flwA", "2026-01-08", weight=1100),
+        _visit("e2", "flwA", "2026-01-02", weight=1200),
+    ]
+
+    struct = profile_entity_structure(visits)
+
+    assert struct.visits_per_entity == {2: 1, 1: 1}
+    assert len(struct.transplant_pool) == 2
