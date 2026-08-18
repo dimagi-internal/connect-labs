@@ -289,3 +289,30 @@ def test_entity_id_still_keys_sources_that_carry_no_case_block():
 
     assert struct.visits_per_entity == {2: 1, 1: 1}
     assert len(struct.transplant_pool) == 2
+
+
+def test_falls_back_to_entity_id_when_the_case_id_is_itself_per_visit():
+    """Some apps put a distinct case id on every visit.
+
+    On opp 675 there were 505 distinct form.case.@case_id values across 505 visits,
+    so keying on the case produced one "baby" per visit — the same shredding this
+    resolver exists to prevent. entity_id groups those correctly, so a degenerate
+    case key must lose to it. Regression for connect-labs#1225.
+    """
+    visits = []
+    for baby in ("b1", "b2"):
+        for i in range(4):
+            visits.append(
+                {
+                    "entity_id": baby,
+                    "username": "flwA",
+                    "visit_date": f"2026-01-0{i + 1}",
+                    # a fresh case id on every single visit
+                    "form_json": {"form": {"case": {"@case_id": f"{baby}-visit-{i}"}, "w": 1000 + i}},
+                }
+            )
+
+    struct = profile_entity_structure(visits)
+
+    assert len(struct.transplant_pool) == 2, "should group by entity_id, not per-visit case"
+    assert struct.visits_per_entity == {4: 2}
