@@ -372,6 +372,12 @@ function WorkflowUI({
     },
   };
   // Which pipeline field each indicator's numerator/denominator ultimately needs.
+  // Which DERIVED case property each indicator ultimately needs. These are the
+  // names on the derived row, not the pipeline column — the derivation renames
+  // several (danger_visits -> ever_danger_sign, referral_visits -> referred,
+  // self_referral_visits -> self_referral_count). Naming the pipeline column here
+  // meant the lookup found nothing and silently blanked C19/C20/C21, which had
+  // been reporting 27.1% / 15.5% / 31.3 the day before.
   var IND_INPUTS = {
     C07: ['weights'],
     C08: ['weights'],
@@ -383,38 +389,50 @@ function WorkflowUI({
     C31: ['weights'],
     C16: ['days_discharge_to_reg'],
     C17: ['days_discharge_to_reg'],
-    C19: ['referral_visits'],
-    C20: ['danger_visits'],
-    C21: ['self_referral_visits'],
+    C19: ['referred'],
+    C20: ['ever_danger_sign'],
+    C21: ['self_referral_count'],
     C23: ['kmc_hours_mean'],
     C28: ['birth_weight_g', 'enrollment_weight_g'],
   };
-  var COUNT_FIELDS = {
-    danger_visits: 1,
-    referral_visits: 1,
-    self_referral_visits: 1,
-    discharge_visits: 1,
-    ebf_visits: 1,
-    death_visits: 1,
+  // derived name -> the pipeline column APP_ASKS is keyed on
+  var ASKS_AS = {
+    referred: 'referral_visits',
+    ever_danger_sign: 'danger_visits',
+    self_referral_count: 'self_referral_visits',
+  };
+  // Fields where 0/false means "nothing was recorded" rather than a real zero.
+  var ZERO_IS_ABSENT = {
+    referred: 1,
+    ever_danger_sign: 1,
+    self_referral_count: 1,
   };
   function anyAsks(field, opps) {
+    var col = ASKS_AS[field] || field;
     if (!opps || !opps.length) return true;
     return opps.some(function (o) {
       var m = APP_ASKS[String(o)];
-      return !m || m[field];
+      return !m || m[col] === undefined || m[col];
     });
   }
-  // "Recorded" is computed from the rows in scope rather than baked in, so it
-  // stays true as the data changes. A count field sitting at 0 is not evidence
-  // that anything was recorded.
+  // "Recorded" is computed from the rows in scope rather than baked in, so it stays
+  // true as the data changes.
   function anyRecorded(field, rows) {
+    var present = false;
     for (var i = 0; i < rows.length; i++) {
       var v = rows[i][field];
-      if (COUNT_FIELDS[field]) {
-        if ((v || 0) > 0) return true;
-      } else if (v !== null && v !== undefined && v !== '') return true;
+      if (v === undefined) continue;
+      present = true;
+      if (ZERO_IS_ABSENT[field]) {
+        if (v) return true;
+      } else if (v !== null && v !== '' && !(Array.isArray(v) && !v.length)) {
+        return true;
+      }
     }
-    return false;
+    // Fail OPEN when the field is absent from every row: that means the gate is
+    // misconfigured (a renamed property), not that the programme collected nothing.
+    // Blanking a real indicator on our own wiring error is the worse failure.
+    return !present;
   }
   // 'ok' | 'notinapp' | 'unrecorded'
   function inputState(indId, rows, opps) {
