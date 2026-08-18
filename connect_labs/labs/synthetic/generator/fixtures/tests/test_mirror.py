@@ -197,49 +197,84 @@ def test_single_reading_of_a_time_varying_measure_is_not_stamped_across_the_seri
     assert _series_constants(single, _time_varying_paths([{"visits": single}]))[0].get(W) == 1600.0
 
 
-def test_registration_forms_join_the_case_series_instead_of_being_dropped():
-    """A visit with no entity_id must still reach its case via form.case.@case_id.
+def _reg_v3(mother, baby, **vals):
+    """V3 registration: submitted against the MOTHER, creates the baby as a subcase."""
+    return {
+        "username": "flwA",
+        "visit_date": vals.pop("date"),
+        "form_json": {"form": {"case": {"@case_id": mother}, "subcase_0": {"case": {"@case_id": baby}}, **vals}},
+    }
 
-    On real KMC data entity_id is per-VISIT and the registration form carries none
-    at all, so keying the pool on entity_id discarded every registration — and with
-    them birth weight, DOB and enrolment weight. The clone then reproduced visit
-    weights faithfully with zero birth weights against 37.5% in the source, which
-    reads as a data-quality finding about the programme rather than a defect in the
-    clone. Regression for connect-labs#1225.
+
+def _visit_v3(baby, per_visit, **vals):
+    """V3 visit: submitted against the BABY, creates a throwaway per-visit case."""
+    return {
+        "entity_id": per_visit,
+        "username": "flwA",
+        "visit_date": vals.pop("date"),
+        "form_json": {"form": {"case": {"@case_id": baby}, "subcase_0": {"case": {"@case_id": per_visit}}, **vals}},
+    }
+
+
+def test_v3_registration_keys_to_the_baby_not_the_mother():
+    """On a V3 registration form, form.case.@case_id is the MOTHER.
+
+    Keying on it stranded the registration — and every field only it collects, like
+    birth weight — on a separate entity from the baby's visits, doubling case counts
+    (BERI 553 -> 1173) and halving per-field coverage.
+    Regression for connect-labs#1224/#1225.
     """
-    case_id = "c-1"
     visits = [
-        # registration: has the case, no entity_id, carries birth weight
-        {
-            "username": "flwA",
-            "visit_date": "2026-01-01",
-            "form_json": {"form": {"case": {"@case_id": case_id}, "child_weight_birth": 1200}},
-        },
-        # follow-ups: same case, plus a per-visit entity_id
-        {
-            "entity_id": "visit-1",
-            "username": "flwA",
-            "visit_date": "2026-01-08",
-            "form_json": {"form": {"case": {"@case_id": case_id}, "child_weight_visit": 1400}},
-        },
-        {
-            "entity_id": "visit-2",
-            "username": "flwA",
-            "visit_date": "2026-01-15",
-            "form_json": {"form": {"case": {"@case_id": case_id}, "child_weight_visit": 1600}},
-        },
+        _reg_v3("mother-1", "baby-1", date="2026-01-01", child_weight_birth=1200),
+        _visit_v3("baby-1", "pv-1", date="2026-01-08", child_weight_visit=1400),
+        _visit_v3("baby-1", "pv-2", date="2026-01-15", child_weight_visit=1600),
     ]
 
     struct = profile_entity_structure(visits)
 
-    # one baby with three visits — not three separate "entities", and nothing dropped
-    assert struct.visits_per_entity == {3: 1}
+    assert struct.visits_per_entity == {3: 1}, "registration must join the baby's series"
     assert len(struct.transplant_pool) == 1
-
     series = struct.transplant_pool[0]["visits"]
     assert [v["day"] for v in series] == [0, 7, 14]
-    # the registration's birth weight survives into the series
     assert series[0]["values"]["form.child_weight_birth"] == 1200
+
+
+def test_v3_twins_stay_separate_rather_than_collapsing_onto_the_mother():
+    """Two babies registered against one mother must remain two entities."""
+    visits = [
+        _reg_v3("mother-1", "baby-1", date="2026-01-01", child_weight_birth=1200),
+        _reg_v3("mother-1", "baby-2", date="2026-01-01", child_weight_birth=1100),
+        _visit_v3("baby-1", "pv-1", date="2026-01-08", child_weight_visit=1400),
+        _visit_v3("baby-2", "pv-2", date="2026-01-08", child_weight_visit=1300),
+    ]
+
+    struct = profile_entity_structure(visits)
+
+    assert len(struct.transplant_pool) == 2
+    assert struct.visits_per_entity == {2: 2}
+
+
+def test_gen1_visits_are_not_shredded_by_their_per_visit_subcase():
+    """Gen-1 apps submit visits against the baby and create a throwaway subcase.
+
+    That subcase is never submitted against, so it must not be mistaken for the
+    beneficiary — otherwise every visit becomes its own entity.
+    """
+    visits = [
+        # Gen-1 registration: against the baby, no subcase
+        {
+            "username": "flwA",
+            "visit_date": "2026-01-01",
+            "form_json": {"form": {"case": {"@case_id": "baby-1"}, "child_weight_birth": 1000}},
+        },
+        _visit_v3("baby-1", "pv-1", date="2026-01-08", child_weight_visit=1200),
+        _visit_v3("baby-1", "pv-2", date="2026-01-15", child_weight_visit=1300),
+    ]
+
+    struct = profile_entity_structure(visits)
+
+    assert struct.visits_per_entity == {3: 1}
+    assert struct.transplant_pool[0]["visits"][0]["values"]["form.child_weight_birth"] == 1000
 
 
 def test_entity_id_still_keys_sources_that_carry_no_case_block():
