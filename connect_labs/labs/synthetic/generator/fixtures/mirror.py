@@ -163,7 +163,7 @@ def build_entity_resolver(visits: list[dict]):
         if cid:
             submitted_against.add(cid)
 
-    def resolve(visit: dict) -> str | None:
+    def by_case(visit: dict) -> str | None:
         sub = _subcase_id(visit)
         if sub and sub in submitted_against:
             return sub
@@ -173,7 +173,28 @@ def build_entity_resolver(visits: list[dict]):
         eid = visit.get("entity_id")
         return eid if eid else None
 
-    return resolve
+    def by_entity(visit: dict) -> str | None:
+        eid = visit.get("entity_id")
+        return eid if eid else None
+
+    # A beneficiary key has to actually GROUP. On some apps form.case.@case_id is
+    # itself per-visit (opp 675: 505 distinct case ids across 505 visits), and the
+    # case-based rule then yields one "baby" per visit — the very failure this
+    # resolver exists to prevent, just arrived at from the other direction.
+    # So check the candidate against the cohort and fall back to entity_id when the
+    # case key is degenerate and entity_id genuinely groups better.
+    def _spread(fn) -> tuple[int, int]:
+        keys = [fn(v) for v in visits]
+        present = [k for k in keys if k]
+        return len(set(present)), len(present)
+
+    case_groups, case_seen = _spread(by_case)
+    ent_groups, ent_seen = _spread(by_entity)
+    case_degenerate = case_seen and case_groups > 0.9 * case_seen
+    entity_groups_better = ent_seen and ent_groups and ent_groups < 0.9 * case_groups
+    if case_degenerate and entity_groups_better:
+        return by_entity
+    return by_case
 
 
 def profile_entity_structure(
