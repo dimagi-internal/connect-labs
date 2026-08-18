@@ -28,12 +28,12 @@ Bringing the core resources under CloudFormation (importing the existing RDS,
 ECS, etc.) is a deliberate later step — "the rest, as needed" — and only worth
 doing if labs proves long-lived enough to justify the import work.
 
-| Template                   | Owns                                                                                                                                                                             | References (does not own)                                                                           |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Template                   | Owns                                                                                                                                                                                                                                   | References (does not own)                                                                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `labs-monitoring.yml`      | SNS alert topic + subscriptions, RDS-connection + slot-exhaustion alarms, web-CPU / ALB-latency / ALB-5xx / no-healthy-target alarms, AI-review empty-audit + classifier-saturation alarms, log metric filters, CI log-read IAM policy | RDS instance, ECS cluster + service, ALB + target group, ECS log groups, GitHub Actions deploy role |
-| `labs-audit-analytics.yml` | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies        | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC                       |
-| `labs-access-logs.yml`     | ALB access-log S3 bucket, its delivery policy, and a 90-day retention lifecycle                                                                                                  | The ALB itself (logging is switched on via a CLI attribute — see below)                             |
-| `labs-email.yml`           | SES domain identity + DKIM, `labs-jj-email` configuration set, `labs-jj-email-events` SNS topic + event destination, scoped `ses:SendEmail` managed policy                       | ECS task role (policy attaches by name), the DNS zone, SES production access                        |
+| `labs-audit-analytics.yml` | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies                                                              | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC                       |
+| `labs-access-logs.yml`     | ALB access-log S3 bucket, its delivery policy, and a 90-day retention lifecycle                                                                                                                                                        | The ALB itself (logging is switched on via a CLI attribute — see below)                             |
+| `labs-email.yml`           | SES domain identity + DKIM, `labs-jj-email` configuration set, `labs-jj-email-events` SNS topic + event destination, scoped `ses:SendEmail` managed policy                                                                             | ECS task role (policy attaches by name), the DNS zone, SES production access                        |
 
 ## Deploy
 
@@ -54,7 +54,7 @@ aws cloudformation deploy \
 - **Carry existing parameters forward, or a re-deploy will silently reset them
   to their defaults.** `AlarmEmail` defaults to `''`, and the email subscription
   is conditional on it, so a deploy that does not pass the current value
-  *removes the subscription* — the alarms stay up and simply stop reaching
+  _removes the subscription_ — the alarms stay up and simply stop reaching
   anyone. This is not hypothetical: a change set on 2026-08-18 that only meant
   to add two alarms came back with `Remove AlertEmailSubscription`, because the
   live stack had `AlarmEmail=connect-labs-alerts@dimagi.com` and the default is
@@ -75,6 +75,7 @@ aws cloudformation deploy \
   aws cloudformation execute-change-set --profile labs \
     --stack-name labs-jj-monitoring --change-set-name my-change
   ```
+
 - **Verify a new metric filter actually matches**, since one that matches nothing
   produces an alarm that can never fire and looks identical to a healthy one:
 
