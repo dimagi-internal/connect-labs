@@ -36,7 +36,26 @@ def _record_export_audit(
     ``paginate(partial_ok=True)``). That is a *successful* partial export, not
     a failure — but the compliance record still needs to show the read stopped
     short of the full dataset, so it is kept in metadata.
+
+    A **successful, complete export that returned zero rows is not recorded**.
+    It read no PHI, so it is not an access event, and recording it costs more
+    than it is worth: the pulse tail poller re-asks every due cursor every 15s
+    (`poll_visit_tail`, #1174) and almost always gets nothing back, so these
+    empty reads were **949,775 of its 962,808 export events — 98.6%** over the
+    week of 2026-08-11, and about **79% of every row in the audit trail**. That
+    buries the human activity the §164.308(a)(1)(ii)(D) review exists to
+    surface, under machine polls that touched no data.
+
+    Deliberately NOT skipped, because each of these is a real access event or a
+    real signal, whatever the row count:
+      - any export that errored (``error``) — an *attempted* read of PHI,
+      - any export cut short (``terminated_early``) — the caller saw some of a
+        larger dataset, and the record has to say the read was partial,
+      - any export that returned rows.
     """
+    if not error and not terminated_early and not row_count:
+        return
+
     try:
         from connect_labs.audit_trail import service
         from connect_labs.audit_trail.models import Action, Outcome
