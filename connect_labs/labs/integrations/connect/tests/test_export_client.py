@@ -142,3 +142,75 @@ def test_context_manager_closes_underlying_client():
 
     with pytest.raises(RuntimeError):
         c.http_client.get("https://example.com")
+
+
+# --- export audit: what gets a compliance record and what does not -----------
+#
+# The pulse tail poller re-asks every due cursor every 15s and almost always
+# gets nothing back. Recording those empty reads as PHI-access events made them
+# ~79% of the entire audit trail, burying the human activity the
+# §164.308(a)(1)(ii)(D) review exists to surface. An export that returned no
+# rows read no PHI — but an export that FAILED, or that was cut short, is still
+# a real access event no matter the row count. These pin both halves.
+
+
+@pytest.fixture
+def recorded(monkeypatch):
+    """Capture calls to the audit service instead of writing rows."""
+    calls = []
+    import connect_labs.audit_trail.service as service
+
+    monkeypatch.setattr(service, "record", lambda *a, **kw: calls.append((a, kw)))
+    return calls
+
+
+def test_successful_empty_export_is_not_audited(client, httpx_mock, recorded):
+    httpx_mock.add_response(
+        url="https://connect.example.com/export/opportunity/42/user_visits/?page_size=2500",
+        json={"next": None, "results": []},
+    )
+
+    assert list(client.paginate("/export/opportunity/42/user_visits/")) == [[]]
+    assert recorded == []
+
+
+def test_export_that_returned_rows_is_audited(client, httpx_mock, recorded):
+    httpx_mock.add_response(
+        url="https://connect.example.com/export/opportunity/42/user_visits/?page_size=2500",
+        json={"next": None, "results": [{"id": 1}]},
+    )
+
+    list(client.paginate("/export/opportunity/42/user_visits/"))
+
+    assert len(recorded) == 1
+    assert recorded[0][1]["record_count"] == 1
+
+
+def test_failed_empty_export_is_still_audited(client, httpx_mock, recorded):
+    """Zero rows because it BROKE is an attempted PHI read — always recorded."""
+    httpx_mock.add_response(
+        url="https://connect.example.com/export/opportunity/42/user_visits/?page_size=2500",
+        status_code=500,
+    )
+
+    with pytest.raises(ExportAPIError):
+        list(client.paginate("/export/opportunity/42/user_visits/"))
+
+    assert len(recorded) == 1
+    assert recorded[0][1]["record_count"] == 0
+    assert "error" in recorded[0][1]["metadata"]
+
+
+def test_abandoned_empty_export_is_still_audited(client, httpx_mock, recorded):
+    """An unrequested teardown mid-stream is recorded as a failure, rows or not."""
+    httpx_mock.add_response(
+        url="https://connect.example.com/export/opportunity/42/user_visits/?page_size=2500",
+        json={"next": None, "results": []},
+    )
+
+    gen = client.paginate("/export/opportunity/42/user_visits/")
+    next(gen)
+    gen.close()
+
+    assert len(recorded) == 1
+    assert recorded[0][1]["metadata"].get("error") == "GeneratorExit"
