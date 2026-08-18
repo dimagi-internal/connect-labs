@@ -25,7 +25,13 @@ from connect_labs.audit.run_checkpoints import call_key, session_key
 from connect_labs.audit.visit_cluster_duplicate_detection import run_grouping_duplicate_detection
 from connect_labs.audit.visit_clustering import build_flw_visit_clusters
 from connect_labs.labs import s3_export
-from connect_labs.labs.ai_review_agents.base import ERROR_KIND_AGENT_EXCEPTION, ERROR_KIND_UNKNOWN
+from connect_labs.labs.ai_review_agents.base import (
+    ERROR_KIND_AGENT_EXCEPTION,
+    ERROR_KIND_RATE_LIMITED,
+    ERROR_KIND_TIMEOUT,
+    ERROR_KIND_UNKNOWN,
+    ERROR_KIND_UNREACHABLE,
+)
 from connect_labs.utils.celery import set_task_progress
 from connect_labs.utils.progress_relays import _RELAYS as AUDIT_PROGRESS_RELAYS  # noqa: F401  (back-compat alias)
 from connect_labs.utils.progress_relays import get_relay
@@ -315,6 +321,29 @@ _MAX_REVIEWERS_PER_IMAGE = 4
 # grows toward that cap in practice, or the gateway's own capacity changes, re-benchmark
 # before raising either constant further.
 _MAX_CONCURRENT_IMAGES_PER_SESSION = 10
+
+# Error kinds that mean "the gateway was overloaded", as opposed to "this image
+# is broken". Retrying these immediately re-enters the same congestion.
+_SATURATION_ERROR_KINDS = frozenset({ERROR_KIND_TIMEOUT, ERROR_KIND_RATE_LIMITED, ERROR_KIND_UNREACHABLE})
+
+# How long the retry sweep waits before re-attempting images that failed for a
+# saturation reason.
+#
+# The sweep re-runs every errored image once, which is right for a broken blob
+# and wrong for a busy gateway: it fires the moment the first pass ends, into
+# the exact congestion that caused the failure. Measured over 2026-08-11..18 it
+# retried 592 images and recovered 160 -- 27%. The failures it was retrying into
+# were overwhelmingly timeouts, and a timeout costs a full 60s client timeout
+# per attempt, so the sweep was also the most expensive possible way to fail.
+#
+# The pool sizes above were benchmarked one run at a time. Nothing bounds
+# CONCURRENT runs, and on 2026-08-14 five scale runs started within 46 seconds
+# (up to 200 concurrent gateway calls against a plateau of ~20), which produced
+# 73-92% error rates. Even two runs two minutes apart gave 79% on 2026-08-17,
+# while runs spaced hours apart gave 9%. A global concurrency budget is the real
+# fix and is tracked in #1231; this constant is the cheap half -- it stops the
+# retry from piling onto a gateway that is still saturated.
+_RETRY_SWEEP_BACKOFF_SECONDS = 30.0
 
 
 def _run_ai_review_on_sessions(
@@ -891,6 +920,29 @@ def _run_ai_review_on_sessions(
                     f"{tag} Cancelled before retry sweep for session {session_id} — "
                     f"skipping {len(retry_candidates)} pending retries"
                 )
+
+            if retry_candidates and not cancelled:
+                # Back off first if the first pass failed because the gateway was
+                # busy -- retrying straight into that is why the sweep only
+                # recovered 27% of what it retried. Waited in short slices so a
+                # cancel still lands promptly instead of after the full backoff.
+                saturation_kinds = sorted(
+                    {kind for _, kinds in retry_candidates for kind in kinds} & _SATURATION_ERROR_KINDS
+                )
+                if saturation_kinds:
+                    logger.info(
+                        f"{tag} Retry sweep: waiting {_RETRY_SWEEP_BACKOFF_SECONDS:.0f}s before "
+                        f"re-attempting -- first pass hit {', '.join(saturation_kinds)}"
+                    )
+                    waited = 0.0
+                    while waited < _RETRY_SWEEP_BACKOFF_SECONDS:
+                        if cancel_key and is_audit_creation_cancelled(cancel_key):
+                            cancelled = True
+                            logger.info(f"{tag} Cancelled during retry-sweep backoff for session {session_id}")
+                            break
+                        slice_s = min(2.0, _RETRY_SWEEP_BACKOFF_SECONDS - waited)
+                        time.sleep(slice_s)
+                        waited += slice_s
 
             if retry_candidates and not cancelled:
                 logger.info(
