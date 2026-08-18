@@ -85,11 +85,7 @@ def test_count_is_exact_below_the_cap(client, admin_user, monkeypatch):
 
     # Below the cap the total must equal what an exact count would return, so
     # assert against the queryset rather than a hardcoded number.
-    expected = (
-        AuditEvent.objects.filter(labs_only=False)
-        .exclude(action__in=[Action.CANARY, Action.PAGE_VIEW])
-        .count()
-    )
+    expected = AuditEvent.objects.filter(labs_only=False).exclude(action__in=[Action.CANARY, Action.PAGE_VIEW]).count()
     assert response.context["total_events"] == expected
     assert response.context["total_events_capped"] is False
 

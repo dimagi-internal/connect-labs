@@ -9,10 +9,10 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.utils.functional import cached_property
 from django.db.models import Count, Max, Sum
 from django.shortcuts import redirect
 from django.utils import timezone
+from django.utils.functional import cached_property
 from django.views.generic import TemplateView
 
 from connect_labs.audit_trail import service

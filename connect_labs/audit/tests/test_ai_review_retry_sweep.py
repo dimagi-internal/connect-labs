@@ -9,9 +9,9 @@ that now runs, within the same task invocation, over images that ended
 their first pass in "error".
 """
 
-from connect_labs.audit import tasks
 import pytest
 
+from connect_labs.audit import tasks
 from connect_labs.labs.ai_review_agents.base import ERROR_KIND_TIMEOUT
 from connect_labs.labs.ai_review_agents.types import ReviewResult
 
