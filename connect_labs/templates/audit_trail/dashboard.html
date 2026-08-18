@@ -144,7 +144,7 @@
   {# ── Event table ───────────────────────────────────────────────────── #}
   <div class="bg-white rounded-lg shadow-sm overflow-hidden">
     <div class="px-4 py-3 border-b border-gray-200 text-sm text-gray-600">
-      {{ total_events }} event{{ total_events|pluralize }}
+      {{ total_events }}{% if total_events_capped %}+{% endif %} event{{ total_events|pluralize }}
     </div>
     <div class="overflow-x-auto">
       <table class="min-w-full text-sm">

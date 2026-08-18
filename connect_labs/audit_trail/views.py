@@ -9,6 +9,7 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.core.paginator import Paginator
+from django.utils.functional import cached_property
 from django.db.models import Count, Max, Sum
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -20,6 +21,46 @@ from connect_labs.audit_trail.timeline import build_session_timeline
 from connect_labs.labs.view_mixins import AdminRequiredMixin
 
 PAGE_SIZE = 50
+
+# Stop counting matching rows past this many. The pager shows "10,000+" instead
+# of an exact total beyond it.
+COUNT_CAP = 10_000
+
+
+class CappedPaginator(Paginator):
+    """A Paginator that refuses to count the whole table.
+
+    ``Paginator.count`` is a bare ``COUNT(*)`` over the filtered queryset, and
+    the default dashboard filter (``labs_only=False`` minus canary and page
+    views) is not index-coverable, so it degenerates into a full scan of every
+    audit row ever written. Measured on production 2026-08-18 at 2,577,392 rows:
+
+        exact count, cold cache   15.668s
+        exact count, warm          0.422s
+        capped count (10,001)      0.006s
+
+    Two things make the exact count the wrong trade rather than merely a slow
+    one. It was the single largest cost on the page AND the only one a bigger
+    instance did not fix -- resizing the database from db.t3.small to
+    db.m6g.large left it unchanged at ~5.2s, because it is bounded by rows
+    examined, not by IO. And it is *unstable*: the same query is 0.4s or 15.7s
+    depending on cache state, so the page's latency swings 37x for a number
+    nobody acts on. Nobody pages to row 2.5 millionth of an audit log; they
+    filter.
+
+    Counting one row past the cap is what distinguishes "exactly at the cap"
+    from "more than the cap", so ``is_capped`` can be honest about which.
+    """
+
+    cap = COUNT_CAP
+
+    @cached_property
+    def count(self):
+        return self.object_list[: self.cap + 1].count()
+
+    @property
+    def is_capped(self) -> bool:
+        return self.count > self.cap
 
 
 class AuditTrailDashboardView(AdminRequiredMixin, TemplateView):
@@ -106,11 +147,13 @@ class AuditTrailDashboardView(AdminRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         page_number = self.request.GET.get("page") or 1
-        paginator = Paginator(self.get_queryset(), PAGE_SIZE)
+        paginator = CappedPaginator(self.get_queryset(), PAGE_SIZE)
         context.update(
             {
                 "page_obj": paginator.get_page(page_number),
-                "total_events": paginator.count,
+                # Capped: show the cap, and let the template mark it a floor.
+                "total_events": min(paginator.count, paginator.cap),
+                "total_events_capped": paginator.is_capped,
                 "action_choices": Action.choices,
                 "outcome_choices": Outcome.choices,
                 "stats": self.get_anomaly_stats(),

@@ -10,6 +10,9 @@ their first pass in "error".
 """
 
 from connect_labs.audit import tasks
+import pytest
+
+from connect_labs.labs.ai_review_agents.base import ERROR_KIND_TIMEOUT
 from connect_labs.labs.ai_review_agents.types import ReviewResult
 
 
@@ -287,3 +290,100 @@ def test_retry_sweep_honors_cancellation_and_does_not_complete_session(monkeypat
     assert ai_result == "error"
     # Cancelled sessions must not be marked complete, so a restart can resume them.
     assert not data_access.saved_data or not data_access.saved_data[-1].get("ai_review_complete")
+
+
+# --- retry-sweep backoff ------------------------------------------------------
+#
+# The sweep fired the instant the first pass ended, straight back into whatever
+# congestion caused the failure. Measured 2026-08-11..18: 592 images retried,
+# 160 recovered (27%), and the failures were overwhelmingly 60s timeouts -- the
+# most expensive possible way to fail. So it now waits first, but ONLY when the
+# first pass failed for a saturation reason; a broken blob gets retried at once
+# as before.
+
+
+class _TimesOutThenSucceedsAgent:
+    """First call reports a gateway TIMEOUT (a saturation signal), then passes."""
+
+    agent_id = "agent_timeout_then_ok"
+    name = "Timeout Then OK Agent"
+    requires_reading = False
+    result_actions = {"yep": {"ai_result": "match", "human_result": "pass", "button_label": "Pass"}}
+
+    def __init__(self):
+        self.calls = 0
+
+    def review(self, ctx):
+        self.calls += 1
+        if self.calls == 1:
+            return ReviewResult.error("AI classifier service timed out. Try again.", error_kind=ERROR_KIND_TIMEOUT)
+        return ReviewResult.success(match=True)
+
+
+@pytest.fixture
+def slept(monkeypatch):
+    """Record sleeps instead of taking them, so these stay fast."""
+    waits = []
+    monkeypatch.setattr(tasks.time, "sleep", lambda s: waits.append(s))
+    return waits
+
+
+def test_retry_sweep_backs_off_when_the_gateway_was_saturated(monkeypatch, slept):
+    agent = _TimesOutThenSucceedsAgent()
+    result, _session, _data_access = _run_with_agent(agent, monkeypatch)
+
+    assert agent.calls == 2
+    assert result["total_passed"] == 1
+    # Waited the full backoff, in slices small enough to notice a cancel.
+    assert sum(slept) == pytest.approx(tasks._RETRY_SWEEP_BACKOFF_SECONDS)
+    assert max(slept) <= 2.0
+
+
+def test_retry_sweep_does_not_back_off_for_a_broken_image(monkeypatch, slept):
+    """An agent exception is not congestion -- retry it immediately, as before."""
+    agent = _RecoversOnRetryAgent()
+    result, _session, _data_access = _run_with_agent(agent, monkeypatch)
+
+    assert agent.calls == 2
+    assert result["total_passed"] == 1
+    assert slept == []
+
+
+def test_retry_sweep_backoff_stops_early_on_cancellation(monkeypatch):
+    """A cancel arriving DURING the backoff must land promptly.
+
+    The point of waiting in short slices is that a stop request does not have to
+    sit through the whole backoff. So the cancel is made to arrive from inside
+    the first slice -- cancelling any earlier is a different, already-covered
+    path that aborts before the sweep is reached at all.
+    """
+    agent = _TimesOutThenSucceedsAgent()
+    waits = []
+    state = {"cancelled": False}
+
+    def _sleep(seconds):
+        waits.append(seconds)
+        state["cancelled"] = True  # the stop request arrives mid-backoff
+
+    monkeypatch.setattr(tasks.time, "sleep", _sleep)
+    monkeypatch.setattr(tasks, "is_audit_creation_cancelled", lambda key: state["cancelled"])
+
+    from connect_labs.labs.ai_review_agents import registry
+
+    monkeypatch.setattr(registry, "get_agent", lambda aid: agent)
+    monkeypatch.setattr(tasks, "resolve_urls_by_blob", lambda **kwargs: {})
+    session = _one_image_session()
+    tasks._run_ai_review_on_sessions(
+        data_access=_FakeDataAccess(session),
+        session_ids=[10],
+        access_token="tok",
+        opp_id=42,
+        ai_reviewers={"form/photo_a": [{"agent_id": agent.agent_id, "auto_apply_actions": ["yep"]}]},
+        cancel_key="ck",
+    )
+
+    # Broke out after one slice instead of waiting the whole backoff, and never
+    # re-attempted the image.
+    assert waits == [2.0]
+    assert sum(waits) < tasks._RETRY_SWEEP_BACKOFF_SECONDS
+    assert agent.calls == 1
