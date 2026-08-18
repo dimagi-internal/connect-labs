@@ -22,7 +22,7 @@ import pandas as pd
 import yaml
 
 from .manifest import Manifest, ManifestValidationError
-from .mirror import _entity_key, profile_entity_structure
+from .mirror import build_entity_resolver, profile_entity_structure
 from .schema_loader import FormSchema, parse_form_schema_from_app_json
 
 
@@ -230,10 +230,11 @@ def _discover_numeric_paths(
     # Sample whole CASES, not loose visits. Per-case coverage is only meaningful
     # if a sampled case brings all of its visits — otherwise a field recorded once
     # per case looks absent from any case whose registration visit wasn't drawn.
+    resolve = build_entity_resolver(visits)
     by_entity: dict[str, list[dict]] = defaultdict(list)
     loose: list[dict] = []
     for v in visits:
-        eid = _entity_key(v)
+        eid = resolve(v)
         (by_entity[eid] if eid else loose).append(v)
 
     sample: list[dict] = []
@@ -261,7 +262,7 @@ def _discover_numeric_paths(
         _walk_paths(fj, "", seen, numeric_here)
         path_counts.update(seen)
         path_numeric.update(numeric_here)
-        eid = _entity_key(v)
+        eid = resolve(v)
         if eid:
             for path in seen:
                 path_entities[path].add(eid)

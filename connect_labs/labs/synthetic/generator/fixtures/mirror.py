@@ -120,30 +120,60 @@ def _extract_nested(obj: dict, dotted_path: str) -> Any:
     return cur
 
 
-def _entity_key(visit: dict) -> str | None:
-    """Identify the beneficiary a visit belongs to.
+def _case_id(visit: dict) -> str | None:
+    """The case this form was submitted against."""
+    v = _extract_nested(visit.get("form_json") or {}, "form.case.@case_id")
+    return v if isinstance(v, str) and v else None
 
-    Prefers the case the form was submitted against (``form.case.@case_id``) and
-    falls back to Connect's ``entity_id``.
 
-    Keying on ``entity_id`` alone silently truncated the transplant pool. On real
-    KMC data ``entity_id`` is per-VISIT, and the registration form — which is where
-    birth weight, DOB and enrolment weight are collected — carries no ``entity_id``
-    at all, so ``if not eid: continue`` discarded every registration in the cohort.
-    The resulting clone reproduced visit weights faithfully and had *zero* birth
-    weights, against 37.5% in the source (connect-labs#1225). Because a dropped
-    field looks exactly like a field the programme never collected, it read as a
-    data-quality finding about the programme rather than a defect in the clone.
+def _subcase_id(visit: dict) -> str | None:
+    """The case this form CREATED, if any."""
+    v = _extract_nested(visit.get("form_json") or {}, "form.subcase_0.case.@case_id")
+    return v if isinstance(v, str) and v else None
 
-    The same identifier drives entity-stage grouping in the analysis pipeline
-    (connect-labs#1224), so a case series here matches a case row there.
+
+def build_entity_resolver(visits: list[dict]):
+    """Return ``visit -> beneficiary id``, decided from the whole cohort.
+
+    No per-visit rule can get this right, because the same two fields mean
+    different things in different KMC app generations:
+
+      V3 registration   case = the MOTHER, subcase = the baby
+      V3 visit          case = the baby,   subcase = a per-visit case
+      Gen-1 registration case = the baby,  no subcase
+      Gen-1 visit       case = the baby,   subcase = a per-visit case
+
+    So ``case`` alone strands V3 registrations on the mother (and collapses twins
+    onto her), while ``subcase`` alone shreds every visit into its own entity.
+
+    The cohort settles it. A subcase is the beneficiary only if some OTHER form was
+    later submitted *against* it — that is what distinguishes the child a
+    registration created from the throwaway case a visit created. So: collect every
+    id that appears as ``form.case.@case_id`` anywhere, then prefer a subcase only
+    when it is in that set.
+
+    Getting this wrong is expensive and quiet — keying on ``case`` alone doubled the
+    V3 opportunities' case counts (BERI 553 -> 1173) and halved their per-field
+    coverage, because each baby split into a registration-only row and a
+    visits-only row (connect-labs#1224/#1225).
     """
-    fj = visit.get("form_json") or {}
-    case_id = _extract_nested(fj, "form.case.@case_id")
-    if isinstance(case_id, str) and case_id:
-        return case_id
-    eid = visit.get("entity_id")
-    return eid if eid else None
+    submitted_against: set[str] = set()
+    for v in visits:
+        cid = _case_id(v)
+        if cid:
+            submitted_against.add(cid)
+
+    def resolve(visit: dict) -> str | None:
+        sub = _subcase_id(visit)
+        if sub and sub in submitted_against:
+            return sub
+        cid = _case_id(visit)
+        if cid:
+            return cid
+        eid = visit.get("entity_id")
+        return eid if eid else None
+
+    return resolve
 
 
 def profile_entity_structure(
@@ -151,10 +181,11 @@ def profile_entity_structure(
 ) -> EntityStructure:
     # visits per (entity, flw) so we can both count an entity's visits and find
     # the FLW who did the most of them.
+    resolve = build_entity_resolver(visits)
     visits_by_entity_flw: dict[str, Counter[str]] = defaultdict(Counter)
     visits_by_entity: dict[str, list[dict]] = defaultdict(list)
     for v in visits:
-        eid = _entity_key(v)
+        eid = resolve(v)
         if not eid:
             continue
         visits_by_entity_flw[eid][v.get("username") or ""] += 1
