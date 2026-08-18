@@ -13,9 +13,11 @@ AWSTemplateFormatVersion: '2010-09-09'
 # dimagi-rad/scout's infra/scout-stack.yml monitoring block. See infra/README.md
 # for the deploy command.
 Description: >-
-  Labs operational guardrails (monitoring): SNS alert topic + RDS
-  connection/slot-exhaustion CloudWatch alarms. Standalone stack that references
-  (does not own) the existing RDS instance and ECS log groups. See PR #765.
+  Labs operational guardrails (monitoring): SNS alert topic plus CloudWatch
+  alarms over RDS (connections, slot exhaustion), the web tier (CPU, ALB p95
+  latency, ELB 5xx, healthy targets) and AI image-audit runs (empty audits,
+  classifier saturation). Standalone stack that references (does not own) the
+  existing RDS instance, ECS services and log groups. See PR #765.
 
 Parameters:
   AlarmEmail:
@@ -50,11 +52,18 @@ Parameters:
     Type: Number
     Default: 90
     Description: >-
-      Alarm when DatabaseConnections exceeds this for 10 minutes. db.t3.small
-      has ~155 usable slots (max_connections minus rds_reserved). Was 120 and
+      Alarm when DatabaseConnections exceeds this for 10 minutes. Was 120 and
       never fired: the 2026-07-29 incident peaked at 106 and sat in the 90s for
       50 minutes, entirely under the old threshold. Steady state is 5-15, so 90
-      is still ~6x headroom over normal while actually catching that shape.
+      is ~6x headroom over normal while actually catching that shape.
+
+      The instance was db.t3.small with ~155 usable slots when this was written.
+      On 2026-08-18 it was resized to db.m6g.large and max_connections rose to
+      829 (the default parameter group derives it from instance memory), so the
+      ceiling moved but the threshold deliberately did NOT: this alarm exists to
+      catch a LEAK CLIMBING, and the thing that makes 90 the right number is
+      steady state being 5-15, not how far away the ceiling is. Raising it in
+      proportion to the new ceiling would only delay the warning.
 
   WebLogGroupName:
     Type: String
@@ -190,7 +199,8 @@ Resources:
       AlarmDescription: >-
         RDS DatabaseConnections is elevated — likely a connection leak climbing
         toward slot exhaustion (the failure mode fixed in PR #765). Investigate
-        before it reaches the ~155-slot ceiling and 500s everywhere.
+        before it reaches the ceiling (829 slots since the 2026-08-18 resize to
+        db.m6g.large; it was ~155) and 500s everywhere.
       Namespace: AWS/RDS
       MetricName: DatabaseConnections
       Dimensions:
@@ -368,6 +378,107 @@ Resources:
       TreatMissingData: breaching
       AlarmActions: [!Ref AlertTopic]
       OKActions: [!Ref AlertTopic]
+
+  # ── AI-review: an audit that reviewed nothing ───────────────────────
+  # tasks.py logs "NO IMAGES REVIEWED: all N image(s) were skipped" at ERROR
+  # when a run attempts zero images -- nearly always a misconfigured image path
+  # or a failing blob fetch, and the audit it produces is silently EMPTY.
+  #
+  # The diagnostic already existed and worked. Nothing consumed it: on
+  # 2026-08-14 four runs skipped all 260 of their images (image_download_failed)
+  # and the line sat unread for four days until a manual log review found it.
+  # A log nobody reads is not a signal, so this makes it one.
+  WebEmptyAiAuditMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WebLogGroupName
+      FilterPattern: '"NO IMAGES REVIEWED"'
+      MetricTransformations:
+        - MetricNamespace: Labs/AIReview
+          MetricName: EmptyAudit
+          MetricValue: '1'
+          DefaultValue: 0
+
+  WorkerEmptyAiAuditMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WorkerLogGroupName
+      FilterPattern: '"NO IMAGES REVIEWED"'
+      MetricTransformations:
+        - MetricNamespace: Labs/AIReview
+          MetricName: EmptyAudit
+          MetricValue: '1'
+          DefaultValue: 0
+
+  EmptyAiAuditAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-ai-review-empty-audit
+      AlarmDescription: >-
+        An AI image-audit run reviewed ZERO images and produced an empty audit —
+        every image was skipped. Usually a misconfigured comparison/image field
+        path or a failing blob fetch. The run reports success, so nobody notices
+        without this. Check the [AIReview:<id>] lines for the skip breakdown.
+      Namespace: Labs/AIReview
+      MetricName: EmptyAudit
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  # ── AI-review: classifier gateway saturation ────────────────────────
+  # base.py logs one "[classifier] ... outcome=timeout ..." line per call that
+  # hit the 60s client timeout. A trickle is normal; a burst means the shared
+  # gateway is saturated and the run is producing an audit with no verdicts.
+  #
+  # Threshold sized off measured history (2026-08-11..18): a quiet day totals
+  # ~22 timeouts across the WHOLE day, while the bad episodes did 464 (08-14)
+  # and 136 (08-17) in a few hours. 25 in a 15-minute window sits far above the
+  # baseline and well below the failure shape. See #1231 -- the cause is that
+  # concurrent runs each get their own pool, so overlapping runs multiply load.
+  WorkerClassifierTimeoutMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WorkerLogGroupName
+      FilterPattern: '"[classifier]" "outcome=timeout"'
+      MetricTransformations:
+        - MetricNamespace: Labs/AIReview
+          MetricName: ClassifierTimeout
+          MetricValue: '1'
+          DefaultValue: 0
+
+  WebClassifierTimeoutMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WebLogGroupName
+      FilterPattern: '"[classifier]" "outcome=timeout"'
+      MetricTransformations:
+        - MetricNamespace: Labs/AIReview
+          MetricName: ClassifierTimeout
+          MetricValue: '1'
+          DefaultValue: 0
+
+  ClassifierSaturationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-ai-classifier-saturation
+      AlarmDescription: >-
+        The AI classifier gateway is timing out in bulk — an image audit running
+        now is producing errors instead of verdicts, and each timeout costs a
+        full 60s. Most likely several AI-review runs are overlapping (see
+        #1231); check how many [AIReview:<id>] runs started recently.
+      Namespace: Labs/AIReview
+      MetricName: ClassifierTimeout
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 25
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
 
 Outputs:
   AlertTopicArn:

@@ -30,7 +30,7 @@ doing if labs proves long-lived enough to justify the import work.
 
 | Template                   | Owns                                                                                                                                                                             | References (does not own)                                                                           |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `labs-monitoring.yml`      | SNS alert topic + subscriptions, RDS-connection + slot-exhaustion alarms, web-CPU / ALB-latency / ALB-5xx / no-healthy-target alarms, log metric filters, CI log-read IAM policy | RDS instance, ECS cluster + service, ALB + target group, ECS log groups, GitHub Actions deploy role |
+| `labs-monitoring.yml`      | SNS alert topic + subscriptions, RDS-connection + slot-exhaustion alarms, web-CPU / ALB-latency / ALB-5xx / no-healthy-target alarms, AI-review empty-audit + classifier-saturation alarms, log metric filters, CI log-read IAM policy | RDS instance, ECS cluster + service, ALB + target group, ECS log groups, GitHub Actions deploy role |
 | `labs-audit-analytics.yml` | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies        | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC                       |
 | `labs-access-logs.yml`     | ALB access-log S3 bucket, its delivery policy, and a 90-day retention lifecycle                                                                                                  | The ALB itself (logging is switched on via a CLI attribute — see below)                             |
 | `labs-email.yml`           | SES domain identity + DKIM, `labs-jj-email` configuration set, `labs-jj-email-events` SNS topic + event destination, scoped `ses:SendEmail` managed policy                       | ECS task role (policy attaches by name), the DNS zone, SES production access                        |
@@ -51,6 +51,38 @@ aws cloudformation deploy \
 - After the first deploy with an email, **confirm the subscription** via the
   email AWS sends, or alarms won't reach your inbox.
 - Re-run the same command to apply template changes (idempotent).
+- **Carry existing parameters forward, or a re-deploy will silently reset them
+  to their defaults.** `AlarmEmail` defaults to `''`, and the email subscription
+  is conditional on it, so a deploy that does not pass the current value
+  *removes the subscription* — the alarms stay up and simply stop reaching
+  anyone. This is not hypothetical: a change set on 2026-08-18 that only meant
+  to add two alarms came back with `Remove AlertEmailSubscription`, because the
+  live stack had `AlarmEmail=connect-labs-alerts@dimagi.com` and the default is
+  blank. Always review a change set before executing, and carry values forward:
+
+  ```bash
+  aws cloudformation describe-stacks --stack-name labs-jj-monitoring \
+    --profile labs --query 'Stacks[0].Parameters[].ParameterKey' --output text \
+    | tr '\t' '\n' | sed 's/^/ParameterKey=/;s/$/,UsePreviousValue=true/' > /tmp/params.txt
+
+  aws cloudformation create-change-set --profile labs \
+    --stack-name labs-jj-monitoring --change-set-name my-change \
+    --template-body file://infra/labs-monitoring.yml \
+    --capabilities CAPABILITY_NAMED_IAM \
+    --parameters $(tr '\n' ' ' < /tmp/params.txt)
+
+  # review, then:
+  aws cloudformation execute-change-set --profile labs \
+    --stack-name labs-jj-monitoring --change-set-name my-change
+  ```
+- **Verify a new metric filter actually matches**, since one that matches nothing
+  produces an alarm that can never fire and looks identical to a healthy one:
+
+  ```bash
+  aws logs test-metric-filter --profile labs \
+    --filter-pattern '"[classifier]" "outcome=timeout"' \
+    --log-event-messages '<a real line that should match>' '<one that should not>'
+  ```
 
 ### An SNS subscription nobody confirms is the same as no alerting
 
