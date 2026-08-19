@@ -66,16 +66,20 @@ def _time_varying_paths(pool: list[dict], *, min_cases: int = 5, vary_share: flo
     multi: dict[str, int] = {}
     varied: dict[str, int] = {}
     for series in pool:
-        seen: dict[str, set[float]] = {}
+        seen: dict[str, set[Any]] = {}
         for v in series.get("visits") or []:
             for path, val in (v.get("values") or {}).items():
                 try:
                     seen.setdefault(path, set()).add(float(val))
                 except (TypeError, ValueError):
                     continue
+            # Categoricals get the same treatment: child_alive flipping to "no"
+            # is time-varying and must never be stamped back across earlier visits.
+            for path, val in (v.get("cats") or {}).items():
+                seen.setdefault(path, set()).add(str(val))
         counts: dict[str, int] = {}
         for v in series.get("visits") or []:
-            for path in v.get("values") or {}:
+            for path in list(v.get("values") or {}) + list(v.get("cats") or {}):
                 counts[path] = counts.get(path, 0) + 1
         for path, n in counts.items():
             if n >= 2:
@@ -87,7 +91,7 @@ def _time_varying_paths(pool: list[dict], *, min_cases: int = 5, vary_share: flo
 
 def _series_constants(
     visits: list[dict], time_varying: set[str] | None = None
-) -> tuple[dict[str, float], dict[str, int]]:
+) -> tuple[dict[str, float], dict[str, int], dict[str, str]]:
     """Per-entity constant numeric values and date offsets to propagate to EVERY visit.
 
     A real KMC child records its birth weight and DOB only at registration, so a
@@ -103,15 +107,21 @@ def _series_constants(
     day-offset from the entity's first visit (a constant DOB → one offset → one date)."""
     val_seen: dict[str, set[float]] = {}
     date_seen: dict[str, set[int]] = {}
+    cat_seen: dict[str, set[str]] = {}
     for v in visits:
         for path, val in (v.get("values") or {}).items():
             val_seen.setdefault(path, set()).add(float(val))
         for path, off in (v.get("dates") or {}).items():
             date_seen.setdefault(path, set()).add(int(off))
+        for path, cval in (v.get("cats") or {}).items():
+            cat_seen.setdefault(path, set()).add(str(cval))
     tv = time_varying or set()
     const_values = {p: next(iter(s)) for p, s in val_seen.items() if len(s) == 1 and p not in tv}
     const_dates = {p: next(iter(s)) for p, s in date_seen.items() if len(s) == 1 and p not in tv}
-    return const_values, const_dates
+    # A categorical answered once and never contradicted (sex, birth location) is a
+    # per-child constant; one that changes is excluded by `time_varying` above.
+    const_cats = {p: next(iter(s)) for p, s in cat_seen.items() if len(s) == 1 and p not in tv}
+    return const_values, const_dates, const_cats
 
 
 def plan_mirror_visits(spec: LongitudinalSpec, *, seed: int) -> list[PlannedVisit]:
@@ -133,7 +143,7 @@ def plan_mirror_visits(spec: LongitudinalSpec, *, seed: int) -> list[PlannedVisi
         start = dt.date.fromisoformat(series["start_date"])
         series_visits = series["visits"]
         ranges = _series_ranges(series_visits)
-        const_values, const_dates = _series_constants(series_visits, time_varying)
+        const_values, const_dates, const_cats = _series_constants(series_visits, time_varying)
         for vj, visit in enumerate(sorted(series_visits, key=lambda v: v["day"]), start=1):
             vdate = start + dt.timedelta(days=int(visit["day"]))
             forced: dict[str, Any] = {}
@@ -150,6 +160,12 @@ def plan_mirror_visits(spec: LongitudinalSpec, *, seed: int) -> list[PlannedVisi
             # DOB stays constant, so age = visit_date - dob is exact across the series.
             for path, offset in (visit.get("dates") or {}).items():
                 forced[path] = (start + dt.timedelta(days=int(offset))).isoformat()
+            # Categoricals are replayed VERBATIM — never jittered, never re-drawn.
+            # These are the outcomes (child_alive, kmc_status, danger signs), and
+            # re-drawing them from marginals is what decoupled a baby's death from
+            # its own weight trajectory, FLW and timing.
+            for path, cval in (visit.get("cats") or {}).items():
+                forced[path] = cval
             # Overlay per-entity constants onto every visit — including ones where the
             # source recorded them only at registration — so birth weight and DOB are
             # identical across the child's whole series (kept exact, never jittered).
@@ -157,5 +173,7 @@ def plan_mirror_visits(spec: LongitudinalSpec, *, seed: int) -> list[PlannedVisi
                 forced[path] = cval
             for path, coff in const_dates.items():
                 forced[path] = (start + dt.timedelta(days=int(coff))).isoformat()
+            for path, cval in const_cats.items():
+                forced[path] = cval
             planned.append(PlannedVisit(entity_id, entity_name, idx, owner, vdate, vj, forced))
     return planned
