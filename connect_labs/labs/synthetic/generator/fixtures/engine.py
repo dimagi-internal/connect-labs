@@ -148,7 +148,10 @@ def _build_mirror_visits(
 ) -> list[dict[str, Any]]:
     """Replay the transplant pool: one stable entity per real case, with its owner
     FLW, timing, visit count, and (jittered) value trajectory reproduced exactly."""
-    planned = plan_mirror_visits(longitudinal, seed=manifest.random_seed)
+    # The app's own `calculate` expressions tell us which values are derived rather
+    # than measured; those are replayed verbatim instead of jittered.
+    computed_paths = {q.json_path for q in form_schema.questions if getattr(q, "calculated", False)}
+    planned = plan_mirror_visits(longitudinal, seed=manifest.random_seed, no_jitter_paths=computed_paths)
     entity_count = max((pv.beneficiary_idx for pv in planned), default=0)
     household_locations = (
         _build_household_locations(manifest.geography, entity_count, rng)

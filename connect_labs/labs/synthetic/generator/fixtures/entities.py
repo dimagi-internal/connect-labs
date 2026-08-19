@@ -124,7 +124,9 @@ def _series_constants(
     return const_values, const_dates, const_cats
 
 
-def plan_mirror_visits(spec: LongitudinalSpec, *, seed: int) -> list[PlannedVisit]:
+def plan_mirror_visits(
+    spec: LongitudinalSpec, *, seed: int, no_jitter_paths: set[str] | None = None
+) -> list[PlannedVisit]:
     """Replay each transplanted case as a stable entity.
 
     One entity per pool series: same owner, same first-visit date + day offsets
@@ -134,6 +136,13 @@ def plan_mirror_visits(spec: LongitudinalSpec, *, seed: int) -> list[PlannedVisi
     plausible per case while not being a verbatim copy.
     """
     rng = random.Random(seed ^ 0x713C10E)
+    # Values the APP computes are replayed exactly. Jitter is meant for measurements;
+    # applied to a computed field it breaks the identity the field encodes — a
+    # jittered child_age stops equalling visit_date - dob, and a jittered visit
+    # counter stops matching the visit's position in its own series. Those showed up
+    # as the largest remaining parity gaps on every KMC opportunity
+    # (visit-counter median gap 1.0, child_age 0.10-0.17).
+    no_jitter = no_jitter_paths or set()
     time_varying = _time_varying_paths(spec.transplant_pool)
     planned: list[PlannedVisit] = []
     for idx, series in enumerate(spec.transplant_pool, start=1):
@@ -151,7 +160,9 @@ def plan_mirror_visits(spec: LongitudinalSpec, *, seed: int) -> list[PlannedVisi
             for path, val in (visit.get("values") or {}).items():
                 lo, hi = ranges[path]
                 span = hi - lo
-                if span > 0 and spec.jitter_frac > 0:
+                if path in no_jitter:
+                    forced[path] = float(val)
+                elif span > 0 and spec.jitter_frac > 0:
                     jittered = float(val) + rng.gauss(0.0, spec.jitter_frac * span)
                     forced[path] = min(max(jittered, lo), hi)
                 else:
