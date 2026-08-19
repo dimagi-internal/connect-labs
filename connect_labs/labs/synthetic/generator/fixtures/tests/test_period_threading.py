@@ -78,3 +78,38 @@ def test_mirror_visits_carry_a_case_block_and_form_name():
         "Child Registration Form",
         "Record Visit Details",
     ]
+
+
+def test_app_calculated_values_are_replayed_exactly_not_jittered():
+    """Jitter is for measurements. A computed value encodes an identity.
+
+    child_age must keep equalling visit_date - dob, and a visit counter must keep
+    matching its position in the series. Jittering them was the largest remaining
+    parity gap on every KMC opportunity — visit-counter median gap 1.0, child_age
+    0.10-0.17. Regression for connect-labs#1225.
+    """
+    from connect_labs.labs.synthetic.generator.fixtures.entities import plan_mirror_visits
+    from connect_labs.labs.synthetic.generator.fixtures.manifest import LongitudinalSpec
+
+    spec = LongitudinalSpec(
+        mode="mirror",
+        jitter_frac=0.5,  # aggressive, so an un-protected field would visibly move
+        transplant_pool=[
+            {
+                "owner": "flw_001",
+                "start_date": "2026-01-01",
+                "visits": [
+                    {"day": 0, "values": {"form.visit_number": 1.0, "form.weight": 1000.0}},
+                    {"day": 7, "values": {"form.visit_number": 2.0, "form.weight": 2000.0}},
+                ],
+            }
+        ],
+    )
+
+    planned = plan_mirror_visits(spec, seed=7, no_jitter_paths={"form.visit_number"})
+
+    counters = [p.forced_values["form.visit_number"] for p in planned]
+    assert counters == [1.0, 2.0], "a computed counter must survive replay exactly"
+    # the measured field is still free to move
+    weights = [p.forced_values["form.weight"] for p in planned]
+    assert weights != [1000.0, 2000.0] or spec.jitter_frac == 0

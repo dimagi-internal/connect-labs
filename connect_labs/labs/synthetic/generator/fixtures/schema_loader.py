@@ -18,6 +18,11 @@ class QuestionSpec:
     json_path: str  # e.g., "form.weight_kg"
     kind: str  # "decimal", "int", "text", "select", "multiselect", "date", "image"
     choices: list[str] = field(default_factory=list)
+    # True when the APP computes this value (an XForm `calculate`) rather than a
+    # human entering it: child_age, visit counters, elapsed-form-time. Jittering a
+    # computed value breaks the identity it encodes — a jittered child_age stops
+    # equalling visit_date - dob — so mirror replays these exactly.
+    calculated: bool = False
 
 
 @dataclass(frozen=True)
@@ -149,5 +154,6 @@ def _hq_walk_question(q: dict[str, Any]) -> list[QuestionSpec]:
             json_path=_xpath_to_json_path(value),
             kind=kind,
             choices=choices,
+            calculated=bool(q.get("calculate")),
         )
     ]
