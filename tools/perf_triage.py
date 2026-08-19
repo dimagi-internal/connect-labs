@@ -49,16 +49,30 @@ ALB_DIMENSION = "app/labs-jj-alb/ffecbe258260c7ee"
 
 # Baselines measured over the 5 days to 2026-07-29. Anything here is a
 # "meaningfully above normal" line, not a guess.
+#
+# db_connection_slots is the ONE entry here that is a property of the instance
+# rather than of the traffic, so it goes stale on a resize while every other
+# number stays valid. It was 155 on db.t3.small; the 2026-08-18 resize to
+# db.m6g.large took it to 829 (`SHOW max_connections`, confirmed on the
+# instance 2026-08-19). Stale, it does not fail -- it prints a plausible
+# fraction that is wrong by 5.3x, so a 6%-full pool reads as 34% full and the
+# "worth a second look" note fires on a healthy window. Re-measure it after any
+# instance-class change rather than scaling it by hand.
 BASELINE = {
     "web_cpu_median_pct": 0.8,
     "alb_p95_median_s": 0.23,
     "db_connections_normal": "5-15",
-    "db_connection_slots": 155,
+    "db_connection_slots": 829,
     "db_cpu_normal_pct": "7-12",
 }
 WEB_CPU_SATURATED = 90.0
 ALB_P95_SLOW_S = 10.0
 DB_CONNECTIONS_HIGH = 90
+# Worth mentioning in an otherwise-healthy verdict. Deliberately NOT scaled to
+# the bigger instance: like DB_CONNECTIONS_HIGH, what makes it meaningful is the
+# distance above a 5-15 steady state, not the distance below the ceiling. It sits
+# between the two so a climbing leak gets mentioned before it alarms.
+DB_CONNECTIONS_NOTEWORTHY = 60
 DB_CPU_HIGH = 50.0
 
 
@@ -347,7 +361,7 @@ def judge(d: dict) -> dict:
             f"DB connections peaked at {conns:.0f} of ~{BASELINE['db_connection_slots']} slots "
             f"-- above the {BASELINE['db_connections_normal']} baseline but under the "
             f"{DB_CONNECTIONS_HIGH} alarm line; worth a second look if it recurs"
-            if conns and conns > 30
+            if conns and conns > DB_CONNECTIONS_NOTEWORTHY
             else f"DB connections peak {conns if conns is not None else 0:.0f}"
         )
         findings.append(
