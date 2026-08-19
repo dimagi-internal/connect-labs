@@ -809,7 +809,17 @@ def profile(
         # pool must capture them explicitly — driven by the schema's date-typed
         # questions, not a hardcoded field name (general for any date-derived axis).
         date_paths = {p for p, k in kinds.items() if k == "date"}
-        structure = profile_entity_structure(user_visits, numeric_paths=numeric_paths, date_paths=date_paths)
+        # Outcomes live in the categoricals — child_alive, kmc_status, feeding, the
+        # danger-sign and referral yes/nos. Replaying them per entity is what makes a
+        # clone answer "do slow-growing babies die more?" the same way the source does.
+        categorical_paths = {p for p, d in field_dists.items() if d.get("distribution") == "categorical"}
+        categorical_paths |= {p for p, k in kinds.items() if k in {"select", "multiselect"}}
+        structure = profile_entity_structure(
+            user_visits,
+            numeric_paths=numeric_paths,
+            date_paths=date_paths,
+            categorical_paths=categorical_paths,
+        )
         ranked = sorted(visits_by_flw.items(), key=lambda kv: -len(kv[1]))
         username_to_persona = {username: f"flw_{i + 1:03d}" for i, (username, _) in enumerate(ranked)}
         pool = []
