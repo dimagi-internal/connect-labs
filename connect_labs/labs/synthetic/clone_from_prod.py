@@ -11,7 +11,7 @@ from .bundle import make_bundle_store, read_bundle
 from .cohort import CohortSpec
 from .dump import _fetch_endpoint
 from .generator.fixtures.engine import generate as _generate
-from .generator.fixtures.fidelity import pool_paths_missing_from_clone
+from .generator.fixtures.fidelity import pool_paths_missing_from_clone, pool_vs_clone_parity
 from .generator.fixtures.manifest import Manifest
 from .generator.fixtures.profiler import profile as _profile
 from .generator.fixtures.schema_loader import parse_form_schema_from_app_json
@@ -149,6 +149,8 @@ class CloneResult:
     # Pool paths that reached no generated visit. Non-empty means the clone is
     # missing data its source records — treat as a build failure, not a nuance.
     dropped_pool_paths: list = field(default_factory=list)
+    # Distributional parity of the generated fixtures against the transplant pool.
+    parity: dict = field(default_factory=dict)
 
 
 def generate_opp_from_bundle(
@@ -280,6 +282,21 @@ def _generate_one(
             ", ".join(dropped[:12]) + (" ..." if len(dropped) > 12 else ""),
         )
 
+    # Presence is not parity. Birth weight came back at 87% coverage against a real
+    # 52%, p90 5798g against a real 1900g, and read as "fixed" because it was no
+    # longer missing. Score the DISTRIBUTIONS here too, in the one place that has
+    # both the pool and the generated fixtures in memory.
+    parity = pool_vs_clone_parity(manifest, fixtures.get("user_visits") or [])
+    if parity.get("scored"):
+        logger.info(
+            "clone(source=%s -> opp=%s): parity %.3f over %d numeric + %d categorical fields",
+            source,
+            opp_id,
+            parity.get("score") or 0.0,
+            parity.get("numeric_fields") or 0,
+            parity.get("categorical_fields") or 0,
+        )
+
     upload = upload_fixtures(drive=drive, opportunity_id=opp_id, fixtures=fixtures)
 
     row = register_labs_only_opp(
@@ -304,6 +321,7 @@ def _generate_one(
         app_structure_present=bool(fixtures.get("app_structure")),
         skipped=False,
         dropped_pool_paths=dropped,
+        parity=parity,
     )
 
 
