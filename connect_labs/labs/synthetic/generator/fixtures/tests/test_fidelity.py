@@ -252,3 +252,55 @@ def test_a_field_the_clone_drops_entirely_is_reported_and_scored_as_a_miss():
     assert "form.child_weight_visit" not in dropped
     # and the loss actually costs something
     assert report["score"] < 1.0
+
+
+def test_pool_paths_missing_from_clone_flags_a_field_the_generator_dropped():
+    """The pool is the contract; anything in it must reach the generated visits.
+
+    A wholly absent field costs nothing in a marginal-comparison fidelity score,
+    which is how birth weight stayed at 0% on clones of opportunities whose source
+    records it. This check runs inside generation, where it cannot be skipped.
+    Regression for connect-labs#1225.
+    """
+    from types import SimpleNamespace
+
+    from connect_labs.labs.synthetic.generator.fixtures.fidelity import pool_paths_missing_from_clone
+
+    manifest = SimpleNamespace(
+        beneficiary_cohorts=[
+            SimpleNamespace(
+                longitudinal=SimpleNamespace(
+                    transplant_pool=[
+                        {
+                            "visits": [
+                                {
+                                    "day": 0,
+                                    "values": {"form.w": 1000.0, "form.birth_weight": 900.0},
+                                    "cats": {"form.child_alive": "yes"},
+                                }
+                            ]
+                        }
+                    ]
+                )
+            )
+        ]
+    )
+    # the generator emitted the weight and the outcome, but dropped birth weight
+    visits = [{"form_json": {"form": {"w": 1000, "child_alive": "yes"}}}]
+
+    assert pool_paths_missing_from_clone(manifest, visits) == ["form.birth_weight"]
+
+
+def test_pool_paths_missing_from_clone_is_quiet_when_everything_arrives():
+    from types import SimpleNamespace
+
+    from connect_labs.labs.synthetic.generator.fixtures.fidelity import pool_paths_missing_from_clone
+
+    manifest = SimpleNamespace(
+        beneficiary_cohorts=[
+            SimpleNamespace(
+                longitudinal=SimpleNamespace(transplant_pool=[{"visits": [{"day": 0, "values": {"form.w": 1000.0}}]}])
+            )
+        ]
+    )
+    assert pool_paths_missing_from_clone(manifest, [{"form_json": {"form": {"w": 1000}}}]) == []
