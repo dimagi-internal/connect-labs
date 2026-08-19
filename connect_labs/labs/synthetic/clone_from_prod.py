@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..progress import NULL_PROGRESS, safe_call
 from .bundle import make_bundle_store, read_bundle
 from .cohort import CohortSpec
 from .dump import _fetch_endpoint
 from .generator.fixtures.engine import generate as _generate
+from .generator.fixtures.fidelity import pool_paths_missing_from_clone
 from .generator.fixtures.manifest import Manifest
 from .generator.fixtures.profiler import profile as _profile
 from .generator.fixtures.schema_loader import parse_form_schema_from_app_json
@@ -145,6 +146,9 @@ class CloneResult:
     record_counts: dict
     app_structure_present: bool
     skipped: bool
+    # Pool paths that reached no generated visit. Non-empty means the clone is
+    # missing data its source records — treat as a build failure, not a nuance.
+    dropped_pool_paths: list = field(default_factory=list)
 
 
 def generate_opp_from_bundle(
@@ -260,6 +264,22 @@ def _generate_one(
         opp_id = existing.opportunity_id
     else:
         opp_id = max(SyntheticOpportunity.next_labs_only_opp_id(), program_id + 1)
+    # The pool is the contract: everything in it was observed in the source and
+    # captured to be replayed. Anything missing from every generated visit is a
+    # generator defect — and a wholly absent field costs nothing in a
+    # marginal-comparison fidelity score, which is how birth weight stayed at 0%
+    # for weeks (connect-labs#1225). Check it here, where it cannot be skipped.
+    dropped = pool_paths_missing_from_clone(manifest, fixtures.get("user_visits") or [])
+    if dropped:
+        logger.warning(
+            "clone(source=%s -> opp=%s): %d path(s) in the transplant pool reached NO "
+            "generated visit — the clone is missing data the source records: %s",
+            source,
+            opp_id,
+            len(dropped),
+            ", ".join(dropped[:12]) + (" ..." if len(dropped) > 12 else ""),
+        )
+
     upload = upload_fixtures(drive=drive, opportunity_id=opp_id, fixtures=fixtures)
 
     row = register_labs_only_opp(
@@ -283,6 +303,7 @@ def _generate_one(
         record_counts=upload.record_counts,
         app_structure_present=bool(fixtures.get("app_structure")),
         skipped=False,
+        dropped_pool_paths=dropped,
     )
 
 
