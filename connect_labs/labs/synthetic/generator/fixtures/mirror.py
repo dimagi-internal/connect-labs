@@ -273,6 +273,12 @@ def profile_entity_structure(
             cats = _categorical_leaves(fj, categorical_paths)
             if cats:  # omitted when none requested/found, so legacy pools are unchanged
                 visit_entry["cats"] = cats
+            # The form's name is an app label, not data about anyone, and without it a
+            # clone cannot reproduce a source's form MIX — so any pipeline that filters
+            # or branches on form.@name is untestable against synthetic data.
+            fname = _extract_nested(fj, "form.@name")
+            if isinstance(fname, str) and fname:
+                visit_entry["form"] = fname
             series_visits.append(visit_entry)
         transplant_pool.append({"owner": entity_owner[eid], "start_date": first.isoformat(), "visits": series_visits})
 

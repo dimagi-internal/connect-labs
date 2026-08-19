@@ -143,6 +143,7 @@ def plan_mirror_visits(spec: LongitudinalSpec, *, seed: int) -> list[PlannedVisi
         start = dt.date.fromisoformat(series["start_date"])
         series_visits = series["visits"]
         ranges = _series_ranges(series_visits)
+        series_form_names = [v["form"] for v in series_visits if v.get("form")]
         const_values, const_dates, const_cats = _series_constants(series_visits, time_varying)
         for vj, visit in enumerate(sorted(series_visits, key=lambda v: v["day"]), start=1):
             vdate = start + dt.timedelta(days=int(visit["day"]))
@@ -175,5 +176,17 @@ def plan_mirror_visits(spec: LongitudinalSpec, *, seed: int) -> list[PlannedVisi
                 forced[path] = (start + dt.timedelta(days=int(coff))).isoformat()
             for path, cval in const_cats.items():
                 forced[path] = cval
+            # Structural fidelity. Clones carried no case block and no form name at
+            # all — form.@name, form.case.@case_id and form.subcase_0.case.@case_id
+            # were null on every synthetic row. That makes a whole class of pipeline
+            # logic untestable on synthetic data, and it is the reason every
+            # entity-join defect this cohort hit had to be found against production
+            # (connect-labs#1224). Emit the same shape the source has:
+            #   form.case.@case_id      the beneficiary, stable across its series
+            #   form.subcase_0...       a per-visit case, distinct every visit
+            if series_form_names:
+                forced["form.@name"] = visit.get("form") or series_form_names[0]
+            forced["form.case.@case_id"] = entity_id
+            forced["form.subcase_0.case.@case_id"] = str(uuid.UUID(int=rng.getrandbits(128)))
             planned.append(PlannedVisit(entity_id, entity_name, idx, owner, vdate, vj, forced))
     return planned

@@ -386,3 +386,26 @@ def test_a_categorical_recorded_once_and_never_contradicted_is_a_constant():
     visits = [{"day": 0, "cats": {"form.sex": "f"}}, {"day": 7, "values": {"form.w": 1000.0}}]
     _, _, const_cats = _series_constants(visits, set())
     assert const_cats["form.sex"] == "f"
+
+
+def test_pool_carries_the_form_name():
+    """Without it a clone cannot reproduce the source's form mix."""
+    visits = [
+        {
+            "entity_id": "b1",
+            "username": "flwA",
+            "visit_date": "2026-01-01",
+            "form_json": {"form": {"@name": "Child Registration Form", "w": 1000}},
+        },
+        {
+            "entity_id": "b1",
+            "username": "flwA",
+            "visit_date": "2026-01-08",
+            "form_json": {"form": {"@name": "Record Visit Details", "w": 1100}},
+        },
+    ]
+
+    struct = profile_entity_structure(visits, numeric_paths={"form.w"})
+
+    names = [v.get("form") for v in struct.transplant_pool[0]["visits"]]
+    assert names == ["Child Registration Form", "Record Visit Details"]
