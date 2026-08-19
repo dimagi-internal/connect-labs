@@ -188,3 +188,46 @@ def _tvd(target: dict, observed: list[str]) -> float:
         obs[x] = obs.get(x, 0) + 1 / obs_total
     keys = set(tgt) | set(obs)
     return 0.5 * sum(abs(tgt.get(k, 0.0) - obs.get(k, 0.0)) for k in keys)
+
+
+def pool_paths_missing_from_clone(manifest, visits: list[dict]) -> list[str]:
+    """Paths the transplant pool carries that no generated visit contains.
+
+    Offline counterpart to :func:`compare_to_source` — it needs no prod access, so it
+    can run inside generation itself rather than as an after-the-fact audit nobody
+    invokes.
+
+    The pool is the contract: every value in it was observed in the source and was
+    deliberately captured to be replayed. A path present there and absent from every
+    generated visit is a generator defect, not a data characteristic, and it is
+    exactly the failure that made birth weight read 0% on clones of opportunities
+    whose source records it (connect-labs#1225). That was invisible for weeks because
+    a wholly missing field costs nothing in a marginal-comparison fidelity score.
+    """
+    expected: set[str] = set()
+    for cohort in getattr(manifest, "beneficiary_cohorts", None) or []:
+        longitudinal = getattr(cohort, "longitudinal", None)
+        pool = getattr(longitudinal, "transplant_pool", None) or [] if longitudinal else []
+        for series in pool:
+            for visit in series.get("visits") or []:
+                expected.update(visit.get("values") or {})
+                expected.update(visit.get("dates") or {})
+                expected.update(visit.get("cats") or {})
+    if not expected:
+        return []
+
+    seen: set[str] = set()
+
+    def walk(obj, prefix=""):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                path = f"{prefix}.{k}" if prefix else k
+                if isinstance(v, dict):
+                    walk(v, path)
+                elif v is not None and v != "":
+                    seen.add(path)
+
+    for v in visits:
+        walk(v.get("form_json") or {})
+
+    return sorted(expected - seen)
