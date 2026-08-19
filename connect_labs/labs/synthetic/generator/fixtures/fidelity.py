@@ -9,6 +9,8 @@ vibes."""
 
 from __future__ import annotations
 
+import statistics
+
 import numpy as np
 from scipy.stats import wasserstein_distance
 
@@ -231,3 +233,113 @@ def pool_paths_missing_from_clone(manifest, visits: list[dict]) -> list[str]:
         walk(v.get("form_json") or {})
 
     return sorted(expected - seen)
+
+
+def _pool_sides(manifest) -> tuple[dict, dict, int]:
+    """Source-side numerics, categoricals and visit count, read from the pool."""
+    nums: dict[str, list[float]] = {}
+    cats: dict[str, dict[str, int]] = {}
+    n_visits = 0
+    for cohort in getattr(manifest, "beneficiary_cohorts", None) or []:
+        longitudinal = getattr(cohort, "longitudinal", None)
+        pool = (getattr(longitudinal, "transplant_pool", None) or []) if longitudinal else []
+        for series in pool:
+            for visit in series.get("visits") or []:
+                n_visits += 1
+                for path, val in (visit.get("values") or {}).items():
+                    try:
+                        nums.setdefault(path, []).append(float(val))
+                    except (TypeError, ValueError):
+                        continue
+                for path, val in (visit.get("cats") or {}).items():
+                    cats.setdefault(path, {}).setdefault(str(val), 0)
+                    cats[path][str(val)] += 1
+    return nums, cats, n_visits
+
+
+def _clone_sides(visits: list[dict]) -> tuple[dict, dict]:
+    nums: dict[str, list[float]] = {}
+    cats: dict[str, dict[str, int]] = {}
+
+    def walk(obj, prefix=""):
+        if not isinstance(obj, dict):
+            return
+        for key, val in obj.items():
+            path = f"{prefix}.{key}" if prefix else key
+            if isinstance(val, dict):
+                walk(val, path)
+            elif val is not None and val != "":
+                try:
+                    nums.setdefault(path, []).append(float(val))
+                except (TypeError, ValueError):
+                    cats.setdefault(path, {}).setdefault(str(val), 0)
+                    cats[path][str(val)] += 1
+
+    for v in visits:
+        walk(v.get("form_json") or {})
+    return nums, cats
+
+
+def pool_vs_clone_parity(manifest, visits: list[dict], *, top_n: int = 12) -> dict:
+    """Score generated fixtures against the transplant pool, offline.
+
+    The pool is a de-identified capture of the source, so this is a real
+    source-vs-clone comparison that needs no prod access — which is what lets it run
+    inside generation instead of as an audit somebody has to remember to invoke.
+
+    Reports, per field, whether the clone reproduces the source's DISTRIBUTION, not
+    merely whether the field is present:
+
+    - numerics: normalized median gap, plus the share of clone values falling outside
+      the source's observed range (invented extremes)
+    - categoricals: total-variation distance between the value mixes
+
+    Presence alone is not parity. Birth weight came back at 87% coverage against a
+    real 52%, with a p90 of 5798g against a real 1900g, and read as "fixed" because
+    it was no longer missing (connect-labs#1225).
+    """
+    rnum, rcat, _ = _pool_sides(manifest)
+    cnum, ccat = _clone_sides(visits)
+    if not rnum and not rcat:
+        return {"scored": False, "reason": "no transplant pool in manifest"}
+
+    numeric: list[dict] = []
+    for path, rvals in rnum.items():
+        cvals = cnum.get(path) or []
+        if not rvals:
+            continue
+        rmed = statistics.median(rvals)
+        if not cvals:
+            numeric.append({"path": path, "status": "missing", "median_gap": 1.0})
+            continue
+        cmed = statistics.median(cvals)
+        gap = abs(cmed - rmed) / abs(rmed) if rmed else (0.0 if cmed == 0 else 1.0)
+        lo, hi = min(rvals), max(rvals)
+        oor = sum(1 for x in cvals if x < lo or x > hi) / len(cvals)
+        numeric.append({"path": path, "median_gap": round(gap, 4), "out_of_range_rate": round(oor, 4)})
+
+    categorical: list[dict] = []
+    for path, rdist in rcat.items():
+        cdist = ccat.get(path) or {}
+        rtot = sum(rdist.values())
+        if not cdist:
+            categorical.append({"path": path, "status": "missing", "tvd": 1.0})
+            continue
+        ctot = sum(cdist.values())
+        tvd = 0.5 * sum(abs(rdist.get(k, 0) / rtot - cdist.get(k, 0) / ctot) for k in set(rdist) | set(cdist))
+        categorical.append({"path": path, "tvd": round(tvd, 4)})
+
+    gaps = [f["median_gap"] for f in numeric] + [f["tvd"] for f in categorical]
+    score = round(max(0.0, 1.0 - (sum(gaps) / len(gaps))), 4) if gaps else None
+    worst = sorted(
+        numeric + categorical,
+        key=lambda f: f.get("median_gap", f.get("tvd", 0.0)),
+        reverse=True,
+    )[:top_n]
+    return {
+        "scored": True,
+        "score": score,
+        "numeric_fields": len(numeric),
+        "categorical_fields": len(categorical),
+        "worst": worst,
+    }

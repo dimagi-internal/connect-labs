@@ -1505,6 +1505,7 @@ def synthetic_generate_opp(
         "app_structure_present": result.app_structure_present,
         "skipped": result.skipped,
         "dropped_pool_paths": list(getattr(result, "dropped_pool_paths", []) or []),
+        "parity": getattr(result, "parity", {}) or {},
     }
 
 
@@ -1564,6 +1565,7 @@ def synthetic_generate_opps_bulk(
                 "skipped": r.skipped,
                 # Non-empty means the clone is missing data its source records.
                 "dropped_pool_paths": list(getattr(r, "dropped_pool_paths", []) or []),
+                "parity": getattr(r, "parity", {}) or {},
             }
             for r in results
         ],
@@ -1710,6 +1712,7 @@ def synthetic_clone_generate(user, *, spec_yaml: str, fresh: bool = False, progr
                 "skipped": r.skipped,
                 # Non-empty means the clone is missing data its source records.
                 "dropped_pool_paths": list(getattr(r, "dropped_pool_paths", []) or []),
+                "parity": getattr(r, "parity", {}) or {},
             }
             for r in results
         ],
