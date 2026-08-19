@@ -304,3 +304,64 @@ def test_pool_paths_missing_from_clone_is_quiet_when_everything_arrives():
         ]
     )
     assert pool_paths_missing_from_clone(manifest, [{"form_json": {"form": {"w": 1000}}}]) == []
+
+
+def _mani(pool):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(beneficiary_cohorts=[SimpleNamespace(longitudinal=SimpleNamespace(transplant_pool=pool))])
+
+
+def test_parity_catches_a_field_that_is_present_but_wrongly_distributed():
+    """Presence is not parity.
+
+    Birth weight came back at 87% coverage against a real 52%, with a p90 of 5798g
+    against a real 1900g, and read as "fixed" purely because it was no longer
+    missing. Regression for connect-labs#1225.
+    """
+    from connect_labs.labs.synthetic.generator.fixtures.fidelity import pool_vs_clone_parity
+
+    pool = [{"visits": [{"day": 0, "values": {"form.bw": float(w)}}]} for w in (1000, 1200, 1400, 1600)]
+    # every value present, but centred far from the source and outside its range
+    clone = [{"form_json": {"form": {"bw": w}}} for w in (4000, 4500, 5000, 5798)]
+
+    report = pool_vs_clone_parity(_mani(pool), clone)
+
+    assert report["scored"] is True
+    worst = report["worst"][0]
+    assert worst["path"] == "form.bw"
+    assert worst["median_gap"] > 1.0
+    assert worst["out_of_range_rate"] == 1.0
+    assert report["score"] < 0.5
+
+
+def test_parity_scores_a_faithful_clone_near_one():
+    from connect_labs.labs.synthetic.generator.fixtures.fidelity import pool_vs_clone_parity
+
+    pool = [
+        {"visits": [{"day": 0, "values": {"form.bw": float(w)}, "cats": {"form.alive": a}}]}
+        for w, a in ((1000, "yes"), (1200, "yes"), (1400, "yes"), (1600, "no"))
+    ]
+    clone = [
+        {"form_json": {"form": {"bw": w, "alive": a}}}
+        for w, a in ((1000, "yes"), (1200, "yes"), (1400, "yes"), (1600, "no"))
+    ]
+
+    report = pool_vs_clone_parity(_mani(pool), clone)
+
+    assert report["score"] > 0.95
+    assert report["categorical_fields"] == 1
+
+
+def test_parity_flags_an_outcome_mix_that_drifted():
+    """A categorical present everywhere but with the wrong mix must not score clean."""
+    from connect_labs.labs.synthetic.generator.fixtures.fidelity import pool_vs_clone_parity
+
+    pool = [{"visits": [{"day": 0, "cats": {"form.alive": a}}]} for a in ["yes"] * 9 + ["no"]]
+    clone = [{"form_json": {"form": {"alive": a}}} for a in ["yes"] * 5 + ["no"] * 5]
+
+    report = pool_vs_clone_parity(_mani(pool), clone)
+
+    worst = report["worst"][0]
+    assert worst["path"] == "form.alive"
+    assert worst["tvd"] > 0.3
