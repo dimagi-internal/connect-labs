@@ -42,6 +42,15 @@ def profile_opp_to_bundle(
     Raises:
         ValueError: if the opportunity has no user_visits (cannot profile).
     """
+    if curate and mirror:
+        logger.warning(
+            "profile_opp_to_bundle(opp=%s): curate=True with mirror=True. These pull in "
+            "opposite directions — mirror replays the source, curate INVENTS signal "
+            "(floors flag rates, gives degenerate categoricals minority mass). On the KMC "
+            "cohort that combination fabricated deaths and put mortality at 26%% against a "
+            "real ~6%%. Use curate=False for anything that will be compared to real results.",
+            source_opp_id,
+        )
     detail = _fetch_endpoint(base_url, source_opp_id, "", oauth_token)
     user_visits = _fetch_endpoint(base_url, source_opp_id, "user_visits", oauth_token)
     user_data = _fetch_endpoint(base_url, source_opp_id, "user_data", oauth_token)

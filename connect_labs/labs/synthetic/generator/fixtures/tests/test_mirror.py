@@ -188,7 +188,7 @@ def test_single_reading_of_a_time_varying_measure_is_not_stamped_across_the_seri
         {"day": 14, "values": {BW: 1450.0}},
         {"day": 28, "values": {BW: 1450.0}},
     ]
-    const_values, _ = _series_constants(single, tv)
+    const_values, _, _ = _series_constants(single, tv)
     assert W not in const_values, "a lone weight reading must not become a per-child constant"
     assert const_values.get(BW) == 1450.0, "#734's birth-weight anchor must still hold"
 
@@ -316,3 +316,73 @@ def test_falls_back_to_entity_id_when_the_case_id_is_itself_per_visit():
 
     assert len(struct.transplant_pool) == 2, "should group by entity_id, not per-visit case"
     assert struct.visits_per_entity == {4: 2}
+
+
+def test_outcomes_are_transplanted_per_case_not_redrawn_from_marginals():
+    """The pool must carry categorical answers, not just numbers.
+
+    It was numeric-only — 149,531 values on the KMC cohort, every one a float — so
+    child_alive, kmc_status, feeding and the danger-sign/referral yes/nos were
+    re-drawn from marginals per visit. A clone then matched the source's death RATE
+    while dying in the wrong babies, which makes every cross-cutting question
+    ("do slow-growing babies die more?") noise. Regression for connect-labs#1225.
+    """
+    visits = [
+        {
+            "entity_id": "b1",
+            "username": "flwA",
+            "visit_date": "2026-01-01",
+            "form_json": {"form": {"w": 1000, "child_alive": "yes"}},
+        },
+        {
+            "entity_id": "b1",
+            "username": "flwA",
+            "visit_date": "2026-01-08",
+            "form_json": {"form": {"w": 900, "child_alive": "no"}},
+        },
+        {
+            "entity_id": "b2",
+            "username": "flwA",
+            "visit_date": "2026-01-01",
+            "form_json": {"form": {"w": 1200, "child_alive": "yes"}},
+        },
+        {
+            "entity_id": "b2",
+            "username": "flwA",
+            "visit_date": "2026-01-08",
+            "form_json": {"form": {"w": 1400, "child_alive": "yes"}},
+        },
+    ]
+
+    struct = profile_entity_structure(visits, numeric_paths={"form.w"}, categorical_paths={"form.child_alive"})
+
+    pools = {tuple(v["cats"]["form.child_alive"] for v in s["visits"]) for s in struct.transplant_pool}
+    # the losing baby's outcome stays attached to the baby that lost weight
+    assert ("yes", "no") in pools
+    assert ("yes", "yes") in pools
+
+
+def test_a_categorical_that_flips_is_never_stamped_back_across_the_series():
+    """child_alive going yes -> no is time-varying and must not become a constant."""
+    from connect_labs.labs.synthetic.generator.fixtures.entities import _series_constants, _time_varying_paths
+
+    pool = [
+        {"visits": [{"day": 0, "cats": {"form.child_alive": "yes"}}, {"day": 7, "cats": {"form.child_alive": "no"}}]}
+        for _ in range(6)
+    ]
+    tv = _time_varying_paths(pool)
+    assert "form.child_alive" in tv
+
+    # a baby seen only once must not have that single reading propagated
+    single = [{"day": 0, "cats": {"form.child_alive": "yes"}}]
+    _, _, const_cats = _series_constants(single, tv)
+    assert "form.child_alive" not in const_cats
+
+
+def test_a_categorical_recorded_once_and_never_contradicted_is_a_constant():
+    """Sex/birth location are answered at registration and hold for the whole series."""
+    from connect_labs.labs.synthetic.generator.fixtures.entities import _series_constants
+
+    visits = [{"day": 0, "cats": {"form.sex": "f"}}, {"day": 7, "values": {"form.w": 1000.0}}]
+    _, _, const_cats = _series_constants(visits, set())
+    assert const_cats["form.sex"] == "f"

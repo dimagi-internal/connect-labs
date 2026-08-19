@@ -90,6 +90,32 @@ def _numeric_leaves(form_json: dict, numeric_paths: set[str] | None) -> dict[str
     return out
 
 
+def _categorical_leaves(form_json: dict, categorical_paths: set[str] | None) -> dict[str, str]:
+    """Categorical answers of a visit, as {dotted_path: value}.
+
+    Only paths the profiler classified as categorical are read, and those are
+    select/multiselect questions — bounded choice lists (yes/no, a status), never
+    free text. So this carries clinical ANSWERS, not identifiers, the same basis on
+    which the pool already carries weights and vitals.
+
+    Without this the pool was numeric-only: 149,531 values on the KMC cohort, every
+    one a float. Every outcome — child_alive, kmc_status, feeding, the danger-sign
+    and referral yes/nos — was therefore re-drawn from marginals per visit instead
+    of replayed, so a clone matched the source's death RATE while dying in the wrong
+    babies. Cohort totals looked right and every cross-cutting question ("do
+    slow-growing babies die more?", "which FLWs have worse outcomes?") was noise.
+    """
+    out: dict[str, str] = {}
+    if not categorical_paths:
+        return out
+    for path in categorical_paths:
+        raw = _extract_nested(form_json, path)
+        if raw is None or raw == "":
+            continue
+        out[path] = str(raw)
+    return out
+
+
 def _date_offsets(form_json: dict, date_paths: set[str] | None, first: dt.date) -> dict[str, int]:
     """Declared date leaves as integer day-offsets from this entity's first visit.
 
@@ -198,7 +224,11 @@ def build_entity_resolver(visits: list[dict]):
 
 
 def profile_entity_structure(
-    visits: list[dict], *, numeric_paths: set[str] | None = None, date_paths: set[str] | None = None
+    visits: list[dict],
+    *,
+    numeric_paths: set[str] | None = None,
+    date_paths: set[str] | None = None,
+    categorical_paths: set[str] | None = None,
 ) -> EntityStructure:
     # visits per (entity, flw) so we can both count an entity's visits and find
     # the FLW who did the most of them.
@@ -240,6 +270,9 @@ def profile_entity_structure(
             dates = _date_offsets(fj, date_paths, first)
             if dates:  # omit the key entirely when no dates requested/found (legacy shape)
                 visit_entry["dates"] = dates
+            cats = _categorical_leaves(fj, categorical_paths)
+            if cats:  # omitted when none requested/found, so legacy pools are unchanged
+                visit_entry["cats"] = cats
             series_visits.append(visit_entry)
         transplant_pool.append({"owner": entity_owner[eid], "start_date": first.isoformat(), "visits": series_visits})
 

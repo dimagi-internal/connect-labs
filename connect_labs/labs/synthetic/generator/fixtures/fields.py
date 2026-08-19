@@ -233,6 +233,11 @@ def _format_forced(value: Any, kind: str | None) -> Any:
     ``child_dob`` stays a real date, not a float)."""
     if kind == "date":
         return value
+    if kind in {"select", "multiselect"}:
+        # A transplanted categorical passes through verbatim. Rounding it would turn a
+        # yes/no coded as "1" into 1.0, which then fails every equality filter the
+        # analysis layer builds on it (filter_value "1", "yes").
+        return value
     if kind == "int":
         return int(round(float(value)))
     try:
