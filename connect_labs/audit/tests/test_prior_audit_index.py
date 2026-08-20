@@ -6,12 +6,32 @@ from connect_labs.audit.data_access import AuditDataAccess, build_prior_audit_in
 from connect_labs.audit.models import AuditSessionRecord
 
 
-def _session(id, status, visit_results, completed_at=None, title=""):
-    data = {"status": status, "visit_results": visit_results, "title": title}
+def _session(id, status, visit_results, completed_at=None, title="", opportunity_id=1973):
+    """Build an AuditSessionRecord.
+
+    ``opportunity_id`` goes in BOTH places on purpose. The envelope key is the
+    base class's storage field (where the record is filed); the one the
+    ``AuditSessionRecord.opportunity_id`` property actually returns is
+    ``data["opportunity_id"]`` -- what the audit is ABOUT. Anything filtering on
+    ``record.opportunity_id`` reads the latter, so a fixture that sets only the
+    envelope key silently presents as ``opportunity_id is None``.
+    """
+    data = {
+        "status": status,
+        "visit_results": visit_results,
+        "title": title,
+        "opportunity_id": opportunity_id,
+    }
     if completed_at:
         data["completed_at"] = completed_at
     return AuditSessionRecord(
-        {"id": id, "experiment": "audit", "type": "AuditSession", "opportunity_id": 1973, "data": data}
+        {
+            "id": id,
+            "experiment": "audit",
+            "type": "AuditSession",
+            "opportunity_id": opportunity_id,
+            "data": data,
+        }
     )
 
 
@@ -84,18 +104,12 @@ class TestPriorAuditIndexFetchesOnlyCompleted:
 
     def test_still_scopes_to_the_requested_opportunity(self):
         mine = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at="2026-05-01T00:00:00Z")
-        other = AuditSessionRecord(
-            {
-                "id": 2,
-                "experiment": "audit",
-                "type": "AuditSession",
-                "opportunity_id": 9999,
-                "data": {
-                    "status": "completed",
-                    "completed_at": "2026-05-02T00:00:00Z",
-                    "visit_results": {"222": _vr(b9="fail")},
-                },
-            }
+        other = _session(
+            2,
+            "completed",
+            {"222": _vr(b9="fail")},
+            completed_at="2026-05-02T00:00:00Z",
+            opportunity_id=9999,
         )
         with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[mine, other]):
             index = self._da().get_prior_audited_images(opportunity_id=1973)
