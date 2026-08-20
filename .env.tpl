@@ -1,3 +1,11 @@
+# Local dev config. Generate the real .env with:
+#     op inject -i .env.tpl -o .env
+#
+# WARNING: op inject resolves secret references ANYWHERE in this file, including
+# inside comments, and ONE unresolvable reference aborts the entire injection --
+# no .env is written and the only clue is a terse "invalid secret reference".
+# So never write a bare reference in prose here; name the vault and item in words.
+
 DATABASE_URL={{ op://Employee/Connect Labs .env/DATABASE_URL }}
 CELERY_BROKER_URL={{ op://Employee/Connect Labs .env/CELERY_BROKER_URL }}
 REDIS_URL={{ op://Employee/Connect Labs .env/REDIS_URL }}
@@ -53,10 +61,13 @@ SUPERSET_PASSWORD={{ op://Employee/Connect Labs .env/SUPERSET_PASSWORD }}
 # Google Drive service account (connect-labs-sa) for synthetic-opp fixtures — DriveClient
 # uses it to read profile bundles and upload generated fixtures during the two-phase clone.
 # Lives in the AI-Agents vault item "connect-labs GCP service account key (connect-labs-sa)".
-# Referenced by item ID, NOT title: the title's parentheses are illegal in an op:// secret
-# reference, so a title-based ref (op read / op inject) fails to resolve. This field is the
-# minified single-line JSON (op-inject-friendly); DriveClient json.loads it, or accepts a
-# file path. Also mirrored in AWS Secrets Manager (labs-jj-synthetic-gdrive-sa-key) for the
+# Referenced by item ID, NOT title: the title's parentheses are illegal in a 1Password
+# secret reference, so a title-based ref (op read / op inject) fails to resolve.
+# NB: do not write a bare "op:" + "//" scheme in these comments -- op inject resolves
+# such references ANYWHERE in the file, comments included, and an unresolvable one
+# aborts the whole injection (see the header note).
+# This field is the minified single-line JSON (op-inject-friendly); DriveClient
+# json.loads it, or accepts a file path. Also mirrored in AWS Secrets Manager (labs-jj-synthetic-gdrive-sa-key) for the
 # deployed labs environment.
 LABS_SYNTHETIC_GDRIVE_SA_KEY={{ op://AI-Agents/swvkqixqoyprbtleply2p4hnta/LABS_SYNTHETIC_GDRIVE_SA_KEY }}
 
