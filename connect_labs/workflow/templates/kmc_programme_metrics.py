@@ -311,6 +311,41 @@ WEIGHT_SERIES_SCHEMA = {
     "terminal_stage": "visit_level",
 }
 
+# ---------------------------------------------------------------------------
+# Saved runs
+# ---------------------------------------------------------------------------
+# pipelines is EMPTY on purpose. This cohort's two pipelines are 8,656 case rows +
+# 34,737 visit rows = 21.6 MB of JSON — four times the framework's 5 MB hard cap, and
+# WORKFLOW_REFERENCE is explicit that verbatim pipeline capture is the failure mode
+# that OOM-killed a web worker on a 102k-visit opp. The render instead computes the
+# aggregates it displays and freezes THOSE into `frozen` (~300 KB) in the
+# onUpdateState write that precedes view.complete().
+#
+# That is also the right thing to preserve: a published figure should be the numbers
+# as published, not a re-derivation that silently moves when the pipeline or the
+# clone behind it changes.
+SNAPSHOT_INPUTS = {
+    "pipelines": [],
+    "workers": False,
+    "state_keys": ["frozen"],
+}
+
+SNAPSHOT_SCHEMA = {
+    "version": 1,
+    "keys": {
+        "state.frozen.programInd": "Programme-wide indicator results (C01-C31) at freeze time",
+        "state.frozen.byLLO": "Per-LLO indicator results, with each LLO's opportunities nested",
+        "state.frozen.byOpp": "Per-opportunity indicator results",
+        "state.frozen.byFLW": "Per-FLW indicator results, keyed (opportunity, username)",
+        "state.frozen.monthly": "Programme monthly trend series",
+        "state.frozen.monthlyByScope": (
+            "Monthly series precomputed per drill scope (all / llo:<name> / opp:<id>) so a "
+            "frozen run still supports the LLO and opportunity drill without live pipelines"
+        ),
+        "state.frozen.meta": "Cohort size at freeze: cases, visits, opportunities, llos",
+    },
+}
+
 DEFINITION = {
     "name": "KMC Programme Metrics (Layer 2 + rollups)",
     "description": (
@@ -332,6 +367,7 @@ DEFINITION = {
         "templateType": "kmc_programme_metrics",
     },
     "pipeline_sources": [],
+    "snapshot_inputs": SNAPSHOT_INPUTS,
 }
 
 TEMPLATE = {
@@ -341,6 +377,9 @@ TEMPLATE = {
     "icon": "fa-chart-line",
     "color": "indigo",
     "multi_opp": True,
+    "supports_saved_runs": True,
+    "snapshot_inputs": SNAPSHOT_INPUTS,
+    "snapshot_schema": SNAPSHOT_SCHEMA,
     "definition": DEFINITION,
     "render_code": _RENDER,
     "pipeline_schemas": [
