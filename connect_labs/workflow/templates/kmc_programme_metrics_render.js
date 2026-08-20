@@ -33,6 +33,18 @@ function WorkflowUI({
     complete: null,
   };
 
+  // ── Saved runs ────────────────────────────────────────────────────────────
+  // A completed run reads FROZEN AGGREGATES, never raw rows. This cohort's two
+  // pipelines are 8,656 case rows + 34,737 visit rows = 21.6 MB of JSON, four times
+  // the framework's 5 MB snapshot cap — and WORKFLOW_REFERENCE is explicit that
+  // verbatim capture is the failure mode that OOM-killed a web worker on a 102k-visit
+  // opp. So the render computes what it displays and freezes THAT (~300 KB), which is
+  // also the thing a reader actually wants preserved: the numbers as published.
+  var frozen =
+    view && view.isCompleted && view.state && view.state.frozen
+      ? view.state.frozen
+      : null;
+
   var LLO_OF = {
     524: 'PIPN',
     874: 'PIPN',
@@ -539,6 +551,7 @@ function WorkflowUI({
           gender: c.gender,
           num_visits: c.total_visits || 0,
           first_visit: c.first_visit_date,
+          visit_dates: c.visit_dates || [],
           last_visit: c.last_visit_date,
           birth_weight_g: c.birth_weight_g,
           enrollment_weight_g: c.enrollment_weight_g,
@@ -550,7 +563,27 @@ function WorkflowUI({
         };
 
         // Case properties (workbook Layer 2)
-        d.started = d.num_visits >= 1; // >=1 visit (CHANGED from 2)
+        // REGISTERED = the registration form exists for this baby.
+        // STARTED     = at least one follow-up visit happened after registration.
+        // Defining started as ">=1 visit" made C01/C02/C05 mathematically identical:
+        // every case is in this table BECAUSE it has a visit, so 'started' was
+        // always true and two of the three scale indicators carried no information.
+        // Registration forms only began joining the case row once the entity key was
+        // fixed, so this distinction is newly computable.
+        var formNames = c.form_names || [];
+        var isReg = function (n) {
+          return /regist/i.test(String(n || ''));
+        };
+        d.n_reg_forms = formNames.filter(isReg).length;
+        d.n_followups = formNames.filter(function (n) {
+          return !isReg(n);
+        }).length;
+        // Apps whose export carries no form name at all fall back to the old rule
+        // rather than reporting every baby as unregistered.
+        d.registered = formNames.length
+          ? d.n_reg_forms >= 1
+          : d.num_visits >= 1;
+        d.started = formNames.length ? d.n_followups >= 1 : d.num_visits >= 1;
         var fv = pd(d.first_visit);
         d.days_since_first_visit = fv ? Math.floor((now - fv) / DAY) : null;
         d.eligible = !!(d.started && fv && d.days_since_first_visit >= ELIG); // 28d from FIRST VISIT
@@ -650,8 +683,8 @@ function WorkflowUI({
       den: function () {
         return true;
       },
-      num: function () {
-        return true;
+      num: function (r) {
+        return r.registered;
       },
       kind: 'count',
     },
@@ -678,8 +711,11 @@ function WorkflowUI({
       den: function () {
         return true;
       },
-      num: function (r) {
-        return r.started;
+      // Reached = any contact at all, which is every case in this table. Distinct from
+      // C01 (a registration form exists) and C02 (a follow-up happened); it was a copy
+      // of C02, so two of the three scale numbers said the same thing.
+      num: function () {
+        return true;
       },
       kind: 'count',
     },
@@ -876,11 +912,16 @@ function WorkflowUI({
     {
       id: 'C19',
       cat: 'Performance',
-      name: '% referred for danger signs',
+      // Denominator is babies WITH a danger sign, not all eligible babies. Against
+      // all-eligible this read 30.7% while danger-sign incidence (C20) read 7.0% —
+      // i.e. more babies referred for danger signs than had one, which cannot happen.
+      // `referred` counts referrals for any reason, so the fix is the denominator:
+      // of the babies who had a danger sign, how many were referred.
+      name: '% of danger-sign cases referred',
       prom: 'Top',
       unit: '%',
       den: function (r) {
-        return r.eligible;
+        return r.eligible && r.ever_danger_sign;
       },
       num: function (r) {
         return r.referred;
@@ -940,8 +981,10 @@ function WorkflowUI({
       prom: 'Lower',
       unit: 'n',
       flw: true,
+      // Says "per started case", so it must use started — it was using `eligible`,
+      // which is why it differed from C06 only by the 28-day eligibility filter.
       den: function (r) {
-        return r.eligible;
+        return r.started;
       },
       mean: function (r) {
         return r.num_visits;
@@ -1125,7 +1168,16 @@ function WorkflowUI({
         return;
       }
       if (!credibleFor(i.id, llo === undefined ? null : llo)) {
-        m[i.id] = { id: i.id, n: 0, value: null, band: 'notcredible' };
+        // Still compute it, but mark it. A blank cell reads as "no data", which is
+        // wrong and actively confusing — these LLOs DO record deaths, the workbook
+        // just says not credibly. Showing the figure greyed with the caveat lets a
+        // reader see both the number and why it is not to be trusted, and makes the
+        // under-recording visible: pooling every LLO gives 5.0% against 6.0% for the
+        // credible recorders alone, because non-recorders add denominator without
+        // deaths (GHI 1.3%, NAMA 2.1% vs PIPN 6.3%).
+        var ne = evaluate(i, rows);
+        ne.band = 'notcredible';
+        m[i.id] = ne;
         return;
       }
       m[i.id] = evaluate(i, rows);
@@ -1136,6 +1188,7 @@ function WorkflowUI({
   // ── Roll up: opp → LLO → program ─────────────────────────────────────────
   var byOpp = React.useMemo(
     function () {
+      if (frozen) return frozen.byOpp || [];
       var g = {};
       derived.forEach(function (r) {
         (g[r.opp] = g[r.opp] || []).push(r);
@@ -1150,11 +1203,12 @@ function WorkflowUI({
         };
       });
     },
-    [derived],
+    [derived, frozen],
   );
 
   var byLLO = React.useMemo(
     function () {
+      if (frozen) return frozen.byLLO || [];
       var g = {};
       derived.forEach(function (r) {
         (g[r.llo] = g[r.llo] || []).push(r);
@@ -1183,7 +1237,7 @@ function WorkflowUI({
           };
         });
     },
-    [derived, byOpp],
+    [derived, byOpp, frozen],
   );
 
   // FLW rollup. Keyed by opp+username: FLW usernames are only unique within an
@@ -1191,6 +1245,7 @@ function WorkflowUI({
   // username alone silently merges different people into one row.
   var byFLW = React.useMemo(
     function () {
+      if (frozen) return frozen.byFLW || [];
       var g = {};
       derived.forEach(function (r) {
         var k = r.opp + '\u0000' + (r.flw || '(unassigned)');
@@ -1224,19 +1279,47 @@ function WorkflowUI({
           return b.rows.length - a.rows.length;
         });
     },
-    [derived],
+    [derived, frozen],
   );
 
   var programInd = React.useMemo(
     function () {
+      if (frozen) return frozen.programInd || {};
       return evalAll(derived);
     },
-    [derived],
+    [derived, frozen],
   );
-  var llosRed = byLLO.filter(function (l) {
-    return l.reds > 0;
-  }).length;
 
+  // Programme mortality, restricted to the LLOs the workbook accepts as credible
+  // recorders of death. The card pooled every LLO while the table below it showed
+  // "recording not credible" for four of six — so the headline number was built on
+  // exactly the data the same dashboard declined to show, and it read LOWER than
+  // reality because non-recorders contribute denominator without deaths.
+  var mortalityCredible = React.useMemo(
+    function () {
+      var rows = derived.filter(function (r) {
+        return MORTALITY_CREDIBLE[r.llo];
+      });
+      var llos = Object.keys(MORTALITY_CREDIBLE).filter(function (l) {
+        return byLLO.some(function (x) {
+          return x.llo === l;
+        });
+      });
+      return {
+        ind: rows.length
+          ? evaluate(
+              IND.filter(function (i) {
+                return i.id === 'C14';
+              })[0],
+              rows,
+            )
+          : null,
+        llos: llos,
+        of: byLLO.length,
+      };
+    },
+    [derived, byLLO],
+  );
   // ── UI ───────────────────────────────────────────────────────────────────
   var s1 = React.useState(null);
   var selLLO = s1[0],
@@ -1247,9 +1330,173 @@ function WorkflowUI({
   var s3 = React.useState(null);
   var selInd = s3[0],
     setSelInd = s3[1];
+  var s5 = React.useState('indicators');
+  var tab = s5[0],
+    setTab = s5[1];
   var s4 = React.useState(null);
   var selFLW = s4[0],
     setSelFLW = s4[1];
+
+  // ── Monthly trend ─────────────────────────────────────────────────────────
+  // Cohort entry is anchored on the FIRST VISIT, not reg_date: every KMC app asks
+  // for reg_date and not one has ever recorded a value, so C03 was listed as
+  // not-computable. First visit is the honest proxy and is present on every case.
+  // Each month's indicators are computed over the cases that ENTERED that month,
+  // so a month's growth/weight figures describe that intake cohort rather than
+  // everyone alive at the time.
+  // Scoped monthly series as a plain function, so the freeze step can precompute
+  // every drill scope rather than only the one currently on screen.
+  function monthlyFor(lloArg, oppArg, flwArg) {
+    var m = function (d) {
+      return String(d || '').slice(0, 7);
+    };
+    var flwKey = flwArg ? String(flwArg).split('\u0000') : null;
+    var ok = function (oppId, llo, flw) {
+      if (flwKey) return oppId === Number(flwKey[0]) && flw === flwKey[1];
+      if (oppArg) return oppId === oppArg;
+      if (lloArg) return llo === lloArg;
+      return true;
+    };
+    var byMonth = {},
+      visitsByMonth = {};
+    derived
+      .filter(function (r) {
+        return ok(r.opp, r.llo, r.flw);
+      })
+      .forEach(function (r) {
+        var k = m(r.first_visit);
+        if (k) (byMonth[k] = byMonth[k] || []).push(r);
+      });
+    wrows.forEach(function (v) {
+      if (!ok(v.opportunity_id, lloOf(v.opportunity_id), v.username)) return;
+      var vk = m(v.visit_date);
+      if (vk) visitsByMonth[vk] = (visitsByMonth[vk] || 0) + 1;
+    });
+    var months = Object.keys(byMonth)
+      .concat(Object.keys(visitsByMonth))
+      .filter(function (v, i, a) {
+        return v && a.indexOf(v) === i;
+      })
+      .sort();
+    return months.map(function (k) {
+      var rows = byMonth[k] || [];
+      var ind = rows.length ? evalAll(rows) : {};
+      var credible = rows.filter(function (r) {
+        return MORTALITY_CREDIBLE[r.llo];
+      });
+      return {
+        month: k,
+        started: rows.filter(function (r) {
+          return r.started;
+        }).length,
+        registered: rows.filter(function (r) {
+          return r.registered;
+        }).length,
+        visits: visitsByMonth[k] || 0,
+        c09: ind['C09'],
+        c13: ind['C13'],
+        c15: ind['C15'],
+        mortality: credible.length
+          ? evaluate(
+              IND.filter(function (i) {
+                return i.id === 'C14';
+              })[0],
+              credible,
+            )
+          : null,
+      };
+    });
+  }
+
+  var monthly = React.useMemo(
+    function () {
+      if (frozen) {
+        var all = frozen.monthly || [];
+        // The frozen series is stored per scope key so a drill still works offline.
+        var key = selFLW
+          ? 'flw:' + selFLW
+          : selOpp
+          ? 'opp:' + selOpp
+          : selLLO
+          ? 'llo:' + selLLO
+          : 'all';
+        return (frozen.monthlyByScope && frozen.monthlyByScope[key]) || all;
+      }
+      var m = function (d) {
+        return String(d || '').slice(0, 7);
+      };
+      // The trend follows the drill: pick an LLO or an opportunity on the
+      // Indicators tab and this shows that scope, not the whole programme.
+      var flwKey = selFLW ? String(selFLW).split('\u0000') : null;
+      var inScope = function (oppId, llo, flw) {
+        // FLW is the deepest level, so it wins when set. Its key is opp+username
+        // because usernames only repeat across opportunities.
+        if (flwKey) return oppId === Number(flwKey[0]) && flw === flwKey[1];
+        if (selOpp) return oppId === selOpp;
+        if (selLLO) return llo === selLLO;
+        return true;
+      };
+      var byMonth = {};
+      var visitsByMonth = {};
+      derived
+        .filter(function (r) {
+          return inScope(r.opp, r.llo, r.flw);
+        })
+        .forEach(function (r) {
+          var k = m(r.first_visit);
+          if (k) (byMonth[k] = byMonth[k] || []).push(r);
+        });
+      // Visits per month come from the VISIT pipeline: visit_date is a base column on
+      // the raw visit cache, not a form_json path, so asking the entity stage to list
+      // it extracted nothing and every month showed 0 visits.
+      wrows.forEach(function (v) {
+        if (!inScope(v.opportunity_id, lloOf(v.opportunity_id), v.username))
+          return;
+        var vk = m(v.visit_date);
+        if (vk) visitsByMonth[vk] = (visitsByMonth[vk] || 0) + 1;
+      });
+      var months = Object.keys(byMonth).concat(Object.keys(visitsByMonth));
+      months = months
+        .filter(function (v, i, a) {
+          return v && a.indexOf(v) === i;
+        })
+        .sort();
+      return months.map(function (k) {
+        var rows = byMonth[k] || [];
+        var ind = rows.length ? evalAll(rows) : {};
+        var credible = rows.filter(function (r) {
+          return MORTALITY_CREDIBLE[r.llo];
+        });
+        return {
+          month: k,
+          started: rows.filter(function (r) {
+            return r.started;
+          }).length,
+          registered: rows.filter(function (r) {
+            return r.registered;
+          }).length,
+          visits: visitsByMonth[k] || 0,
+          c09: ind['C09'],
+          c13: ind['C13'],
+          c15: ind['C15'],
+          // same credibility gate as the topline card
+          mortality: credible.length
+            ? evaluate(
+                IND.filter(function (i) {
+                  return i.id === 'C14';
+                })[0],
+                credible,
+              )
+            : null,
+        };
+      });
+    },
+    [derived, wrows, selLLO, selOpp, selFLW, frozen],
+  );
+
+  var llosRed = byLLO.filter(function (l) {
+    return l.reds > 0;
+  }).length;
 
   var BAND_CLS = {
     green: 'bg-green-100 text-green-800',
@@ -1272,7 +1519,7 @@ function WorkflowUI({
   function bandLabel(e) {
     if (e.band === 'notinapp') return 'not in this app';
     if (e.band === 'unrecorded') return 'no value reaches this row';
-    if (e.band === 'notcredible') return 'recording not credible';
+    if (e.band === 'notcredible') return 'shown, not credible';
     if (e.band === 'insufficient') return 'n<' + MIN_DEN;
     if (e.band === 'nodata') return 'no data';
     return e.band;
@@ -1355,161 +1602,502 @@ function WorkflowUI({
   if (selLLO) crumb.push(selLLO);
   if (selOpp) crumb.push(oppLabel(selOpp));
 
-  return (
-    <div className="p-6 space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">KMC Indicators</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          The kmc_metrics_framework registry, evaluated live. Case properties
-          are computed in SQL by the entity pipeline; only the weight series is
-          derived here. Click any row to drill Programme → LLO → opportunity →
-          cases.
-        </p>
-      </div>
+  // ── Trend charts ──────────────────────────────────────────────────────────
+  // Time on the X axis. A month-per-row table is a ledger, not a trend — the shape
+  // of a programme (quality climbing, mortality falling, follow-up tightening) is
+  // only legible as a line.
+  var CHART_W = 720,
+    CHART_H = 150,
+    PAD_L = 44,
+    PAD_R = 14,
+    PAD_T = 12,
+    PAD_B = 26;
 
-      <div className="flex items-center gap-2 text-sm">
-        {crumb.map(function (c, i) {
-          var last = i === crumb.length - 1;
+  function Axis(props) {
+    var months = props.months;
+    var innerW = CHART_W - PAD_L - PAD_R;
+    var step = months.length > 1 ? innerW / (months.length - 1) : 0;
+    // With ~16 months, label every other one so they don't collide.
+    var every = months.length > 10 ? 2 : 1;
+    return (
+      <g>
+        <line
+          x1={PAD_L}
+          y1={CHART_H - PAD_B}
+          x2={CHART_W - PAD_R}
+          y2={CHART_H - PAD_B}
+          stroke="#e5e7eb"
+        />
+        {months.map(function (m, i) {
+          if (i % every !== 0) return null;
           return (
-            <span key={i} className="flex items-center gap-2">
-              <button
-                onClick={function () {
-                  if (i === 0) {
-                    setSelLLO(null);
-                    setSelOpp(null);
-                    setSelInd(null);
-                  }
-                  if (i === 1) {
-                    setSelOpp(null);
-                  }
-                }}
-                className={
-                  last
-                    ? 'font-semibold text-gray-900'
-                    : 'text-indigo-600 hover:underline'
-                }
-              >
-                {c}
-              </button>
-              {!last && <span className="text-gray-300">›</span>}
-            </span>
+            <text
+              key={m}
+              x={PAD_L + i * step}
+              y={CHART_H - PAD_B + 14}
+              fontSize="9"
+              fill="#9ca3af"
+              textAnchor="middle"
+            >
+              {m.slice(2)}
+            </text>
           );
         })}
-      </div>
+      </g>
+    );
+  }
 
-      {!selLLO && (
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <div className="text-xs text-gray-500">
-                LLOs with a red indicator
-              </div>
-              <div className="text-2xl font-semibold mt-1">
-                {llosRed}{' '}
-                <span className="text-base text-gray-400">
-                  of {byLLO.length}
-                </span>
-              </div>
-              <div className="text-xs text-gray-400 mt-1">
-                Program row 8 — the catch-all
-              </div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <div className="text-xs text-gray-500">Total started</div>
-              <div className="text-2xl font-semibold mt-1">
-                {programInd['C02'].value}
-              </div>
-              <div className="text-xs text-gray-400 mt-1">
-                Program row 2 · against 25,000 by Q1-2027
-              </div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <div className="text-xs text-gray-500">
-                % weight data sufficient
-              </div>
-              <div className="text-2xl font-semibold mt-1">
-                {fmt(IND[6], programInd['C09'])}
-              </div>
-              <div className="text-xs text-gray-400 mt-1">
-                Program row 3 · pooled (C09)
-              </div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <div className="text-xs text-gray-500">Mortality</div>
-              <div className="text-2xl font-semibold mt-1">
-                {fmt(IND[11], programInd['C14'])}
-              </div>
-              <div className="text-xs text-gray-400 mt-1">
-                Program row 5 · two-sided (C14)
-              </div>
-            </div>
-          </div>
+  function LineChart(props) {
+    var months = props.months,
+      values = props.values,
+      color = props.color,
+      pct = props.pct,
+      target = props.target;
+    var innerW = CHART_W - PAD_L - PAD_R;
+    var innerH = CHART_H - PAD_T - PAD_B;
+    var step = months.length > 1 ? innerW / (months.length - 1) : 0;
+    var real = values.filter(function (v) {
+      return typeof v === 'number';
+    });
+    if (!real.length) {
+      return (
+        <div className="text-xs text-gray-400 py-8 text-center">
+          no month has enough data to score
+        </div>
+      );
+    }
+    var hi = Math.max.apply(null, real);
+    var lo = Math.min.apply(null, real);
+    if (target !== undefined && target !== null) {
+      hi = Math.max(hi, target);
+      lo = Math.min(lo, target);
+    }
+    if (pct) {
+      lo = 0;
+      hi = Math.max(hi, 0.01);
+    } else {
+      var padv = (hi - lo) * 0.15 || 1;
+      hi = hi + padv;
+      lo = Math.max(0, lo - padv);
+    }
+    var span = hi - lo || 1;
+    function y(v) {
+      return PAD_T + innerH - ((v - lo) / span) * innerH;
+    }
+    function x(i) {
+      return PAD_L + i * step;
+    }
+    // Break the line wherever a month could not be scored, rather than drawing
+    // through the gap and implying data we do not have.
+    var segments = [];
+    var cur = [];
+    values.forEach(function (v, i) {
+      if (typeof v === 'number') cur.push([x(i), y(v)]);
+      else if (cur.length) {
+        segments.push(cur);
+        cur = [];
+      }
+    });
+    if (cur.length) segments.push(cur);
+    var ticks = [lo, lo + span / 2, hi];
+    return (
+      <svg
+        viewBox={'0 0 ' + CHART_W + ' ' + CHART_H}
+        className="w-full"
+        style={{ height: 'auto' }}
+      >
+        {ticks.map(function (t, i) {
+          return (
+            <g key={i}>
+              <line
+                x1={PAD_L}
+                y1={y(t)}
+                x2={CHART_W - PAD_R}
+                y2={y(t)}
+                stroke="#f3f4f6"
+              />
+              <text
+                x={PAD_L - 6}
+                y={y(t) + 3}
+                fontSize="9"
+                fill="#9ca3af"
+                textAnchor="end"
+              >
+                {pct ? Math.round(t * 100) + '%' : Math.round(t * 10) / 10}
+              </text>
+            </g>
+          );
+        })}
+        {target !== undefined && target !== null && (
+          <g>
+            <line
+              x1={PAD_L}
+              y1={y(target)}
+              x2={CHART_W - PAD_R}
+              y2={y(target)}
+              stroke="#94a3b8"
+              strokeDasharray="4 3"
+            />
+            <text
+              x={CHART_W - PAD_R}
+              y={y(target) - 4}
+              fontSize="9"
+              fill="#94a3b8"
+              textAnchor="end"
+            >
+              target
+            </text>
+          </g>
+        )}
+        <Axis months={months} />
+        {segments.map(function (seg, i) {
+          return (
+            <polyline
+              key={i}
+              fill="none"
+              stroke={color}
+              strokeWidth="2"
+              strokeLinejoin="round"
+              points={seg
+                .map(function (p) {
+                  return p[0] + ',' + p[1];
+                })
+                .join(' ')}
+            />
+          );
+        })}
+        {values.map(function (v, i) {
+          if (typeof v !== 'number') return null;
+          return <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill={color} />;
+        })}
+      </svg>
+    );
+  }
 
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-              LLOs{' '}
-              <span className="text-xs font-normal text-gray-400 ml-2">
-                click to drill into an LLO's opportunities
+  function VolumeChart(props) {
+    var months = props.months,
+      started = props.started,
+      visits = props.visits;
+    var innerW = CHART_W - PAD_L - PAD_R;
+    var innerH = CHART_H - PAD_T - PAD_B;
+    var step = months.length ? innerW / months.length : 0;
+    var maxS = Math.max.apply(null, started.concat([1]));
+    var maxV = Math.max.apply(null, visits.concat([1]));
+    return (
+      <svg
+        viewBox={'0 0 ' + CHART_W + ' ' + CHART_H}
+        className="w-full"
+        style={{ height: 'auto' }}
+      >
+        <Axis months={months} />
+        {started.map(function (v, i) {
+          var h = (v / maxS) * innerH;
+          return (
+            <rect
+              key={i}
+              x={PAD_L + i * step + step * 0.2}
+              y={PAD_T + innerH - h}
+              width={step * 0.6}
+              height={h}
+              fill="#6366f1"
+              opacity="0.85"
+            />
+          );
+        })}
+        <polyline
+          fill="none"
+          stroke="#0ea5e9"
+          strokeWidth="2"
+          points={visits
+            .map(function (v, i) {
+              return (
+                PAD_L +
+                i * step +
+                step / 2 +
+                ',' +
+                (PAD_T + innerH - (v / maxV) * innerH)
+              );
+            })
+            .join(' ')}
+        />
+        <text x={PAD_L} y={PAD_T - 2} fontSize="9" fill="#6366f1">
+          bars = babies started (max {maxS})
+        </text>
+        <text
+          x={CHART_W - PAD_R}
+          y={PAD_T - 2}
+          fontSize="9"
+          fill="#0ea5e9"
+          textAnchor="end"
+        >
+          line = visits (max {maxV})
+        </text>
+      </svg>
+    );
+  }
+
+  function TrendView() {
+    if (!monthly.length) {
+      return (
+        <div className="bg-white border border-gray-200 rounded-xl p-6 text-sm text-gray-500">
+          No dated visits to trend.
+        </div>
+      );
+    }
+    var months = monthly.map(function (m) {
+      return m.month;
+    });
+    function series(key) {
+      return monthly.map(function (m) {
+        var e = m[key];
+        // An unscored month (n below the minimum denominator) is a GAP, not a zero.
+        if (!e || e.value === null || e.band === 'insufficient') return null;
+        return e.value;
+      });
+    }
+    var charts = [
+      {
+        id: 'C09',
+        title: 'C09 · % weight data sufficient',
+        note: 'of that month\u2019s intake cohort',
+        values: series('c09'),
+        color: '#0d9488',
+        pct: true,
+        target: 0.6,
+      },
+      {
+        id: 'C14',
+        title: 'C14 · Mortality',
+        note: 'PIPN + EHA only \u2014 the credible recorders',
+        values: series('mortality'),
+        color: '#dc2626',
+        pct: true,
+        target: 0.04,
+      },
+      {
+        id: 'C15',
+        title: 'C15 · Loss to follow-up by day 28',
+        note: 'newest month is right-censored, not a collapse',
+        values: series('c15'),
+        color: '#d97706',
+        pct: true,
+        target: 0.1,
+      },
+      {
+        id: 'C13',
+        title: 'C13 · Mean early growth rate',
+        note: 'g/kg/day \u2014 target 15',
+        values: series('c13'),
+        color: '#4f46e5',
+        pct: false,
+        target: 15,
+      },
+    ];
+    return (
+      <div className="space-y-5">
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="flex items-baseline justify-between gap-4 flex-wrap">
+            <div className="font-medium text-gray-900">
+              Monthly trend
+              <span className="ml-2 text-sm font-normal text-gray-500">
+                {selFLW
+                  ? (
+                      byFLW.filter(function (f) {
+                        return f.key === selFLW;
+                      })[0] || {}
+                    ).flw +
+                    ' — ' +
+                    oppLabel(selOpp || (selFLW || '').split('\u0000')[0])
+                  : selOpp
+                  ? oppLabel(selOpp)
+                  : selLLO
+                  ? selLLO + ' — all opportunities'
+                  : 'Whole programme'}
               </span>
             </div>
+            {/* Scope switcher, so you can move between LLOs without hopping tabs. */}
+            <div className="flex items-center gap-1 flex-wrap">
+              <button
+                onClick={function () {
+                  setSelLLO(null);
+                  setSelOpp(null);
+                  setSelFLW(null);
+                }}
+                className={
+                  'px-2 py-1 rounded text-xs border ' +
+                  (!selLLO && !selOpp
+                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50')
+                }
+              >
+                Whole programme
+              </button>
+              {byLLO.map(function (l) {
+                var on = selLLO === l.llo && !selOpp;
+                return (
+                  <button
+                    key={l.llo}
+                    onClick={function () {
+                      setSelLLO(l.llo);
+                      setSelOpp(null);
+                      setSelFLW(null);
+                    }}
+                    className={
+                      'px-2 py-1 rounded text-xs border ' +
+                      (on
+                        ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50')
+                    }
+                  >
+                    {l.llo}
+                  </button>
+                );
+              })}
+              {selFLW && (
+                <button
+                  onClick={function () {
+                    setSelFLW(null);
+                  }}
+                  className="px-2 py-1 rounded text-xs border border-indigo-300 bg-indigo-50 text-indigo-700"
+                >
+                  {(
+                    byFLW.filter(function (f) {
+                      return f.key === selFLW;
+                    })[0] || {}
+                  ).flw + ' ✕'}
+                </button>
+              )}
+              {selOpp && !selFLW && (
+                <button
+                  onClick={function () {
+                    setSelOpp(null);
+                  }}
+                  className="px-2 py-1 rounded text-xs border border-indigo-300 bg-indigo-50 text-indigo-700"
+                >
+                  {oppLabel(selOpp)} ✕
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Cohorted on each baby&rsquo;s FIRST VISIT &mdash; every KMC app asks
+            for reg_date and none has recorded one, so first visit is the honest
+            proxy (this is what C03/C04 were waiting on). Each month&rsquo;s
+            quality and growth figures describe the babies who ENTERED that
+            month. A gap in a line is a month with too few cases to score, not a
+            zero. Dashed line = target.
+          </p>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="text-sm font-medium text-gray-900 mb-1">
+            Intake &amp; activity
+          </div>
+          <VolumeChart
+            months={months}
+            started={monthly.map(function (m) {
+              return m.started;
+            })}
+            visits={monthly.map(function (m) {
+              return m.visits;
+            })}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {charts.map(function (c) {
+            return (
+              <div
+                key={c.id}
+                className="bg-white border border-gray-200 rounded-xl p-4"
+              >
+                <div className="text-sm font-medium text-gray-900">
+                  {c.title}
+                </div>
+                <div className="text-xs text-gray-400 mb-1">{c.note}</div>
+                <LineChart
+                  months={months}
+                  values={c.values}
+                  color={c.color}
+                  pct={c.pct}
+                  target={c.target}
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        <details className="bg-white border border-gray-200 rounded-xl">
+          <summary className="px-4 py-3 text-sm font-medium text-gray-900 cursor-pointer">
+            Monthly figures (table)
+          </summary>
+          <div className="overflow-x-auto border-t border-gray-100">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
-                  <th className="px-3 py-2 text-left">LLO</th>
-                  <th className="px-3 py-2 text-right">Opps</th>
-                  <th className="px-3 py-2 text-right">Cases</th>
+                  <th className="px-3 py-2 text-left">Month</th>
+                  <th className="px-3 py-2 text-right">Registered</th>
                   <th className="px-3 py-2 text-right">Started</th>
-                  <th className="px-3 py-2 text-right">C09 sufficient</th>
-                  <th className="px-3 py-2 text-right">C13 growth</th>
-                  <th className="px-3 py-2 text-right">C14 mortality</th>
-                  <th className="px-3 py-2 text-right">C16 ≤3 days</th>
-                  <th className="px-3 py-2 text-right">Red</th>
-                  <th className="px-3 py-2 text-right">Yellow</th>
+                  <th className="px-3 py-2 text-right">Visits</th>
+                  <th className="px-3 py-2 text-right">
+                    % weight data sufficient
+                    <div className="text-[10px] font-normal text-gray-400">
+                      C09
+                    </div>
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    Mean early growth rate
+                    <div className="text-[10px] font-normal text-gray-400">
+                      C13
+                    </div>
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    Mortality
+                    <div className="text-[10px] font-normal text-gray-400">
+                      C14
+                    </div>
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    Loss to follow-up
+                    <div className="text-[10px] font-normal text-gray-400">
+                      C15
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {byLLO.map(function (l) {
+                {monthly.map(function (m) {
+                  function cell(e, id) {
+                    var ind = IND.filter(function (i) {
+                      return i.id === id;
+                    })[0];
+                    if (!e || e.value === null)
+                      return <span className="text-gray-300">&mdash;</span>;
+                    if (e.band === 'insufficient')
+                      return (
+                        <span className="text-gray-400">n&lt;{MIN_DEN}</span>
+                      );
+                    return fmt(ind, e);
+                  }
                   return (
-                    <tr
-                      key={l.llo}
-                      className="border-t border-gray-100 cursor-pointer hover:bg-indigo-50"
-                      onClick={function () {
-                        setSelLLO(l.llo);
-                      }}
-                    >
-                      <td className="px-3 py-2 font-medium text-indigo-700">
-                        {l.llo}
+                    <tr key={m.month} className="border-t border-gray-100">
+                      <td className="px-3 py-2 font-medium text-gray-900">
+                        {m.month}
                       </td>
-                      <td className="px-3 py-2 text-right text-gray-500">
-                        {l.opps.length}
-                      </td>
-                      <td className="px-3 py-2 text-right">{l.rows.length}</td>
+                      <td className="px-3 py-2 text-right">{m.registered}</td>
+                      <td className="px-3 py-2 text-right">{m.started}</td>
+                      <td className="px-3 py-2 text-right">{m.visits}</td>
                       <td className="px-3 py-2 text-right">
-                        {l.ind['C02'].value}
+                        {cell(m.c09, 'C09')}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {fmt(IND[6], l.ind['C09'])}
+                        {cell(m.c13, 'C13')}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {fmt(IND[10], l.ind['C13'])}
+                        {cell(m.mortality, 'C14')}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {fmt(IND[11], l.ind['C14'])}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {fmt(IND[13], l.ind['C16'])}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {l.reds ? (
-                          <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-800">
-                            {l.reds}
-                          </span>
-                        ) : (
-                          '0'
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-500">
-                        {l.yellows}
+                        {cell(m.c15, 'C15')}
                       </td>
                     </tr>
                   );
@@ -1517,521 +2105,921 @@ function WorkflowUI({
               </tbody>
             </table>
           </div>
+        </details>
+      </div>
+    );
+  }
 
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-              Programme-wide indicators{' '}
-              <span className="text-xs font-normal text-gray-400 ml-2">
-                all cases pooled
-              </span>
-            </div>
-            <div className="overflow-x-auto">
-              <IndicatorTable ind={programInd} />
-            </div>
-          </div>
+  // Build the frozen payload: everything the page DISPLAYS, and nothing it doesn't.
+  // Per-case rows are deliberately excluded — 8,656 of them is 7.5 MB on its own, and
+  // case-level drill is an investigative tool, not part of a published figure.
+  function buildFrozen() {
+    var scopes = { all: monthlyFor(null, null, null) };
+    byLLO.forEach(function (l) {
+      scopes['llo:' + l.llo] = monthlyFor(l.llo, null, null);
+      (l.opps || []).forEach(function (o) {
+        scopes['opp:' + o.opp] = monthlyFor(null, o.opp, null);
+      });
+    });
+    return {
+      schema: 1,
+      generated_at: new Date().toISOString(),
+      programInd: programInd,
+      byLLO: byLLO.map(function (l) {
+        return {
+          llo: l.llo,
+          rows: [],
+          ind: l.ind,
+          reds: l.reds,
+          yellows: l.yellows,
+          opps: (l.opps || []).map(function (o) {
+            return {
+              opp: o.opp,
+              llo: o.llo,
+              rows: [],
+              ind: o.ind,
+              n: (o.rows || []).length,
+            };
+          }),
+        };
+      }),
+      byOpp: byOpp.map(function (o) {
+        return {
+          opp: o.opp,
+          llo: o.llo,
+          rows: [],
+          ind: o.ind,
+          n: (o.rows || []).length,
+        };
+      }),
+      byFLW: byFLW.map(function (f) {
+        return {
+          key: f.key,
+          opp: f.opp,
+          flw: f.flw,
+          llo: f.llo,
+          rows: [],
+          ind: f.ind,
+          reds: f.reds,
+          yellows: f.yellows,
+          n: (f.rows || []).length,
+        };
+      }),
+      monthly: scopes.all,
+      monthlyByScope: scopes,
+      meta: {
+        cases: derived.length,
+        visits: wrows.length,
+        opportunities: byOpp.length,
+        llos: byLLO.length,
+      },
+    };
+  }
+
+  function freezeRun() {
+    if (!view || !view.complete) {
+      window.alert('This run does not support snapshots yet.');
+      return;
+    }
+    // State must be written BEFORE complete(): the snapshot captures declared state
+    // keys, and completion refuses to re-execute pipelines by design.
+    onUpdateState({ frozen: buildFrozen() });
+    setTimeout(function () {
+      view.complete({
+        confirm:
+          'Freeze this run? The figures become read-only and load instantly from the ' +
+          'snapshot. Re-running later creates a new run; this one stays in the history.',
+      });
+    }, 400);
+  }
+
+  return (
+    <div className="p-6 space-y-5">
+      {frozen && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <span className="font-medium">Frozen run.</span> These figures are the
+          snapshot taken{' '}
+          {view.asOf ? String(view.asOf).slice(0, 16).replace('T', ' ') : ''} —{' '}
+          {(frozen.meta || {}).cases} cases and {(frozen.meta || {}).visits}{' '}
+          visits across {(frozen.meta || {}).opportunities} opportunities. They
+          load instantly and cannot move. Per-case detail is not part of a
+          snapshot; start a new run for that.
         </div>
       )}
 
-      {selLLO && !selOpp && (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-            {selLLO} — opportunities
-            <span className="text-xs font-normal text-gray-400 ml-2">
-              one LLO can have a good opp and a bad one; this is where that
-              shows
-            </span>
-          </div>
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 text-gray-500">
-              <tr>
-                <th className="px-3 py-2 text-left">Opportunity</th>
-                <th className="px-3 py-2 text-right">Cases</th>
-                <th className="px-3 py-2 text-right">C07 computable</th>
-                <th className="px-3 py-2 text-right">C09 sufficient</th>
-                <th className="px-3 py-2 text-right">C13 growth</th>
-                <th className="px-3 py-2 text-right">C14 mortality</th>
-                <th className="px-3 py-2 text-right">C15 LTFU</th>
-                <th className="px-3 py-2 text-right">Red</th>
-              </tr>
-            </thead>
-            <tbody>
-              {byLLO
-                .filter(function (l) {
-                  return l.llo === selLLO;
-                })[0]
-                .opps.map(function (o) {
-                  var reds = Object.keys(o.ind).filter(function (k) {
-                    return o.ind[k].band === 'red';
-                  }).length;
-                  return (
-                    <tr
-                      key={o.opp}
-                      className="border-t border-gray-100 cursor-pointer hover:bg-indigo-50"
-                      onClick={function () {
-                        setSelOpp(o.opp);
-                        setSelFLW(null);
-                      }}
-                    >
-                      <td className="px-3 py-2 font-medium text-indigo-700">
-                        {oppLabel(o.opp)}
-                      </td>
-                      <td className="px-3 py-2 text-right">{o.rows.length}</td>
-                      <td className="px-3 py-2 text-right">
-                        {fmt(IND[4], o.ind['C07'])}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {fmt(IND[6], o.ind['C09'])}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {fmt(IND[10], o.ind['C13'])}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {fmt(IND[11], o.ind['C14'])}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {fmt(IND[12], o.ind['C15'])}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {reds ? (
-                          <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-800">
-                            {reds}
-                          </span>
-                        ) : (
-                          '0'
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-          <div className="px-4 py-3 border-t border-gray-100">
-            <div className="text-sm font-medium text-gray-900 mb-2">
-              {selLLO} — all indicators (pooled across its opportunities)
-            </div>
-            <div className="overflow-x-auto">
-              <IndicatorTable
-                ind={
-                  byLLO.filter(function (l) {
-                    return l.llo === selLLO;
-                  })[0].ind
-                }
-              />
-            </div>
-          </div>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">KMC Indicators</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            The kmc_metrics_framework registry, evaluated live. Case properties
+            are computed in SQL by the entity pipeline; only the weight series
+            is derived here. Click any row to drill Programme → LLO →
+            opportunity → cases.
+          </p>
         </div>
-      )}
+        {!frozen && view && view.complete && (
+          <button
+            onClick={freezeRun}
+            className="shrink-0 px-3 py-2 rounded-lg text-sm border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+            title="Freeze these figures as a snapshot that loads instantly and never moves"
+          >
+            Freeze this run
+          </button>
+        )}
+      </div>
 
-      {selOpp &&
-        (function () {
-          var CASE_CAP = 300;
-          var caseRows = byOpp.filter(function (o) {
-            return o.opp === selOpp;
-          })[0].rows;
-          if (selFLW) {
-            var f0 = byFLW.filter(function (f) {
-              return f.key === selFLW;
-            })[0];
-            if (f0) caseRows = f0.rows;
-          }
-          if (selInd) {
-            var indSel = IND.filter(function (i) {
-              return i.id === selInd;
-            })[0];
-            if (indSel && indSel.den) caseRows = caseRows.filter(indSel.den);
-          }
+      <div className="flex items-center gap-1 border-b border-gray-200">
+        {[
+          ['indicators', 'Indicators'],
+          ['trends', 'Monthly trend'],
+        ].map(function (t) {
+          var on = tab === t[0];
           return (
+            <button
+              key={t[0]}
+              onClick={function () {
+                setTab(t[0]);
+              }}
+              className={
+                'px-4 py-2 text-sm -mb-px border-b-2 ' +
+                (on
+                  ? 'border-indigo-600 text-indigo-700 font-medium'
+                  : 'border-transparent text-gray-500 hover:text-gray-700')
+              }
+            >
+              {t[1]}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === 'trends' && <TrendView />}
+
+      {tab === 'indicators' && (
+        <>
+          <div className="flex items-center gap-2 text-sm">
+            {crumb.map(function (c, i) {
+              var last = i === crumb.length - 1;
+              return (
+                <span key={i} className="flex items-center gap-2">
+                  <button
+                    onClick={function () {
+                      if (i === 0) {
+                        setSelLLO(null);
+                        setSelOpp(null);
+                        setSelInd(null);
+                      }
+                      if (i === 1) {
+                        setSelOpp(null);
+                      }
+                    }}
+                    className={
+                      last
+                        ? 'font-semibold text-gray-900'
+                        : 'text-indigo-600 hover:underline'
+                    }
+                  >
+                    {c}
+                  </button>
+                  {!last && <span className="text-gray-300">›</span>}
+                </span>
+              );
+            })}
+          </div>
+
+          {!selLLO && (
             <div className="space-y-5">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-white border border-gray-200 rounded-xl p-4">
+                  <div className="text-xs text-gray-500">
+                    LLOs with a red indicator
+                  </div>
+                  <div className="text-2xl font-semibold mt-1">
+                    {llosRed}{' '}
+                    <span className="text-base text-gray-400">
+                      of {byLLO.length}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    Program row 8 — LLOs with any red indicator
+                  </div>
+                </div>
+                <div className="bg-white border border-gray-200 rounded-xl p-4">
+                  <div className="text-xs text-gray-500">Total started</div>
+                  <div className="text-2xl font-semibold mt-1">
+                    {programInd['C02'].value}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    Program row 2 · Started cases (C02) against 25,000 by
+                    Q1-2027
+                  </div>
+                </div>
+                <div className="bg-white border border-gray-200 rounded-xl p-4">
+                  <div className="text-xs text-gray-500">
+                    % weight data sufficient
+                  </div>
+                  <div className="text-2xl font-semibold mt-1">
+                    {fmt(IND[6], programInd['C09'])}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    Program row 3 · % weight data sufficient (C09), pooled
+                  </div>
+                </div>
+                <div className="bg-white border border-gray-200 rounded-xl p-4">
+                  <div className="text-xs text-gray-500">Mortality</div>
+                  <div className="text-2xl font-semibold mt-1">
+                    {mortalityCredible.ind
+                      ? fmt(IND[11], mortalityCredible.ind)
+                      : '\u2014'}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    Program row 5 · Mortality (C14), two-sided ·{' '}
+                    {mortalityCredible.llos.length
+                      ? mortalityCredible.llos.join(' + ') +
+                        ' only (' +
+                        mortalityCredible.llos.length +
+                        ' of ' +
+                        mortalityCredible.of +
+                        ' LLOs record deaths credibly)'
+                      : 'no credible recorder'}
+                  </div>
+                </div>
+              </div>
+
               <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-                  {oppLabel(selOpp)} — indicators
+                  LLOs{' '}
+                  <span className="text-xs font-normal text-gray-400 ml-2">
+                    click to drill into an LLO's opportunities
+                  </span>
+                </div>
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left">LLO</th>
+                      <th className="px-3 py-2 text-right">Opps</th>
+                      <th className="px-3 py-2 text-right">Cases</th>
+                      <th className="px-3 py-2 text-right">Started</th>
+                      <th className="px-3 py-2 text-right">
+                        % weight data sufficient
+                        <div className="text-[10px] font-normal text-gray-400">
+                          C09
+                        </div>
+                      </th>
+                      <th className="px-3 py-2 text-right">
+                        Mean early growth rate
+                        <div className="text-[10px] font-normal text-gray-400">
+                          C13 · g/kg/day
+                        </div>
+                      </th>
+                      <th className="px-3 py-2 text-right">
+                        Mortality
+                        <div className="text-[10px] font-normal text-gray-400">
+                          C14
+                        </div>
+                      </th>
+                      <th className="px-3 py-2 text-right">
+                        % enrolled within 3 days
+                        <div className="text-[10px] font-normal text-gray-400">
+                          C16
+                        </div>
+                      </th>
+                      <th className="px-3 py-2 text-right">Red</th>
+                      <th className="px-3 py-2 text-right">Yellow</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {byLLO.map(function (l) {
+                      return (
+                        <tr
+                          key={l.llo}
+                          className="border-t border-gray-100 cursor-pointer hover:bg-indigo-50"
+                          onClick={function () {
+                            setSelLLO(l.llo);
+                          }}
+                        >
+                          <td className="px-3 py-2 font-medium text-indigo-700">
+                            {l.llo}
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-500">
+                            {l.opps.length}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {l.rows.length}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {l.ind['C02'].value}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {fmt(IND[6], l.ind['C09'])}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {fmt(IND[10], l.ind['C13'])}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {fmt(IND[11], l.ind['C14'])}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {fmt(IND[13], l.ind['C16'])}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {l.reds ? (
+                              <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-800">
+                                {l.reds}
+                              </span>
+                            ) : (
+                              '0'
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-500">
+                            {l.yellows}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
+                  Programme-wide indicators{' '}
+                  <span className="text-xs font-normal text-gray-400 ml-2">
+                    all cases pooled
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <IndicatorTable ind={programInd} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selLLO && !selOpp && (
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
+                {selLLO} — opportunities
+                <span className="text-xs font-normal text-gray-400 ml-2">
+                  one LLO can have a good opp and a bad one; this is where that
+                  shows
+                </span>
+              </div>
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Opportunity</th>
+                    <th className="px-3 py-2 text-right">Cases</th>
+                    <th className="px-3 py-2 text-right">
+                      % weight data computable
+                      <div className="text-[10px] font-normal text-gray-400">
+                        C07
+                      </div>
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      % weight data sufficient
+                      <div className="text-[10px] font-normal text-gray-400">
+                        C09
+                      </div>
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      Mean early growth rate
+                      <div className="text-[10px] font-normal text-gray-400">
+                        C13 · g/kg/day
+                      </div>
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      Mortality
+                      <div className="text-[10px] font-normal text-gray-400">
+                        C14
+                      </div>
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      Loss to follow-up by day 28
+                      <div className="text-[10px] font-normal text-gray-400">
+                        C15
+                      </div>
+                    </th>
+                    <th className="px-3 py-2 text-right">Red</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byLLO
+                    .filter(function (l) {
+                      return l.llo === selLLO;
+                    })[0]
+                    .opps.map(function (o) {
+                      var reds = Object.keys(o.ind).filter(function (k) {
+                        return o.ind[k].band === 'red';
+                      }).length;
+                      return (
+                        <tr
+                          key={o.opp}
+                          className="border-t border-gray-100 cursor-pointer hover:bg-indigo-50"
+                          onClick={function () {
+                            setSelOpp(o.opp);
+                            setSelFLW(null);
+                          }}
+                        >
+                          <td className="px-3 py-2 font-medium text-indigo-700">
+                            {oppLabel(o.opp)}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {o.rows.length}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {fmt(IND[4], o.ind['C07'])}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {fmt(IND[6], o.ind['C09'])}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {fmt(IND[10], o.ind['C13'])}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {fmt(IND[11], o.ind['C14'])}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {fmt(IND[12], o.ind['C15'])}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {reds ? (
+                              <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-800">
+                                {reds}
+                              </span>
+                            ) : (
+                              '0'
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+              <div className="px-4 py-3 border-t border-gray-100">
+                <div className="text-sm font-medium text-gray-900 mb-2">
+                  {selLLO} — all indicators (pooled across its opportunities)
                 </div>
                 <div className="overflow-x-auto">
                   <IndicatorTable
                     ind={
-                      byOpp.filter(function (o) {
-                        return o.opp === selOpp;
+                      byLLO.filter(function (l) {
+                        return l.llo === selLLO;
                       })[0].ind
                     }
-                    onPick={function (id) {
-                      setSelInd(id === selInd ? null : id);
-                    }}
                   />
                 </div>
               </div>
+            </div>
+          )}
 
-              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-                  Frontline workers
-                  <span className="text-xs font-normal text-gray-400 ml-2">
-                    click an FLW for their full indicator set and to filter the
-                    case list
-                  </span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50 text-gray-500">
-                      <tr>
-                        <th className="px-3 py-2 text-left">FLW</th>
-                        <th className="px-3 py-2 text-right">Cases</th>
-                        <th className="px-3 py-2 text-right">C09 sufficient</th>
-                        <th className="px-3 py-2 text-right">C13 growth</th>
-                        <th className="px-3 py-2 text-right">C15 LTFU</th>
-                        <th className="px-3 py-2 text-right">
-                          C24 visits/case
-                        </th>
-                        <th className="px-3 py-2 text-right">C28 birth-copy</th>
-                        <th className="px-3 py-2 text-right">C31 rounding</th>
-                        <th className="px-3 py-2 text-right">Red</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {byFLW
-                        .filter(function (f) {
-                          return f.opp === selOpp;
-                        })
-                        .map(function (f) {
-                          function cell(id) {
-                            var i = IND.filter(function (x) {
-                              return x.id === id;
-                            })[0];
-                            return fmt(i, f.ind[id]);
-                          }
-                          return (
-                            <tr
-                              key={f.key}
-                              className={
-                                'border-t border-gray-100 cursor-pointer hover:bg-indigo-50 ' +
-                                (selFLW === f.key ? 'bg-indigo-50' : '')
+          {selOpp &&
+            (function () {
+              var CASE_CAP = 300;
+              var caseRows = byOpp.filter(function (o) {
+                return o.opp === selOpp;
+              })[0].rows;
+              if (selFLW) {
+                var f0 = byFLW.filter(function (f) {
+                  return f.key === selFLW;
+                })[0];
+                if (f0) caseRows = f0.rows;
+              }
+              if (selInd) {
+                var indSel = IND.filter(function (i) {
+                  return i.id === selInd;
+                })[0];
+                if (indSel && indSel.den)
+                  caseRows = caseRows.filter(indSel.den);
+              }
+              return (
+                <div className="space-y-5">
+                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
+                      {oppLabel(selOpp)} — indicators
+                    </div>
+                    <div className="overflow-x-auto">
+                      <IndicatorTable
+                        ind={
+                          byOpp.filter(function (o) {
+                            return o.opp === selOpp;
+                          })[0].ind
+                        }
+                        onPick={function (id) {
+                          setSelInd(id === selInd ? null : id);
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
+                      Frontline workers
+                      <span className="text-xs font-normal text-gray-400 ml-2">
+                        click an FLW for their full indicator set and to filter
+                        the case list
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-gray-50 text-gray-500">
+                          <tr>
+                            <th className="px-3 py-2 text-left">FLW</th>
+                            <th className="px-3 py-2 text-right">Cases</th>
+                            <th className="px-3 py-2 text-right">
+                              % weight data sufficient
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C09
+                              </div>
+                            </th>
+                            <th className="px-3 py-2 text-right">
+                              Mean early growth rate
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C13 · g/kg/day
+                              </div>
+                            </th>
+                            <th className="px-3 py-2 text-right">
+                              Loss to follow-up by day 28
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C15
+                              </div>
+                            </th>
+                            <th className="px-3 py-2 text-right">
+                              Mean visits per started case
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C24
+                              </div>
+                            </th>
+                            <th className="px-3 py-2 text-right">
+                              Birth-copy rate
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C28
+                              </div>
+                            </th>
+                            <th className="px-3 py-2 text-right">
+                              Weight rounding rate
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C31
+                              </div>
+                            </th>
+                            <th className="px-3 py-2 text-right">Red</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {byFLW
+                            .filter(function (f) {
+                              return f.opp === selOpp;
+                            })
+                            .map(function (f) {
+                              function cell(id) {
+                                var i = IND.filter(function (x) {
+                                  return x.id === id;
+                                })[0];
+                                return fmt(i, f.ind[id]);
                               }
-                              onClick={function () {
-                                setSelFLW(selFLW === f.key ? null : f.key);
-                              }}
-                            >
-                              <td className="px-3 py-2 font-medium text-indigo-700">
-                                {f.flw}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                {f.rows.length}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                {cell('C09')}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                {cell('C13')}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                {cell('C15')}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                {cell('C24')}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                {cell('C28')}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                {cell('C31')}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                {f.reds ? (
-                                  <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-800">
-                                    {f.reds}
-                                  </span>
-                                ) : (
-                                  '0'
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                    </tbody>
-                  </table>
-                </div>
-                {selFLW &&
-                  byFLW.filter(function (f) {
-                    return f.key === selFLW;
-                  })[0] && (
-                    <div className="px-4 py-3 border-t border-gray-100">
-                      <div className="text-sm font-medium text-gray-900 mb-2">
-                        {
-                          byFLW.filter(function (f) {
-                            return f.key === selFLW;
-                          })[0].flw
-                        }{' '}
-                        — all indicators
-                        <span className="text-xs font-normal text-gray-400 ml-2">
-                          n is small per FLW, so most rows will read n&lt;
-                          {MIN_DEN}
-                        </span>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <IndicatorTable
-                          ind={
+                              return (
+                                <tr
+                                  key={f.key}
+                                  className={
+                                    'border-t border-gray-100 cursor-pointer hover:bg-indigo-50 ' +
+                                    (selFLW === f.key ? 'bg-indigo-50' : '')
+                                  }
+                                  onClick={function () {
+                                    setSelFLW(selFLW === f.key ? null : f.key);
+                                  }}
+                                >
+                                  <td className="px-3 py-2 font-medium text-indigo-700">
+                                    {f.flw}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    {f.rows.length}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    {cell('C09')}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    {cell('C13')}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    {cell('C15')}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    {cell('C24')}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    {cell('C28')}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    {cell('C31')}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    {f.reds ? (
+                                      <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-800">
+                                        {f.reds}
+                                      </span>
+                                    ) : (
+                                      '0'
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {selFLW &&
+                      byFLW.filter(function (f) {
+                        return f.key === selFLW;
+                      })[0] && (
+                        <div className="px-4 py-3 border-t border-gray-100">
+                          <div className="text-sm font-medium text-gray-900 mb-2">
+                            {
+                              byFLW.filter(function (f) {
+                                return f.key === selFLW;
+                              })[0].flw
+                            }{' '}
+                            — all indicators
+                            <span className="text-xs font-normal text-gray-400 ml-2">
+                              n is small per FLW, so most rows will read n&lt;
+                              {MIN_DEN}
+                            </span>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <IndicatorTable
+                              ind={
+                                byFLW.filter(function (f) {
+                                  return f.key === selFLW;
+                                })[0].ind
+                              }
+                            />
+                          </div>
+                        </div>
+                      )}
+                  </div>
+
+                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
+                      {frozen ? 'Cases — not captured in a snapshot' : 'Cases '}
+                      {!frozen && selInd
+                        ? '\u2014 in the denominator of ' + selInd
+                        : ''}
+                      {selFLW
+                        ? ' \u2014 ' +
+                          (
                             byFLW.filter(function (f) {
                               return f.key === selFLW;
-                            })[0].ind
-                          }
-                        />
-                      </div>
+                            })[0] || {}
+                          ).flw
+                        : ''}
+                      <span className="text-xs font-normal text-gray-400 ml-2">
+                        {caseRows.length > CASE_CAP
+                          ? 'showing first ' +
+                            CASE_CAP +
+                            ' of ' +
+                            caseRows.length +
+                            ' \u2014 narrow by FLW or indicator to see the rest'
+                          : caseRows.length +
+                            ' case' +
+                            (caseRows.length === 1 ? '' : 's') +
+                            (selInd
+                              ? ''
+                              : ' \u2014 click an indicator above to filter')}
+                      </span>
                     </div>
-                  )}
-              </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-xs">
+                        <thead className="bg-gray-50 text-gray-500">
+                          <tr>
+                            <th className="px-2 py-2 text-left">Baby</th>
+                            <th className="px-2 py-2 text-left">FLW</th>
+                            <th className="px-2 py-2 text-right">
+                              Visits
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C06/C24
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-left">First visit</th>
+                            <th className="px-2 py-2 text-center">
+                              Started
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C02
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-center">Eligible</th>
+                            <th className="px-2 py-2 text-center">
+                              Outcome known
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C15
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-center">
+                              Died
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C14
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-right">
+                              Weight readings
+                            </th>
+                            <th className="px-2 py-2 text-center">
+                              Weight computable
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C07
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-center">
+                              Weight consistent
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C08
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-center">
+                              Weight sufficient
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C09
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-right">
+                              First &rarr; last weight (g)
+                            </th>
+                            <th className="px-2 py-2 text-right">
+                              Early growth rate
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C13
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-left">
+                              Growth
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C10-12
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-right">
+                              Days discharge to enrolment
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C17
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-center">
+                              &le;3d
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C16
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-center">
+                              Danger sign
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C20
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-center">
+                              Referred
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C19
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-right">
+                              Self-referrals
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C21
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-right">
+                              Skin-to-skin hours
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C23
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-center">
+                              Enrolment wt = birth wt
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C28
+                              </div>
+                            </th>
+                            <th className="px-2 py-2 text-right">
+                              Weights rounded to 100g
+                              <div className="text-[10px] font-normal text-gray-400">
+                                C31
+                              </div>
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(function () {
+                            var rows = caseRows;
+                            function tick(b) {
+                              return b ? '\u2713' : '';
+                            }
+                            function num(x, dp) {
+                              return typeof x === 'number' && !isNaN(x)
+                                ? x.toFixed(dp || 0)
+                                : '\u2014';
+                            }
+                            return rows.slice(0, CASE_CAP).map(function (r) {
+                              return (
+                                <tr
+                                  key={r.entity_id}
+                                  className="border-t border-gray-100"
+                                >
+                                  <td className="px-2 py-1.5">{r.name}</td>
+                                  <td className="px-2 py-1.5">{r.flw}</td>
+                                  <td className="px-2 py-1.5 text-right">
+                                    {r.num_visits}
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    {r.first_visit || '\u2014'}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {tick(r.started)}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {tick(r.eligible)}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {tick(r.outcome_known)}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {r.died ? '\u2715' : ''}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-right">
+                                    {r.n_weight_readings}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {tick(r.weight_computable)}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {tick(r.weight_consistent)}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {tick(r.weight_gain_data_sufficient)}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-right">
+                                    {r.first_weight_g
+                                      ? r.first_weight_g +
+                                        '\u2192' +
+                                        r.last_weight_g
+                                      : '\u2014'}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-right">
+                                    {num(r.early_g_per_kg_day, 1)}
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    {r.growth_class || '\u2014'}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-right">
+                                    {num(r.days_discharge_to_reg)}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {tick(r.enrolled_within_3d)}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {tick(r.ever_danger_sign)}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {tick(r.referred)}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-right">
+                                    {r.self_referral_count || 0}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-right">
+                                    {num(r.kmc_hours_mean, 1)}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {r.enrollment_is_birth_copy === null
+                                      ? '\u2014'
+                                      : tick(r.enrollment_is_birth_copy)}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-right">
+                                    {r.n_weights_round_100}
+                                  </td>
+                                </tr>
+                              );
+                            });
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
-              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-                  Cases {selInd ? '\u2014 in the denominator of ' + selInd : ''}
-                  {selFLW
-                    ? ' \u2014 ' +
-                      (
-                        byFLW.filter(function (f) {
-                          return f.key === selFLW;
-                        })[0] || {}
-                      ).flw
-                    : ''}
-                  <span className="text-xs font-normal text-gray-400 ml-2">
-                    {caseRows.length > CASE_CAP
-                      ? 'showing first ' +
-                        CASE_CAP +
-                        ' of ' +
-                        caseRows.length +
-                        ' \u2014 narrow by FLW or indicator to see the rest'
-                      : caseRows.length +
-                        ' case' +
-                        (caseRows.length === 1 ? '' : 's') +
-                        (selInd
-                          ? ''
-                          : ' \u2014 click an indicator above to filter')}
-                  </span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-xs">
-                    <thead className="bg-gray-50 text-gray-500">
-                      <tr>
-                        <th className="px-2 py-2 text-left">Baby</th>
-                        <th className="px-2 py-2 text-left">FLW</th>
-                        <th className="px-2 py-2 text-right">
-                          Visits
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C06/C24
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-left">First visit</th>
-                        <th className="px-2 py-2 text-center">
-                          Started
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C02
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-center">Eligible</th>
-                        <th className="px-2 py-2 text-center">
-                          Outcome
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C15
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-center">
-                          Died
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C14
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-right">Wt n</th>
-                        <th className="px-2 py-2 text-center">
-                          Comp
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C07
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-center">
-                          Cons
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C08
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-center">
-                          Suff
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C09
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-right">Weights</th>
-                        <th className="px-2 py-2 text-right">
-                          g/kg/d
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C13
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-left">
-                          Growth
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C10-12
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-right">
-                          Days to enrol
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C17
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-center">
-                          &le;3d
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C16
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-center">
-                          Danger
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C20
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-center">
-                          Referred
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C19
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-right">
-                          Self-ref
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C21
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-right">
-                          KMC h
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C23
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-center">
-                          Birth-copy
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C28
-                          </div>
-                        </th>
-                        <th className="px-2 py-2 text-right">
-                          Round100
-                          <div className="text-[10px] font-normal text-gray-400">
-                            C31
-                          </div>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(function () {
-                        var rows = caseRows;
-                        function tick(b) {
-                          return b ? '\u2713' : '';
-                        }
-                        function num(x, dp) {
-                          return typeof x === 'number' && !isNaN(x)
-                            ? x.toFixed(dp || 0)
-                            : '\u2014';
-                        }
-                        return rows.slice(0, CASE_CAP).map(function (r) {
-                          return (
-                            <tr
-                              key={r.entity_id}
-                              className="border-t border-gray-100"
-                            >
-                              <td className="px-2 py-1.5">{r.name}</td>
-                              <td className="px-2 py-1.5">{r.flw}</td>
-                              <td className="px-2 py-1.5 text-right">
-                                {r.num_visits}
-                              </td>
-                              <td className="px-2 py-1.5">
-                                {r.first_visit || '\u2014'}
-                              </td>
-                              <td className="px-2 py-1.5 text-center">
-                                {tick(r.started)}
-                              </td>
-                              <td className="px-2 py-1.5 text-center">
-                                {tick(r.eligible)}
-                              </td>
-                              <td className="px-2 py-1.5 text-center">
-                                {tick(r.outcome_known)}
-                              </td>
-                              <td className="px-2 py-1.5 text-center">
-                                {r.died ? '\u2715' : ''}
-                              </td>
-                              <td className="px-2 py-1.5 text-right">
-                                {r.n_weight_readings}
-                              </td>
-                              <td className="px-2 py-1.5 text-center">
-                                {tick(r.weight_computable)}
-                              </td>
-                              <td className="px-2 py-1.5 text-center">
-                                {tick(r.weight_consistent)}
-                              </td>
-                              <td className="px-2 py-1.5 text-center">
-                                {tick(r.weight_gain_data_sufficient)}
-                              </td>
-                              <td className="px-2 py-1.5 text-right">
-                                {r.first_weight_g
-                                  ? r.first_weight_g +
-                                    '\u2192' +
-                                    r.last_weight_g
-                                  : '\u2014'}
-                              </td>
-                              <td className="px-2 py-1.5 text-right">
-                                {num(r.early_g_per_kg_day, 1)}
-                              </td>
-                              <td className="px-2 py-1.5">
-                                {r.growth_class || '\u2014'}
-                              </td>
-                              <td className="px-2 py-1.5 text-right">
-                                {num(r.days_discharge_to_reg)}
-                              </td>
-                              <td className="px-2 py-1.5 text-center">
-                                {tick(r.enrolled_within_3d)}
-                              </td>
-                              <td className="px-2 py-1.5 text-center">
-                                {tick(r.ever_danger_sign)}
-                              </td>
-                              <td className="px-2 py-1.5 text-center">
-                                {tick(r.referred)}
-                              </td>
-                              <td className="px-2 py-1.5 text-right">
-                                {r.self_referral_count || 0}
-                              </td>
-                              <td className="px-2 py-1.5 text-right">
-                                {num(r.kmc_hours_mean, 1)}
-                              </td>
-                              <td className="px-2 py-1.5 text-center">
-                                {r.enrollment_is_birth_copy === null
-                                  ? '\u2014'
-                                  : tick(r.enrollment_is_birth_copy)}
-                              </td>
-                              <td className="px-2 py-1.5 text-right">
-                                {r.n_weights_round_100}
-                              </td>
-                            </tr>
-                          );
-                        });
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="font-medium text-gray-900 mb-2 text-sm">
+              Declared in the workbook, not computable yet
             </div>
-          );
-        })()}
-
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="font-medium text-gray-900 mb-2 text-sm">
-          Declared in the workbook, not computable yet
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 text-xs text-gray-500">
-          {NOT_COMPUTABLE.map(function (n) {
-            return (
-              <div key={n.id}>
-                <span className="font-mono text-gray-400">{n.id}</span> {n.name}{' '}
-                — {n.why}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 text-xs text-gray-500">
+              {NOT_COMPUTABLE.map(function (n) {
+                return (
+                  <div key={n.id}>
+                    <span className="font-mono text-gray-400">{n.id}</span>{' '}
+                    {n.name} — {n.why}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
