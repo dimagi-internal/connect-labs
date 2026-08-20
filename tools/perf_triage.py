@@ -67,6 +67,13 @@ BASELINE = {
 }
 WEB_CPU_SATURATED = 90.0
 ALB_P95_SLOW_S = 10.0
+# Same metric, period and threshold as the DEPLOYED labs-jj-alb-5xx-high alarm
+# (Sum > 25 per 300s, 1 evaluation period). Kept deliberately identical: a triage
+# tool that disagrees with the pager about the same metric is worse than no
+# triage tool, because the tool is what a reviewer reads first. Scaled by
+# period/300 so a coarser window compares like for like -- though a long window
+# still averages a spike away, per the caveat at the top of this file.
+ALB_5XX_PER_300S = 25
 DB_CONNECTIONS_HIGH = 90
 # Worth mentioning in an otherwise-healthy verdict. Deliberately NOT scaled to
 # the bigger instance: like DB_CONNECTIONS_HIGH, what makes it meaningful is the
@@ -110,6 +117,20 @@ def _period_for(hours: int) -> int:
         if seconds / period <= MAX_DATAPOINTS:
             return period
     return PERIOD_LADDER[-1]
+
+
+def _breaching_5xx_periods(points, period):
+    """Count periods whose ELB 5xx rate exceeds what the deployed alarm pages on.
+
+    The alarm's unit is "Sum > 25 per 300s". A longer window uses a coarser
+    period, so the raw Sum grows with the period and comparing it to a flat 25
+    would flag every long window. Scaling converts the threshold to the same
+    rate: 75 in a 15-minute period is exactly the alarm's rate, not three times
+    it. (A coarser period still averages a short spike away -- that is the
+    documented tradeoff at the top of this file, not something scaling fixes.)
+    """
+    limit = ALB_5XX_PER_300S * (period / 300)
+    return len([p for p in points if p.get("Sum", 0) > limit])
 
 
 def _metric(namespace, name, dimensions, start, end, period=300, stats=None, ext=None):
@@ -249,6 +270,8 @@ def collect(hours: int) -> dict:
             [p for p in alb_p95 if p.get("ExtendedStatistics", {}).get("p95", 0) > ALB_P95_SLOW_S]
         ),
         "elb_5xx_total": sum(p.get("Sum", 0) for p in elb_5xx),
+        "elb_5xx_peak_period": max((p.get("Sum", 0) for p in elb_5xx), default=0),
+        "elb_5xx_breaching_periods": _breaching_5xx_periods(elb_5xx, period),
         "alarms_firing": [a["name"] for a in alarms if a["state"] == "ALARM"],
         "alarms_all": alarms,
         "web_desired_count": service.get("desiredCount"),
@@ -338,10 +361,45 @@ def judge(d: dict) -> dict:
             next_step = "Find the slow requests holding connections (§3), not the database."
 
     if d["elb_5xx_total"]:
+        breaching = d["elb_5xx_breaching_periods"]
         findings.append(
-            f"ELB-generated 5xx: {d['elb_5xx_total']:.0f} in window. The ALB could not get a "
-            "usable response (distinct from target 5xx, which means the app answered with an error)."
+            f"ELB-generated 5xx: {d['elb_5xx_total']:.0f} in window, peak "
+            f"{d['elb_5xx_peak_period']:.0f} in one {period_min}-minute period"
+            + (
+                f" -- {breaching} period(s) OVER the {ALB_5XX_PER_300S}/5min line the "
+                "labs-jj-alb-5xx-high alarm pages on."
+                if breaching
+                else " (under the alarm line)."
+            )
+            + " The ALB could not get a usable response (distinct from target 5xx, which "
+            "means the app answered with an error)."
         )
+        # Overrides slow_no_saturation as well as healthy. That verdict is an
+        # INFERENCE ("latency without CPU saturation implies a slow dependency")
+        # and it sends the reader to outbound_by_host; breaching 5xx is a
+        # MEASUREMENT that requests actually failed. On 2026-08-20 the inference
+        # was wrong -- the split was self_ms-dominated with one web task pegged
+        # at 100%, nothing to do with an upstream. Lead with the measurement.
+        # web_saturated / worker_saturated are left alone: they are more
+        # specific than this and already name the tier.
+        if breaching and verdict in ("healthy", "slow_no_saturation"):
+            # A tier that cannot answer is a user-visible outage whatever the CPU
+            # shape says. This branch exists because on 2026-08-20 the tool
+            # reported 429 ELB 5xx and "No sustained performance problem" in the
+            # same output, while the alarm on the identical metric fired five
+            # times and paged. The 5xx count was collected, printed, and then
+            # excluded from the verdict -- so the one number that proved users
+            # were being failed could not change the answer.
+            verdict = "elb_5xx_elevated"
+            next_step = (
+                "Requests are FAILING, not merely slow, so start with what the ALB could not "
+                "serve rather than with the slowest request. Web CPU can look unsaturated on "
+                "Average while a single task is pegged -- check Maximum too: "
+                "aws cloudwatch get-metric-statistics --namespace AWS/ECS "
+                "--metric-name CPUUtilization --statistics Average Maximum "
+                "--dimensions ClusterName=labs-jj-cluster,ServiceName=labs-jj-web "
+                "--profile labs --region us-east-1. Then §3 for the request itself."
+            )
 
     if d["web_running_count"] != d["web_desired_count"]:
         findings.append(f"CAPACITY: {d['web_running_count']} of {d['web_desired_count']} web tasks running.")
