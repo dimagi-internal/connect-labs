@@ -186,9 +186,9 @@ class AuditCriteria:
     # Filter to specific deliver unit type(s) — derived from form.@name in form_json,
     # since Connect never exposes a deliver-unit name, only the numeric FK id.
     deliver_unit_types: list[str] | None = None
-    visit_statuses: list[str] | None = (
-        None  # Filter to specific visit status(es): pending/approved/rejected/over_limit
-    )
+    visit_statuses: list[
+        str
+    ] | None = None  # Filter to specific visit status(es): pending/approved/rejected/over_limit
     related_fields: list[dict] | None = None  # List of {image_path, field_path, label}
     exclude_prior_audited: bool = False  # Drop images already audited in a completed session
     # Restrict date_range audits to visits falling on these ISO weekdays (1=Monday..7=Sunday).
