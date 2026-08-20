@@ -1,6 +1,8 @@
 """Unit tests for the prior-audit index (Must-have #5)."""
 
-from connect_labs.audit.data_access import build_prior_audit_index
+from unittest.mock import patch
+
+from connect_labs.audit.data_access import AuditDataAccess, build_prior_audit_index
 from connect_labs.audit.models import AuditSessionRecord
 
 
@@ -52,3 +54,76 @@ def test_most_recent_verdict_wins():
     index = build_prior_audit_index([old, new])
     assert index["111:b1"]["result"] == "fail"
     assert index["111:b1"]["session_id"] == 2
+
+
+class TestPriorAuditIndexFetchesOnlyCompleted:
+    """The index must not drag in-progress sessions over the wire to discard them.
+
+    An AuditSessionRecord is not a local row -- it is fetched from Connect's
+    export API carrying its whole `data` blob (every visit_images and
+    visit_results entry). get_prior_audited_images runs on every
+    /audit/api/<id>/bulk-data/ load, whose own response is single-digit
+    kilobytes, so filtering in Python after the fetch pays the download and JSON
+    parse of every in-progress session in scope for nothing (#1246).
+
+    These pin the REQUEST, not just the result, because a regression here is
+    silent: the page still renders correctly, just slowly, which is exactly how
+    it went unnoticed until the tier saturated.
+    """
+
+    @staticmethod
+    def _da():
+        # Bypass __init__: it demands an OAuth token, and none of these tests
+        # reach the network -- get_audit_sessions is patched in every one.
+        return AuditDataAccess.__new__(AuditDataAccess)
+
+    def test_asks_the_api_for_completed_sessions_only(self):
+        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[]) as spy:
+            self._da().get_prior_audited_images(opportunity_id=1973)
+        spy.assert_called_once_with(status="completed")
+
+    def test_still_scopes_to_the_requested_opportunity(self):
+        mine = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at="2026-05-01T00:00:00Z")
+        other = AuditSessionRecord(
+            {
+                "id": 2,
+                "experiment": "audit",
+                "type": "AuditSession",
+                "opportunity_id": 9999,
+                "data": {
+                    "status": "completed",
+                    "completed_at": "2026-05-02T00:00:00Z",
+                    "visit_results": {"222": _vr(b9="fail")},
+                },
+            }
+        )
+        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[mine, other]):
+            index = self._da().get_prior_audited_images(opportunity_id=1973)
+        assert "111:b1" in index
+        assert "222:b9" not in index, "another opportunity's verdicts must not leak in"
+
+    def test_exclude_session_id_is_still_honoured(self):
+        s = _session(7, "completed", {"111": _vr(b1="pass")}, completed_at="2026-05-01T00:00:00Z")
+        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]):
+            index = self._da().get_prior_audited_images(opportunity_id=1973, exclude_session_id=7)
+        assert index == {}
+
+    def test_a_session_without_a_status_key_is_not_indexed(self):
+        """Mirrors the server-side filter, which is what makes moving it safe.
+
+        AuditSessionRecord.status reads data["status"] defaulting to
+        "in_progress", so a session missing the key is dropped by the Python
+        check and equally unmatched by data__status=completed. The predicate is
+        the same one, moved.
+        """
+        bare = AuditSessionRecord(
+            {
+                "id": 3,
+                "experiment": "audit",
+                "type": "AuditSession",
+                "opportunity_id": 1973,
+                "data": {"visit_results": {"111": _vr(b1="pass")}},
+            }
+        )
+        assert bare.status == "in_progress"
+        assert build_prior_audit_index([bare]) == {}

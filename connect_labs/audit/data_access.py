@@ -186,9 +186,9 @@ class AuditCriteria:
     # Filter to specific deliver unit type(s) — derived from form.@name in form_json,
     # since Connect never exposes a deliver-unit name, only the numeric FK id.
     deliver_unit_types: list[str] | None = None
-    visit_statuses: list[
-        str
-    ] | None = None  # Filter to specific visit status(es): pending/approved/rejected/over_limit
+    visit_statuses: list[str] | None = (
+        None  # Filter to specific visit status(es): pending/approved/rejected/over_limit
+    )
     related_fields: list[dict] | None = None  # List of {image_path, field_path, label}
     exclude_prior_audited: bool = False  # Drop images already audited in a completed session
     # Restrict date_range audits to visits falling on these ISO weekdays (1=Monday..7=Sunday).
@@ -1385,8 +1385,25 @@ class AuditDataAccess(BaseDataAccess):
 
         Filters to this opportunity even under program scope (get_audit_sessions
         fans out across a program's opportunities).
+
+        ``status="completed"`` is pushed down to the API rather than left to
+        ``build_prior_audit_index``, which drops non-completed sessions anyway.
+        The filter is not a micro-optimisation: an ``AuditSessionRecord`` is not
+        a local row, it is fetched from Connect's export API carrying its whole
+        ``data`` blob (every ``visit_images`` and ``visit_results`` entry for the
+        session). Without the filter, every in-progress session in scope is
+        pulled over the wire and JSON-parsed on each call purely to be skipped a
+        few lines later -- and this runs on every ``/audit/api/<id>/bulk-data/``
+        load, whose own response is single-digit kilobytes. See #1246.
+
+        Safe because it is the same predicate, moved: ``AuditSessionRecord.status``
+        reads ``data["status"]`` defaulting to ``"in_progress"``, so a session
+        missing the key is skipped by the Python check and equally unmatched by
+        ``data__status=completed``. ``LabsRecordDataView.get_queryset`` turns the
+        ``data__``-prefixed param into a real JSONField lookup, so the filter is
+        applied server-side rather than ignored.
         """
-        sessions = [s for s in self.get_audit_sessions() if s.opportunity_id == opportunity_id]
+        sessions = [s for s in self.get_audit_sessions(status="completed") if s.opportunity_id == opportunity_id]
         return build_prior_audit_index(sessions, exclude_session_id=exclude_session_id)
 
     def _query_audit_sessions(
