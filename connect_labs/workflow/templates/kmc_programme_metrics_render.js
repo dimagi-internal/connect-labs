@@ -1240,6 +1240,12 @@ function WorkflowUI({
     [derived, byOpp, frozen],
   );
 
+  // Separator for the composite FLW key. NOT '\u0000': a NUL byte is legal in a JS
+  // string but Postgres cannot store it in a JSON column, so freezing a run died with
+  // `UntranslatableCharacter: \u0000 cannot be converted to text` — the key only
+  // became unstorable at the moment it was persisted, long after it was built.
+  var FLW_SEP = '::';
+
   // FLW rollup. Keyed by opp+username: FLW usernames are only unique within an
   // opportunity (the synthetic cohort reuses flw_001.. across opps), so keying on
   // username alone silently merges different people into one row.
@@ -1248,12 +1254,12 @@ function WorkflowUI({
       if (frozen) return frozen.byFLW || [];
       var g = {};
       derived.forEach(function (r) {
-        var k = r.opp + '\u0000' + (r.flw || '(unassigned)');
+        var k = r.opp + FLW_SEP + (r.flw || '(unassigned)');
         (g[k] = g[k] || []).push(r);
       });
       return Object.keys(g)
         .map(function (k) {
-          var parts = k.split('\u0000'),
+          var parts = k.split(FLW_SEP),
             opp = Number(parts[0]);
           var rows = g[k],
             llo = lloOf(opp);
@@ -1350,7 +1356,7 @@ function WorkflowUI({
     var m = function (d) {
       return String(d || '').slice(0, 7);
     };
-    var flwKey = flwArg ? String(flwArg).split('\u0000') : null;
+    var flwKey = flwArg ? String(flwArg).split(FLW_SEP) : null;
     var ok = function (oppId, llo, flw) {
       if (flwKey) return oppId === Number(flwKey[0]) && flw === flwKey[1];
       if (oppArg) return oppId === oppArg;
@@ -1427,7 +1433,7 @@ function WorkflowUI({
       };
       // The trend follows the drill: pick an LLO or an opportunity on the
       // Indicators tab and this shows that scope, not the whole programme.
-      var flwKey = selFLW ? String(selFLW).split('\u0000') : null;
+      var flwKey = selFLW ? String(selFLW).split(FLW_SEP) : null;
       var inScope = function (oppId, llo, flw) {
         // FLW is the deepest level, so it wins when set. Its key is opp+username
         // because usernames only repeat across opportunities.
@@ -1907,7 +1913,7 @@ function WorkflowUI({
                       })[0] || {}
                     ).flw +
                     ' — ' +
-                    oppLabel(selOpp || (selFLW || '').split('\u0000')[0])
+                    oppLabel(selOpp || (selFLW || '').split(FLW_SEP)[0])
                   : selOpp
                   ? oppLabel(selOpp)
                   : selLLO
@@ -2176,21 +2182,43 @@ function WorkflowUI({
     };
   }
 
+  // Staged snapshot: the aggregates have been written to run state but the run is
+  // still in_progress. `view.state` reflects the persisted write, so its presence is
+  // proof the write landed.
+  var staged =
+    view && view.state && view.state.frozen ? view.state.frozen : null;
+
+  // Freezing is TWO steps on purpose. onUpdateState is fire-and-forget, so pairing it
+  // with view.complete() behind one click is a race — and complete() won it, producing
+  // a completed run whose snapshot captured an empty state. There is no un-complete
+  // path, so that artifact is permanent. Waiting for the write to round-trip through
+  // view.state removes the guess entirely.
+  function stageSnapshot() {
+    if (!derived.length) {
+      window.alert(
+        'No case data has loaded yet — a snapshot taken now would be empty, and a ' +
+          'completed run cannot be reopened. Wait for the indicators to appear.',
+      );
+      return;
+    }
+    onUpdateState({ frozen: buildFrozen() });
+  }
+
   function freezeRun() {
     if (!view || !view.complete) {
       window.alert('This run does not support snapshots yet.');
       return;
     }
-    // State must be written BEFORE complete(): the snapshot captures declared state
-    // keys, and completion refuses to re-execute pipelines by design.
-    onUpdateState({ frozen: buildFrozen() });
-    setTimeout(function () {
-      view.complete({
-        confirm:
-          'Freeze this run? The figures become read-only and load instantly from the ' +
-          'snapshot. Re-running later creates a new run; this one stays in the history.',
-      });
-    }, 400);
+    if (!staged) {
+      window.alert('Prepare the snapshot first.');
+      return;
+    }
+    view.complete({
+      confirm:
+        'Freeze this run? The figures become read-only and load from the snapshot ' +
+        'instead of recomputing. Re-running later creates a new run; this one stays ' +
+        'in the history.',
+    });
   }
 
   return (
@@ -2218,13 +2246,38 @@ function WorkflowUI({
           </p>
         </div>
         {!frozen && view && view.complete && (
-          <button
-            onClick={freezeRun}
-            className="shrink-0 px-3 py-2 rounded-lg text-sm border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-            title="Freeze these figures as a snapshot that loads instantly and never moves"
-          >
-            Freeze this run
-          </button>
+          <div className="shrink-0 flex items-center gap-2">
+            {staged && (
+              <span className="text-xs text-gray-500">
+                snapshot prepared · {(staged.meta || {}).cases} cases
+              </span>
+            )}
+            <button
+              onClick={staged ? freezeRun : stageSnapshot}
+              disabled={!derived.length}
+              className={
+                'px-3 py-2 rounded-lg text-sm border ' +
+                (!derived.length
+                  ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
+                  : staged
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                  : 'border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100')
+              }
+              title={
+                !derived.length
+                  ? 'Waiting for case data to load'
+                  : staged
+                  ? 'Freeze the prepared snapshot — figures become read-only'
+                  : 'Compute the snapshot from what is on screen'
+              }
+            >
+              {!derived.length
+                ? 'Freeze this run (loading…)'
+                : staged
+                ? 'Freeze this run'
+                : '1. Prepare snapshot'}
+            </button>
+          </div>
         )}
       </div>
 
