@@ -221,6 +221,11 @@
     paint(store.summary);
 
     store.on('event', (ev) => {
+      // Only LIVE arrivals climb the all-time figures. Replayed events are
+      // already inside the baseline -- counting them again was invisible at
+      // estate scale (2k on 1.7M) and a 30% overstatement on a single
+      // opportunity's life replay, on the least forgiving number on screen.
+      if (store.mode !== 'live') return;
       delivered += 1;
       // Live events carry only the worker's rate; the org share catches up on
       // the next summary refresh. Slightly under is better than invented.
