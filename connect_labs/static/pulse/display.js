@@ -1474,6 +1474,15 @@
         try {
           await store.fitLife(seconds);
           paintTransport();
+          // The preset buttons own the speed readout on click; a computed
+          // speed has to say what it is itself.
+          const sr = $('#speed-read');
+          if (sr) sr.textContent = nf.format(store.speed) + '×';
+          $$('#speed-controls [data-speed]').forEach((o) =>
+            o.setAttribute('aria-pressed', 'false'),
+          );
+          const br = $('#brush-read');
+          if (br) br.textContent = 'Whole life · ' + seconds + 's';
         } catch (err) {
           console.error('[pulse] life replay failed', err);
         }
