@@ -1000,3 +1000,39 @@ class TestTrendSeries:
         trends = client.get(reverse("pulse:api_summary")).json()["trends"]
         horizon = timezone.now() + timedelta(days=7)
         assert all(w["t"] < horizon.timestamp() for w in trends)
+
+
+@pytest.mark.django_db
+class TestLifeReplayScope:
+    """The sampled replay must honour EVERY scope axis.
+
+    The strided ROW_NUMBER path restated only the programme filter, so a
+    single-opportunity life replay whose history exceeded the point budget
+    would have sampled the whole estate's time range and painted other
+    partners' lights over one engagement's minute.
+    """
+
+    def test_sampling_stays_inside_the_opportunity(self, client, populated):
+        now = timezone.now()
+        for i in range(30):
+            for opp_id, base in ((765, 20000), (999, 30000)):
+                PulseEvent.objects.create(
+                    connect_visit_id=base + i,
+                    opportunity_id=opp_id,
+                    field_ts=now - timedelta(days=200 + i),
+                    sync_ts=now - timedelta(days=200 + i),
+                    status="approved",
+                    service_slug="mbw",
+                    worker_hash="w",
+                )
+        PulseOpportunity.objects.get_or_create(opportunity_id=999, defaults={"name": "Other"})
+
+        d = client.get(
+            reverse("pulse:api_replay"),
+            {"from": 1, "to": int(now.timestamp()), "limit": 10, "opportunity": 765},
+        ).json()
+
+        assert d["sampled"] is True
+        opp_i = d["fields"].index("opportunity_id")
+        assert d["events"], "the scoped sample must not come back empty"
+        assert {row[opp_i] for row in d["events"]} == {765}, "another opportunity's rows leaked into the sample"

@@ -692,6 +692,15 @@
 
   /* ═══ grid (the map's geography) ════════════════════════════════ */
   async function loadGrid() {
+    // Grid cells carry no opportunity_id, so a single-opportunity scope
+    // cannot narrow them -- and the whole estate's density under one
+    // engagement's lights would claim work that is not theirs. No base
+    // layer at all is the honest rendering; the lights are the data.
+    if (store.opportunity) {
+      cells = [];
+      baseDirty = true;
+      return;
+    }
     try {
       // Built by the store, not by hand: this fetch has to carry whatever the
       // store is filtered to. A local copy of the query string silently missed
@@ -1409,6 +1418,7 @@
       set('service', store.service);
       set('program', store.program);
       set('org', store.org);
+      set('opportunity', store.opportunity);
       const open = window.PulseWindows && window.PulseWindows.state();
       set('partner', open && open.partner);
       set('opp', open && open.opportunity);
@@ -1422,13 +1432,15 @@
       const service = q.get('service');
       const program = q.get('program');
       const org = q.get('org');
+      const opportunity = q.get('opportunity');
 
-      // Set them on the store directly and load ONCE, rather than calling three
-      // setters that would each re-fetch everything in turn.
+      // Set them on the store directly and load ONCE, rather than calling
+      // several setters that would each re-fetch everything in turn.
       store.service = service || null;
       store.program = program ? Number(program) : null;
       store.org = org || null;
-      if (service || program || org) {
+      store.opportunity = opportunity ? Number(opportunity) : null;
+      if (service || program || org || opportunity) {
         await store.refreshSummary();
         await loadGrid();
         const svc = $('#svc-filter'),
@@ -1451,6 +1463,20 @@
         const worker = q.get('worker');
         if (worker)
           window.PulseWindows.openWorker(store, worker, partner, partner);
+      }
+
+      // ?opportunity=<id>&fit=60 -- the whole life of one engagement, its
+      // lights normalised to play in that many seconds. The speed readout
+      // shows the (large) multiplier this works out to.
+      const fit = q.get('fit');
+      if (store.opportunity && fit) {
+        const seconds = Math.max(10, Number(fit) || 60);
+        try {
+          await store.fitLife(seconds);
+          paintTransport();
+        } catch (err) {
+          console.error('[pulse] life replay failed', err);
+        }
       }
     }
 

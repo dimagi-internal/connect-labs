@@ -1280,9 +1280,22 @@ class ReplayView(View):
             table = PulseEvent._meta.db_table
             where = "field_ts >= %s AND field_ts <= %s"
             params = [start, end]
+            # EVERY axis the scope narrowed must be restated here, or the
+            # stride samples the whole estate's time range and hands back rows
+            # the filter excluded. Program was restated from day one; the
+            # single-opportunity life-replay is what surfaced the others.
             if sc["program"] is not None:
                 where += " AND program_id = %s"
                 params.append(sc["program"].program_id)
+            if sc["opportunity"] is not None:
+                where += " AND opportunity_id = %s"
+                params.append(sc["opportunity"].opportunity_id)
+            if sc["org"] is not None:
+                where += " AND org_slug = %s"
+                params.append(sc["org"].slug)
+            if sc["service"]:
+                where += " AND service_slug = %s"
+                params.append(sc["service"])
             rows = list(
                 PulseEvent.objects.raw(
                     f"""SELECT * FROM (

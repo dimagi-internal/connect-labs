@@ -42,6 +42,7 @@
       this.program = this.opts.program || null;
       this.org = this.opts.org || null;
       this.service = this.opts.service || null;
+      this.opportunity = this.opts.opportunity || null;
       // [fromEpoch, toEpoch] when a range is pinned, else null.
       this.range = this.opts.range || null;
       this.speed = this.opts.speed;
@@ -129,6 +130,10 @@
       const u = new URLSearchParams(params || {});
       if (this.program) u.set('program', this.program);
       if (this.org) u.set('org', this.org);
+      // service was set on the store but never sent, so the Service filter
+      // redrew the menu and quietly scoped nothing server-side.
+      if (this.service) u.set('service', this.service);
+      if (this.opportunity) u.set('opportunity', this.opportunity);
       if (this.opts.token) u.set('token', this.opts.token);
       const q = u.toString();
       return `${this.opts.base}${path}${q ? '?' + q : ''}`;
@@ -185,6 +190,33 @@
       if (next === this.service) return;
       this.service = next;
       await this._applyFilter();
+    }
+
+    /* Replay the WHOLE life of the current scope, normalised so the full
+       span plays in `seconds`. Two steps, because the span is unknown until
+       the data answers: an unbounded probe finds the first and last delivery
+       (the server samples uniformly, so the extremes of the sample are the
+       extremes of the history), then the range is pinned to exactly that and
+       the speed set so (last - first) / speed lands on `seconds`. */
+    async fitLife(seconds = 60) {
+      const res = await fetch(
+        this._url('/api/replay/', {
+          from: 1,
+          to: Math.ceil(Date.now() / 1000),
+          limit: 2000,
+        }),
+      );
+      if (!res.ok) throw new Error(`replay ${res.status}`);
+      const d = await res.json();
+      const f = (d.fields || []).indexOf('field_ts');
+      const evs = d.events || [];
+      if (f < 0 || evs.length < 2) return false;
+      const first = evs[0][f];
+      const last = evs[evs.length - 1][f];
+      if (!(last > first)) return false;
+      this.setSpeed(Math.max(1, Math.round((last - first) / seconds)));
+      await this.setRange(first, last + 1);
+      return true;
     }
 
     /* Replay an explicit range when one is pinned, otherwise the rolling
