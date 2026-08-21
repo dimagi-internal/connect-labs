@@ -20,6 +20,7 @@ import logging
 from dataclasses import dataclass
 
 from django.db import transaction
+from django.db.models import F
 from django.utils.dateparse import parse_datetime
 
 from connect_labs.audit.prior_audit_models import AUDIT_VERDICTS, PriorAuditVerdict
@@ -117,25 +118,24 @@ def read_index(opportunity_id: int, exclude_session_id: int | None = None) -> di
     switched between the two without noticing -- which is the point: the diff in
     ``verify_opportunity`` is only meaningful if the shapes are identical.
 
-    The winner is resolved in Python rather than with DISTINCT ON so the
-    tie-breaking is visibly the same logic as the live builder, including the
-    rule that a null completed_at never displaces a dated one. The row count per
-    opportunity is small enough that this is not the expensive part; the network
-    round-trip it replaces is.
+    Ordered ASCENDING by the same precedence the live builder sorts on
+    (``data_access.PRIOR_AUDIT_ORDER``: dated beats undated, then completed_at,
+    then session_id) and then plainly overwritten, so the last row wins.
+
+    The ORDER BY is load-bearing, not cosmetic. Without it Postgres returns rows
+    in whatever order it likes, so two images whose verdicts tie on completed_at
+    -- or which both carry none -- would resolve differently between runs, and
+    ``verify_opportunity`` would report a disagreement that appears and vanishes.
+    ``F(...).asc(nulls_first=True)`` reproduces the "undated loses" half in SQL.
     """
     qs = PriorAuditVerdict.objects.filter(opportunity_id=opportunity_id)
     if exclude_session_id is not None:
         qs = qs.exclude(session_id=exclude_session_id)
+    qs = qs.order_by(F("completed_at").asc(nulls_first=True), "session_id")
 
     index: dict[str, dict] = {}
-    best: dict[str, object] = {}
     for row in qs.iterator():
-        key = f"{row.visit_id}:{row.blob_id}"
-        prev = best.get(key)
-        if prev is not None and (row.completed_at is None or row.completed_at <= prev):
-            continue
-        best[key] = row.completed_at
-        index[key] = {
+        index[f"{row.visit_id}:{row.blob_id}"] = {
             "result": row.result,
             "session_id": row.session_id,
             "session_title": row.session_title,

@@ -184,3 +184,56 @@ class TestVerifyDetectsDisagreement:
         live = build_prior_audit_index([_session(1, "completed", {"111": _vr(b1="fail")}, completed_at=_dt(1))])
         result = verify_opportunity(OPP, live)
         assert not result.agrees and result.mismatched[0]["key"] == "111:b1"
+
+
+@pytest.mark.django_db
+class TestTieBreaking:
+    """Ties must resolve the SAME way in both paths, and the same way twice.
+
+    Before PRIOR_AUDIT_ORDER the live builder's tie behaviour fell out of the
+    order `sessions` happened to arrive in -- on equal completed_at it kept the
+    FIRST session, and when both were None it kept the LAST -- while the
+    projection read rows in whatever order Postgres returned them. Two page loads
+    could disagree about an image's prior verdict, and verify_opportunity would
+    report a disagreement that appeared and vanished.
+
+    An undated completed session is reachable: one completed before completed_at
+    was recorded has status "completed" and no timestamp.
+    """
+
+    def _both(self, sessions):
+        rebuild_opportunity(OPP, sessions)
+        return build_prior_audit_index(sessions), read_index(OPP)
+
+    def test_equal_timestamps_resolve_to_the_same_session_in_both_paths(self):
+        a = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(5))
+        b = _session(2, "completed", {"111": _vr(b1="fail")}, completed_at=_dt(5))
+        live, projected = self._both([a, b])
+        assert live["111:b1"]["session_id"] == projected["111:b1"]["session_id"]
+        assert verify_opportunity(OPP, live).agrees
+
+    def test_equal_timestamps_do_not_depend_on_session_order(self):
+        a = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(5))
+        b = _session(2, "completed", {"111": _vr(b1="fail")}, completed_at=_dt(5))
+        assert build_prior_audit_index([a, b]) == build_prior_audit_index([b, a])
+
+    def test_all_null_timestamps_resolve_identically_in_both_paths(self):
+        a = _session(1, "completed", {"111": _vr(b1="pass")})
+        b = _session(2, "completed", {"111": _vr(b1="fail")})
+        live, projected = self._both([a, b])
+        assert live["111:b1"]["session_id"] == projected["111:b1"]["session_id"]
+        assert verify_opportunity(OPP, live).agrees
+
+    def test_all_null_timestamps_do_not_depend_on_session_order(self):
+        a = _session(1, "completed", {"111": _vr(b1="pass")})
+        b = _session(2, "completed", {"111": _vr(b1="fail")})
+        assert build_prior_audit_index([a, b]) == build_prior_audit_index([b, a])
+
+    def test_a_dated_verdict_still_beats_an_undated_one_regardless_of_id(self):
+        """The undated session has the HIGHER id, so id alone must not decide."""
+        dated = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
+        undated = _session(9, "completed", {"111": _vr(b1="fail")})
+        live, projected = self._both([dated, undated])
+        assert live["111:b1"]["result"] == "pass"
+        assert projected["111:b1"]["result"] == "pass"
+        assert verify_opportunity(OPP, live).agrees
