@@ -225,7 +225,12 @@
     cx.globalCompositeOperation = 'source-over';
 
     // A window is modal — the tour must not keep swapping cards behind it.
-    if (!(window.PulseWindows && window.PulseWindows.isOpen()))
+    // And a single-opportunity view is one engagement's story: rotating
+    // callouts for unrelated partners over it is noise, so the tour sits out.
+    if (
+      !store.opportunity &&
+      !(window.PulseWindows && window.PulseWindows.isOpen())
+    )
       Partners.tick(ts, ts - lastInteractionAt);
     Brush.tick();
   }
