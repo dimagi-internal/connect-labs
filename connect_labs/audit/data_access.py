@@ -1402,26 +1402,44 @@ class AuditDataAccess(BaseDataAccess):
     def get_prior_audited_images(self, opportunity_id, exclude_session_id=None) -> dict:
         """Prior-audit index for one opportunity, from its completed sessions.
 
-        Filters to this opportunity even under program scope (get_audit_sessions
-        fans out across a program's opportunities).
+        Reads the local projection when this opportunity has one, and otherwise
+        falls back to computing it live from Connect. The fallback is not a
+        transitional nicety -- it is the safety property. An opportunity whose
+        projection has never been built must not be reported as having no prior
+        audits, because "no verdicts" and "never built" are indistinguishable in
+        the rows table and opposite in consequence: the second tells an auditor
+        an image has never been judged when it has.
 
-        ``status="completed"`` is pushed down to the API rather than left to
-        ``build_prior_audit_index``, which drops non-completed sessions anyway.
-        The filter is not a micro-optimisation: an ``AuditSessionRecord`` is not
-        a local row, it is fetched from Connect's export API carrying its whole
-        ``data`` blob (every ``visit_images`` and ``visit_results`` entry for the
-        session). Without the filter, every in-progress session in scope is
-        pulled over the wire and JSON-parsed on each call purely to be skipped a
-        few lines later -- and this runs on every ``/audit/api/<id>/bulk-data/``
-        load, whose own response is single-digit kilobytes. See #1246.
+        ``is_built`` is therefore the gate, not "are there any rows". Rows
+        accumulate from completion dual-writes before a backfill has run, and a
+        partial set is precisely what must never be served as a full history.
 
-        Safe because it is the same predicate, moved: ``AuditSessionRecord.status``
-        reads ``data["status"]`` defaulting to ``"in_progress"``, so a session
-        missing the key is skipped by the Python check and equally unmatched by
-        ``data__status=completed``. ``LabsRecordDataView.get_queryset`` turns the
-        ``data__``-prefixed param into a real JSONField lookup, so the filter is
-        applied server-side rather than ignored.
+        The live path stays for that fallback and for the rebuild/verify source;
+        what changes is that a built opportunity no longer reconstructs the whole
+        audit history on every page load (#1246).
         """
+        from connect_labs.audit import prior_audit_projection as projection
+
+        if projection.is_built(opportunity_id):
+            return projection.read_index(opportunity_id, exclude_session_id=exclude_session_id)
+
+        # ``status="completed"`` is pushed down to the API rather than left to
+        # build_prior_audit_index, which drops non-completed sessions anyway. An
+        # AuditSessionRecord is not a local row -- it is fetched from Connect's
+        # export API carrying its whole ``data`` blob -- so without the filter
+        # every in-progress session in scope is pulled over the wire and parsed
+        # only to be skipped. Safe because it is the same predicate, moved:
+        # AuditSessionRecord.status reads data["status"] defaulting to
+        # "in_progress", so a session missing the key is dropped by the Python
+        # check and equally unmatched by data__status=completed.
+        #
+        # opportunity_id is deliberately NOT pushed down alongside it. It would
+        # be the same one-line change, but the values differ in kind: "completed"
+        # is unambiguously a string, while an opportunity id is numeric and a
+        # data__opportunity_id lookup misses any record that stored it as a
+        # string. That failure is an UNDER-fetch -- missing prior verdicts, on
+        # the path an auditor trusts -- and it is silent. It stays a Python
+        # filter until someone verifies the stored types against production.
         sessions = [s for s in self.get_audit_sessions(status="completed") if s.opportunity_id == opportunity_id]
         return build_prior_audit_index(sessions, exclude_session_id=exclude_session_id)
 

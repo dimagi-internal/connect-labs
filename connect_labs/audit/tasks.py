@@ -38,6 +38,12 @@ from connect_labs.utils.progress_relays import get_relay
 
 logger = logging.getLogger(__name__)
 
+# Celery's autodiscover_tasks() only imports <app>/tasks.py, so a @shared_task
+# defined anywhere else in this app never registers -- and a beat entry naming an
+# unregistered task fails at dispatch, not at startup. Imported here so
+# connect_labs.audit.reconcile_prior_audit_index actually exists on the worker.
+from connect_labs.audit.prior_audit_tasks import reconcile_prior_audit_index  # noqa: E402,F401
+
 # The in-process progress-relay registry now lives in connect_labs.utils.progress_relays
 # (domain-neutral, reusable by any eager in-process fan-out). AUDIT_PROGRESS_RELAYS
 # remains as a back-compat alias to the shared dict so existing imports keep working;

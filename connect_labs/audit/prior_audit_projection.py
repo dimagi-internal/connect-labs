@@ -23,7 +23,7 @@ from django.db import transaction
 from django.db.models import F
 from django.utils.dateparse import parse_datetime
 
-from connect_labs.audit.prior_audit_models import AUDIT_VERDICTS, PriorAuditVerdict
+from connect_labs.audit.prior_audit_models import AUDIT_VERDICTS, PriorAuditProjectionState, PriorAuditVerdict
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ def replace_session(session) -> int:
 
 
 @transaction.atomic
-def rebuild_opportunity(opportunity_id: int, sessions) -> dict:
+def rebuild_opportunity(opportunity_id: int, sessions, built_by: str = "") -> dict:
     """Rebuild one opportunity's projection from the full session list.
 
     Scoped to the opportunity, never a global truncate: the caller fetched one
@@ -102,6 +102,18 @@ def rebuild_opportunity(opportunity_id: int, sessions) -> dict:
             rows.extend(session_rows)
     if rows:
         PriorAuditVerdict.objects.bulk_create(rows, batch_size=1000)
+    # Stamped in the SAME transaction as the rows. A build that wrote rows but
+    # not the state row would keep falling back forever (merely wasteful); one
+    # that stamped state without the rows would report an empty history as a
+    # clean one, which is the failure this whole design exists to avoid.
+    PriorAuditProjectionState.objects.update_or_create(
+        opportunity_id=opportunity_id,
+        defaults={
+            "built_by": (built_by or "")[:150],
+            "source_sessions": len(sessions),
+            "rows": len(rows),
+        },
+    )
     return {
         "opportunity_id": opportunity_id,
         "sessions_seen": len(sessions),
@@ -193,3 +205,44 @@ def verify_opportunity(opportunity_id: int, live_index: dict, exclude_session_id
         extra=sorted(proj_keys - live_keys),
         mismatched=mismatched,
     )
+
+
+def is_built(opportunity_id: int) -> bool:
+    """Has this opportunity's projection ever been built?
+
+    The read path's entire safety rests on this. An opportunity with no state
+    row falls back to the live computation, however many rows happen to be in
+    the table for it -- dual-written rows from a completion accumulate before
+    the backfill runs, and a partial set is exactly the thing that must never be
+    served as a complete history.
+    """
+    return PriorAuditProjectionState.objects.filter(opportunity_id=opportunity_id).exists()
+
+
+def record_session(session) -> int | None:
+    """Keep the projection in step when a session is completed or reopened.
+
+    Called from the request that just wrote the session, so it needs no fetch
+    and no credential -- it writes the object already in hand. That matters:
+    anything that had to re-read from Connect would inherit the caller's scope
+    and could silently write a narrower truth.
+
+    Best-effort, following _maybe_complete_workflow_run: the session write has
+    already succeeded and is what the user asked for, so a projection failure is
+    logged and swallowed rather than turned into a 500 on a completed audit. The
+    cost of swallowing is bounded -- reconciliation finds the drift, and until it
+    does the projection is merely stale, in the direction of showing a verdict
+    that was retracted or missing one that was added.
+
+    Returns the row count written, or None if it failed.
+    """
+    try:
+        return replace_session(session)
+    except Exception:
+        logger.exception(
+            "prior-audit projection: failed to record session %s (opp %s); "
+            "projection is now stale for this opportunity until reconciliation",
+            getattr(session, "id", "?"),
+            getattr(session, "opportunity_id", "?"),
+        )
+        return None
