@@ -86,6 +86,13 @@ function WorkflowUI({
   function lloOf(o) {
     return LLO_OF[o] || 'opp ' + o;
   }
+  // Synthetic clones are provisioned above 10000; the real KMC opportunities are
+  // all below it. This matters for honesty: on a synthetic run, "no value reaches
+  // this row" can mean OUR clone does not carry the field, which is not evidence
+  // about what the real programme records.
+  function isSyntheticOpp(o) {
+    return Number(o) >= 10000;
+  }
   function oppLabel(o) {
     return OPP_LABEL[o] || 'opp ' + o;
   }
@@ -849,6 +856,11 @@ function WorkflowUI({
       cat: 'Performance',
       name: 'Mortality',
       prom: 'Top',
+      // This row is ALL LLOs pooled. The headline card above is gated to the
+      // credible recorders, so the two legitimately differ and the page must say
+      // which is which — an unlabelled pair reads as a bug.
+      scopeNote:
+        'All LLOs pooled, including the four the workbook says do not record deaths credibly. The headline card above is PIPN + EHA only, and reads higher because non-recorders add denominator without deaths.',
       unit: '%',
       den: function (r) {
         return r.eligible && r.outcome_known;
@@ -1033,13 +1045,13 @@ function WorkflowUI({
     {
       id: 'C03',
       name: 'Cases started per month',
-      why: 'every app asks for reg_date and none has recorded one — use the Trend tab (first visit)',
+      why: 'no reg_date value reaches these rows — it is a hidden field the form auto-calculates (today()), not a question anyone answers — so use the Trend tab, which cohorts on first visit',
     },
     { id: 'C04', name: 'Visits per month', why: 'available on the Trend tab' },
     {
       id: 'C18',
       name: 'KMC completion rate',
-      why: 'all 11 apps ask for kmc discharge (kmc_status_discharged) and none has recorded a single value; gate also TBD in the workbook',
+      why: 'no kmc_status_discharged value reaches these rows — it is a hidden calculated field (DataBindOnly), not a question anyone answers — and the completion gate is still TBD in the workbook',
     },
     { id: 'C22', name: '% EBF at completion', why: 'depends on C18' },
     { id: 'C25', name: '% thin', why: 'needs per-reading flag_thin' },
@@ -1172,9 +1184,10 @@ function WorkflowUI({
         // wrong and actively confusing — these LLOs DO record deaths, the workbook
         // just says not credibly. Showing the figure greyed with the caveat lets a
         // reader see both the number and why it is not to be trusted, and makes the
-        // under-recording visible: pooling every LLO gives 5.0% against 6.0% for the
-        // credible recorders alone, because non-recorders add denominator without
-        // deaths (GHI 1.3%, NAMA 2.1% vs PIPN 6.3%).
+        // under-recording visible: pooling every LLO reads LOWER than the credible
+        // recorders alone, because non-recorders add denominator without deaths.
+        // (Deliberately no figures here — an earlier version hardcoded them, they
+        // went stale as the cohort changed, and they were quoted as current.)
         var ne = evaluate(i, rows);
         ne.band = 'notcredible';
         m[i.id] = ne;
@@ -1579,6 +1592,14 @@ function WorkflowUI({
                       title={i.tbdInput}
                     >
                       provisional
+                    </span>
+                  )}
+                  {i.scopeNote && (
+                    <span
+                      className="ml-2 text-xs text-gray-400"
+                      title={i.scopeNote}
+                    >
+                      all LLOs pooled
                     </span>
                   )}
                 </td>
@@ -1986,12 +2007,13 @@ function WorkflowUI({
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            Cohorted on each baby&rsquo;s FIRST VISIT &mdash; every KMC app asks
-            for reg_date and none has recorded one, so first visit is the honest
-            proxy (this is what C03/C04 were waiting on). Each month&rsquo;s
-            quality and growth figures describe the babies who ENTERED that
-            month. A gap in a line is a month with too few cases to score, not a
-            zero. Dashed line = target.
+            Cohorted on each baby&rsquo;s FIRST VISIT &mdash; no reg_date value
+            reaches these rows (it is a hidden field the form auto-calculates,
+            not a question anyone answers), so first visit is the honest proxy
+            (this is what C03/C04 were waiting on). Each month&rsquo;s quality
+            and growth figures describe the babies who ENTERED that month. A gap
+            in a line is a month with too few cases to score, not a zero. Dashed
+            line = target.
           </p>
         </div>
 
@@ -2119,6 +2141,21 @@ function WorkflowUI({
   // Build the frozen payload: everything the page DISPLAYS, and nothing it doesn't.
   // Per-case rows are deliberately excluded — 8,656 of them is 7.5 MB on its own, and
   // case-level drill is an investigative tool, not part of a published figure.
+  // Is this run built on synthetic clones rather than real programme data? A frozen
+  // run reads the flag captured at freeze time; a live run computes it from scope.
+  var runIsSynthetic = React.useMemo(
+    function () {
+      if (frozen) return !!(frozen.meta && frozen.meta.synthetic);
+      var seen = {};
+      derived.forEach(function (r) {
+        seen[r.opp] = true;
+      });
+      var opps = Object.keys(seen);
+      return opps.length > 0 && opps.every(isSyntheticOpp);
+    },
+    [derived, frozen],
+  );
+
   function buildFrozen() {
     var scopes = { all: monthlyFor(null, null, null) };
     byLLO.forEach(function (l) {
@@ -2178,6 +2215,7 @@ function WorkflowUI({
         visits: wrows.length,
         opportunities: byOpp.length,
         llos: byLLO.length,
+        synthetic: runIsSynthetic,
       },
     };
   }
@@ -3060,6 +3098,16 @@ function WorkflowUI({
             <div className="font-medium text-gray-900 mb-2 text-sm">
               Declared in the workbook, not computable yet
             </div>
+            {runIsSynthetic && (
+              <div className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                This run is built on synthetic clones. Where a reason below says
+                a value does not reach these rows, that is a statement about
+                THIS dataset, not about what the real programmes collect &mdash;
+                the clone reproduces only part of each app&rsquo;s fields.
+                Confirm against a run on live data before treating any of these
+                as a collection gap.
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 text-xs text-gray-500">
               {NOT_COMPUTABLE.map(function (n) {
                 return (
