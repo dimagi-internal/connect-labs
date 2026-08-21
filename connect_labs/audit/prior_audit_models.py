@@ -1,0 +1,109 @@
+"""Local projection of "which images has a human already judged".
+
+WHY THIS TABLE EXISTS
+``get_prior_audited_images`` answers one question -- *has this exact image been
+judged in some other completed audit of this opportunity?* -- and today it
+answers it by RECONSTRUCTING the opportunity's entire audit history on every
+call: pull every AuditSession record from Connect's export API, each carrying
+its whole ``data`` blob, parse them all, walk every verdict, build a dict, throw
+it away. It runs on every ``/audit/api/<id>/bulk-data/`` load, whose own response
+is single-digit kilobytes, and its cost tracks accumulated audit history rather
+than anything on the page -- so it degrades on its own as audits pile up. It was
+the dominant cost in the 2026-08-20 web-tier saturation (#1246, #1152).
+
+WHY ONE ROW PER (SESSION, IMAGE) AND NOT ONE PER IMAGE
+The obvious schema -- one row per image holding the winning verdict -- cannot
+survive a retraction. ``ExperimentAuditUncompleteView`` reopens a completed
+session (``status`` back to ``in_progress``, ``completed_at`` to ``None``), which
+withdraws every verdict it contributed. Because the rule is *most recent
+completed wins*, withdrawing session A's verdict must RESTORE session B's older
+one for that image -- and a table holding only the winner has no memory that B
+ever voted.
+
+So this stores the raw contribution and lets the winner be a query:
+
+    complete    -> insert this session's rows
+    uncomplete  -> delete this session's rows
+    read        -> DISTINCT ON (visit_id, blob_id) ... ORDER BY completed_at DESC
+
+Every operation is idempotent and none needs to recompute anything.
+
+WHAT THE KEY IS, AND WHAT IT IS NOT
+``(visit_id, blob_id)`` identifies one photo slot on one visit. In Connect,
+``BlobMeta`` is ``unique_together ("parent_id", "name")`` and ``blob_id``
+defaults to ``uuid4()``, so this is stable and effectively unique -- but note
+``blob_id`` is **not declared unique** there (a plain ``CharField`` with a
+non-unique index), which is why the key is the pair and nothing here assumes
+global blob uniqueness.
+
+It identifies an UPLOAD, not a picture. Re-uploading the same photo produces a
+new ``blob_id``. That is the correct semantics for "was this submission judged?",
+and it is emphatically NOT duplicate detection -- that is the separate
+``/detect_duplicates`` path in ``duplicate_detection.py``. Do not repurpose this
+table for it.
+
+THIS IS A CACHE, NOT THE SYSTEM OF RECORD
+Audit sessions live in Connect and labs writes them over the API, so labs has no
+transactional control over the source. A half-completed write drifts the two
+apart, and drift here is silent and consequential: an auditor told "not
+previously audited" about an image that was. Therefore this table must always be
+rebuildable from the source (``rebuild_prior_audit_index``), verifiable against
+it (``verify_prior_audit_index``), and the read path must fall back to live
+computation rather than report an empty history as a clean one.
+"""
+
+from __future__ import annotations
+
+from django.db import models
+
+# Verdicts that count as "a human judged this". Mirrors data_access._AUDIT_VERDICTS;
+# an image with no verdict, or a non-verdict value, is not a prior audit.
+AUDIT_VERDICTS = ("pass", "fail", "duplicate_fake", "duplicate", "fake")
+
+
+class PriorAuditVerdict(models.Model):
+    """One completed session's verdict on one image.
+
+    Not "the" verdict for that image -- several sessions may have judged it, and
+    which one wins is decided on read by ``completed_at``.
+    """
+
+    # Scope for every read; the index is always asked for one opportunity.
+    opportunity_id = models.IntegerField(db_index=True)
+
+    # The contributing session. Deleting by this alone is how a retraction works.
+    session_id = models.IntegerField(db_index=True)
+    session_title = models.CharField(max_length=255, blank=True, default="")
+
+    # visit_id is stored as text because it is a JSON object key upstream
+    # (``data["visit_results"]``), and coercing it to an int here would invent a
+    # normalisation the source does not have.
+    visit_id = models.CharField(max_length=64)
+    blob_id = models.CharField(max_length=255)
+
+    result = models.CharField(max_length=32)
+
+    # Nullable because a session can be marked completed without a timestamp.
+    # Such a row loses every comparison in the winner query, which matches
+    # build_prior_audit_index: a null completed_at never displaces a dated one.
+    completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        constraints = [
+            # One session gets one verdict per image. Makes the rebuild an upsert
+            # and makes a double-insert impossible rather than merely unlikely.
+            models.UniqueConstraint(
+                fields=["session_id", "visit_id", "blob_id"],
+                name="uniq_prior_audit_session_visit_blob",
+            )
+        ]
+        indexes = [
+            # The read path: one opportunity, then the winner per image.
+            models.Index(
+                fields=["opportunity_id", "visit_id", "blob_id", "-completed_at"],
+                name="idx_prior_audit_lookup",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.visit_id}:{self.blob_id} = {self.result} (session {self.session_id})"

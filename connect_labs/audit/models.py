@@ -4,8 +4,17 @@ Proxy models for Audit LocalLabsRecords.
 These proxy models provide convenient access to LocalLabsRecord data
 for the audit workflow. LocalLabsRecord is a transient Python object
 that deserializes production API responses - no database storage.
+
+The one exception is ``PriorAuditVerdict``, a REAL labs-DB table re-exported
+below. It is a local projection of prior audit verdicts, kept so the
+bulk-assessment page can look up "has this image been judged before" instead of
+rebuilding the opportunity's whole audit history from remote blobs on every
+load. It lives in ``prior_audit_models.py`` -- see that module for why it stores
+one row per (session, image) rather than one per image. Re-exported here because
+Django only discovers models reachable from ``models.py``.
 """
 
+from connect_labs.audit.prior_audit_models import AUDIT_VERDICTS, PriorAuditVerdict  # noqa: F401
 from connect_labs.labs.models import LocalLabsRecord
 
 # Shared with connect_labs.audit.tasks._combine_reviewer_results, which joins

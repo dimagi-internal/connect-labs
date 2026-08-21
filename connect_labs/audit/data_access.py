@@ -11,6 +11,7 @@ Key optimizations:
 4. Uses FieldComputation with custom extractors - leverages analysis pipeline infrastructure
 """
 
+import datetime as _dt
 import hashlib
 import logging
 import time
@@ -350,6 +351,24 @@ def filter_visits_for_audit(
 
 _AUDIT_VERDICTS = {"pass", "fail", "duplicate_fake", "duplicate", "fake"}
 
+# THE canonical precedence for "which completed session's verdict wins" -- later
+# sorts higher. Both readers of this rule (build_prior_audit_index below, and the
+# local projection in prior_audit_projection.read_index) must order by it, or
+# they disagree on ties and the projection cannot be verified against the live
+# computation.
+#
+# session_id breaks the tie because it is the only totally-ordered, stable
+# attribute available on both sides; the value it picks is arbitrary but the
+# CHOICE is not, which is the property that matters. `completed_at is not None`
+# leads so a session with no timestamp always loses to one that has a date,
+# preserving the existing intent that a dated verdict is never displaced by an
+# undated one.
+_MIN_DT = _dt.datetime.min.replace(tzinfo=_dt.timezone.utc)
+
+
+def PRIOR_AUDIT_ORDER(session):
+    return (session.completed_at is not None, session.completed_at or _MIN_DT, session.id)
+
 
 def build_prior_audit_index(sessions, exclude_session_id=None) -> dict:
     """Map "<visit_id>:<blob_id>" -> prior verdict, from COMPLETED sessions only.
@@ -360,24 +379,24 @@ def build_prior_audit_index(sessions, exclude_session_id=None) -> dict:
     flags its own images (matters for reopened sessions).
     """
     index: dict[str, dict] = {}
-    dt_by_key: dict[str, object] = {}
-    for session in sessions:
-        if session.status != "completed":
-            continue
-        if exclude_session_id is not None and session.id == exclude_session_id:
-            continue
+    # Ascending by PRIOR_AUDIT_ORDER, then plain overwrite, so the last writer is
+    # the winner. Replaces a hand-rolled comparison whose tie behaviour depended
+    # on the order `sessions` happened to arrive in: on equal completed_at it
+    # kept the FIRST session, and when both were None it kept the LAST. Both are
+    # reachable (an old session completed before completed_at was recorded has
+    # status "completed" and no timestamp), and both meant two page loads could
+    # disagree about an image's prior verdict with nothing to show for it.
+    for session in sorted(
+        (s for s in sessions if s.status == "completed" and s.id != exclude_session_id),
+        key=PRIOR_AUDIT_ORDER,
+    ):
         completed_at = session.completed_at  # datetime | None
         for visit_key, visit_result in (session.data.get("visit_results") or {}).items():
             for blob_id, assessment in (visit_result.get("assessments") or {}).items():
                 result = assessment.get("result")
                 if result not in _AUDIT_VERDICTS:
                     continue
-                key = f"{visit_key}:{blob_id}"
-                prev_dt = dt_by_key.get(key)
-                if prev_dt is not None and (completed_at is None or completed_at <= prev_dt):
-                    continue
-                dt_by_key[key] = completed_at
-                index[key] = {
+                index[f"{visit_key}:{blob_id}"] = {
                     "result": result,
                     "session_id": session.id,
                     "session_title": session.data.get("title", ""),
