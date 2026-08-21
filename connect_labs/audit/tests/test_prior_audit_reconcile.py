@@ -56,8 +56,10 @@ def _run(sessions, expect_drift=False, **opts):
     """
     out = StringIO()
     with (
-        patch("connect_labs.audit.management.commands.reconcile_prior_audit_index.get_valid_access_token",
-              return_value="tok"),
+        patch(
+            "connect_labs.audit.management.commands.reconcile_prior_audit_index.get_valid_access_token",
+            return_value="tok",
+        ),
         patch.object(AuditDataAccess, "__init__", return_value=None),
         patch.object(AuditDataAccess, "close", return_value=None),
         patch.object(AuditDataAccess, "get_audit_sessions", return_value=sessions),
@@ -83,7 +85,6 @@ class TestReconcile:
         with pytest.raises(CommandError, match="drifted"):
             _run([newer], username="poller")
 
-
     def test_repair_rebuilds_the_drifted_opportunity(self, poller):
         rebuild_opportunity(OPP, [], built_by="poller")
         newer = _session(2, "completed", {"111": _vr(b1="fail")}, completed_at=_dt(2))
@@ -106,9 +107,9 @@ class TestReconcile:
         out = _run([a], username="poller", repair=True, expect_drift=True)  # b is invisible now
 
         assert "REFUSING to repair" in out
-        assert PriorAuditVerdict.objects.filter(opportunity_id=OPP).count() == 2, (
-            "a narrowed identity must not be able to delete verdicts"
-        )
+        assert (
+            PriorAuditVerdict.objects.filter(opportunity_id=OPP).count() == 2
+        ), "a narrowed identity must not be able to delete verdicts"
 
     def test_unknown_user_is_an_error_not_an_empty_pass(self):
         with pytest.raises(CommandError, match="does not exist"):

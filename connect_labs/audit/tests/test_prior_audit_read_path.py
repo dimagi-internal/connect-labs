@@ -13,12 +13,7 @@ import pytest
 from connect_labs.audit.data_access import AuditDataAccess
 from connect_labs.audit.models import AuditSessionRecord
 from connect_labs.audit.prior_audit_models import PriorAuditProjectionState, PriorAuditVerdict
-from connect_labs.audit.prior_audit_projection import (
-    is_built,
-    rebuild_opportunity,
-    record_session,
-    replace_session,
-)
+from connect_labs.audit.prior_audit_projection import is_built, rebuild_opportunity, record_session, replace_session
 
 OPP = 1973
 
