@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import random
+import re
 import statistics
 from collections import Counter, defaultdict
 from typing import Any
@@ -344,6 +345,130 @@ _AFFIRMATIVE_FOR = {
 # invent variance in how work is RECORDED; it must not invent whether babies lived.
 # connect-labs#1189.
 _OUTCOME_LEAVES = frozenset({"child_alive", "alive", "baby_alive", "is_alive", "child_died", "died", "death"})
+
+
+# Leaf-name tokens that mark a direct identifier. A text field is NEVER replayed
+# verbatim into the transplant pool when its leaf matches one — the pool ships to a
+# synthetic environment that is supposed to be safe to reason over, so it must not
+# become a side channel for names, phones, addresses or free-text remarks.
+_IDENTIFIER_LEAF_TOKENS = frozenset(
+    {
+        "name",
+        "names",
+        "phone",
+        "mobile",
+        "tel",
+        "address",
+        "email",
+        "gps",
+        "coordinate",
+        "coordinates",
+        "latitude",
+        "longitude",
+        "lat",
+        "lon",
+        "nin",
+        "bvn",
+        "id",
+        "ids",
+        "uuid",
+        "contact",
+        "surname",
+        "guardian",
+        "signature",
+        "photo",
+        "image",
+        "comment",
+        "comments",
+        "remark",
+        "remarks",
+        "note",
+        "notes",
+        "specify",
+        "description",
+        "other",
+    }
+)
+
+# A replayable enumerable must be genuinely enumerable. These bounds are what keep
+# free text out: a field with many distinct long values is prose or an identifier,
+# whatever its declared type says.
+_MAX_REPLAYABLE_CARDINALITY = 25
+_MAX_REPLAYABLE_VALUE_LEN = 40
+_MIN_REPLAYABLE_OBSERVATIONS = 5
+
+
+def _is_identifier_path(path: str) -> bool:
+    """Match whole underscore-separated segments, never substrings.
+
+    Substring matching over-blocks badly: "nin" is inside "kmc_positioning_checklist",
+    "id" is inside "valid" and "avoid". Over-blocking costs real fidelity — the point
+    of this pass is to carry MORE of the app — so the guard has to be precise in both
+    directions.
+    """
+    leaf = path.rsplit(".", 1)[-1].lower()
+    segments = {seg for seg in re.split(r"[^a-z0-9]+", leaf) if seg}
+    return bool(segments & _IDENTIFIER_LEAF_TOKENS)
+
+
+def _discover_replayable_text_paths(visits: list[dict], candidate_paths: set[str]) -> tuple[set[str], set[str]]:
+    """Split text-typed paths into (date-like, enumerable) so mirror can replay them.
+
+    The transplant pool used to carry only numeric / date / select-typed paths, so
+    every field the schema types as ``text`` was dropped. That is most of a CommCare
+    app: HQ reports hidden calculated fields as ``DataBindOnly``, which _KIND_MAP has
+    no entry for, so they fall back to ``text``. On the KMC deliver app that is 320 of
+    409 questions — including ``reg_date`` (``calculate="today()"``) and
+    ``kmc_status_discharged`` — which is why clones could not compute C03/C18/C22 and
+    the dashboard reported a collection gap that only existed in our own clone.
+
+    The declared type cannot be trusted here (``DataBindOnly`` says nothing about the
+    value), so classify on the OBSERVED values instead, and refuse anything that looks
+    like free text or an identifier — high-cardinality strings are exactly where names,
+    addresses and phone numbers live.
+    """
+    seen: dict[str, Counter[str]] = defaultdict(Counter)
+    for visit in visits:
+        form_json = visit.get("form_json") or {}
+        for path in candidate_paths:
+            raw = _extract_nested(form_json, path)
+            if raw is None or isinstance(raw, (dict, list)):
+                continue
+            text = str(raw).strip()
+            if text:
+                seen[path][text] += 1
+
+    date_like: set[str] = set()
+    enumerable: set[str] = set()
+    for path, counts in seen.items():
+        if _is_identifier_path(path):
+            continue
+        if sum(counts.values()) < _MIN_REPLAYABLE_OBSERVATIONS:
+            continue
+        values = list(counts)
+        if all(_parse_iso_date(v) is not None for v in values):
+            date_like.add(path)
+        elif len(values) <= _MAX_REPLAYABLE_CARDINALITY and all(len(v) <= _MAX_REPLAYABLE_VALUE_LEN for v in values):
+            enumerable.add(path)
+    return date_like, enumerable
+
+
+def _parse_iso_date(raw: str) -> dt.date | None:
+    """Separator-formatted ISO dates only, which is what CommCare emits.
+
+    Deliberately stricter than ``dt.date.fromisoformat``, which since 3.11 also accepts
+    the compact ``YYYYMMDD`` basic format — so a bare integer id like ``20250601``
+    parses as a date. Misclassifying one is not a near miss: the pool stores dates as
+    day-offsets, so the value would be reconstructed as a different number entirely.
+    A date we decline here is still eligible to be carried as an enumerable.
+    """
+    text = raw.strip()[:10]
+    if len(text) != 10 or text[4] != "-" or text[7] != "-":
+        return None
+    try:
+        return dt.date.fromisoformat(text)
+    except ValueError:
+        return None
 
 
 def _is_outcome_path(path: str) -> bool:
@@ -814,6 +939,31 @@ def profile(
         # clone answer "do slow-growing babies die more?" the same way the source does.
         categorical_paths = {p for p, d in field_dists.items() if d.get("distribution") == "categorical"}
         categorical_paths |= {p for p, k in kinds.items() if k in {"select", "multiselect"}}
+        # Everything the schema calls "text" is still unclaimed at this point, and on a
+        # real CommCare app that is the majority of the form — HQ reports hidden
+        # calculated fields as DataBindOnly, which falls back to "text". Promote the
+        # ones whose OBSERVED values are dates or a small enumeration; leave genuine
+        # free text (and anything identifier-shaped) out of the pool entirely.
+        unclaimed = {
+            p
+            for p, k in kinds.items()
+            if k == "text" and p not in numeric_paths and p not in date_paths and p not in categorical_paths
+        }
+        # Paths present in the data but absent from the schema (subcase/case update
+        # blocks, which is where several derived KMC properties actually land).
+        # Walked from the visits rather than form_json_paths, which is an optional
+        # caller argument and may legitimately be None here.
+        observed_counts: Counter[str] = Counter()
+        for visit in user_visits:
+            _walk_paths(visit.get("form_json") or {}, "", observed_counts, Counter())
+        unclaimed |= {
+            p
+            for p in observed_counts
+            if p not in kinds and p not in numeric_paths and p not in date_paths and p not in categorical_paths
+        }
+        replay_dates, replay_enums = _discover_replayable_text_paths(user_visits, unclaimed)
+        date_paths = date_paths | replay_dates
+        categorical_paths = categorical_paths | replay_enums
         structure = profile_entity_structure(
             user_visits,
             numeric_paths=numeric_paths,
