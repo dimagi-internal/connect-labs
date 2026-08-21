@@ -281,6 +281,28 @@ CASE_PROPERTIES_SCHEMA = {
             "paths": ["form.kmc_discontinuation.kmc_status_discharged", "form.kmc_discontinuation.discharged_logic"],
             "aggregation": "count",
         },
+        {
+            "name": "baby_case_id",
+            "paths": ["form.case.@case_id", "entity_id"],
+            "aggregation": "first",
+            "description": (
+                "The KMC beneficiary case, falling back to entity_id for sources with no case "
+                "block (synthetic clones). entity_id is per-VISIT on real Connect data, so "
+                "grouping on it alone scattered each baby across one row per visit and stranded "
+                "every registration-form field \u2014 connect-labs#1224."
+            ),
+        },
+        {
+            "name": "form_names",
+            "path": "form.@name",
+            "aggregation": "list",
+            "description": (
+                "Every form name in this baby's series. Separates REGISTERED (has a registration "
+                "form) from STARTED (has a follow-up visit) \u2014 without it C01/C02/C05 were all "
+                "identical because 'started' was defined as having >=1 visit, which every case "
+                "has by construction."
+            ),
+        },
     ],
     "data_source": {"type": "connect_csv"},
     "grouping_key": "username",
@@ -303,7 +325,18 @@ WEIGHT_SERIES_SCHEMA = {
             ],
             "transform": "kg_to_g",
             "aggregation": "first",
-        }
+        },
+        {
+            "name": "baby_case_id",
+            "paths": ["form.case.@case_id", "entity_id"],
+            "aggregation": "first",
+            "description": (
+                "The KMC beneficiary case, falling back to entity_id for sources with no case "
+                "block (synthetic clones). entity_id is per-VISIT on real Connect data, so "
+                "grouping on it alone scattered each baby across one row per visit and stranded "
+                "every registration-form field \u2014 connect-labs#1224."
+            ),
+        },
     ],
     "data_source": {"type": "connect_csv"},
     "grouping_key": "username",
