@@ -28,7 +28,15 @@ always authenticated (see PulseOppView).
         <h1 id="opp-name">{{ opp_name }}</h1>
         <div class="opp-chips" id="opp-chips"></div>
       </div>
-      <div class="opp-standing" id="opp-standing"></div>
+      <div class="opp-side">
+        {# The whole engagement, replayed as lights on the night map, its  #}
+        {# full span normalised to a minute. New tab: the dossier stays.   #}
+        <a class="opp-replay" target="_blank" rel="noopener"
+           href="{% url 'pulse:display' 'nightmap' %}?opportunity={{ opp_id }}&amp;fit=60">
+          &#9654; Replay its life &middot; 60s
+        </a>
+        <div class="opp-standing" id="opp-standing"></div>
+      </div>
     </header>
 
     <section class="opp-kpis" id="opp-kpis" aria-label="Headline figures"></section>
