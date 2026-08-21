@@ -107,3 +107,37 @@ class PriorAuditVerdict(models.Model):
 
     def __str__(self) -> str:
         return f"{self.visit_id}:{self.blob_id} = {self.result} (session {self.session_id})"
+
+
+class PriorAuditProjectionState(models.Model):
+    """Records that an opportunity's projection has actually been built.
+
+    Without this the read path cannot tell the two meanings of an empty result
+    apart: "this opportunity genuinely has no prior verdicts" and "nobody has
+    ever built this opportunity". They look identical in the rows table and
+    differ completely in consequence -- the second one tells an auditor an image
+    has never been judged when it has. So the projection is trusted ONLY for an
+    opportunity with a row here, and every other opportunity silently falls back
+    to the live computation.
+
+    ``built_by`` is recorded because scope follows the identity that built it:
+    the source is Connect's export API, which returns what that user's org
+    membership can see. Pulse learned this the hard way -- an ingest run under a
+    narrower account understated every headline figure ~5x and nothing errored
+    (see pulse/client.get_poller_user). Here a narrower identity would produce
+    MISSING prior verdicts, which is the dangerous direction, so which identity
+    built a projection has to be answerable after the fact.
+    """
+
+    opportunity_id = models.IntegerField(unique=True)
+    built_at = models.DateTimeField(auto_now=True)
+    built_by = models.CharField(max_length=150, blank=True, default="")
+
+    # Both counts are for drift diagnosis: a reconciliation run that finds a
+    # different session count than the build saw is the cheapest possible signal
+    # that the identity's scope changed underneath the projection.
+    source_sessions = models.IntegerField(default=0)
+    rows = models.IntegerField(default=0)
+
+    def __str__(self) -> str:
+        return f"opp {self.opportunity_id}: {self.rows} rows from {self.source_sessions} sessions"

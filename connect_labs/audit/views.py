@@ -28,6 +28,7 @@ from django.utils.decorators import method_decorator
 from django.views.generic import DetailView, TemplateView, View
 from django_tables2 import SingleTableView
 
+from connect_labs.audit import prior_audit_projection
 from connect_labs.audit.analysis_config import extract_additional_case_info, extract_images_with_question_ids
 from connect_labs.audit.classifier_fail_sync import sync_after_save
 from connect_labs.audit.data_access import AuditDataAccess, ImageDownloadError
@@ -501,6 +502,10 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
                 session = data_access.save_audit_session(session)
                 s3_export.upsert_audit_session(session)
                 sync_after_save(session, request, data_access)
+                # Keep the prior-audit projection in step. Uses the session
+                # object already in hand -- no fetch, so no chance of writing a
+                # narrower truth than the one just saved.
+                prior_audit_projection.record_session(session)
 
                 # If this session belongs to a workflow run, complete the run
                 # once ALL of its linked sessions are completed. The run's
@@ -561,6 +566,11 @@ class ExperimentAuditUncompleteView(LoginRequiredMixin, View):
             session.data["completed_at"] = None
 
             session = data_access.save_audit_session(session)
+            # Reopening RETRACTS every verdict this session contributed, and the
+            # older session's verdict for those images must come back. That is
+            # why the table stores one row per (session, image): record_session
+            # deletes this session's rows and the winner is recomputed on read.
+            prior_audit_projection.record_session(session)
             return JsonResponse({"success": True})
 
         except Exception:

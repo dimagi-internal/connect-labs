@@ -14,7 +14,11 @@ one row per (session, image) rather than one per image. Re-exported here because
 Django only discovers models reachable from ``models.py``.
 """
 
-from connect_labs.audit.prior_audit_models import AUDIT_VERDICTS, PriorAuditVerdict  # noqa: F401
+from connect_labs.audit.prior_audit_models import (  # noqa: F401
+    AUDIT_VERDICTS,
+    PriorAuditProjectionState,
+    PriorAuditVerdict,
+)
 from connect_labs.labs.models import LocalLabsRecord
 
 # Shared with connect_labs.audit.tasks._combine_reviewer_results, which joins

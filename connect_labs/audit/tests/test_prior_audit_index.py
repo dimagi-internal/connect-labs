@@ -2,6 +2,8 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from connect_labs.audit.data_access import AuditDataAccess, build_prior_audit_index
 from connect_labs.audit.models import AuditSessionRecord
 
@@ -76,6 +78,7 @@ def test_most_recent_verdict_wins():
     assert index["111:b1"]["session_id"] == 2
 
 
+@pytest.mark.django_db
 class TestPriorAuditIndexFetchesOnlyCompleted:
     """The index must not drag in-progress sessions over the wire to discard them.
 
@@ -89,6 +92,12 @@ class TestPriorAuditIndexFetchesOnlyCompleted:
     These pin the REQUEST, not just the result, because a regression here is
     silent: the page still renders correctly, just slowly, which is exactly how
     it went unnoticed until the tier saturated.
+
+    django_db because get_prior_audited_images now checks whether this
+    opportunity has a BUILT projection before deciding to compute live. Nothing
+    here builds one, so every test in this class exercises the FALLBACK path --
+    which is the one that still talks to Connect, and therefore the one these
+    assertions are about.
     """
 
     @staticmethod
