@@ -961,10 +961,24 @@ class TestTrendSeries:
     def test_online_is_judged_per_worker_week(self, client, populated):
         # fast-worker: 3 of 3 timely. slow-worker: 1 of 3 timely (one lucky
         # fast sync must not make an offline worker online).
+        #
+        # weeks_ago=2, not the default 1, so this assertion cannot collide with
+        # the `populated` fixture's own worker. That fixture writes events at
+        # now-1h .. now-10h, which sit in the CURRENT ISO week for most of the
+        # week but fall into the PREVIOUS one whenever now is within 10 hours of
+        # the week boundary -- i.e. Monday 00:00-10:00 UTC. On those runs the
+        # fixture's worker landed in the same bucket as these two and the week
+        # reported 3 workers instead of 2.
+        #
+        # It is not a flake in the sense of being random: it failed every Monday
+        # morning and passed the rest of the week, which is the kind that gets
+        # re-run rather than read. Two weeks back is unreachable for a fixture
+        # spanning ten hours no matter where "now" sits, so the separation is
+        # arithmetic rather than luck.
         for i, lag in enumerate((1, 2, 3)):
-            self._mk(9000 + i, "fast-worker", lag)
+            self._mk(9000 + i, "fast-worker", lag, weeks_ago=2)
         for i, lag in enumerate((1, 60, 90)):
-            self._mk(9100 + i, "slow-worker", lag)
+            self._mk(9100 + i, "slow-worker", lag, weeks_ago=2)
 
         trends = client.get(reverse("pulse:api_summary")).json()["trends"]
         week = [w for w in trends if w["workers"] >= 2][-1]
