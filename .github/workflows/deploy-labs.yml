@@ -288,6 +288,83 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # REPORT-ONLY, and built so it cannot become anything else. Django marks a
+      # migration applied by NAME, so a row in django_migrations whose file is
+      # absent from the repo is a name `migrate` will silently skip -- the deploy
+      # still reports success and the table is never created. That is #1264: the
+      # audit verdict table did not exist in production for three days across two
+      # green deploys, and the page that reads it falls back to an empty index,
+      # which renders as "no image was previously audited". A wrong answer, not
+      # an error.
+      #
+      # Runs immediately BEFORE migrate, and under the same condition, so it
+      # speaks exactly when a skip is possible and costs nothing on the deploys
+      # where no migration is applied.
+      #
+      # Two independent reasons this can never block a cutover: the step carries
+      # continue-on-error, and the script never exits non-zero (the command's own
+      # exit code is captured into a variable and reported, never propagated).
+      # Flipping it to a gate is a deliberate edit of both, not an accident --
+      # and should not happen until it has a track record of being right here.
+      # See connect-labs #1267.
+      - name: Report migration drift (never blocks)
+        if: ${{ steps.migcheck.outputs.run == 'true' }}
+        continue-on-error: true
+        run: |
+          set +e
+          TASK_ARN=$(aws ecs run-task \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task-definition ${{ steps.taskdefs.outputs.web_td }} \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[subnet-06646effb09be2f42],securityGroups=[sg-0666a5ed512c97d9d],assignPublicIp=ENABLED}" \
+            --overrides '{"containerOverrides":[{"name":"web","command":["python","manage.py","check_migration_drift","--skip-checks"]}]}' \
+            --query 'tasks[0].taskArn' --output text)
+
+          if [ -z "$TASK_ARN" ] || [ "$TASK_ARN" = "None" ]; then
+            echo "::warning::could not start the drift-check task; skipping the report (the deploy is unaffected)"
+            exit 0
+          fi
+          echo "Drift-check task: $TASK_ARN"
+
+          aws ecs wait tasks-stopped --cluster ${{ env.ECS_CLUSTER }} --tasks "$TASK_ARN"
+          DRIFT_EXIT=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+
+          # Tail the task's OWN stream, not a time filter over the whole group:
+          # /ecs/labs-jj-web is shared with the live web service, so a group-wide
+          # filter buries this output in request logs.
+          TASK_ID="${TASK_ARN##*/}"
+          LOG_OPTS=$(aws ecs describe-task-definition \
+            --task-definition ${{ steps.taskdefs.outputs.web_td }} \
+            --query 'taskDefinition.containerDefinitions[?name==`web`].logConfiguration.options | [0]' \
+            --output json)
+          LOG_GROUP=$(printf '%s' "$LOG_OPTS" | python3 -c "import sys,json; print(json.load(sys.stdin)['awslogs-group'])")
+          LOG_PREFIX=$(printf '%s' "$LOG_OPTS" | python3 -c "import sys,json; print(json.load(sys.stdin)['awslogs-stream-prefix'])")
+          LOG_STREAM="$LOG_PREFIX/web/$TASK_ID"
+
+          echo "----- migration drift report ($LOG_STREAM) -----"
+          OUT=""
+          for i in 1 2 3 4 5 6; do
+            OUT=$(aws logs get-log-events \
+              --log-group-name "$LOG_GROUP" --log-stream-name "$LOG_STREAM" \
+              --start-from-head --query 'events[*].message' --output text)
+            [ -n "$OUT" ] && break
+            sleep 8
+          done
+          echo "${OUT:-(no log events found in $LOG_STREAM)}"
+          echo "------------------------------------------------"
+
+          # An UNKNOWN command exits non-zero too (a deploy of code predating
+          # check_migration_drift), which is why this is a warning about the
+          # report rather than a claim about the database.
+          if [ "$DRIFT_EXIT" != "0" ]; then
+            echo "::warning::check_migration_drift exited $DRIFT_EXIT — read the report above. The deploy is NOT blocked by this."
+          else
+            echo "No blocking migration drift reported."
+          fi
+          exit 0
+
       - name: Run database migrations
         if: ${{ steps.migcheck.outputs.run == 'true' }}
         run: |
