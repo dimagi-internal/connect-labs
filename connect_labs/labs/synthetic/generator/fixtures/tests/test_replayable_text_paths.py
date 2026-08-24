@@ -100,3 +100,38 @@ def test_bare_integers_are_not_mistaken_for_dates():
     visits = _visits(*({"form": {"count": "20250601"}} for _ in range(6)))
     dates, _ = _discover_replayable_text_paths(visits, {"form.count"})
     assert dates == set()
+
+
+def test_submission_envelope_paths_are_not_replayed():
+    """Transport metadata is not something the form asked, and it is on EVERY visit.
+
+    The date-typed ones are the dangerous half: the pool stores dates as day-offsets,
+    so a transplanted received_on lands next to a generated visit_date it was never
+    consistent with.
+    """
+    from connect_labs.labs.synthetic.generator.fixtures.profiler import _is_envelope_path
+
+    for path in (
+        "metadata.timeEnd",
+        "metadata.commcare_version",
+        "form.meta.timeStart",
+        "form.meta.@xmlns",
+        "form.@version",
+        "form.#type",
+        "form.case.@date_modified",
+        "received_on",
+        "server_modified_on",
+        "indexed_on",
+        "type",
+        "version",
+    ):
+        assert _is_envelope_path(path), path
+
+    for path in (
+        "form.reg_date",
+        "form.case.update.reg_date",
+        "form.kmc_discontinuation.kmc_status_discharged",
+        "form.child_details.child_DOB",
+        "form.anthropometric.child_weight_visit",
+    ):
+        assert not _is_envelope_path(path), path
