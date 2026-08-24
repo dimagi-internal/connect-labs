@@ -102,6 +102,21 @@ def profile_opp_to_bundle(
     )
 
 
+def _slot_progress(outer, slot_index: int, slot_count: int):
+    """Map a 0..stages inner scale onto ``[slot_index, slot_index+1]`` of the outer bar.
+
+    A cohort reports one step per opportunity; a single opportunity reports one step
+    per stage. Emitting both raw onto the same callback means `total` changes between
+    notifications, which is not a progress bar any client can draw.
+    """
+
+    def _inner(value: float, total: float | None, message: str) -> None:
+        frac = (value / total) if total else 0.0
+        safe_call(outer, slot_index + frac, slot_count, message)
+
+    return _inner
+
+
 def profile_opps_bulk(
     source_ids,
     *,
@@ -146,7 +161,11 @@ def profile_opps_bulk(
                     store=store,
                     curate=curate,
                     mirror=mirror,
-                    progress=progress,
+                    # Rescale this opp's stage reports into ITS OWN SLOT of the cohort
+                    # bar, so one callback never carries two different totals. A client
+                    # tracking `total` sees a single monotonic 0..n scale; without this
+                    # the bar would jump between n/6 and n/len(opps) mid-run.
+                    progress=_slot_progress(progress, done - 1, total),
                 )
             )
             outcome = f"profiled opportunity {sid}"
