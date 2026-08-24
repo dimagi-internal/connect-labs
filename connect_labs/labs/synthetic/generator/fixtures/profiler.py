@@ -398,6 +398,42 @@ _MAX_REPLAYABLE_VALUE_LEN = 40
 _MIN_REPLAYABLE_OBSERVATIONS = 5
 
 
+# Submission-envelope paths: CommCare transport metadata that wraps every form, not
+# anything the form asked. Replaying them is pointless (the engine stamps its own
+# timestamps, versions and ids) and actively harmful for the date-typed ones — the pool
+# stores dates as day-offsets, so a transplanted received_on/server_modified_on lands
+# alongside a generated visit_date it was never consistent with. They are also the most
+# expensive paths to carry, because unlike a real question they are present on EVERY
+# visit: on opp 524 just 14 of these accounted for most of a 28.9 MB -> 46.1 MB manifest.
+_ENVELOPE_PREFIXES = ("metadata.", "form.meta.", "form.@", "form.#", "form.case.@")
+_ENVELOPE_EXACT = frozenset(
+    {
+        "received_on",
+        "server_modified_on",
+        "indexed_on",
+        "edited_on",
+        "archived",
+        "version",
+        "uiversion",
+        "type",
+        "doc_type",
+        "id",
+        "build_id",
+        "app_id",
+        "xmlns",
+        "form_name",
+        "state",
+        "partial_submission",
+        "is_phone_submission",
+        "initial_processing_complete",
+    }
+)
+
+
+def _is_envelope_path(path: str) -> bool:
+    return path in _ENVELOPE_EXACT or path.startswith(_ENVELOPE_PREFIXES)
+
+
 def _is_identifier_path(path: str) -> bool:
     """Match whole underscore-separated segments, never substrings.
 
@@ -959,7 +995,11 @@ def profile(
         unclaimed |= {
             p
             for p in observed_counts
-            if p not in kinds and p not in numeric_paths and p not in date_paths and p not in categorical_paths
+            if p not in kinds
+            and not _is_envelope_path(p)
+            and p not in numeric_paths
+            and p not in date_paths
+            and p not in categorical_paths
         }
         replay_dates, replay_enums = _discover_replayable_text_paths(user_visits, unclaimed)
         date_paths = date_paths | replay_dates
