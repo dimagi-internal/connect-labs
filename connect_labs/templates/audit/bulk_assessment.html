@@ -381,8 +381,28 @@
                // The AI Result Section's full text (below the image). Kept as one
                // getter rather than an inline ternary chain now that duplicate
                // cross-referencing adds another branch.
+               // One verdict for EVERY image, in four states. A match used to render
+               // nothing at all -- byte-identical on screen to an image the AI never
+               // reached -- so 'the AI checked this and it was fine' and 'nobody has
+               // looked at this yet' were indistinguishable to a reviewer.
+               get aiVerdict() {
+                 if (this.aiResult === 'match') return 'passed';
+                 if (this.aiResult === 'no_match') return 'failed';
+                 if (this.aiResult === 'error') return 'unreadable';
+                 return 'unreviewed';
+               },
+               get aiVerdictLabel() {
+                 if (this.aiVerdict === 'passed') return 'AI: Passed';
+                 if (this.aiVerdict === 'failed') return 'AI: Failed';
+                 if (this.aiVerdict === 'unreadable') return 'AI: Could not read';
+                 return 'AI: Not reviewed';
+               },
                get aiResultSectionText() {
                  if (this.aiResult === 'error') return this.aiNotes || 'Error';
+                 if (this.aiResult === 'match') return this.aiNotes || 'Reading matches the photo';
+                 // No verdict at all: the AI never scored this image. Say so, rather than
+                 // leaving a blank that a reviewer reads as a pass.
+                 if (!this.aiResult) return 'Not scored by the AI -- a person still needs to judge this';
                  if (this.aiResult !== 'no_match') return '';
                  var parts = [];
                  if (this.nonDuplicateAiLabel) parts.push(this.nonDuplicateAiLabel);
@@ -611,26 +631,45 @@
               </div>
             </template>
 
-            <!-- AI Result Section (only for failures/errors; passes are shown in the tile footer) -->
-            <template x-if="aiResult && aiResult !== 'match'">
+            <!-- AI Result Section, shown for EVERY image in all four states: passed,
+                 failed, could-not-read, not-reviewed. It was gated on
+                 'aiResult && aiResult !== match', so a passed image and an image the AI
+                 never scored both rendered nothing and a reviewer could not tell them
+                 apart. Every 'match' style rule below was unreachable as a result, and
+                 the old comment here claimed passes appear in a tile footer -- there is
+                 no such footer. -->
+            <template x-if="true">
               <div class="rounded px-2 py-1.5 mb-2 text-xs"
                    :class="{
-                     'bg-blue-50 border border-blue-200': aiResult === 'match',
-                     'bg-orange-50 border border-orange-200': aiResult === 'no_match',
-                     'bg-gray-50 border border-gray-200': aiResult === 'error'
+                     'bg-blue-50 border border-blue-200': aiVerdict === 'passed',
+                     'bg-orange-50 border border-orange-200': aiVerdict === 'failed',
+                     'bg-gray-50 border border-gray-200': aiVerdict === 'unreadable',
+                     'bg-amber-50 border border-amber-200': aiVerdict === 'unreviewed'
                    }">
                 <div class="flex items-center gap-1.5">
                   <i class="fa-solid fa-robot"
                      :class="{
-                       'text-blue-600': aiResult === 'match',
-                       'text-orange-600': aiResult === 'no_match',
-                       'text-gray-500': aiResult === 'error'
+                       'text-blue-600': aiVerdict === 'passed',
+                       'text-orange-600': aiVerdict === 'failed',
+                       'text-gray-500': aiVerdict === 'unreadable',
+                       'text-amber-600': aiVerdict === 'unreviewed'
                      }"></i>
-                  <span class="font-medium"
+                  <!-- Verdict word first, then the reason. The reason alone is ambiguous:
+                       'Weight mismatch' and 'Reading matches the photo' are both just
+                       sentences until something states which one is a pass. -->
+                  <span class="font-bold shrink-0"
                         :class="{
-                          'text-blue-700': aiResult === 'match',
-                          'text-orange-700': aiResult === 'no_match',
-                          'text-gray-600': aiResult === 'error'
+                          'text-blue-700': aiVerdict === 'passed',
+                          'text-orange-700': aiVerdict === 'failed',
+                          'text-gray-600': aiVerdict === 'unreadable',
+                          'text-amber-700': aiVerdict === 'unreviewed'
+                        }"
+                        x-text="aiVerdictLabel"></span>
+                  <span :class="{
+                          'text-blue-700': aiVerdict === 'passed',
+                          'text-orange-700': aiVerdict === 'failed',
+                          'text-gray-600': aiVerdict === 'unreadable',
+                          'text-amber-700': aiVerdict === 'unreviewed'
                         }"
                         x-text="aiResultSectionText"></span>
                   <!-- Manual backstop for a real (non-429) gateway failure that outlasted
