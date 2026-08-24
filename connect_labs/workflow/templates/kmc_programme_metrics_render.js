@@ -557,6 +557,7 @@ function WorkflowUI({
           dob: c.dob,
           gender: c.gender,
           num_visits: c.total_visits || 0,
+          reg_date: c.reg_date,
           first_visit: c.first_visit_date,
           visit_dates: c.visit_dates || [],
           last_visit: c.last_visit_date,
@@ -1045,15 +1046,19 @@ function WorkflowUI({
     {
       id: 'C03',
       name: 'Cases started per month',
-      why: 'no reg_date value reaches these rows — it is a hidden field the form auto-calculates (today()), not a question anyone answers — so use the Trend tab, which cohorts on first visit',
+      why: 'now computed \u2014 see the Trend tab, which cohorts on each baby\u2019s actual registration date',
     },
     { id: 'C04', name: 'Visits per month', why: 'available on the Trend tab' },
     {
       id: 'C18',
       name: 'KMC completion rate',
-      why: 'no kmc_status_discharged value reaches these rows — it is a hidden calculated field (DataBindOnly), not a question anyone answers — and the completion gate is still TBD in the workbook',
+      why: 'the discharge data is now present in these rows; what is missing is the DEFINITION \u2014 the workbook leaves the completion gate TBD, so there is no rule yet for when a baby counts as completed',
     },
-    { id: 'C22', name: '% EBF at completion', why: 'depends on C18' },
+    {
+      id: 'C22',
+      name: '% EBF at completion',
+      why: 'depends on C18, so it is blocked on the same missing definition rather than on missing data',
+    },
     { id: 'C25', name: '% thin', why: 'needs per-reading flag_thin' },
     {
       id: 'C26',
@@ -1383,7 +1388,12 @@ function WorkflowUI({
         return ok(r.opp, r.llo, r.flw);
       })
       .forEach(function (r) {
-        var k = m(r.first_visit);
+        // Cohort on the REGISTRATION date, falling back to first visit only where a
+        // row genuinely has none. reg_date is a hidden field the form auto-calculates,
+        // so it was absent from every clone until the profiler learned to carry
+        // calculated fields — first visit was the proxy standing in for it, and this
+        // is what C03 was waiting on.
+        var k = m(r.reg_date) || m(r.first_visit);
         if (k) (byMonth[k] = byMonth[k] || []).push(r);
       });
     wrows.forEach(function (v) {
@@ -2007,13 +2017,13 @@ function WorkflowUI({
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            Cohorted on each baby&rsquo;s FIRST VISIT &mdash; no reg_date value
-            reaches these rows (it is a hidden field the form auto-calculates,
-            not a question anyone answers), so first visit is the honest proxy
-            (this is what C03/C04 were waiting on). Each month&rsquo;s quality
-            and growth figures describe the babies who ENTERED that month. A gap
-            in a line is a month with too few cases to score, not a zero. Dashed
-            line = target.
+            Cohorted on each baby&rsquo;s REGISTRATION DATE, falling back to
+            first visit only where a row has none &mdash; this is C03, computed
+            rather than proxied now that the clone carries the form&rsquo;s
+            hidden calculated fields. Each month&rsquo;s quality and growth
+            figures describe the babies who ENTERED that month. A gap in a line
+            is a month with too few cases to score, not a zero. Dashed line =
+            target.
           </p>
         </div>
 
@@ -3100,12 +3110,14 @@ function WorkflowUI({
             </div>
             {runIsSynthetic && (
               <div className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-                This run is built on synthetic clones. Where a reason below says
-                a value does not reach these rows, that is a statement about
-                THIS dataset, not about what the real programmes collect &mdash;
-                the clone reproduces only part of each app&rsquo;s fields.
-                Confirm against a run on live data before treating any of these
-                as a collection gap.
+                This run is built on synthetic clones. The clone now carries the
+                form&rsquo;s hidden calculated fields, so an indicator that
+                reads one is no longer blank here for that reason. Identifiers
+                &mdash; names, phones, addresses, GPS, free text &mdash; are
+                deliberately never reproduced, so anything derived from those
+                still reads empty. Confirm against a run on live data before
+                treating any blank below as something the real programmes fail
+                to collect.
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 text-xs text-gray-500">
