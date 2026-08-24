@@ -91,25 +91,44 @@ class TestReconcile:
         _run([newer], username="poller", repair=True)
         assert PriorAuditVerdict.objects.filter(opportunity_id=OPP, blob_id="b1").exists()
 
-    def test_refuses_to_repair_from_a_narrower_scope(self, poller):
-        """The dangerous case: fewer sessions visible than the build saw.
+    def test_repairing_from_a_narrower_scope_cannot_delete_verdicts(self, poller):
+        """The case that used to need a veto, and now needs none.
 
-        Rebuilding here would DELETE prior verdicts that exist. Pulse hit the
-        same trap from the other side and understated everything ~5x silently.
+        rebuild_opportunity merges: it refreshes rows for sessions it SAW and
+        leaves the rest alone, so a narrow identity repairing an opportunity can
+        no longer destroy verdicts it was never able to read. The earlier version
+        of this test asserted that the command REFUSED here -- a guard that only
+        held because someone remembered to write it, and that did not protect the
+        first build or the rebuild command at all. The property is now in the
+        write path itself.
         """
         a = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
         b = _session(2, "completed", {"222": _vr(b9="fail")}, completed_at=_dt(2))
         rebuild_opportunity(OPP, [a, b], built_by="wide-scope-user")
         assert PriorAuditVerdict.objects.filter(opportunity_id=OPP).count() == 2
 
-        # Refusing still leaves the opportunity drifted, so the run also exits
-        # non-zero -- refusing to repair must not read as "everything is fine".
-        out = _run([a], username="poller", repair=True, expect_drift=True)  # b is invisible now
+        _run([a], username="poller", repair=True)  # b is invisible to this identity
 
-        assert "REFUSING to repair" in out
         assert (
             PriorAuditVerdict.objects.filter(opportunity_id=OPP).count() == 2
         ), "a narrowed identity must not be able to delete verdicts"
+        assert PriorAuditVerdict.objects.filter(opportunity_id=OPP, blob_id="b9").exists()
+
+    def test_a_narrow_identity_reports_agreement_rather_than_phantom_drift(self, poller):
+        """Rows it cannot see are beyond its scope, not evidence of drift.
+
+        Reported as drift, this would fire on every run for any narrow identity
+        and train people to ignore the one signal that catches real problems.
+        """
+        a = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
+        b = _session(2, "completed", {"222": _vr(b9="fail")}, completed_at=_dt(2))
+        rebuild_opportunity(OPP, [a, b], built_by="wide-scope-user")
+
+        out = _run([a], username="poller")  # no CommandError => no drift claimed
+
+        assert "ok" in out, "no drift should be claimed"
+        assert "beyond-scope=1" in out, "the rows it cannot see must be named, not silently ignored"
+        assert "[SCOPE]" in out, "and the narrower view itself is worth flagging"
 
     def test_unknown_user_is_an_error_not_an_empty_pass(self):
         with pytest.raises(CommandError, match="does not exist"):

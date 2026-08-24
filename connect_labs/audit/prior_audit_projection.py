@@ -85,14 +85,36 @@ def replace_session(session) -> int:
 
 
 @transaction.atomic
-def rebuild_opportunity(opportunity_id: int, sessions, built_by: str = "") -> dict:
-    """Rebuild one opportunity's projection from the full session list.
+def rebuild_opportunity(opportunity_id: int, sessions, built_by: str = "", prune_unseen: bool = False) -> dict:
+    """MERGE one identity's view of an opportunity into the projection.
 
-    Scoped to the opportunity, never a global truncate: the caller fetched one
-    opportunity's sessions, so wiping anything else would delete rows this call
-    has no evidence about.
+    Merge, not replace, and that is the whole safety model. The source is
+    Connect's export API, which returns only what the CALLING identity's org
+    membership can see -- so a blanket delete followed by "insert what I could
+    see" lets any narrow-permission caller destroy verdicts it was never able to
+    read. That is silent, permanent, and produces exactly the failure this
+    projection exists to prevent: an auditor told an image was never judged when
+    it was.
+
+    So rows are only ever removed for a session this call actually SAW:
+
+      * a session seen and still completed -> its rows are refreshed;
+      * a session seen and no longer completed (reopened) -> its rows go, which
+        is a real retraction and the point of storing per-session rows;
+      * a session NOT seen -> left completely alone, because "invisible to me"
+        and "does not exist" are indistinguishable from here.
+
+    The consequence is the property that matters: the projection is MONOTONIC
+    under permission variation. Identities with different scopes contribute
+    different subsets and the table converges to their union; no permission
+    level can shrink it. A narrower caller can fail to add, never subtract.
+
+    ``prune_unseen`` opts out of that guarantee and must only be used by a caller
+    known to see everything -- it deletes rows for sessions absent from this
+    view, which is the only way to retire a session deleted upstream, and also
+    the one operation a narrow identity could use to lose data.
     """
-    deleted, _ = PriorAuditVerdict.objects.filter(opportunity_id=opportunity_id).delete()
+    seen_ids = {s.id for s in sessions}
     rows: list[PriorAuditVerdict] = []
     contributing = 0
     for session in sessions:
@@ -100,26 +122,44 @@ def rebuild_opportunity(opportunity_id: int, sessions, built_by: str = "") -> di
         if session_rows:
             contributing += 1
             rows.extend(session_rows)
+
+    # Scoped to the sessions in hand. Retractions are covered because a reopened
+    # session IS in seen_ids and simply contributes no rows back.
+    deleted, _ = PriorAuditVerdict.objects.filter(opportunity_id=opportunity_id, session_id__in=seen_ids).delete()
+
+    pruned = 0
+    if prune_unseen:
+        pruned, _ = (
+            PriorAuditVerdict.objects.filter(opportunity_id=opportunity_id).exclude(session_id__in=seen_ids).delete()
+        )
+
     if rows:
         PriorAuditVerdict.objects.bulk_create(rows, batch_size=1000)
+
     # Stamped in the SAME transaction as the rows. A build that wrote rows but
     # not the state row would keep falling back forever (merely wasteful); one
     # that stamped state without the rows would report an empty history as a
     # clean one, which is the failure this whole design exists to avoid.
-    PriorAuditProjectionState.objects.update_or_create(
-        opportunity_id=opportunity_id,
-        defaults={
-            "built_by": (built_by or "")[:150],
-            "source_sessions": len(sessions),
-            "rows": len(rows),
-        },
-    )
+    #
+    # source_sessions/rows describe THIS identity's view, and are only ever
+    # raised, never lowered -- a narrower run must not make the projection look
+    # like it was built from less than it actually holds.
+    state, _created = PriorAuditProjectionState.objects.get_or_create(opportunity_id=opportunity_id)
+    total_rows = PriorAuditVerdict.objects.filter(opportunity_id=opportunity_id).count()
+    if len(sessions) >= state.source_sessions:
+        state.built_by = (built_by or "")[:150]
+        state.source_sessions = len(sessions)
+    state.rows = total_rows
+    state.save()
+
     return {
         "opportunity_id": opportunity_id,
         "sessions_seen": len(sessions),
         "sessions_contributing": contributing,
-        "rows_deleted": deleted,
+        "rows_refreshed": deleted,
         "rows_written": len(rows),
+        "rows_pruned": pruned,
+        "rows_total": total_rows,
     }
 
 
@@ -161,9 +201,10 @@ class VerifyResult:
     opportunity_id: int
     live_keys: int
     projected_keys: int
-    missing: list  # in live, absent from projection
-    extra: list  # in projection, absent from live
+    missing: list  # in live, absent from projection -- the projection is behind
+    extra: list  # in projection FROM A SEEN SESSION, absent from live -- stale
     mismatched: list  # same key, different verdict/session
+    beyond_scope: int = 0  # projection rows from sessions this identity cannot see
 
     @property
     def agrees(self) -> bool:
@@ -171,22 +212,49 @@ class VerifyResult:
 
     def summary(self) -> str:
         verdict = "AGREES" if self.agrees else "DISAGREES"
+        tail = f" beyond-scope={self.beyond_scope}" if self.beyond_scope else ""
         return (
             f"opp {self.opportunity_id}: {verdict} — live={self.live_keys} projected={self.projected_keys} "
-            f"missing={len(self.missing)} extra={len(self.extra)} mismatched={len(self.mismatched)}"
+            f"missing={len(self.missing)} extra={len(self.extra)} mismatched={len(self.mismatched)}{tail}"
         )
 
 
-def verify_opportunity(opportunity_id: int, live_index: dict, exclude_session_id: int | None = None) -> VerifyResult:
-    """Diff the projection against the live computation for one opportunity.
+def verify_opportunity(
+    opportunity_id: int,
+    live_index: dict,
+    exclude_session_id: int | None = None,
+    visible_session_ids: set | None = None,
+) -> VerifyResult:
+    """Diff the projection against one identity's live computation.
 
     Compares the fields a caller ACTS on -- the verdict and which session it came
-    from. ``completed_at`` is deliberately excluded from the comparison: the live
-    builder stringifies whatever the blob held, the projection round-trips it
-    through a DateTimeField, and a formatting difference is not a disagreement
-    about what was audited.
+    from. ``completed_at`` is deliberately excluded: the live builder stringifies
+    whatever the blob held, the projection round-trips it through a DateTimeField,
+    and a formatting difference is not a disagreement about what was audited.
+
+    ``visible_session_ids`` is what makes this honest under merge semantics. The
+    projection is a union across every identity that has ever built it, so it
+    legitimately holds rows from sessions the CURRENT identity cannot see. Judged
+    naively those look identical to stale rows, and a verifier that called them
+    drift would fire forever on any narrow identity -- which trains people to
+    ignore it, and an ignored verifier is the same as none.
+
+    Passed a visible set, rows from outside it are counted as ``beyond_scope``
+    and excluded from the verdict. Omit it and every projected row is judged,
+    which is only correct for an identity known to see everything.
     """
     projected = read_index(opportunity_id, exclude_session_id=exclude_session_id)
+
+    beyond_scope = 0
+    if visible_session_ids is not None:
+        in_scope = {}
+        for key, entry in projected.items():
+            if entry.get("session_id") in visible_session_ids:
+                in_scope[key] = entry
+            else:
+                beyond_scope += 1
+        projected = in_scope
+
     live_keys, proj_keys = set(live_index), set(projected)
 
     def _cmp(entry):
@@ -204,6 +272,7 @@ def verify_opportunity(opportunity_id: int, live_index: dict, exclude_session_id
         missing=sorted(live_keys - proj_keys),
         extra=sorted(proj_keys - live_keys),
         mismatched=mismatched,
+        beyond_scope=beyond_scope,
     )
 
 
@@ -223,16 +292,16 @@ def record_session(session) -> int | None:
     """Keep the projection in step when a session is completed or reopened.
 
     Called from the request that just wrote the session, so it needs no fetch
-    and no credential -- it writes the object already in hand. That matters:
-    anything that had to re-read from Connect would inherit the caller's scope
-    and could silently write a narrower truth.
+    and no credential -- it writes the object already in hand. That is what
+    makes this path permission-independent: anything that had to re-read from
+    Connect would inherit the caller's scope and could persist a narrower truth
+    than the one just saved.
 
     Best-effort, following _maybe_complete_workflow_run: the session write has
     already succeeded and is what the user asked for, so a projection failure is
     logged and swallowed rather than turned into a 500 on a completed audit. The
     cost of swallowing is bounded -- reconciliation finds the drift, and until it
-    does the projection is merely stale, in the direction of showing a verdict
-    that was retracted or missing one that was added.
+    does the projection is merely stale.
 
     Returns the row count written, or None if it failed.
     """

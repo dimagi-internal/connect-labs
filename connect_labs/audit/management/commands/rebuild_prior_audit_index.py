@@ -29,6 +29,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--opportunity", type=int, required=True, help="opportunity id")
         parser.add_argument("--token", default=None, help="OAuth access token for the export API")
+        parser.add_argument("--username", default=None, help="record who built it, for scope diagnosis")
         parser.add_argument(
             "--verify-only",
             action="store_true",
@@ -48,9 +49,13 @@ class Command(BaseCommand):
 
         result = None
         if not opts["verify_only"]:
-            result = projection.rebuild_opportunity(opp, sessions)
+            result = projection.rebuild_opportunity(opp, sessions, built_by=opts.get("username") or "")
 
-        verdict = projection.verify_opportunity(opp, live)
+        # Judged against what THIS token can see. The projection may legitimately
+        # hold rows from sessions outside this scope -- it merges across
+        # identities -- and calling those drift would make the gate unusable for
+        # anyone without full visibility.
+        verdict = projection.verify_opportunity(opp, live, visible_session_ids={s.id for s in sessions})
 
         if opts["json"]:
             self.stdout.write(
