@@ -979,6 +979,9 @@
                                 <th class="py-2 text-left font-medium">Run</th>
                                 <th class="py-2 text-left font-medium">Created</th>
                                 <th class="py-2 text-left font-medium">Period</th>
+                                {% if workflow.template_type == "kmc_image_audit" %}
+                                <th class="py-2 text-left font-medium">LLO / Opportunity</th>
+                                {% endif %}
                                 <th class="py-2 text-center font-medium">FLWs</th>
                                 <th class="py-2 text-left font-medium">Status</th>
                                 {% if workflow.template_type == "bulk_image_audit" %}
@@ -1199,6 +1202,15 @@
                                         {% endif %}
                                     </span>
                                 </td>
+                                {% if workflow.template_type == "kmc_image_audit" %}
+                                <td class="py-3">
+                                    {% if run.state.llo_summary %}
+                                    <span class="text-sm text-gray-700">{{ run.state.llo_summary }}</span>
+                                    {% else %}
+                                    <span class="text-sm text-gray-400">&mdash;</span>
+                                    {% endif %}
+                                </td>
+                                {% endif %}
                                 <td class="py-3 text-center">
                                     {% if run.selected_count > 0 %}
                                     <span class="text-sm text-gray-700">{{ run.selected_count }}</span>
