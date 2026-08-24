@@ -1067,3 +1067,111 @@ class TestGetCachedPipelineData:
 
             assert result == {}
             MockPipelineAccess.assert_not_called()
+
+
+class TestUpdateScheduleDefaults:
+    """update_definition overwrites the WHOLE data blob, so anything short of a
+    read-modify-write here silently destroys a workflow's config. These pin the merge at
+    both levels."""
+
+    def _existing(self):
+        return LocalLabsRecord(
+            {
+                "id": 5,
+                "experiment": "workflow",
+                "type": "workflow_definition",
+                "data": {
+                    "name": "KMC Image Audit",
+                    "opportunity_ids": [1487],
+                    "config": {
+                        "opp_meta": {"1487": {"llo": "PIPN"}},
+                        "weight_image_path": "anthropometric/upload_weight_image",
+                        "schedule_defaults": {
+                            "_note": "why this cohort was chosen",
+                            "sample_percentage": 30,
+                            "opportunity_ids": [1236, 1487],
+                        },
+                    },
+                },
+                "opportunity_id": 1487,
+            }
+        )
+
+    def test_merges_into_schedule_defaults_without_dropping_siblings(self, workflow_data_access):
+        wda, mock_api = workflow_data_access
+        existing = self._existing()
+        mock_api.get_record_by_id.return_value = existing
+        mock_api.update_record.return_value = existing
+
+        wda.update_schedule_defaults(5, {"max_per_flw": 20})
+
+        sent = mock_api.update_record.call_args.kwargs["data"]
+        defaults = sent["config"]["schedule_defaults"]
+        assert defaults["max_per_flw"] == 20
+        # The sibling keys — including the _note recording why a cohort was picked —
+        # must survive, or setting a cap quietly rewrites the schedule's scope.
+        assert defaults["sample_percentage"] == 30
+        assert defaults["opportunity_ids"] == [1236, 1487]
+        assert defaults["_note"] == "why this cohort was chosen"
+
+    def test_preserves_the_rest_of_config_and_of_data(self, workflow_data_access):
+        wda, mock_api = workflow_data_access
+        existing = self._existing()
+        mock_api.get_record_by_id.return_value = existing
+        mock_api.update_record.return_value = existing
+
+        wda.update_schedule_defaults(5, {"max_per_flw": 20})
+
+        sent = mock_api.update_record.call_args.kwargs["data"]
+        assert sent["config"]["opp_meta"] == {"1487": {"llo": "PIPN"}}
+        assert sent["config"]["weight_image_path"] == "anthropometric/upload_weight_image"
+        assert sent["name"] == "KMC Image Audit"
+        assert sent["opportunity_ids"] == [1487]
+
+    def test_overwrites_only_the_keys_given(self, workflow_data_access):
+        wda, mock_api = workflow_data_access
+        existing = self._existing()
+        mock_api.get_record_by_id.return_value = existing
+        mock_api.update_record.return_value = existing
+
+        wda.update_schedule_defaults(5, {"opportunity_ids": [1790]})
+
+        defaults = mock_api.update_record.call_args.kwargs["data"]["config"]["schedule_defaults"]
+        assert defaults["opportunity_ids"] == [1790]
+        assert defaults["sample_percentage"] == 30
+
+    def test_empty_values_writes_nothing(self, workflow_data_access):
+        wda, mock_api = workflow_data_access
+        mock_api.get_record_by_id.return_value = self._existing()
+
+        result = wda.update_schedule_defaults(5, {})
+
+        mock_api.update_record.assert_not_called()
+        assert result is not None
+
+    def test_returns_none_when_definition_not_found(self, workflow_data_access):
+        wda, mock_api = workflow_data_access
+        mock_api.get_record_by_id.return_value = None
+
+        assert wda.update_schedule_defaults(999, {"max_per_flw": 5}) is None
+        mock_api.update_record.assert_not_called()
+
+    def test_creates_the_config_block_when_absent(self, workflow_data_access):
+        wda, mock_api = workflow_data_access
+        bare = LocalLabsRecord(
+            {
+                "id": 5,
+                "experiment": "workflow",
+                "type": "workflow_definition",
+                "data": {"name": "Bare"},
+                "opportunity_id": 1487,
+            }
+        )
+        mock_api.get_record_by_id.return_value = bare
+        mock_api.update_record.return_value = bare
+
+        wda.update_schedule_defaults(5, {"max_per_flw": 3})
+
+        sent = mock_api.update_record.call_args.kwargs["data"]
+        assert sent["config"]["schedule_defaults"] == {"max_per_flw": 3}
+        assert sent["name"] == "Bare"

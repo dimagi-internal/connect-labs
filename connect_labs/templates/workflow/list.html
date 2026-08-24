@@ -679,10 +679,27 @@
                     day_of_month: 1,
                     {% endif %}
                 },
+                // Template-declared run settings (see template_schedule_options), seeded
+                // from what is saved on the definition so the dialog opens showing the
+                // settings the schedule would actually run with.
+                // Rendered WITHOUT |safe on purpose. This object literal sits inside the
+                // card's x-data attribute, which is delimited by double quotes, so raw
+                // quotes out of the JSON would end the attribute early and break every
+                // workflow card on the page. Autoescape emits the quot entity instead,
+                // which the HTML parser turns back into a quote before Alpine evaluates.
+                // Keep this comment free of double quotes and entities, for that reason.
+                scheduleDefaults: {{ workflow.schedule_defaults_seed|default:"{}" }},
+                toggleScheduleChoice(key, value) {
+                    const current = this.scheduleDefaults[key] || [];
+                    this.scheduleDefaults[key] = current.includes(value)
+                        ? current.filter(v => v !== value)
+                        : current.concat([value]);
+                },
                 async saveSchedule() {
                     this.savingSchedule = true;
                     const f = this.scheduleForm;
                     const body = { cadence: f.cadence, hour: Number(f.hour) };
+                    if (Object.keys(this.scheduleDefaults).length) body.defaults = this.scheduleDefaults;
                     if (f.cadence === 'weekly') body.day_of_week = Number(f.day_of_week);
                     if (f.cadence === 'monthly') body.day_of_month = Number(f.day_of_month);
                     try {
@@ -1356,6 +1373,52 @@
                     <label class="block text-sm font-medium mb-1">Hour (UTC, 0&ndash;23)</label>
                     <input type="number" min="0" max="23" x-model="scheduleForm.hour"
                            class="w-full border rounded px-3 py-2 mb-4">
+
+                    {% if workflow.schedule_options %}
+                    <div class="border-t pt-3 mb-4 space-y-3 max-h-72 overflow-y-auto">
+                        <p class="text-xs text-gray-500">
+                            What this schedule runs with. Saved on the workflow itself, so it holds
+                            for every firing &mdash; the dashboard's own controls only affect a run
+                            you start there by hand.
+                        </p>
+                        {% for opt in workflow.schedule_options %}
+                        <div>
+                            {% if opt.type == 'bool' %}
+                            <label class="flex items-center gap-2 text-sm font-medium">
+                                <input type="checkbox" x-model="scheduleDefaults['{{ opt.key|escapejs }}']">
+                                <span>{{ opt.label }}</span>
+                            </label>
+                            {% else %}
+                            <label class="block text-sm font-medium mb-1">{{ opt.label }}</label>
+                            {% endif %}
+                            {% if opt.unavailable %}
+                            <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                                Not configurable here &mdash; this workflow's config has no
+                                <code>{{ opt.choices_from_config }}</code>. The rest of the schedule
+                                still saves; this setting keeps whatever it already has.
+                            </p>
+                            {% elif opt.type == 'multi_int' %}
+                            <div class="space-y-1">
+                                {% for choice in opt.choices %}
+                                <label class="flex items-center gap-2 text-sm">
+                                    <input type="checkbox"
+                                           :checked="(scheduleDefaults['{{ opt.key|escapejs }}'] || []).includes({{ choice.value }})"
+                                           @change="toggleScheduleChoice('{{ opt.key|escapejs }}', {{ choice.value }})">
+                                    <span>{{ choice.label }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                            {% elif opt.type == 'int' %}
+                            <input type="number" min="{{ opt.min }}" max="{{ opt.max }}"
+                                   x-model="scheduleDefaults['{{ opt.key|escapejs }}']"
+                                   placeholder="not set"
+                                   class="w-full border rounded px-3 py-2">
+                            {% endif %}
+                            {% if opt.help %}<p class="text-xs text-gray-500 mt-1">{{ opt.help }}</p>{% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
 
                     <div class="flex justify-between">
                         <button type="button" class="text-red-600 text-sm"

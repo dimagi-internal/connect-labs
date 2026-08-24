@@ -121,7 +121,7 @@ def run_default_for_definition(definition, *, access_token, request=None, **kwar
     key = definition.template_type or (definition.data.get("config") or {}).get("templateType")
     template = TEMPLATES.get(key) if key else None
     if not template or not template.get("supports_default_run") or not callable(template.get("run_default")):
-        raise ValueError(f"Workflow {getattr(definition,'id','?')} (template {key!r}) does not support default-run.")
+        raise ValueError(f"Workflow {getattr(definition, 'id', '?')} (template {key!r}) does not support default-run.")
     return template["run_default"](definition=definition, access_token=access_token, request=request, **kwargs)
 
 
@@ -131,6 +131,116 @@ def template_supports_default_run(template_key: str | None) -> bool:
         return False
     template = TEMPLATES.get(template_key)
     return bool(template and template.get("supports_default_run") and callable(template.get("run_default")))
+
+
+SCHEDULE_OPTION_TYPES = ("int", "multi_int", "bool")
+
+# The config key every schedulable template keeps its headless-run settings under. Named
+# here rather than per template so the scheduling UI and the endpoint that saves it agree
+# with run_default without importing the template module.
+SCHEDULE_DEFAULTS_CONFIG_KEY = "schedule_defaults"
+
+
+def template_schedule_options(template_key: str | None) -> list[dict]:
+    """Settings a template lets the scheduling UI write to ``config.schedule_defaults``.
+
+    A template's ``run_default`` reads its settings from ``config.schedule_defaults``,
+    which had no editing surface at all: render code can only write RUN state, and no API
+    endpoint updates a definition's config. So a cap typed into a dashboard applied to
+    that one run while a schedule silently ran without it, and changing which
+    opportunities a schedule covered meant an out-of-band API call. Declaring an option
+    here is what puts it in the schedule dialog and makes it persist.
+
+    Two deliberate types rather than a general config editor - that is what keeps every
+    value cheap to validate and safe to merge:
+
+    ``int``
+        One bounded whole number: ``{key, label, help, min, max}``. Blank clears it.
+    ``multi_int``
+        A non-empty set of whole numbers chosen from a fixed list, e.g. which
+        opportunities a schedule covers. ``choices_from_config`` names the config key
+        holding ``{value: label}``, so the choices come from the workflow's OWN config
+        and stay correct per definition instead of being frozen at import.
+    ``bool``
+        An on/off flag, e.g. a dry run that reports what it would do and creates
+        nothing.
+
+    Returns [] for templates that declare none, which is every template but one.
+    """
+    if not template_supports_default_run(template_key):
+        return []
+    template = TEMPLATES.get(template_key) or {}
+    options = []
+    for opt in template.get("schedule_options") or []:
+        key = (opt or {}).get("key")
+        opt_type = (opt or {}).get("type") or "int"
+        if not key or opt_type not in SCHEDULE_OPTION_TYPES:
+            # Skip rather than raise: a malformed declaration must not take down the
+            # whole workflow list page for every other template.
+            logger.warning("Ignoring schedule option %r on template %r", opt, template_key)
+            continue
+        resolved = {
+            "key": key,
+            "type": opt_type,
+            "label": opt.get("label") or key,
+            "help": opt.get("help") or "",
+        }
+        if opt_type == "int":
+            resolved["min"] = int(opt.get("min", 1))
+            resolved["max"] = int(opt.get("max", 1000000))
+        elif opt_type == "multi_int":
+            resolved["choices_from_config"] = opt.get("choices_from_config") or ""
+        options.append(resolved)
+    return options
+
+
+def schedule_options_for_definition(definition) -> list[dict]:
+    """``template_schedule_options`` with each option's choices and current value filled in.
+
+    Both the schedule dialog and the endpoint that saves it read options through here, so
+    what the UI offers and what the API accepts cannot drift apart - the endpoint
+    validates against exactly the list the dialog was built from.
+    """
+    if definition is None:
+        return []
+    # Every read below treats config as UNTRUSTED. It is operator-editable JSON that this
+    # template's own docs tell people to hand-patch, and this function runs while building
+    # the workflow LIST page - so a scalar where a dict was expected would raise inside a
+    # comprehension, get swallowed by the page's blanket handler, and render zero
+    # workflows for everyone in the opportunity, including the page needed to fix it.
+    data = getattr(definition, "data", None) or {}
+    config = data.get("config")
+    config = config if isinstance(config, dict) else {}
+    defaults = config.get(SCHEDULE_DEFAULTS_CONFIG_KEY)
+    defaults = defaults if isinstance(defaults, dict) else {}
+
+    options = []
+    for opt in template_schedule_options(getattr(definition, "template_type", None)):
+        filled = dict(opt)
+        filled["value"] = defaults.get(opt["key"])
+        if opt["type"] == "multi_int":
+            raw = config.get(opt.get("choices_from_config") or "")
+            raw = raw if isinstance(raw, dict) else {}
+            choices = []
+            for value, label in raw.items():
+                try:
+                    choices.append({"value": int(value), "label": str(label)})
+                except (TypeError, ValueError):
+                    continue
+            filled["choices"] = sorted(choices, key=lambda c: c["value"])
+            # Selected set, as ints, so the template can test membership directly. A
+            # non-list value (a bare int, a string) is treated as nothing selected rather
+            # than iterated - iterating a string would silently select its digits.
+            saved = filled["value"] if isinstance(filled["value"], list) else []
+            filled["selected"] = [int(v) for v in saved if str(v).lstrip("-").isdigit()]
+            # No choices means the config key this option reads is missing or unusable.
+            # Left unflagged that renders a labelled control with nothing in it, which
+            # posts an empty set, fails validation, and blocks the whole schedule from
+            # being saved - a dead end with no explanation. Flagged, the dialog can say
+            # why and omit the key so the REST of the schedule still saves.
+            filled["unavailable"] = not filled["choices"]
+        options.append(filled)
+    return options
 
 
 def list_templates() -> list[dict]:

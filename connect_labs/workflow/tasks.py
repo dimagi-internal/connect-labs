@@ -862,11 +862,35 @@ def run_scheduled_workflow(schedule_id: int) -> dict:
         definition = da.get_definition(sched.definition_id)
         if definition is None:
             raise ValueError(f"definition {sched.definition_id} not found")
-        run_default_for_definition(
+        result = run_default_for_definition(
             definition, access_token=token, request=None, cchq_access_token=cchq_token, cadence=sched.cadence
         )
+        # A hook reports trouble by RETURNING it at least as often as by raising: creator
+        # templates audit several opportunities in one run and record a per-opportunity
+        # failure rather than abandoning the rest. Discarding the return value marked
+        # those runs "OK", so a schedule could fail the same way every night and still
+        # look healthy in the admin - defeating the very distinction those hooks take
+        # care to draw between "failed", "empty" and "ready".
         sched.last_status = WorkflowSchedule.STATUS_OK
         sched.last_error = ""
+        if isinstance(result, dict):
+            errors = [str(e) for e in (result.get("errors") or []) if e]
+            if result.get("error"):
+                errors.insert(0, str(result["error"]))
+            if result.get("status") == "failed":
+                sched.last_status = WorkflowSchedule.STATUS_FAILED
+            elif result.get("status") == "dry_run":
+                # A dry run succeeds having created nothing, which is indistinguishable
+                # from a healthy run in a green OK pill. Saying so here is what stops a
+                # schedule left in dry-run mode looking like it is doing its job. (A
+                # distinct last_status would need a migration for one advisory state.)
+                errors.append("dry run - reported only, no audits created")
+            if errors:
+                # Recorded even when the run overall succeeded: "created audits for 4 of
+                # 5 opportunities" is a success still worth acting on, and last_error is
+                # the only field the admin surfaces it through.
+                sched.last_error = "; ".join(errors)[:2000]
+        logger.info("Scheduled workflow %s finished: %s", schedule_id, result)
     except Exception as e:  # noqa: BLE001
         logger.exception("Scheduled workflow %s failed", schedule_id)
         sched.last_status = WorkflowSchedule.STATUS_FAILED

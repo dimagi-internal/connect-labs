@@ -49,6 +49,14 @@
             {% elif s.last_status == "ok" %}<span class="text-green-600">OK</span>
             {% elif not s.enabled %}<span>Paused</span>
             {% else %}<span class="text-gray-400">—</span>{% endif %}
+            {# A run can succeed overall and still leave something to act on - "created
+               audits for 4 of 5 opportunities", or a dry run that created nothing on
+               purpose. run_scheduled_workflow records those in last_error, which nothing
+               rendered, so a partial failure and a forgotten dry run both read as a plain
+               green OK. Full text on hover, since the message names the opportunity. #}
+            {% if s.last_error %}
+            <div class="mt-1 text-xs text-amber-700 max-w-xs truncate" title="{{ s.last_error }}">{{ s.last_error }}</div>
+            {% endif %}
           </td>
           <td class="px-4 py-3 text-right whitespace-nowrap">
             <form method="post" action="{% url 'labs_admin:schedule_toggle' s.id %}" class="inline">

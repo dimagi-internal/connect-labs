@@ -519,6 +519,28 @@ class WorkflowDataAccess(BaseDataAccess):
             )
         return None
 
+    def update_schedule_defaults(self, definition_id: int, values: dict) -> WorkflowDefinitionRecord | None:
+        """Merge ``values`` into a definition's ``config.schedule_defaults``.
+
+        A MERGE at both levels, never a replace: ``update_definition`` overwrites the
+        whole data blob, so building the payload from anything less than the existing
+        record would silently drop the rest of config (opp_meta, the image paths, the
+        agent map) along with the sibling schedule_defaults keys - including the
+        ``_note`` recording why a cohort was chosen.
+
+        Returns None if the definition cannot be loaded, and writes nothing when
+        ``values`` is empty.
+        """
+        existing = self.get_definition(definition_id)
+        if not existing:
+            return None
+        if not values:
+            return existing
+
+        config = {**(existing.data.get("config") or {})}
+        config["schedule_defaults"] = {**(config.get("schedule_defaults") or {}), **values}
+        return self.update_definition(definition_id, {**existing.data, "config": config})
+
     def update_opportunity_ids(
         self, definition_id: int, opportunity_ids: list[int]
     ) -> WorkflowDefinitionRecord | None:

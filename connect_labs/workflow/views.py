@@ -31,7 +31,7 @@ from connect_labs.utils.feature_access import can_create_from_template, get_allo
 from connect_labs.workflow.data_access import PipelineCacheMiss, PipelineDataAccess, WorkflowDataAccess
 from connect_labs.workflow.templates import TEMPLATES
 from connect_labs.workflow.templates import create_workflow_from_template as create_from_template
-from connect_labs.workflow.templates import template_supports_default_run
+from connect_labs.workflow.templates import schedule_options_for_definition, template_supports_default_run
 from connect_labs.workflow.templates.weekly_dual_track_audit import CLASSIFIER_KEYS
 
 logger = logging.getLogger(__name__)
@@ -166,6 +166,35 @@ def _resolve_pipeline_sources_for_run(
     return ordered_sources, configs_by_alias
 
 
+def _schedule_seed_value(option):
+    """One schedule option's current value, shaped for the dialog's JS state.
+
+    Kept out of the Django template because the "nothing set yet" cases are what a
+    template filter gets subtly wrong: an unset integer must seed as "" so the input
+    renders blank and posts back as "clear it", NOT as 0 (a cap of zero) or as the string
+    "None".
+    """
+    if option["type"] == "multi_int":
+        return option.get("selected") or []
+    if option["type"] == "bool":
+        return bool(option.get("value"))
+
+    value = option.get("value")
+    if value is None:
+        return ""
+    # Clamp a stored int into the option's declared range before seeding.
+    #
+    # The dialog posts EVERY option, so an out-of-range value already in config (set by
+    # hand, or left behind by a narrowed max) would fail validation and make cadence,
+    # hour and opportunities unsaveable - on a field the user never touched. Seeding a
+    # legal value means they are never posting something they did not enter.
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return ""
+    return min(max(number, option["min"]), option["max"])
+
+
 class WorkflowTemplateListAPIView(LoginRequiredMixin, View):
     """API endpoint to list available workflow templates."""
 
@@ -242,6 +271,7 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
                 "last_status": sched.last_status,
             }
 
+        schedule_options = schedule_options_for_definition(definition)
         return {
             "definition": definition,
             "runs": runs,
@@ -251,6 +281,19 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             "latest_run_id": runs[0].id if runs else 0,
             "schedulable": template_supports_default_run(definition.template_type),
             "schedule": schedule_dict,
+            # Settings the schedule dialog offers, each already carrying its choices and
+            # the value currently saved on this definition. Empty for every template that
+            # declares none, which leaves the dialog exactly as it was.
+            "schedule_options": schedule_options,
+            # The same values as a JSON literal for the dialog's Alpine state. Built here
+            # rather than assembled in the template: every value is an int or list of
+            # ints, and json.dumps gets the "no value set" cases right without relying on
+            # Django filters to produce valid JS.
+            # Unavailable options are omitted, so an option whose choices could not be
+            # resolved is never posted and cannot block the rest of the schedule saving.
+            "schedule_defaults_seed": json.dumps(
+                {opt["key"]: _schedule_seed_value(opt) for opt in schedule_options if not opt.get("unavailable")}
+            ),
         }
 
     def get_context_data(self, **kwargs):
@@ -3482,6 +3525,81 @@ def _resolve_schedule_scope(request):
     return labs_context.get("opportunity_id"), labs_context.get("program_id")
 
 
+def _clean_schedule_defaults(raw, options):
+    """Validate posted schedule defaults against a definition's DECLARED options.
+
+    Returns ``(values, error)``. ``values`` holds only keys the template declared and is
+    safe to merge into ``config.schedule_defaults``; an unrecognised key is an error
+    rather than a silent drop, because a caller that thinks it set a cap and did not is
+    exactly the failure this whole surface exists to remove.
+
+    Validating against ``options`` - the same list the dialog was rendered from - is what
+    stops this becoming a general config-write endpoint.
+    """
+    if raw is None:
+        return {}, None
+    if not isinstance(raw, dict):
+        return None, "defaults must be a JSON object"
+
+    by_key = {opt["key"]: opt for opt in options}
+    unknown = sorted(set(raw) - set(by_key))
+    if unknown:
+        return None, "not settable on this workflow: %s" % ", ".join(unknown)
+
+    values = {}
+    for key, value in raw.items():
+        opt = by_key[key]
+
+        if opt["type"] == "bool":
+            # Strict: a truthy string like "false" silently arming a live run is exactly
+            # the kind of near-miss a dry-run flag exists to prevent.
+            if not isinstance(value, bool):
+                return None, f"{opt['label']} must be true or false"
+            values[key] = value
+            continue
+
+        if opt["type"] == "int":
+            # Blank clears the setting. run_default treats a missing key as "no cap",
+            # so store None rather than 0 and keep one meaning for "unset".
+            if value in (None, ""):
+                values[key] = None
+                continue
+            try:
+                number = int(value)
+            except (TypeError, ValueError):
+                return None, f"{opt['label']} must be a whole number"
+            if not opt["min"] <= number <= opt["max"]:
+                return None, f"{opt['label']} must be between {opt['min']} and {opt['max']}"
+            values[key] = number
+            continue
+
+        # multi_int
+        if not isinstance(value, list):
+            return None, f"{opt['label']} must be a list"
+        allowed = {c["value"] for c in opt.get("choices") or []}
+        chosen = []
+        for item in value:
+            try:
+                number = int(item)
+            except (TypeError, ValueError):
+                return None, f"{opt['label']} must contain whole numbers"
+            # No `allowed and ...` guard: an empty choice set means nothing is selectable,
+            # so every value must be rejected. Skipping the check there would let any id
+            # through - and it is now an EXPECTED state (see the unavailable flag), where
+            # the omission is only client-side and so not something to rely on.
+            if number not in allowed:
+                return None, f"{number} is not one of this workflow's {opt['label'].lower()}"
+            if number not in chosen:
+                chosen.append(number)
+        if not chosen:
+            # Saving an empty set would leave a schedule that fires nightly and audits
+            # nothing - run_default's loudest failure, and avoidable here.
+            return None, f"select at least one of {opt['label'].lower()}"
+        values[key] = sorted(chosen)
+
+    return values, None
+
+
 @login_required
 @require_POST
 def schedule_upsert_api(request, definition_id):
@@ -3540,19 +3658,38 @@ def schedule_upsert_api(request, definition_id):
         day_of_week = None
         day_of_month = None
 
-    # Load the definition (scoped) to (a) verify access and (b) snapshot its name.
+    # Load the definition (scoped) to (a) verify access, (b) snapshot its name, and
+    # (c) persist any schedule defaults the dialog sent. The client stays open across
+    # all three so the write reuses the connection that already proved access.
     if opportunity_id:
         da = WorkflowDataAccess(access_token=access_token, opportunity_id=opportunity_id)
     else:
         da = WorkflowDataAccess(access_token=access_token, program_id=program_id)
     try:
         definition = da.get_definition(definition_id)
+        if definition is None:
+            return JsonResponse({"error": "Workflow definition not found"}, status=404)
+        if not template_supports_default_run(definition.template_type):
+            return JsonResponse({"error": "This workflow does not support scheduling."}, status=400)
+
+        # Settings first, schedule second. A schedule created before its config lands
+        # would fire on the OLD settings if the write then failed, which is the silent
+        # wrong-volume run this endpoint is meant to prevent.
+        values, error = _clean_schedule_defaults(body.get("defaults"), schedule_options_for_definition(definition))
+        if error:
+            return JsonResponse({"error": error}, status=400)
+        if values:
+            if da.update_schedule_defaults(definition_id, values) is None:
+                return JsonResponse({"error": "Could not save the schedule settings"}, status=502)
+    except LabsAPIError as exc:
+        # The upstream client RAISES on a failed write rather than returning None, so
+        # without this the None-check above is unreachable for real API failures and the
+        # caller gets Django's HTML 500 into `await response.json()` - surfacing to the
+        # user as "Unexpected token '<'" instead of the intended message.
+        logger.warning("Schedule upsert failed for definition %s: %s", definition_id, exc)
+        return JsonResponse({"error": "Could not save the schedule settings"}, status=502)
     finally:
         da.close()
-    if definition is None:
-        return JsonResponse({"error": "Workflow definition not found"}, status=404)
-    if not template_supports_default_run(definition.template_type):
-        return JsonResponse({"error": "This workflow does not support scheduling."}, status=400)
 
     sched, _created = WorkflowSchedule.objects.update_or_create(
         definition_id=definition_id,
