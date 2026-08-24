@@ -961,10 +961,17 @@ class TestTrendSeries:
     def test_online_is_judged_per_worker_week(self, client, populated):
         # fast-worker: 3 of 3 timely. slow-worker: 1 of 3 timely (one lucky
         # fast sync must not make an offline worker online).
+        #
+        # Two weeks back, not one, so the bucket holds ONLY these two workers.
+        # The `populated` fixture writes events at now-1h..now-10h, which land in
+        # the PREVIOUS ISO week whenever the suite runs in the first hours of a
+        # Monday (UTC) -- there they joined this test's week-1 bucket and made it
+        # 3 workers, not 2. Observed 2026-08-24 01:00Z. The fixture reaches at
+        # most 10 hours back, so it can never touch a bucket two weeks old.
         for i, lag in enumerate((1, 2, 3)):
-            self._mk(9000 + i, "fast-worker", lag)
+            self._mk(9000 + i, "fast-worker", lag, weeks_ago=2)
         for i, lag in enumerate((1, 60, 90)):
-            self._mk(9100 + i, "slow-worker", lag)
+            self._mk(9100 + i, "slow-worker", lag, weeks_ago=2)
 
         trends = client.get(reverse("pulse:api_summary")).json()["trends"]
         week = [w for w in trends if w["workers"] >= 2][-1]
