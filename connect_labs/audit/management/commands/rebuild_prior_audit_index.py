@@ -4,23 +4,35 @@
     manage.py rebuild_prior_audit_index --opportunity 1973 --verify-only
     manage.py rebuild_prior_audit_index --opportunity 1973 --json
 
-``--verify-only`` is the one that matters right now. Nothing reads the
-projection yet (#1246 step 1), so the only question worth asking is whether it
-agrees with the live computation on real data. It exits non-zero when it does
-not, so it can gate the switch-over rather than being read by eye.
+``--verify-only`` is the gate: it diffs the projection against the live
+computation and exits non-zero when they disagree, so it can block the
+switch-over rather than being read by eye.
 
-Needs an OAuth access token to reach Connect's export API, the same as any other
-audit read -- pass --token, or run it where a service token is configured.
+AUTHENTICATION: prefer ``--as <username>``, which looks up that labs user's
+stored Connect token the way the reconcile command and Pulse's ingest do.
+``--token`` still exists for local one-offs, but do NOT pass it through
+run-labs-command -- that workflow takes the command line as a free-text
+dispatch input, so the token would be recorded in the workflow inputs and the
+Actions log. ``--as`` keeps the credential in the database where it already
+lives.
+
+Scope follows whichever identity is used: the export API returns what that
+user's org membership can see. That is safe by construction here --
+rebuild_opportunity merges and cannot delete rows for sessions it did not see
+(#1260) -- but a narrow identity will simply build less, so prefer the widest
+one available.
 """
 
 from __future__ import annotations
 
 import json
 
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
 from connect_labs.audit import prior_audit_projection as projection
 from connect_labs.audit.data_access import AuditDataAccess, build_prior_audit_index
+from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
 
 
 class Command(BaseCommand):
@@ -28,8 +40,12 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--opportunity", type=int, required=True, help="opportunity id")
-        parser.add_argument("--token", default=None, help="OAuth access token for the export API")
-        parser.add_argument("--username", default=None, help="record who built it, for scope diagnosis")
+        parser.add_argument(
+            "--as", dest="username", default=None, help="labs username whose stored Connect token to use"
+        )
+        parser.add_argument(
+            "--token", default=None, help="raw OAuth token (local use only — never via run-labs-command)"
+        )
         parser.add_argument(
             "--verify-only",
             action="store_true",
@@ -39,7 +55,24 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         opp = opts["opportunity"]
-        data_access = AuditDataAccess(opportunity_id=opp, access_token=opts["token"])
+        token = opts["token"]
+        if not token:
+            if not opts["username"]:
+                raise CommandError("pass --as <username> (preferred) or --token")
+            try:
+                user = get_user_model().objects.get(username=opts["username"])
+            except get_user_model().DoesNotExist:
+                raise CommandError(
+                    f"user {opts['username']!r} does not exist in labs "
+                    "(they must have logged into labs in a browser at least once)"
+                )
+            try:
+                token = get_valid_access_token(user)
+            except ConnectTokenError as exc:
+                # An expired refresh looks exactly like "nothing to build" if it
+                # is allowed to fall through, so it has to stop the run.
+                raise CommandError(f"no usable Connect token for {opts['username']!r}: {exc}") from exc
+        data_access = AuditDataAccess(opportunity_id=opp, access_token=token)
 
         # One fetch, used for BOTH the rebuild and the live comparison. Fetching
         # twice would let the source change between them and turn an ordinary
