@@ -1226,9 +1226,16 @@ def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, An
         "additionalProperties": False,
     },
     is_write=False,
+    wants_progress=True,
 )
 def synthetic_profile_opp(
-    user, *, source_opportunity_id: int, out_dir: str, curate: bool = False, mirror: bool = False
+    user,
+    *,
+    source_opportunity_id: int,
+    out_dir: str,
+    curate: bool = False,
+    mirror: bool = False,
+    progress=NULL_PROGRESS,
 ) -> dict[str, Any]:
     _require_opportunity_access(user, source_opportunity_id)
     try:
@@ -1244,6 +1251,7 @@ def synthetic_profile_opp(
         base_url=settings.CONNECT_PRODUCTION_URL,
         oauth_token=token,
         store=store,
+        progress=progress,
     )
     resolved = f"gdrive:{store.root_folder_id}" if hasattr(store, "root_folder_id") else str(out_dir)
     return {

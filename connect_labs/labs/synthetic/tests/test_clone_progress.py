@@ -139,3 +139,50 @@ def test_generate_opps_bulk_reports_progress_per_bundle(tmp_path, settings, monk
 
     assert seen, "generate_opps_bulk emitted no progress at all"
     assert seen[-1][0] == seen[-1][1], f"final report must show every bundle done: {seen[-1]}"
+
+
+def test_a_single_opportunity_reports_progress_between_its_stages(tmp_path):
+    """Per-opp notifications keep a COHORT alive; they do nothing for ONE big opp.
+
+    profile_opps_bulk emits once per opportunity, so a cohort of small opps survives.
+    But a single large opportunity emits nothing between its first byte and its last,
+    and the client's idle timer expires mid-call — aborting a run the server would have
+    finished. Opp 874 (11,581 visits) is the case that exposed it: every smaller KMC opp
+    profiles inside the 300s window and it does not.
+    """
+    seen = []
+
+    with patch.object(clone_from_prod, "_fetch_endpoint", side_effect=lambda b, o, k, t: _bulk_fetch(o, k)):
+        clone_from_prod.profile_opp_to_bundle(
+            874,
+            base_url="https://example.invalid",
+            oauth_token="t",
+            store=clone_from_prod.make_bundle_store(str(tmp_path)),
+            progress=lambda done, total, msg=None: seen.append((done, total, msg)),
+        )
+
+    # Every fetch is its own stage, and the manifest build is bracketed by two of
+    # them -- the CPU-heavy stretch must not be entered without a notification
+    # immediately before it.
+    assert len(seen) >= 6, seen
+    assert [d for d, _, _ in seen] == sorted(d for d, _, _ in seen), "progress must be monotonic"
+    assert all(t == 6 for _, t, _ in seen), seen
+    assert any("visits" in (m or "") for _, _, m in seen), "visit count is the useful signal here"
+
+
+def test_a_caller_that_cannot_report_progress_does_not_take_the_profile_down(tmp_path):
+    """Telemetry must never fail the call it exists to keep alive."""
+
+    def _explode(*_a, **_k):
+        raise RuntimeError("session gone")
+
+    with patch.object(clone_from_prod, "_fetch_endpoint", side_effect=lambda b, o, k, t: _bulk_fetch(o, k)):
+        handle = clone_from_prod.profile_opp_to_bundle(
+            874,
+            base_url="https://example.invalid",
+            oauth_token="t",
+            store=clone_from_prod.make_bundle_store(str(tmp_path)),
+            progress=_explode,
+        )
+
+    assert handle

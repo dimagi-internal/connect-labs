@@ -23,7 +23,14 @@ logger = logging.getLogger(__name__)
 
 
 def profile_opp_to_bundle(
-    source_opp_id: int, *, base_url: str, oauth_token: str, store, curate: bool = False, mirror: bool = False
+    source_opp_id: int,
+    *,
+    base_url: str,
+    oauth_token: str,
+    store,
+    curate: bool = False,
+    mirror: bool = False,
+    progress=NULL_PROGRESS,
 ) -> str:
     """Fetch real prod exports for *source_opp_id* and write a self-contained profile bundle.
 
@@ -52,10 +59,27 @@ def profile_opp_to_bundle(
             "real ~6%%. Use curate=False for anything that will be compared to real results.",
             source_opp_id,
         )
+    # Progress between stages, not just between opportunities (connect-labs#1220).
+    # profile_opps_bulk already reports per opp, which keeps a COHORT alive — but a
+    # single large opportunity emits nothing at all between its first byte and its
+    # last, so the client's idle timer expires mid-call and aborts a run the server
+    # would have finished. Opp 874 (11,581 visits) is the case that exposed it: every
+    # smaller opp profiles inside the window and it does not.
+    stages = 6
+    safe_call(progress, 0, stages, f"Profiling opportunity {source_opp_id}")
     detail = _fetch_endpoint(base_url, source_opp_id, "", oauth_token)
+    safe_call(progress, 1, stages, "fetched opportunity detail")
     user_visits = _fetch_endpoint(base_url, source_opp_id, "user_visits", oauth_token)
+    safe_call(
+        progress,
+        2,
+        stages,
+        f"fetched {len(user_visits) if isinstance(user_visits, list) else 0} visits",
+    )
     user_data = _fetch_endpoint(base_url, source_opp_id, "user_data", oauth_token)
+    safe_call(progress, 3, stages, "fetched user data")
     app_structure = _fetch_endpoint(base_url, source_opp_id, "app_structure", oauth_token) or {}
+    safe_call(progress, 4, stages, "fetched app structure")
 
     if not isinstance(user_visits, list) or not user_visits:
         raise ValueError(f"No user_visits for opportunity_id={source_opp_id}")
@@ -69,12 +93,28 @@ def profile_opp_to_bundle(
         curate=curate,
         mirror=mirror,
     )
+    safe_call(progress, 5, stages, "built manifest; writing bundle")
     return store.write(
         source_opp_id,
         manifest_yaml=manifest_yaml,
         app_structure=app_structure if isinstance(app_structure, dict) else {},
         opportunity=detail if isinstance(detail, dict) else {},
     )
+
+
+def _slot_progress(outer, slot_index: int, slot_count: int):
+    """Map a 0..stages inner scale onto ``[slot_index, slot_index+1]`` of the outer bar.
+
+    A cohort reports one step per opportunity; a single opportunity reports one step
+    per stage. Emitting both raw onto the same callback means `total` changes between
+    notifications, which is not a progress bar any client can draw.
+    """
+
+    def _inner(value: float, total: float | None, message: str) -> None:
+        frac = (value / total) if total else 0.0
+        safe_call(outer, slot_index + frac, slot_count, message)
+
+    return _inner
 
 
 def profile_opps_bulk(
@@ -115,7 +155,17 @@ def profile_opps_bulk(
         try:
             handles.append(
                 profile_opp_to_bundle(
-                    sid, base_url=base_url, oauth_token=oauth_token, store=store, curate=curate, mirror=mirror
+                    sid,
+                    base_url=base_url,
+                    oauth_token=oauth_token,
+                    store=store,
+                    curate=curate,
+                    mirror=mirror,
+                    # Rescale this opp's stage reports into ITS OWN SLOT of the cohort
+                    # bar, so one callback never carries two different totals. A client
+                    # tracking `total` sees a single monotonic 0..n scale; without this
+                    # the bar would jump between n/6 and n/len(opps) mid-run.
+                    progress=_slot_progress(progress, done - 1, total),
                 )
             )
             outcome = f"profiled opportunity {sid}"
