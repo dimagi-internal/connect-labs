@@ -29,6 +29,7 @@ database (the one whose recorded history matters), not a fresh test DB.
 
 import re
 
+from django.apps import apps
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connections
@@ -40,12 +41,27 @@ from django.db.migrations.recorder import MigrationRecorder
 # renamed) has no predictable successor, so it is never classed as collidable.
 _INDEX_RE = re.compile(r"^(\d+)")
 
-# Severities, worst first. Only the first two fail the command by default; a
+# Severities, worst first. All but SHADOWED fail the command by default: a
 # SHADOWED ghost cannot be re-generated under its own name, so it is a
 # reproducibility problem rather than a live trap.
 COLLIDABLE_NOW = "COLLIDABLE_NOW"
+ARMED = "ARMED"
 AT_RISK = "AT_RISK"
 SHADOWED = "SHADOWED"
+
+FAILING = (COLLIDABLE_NOW, ARMED, AT_RISK)
+
+
+def app_has_models(app_label):
+    """Whether the app defines any concrete model right now.
+
+    An app with none has nothing for makemigrations to write, so its recorded
+    ghosts cannot be re-generated until a model shows up.
+    """
+    try:
+        return bool(list(apps.get_app_config(app_label).get_models()))
+    except LookupError:
+        return False
 
 
 def parse_index(name):
@@ -54,15 +70,22 @@ def parse_index(name):
     return int(match.group(1)) if match else None
 
 
-def classify_ghost(name, disk_names):
+def classify_ghost(name, disk_names, has_models=True):
     """Rate one recorded-but-fileless migration name.
 
     ``disk_names`` is every migration name that app currently has on disk.
+    ``has_models`` is whether the app defines any concrete model today --
+    ``makemigrations`` generates nothing for an app that defines none, which is
+    the difference between a trap that is sprung and one that is merely loaded.
 
-    - COLLIDABLE_NOW: the app has no files at all and the ghost is
-      ``0001_initial``. ``makemigrations`` emits exactly that name for an app's
-      first migration, so the collision is not a possibility, it is the next
-      thing that happens. This is the #1264 shape.
+    - COLLIDABLE_NOW: the app has no files, the ghost is ``0001_initial``, and
+      the app has models. ``makemigrations`` emits exactly that name for a first
+      migration, so the collision is not a possibility -- it is the next thing
+      that happens. This is the #1264 shape.
+    - ARMED: same, but the app has no models yet, so nothing is generated today.
+      It fires on the day someone adds the first model. This is precisely the
+      state ``audit`` sat in until #1252 added PriorAuditVerdict, so it is
+      reported as a defect to fix now rather than a note to remember later.
     - AT_RISK: the ghost's number is one ``makemigrations`` could still reach
       (>= the next number it would assign). Whether it actually collides then
       depends on the name fragment, which is not predictable.
@@ -72,7 +95,7 @@ def classify_ghost(name, disk_names):
     """
     index = parse_index(name)
     if not disk_names and name == "0001_initial":
-        return COLLIDABLE_NOW
+        return COLLIDABLE_NOW if has_models else ARMED
 
     if index is None:
         return SHADOWED
@@ -159,17 +182,24 @@ class Command(BaseCommand):
 
         for app_label, names in sorted(ghosts_by_app.items()):
             disk_names = disk_by_app.get(app_label, set())
+            has_models = app_has_models(app_label)
             self.stdout.write(f"\n  {app_label} — {len(disk_names)} file(s) on disk, {len(names)} recorded with none:")
             for name in names:
-                severity = classify_ghost(name, disk_names)
-                style = self.style.ERROR if severity in (COLLIDABLE_NOW, AT_RISK) else self.style.WARNING
+                severity = classify_ghost(name, disk_names, has_models)
+                style = self.style.ERROR if severity in FAILING else self.style.WARNING
                 self.stdout.write(style(f"    [{severity}] {app_label}.{name}"))
                 if severity == COLLIDABLE_NOW:
                     self.stdout.write(
-                        "      This app has no migration files. The next `makemigrations` will emit "
-                        "this exact name and `migrate` will skip it as already applied."
+                        "      This app has no migration files and does have models. The next "
+                        "`makemigrations` emits this exact name and `migrate` skips it as applied."
                     )
-                if severity in (COLLIDABLE_NOW, AT_RISK) or strict:
+                if severity == ARMED:
+                    self.stdout.write(
+                        "      This app has no migration files and no models yet, so nothing is "
+                        "generated today — but the first model added to it produces exactly this "
+                        "name, which `migrate` will skip. `audit` sat here until #1252."
+                    )
+                if severity in FAILING or strict:
                     fail = True
 
         if retired:

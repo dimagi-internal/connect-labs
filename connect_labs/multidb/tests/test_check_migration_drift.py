@@ -13,9 +13,11 @@ from django.core.management.base import CommandError
 from django.db.migrations.recorder import MigrationRecorder
 
 from connect_labs.multidb.management.commands.check_migration_drift import (
+    ARMED,
     AT_RISK,
     COLLIDABLE_NOW,
     SHADOWED,
+    app_has_models,
     classify_ghost,
     parse_index,
 )
@@ -30,13 +32,29 @@ class TestParseIndex:
 
 
 class TestClassifyGhost:
-    def test_empty_app_with_recorded_0001_is_collidable_now(self):
-        """The #1264 shape: no files at all, and 0001_initial already recorded.
+    def test_empty_app_with_models_and_recorded_0001_is_collidable_now(self):
+        """The #1264 shape: no files at all, 0001_initial recorded, models present.
 
         makemigrations emits exactly `0001_initial` for an app's first migration,
         so this is not a risk of collision — it is the next thing that happens.
         """
-        assert classify_ghost("0001_initial", set()) == COLLIDABLE_NOW
+        assert classify_ghost("0001_initial", set(), has_models=True) == COLLIDABLE_NOW
+
+    def test_empty_app_without_models_is_armed_not_collidable(self):
+        """Measured on prod 2026-08-24: solicitations, tasks and flags all sit here.
+
+        makemigrations writes nothing for an app with no models, so the collision
+        cannot happen today — but the first model added to one produces exactly
+        `0001_initial`. That is the state `audit` was in until #1252 added a model
+        to it, so this is reported as a defect now rather than a footnote.
+        """
+        assert classify_ghost("0001_initial", set(), has_models=False) == ARMED
+
+    def test_models_only_change_the_0001_case(self):
+        # has_models is about whether makemigrations writes anything at all; it
+        # does not reorder the numbering logic the other severities rest on.
+        assert classify_ghost("0003_initial", set(), has_models=False) == AT_RISK
+        assert classify_ghost("0002_x", {"0001_a", "0004_b"}, has_models=False) == SHADOWED
 
     def test_empty_app_ghosts_above_0001_are_at_risk(self):
         # Reachable, but only once numbering climbs to it, and only if the
@@ -63,6 +81,18 @@ class TestClassifyGhost:
         assert classify_ghost("0003_initial", on_disk) == SHADOWED
 
 
+class TestAppHasModels:
+    def test_true_for_an_app_with_models(self):
+        # audit gained PriorAuditVerdict in #1252 — that is what sprang the trap.
+        assert app_has_models("audit") is True
+
+    def test_false_for_an_app_with_none(self):
+        assert app_has_models("multidb") is False
+
+    def test_false_for_an_app_that_is_not_installed(self):
+        assert app_has_models("an_app_that_was_deleted") is False
+
+
 @pytest.mark.django_db
 class TestCommand:
     def test_passes_on_a_clean_database(self, capsys):
@@ -72,15 +102,15 @@ class TestCommand:
         assert "no drift" in capsys.readouterr().out
 
     def test_fails_on_a_recorded_name_with_no_file(self, capsys):
-        # multidb has a migrations package and no migration files, so a recorded
-        # 0001_initial for it is precisely the audit-app trap.
+        # multidb has a migrations package, no migration files and no models, so
+        # a recorded 0001_initial for it is the armed form of the audit-app trap.
         MigrationRecorder.Migration.objects.create(app="multidb", name="0001_initial")
 
         with pytest.raises(CommandError, match="Migration drift detected"):
             call_command("check_migration_drift", "--database", "default")
 
         out = capsys.readouterr().out
-        assert COLLIDABLE_NOW in out
+        assert ARMED in out
         assert "multidb.0001_initial" in out
 
     def test_shadowed_ghost_passes_by_default_and_fails_under_strict(self, capsys):
