@@ -1,0 +1,216 @@
+# KMC Layer 2 — case properties, one row per baby.
+#
+# The workbook's Layer 2 (kmc_metrics_framework.xlsx, "Case properties" tab),
+# expressed as SQL over the visit-level extraction the pipeline already emits.
+#
+# WHY THIS FILE EXISTS
+# The existing kmc_programme_metrics dashboard derives all of this in the browser,
+# in JavaScript, over one row per baby carrying a weights array. That forces Layer 3
+# to be in-memory too, because none of these properties exist in the database to
+# GROUP BY. Moving them here makes the indicator layer a GROUP BY, and makes the
+# definitions readable by a second engine (Neal's local Python) instead of being
+# trapped in render code.
+#
+# CONTRACT
+# - `sql` is evaluated per baby, in the `props` CTE, over the aggregates in `visit_agg`.
+# - `visit_agg` columns are produced by the aggregates block below.
+# - Every expression is portable Postgres over NAMED COLUMNS — no JSONB, no paths.
+#   Layer 1 (paths -> columns) stays in the pipeline schema, per Scout's precedent.
+#
+# Parity target: connect_labs/workflow/templates/kmc_programme_metrics_render.js
+# lines ~560-680. Constants match that file exactly.
+
+version: 1
+entity: baby
+
+constants:
+  ELIG_DAYS: 28 # eligibility gate, days from FIRST VISIT
+  SWING: 0.25 # max fractional change between consecutive weights
+  GROWTH_LO_DAY: 21 # early-growth window, lower bound (days from first visit)
+  GROWTH_HI_DAY: 35 # early-growth window, upper bound
+  PLAUSIBLE_LO: 10 # g/kg/day - PROVISIONAL, not the workbook's definition
+  PLAUSIBLE_HI: 20 # g/kg/day - PROVISIONAL
+  WMIN: 400 # implausible weight floor (g), drops the reading
+  WMAX: 8000 # implausible weight ceiling (g)
+
+# ---------------------------------------------------------------------------
+# Per-baby aggregates over the visit series. These replace the JS `series` map
+# and the client-side reduce over wrows.
+# ---------------------------------------------------------------------------
+aggregates:
+  - name: num_visits
+    sql: 'COUNT(*)'
+  - name: first_visit
+    sql: 'MIN(visit_date)'
+  - name: last_visit
+    sql: 'MAX(visit_date)'
+  - name: reg_date
+    sql: 'MIN(reg_date) FILTER (WHERE reg_date IS NOT NULL)'
+  - name: birth_weight_g
+    sql: 'MIN(birth_weight_g) FILTER (WHERE birth_weight_g IS NOT NULL)'
+  - name: enrollment_weight_g
+    sql: 'MIN(enrollment_weight_g) FILTER (WHERE enrollment_weight_g IS NOT NULL)'
+  - name: days_discharge_to_reg
+    sql: 'MIN(days_discharge_to_reg) FILTER (WHERE days_discharge_to_reg IS NOT NULL)'
+  - name: kmc_hours_mean
+    sql: 'AVG(kmc_hours_mean)'
+  # Counts of visits carrying a positive marker. The pipeline's `count` aggregation
+  # already applies the yes-filter at Layer 1, so these are plain counts here.
+  - name: death_visits
+    sql: 'COUNT(*) FILTER (WHERE child_alive_no)'
+  - name: danger_visits
+    sql: 'COUNT(*) FILTER (WHERE danger_sign_yes)'
+  - name: referral_visits
+    sql: 'COUNT(*) FILTER (WHERE referred_yes)'
+  - name: self_referral_visits
+    sql: 'COUNT(*) FILTER (WHERE self_referral_yes)'
+  - name: ebf_visits
+    sql: 'COUNT(*) FILTER (WHERE ebf_recorded)'
+  # Registration vs follow-up. Without this C01/C02/C05 are mathematically
+  # identical, because every case is in the table BECAUSE it has a visit.
+  - name: n_reg_forms
+    sql: "COUNT(*) FILTER (WHERE form_name ~* 'regist')"
+  - name: n_followups
+    sql: "COUNT(*) FILTER (WHERE form_name !~* 'regist')"
+  - name: n_form_names
+    sql: 'COUNT(*) FILTER (WHERE form_name IS NOT NULL)'
+  # C31 is a sum over weight READINGS, not over day-collapsed days. The render code
+  # reads n_weight_readings straight off the pipeline and counts round values over the
+  # RAW weights array, so both must be computed here before the day collapse -- using
+  # n_weight_days here would silently change the denominator of the rounding rate.
+  - name: n_weight_readings
+    sql: 'COUNT(*) FILTER (WHERE weights IS NOT NULL)'
+  - name: n_weights_round_100_raw
+    sql: 'COUNT(*) FILTER (WHERE weights IS NOT NULL AND weights::numeric % 100 = 0)'
+
+# ---------------------------------------------------------------------------
+# Weight-series properties. These are the two the browser does with a loop; in
+# SQL they are window functions over the per-DAY weight series (the JS collapses
+# multiple readings on one day before iterating, so `weight_days` does too).
+# ---------------------------------------------------------------------------
+weight_series:
+  day_collapse: 'AVG(weight_g)' # one reading per (baby, day)
+  valid: 'weight_g BETWEEN :WMIN AND :WMAX'
+  derived:
+    - name: n_weight_days
+      sql: 'COUNT(*)'
+    - name: weight_span_days
+      sql: 'MAX(day)::date - MIN(day)::date'
+    - name: first_weight_g
+      sql: 'ROUND((ARRAY_AGG(w ORDER BY day ASC))[1])'
+    - name: last_weight_g
+      sql: 'ROUND((ARRAY_AGG(w ORDER BY day DESC))[1])'
+    # |w[i] - w[i-1]| > SWING * w[i-1] on ANY consecutive pair -> inconsistent.
+    # The JS breaks out of the loop on the first offender; bool_and is equivalent.
+    - name: no_implausible_swing
+      sql: 'BOOL_AND(prev_w IS NULL OR ABS(w - prev_w) <= :SWING * prev_w)'
+    # Early growth: w0 is the first reading, w28 the LAST reading whose age falls
+    # in the window. Matches the JS, which overwrites w28 on each in-window hit.
+    - name: growth_w0
+      sql: '(ARRAY_AGG(w ORDER BY day ASC))[1]'
+    - name: growth_w0_day
+      sql: '(ARRAY_AGG(day ORDER BY day ASC))[1]'
+    - name: growth_w28
+      sql: '(ARRAY_AGG(w ORDER BY day DESC) FILTER (WHERE age_days BETWEEN :GROWTH_LO_DAY AND :GROWTH_HI_DAY))[1]'
+    - name: growth_w28_day
+      sql: '(ARRAY_AGG(day ORDER BY day DESC) FILTER (WHERE age_days BETWEEN :GROWTH_LO_DAY AND :GROWTH_HI_DAY))[1]'
+
+# ---------------------------------------------------------------------------
+# The workbook's Layer 2 properties.
+# ---------------------------------------------------------------------------
+properties:
+  - name: registered
+    type: bool
+    sql: 'CASE WHEN n_form_names > 0 THEN n_reg_forms >= 1 ELSE num_visits >= 1 END'
+    notes: 'Registration form exists. Falls back to the old rule for apps whose export carries no form name, rather than reporting every baby unregistered.'
+
+  - name: started
+    type: bool
+    sql: 'CASE WHEN n_form_names > 0 THEN n_followups >= 1 ELSE num_visits >= 1 END'
+    notes: 'At least one follow-up visit after registration.'
+
+  - name: days_since_first_visit
+    type: int
+    sql: 'FLOOR(EXTRACT(EPOCH FROM (:as_of - first_visit)) / 86400)::int'
+
+  - name: days_first_to_last
+    type: int
+    sql: 'ROUND(EXTRACT(EPOCH FROM (last_visit - first_visit)) / 86400)::int'
+
+  - name: eligible
+    type: bool
+    sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :ELIG_DAYS'
+    notes: '28 days from FIRST VISIT, not reg_date. Workbook section 4.1 anchor decision.'
+
+  - name: died
+    type: bool
+    sql: 'death_visits > 0'
+
+  - name: outcome_known
+    type: bool
+    sql: 'died OR (days_first_to_last IS NOT NULL AND days_first_to_last >= :ELIG_DAYS)'
+    notes: "Case-properties tab verbatim: died, or seen at least 28 days after first visit. FALSE means lost to follow-up. Reading it as 'child_alive was ever recorded' makes it true for nearly every case and reports C15 as ~0."
+
+  - name: early_exit
+    type: bool
+    sql: 'died AND days_first_to_last IS NOT NULL AND days_first_to_last < :ELIG_DAYS'
+    notes: "Died before its eligibility date. The death visit's own date is not carried at entity stage, but a death is recorded AT a visit, so a died case whose last visit precedes day 28 died before eligibility. Deliberate under-count rather than a guess at the death date."
+
+  - name: n_weights
+    type: int
+    sql: 'COALESCE(n_weight_days, 0)'
+
+  - name: weight_computable
+    type: bool
+    sql: 'COALESCE(n_weight_days, 0) >= 2 AND COALESCE(weight_span_days, 0) >= 7'
+
+  - name: weight_consistent
+    type: bool
+    sql: 'weight_computable AND COALESCE(no_implausible_swing, TRUE)'
+
+  - name: early_g_per_kg_day
+    type: number
+    sql: >-
+      CASE WHEN weight_computable
+                AND growth_w28 IS NOT NULL
+                AND growth_w28_day <> growth_w0_day
+                AND (growth_w28_day::date - growth_w0_day::date) > 0
+           THEN (growth_w28 - growth_w0) / (growth_w0 / 1000.0)
+                / (growth_w28_day::date - growth_w0_day::date)
+           ELSE NULL END
+
+  - name: weight_gain_data_sufficient
+    type: bool
+    sql: 'early_g_per_kg_day IS NOT NULL AND weight_consistent'
+
+  - name: growth_class
+    type: categorical
+    sql: >-
+      CASE WHEN NOT weight_gain_data_sufficient THEN NULL
+           WHEN early_g_per_kg_day < :PLAUSIBLE_LO THEN 'slow'
+           WHEN early_g_per_kg_day > :PLAUSIBLE_HI THEN 'fast'
+           ELSE 'plausible' END
+    notes: "PROVISIONAL. The workbook's bands are birth-weight-band-specific and that table does not exist yet; the UI labels this provisional."
+
+  - name: ever_danger_sign
+    type: bool
+    sql: 'danger_visits > 0'
+
+  - name: referred
+    type: bool
+    sql: 'referral_visits > 0'
+
+  - name: self_referral_count
+    type: int
+    sql: 'COALESCE(self_referral_visits, 0)'
+
+  - name: enrolled_within_3d
+    type: bool
+    sql: 'CASE WHEN days_discharge_to_reg IS NULL THEN NULL ELSE days_discharge_to_reg <= 3 END'
+
+  - name: enrollment_is_birth_copy
+    type: bool
+    sql: >-
+      CASE WHEN birth_weight_g IS NOT NULL AND enrollment_weight_g IS NOT NULL
+           THEN ABS(birth_weight_g - enrollment_weight_g) < 1
+           ELSE NULL END
