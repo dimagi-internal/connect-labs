@@ -405,6 +405,21 @@ class ExperimentSaveAuditView(LoginRequiredMixin, View):
                 # Save session (keeps status as in_progress)
                 session = data_access.save_audit_session(session)
                 sync_after_save(session, request, data_access)
+                # Third mutation point for verdicts, and the one that is easy to
+                # miss: this endpoint does NOT set status, so a session that is
+                # already completed keeps that status while its visit_results are
+                # overwritten wholesale from the POST above.
+                #
+                # That is reachable, not theoretical. bulk_assessment.html sets
+                #     isReadOnly = status === 'completed' && !isMuacPictureAuditWorkflow
+                # so for MUAC picture audits -- the bulk of the audit volume -- a
+                # COMPLETED session stays editable and autosave keeps posting here.
+                #
+                # Nothing else could catch it: completed_at does not change on an
+                # edit, and LabsRecord has no date_modified for a watermark to
+                # read. Without this call the projection would serve the old
+                # verdicts until its staleness window expired.
+                prior_audit_projection.record_session(session)
 
                 # Calculate updated progress
                 progress_stats = session.get_progress_stats()
