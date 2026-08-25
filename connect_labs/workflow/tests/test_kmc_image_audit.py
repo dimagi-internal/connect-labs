@@ -487,7 +487,12 @@ def test_the_cap_filter_survives_the_real_criteria_parser():
 
     from connect_labs.audit.data_access import AuditCriteria
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline
-    from connect_labs.workflow.templates.kmc_image_audit import PHOTO_FORM_NAMES, _scheduled_criteria
+    from connect_labs.workflow.templates.kmc_image_audit import (
+        IMAGE_TYPES,
+        PHOTO_FORM_NAMES,
+        _image_rules,
+        _scheduled_criteria,
+    )
 
     criteria = _scheduled_criteria(
         opp_id=DIGITAL_OPP,
@@ -495,8 +500,7 @@ def test_the_cap_filter_survives_the_real_criteria_parser():
         window_start="2026-08-01",
         window_end="2026-08-07",
         sample_percentage=30,
-        image_path="anthropometric/upload_weight_image",
-        field_path="child_weight_visit",
+        image_rules=_image_rules(image_paths=["anthropometric/upload_weight_image"], image_types=IMAGE_TYPES),
     )
     criteria["deliver_unit_types"] = list(PHOTO_FORM_NAMES)
 
@@ -753,11 +757,21 @@ def test_a_fresh_workflow_from_the_template_can_have_a_schedule_saved():
 
 
 def test_opportunity_labels_are_derived_from_opp_meta_so_they_cannot_disagree():
+    """Still derived, so a label cannot drift from the opportunity it names -- but an
+    explicit display_name wins where the derived one would be ambiguous. 1487 and 2166
+    are BOTH "PIPN V3", so the bare formula gives two opportunities the same label and a
+    picker in which they cannot be told apart.
+    """
     from connect_labs.workflow.templates.kmc_image_audit import OPP_META, OPP_NAMES
 
     assert set(OPP_NAMES) == {str(o) for o in OPP_META}
     for opp_id, meta in OPP_META.items():
-        assert OPP_NAMES[str(opp_id)] == f"{meta['llo']} ({meta['version']})"
+        expected = meta.get("display_name") or f"{meta['llo']} ({meta['version']})"
+        assert OPP_NAMES[str(opp_id)] == expected
+
+    # No two opportunities may share a label, which is the property the override exists
+    # to protect and the one a future addition is most likely to break.
+    assert len(set(OPP_NAMES.values())) == len(OPP_NAMES)
 
 
 def test_an_option_whose_choices_cannot_be_resolved_is_flagged_not_silently_empty():

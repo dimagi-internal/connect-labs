@@ -29,7 +29,7 @@ from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.utils.feature_access import can_create_from_template, get_allowed_templates
 from connect_labs.workflow.data_access import PipelineCacheMiss, PipelineDataAccess, WorkflowDataAccess
-from connect_labs.workflow.templates import TEMPLATES
+from connect_labs.workflow.templates import MULTI_OPTION_COERCERS, TEMPLATES
 from connect_labs.workflow.templates import create_workflow_from_template as create_from_template
 from connect_labs.workflow.templates import schedule_options_for_definition, template_supports_default_run
 from connect_labs.workflow.templates.weekly_dual_track_audit import CLASSIFIER_KEYS
@@ -174,7 +174,7 @@ def _schedule_seed_value(option):
     renders blank and posts back as "clear it", NOT as 0 (a cap of zero) or as the string
     "None".
     """
-    if option["type"] == "multi_int":
+    if option["type"] in MULTI_OPTION_COERCERS:
         return option.get("selected") or []
     if option["type"] == "bool":
         return bool(option.get("value"))
@@ -3573,24 +3573,27 @@ def _clean_schedule_defaults(raw, options):
             values[key] = number
             continue
 
-        # multi_int
+        # multi_int / multi_str -- one path, so a string-valued multi-select is
+        # validated exactly as strictly as an integer-valued one.
+        coerce = MULTI_OPTION_COERCERS[opt["type"]]
         if not isinstance(value, list):
             return None, f"{opt['label']} must be a list"
         allowed = {c["value"] for c in opt.get("choices") or []}
         chosen = []
         for item in value:
             try:
-                number = int(item)
+                coerced = coerce(item)
             except (TypeError, ValueError):
-                return None, f"{opt['label']} must contain whole numbers"
+                expected = "whole numbers" if opt["type"] == "multi_int" else "text values"
+                return None, f"{opt['label']} must contain {expected}"
             # No `allowed and ...` guard: an empty choice set means nothing is selectable,
             # so every value must be rejected. Skipping the check there would let any id
             # through - and it is now an EXPECTED state (see the unavailable flag), where
             # the omission is only client-side and so not something to rely on.
-            if number not in allowed:
-                return None, f"{number} is not one of this workflow's {opt['label'].lower()}"
-            if number not in chosen:
-                chosen.append(number)
+            if coerced not in allowed:
+                return None, f"{coerced} is not one of this workflow's {opt['label'].lower()}"
+            if coerced not in chosen:
+                chosen.append(coerced)
         if not chosen:
             # Saving an empty set would leave a schedule that fires nightly and audits
             # nothing - run_default's loudest failure, and avoidable here.

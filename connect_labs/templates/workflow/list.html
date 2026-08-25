@@ -1420,6 +1420,24 @@
                                 </label>
                                 {% endfor %}
                             </div>
+                            {% elif opt.type == 'multi_str' %}
+                            {% comment %} Same control as multi_int, kept as its own branch because the value is a
+                               JS string and so must be quoted. Written with escapejs rather than a
+                               precomputed literal marked |safe: this sits inside a double-quoted
+                               attribute, and a value carrying a quote would end the attribute early and
+                               silently break the whole dialog -- the failure mode that already cost us
+                               once on x-data. escapejs cannot emit a bare quote or angle bracket.
+                            {% endcomment %}
+                            <div class="space-y-1">
+                                {% for choice in opt.choices %}
+                                <label class="flex items-center gap-2 text-sm">
+                                    <input type="checkbox"
+                                           :checked="(scheduleDefaults['{{ opt.key|escapejs }}'] || []).includes('{{ choice.value|escapejs }}')"
+                                           @change="toggleScheduleChoice('{{ opt.key|escapejs }}', '{{ choice.value|escapejs }}')">
+                                    <span>{{ choice.label }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
                             {% elif opt.type == 'int' %}
                             <input type="number" min="{{ opt.min }}" max="{{ opt.max }}"
                                    x-model="scheduleDefaults['{{ opt.key|escapejs }}']"

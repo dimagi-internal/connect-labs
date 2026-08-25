@@ -30,6 +30,87 @@ from connect_labs.labs.models import LocalLabsRecord
 AI_NOTES_JOIN_SEP = "; "
 
 
+def new_assessment_bucket() -> dict:
+    """Zeroed counters for one set of assessments.
+
+    Both ``get_assessment_stats`` (one bucket for the session) and
+    ``get_assessment_stats_by_question`` (one bucket per photo type) fill THIS shape,
+    so a per-type breakdown always carries the same counters as the total it belongs
+    to. Previously the by-question buckets were their own smaller dict with no AI
+    counters at all, which is why a per-type AI pass rate could not be computed
+    without inventing a third tally somewhere else.
+    """
+    return {
+        "total": 0,
+        "pass": 0,
+        "fail": 0,
+        "duplicate_fake": 0,
+        "pending": 0,
+        "ai_match": 0,
+        "ai_no_match": 0,
+        "ai_error": 0,
+        "ai_pending": 0,
+        "ai_flags_by_label": {},
+        "ai_flags_unlabeled": 0,
+    }
+
+
+def tally_assessment(bucket: dict, assessment: dict) -> None:
+    """Count ONE assessment into ``bucket``.
+
+    The single place that decides what "pass" or "ai_match" means. It exists because
+    the session total and the per-photo-type breakdown used to classify results in two
+    separately written loops: the same ``result`` string could be counted one way in
+    one and another way in the other, and a new outcome added to one loop simply would
+    not appear in the other. Sharing the classification makes that impossible, and the
+    reconciliation test asserts the per-type buckets sum back to the total.
+    """
+    bucket["total"] += 1
+
+    # Human assessment result. "duplicate_fake" is a distinct bucket from "pending" --
+    # it is a completed assessment (the image was reviewed and flagged), not an
+    # unreviewed one. It already counts against the pass rate the same way fail does,
+    # since neither is counted in "pass" and pass rate is computed as pass/total.
+    # "duplicate" and "fake" are the same bucket split into two distinct results --
+    # only ever written by the muac_picture_audit workflow's review screen.
+    result = assessment.get("result")
+    if result == "pass":
+        bucket["pass"] += 1
+    elif result == "fail":
+        bucket["fail"] += 1
+    elif result in ("duplicate_fake", "duplicate", "fake"):
+        bucket["duplicate_fake"] += 1
+    else:
+        bucket["pending"] += 1
+
+    # AI review result
+    ai_result = assessment.get("ai_result")
+    if ai_result == "match":
+        bucket["ai_match"] += 1
+    elif ai_result == "no_match":
+        bucket["ai_no_match"] += 1
+        # Multiple independent reviewers on one image path (e.g. MUAC OverZoom + MUAC
+        # Match) each contribute their own badge_label; _combine_reviewer_results joins
+        # every failing reviewer's label with AI_NOTES_JOIN_SEP into ai_notes (see
+        # connect_labs/audit/tasks.py). Splitting it back apart here recovers which
+        # classifier(s) flagged this image -- one image can count toward MORE THAN ONE
+        # label, so ai_flags_by_label's values can sum to more than ai_no_match.
+        # ai_flags_unlabeled is tracked as its own counter (not inferred by subtracting
+        # one from the other) for exactly that reason.
+        found_label = False
+        for label in (assessment.get("ai_notes") or "").split(AI_NOTES_JOIN_SEP):
+            label = label.strip()
+            if label:
+                bucket["ai_flags_by_label"][label] = bucket["ai_flags_by_label"].get(label, 0) + 1
+                found_label = True
+        if not found_label:
+            bucket["ai_flags_unlabeled"] += 1
+    elif ai_result == "error":
+        bucket["ai_error"] += 1
+    else:
+        bucket["ai_pending"] += 1
+
+
 class AuditSessionRecord(LocalLabsRecord):
     """Proxy model for AuditSession-type LocalLabsRecords with nested visit results."""
 
@@ -501,72 +582,10 @@ class AuditSessionRecord(LocalLabsRecord):
             by subtracting one from the other; it's tracked as its own
             counter for exactly this reason.
         """
-        stats = {
-            "total": 0,
-            "pass": 0,
-            "fail": 0,
-            "duplicate_fake": 0,
-            "pending": 0,
-            "ai_match": 0,
-            "ai_no_match": 0,
-            "ai_error": 0,
-            "ai_pending": 0,
-            "ai_flags_by_label": {},
-            "ai_flags_unlabeled": 0,
-        }
-
+        stats = new_assessment_bucket()
         for visit_result in self.data.get("visit_results", {}).values():
             for assessment in visit_result.get("assessments", {}).values():
-                stats["total"] += 1
-
-                # Human assessment result. "duplicate_fake" is a distinct
-                # bucket from "pending" — it's a completed assessment (the
-                # image was reviewed and flagged), not an unreviewed one. It
-                # already counts against the pass rate the same way fail
-                # does, since neither is counted in "pass" and pass rate is
-                # computed as pass/total. "duplicate" and "fake" are the same
-                # bucket split into two distinct results -- only ever written
-                # by the muac_picture_audit workflow's review screen.
-                result = assessment.get("result")
-                if result == "pass":
-                    stats["pass"] += 1
-                elif result == "fail":
-                    stats["fail"] += 1
-                elif result in ("duplicate_fake", "duplicate", "fake"):
-                    stats["duplicate_fake"] += 1
-                else:
-                    stats["pending"] += 1
-
-                # AI review result
-                ai_result = assessment.get("ai_result")
-                if ai_result == "match":
-                    stats["ai_match"] += 1
-                elif ai_result == "no_match":
-                    stats["ai_no_match"] += 1
-                    # Multiple independent reviewers on one image path (e.g.
-                    # MUAC OverZoom + MUAC Match) each contribute their own
-                    # badge_label; _combine_reviewer_results joins every
-                    # failing reviewer's label with AI_NOTES_JOIN_SEP into
-                    # ai_notes (see connect_labs/audit/tasks.py). Splitting it
-                    # back apart here recovers which classifier(s) flagged
-                    # this image -- one image can count toward MORE THAN ONE
-                    # label, so ai_flags_by_label's values can sum to more
-                    # than ai_no_match. ai_flags_unlabeled is tracked as its
-                    # own counter (not inferred by subtracting one from the
-                    # other) for exactly that reason.
-                    found_label = False
-                    for label in (assessment.get("ai_notes") or "").split(AI_NOTES_JOIN_SEP):
-                        label = label.strip()
-                        if label:
-                            stats["ai_flags_by_label"][label] = stats["ai_flags_by_label"].get(label, 0) + 1
-                            found_label = True
-                    if not found_label:
-                        stats["ai_flags_unlabeled"] += 1
-                elif ai_result == "error":
-                    stats["ai_error"] += 1
-                else:
-                    stats["ai_pending"] += 1
-
+                tally_assessment(stats, assessment)
         return stats
 
     def get_flw_count(self) -> int:
@@ -637,6 +656,18 @@ class AuditSessionRecord(LocalLabsRecord):
             "visit_count": self.get_visit_count(),
             "image_count": self.data.get("image_count", 0),
             "assessment_stats": stats,
+            # The same counters as assessment_stats, split by PHOTO TYPE. Sent here
+            # because a session can mix photo types that are not all machine
+            # scoreable -- KMC audits a weight photo the classifier reads plus
+            # equipment and wrap photos no classifier exists for -- and a pass rate
+            # blended over those reads as a quality drop when it is only a change in
+            # what was photographed. Without this the caller's only way to
+            # disaggregate is to fetch every session's images one request at a time.
+            #
+            # get_stats_by_image_type, NOT get_assessment_stats_by_question: the two
+            # key on different things and only this one keys on the image path the
+            # rest of the UI uses. See that method's docstring.
+            "by_image_type": self.get_stats_by_image_type(),
             "workflow_run_id": self.workflow_run_id,
             "flw_username": self.flw_username,
             "flw_count": self.get_flw_count(),
@@ -663,46 +694,94 @@ class AuditSessionRecord(LocalLabsRecord):
 
     def get_assessment_stats_by_question(self) -> dict:
         """
-        Calculate pass/fail/pending counts grouped by photo question_id.
+        Calculate pass/fail/pending counts grouped by the ASSESSMENT's question_id.
+
+        WARNING -- this is NOT reliably the photo's own question path, so it cannot be
+        joined to anything that keys on image type. ``_persist_outcome`` stores the
+        first related field that had a VALUE as the assessment's question_id, so a
+        photo reviewed against a typed comparison field is filed under that field's
+        path: KMC weight photos land under "child_weight_visit", not under
+        "anthropometric/upload_weight_image". Photos with no related field value keep
+        their own path, so the keys here are a mix of both vocabularies.
+
+        Use ``get_stats_by_image_type`` for anything keyed by photo type -- the picker
+        that chooses image types, the per-type filters and the per-type pass rates all
+        speak image paths, and this method does not.
 
         Unlike get_assessment_stats() (one overall total), this disaggregates
         by photo type so callers can show e.g. "MUAC Photo 4/10, Vaccine Card 7/12"
         per FLW instead of a single blended pass rate.
 
         Returns:
-            Dict keyed by question_id -> {"label": str, "pass": int, "fail": int,
-            "duplicate_fake": int, "pending": int, "total": int}
+            Dict keyed by question_id -> a ``new_assessment_bucket`` with a "label"
+            added: every counter ``get_assessment_stats`` returns (human pass/fail/
+            duplicate_fake/pending AND ai_match/ai_no_match/ai_error/ai_pending plus
+            ai_flags_by_label), scoped to that one photo type. The buckets sum back to
+            get_assessment_stats exactly -- both are filled by ``tally_assessment``.
         """
         by_question: dict[str, dict] = {}
         for visit_result in self.data.get("visit_results", {}).values():
             for assessment in visit_result.get("assessments", {}).values():
                 qid = assessment.get("question_id") or "unknown"
-                bucket = by_question.setdefault(
-                    qid,
-                    {
-                        "label": qid.rsplit("/", 1)[-1],
-                        "pass": 0,
-                        "fail": 0,
-                        "duplicate_fake": 0,
-                        "pending": 0,
-                        "total": 0,
-                    },
-                )
-                bucket["total"] += 1
-                # "duplicate_fake" is a distinct, completed assessment outcome
-                # (the image was reviewed and flagged) — not "pending" (not
-                # yet reviewed). See get_assessment_stats for why pass/total
-                # already treats it as failing without further bucket math.
-                result = assessment.get("result")
-                if result == "pass":
-                    bucket["pass"] += 1
-                elif result == "fail":
-                    bucket["fail"] += 1
-                elif result in ("duplicate_fake", "duplicate", "fake"):
-                    bucket["duplicate_fake"] += 1
-                else:
-                    bucket["pending"] += 1
+                bucket = by_question.get(qid)
+                if bucket is None:
+                    # The label a reviewer sees for this photo type. Derived the same
+                    # way OpportunityImageTypesAPIView derives it (last path segment),
+                    # so the picker that CHOOSES a photo type and the results that
+                    # report it show the same words for it.
+                    bucket = new_assessment_bucket()
+                    bucket["label"] = qid.rsplit("/", 1)[-1]
+                    by_question[qid] = bucket
+                tally_assessment(bucket, assessment)
         return by_question
+
+    def get_stats_by_image_type(self) -> dict:
+        """Counters per PHOTO TYPE, keyed by the image's own question path.
+
+        Walks the session's stored images -- the only record that says what each photo
+        IS -- and joins each one to its assessment by blob_id, rather than walking the
+        assessments and trusting their question_id (see
+        ``get_assessment_stats_by_question`` for why that key cannot be used here).
+        The keys are therefore the same image paths the review UI filters on, the
+        opportunity image-questions endpoint offers, and an audit's related_fields
+        rules name.
+
+        A photo with NO assessment is still counted, as one "pending" / "ai_pending".
+        That is the honest reading and the reason this method exists: a session can
+        hold photo types no classifier can score -- KMC's equipment and KMC-wrap
+        photos have no agent -- and those are skipped outright by the review task, so
+        they never appear in the assessments at all. Counting only assessments would
+        make them vanish rather than show up as the unreviewed work they are.
+
+        Returns:
+            Dict keyed by image question path -> a ``new_assessment_bucket`` with a
+            "label" added, where "total" is the number of IMAGES of that type. That
+            makes it the correct denominator for a per-type pass rate.
+
+        Note it does NOT sum to ``get_assessment_stats``: that one counts assessments,
+        this one counts images, and the two differ by exactly the photos nothing has
+        reviewed yet.
+        """
+        by_type: dict[str, dict] = {}
+        visit_results = self.data.get("visit_results", {}) or {}
+        for visit_key, images in (self.data.get("visit_images", {}) or {}).items():
+            assessments = (visit_results.get(str(visit_key)) or {}).get("assessments") or {}
+            for image in images or []:
+                if not isinstance(image, dict):
+                    continue
+                qid = image.get("question_id") or "unknown"
+                bucket = by_type.get(qid)
+                if bucket is None:
+                    # Derived the same way OpportunityImageTypesAPIView derives it (last
+                    # path segment), so the picker that CHOOSES a photo type and the
+                    # results that report it show the same words for it.
+                    bucket = new_assessment_bucket()
+                    bucket["label"] = qid.rsplit("/", 1)[-1]
+                    by_type[qid] = bucket
+                # An absent assessment is an empty dict, which tally_assessment counts
+                # as pending / ai_pending -- "nobody has looked at this yet".
+                tally_assessment(bucket, assessments.get(image.get("blob_id")) or {})
+        return by_type
 
     def get_visit_date_range(self) -> tuple[str | None, str | None]:
         """
