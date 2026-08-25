@@ -62,6 +62,41 @@ MUAC_PICTURE_AUDIT_WORKFLOW_DEFINITION_ID = 6840
 MUAC_PICTURE_AUDIT_PROGRAM_ID = 176
 
 
+def _can_reach_muac_program(request) -> bool:
+    """Whether this viewer has program 176 in their Connect membership at all.
+
+    The probe below fetches a run under ``program_id=176``. Upstream,
+    ``_get_program_or_404`` filters programs by the caller's org membership and
+    raises ``NotFound`` on a miss -- so for a viewer who is not in program 176
+    that fetch is a **404 by construction**, on every bulk page load, forever.
+    It cannot ever return the run, because the run being sought is not one they
+    are allowed to see.
+
+    That is not a harmless miss. Every one of those 404s is recorded in the
+    HIPAA audit trail as ``outcome=failure``, and at 83% of loads (341 of 411
+    over one 2026-08-11 window, still ~61 per 36h on 2026-08-25) it is the
+    single loudest failure signature in the audit app. Two telemetry reviews
+    and #1242 were spent chasing it as a correctness bug before the cause --
+    a feature probe answering "no" the only way it can -- was identified.
+
+    So: ask the cheap local question first. Membership is already in the
+    session's org data, and if 176 is not there the remote answer is knowable
+    without asking. Returns False for everyone else, which is the same verdict
+    the probe reached, minus the round-trip and the false failure event.
+
+    An EMPTY programs list counts as "cannot reach", deliberately. That is not
+    the unknown case, it is the common one: external LLO users hold opportunity
+    ACL and no program ACL at all (see docs/superpowers/specs/2026-07-01-pages-
+    scoping-design.md), so they carry no programs -- and they are precisely the
+    auditors generating these 404s. Failing open on an empty list would leave
+    the whole population unfixed. The cost if org data were ever unpopulated for
+    a genuine program-176 member is one degraded review screen, which is the
+    same fail-closed outcome this probe already produces on any API error.
+    """
+    programs = (get_org_data(request) or {}).get("programs", []) or []
+    return any(program.get("id") == MUAC_PICTURE_AUDIT_PROGRAM_ID for program in programs)
+
+
 def _is_muac_picture_audit_session(session, request) -> bool:
     """Resolve whether `session` was created by workflow 6840, via its
     workflow_run_id -> WorkflowRunRecord.definition_id. Scoped to program_id
@@ -72,6 +107,10 @@ def _is_muac_picture_audit_session(session, request) -> bool:
     """
     run_id = session.workflow_run_id
     if not run_id:
+        return False
+    # A viewer outside program 176 can only ever get a 404 here (see above),
+    # so skip the call rather than logging a failure to learn what we know.
+    if not _can_reach_muac_program(request):
         return False
     wda = WorkflowDataAccess(request=request, program_id=MUAC_PICTURE_AUDIT_PROGRAM_ID)
     try:

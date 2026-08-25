@@ -523,6 +523,52 @@ class WorkflowDefinitionView(LoginRequiredMixin, TemplateView):
         return context
 
 
+def _scope_is_reachable(request, key: str, scope_id) -> bool:
+    """Whether ``scope_id`` is in the viewer's own Connect membership.
+
+    ``labs_context`` deliberately passes an unrecognised program/opportunity id
+    straight through rather than rejecting it, so its presence proves the URL
+    said it -- never that the viewer can read it.
+    """
+    if not scope_id:
+        return False
+    entries = (get_org_data(request) or {}).get(key, []) or []
+    return any(str(entry.get("id")) == str(scope_id) for entry in entries)
+
+
+def _definition_unavailable_message(request, definition_id, opportunity_id, program_id) -> str:
+    """Say whether a workflow is missing or merely out of reach -- they differ.
+
+    Upstream, ``_get_opportunity_or_404`` / ``_get_program_or_404`` filter by the
+    caller's org membership and raise ``NotFound``, so **"you may not read this"
+    and "this does not exist" arrive as the same 404**. Reporting the second when
+    it was the first sends people hunting for a deleted record: on 2026-08-25 a
+    user signed in under a personal address that had opportunity access but not
+    program access opened a program-scoped link, was told the workflow did not
+    exist, and it was escalated as a missing workflow. It was there the whole
+    time. (#1280)
+
+    The sibling opportunity-recovery branch in this view already draws this
+    distinction (``unauthorized_opportunity_id``); the scoped branch did not.
+    """
+    if program_id and not _scope_is_reachable(request, "programs", program_id):
+        return (
+            f"You don't have access to program {program_id}, so workflow {definition_id} "
+            f"can't be loaded in this context. It may well exist -- ask whoever shared this "
+            f"link to grant you access to the program, or open it under an opportunity you "
+            f"do have access to. If you have more than one login, check you're using the one "
+            f"your Connect access is on."
+        )
+    if opportunity_id and not _scope_is_reachable(request, "opportunities", opportunity_id):
+        return (
+            f"You don't have access to opportunity {opportunity_id}, so workflow "
+            f"{definition_id} can't be loaded in this context. It may well exist -- ask "
+            f"whoever shared this link to grant you access."
+        )
+    scope = f"program {program_id}" if program_id else f"opportunity {opportunity_id}"
+    return f"Workflow definition {definition_id} not found under {scope}."
+
+
 class WorkflowRunView(LoginRequiredMixin, TemplateView):
     """Main UI for executing a workflow. Also handles edit mode via ?edit=true."""
 
@@ -687,7 +733,9 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # Get workflow definition
             definition = data_access.get_definition(definition_id)
             if not definition:
-                context["error"] = f"Workflow definition {definition_id} not found."
+                context["error"] = _definition_unavailable_message(
+                    self.request, definition_id, opportunity_id, program_id
+                )
                 return context
             context["definition"] = definition
 
