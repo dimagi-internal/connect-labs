@@ -219,16 +219,17 @@ def _property_levels(properties: list[dict[str, Any]]) -> list[list[dict[str, An
     return levels
 
 
-def compile_indicator_sql(
+def _build_ctes(
     props_doc: dict[str, Any],
     registry: dict[str, Any],
     visit_sql: str,
-    scope: str = "programme",
-    as_of: str = "CURRENT_DATE",
-) -> str:
-    """The whole thing: one statement, Layer 1 -> Layer 2 -> Layer 3."""
-    if scope not in SCOPES:
-        raise RegistryError(f"unknown scope {scope!r}; expected one of {sorted(SCOPES)}")
+    as_of: str,
+) -> tuple[str, dict[str, str]]:
+    """The Layer 1 -> Layer 2 CTE chain, plus every measure's compiled expression.
+
+    Shared by both entry points so a multi-scope rollup reuses ONE extraction
+    instead of re-running the whole chain per scope.
+    """
     problems = validate(props_doc, registry)
     if problems:
         raise RegistryError("registry does not validate:\n  " + "\n  ".join(problems))
@@ -242,6 +243,7 @@ def compile_indicator_sql(
     ws = props_doc["weight_series"]
     agg_cols = ",\n    ".join(f"{C(a['sql'])} AS {a['name']}" for a in props_doc["aggregates"])
     wderived = ",\n    ".join(f"{C(d['sql'])} AS {d['name']}" for d in ws["derived"])
+
     levels = _property_levels(props_doc["properties"])
     prop_ctes = []
     prev = "base_m"
@@ -254,14 +256,8 @@ def compile_indicator_sql(
     final_props = prev
 
     compiled = compile_measures(registry)
-    measure_cols = ",\n    ".join(f"{compiled[m['name']]} AS {m['name']}" for m in registry["measures"])
 
-    scope_cols = SCOPES[scope]
-    scope_select = "".join(f"props.{c},\n    " for c in scope_cols)
-    group_by = ("GROUP BY " + ", ".join(f"props.{c}" for c in scope_cols)) if scope_cols else ""
-
-    return f"""
-WITH visits AS (
+    ctes = f"""WITH visits AS (
 {visit_sql}
 ),
 weight_days AS (
@@ -284,8 +280,7 @@ weight_seq AS (
     -- reading. The render code uses `(p.day - fv) / DAY` where fv is the first
     -- visit; anchoring on the first weighing instead shifts the growth window for
     -- every baby whose first visit carried no weight, and silently changes
-    -- C09-C13. Caught only on real data -- every fixture baby happened to be
-    -- weighed on its first visit.
+    -- C09-C13. Caught only on real data.
     SELECT wd.baby_id, wd.day, wd.w,
            LAG(wd.w) OVER (PARTITION BY wd.baby_id ORDER BY wd.day) AS prev_w,
            (wd.day - bf.first_visit_day)::int AS age_days
@@ -313,10 +308,90 @@ base_m AS (
     LEFT JOIN weight_agg w USING (baby_id)
 ),
 {prop_cte_sql},
-props AS (SELECT * FROM {final_props})
+props AS (SELECT * FROM {final_props})"""
+    return ctes.strip(), compiled
+
+
+def _measure_cols(registry: dict[str, Any], compiled: dict[str, str]) -> str:
+    return ",\n    ".join(f"{compiled[m['name']]} AS {m['name']}" for m in registry["measures"])
+
+
+def compile_indicator_sql(
+    props_doc: dict[str, Any],
+    registry: dict[str, Any],
+    visit_sql: str,
+    scope: str = "programme",
+    as_of: str = "CURRENT_DATE",
+) -> str:
+    """One statement for ONE scope. Prefer compile_rollup_sql for several."""
+    if scope not in SCOPES:
+        raise RegistryError(f"unknown scope {scope!r}; expected one of {sorted(SCOPES)}")
+    ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of)
+    scope_cols = SCOPES[scope]
+    scope_select = "".join(f"props.{c},\n    " for c in scope_cols)
+    group_by = ("GROUP BY " + ", ".join(f"props.{c}" for c in scope_cols)) if scope_cols else ""
+    return f"""{ctes}
 SELECT
     {scope_select}COUNT(*) AS n_cases,
-    {measure_cols}
+    {_measure_cols(registry, compiled)}
 FROM props
 {group_by}
+""".strip()
+
+
+def compile_rollup_sql(
+    props_doc: dict[str, Any],
+    registry: dict[str, Any],
+    visit_sql: str,
+    scopes: list[str] | None = None,
+    as_of: str = "CURRENT_DATE",
+) -> str:
+    """EVERY scope from ONE pass over props, via GROUPING SETS.
+
+    Calling compile_indicator_sql once per scope re-runs the entire Layer 1
+    extraction each time -- the JSONB COALESCE chain over every visit, the weight
+    window functions, the whole property chain -- for results that all derive from
+    the same `props` rows. Measured on opportunity 10042: 28.2s + 31.2s + 27.3s for
+    three scopes, against a browser implementation that fetches once and slices in
+    memory. GROUPING SETS collapses that to a single pass, which is the only
+    version where pushing this into SQL is an improvement rather than a regression.
+
+    Each output row carries a `scope` label naming the grouping set that produced it.
+    """
+    scopes = scopes or ["programme", "opportunity", "flw", "month"]
+    unknown = [s for s in scopes if s not in SCOPES]
+    if unknown:
+        raise RegistryError(f"unknown scope(s) {unknown}; expected from {sorted(SCOPES)}")
+
+    ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of)
+
+    all_cols: list[str] = []
+    for sc in scopes:
+        for c in SCOPES[sc]:
+            if c not in all_cols:
+                all_cols.append(c)
+
+    sets = ", ".join(
+        ("(" + ", ".join(f"props.{c}" for c in SCOPES[sc]) + ")") if SCOPES[sc] else "()" for sc in scopes
+    )
+    # GROUPING() reports 0 when a column participated in the row's grouping set,
+    # which is how each row is labelled back to the scope that produced it.
+    label_cases = "\n        ".join(
+        "WHEN "
+        + (" AND ".join(f"GROUPING(props.{c}) = {0 if c in SCOPES[sc] else 1}" for c in all_cols) or "TRUE")
+        + f" THEN '{sc}'"
+        for sc in scopes
+    )
+    col_select = "".join(f"props.{c},\n    " for c in all_cols)
+
+    return f"""{ctes}
+SELECT
+    CASE
+        {label_cases}
+        ELSE 'other'
+    END AS scope,
+    {col_select}COUNT(*) AS n_cases,
+    {_measure_cols(registry, compiled)}
+FROM props
+GROUP BY GROUPING SETS ({sets})
 """.strip()
