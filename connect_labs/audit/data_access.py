@@ -1400,48 +1400,66 @@ class AuditDataAccess(BaseDataAccess):
         return self._query_audit_sessions(username=username, **kwargs)
 
     def get_prior_audited_images(self, opportunity_id, exclude_session_id=None) -> dict:
-        """Prior-audit index for one opportunity, from its completed sessions.
+        """Prior-audit index for one opportunity, cached just-in-time.
 
-        Reads the local projection when this opportunity has one, and otherwise
-        falls back to computing it live from Connect. The fallback is not a
-        transitional nicety -- it is the safety property. An opportunity whose
-        projection has never been built must not be reported as having no prior
-        audits, because "no verdicts" and "never built" are indistinguishable in
-        the rows table and opposite in consequence: the second tells an auditor
-        an image has never been judged when it has.
+        Serves the local projection when it is fresh; otherwise computes the
+        index live with THIS caller's credentials, stores it, and returns it.
 
-        ``is_built`` is therefore the gate, not "are there any rows". Rows
-        accumulate from completion dual-writes before a backfill has run, and a
-        partial set is precisely what must never be served as a full history.
+        WHY JUST-IN-TIME, AND WHY NO STORED CREDENTIAL
+        The alternative -- backfill every opportunity in a batch, then read from
+        the table -- needs a credential for the batch to run under: a service
+        account, or some person's cached OAuth token driving a scheduled job.
+        That is a standing grant, it outlives the session that created it, and it
+        makes the data's completeness a function of whichever identity ran the
+        job.
 
-        The live path stays for that fallback and for the rebuild/verify source;
-        what changes is that a built opportunity no longer reconstructs the whole
-        audit history on every page load (#1246).
+        None of it is necessary. The request that needs this answer has already
+        authenticated AND already proved access to the opportunity -- the caller
+        fetched an audit session in it (404 otherwise) before reaching here. So
+        the read that populates the cache is authorised by the very request that
+        wanted it, with live credentials, and nothing is stored on anyone's
+        behalf.
+
+        WHY ONE REQUESTER'S VIEW IS THE WHOLE VIEW
+        The export API authorises at OPPORTUNITY level --
+        LabsRecordDataView._check_get_permissions -> _get_opportunity_or_404 --
+        with no per-session ACL beneath it. Anyone allowed to read one of an
+        opportunity's audit sessions may read all of them, so an index built by
+        any authorised caller is complete for that opportunity.
+
+        WHY THE ACL IS RE-CHECKED EVERY TIME, NOT INHERITED
+        Because the check IS the caller's own fetch, on every request -- not a
+        permission recorded when the row was written. A user whose access is
+        revoked stops getting past get_audit_session immediately; nothing here
+        can serve them from a grant that has since been taken away.
+
+        Staleness is bounded by projection.STALE_AFTER rather than by a scheduled
+        reconciler, so a missed completion dual-write self-heals on the next read.
         """
         from connect_labs.audit import prior_audit_projection as projection
 
-        if projection.is_built(opportunity_id):
+        if projection.is_fresh(opportunity_id):
             return projection.read_index(opportunity_id, exclude_session_id=exclude_session_id)
 
-        # ``status="completed"`` is pushed down to the API rather than left to
-        # build_prior_audit_index, which drops non-completed sessions anyway. An
-        # AuditSessionRecord is not a local row -- it is fetched from Connect's
-        # export API carrying its whole ``data`` blob -- so without the filter
-        # every in-progress session in scope is pulled over the wire and parsed
-        # only to be skipped. Safe because it is the same predicate, moved:
-        # AuditSessionRecord.status reads data["status"] defaulting to
-        # "in_progress", so a session missing the key is dropped by the Python
-        # check and equally unmatched by data__status=completed.
+        # status="completed" is pushed down to the API rather than left to
+        # build_prior_audit_index, which drops non-completed sessions anyway.
+        # Verified against production 2026-08-25: server-filtered counts match
+        # Python-filtered exactly across five opportunities.
         #
-        # opportunity_id is deliberately NOT pushed down alongside it. It would
-        # be the same one-line change, but the values differ in kind: "completed"
-        # is unambiguously a string, while an opportunity id is numeric and a
-        # data__opportunity_id lookup misses any record that stored it as a
-        # string. That failure is an UNDER-fetch -- missing prior verdicts, on
-        # the path an auditor trusts -- and it is silent. It stays a Python
-        # filter until someone verifies the stored types against production.
+        # opportunity_id is deliberately NOT pushed down alongside it: an id is
+        # numeric, and a data__opportunity_id lookup misses any record that
+        # stored it as a string. That failure is an UNDER-fetch -- missing prior
+        # verdicts -- and it is silent.
         sessions = [s for s in self.get_audit_sessions(status="completed") if s.opportunity_id == opportunity_id]
+
+        projection.populate(opportunity_id, sessions, built_by=self._requesting_username())
+
         return build_prior_audit_index(sessions, exclude_session_id=exclude_session_id)
+
+    def _requesting_username(self) -> str:
+        """Who caused this build, for diagnosis. Never used for authorisation."""
+        user = getattr(getattr(self, "request", None), "user", None)
+        return getattr(user, "username", "") or ""
 
     def _query_audit_sessions(
         self, username: str | None = None, labs_record_id: int | None = None, **kwargs

@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import timedelta
 
 from django.db import transaction
 from django.db.models import F
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from connect_labs.audit.prior_audit_models import AUDIT_VERDICTS, PriorAuditProjectionState, PriorAuditVerdict
@@ -276,16 +278,57 @@ def verify_opportunity(
     )
 
 
-def is_built(opportunity_id: int) -> bool:
-    """Has this opportunity's projection ever been built?
+#: How stale a projection may be before the next reader rebuilds it.
+#:
+#: Not a correctness mechanism -- ``record_session`` keeps the table in step as
+#: sessions complete and reopen. This bounds how long a MISSED dual-write can go
+#: unnoticed, and a missed one is expected: record_session deliberately swallows
+#: its errors so a failed cache write cannot 500 an audit already completed.
+#:
+#: Fifteen minutes costs at most one live computation per opportunity per quarter
+#: hour -- which is what the code did on EVERY request before any of this existed
+#: -- and it removes the need for a scheduled reconciler running under somebody's
+#: stored credential.
+STALE_AFTER = timedelta(minutes=15)
 
-    The read path's entire safety rests on this. An opportunity with no state
-    row falls back to the live computation, however many rows happen to be in
-    the table for it -- dual-written rows from a completion accumulate before
-    the backfill runs, and a partial set is exactly the thing that must never be
-    served as a complete history.
+
+def is_fresh(opportunity_id: int) -> bool:
+    """Is this opportunity's projection built AND recent enough to serve?
+
+    "Built" alone is not enough. Rows accumulate from completion dual-writes
+    before anything has built the opportunity, and a partial set served as a
+    complete history under-reports prior audits -- the failure this projection
+    exists to prevent. Only a state row licenses reading, and only a recent one
+    licenses reading without a refresh.
     """
+    state = PriorAuditProjectionState.objects.filter(opportunity_id=opportunity_id).first()
+    return bool(state) and (timezone.now() - state.built_at) < STALE_AFTER
+
+
+def is_built(opportunity_id: int) -> bool:
+    """Has this opportunity ever been built? (Ignores staleness.)"""
     return PriorAuditProjectionState.objects.filter(opportunity_id=opportunity_id).exists()
+
+
+def populate(opportunity_id: int, sessions, built_by: str = "") -> None:
+    """Store an index a reader has just computed. Never breaks the read.
+
+    The caller fetched these sessions with its OWN credentials and already proved
+    access to the opportunity to get this far, so there is no credential to
+    borrow and no scope to inherit -- the write is authorised by the same request
+    that needed the answer.
+
+    Best-effort: the reader holds a correct answer either way, and a cache write
+    must not turn a working page into a 500.
+    """
+    try:
+        rebuild_opportunity(opportunity_id, sessions, built_by=built_by)
+    except Exception:
+        logger.exception(
+            "prior-audit projection: failed to populate opp %s just-in-time; "
+            "reads stay correct via live computation",
+            opportunity_id,
+        )
 
 
 def record_session(session) -> int | None:
