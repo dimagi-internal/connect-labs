@@ -2219,13 +2219,20 @@ class OpportunityAuditSessionsSummaryAPIView(LoginRequiredMixin, View):
                         "by_question": {
                             "<question_id>": {
                                 "label": str,
-                                "pass": int,
-                                "fail": int,
-                                "pending": int,
-                                "total": int
+                                "pass": int, "fail": int, "duplicate_fake": int,
+                                "pending": int, "total": int,
+                                "ai_match": int, "ai_no_match": int, "ai_error": int,
+                                "ai_pending": int, "ai_flags_by_label": {str: int},
+                                "ai_flags_unlabeled": int
                             },
                             ...
                         }
+
+                        NOTE the key is the ASSESSMENT's question_id, which is the
+                        comparison FIELD path whenever the photo was checked against
+                        one -- not the photo's own path. It cannot be joined to
+                        anything image-typed; see
+                        AuditSessionRecord.get_assessment_stats_by_question.
                     },
                     ...
                 ]
