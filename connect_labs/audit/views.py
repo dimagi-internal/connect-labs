@@ -418,14 +418,25 @@ class ExperimentSaveAuditView(LoginRequiredMixin, View):
                     try:
                         visit_results = json.loads(visit_results_json)
                         session.data["visit_results"] = visit_results
-                        # When the verdicts were last written. completed_at is
-                        # deliberately NOT touched: it means "when this audit was
-                        # completed", and an edit afterwards does not re-complete
-                        # it. Without a separate field the record asserts a
-                        # completion time while carrying verdicts made later, and
-                        # the review screen renders that stale date next to them
-                        # ("Audited in a prior session on <date>").
-                        session.data["last_edited_at"] = timezone.now().isoformat()
+                        # Editing a completed audit re-dates it. An audit's
+                        # conclusions ARE its content, so one whose verdicts
+                        # changed today was not meaningfully "completed" on the
+                        # original date -- and the review screen renders this
+                        # field beside those verdicts ("Audited in a prior session
+                        # on <date>").
+                        #
+                        # A separate last_edited_at was tried and removed: the
+                        # original completion time is already preserved in the
+                        # HIPAA audit trail (update_record is @_audited(UPDATE)),
+                        # with the whole sequence rather than just the first
+                        # value, and having two timestamps meant the live index
+                        # and the projection ordered verdicts on DIFFERENT ones
+                        # and could pick different winners for the same image.
+                        #
+                        # Only stamped for a session that is already completed:
+                        # an in-progress save has no completion to re-date.
+                        if session.status == "completed":
+                            session.data["completed_at"] = timezone.now().isoformat()
                     except json.JSONDecodeError as e:
                         return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
 
@@ -536,10 +547,6 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
                     try:
                         visit_results = json.loads(visit_results_json)
                         session.data["visit_results"] = visit_results
-                        # Same meaning as on the save path: when the verdicts were
-                        # last written. Stamped here too so the field is never
-                        # absent on a session that has verdicts.
-                        session.data["last_edited_at"] = timezone.now().isoformat()
                     except json.JSONDecodeError as e:
                         return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
 

@@ -46,11 +46,7 @@ def rows_for_session(session) -> list[PriorAuditVerdict]:
     """
     if getattr(session, "status", None) != "completed":
         return []
-    # The date a verdict is SHOWN with must reflect a later edit; see
-    # AuditSessionRecord.verdicts_dated_at. Stored in completed_at so the
-    # projection and the live builder produce byte-identical entries -- the diff
-    # in verify_opportunity is only meaningful while their shapes match.
-    completed_at = _as_dt(getattr(session, "verdicts_dated_at", None))
+    completed_at = _as_dt(getattr(session, "completed_at", None))
     title = (session.data or {}).get("title", "") or ""
     opportunity_id = session.opportunity_id
     rows = []

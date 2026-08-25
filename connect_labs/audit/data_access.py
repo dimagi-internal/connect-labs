@@ -390,9 +390,9 @@ def build_prior_audit_index(sessions, exclude_session_id=None) -> dict:
         (s for s in sessions if s.status == "completed" and s.id != exclude_session_id),
         key=PRIOR_AUDIT_ORDER,
     ):
-        # The date a verdict is SHOWN with, which is not necessarily when the
-        # session was completed -- see AuditSessionRecord.verdicts_dated_at.
-        dated_at = session.verdicts_dated_at  # datetime | None
+        # Moves when a completed session is edited, so it is both "when this
+        # audit was completed" and the honest date to show beside its verdicts.
+        dated_at = session.completed_at  # datetime | None
         for visit_key, visit_result in (session.data.get("visit_results") or {}).items():
             for blob_id, assessment in (visit_result.get("assessments") or {}).items():
                 result = assessment.get("result")
