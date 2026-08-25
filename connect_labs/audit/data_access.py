@@ -390,7 +390,9 @@ def build_prior_audit_index(sessions, exclude_session_id=None) -> dict:
         (s for s in sessions if s.status == "completed" and s.id != exclude_session_id),
         key=PRIOR_AUDIT_ORDER,
     ):
-        completed_at = session.completed_at  # datetime | None
+        # The date a verdict is SHOWN with, which is not necessarily when the
+        # session was completed -- see AuditSessionRecord.verdicts_dated_at.
+        dated_at = session.verdicts_dated_at  # datetime | None
         for visit_key, visit_result in (session.data.get("visit_results") or {}).items():
             for blob_id, assessment in (visit_result.get("assessments") or {}).items():
                 result = assessment.get("result")
@@ -400,7 +402,7 @@ def build_prior_audit_index(sessions, exclude_session_id=None) -> dict:
                     "result": result,
                     "session_id": session.id,
                     "session_title": session.data.get("title", ""),
-                    "completed_at": completed_at.isoformat() if completed_at else None,
+                    "completed_at": dated_at.isoformat() if dated_at else None,
                 }
     return index
 
