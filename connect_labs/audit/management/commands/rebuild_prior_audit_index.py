@@ -29,10 +29,21 @@ import json
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 
 from connect_labs.audit import prior_audit_projection as projection
 from connect_labs.audit.data_access import AuditDataAccess, build_prior_audit_index
 from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
+
+
+class _Rollback(Exception):
+    """Unwind the surrounding atomic block without surfacing as a failure.
+
+    Used for both outcomes that must not persist: a build that disagreed with
+    the live index, and a --verify-only dry run that agreed. Django rolls back
+    on any exception leaving an atomic block, so this is the mechanism; the
+    caller catches it and reports normally.
+    """
 
 
 class Command(BaseCommand):
@@ -80,24 +91,59 @@ class Command(BaseCommand):
         sessions = [s for s in data_access.get_audit_sessions(status="completed") if s.opportunity_id == opp]
         live = build_prior_audit_index(sessions)
 
+        # Build and verify inside ONE transaction, so a build that fails its own
+        # gate leaves nothing behind.
+        #
+        # rebuild_opportunity is itself atomic and writes the
+        # PriorAuditProjectionState row -- and that row is what flips
+        # is_built(), so the instant it commits, every auditor on this
+        # opportunity is served the projection instead of the live computation.
+        # Verifying afterwards meant the command could print "do NOT switch the
+        # read path" about a switch it had already made. A gate that fires after
+        # the irreversible step is not a gate.
+        #
+        # It matters more here than for a typical cache: a wrong projection does
+        # not raise, it renders as "this image was never audited".
         result = None
-        if not opts["verify_only"]:
-            result = projection.rebuild_opportunity(opp, sessions, built_by=opts.get("username") or "")
+        agreed = False
+        try:
+            with transaction.atomic():
+                # ALWAYS build, in both modes. --verify-only differs only in
+                # rolling back afterwards -- that is what makes it a dry run
+                # rather than a diff against an empty table, which could only
+                # ever report every key as missing.
+                result = projection.rebuild_opportunity(opp, sessions, built_by=opts.get("username") or "")
 
-        # Judged against what THIS token can see. The projection may legitimately
-        # hold rows from sessions outside this scope -- it merges across
-        # identities -- and calling those drift would make the gate unusable for
-        # anyone without full visibility.
-        verdict = projection.verify_opportunity(opp, live, visible_session_ids={s.id for s in sessions})
+                # Judged against what THIS token can see. The projection may
+                # legitimately hold rows from sessions outside this scope -- it
+                # merges across identities (#1260) -- and calling those drift
+                # would make the gate unusable for anyone without full
+                # visibility.
+                verdict = projection.verify_opportunity(opp, live, visible_session_ids={s.id for s in sessions})
+                agreed = verdict.agrees
+                if not agreed:
+                    raise _Rollback
+                # --verify-only is a genuine DRY RUN: it builds, checks whether
+                # the build WOULD agree, and always rolls back. Without this it
+                # could only diff an empty table against live and report every
+                # key as missing, which answered nothing.
+                if opts["verify_only"]:
+                    raise _Rollback
+        except _Rollback:
+            pass
+
+        committed = agreed and not opts["verify_only"]
 
         if opts["json"]:
             self.stdout.write(
                 json.dumps(
                     {
-                        "rebuild": result,
                         "agrees": verdict.agrees,
+                        "committed": committed,
+                        "rebuild": result,
                         "live_keys": verdict.live_keys,
                         "projected_keys": verdict.projected_keys,
+                        "beyond_scope": verdict.beyond_scope,
                         "missing": verdict.missing[:50],
                         "extra": verdict.extra[:50],
                         "mismatched": verdict.mismatched[:50],
@@ -109,10 +155,28 @@ class Command(BaseCommand):
         else:
             if result:
                 self.stdout.write(
-                    f"rebuilt opp {opp}: {result['sessions_contributing']}/{result['sessions_seen']} sessions "
-                    f"contributed, {result['rows_written']} rows written ({result['rows_deleted']} removed)"
+                    f"opp {opp}: {result['sessions_contributing']}/{result['sessions_seen']} sessions "
+                    f"contributed, {result['rows_written']} rows ({result['rows_total']} total)"
                 )
             self.stdout.write(verdict.summary())
+            # Say plainly whether anything persisted. The whole point of the
+            # rollback is that "it ran" and "it took effect" are now different
+            # outcomes, and the operator must not have to infer which happened.
+            if committed:
+                self.stdout.write(
+                    f"COMMITTED — opp {opp} is now built, and the bulk-data page will read the projection."
+                )
+            elif opts["verify_only"]:
+                self.stdout.write(
+                    "DRY RUN — rolled back. "
+                    + (
+                        "A real build would agree; re-run without --verify-only to commit it."
+                        if agreed
+                        else "A real build would NOT agree; nothing was written."
+                    )
+                )
+            else:
+                self.stdout.write("ROLLED BACK — the build disagreed with the live index; nothing was written.")
             # Truncated on purpose: a systemic disagreement produces thousands of
             # lines and the first few already say which way it is broken.
             for label, items in (("missing", verdict.missing), ("extra", verdict.extra)):
@@ -124,4 +188,4 @@ class Command(BaseCommand):
                 self.stdout.write(f"  mismatched: {m['key']} live={m['live']} projected={m['projected']}")
 
         if not verdict.agrees:
-            raise CommandError("projection does NOT agree with the live index — do not switch the read path")
+            raise CommandError("projection does NOT agree with the live index — nothing was committed")
