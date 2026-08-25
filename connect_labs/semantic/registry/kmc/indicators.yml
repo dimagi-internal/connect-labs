@@ -1,0 +1,565 @@
+# KMC Layer 3 — the indicator registry, in Cube measure syntax.
+#
+# Converted verbatim from the JavaScript closures in
+# connect_labs/workflow/templates/kmc_programme_metrics_render.js (var IND, ~line 684).
+# Those closures cannot be diffed as data, cannot be read from Python, and have to be
+# hand-resynced with the repo. Expressed here they are readable by both engines.
+#
+# NOTATION: Cube (cube.dev) measure syntax, restricted to Cube's REAL measure types --
+# count, count_distinct, count_distinct_approx, sum, avg, min, max, number. No
+# extensions. Scout's semantic model stays inside the same vocabulary (its
+# SemanticField.MeasureType, even after a migration named expand_measure_types, has no
+# first/last), and anything we invented here no Cube tool would ever validate.
+#
+# Nothing runs Cube. This is a notation, not a runtime: connect-labs compiles these to
+# SQL, and a second engine can read the same file.
+#
+# SHAPE: every indicator is three measures -- a numerator, a denominator, and a
+# `type: number` value over the two. That is how Scout shapes its rate KPIs, and it
+# enforces the workbook's "no bare numbers" rule structurally: a value cannot be
+# rendered without the denominator that produced it.
+
+version: 1
+cube: kmc_case
+description: >-
+  One row per baby (see properties.yml). Measures are evaluated with GROUP BY over
+  whatever scope the caller selects -- programme, LLO, opportunity, FLW or month.
+
+measures:
+  # ── Scale ────────────────────────────────────────────────────────────────
+  - name: c01
+    title: Registered cases
+    type: number
+    sql: '{c01_numerator}'
+    meta:
+      {
+        indicator: C01,
+        category: Scale,
+        prominence: Top,
+        unit: n,
+        direction: none,
+      }
+  - name: c01_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.registered' }]
+  - name: c01_denominator
+    type: count
+
+  - name: c02
+    title: Started cases
+    type: number
+    sql: '{c02_numerator}'
+    meta:
+      {
+        indicator: C02,
+        category: Scale,
+        prominence: Top,
+        unit: n,
+        direction: none,
+      }
+  - name: c02_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.started' }]
+  - name: c02_denominator
+    type: count
+
+  - name: c05
+    title: Cumulative SVNs reached
+    type: number
+    sql: '{c05_numerator}'
+    meta:
+      {
+        indicator: C05,
+        category: Scale,
+        prominence: Top,
+        unit: n,
+        direction: none,
+      }
+  - name: c05_numerator
+    type: count
+  - name: c05_denominator
+    type: count
+
+  - name: c06
+    title: Mean visits per case
+    type: number
+    sql: '{c06_numerator}'
+    meta:
+      {
+        indicator: C06,
+        category: Scale,
+        prominence: Lower,
+        unit: n,
+        direction: none,
+        note: 'Identical in definition to C24; both are kept for parity with the workbook.',
+      }
+  - name: c06_numerator
+    type: avg
+    sql: '{CUBE}.num_visits'
+    filters: [{ sql: '{CUBE}.started' }]
+  - name: c06_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.started' }]
+
+  # ── Program quality ──────────────────────────────────────────────────────
+  - name: c07
+    title: '% weight_gain_data_computable'
+    type: number
+    sql: '100.0 * {c07_numerator} / NULLIF({c07_denominator}, 0)'
+    meta:
+      {
+        indicator: C07,
+        category: Program quality,
+        prominence: Lower,
+        unit: '%',
+        direction: higher,
+        bands: [0.75, 0.55],
+        min_denominator: 25,
+      }
+  - name: c07_numerator
+    type: count
+    filters:
+      [
+        { sql: '{CUBE}.weight_computable' },
+        { sql: '{CUBE}.eligible AND NOT {CUBE}.early_exit' },
+      ]
+  - name: c07_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.eligible AND NOT {CUBE}.early_exit' }]
+
+  - name: c08
+    title: '% weight_gain_data_consistent'
+    type: number
+    sql: '100.0 * {c08_numerator} / NULLIF({c08_denominator}, 0)'
+    meta:
+      {
+        indicator: C08,
+        category: Program quality,
+        prominence: Lower,
+        unit: '%',
+        direction: higher,
+        bands: [0.8, 0.6],
+        min_denominator: 25,
+      }
+  - name: c08_numerator
+    type: count
+    filters:
+      [{ sql: '{CUBE}.weight_consistent' }, { sql: '{CUBE}.weight_computable' }]
+  - name: c08_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.weight_computable' }]
+
+  - name: c09
+    title: '% weight_gain_data_sufficient'
+    type: number
+    sql: '100.0 * {c09_numerator} / NULLIF({c09_denominator}, 0)'
+    meta:
+      {
+        indicator: C09,
+        category: Program quality,
+        prominence: Top,
+        unit: '%',
+        direction: higher,
+        bands: [0.6, 0.4],
+        min_denominator: 25,
+      }
+  - name: c09_numerator
+    type: count
+    filters:
+      [
+        { sql: '{CUBE}.weight_gain_data_sufficient' },
+        { sql: '{CUBE}.eligible AND NOT {CUBE}.early_exit' },
+      ]
+  - name: c09_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.eligible AND NOT {CUBE}.early_exit' }]
+
+  - name: c10
+    title: '% plausible growth'
+    type: number
+    sql: '100.0 * {c10_numerator} / NULLIF({c10_denominator}, 0)'
+    meta:
+      {
+        indicator: C10,
+        category: Program quality,
+        prominence: Top,
+        unit: '%',
+        direction: higher,
+        bands: [0.7, 0.5],
+        min_denominator: 25,
+      }
+  - name: c10_numerator
+    type: count
+    filters:
+      [
+        { sql: "{CUBE}.growth_class = 'plausible'" },
+        { sql: '{CUBE}.weight_gain_data_sufficient' },
+      ]
+  - name: c10_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.weight_gain_data_sufficient' }]
+
+  - name: c11
+    title: '% slow growth'
+    type: number
+    sql: '100.0 * {c11_numerator} / NULLIF({c11_denominator}, 0)'
+    meta:
+      {
+        indicator: C11,
+        category: Program quality,
+        prominence: Top,
+        unit: '%',
+        direction: lower,
+        bands: [0.15, 0.3],
+        min_denominator: 25,
+      }
+  - name: c11_numerator
+    type: count
+    filters:
+      [
+        { sql: "{CUBE}.growth_class = 'slow'" },
+        { sql: '{CUBE}.weight_gain_data_sufficient' },
+      ]
+  - name: c11_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.weight_gain_data_sufficient' }]
+
+  - name: c12
+    title: '% fast growth'
+    type: number
+    sql: '100.0 * {c12_numerator} / NULLIF({c12_denominator}, 0)'
+    meta:
+      {
+        indicator: C12,
+        category: Program quality,
+        prominence: Lower,
+        unit: '%',
+        direction: mid,
+        bands: [0.15, 0.3],
+        min_denominator: 25,
+      }
+  - name: c12_numerator
+    type: count
+    filters:
+      [
+        { sql: "{CUBE}.growth_class = 'fast'" },
+        { sql: '{CUBE}.weight_gain_data_sufficient' },
+      ]
+  - name: c12_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.weight_gain_data_sufficient' }]
+
+  - name: c13
+    title: Mean early growth rate
+    type: number
+    sql: '{c13_numerator}'
+    meta:
+      {
+        indicator: C13,
+        category: Program quality,
+        prominence: Top,
+        unit: g/kg/d,
+        direction: higher,
+        bands: [15, 13],
+        min_denominator: 25,
+      }
+  - name: c13_numerator
+    type: avg
+    sql: '{CUBE}.early_g_per_kg_day'
+    filters: [{ sql: '{CUBE}.weight_gain_data_sufficient' }]
+  - name: c13_denominator
+    type: count
+    filters:
+      [
+        {
+          sql: '{CUBE}.weight_gain_data_sufficient AND {CUBE}.early_g_per_kg_day IS NOT NULL',
+        },
+      ]
+
+  # ── Performance ──────────────────────────────────────────────────────────
+  - name: c14
+    title: Mortality
+    type: number
+    sql: '100.0 * {c14_numerator} / NULLIF({c14_denominator}, 0)'
+    meta:
+      {
+        indicator: C14,
+        category: Performance,
+        prominence: Top,
+        unit: '%',
+        direction: mid2,
+        bands: [[0.04, 0.12], [0.02, 0.16]],
+        min_denominator: 25,
+        note: 'TWO-SIDED. Implausibly low means under-recording. Gated by the
+          Targets and settings credibility flag - see suppression below.',
+      }
+  - name: c14_numerator
+    type: count
+    filters:
+      [
+        { sql: '{CUBE}.died' },
+        { sql: '{CUBE}.eligible AND {CUBE}.outcome_known' },
+      ]
+  - name: c14_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.eligible AND {CUBE}.outcome_known' }]
+
+  - name: c15
+    title: Loss to follow-up by day 28
+    type: number
+    sql: '100.0 * {c15_numerator} / NULLIF({c15_denominator}, 0)'
+    meta:
+      {
+        indicator: C15,
+        category: Performance,
+        prominence: Top,
+        unit: '%',
+        direction: lower,
+        bands: [0.1, 0.25],
+        min_denominator: 25,
+        flw_applicable: true,
+      }
+  - name: c15_numerator
+    type: count
+    filters: [{ sql: 'NOT {CUBE}.outcome_known' }, { sql: '{CUBE}.eligible' }]
+  - name: c15_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.eligible' }]
+
+  - name: c16
+    title: '% enrolled within 3 days'
+    type: number
+    sql: '100.0 * {c16_numerator} / NULLIF({c16_denominator}, 0)'
+    meta:
+      {
+        indicator: C16,
+        category: Performance,
+        prominence: Top,
+        unit: '%',
+        direction: higher,
+        bands: [0.5, 0.3],
+        min_denominator: 25,
+      }
+  - name: c16_numerator
+    type: count
+    filters:
+      [
+        { sql: '{CUBE}.enrolled_within_3d' },
+        { sql: '{CUBE}.started AND {CUBE}.days_discharge_to_reg IS NOT NULL' },
+      ]
+  - name: c16_denominator
+    type: count
+    filters:
+      [{ sql: '{CUBE}.started AND {CUBE}.days_discharge_to_reg IS NOT NULL' }]
+
+  - name: c17
+    title: Median days to enrolment
+    type: number
+    sql: >-
+      (ARRAY_AGG({CUBE}.days_discharge_to_reg ORDER BY {CUBE}.days_discharge_to_reg)
+         FILTER (WHERE {CUBE}.started AND {CUBE}.days_discharge_to_reg IS NOT NULL)
+      )[FLOOR({c17_denominator} / 2.0) + 1]
+    meta:
+      {
+        indicator: C17,
+        category: Performance,
+        prominence: Lower,
+        unit: d,
+        direction: lower,
+        bands: [3, 7],
+        min_denominator: 25,
+        note:
+          "Cube has no median measure type, so this is type:number with SQL -
+          still inside Cube's vocabulary, no extension. Deliberately reproduces
+          the JS UPPER median (mv[floor(n/2)] on a 0-indexed sorted array)
+          rather than PERCENTILE_CONT, so the two engines agree exactly. The
+          upper-median choice is itself worth revisiting - see PARITY.md.",
+      }
+  - name: c17_denominator
+    type: count
+    filters:
+      [{ sql: '{CUBE}.started AND {CUBE}.days_discharge_to_reg IS NOT NULL' }]
+
+  - name: c19
+    title: '% of danger-sign cases referred'
+    type: number
+    sql: '100.0 * {c19_numerator} / NULLIF({c19_denominator}, 0)'
+    meta:
+      {
+        indicator: C19,
+        category: Performance,
+        prominence: Top,
+        unit: '%',
+        direction: mid,
+        bands: null,
+        min_denominator: 25,
+      }
+  - name: c19_numerator
+    type: count
+    filters:
+      [
+        { sql: '{CUBE}.referred' },
+        { sql: '{CUBE}.eligible AND {CUBE}.ever_danger_sign' },
+      ]
+  - name: c19_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.eligible AND {CUBE}.ever_danger_sign' }]
+
+  - name: c20
+    title: Danger-sign incidence
+    type: number
+    sql: '100.0 * {c20_numerator} / NULLIF({c20_denominator}, 0)'
+    meta:
+      {
+        indicator: C20,
+        category: Performance,
+        prominence: Lower,
+        unit: '%',
+        direction: mid,
+        bands: null,
+        min_denominator: 25,
+      }
+  - name: c20_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.ever_danger_sign' }, { sql: '{CUBE}.eligible' }]
+  - name: c20_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.eligible' }]
+
+  - name: c21
+    title: Self-referrals per 100 cases
+    type: number
+    sql: '{c21_numerator}'
+    meta:
+      {
+        indicator: C21,
+        category: Performance,
+        prominence: Lower,
+        unit: '/100',
+        direction: higher,
+        bands: null,
+        min_denominator: 25,
+      }
+  - name: c21_numerator
+    type: avg
+    sql: '{CUBE}.self_referral_count * 100'
+    filters: [{ sql: '{CUBE}.eligible' }]
+  - name: c21_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.eligible' }]
+
+  - name: c23
+    title: Mean skin-to-skin hours
+    type: number
+    sql: '{c23_numerator}'
+    meta:
+      {
+        indicator: C23,
+        category: Performance,
+        prominence: Lower,
+        unit: h,
+        direction: higher,
+        bands: null,
+        min_denominator: 25,
+      }
+  - name: c23_numerator
+    type: avg
+    sql: '{CUBE}.kmc_hours_mean'
+    filters: [{ sql: '{CUBE}.eligible' }]
+  - name: c23_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.eligible AND {CUBE}.kmc_hours_mean IS NOT NULL' }]
+
+  - name: c24
+    title: Mean visits per started case
+    type: number
+    sql: '{c24_numerator}'
+    meta:
+      {
+        indicator: C24,
+        category: Performance,
+        prominence: Lower,
+        unit: n,
+        direction: higher,
+        bands: null,
+        min_denominator: 25,
+        flw_applicable: true,
+      }
+  - name: c24_numerator
+    type: avg
+    sql: '{CUBE}.num_visits'
+    filters: [{ sql: '{CUBE}.started' }]
+  - name: c24_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.started' }]
+
+  # ── Data quality ─────────────────────────────────────────────────────────
+  - name: c28
+    title: Birth-copy rate
+    type: number
+    sql: '100.0 * {c28_numerator} / NULLIF({c28_denominator}, 0)'
+    meta:
+      {
+        indicator: C28,
+        category: Data quality,
+        prominence: Top,
+        unit: '%',
+        direction: lower,
+        bands: [0.1, 0.2],
+        min_denominator: 25,
+        flw_applicable: true,
+      }
+  - name: c28_numerator
+    type: count
+    filters:
+      [
+        { sql: '{CUBE}.enrollment_is_birth_copy' },
+        { sql: '{CUBE}.enrollment_is_birth_copy IS NOT NULL' },
+      ]
+  - name: c28_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.enrollment_is_birth_copy IS NOT NULL' }]
+
+  - name: c31
+    title: Weight rounding rate
+    type: number
+    sql: '100.0 * {c31_numerator} / NULLIF({c31_denominator}, 0)'
+    meta:
+      {
+        indicator: C31,
+        category: Data quality,
+        prominence: Top,
+        unit: '%',
+        direction: lower,
+        bands: null,
+        min_denominator: 100,
+        flw_applicable: true,
+        note:
+          'Sum-over-sum, not a case count: the denominator is weight READINGS.
+          min_denominator is therefore 100 readings, per the workbook.',
+      }
+  - name: c31_numerator
+    type: sum
+    sql: '{CUBE}.n_weights_round_100_raw'
+  - name: c31_denominator
+    type: sum
+    sql: '{CUBE}.n_weight_readings'
+
+# ---------------------------------------------------------------------------
+# Suppression -- the channel the workbook needs and Neal's schema does not yet have.
+# These are NOT bands. They decide whether a computed number may be shown at all.
+# Source: kmc_metrics_framework.xlsx, "Targets & settings" rows 6-8.
+# ---------------------------------------------------------------------------
+suppression:
+  - indicator: C14
+    setting: mortality_recording_credible
+    scope: llo
+    when_false: not_credible
+    note: >-
+      Pooling every LLO reads LOWER than the credible recorders alone, because
+      non-recorders add denominator without deaths. Render greyed with the caveat
+      rather than blank: a blank cell reads as "no data", which is wrong.
+  - indicator: C18
+    setting: completion_recording_credible
+    scope: llo
+    when_false: not_credible
