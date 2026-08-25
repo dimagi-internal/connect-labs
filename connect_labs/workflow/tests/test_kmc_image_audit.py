@@ -906,3 +906,19 @@ def test_a_run_whose_sessions_all_have_images_reports_none_blank(patched):
 
     assert result["sessions_created"] == 1
     assert "sessions_without_images" not in result
+
+
+def test_a_failure_names_the_llo_and_the_window_not_just_an_id(patched):
+    """These strings are the ONLY account of a scheduled failure a person sees - they land
+    in WorkflowSchedule.last_error and are rendered on the admin schedules table. "1236:
+    <exception>" forces the reader to look up which LLO that is and which window ran."""
+    patched["task"].apply.side_effect = RuntimeError("upstream 500")
+    definition = _definition(schedule_defaults={"opportunity_ids": [DIAL_OPP]})
+    result = run_default(definition=definition, access_token="t", cadence="daily", window=("2026-08-01", "2026-08-07"))
+
+    assert len(result["errors"]) == 1
+    line = result["errors"][0]
+    assert "EHA" in line, "the LLO name is what a reader recognises"
+    assert str(DIAL_OPP) in line, "the id is what they search for"
+    assert "2026-08-01" in line and "2026-08-07" in line, "which window failed"
+    assert "upstream 500" in line, "and the actual cause"

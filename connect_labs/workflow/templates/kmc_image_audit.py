@@ -2009,6 +2009,18 @@ def _scheduled_criteria(*, opp_id, opp_meta, window_start, window_end, sample_pe
     }
 
 
+def _error_line(opp_id, meta, window_start, window_end, detail):
+    """One failure, written so it can be acted on without opening anything else.
+
+    These strings are the ONLY account of a scheduled failure a person sees - they land in
+    WorkflowSchedule.last_error and are rendered on the admin schedules table. A bare
+    "1236: <exception>" makes the reader look up which LLO 1236 is and which window ran
+    before they can even start, so the id, the LLO name and the audited window all go in.
+    """
+    label = (meta or {}).get("llo") or "Opportunity"
+    return f"{label} {opp_id} ({window_start} to {window_end}): {detail}"
+
+
 class _FormRenamed(Exception):
     """The photo-bearing form matched nothing while the window held visits.
 
@@ -2328,14 +2340,16 @@ def run_default(*, definition, access_token, request=None, window=None, cadence=
                 # record-creation API surfaced as {status: failed, errors: []} with nothing to act on.
                 if not created:
                     if result.get("success") is False or result.get("error"):
-                        errors.append("{}: {}".format(opp_id, result.get("error") or result))
+                        errors.append(
+                            _error_line(opp_id, meta, window_start, window_end, result.get("error") or result)
+                        )
                     else:
                         empty.append(opp_id)
             else:
-                errors.append(f"{opp_id}: {eager.result}")
+                errors.append(_error_line(opp_id, meta, window_start, window_end, eager.result))
         except Exception as exc:  # noqa: BLE001 - one bad opportunity must not end the batch
             logger.exception("kmc_image_audit scheduled run failed for opportunity %s", opp_id)
-            errors.append(f"{opp_id}: {exc}")
+            errors.append(_error_line(opp_id, meta, window_start, window_end, exc))
 
     # An empty window is a legitimate outcome, not a failure: a weekly schedule over a quiet period
     # audits nothing and that is correct. Only report failure when something actually went wrong,

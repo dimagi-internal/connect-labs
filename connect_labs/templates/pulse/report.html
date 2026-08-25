@@ -208,8 +208,10 @@
 
   {% if report.intro %}<p class="intro">{{ report.intro|linebreaksbr }}</p>{% endif %}
 
-  {# Headline tiles. Every value here is derived from verified, reimbursed
-     delivery -- nothing on this row is typed by hand. #}
+  {% comment %}
+  Headline tiles. Every value here is derived from verified, reimbursed
+  delivery -- nothing on this row is typed by hand.
+  {% endcomment %}
   <div class="rule">
     <i style="background:#1b1464;width:26%"></i>
     <i style="background:#6d8ad6;width:24%"></i>

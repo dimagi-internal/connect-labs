@@ -49,13 +49,24 @@
             {% elif s.last_status == "ok" %}<span class="text-green-600">OK</span>
             {% elif not s.enabled %}<span>Paused</span>
             {% else %}<span class="text-gray-400">—</span>{% endif %}
-            {# A run can succeed overall and still leave something to act on - "created
-               audits for 4 of 5 opportunities", or a dry run that created nothing on
-               purpose. run_scheduled_workflow records those in last_error, which nothing
-               rendered, so a partial failure and a forgotten dry run both read as a plain
-               green OK. Full text on hover, since the message names the opportunity. #}
+            {% comment %}
+            A run can succeed overall and still leave something to act on - "created
+            audits for 4 of 5 opportunities", or a dry run that created nothing on
+            purpose. run_scheduled_workflow records those in last_error, so without this
+            a partial failure and a forgotten dry run both read as a plain green OK.
+
+            Shown IN FULL and wrapped, not truncated to one line: these messages name the
+            opportunity and the reason it failed, and that reason is precisely what a
+            single-line ellipsis cuts off. Hover-only text is no use to someone scanning
+            the table to find what broke, and no use at all on a touch device.
+
+            Written as a comment TAG. The brace-hash form is single-line only in Django; a
+            multi-line one is not lexed as a comment at all and renders verbatim onto the
+            page - which is exactly what happened here, printing this paragraph into the
+            Status cell of every row.
+            {% endcomment %}
             {% if s.last_error %}
-            <div class="mt-1 text-xs text-amber-700 max-w-xs truncate" title="{{ s.last_error }}">{{ s.last_error }}</div>
+            <div class="mt-1 text-xs whitespace-pre-wrap break-words max-w-md {% if s.last_status == 'failed' or s.last_status == 'auth_expired' %}text-red-700{% else %}text-amber-700{% endif %}">{{ s.last_error }}</div>
             {% endif %}
           </td>
           <td class="px-4 py-3 text-right whitespace-nowrap">
