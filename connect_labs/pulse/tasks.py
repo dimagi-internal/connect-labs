@@ -17,6 +17,8 @@ import time
 from datetime import datetime
 from datetime import timezone as dt_timezone
 
+from django.utils import timezone
+
 from config import celery_app
 from connect_labs.pulse import ingest
 from connect_labs.pulse.client import PulseAuthError, get_client
@@ -130,6 +132,8 @@ def poll_visit_tail(
         with get_client() as client:
             while True:
                 cursors = ingest.due_cursors(limit=limit)
+                failed = 0
+                last_error = ""
                 for cursor in cursors:
                     try:
                         result = ingest.tail_visits(client, cursor)
@@ -138,15 +142,29 @@ def poll_visit_tail(
                     except Exception as exc:
                         # Isolate per-opportunity failures: one opp erroring must
                         # not stop the rest of the sweep or freeze the display.
+                        failed += 1
+                        last_error = str(exc)[:2000]
                         cursor.consecutive_failures += 1
-                        cursor.last_error = str(exc)[:2000]
-                        cursor.save(update_fields=["consecutive_failures", "last_error"])
+                        cursor.last_error = last_error
+                        cursor.last_failed_at = timezone.now()
+                        cursor.save(update_fields=["consecutive_failures", "last_error", "last_failed_at"])
                         logger.warning("[pulse] tail failed for opp %s: %s", cursor.opportunity_id, exc)
                 sweeps += 1
 
                 # Recorded per sweep, not once at the end: health should reflect
                 # the most recent sweep, not the start of a minute-long task.
-                ingest.record_success(TIER_TAIL)
+                #
+                # A sweep in which EVERY due cursor failed is not a successful
+                # sweep. This used to record success unconditionally, which zeroed
+                # `consecutive_failures` and cleared `last_error` on the tier --
+                # so 80 cursors could 404 continuously for 27 days (1.7M failed
+                # calls) while the tail tier read perfectly healthy and nothing
+                # ever raised an alarm. An empty sweep (nothing due) IS healthy;
+                # a sweep that tried and failed at everything is not. (#1277)
+                if cursors and failed == len(cursors):
+                    ingest.record_failure(TIER_TAIL, f"all {failed} due cursor(s) failed; last: {last_error}")
+                else:
+                    ingest.record_success(TIER_TAIL)
 
                 elapsed = time.monotonic() - started
                 if elapsed + sweep_interval >= deadline:
@@ -386,7 +404,8 @@ def poll_works(limit: int = 40) -> dict:
         ingest.record_success(TIER_WORKS)
         return {"polled": 0, "stored": 0}
 
-    stored = polled = 0
+    stored = polled = failed = 0
+    last_error = ""
     try:
         with get_client() as client:
             for cursor in cursors:
@@ -394,11 +413,18 @@ def poll_works(limit: int = 40) -> dict:
                     stored += ingest.sync_works(client, cursor)["stored"]
                     polled += 1
                 except Exception as exc:
+                    failed += 1
+                    last_error = str(exc)[:2000]
                     cursor.consecutive_failures += 1
-                    cursor.last_error = str(exc)[:2000]
-                    cursor.save(update_fields=["consecutive_failures", "last_error"])
+                    cursor.last_error = last_error
+                    cursor.last_failed_at = timezone.now()
+                    cursor.save(update_fields=["consecutive_failures", "last_error", "last_failed_at"])
                     logger.warning("[pulse] works sync failed for opp %s: %s", cursor.opportunity_id, exc)
-        ingest.record_success(TIER_WORKS)
+        # Same rule as the tail tier: everything failing is not a success (#1277).
+        if failed == len(cursors):
+            ingest.record_failure(TIER_WORKS, f"all {failed} due cursor(s) failed; last: {last_error}")
+        else:
+            ingest.record_success(TIER_WORKS)
         return {"polled": polled, "stored": stored}
     except PulseAuthError as exc:
         ingest.record_failure(TIER_WORKS, f"auth: {exc}")

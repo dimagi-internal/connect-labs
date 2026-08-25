@@ -20,6 +20,22 @@ from connect_labs.audit.views import (
 )
 
 
+def _request_in_muac_program():
+    """A request whose viewer actually holds program 176.
+
+    ``_is_muac_picture_audit_session`` now checks membership before probing:
+    for a viewer outside program 176 the upstream fetch is a 404 by
+    construction, so it is skipped (#1242). These tests exercise what the probe
+    does once it RUNS, so they have to supply a viewer it will run for -- the
+    bare ``"req"`` placeholder they used carried no membership and now
+    short-circuits, which would leave them passing for the wrong reason.
+    """
+    return SimpleNamespace(
+        session={"labs_oauth": {"organization_data": {"programs": [{"id": MUAC_PICTURE_AUDIT_PROGRAM_ID}]}}},
+        user=None,
+    )
+
+
 def _make_session(workflow_run_id):
     # AuditSessionRecord.workflow_run_id reads the top-level labs_record_id,
     # not anything nested in `data` -- it points at the WorkflowRunRecord that
@@ -57,7 +73,7 @@ def test_matching_definition_id_is_scoped(monkeypatch):
 
     monkeypatch.setattr(views, "WorkflowDataAccess", fake_ctor)
 
-    assert _is_muac_picture_audit_session(session, request="req") is True
+    assert _is_muac_picture_audit_session(session, request=_request_in_muac_program()) is True
     fake_wda.get_run.assert_called_once_with(7117)
     fake_wda.close.assert_called_once()
     # Scoped by program_id only (never opportunity_id) -- mixing scope
@@ -74,7 +90,7 @@ def test_other_workflow_definition_id_is_not_scoped(monkeypatch):
     fake_wda.get_run.return_value = fake_run
     monkeypatch.setattr(views, "WorkflowDataAccess", lambda **k: fake_wda)
 
-    assert _is_muac_picture_audit_session(session, request="req") is False
+    assert _is_muac_picture_audit_session(session, request=_request_in_muac_program()) is False
 
 
 def test_run_not_found_is_not_scoped(monkeypatch):
@@ -83,7 +99,7 @@ def test_run_not_found_is_not_scoped(monkeypatch):
     fake_wda.get_run.return_value = None
     monkeypatch.setattr(views, "WorkflowDataAccess", lambda **k: fake_wda)
 
-    assert _is_muac_picture_audit_session(session, request="req") is False
+    assert _is_muac_picture_audit_session(session, request=_request_in_muac_program()) is False
 
 
 def test_lookup_error_fails_closed(monkeypatch):
@@ -92,7 +108,7 @@ def test_lookup_error_fails_closed(monkeypatch):
     fake_wda.get_run.side_effect = RuntimeError("production API down")
     monkeypatch.setattr(views, "WorkflowDataAccess", lambda **k: fake_wda)
 
-    assert _is_muac_picture_audit_session(session, request="req") is False
+    assert _is_muac_picture_audit_session(session, request=_request_in_muac_program()) is False
     fake_wda.close.assert_called_once()
 
 
