@@ -14,8 +14,6 @@ one row per (session, image) rather than one per image. Re-exported here because
 Django only discovers models reachable from ``models.py``.
 """
 
-from django.utils.dateparse import parse_datetime
-
 from connect_labs.audit.prior_audit_models import (  # noqa: F401
     AUDIT_VERDICTS,
     PriorAuditProjectionState,
@@ -160,29 +158,6 @@ class AuditSessionRecord(LocalLabsRecord):
             return dt.datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
         except ValueError:
             return None
-
-    @property
-    def last_edited_at(self):
-        """When this session's verdicts were last written, or None.
-
-        Distinct from completed_at, which means "when this audit was completed"
-        and is deliberately not moved by a later edit. A completed session can
-        still have its verdicts changed -- the MUAC picture-audit workflow leaves
-        them editable on purpose -- and without this the record asserts a
-        completion time while carrying verdicts made after it.
-        """
-        raw = self.data.get("last_edited_at")
-        return parse_datetime(raw) if isinstance(raw, str) else raw
-
-    @property
-    def verdicts_dated_at(self):
-        """The honest date to show beside a verdict from this session.
-
-        last_edited_at is only ever written at or after completion, so it wins
-        whenever present; completed_at is the fallback for sessions finished
-        before the field existed.
-        """
-        return self.last_edited_at or self.completed_at
 
     @property
     def notes(self):
