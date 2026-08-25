@@ -139,32 +139,3 @@ class TestReconcile:
         assert not PriorAuditProjectionState.objects.exists()
         out = _run([], username="poller")
         assert "no built projections" in out
-
-
-@pytest.mark.django_db
-class TestScheduledTask:
-    def test_skips_quietly_when_no_identity_is_configured(self, settings):
-        """An unset identity is a configuration state, not a pageable failure."""
-        from connect_labs.audit.prior_audit_tasks import reconcile_prior_audit_index
-
-        settings.PRIOR_AUDIT_RECONCILE_USERNAME = ""
-        assert "skipped" in reconcile_prior_audit_index()
-
-    def test_reports_drift_instead_of_raising(self, settings):
-        """Beat should log drift, not crash the worker on a schedule."""
-        from connect_labs.audit.prior_audit_tasks import reconcile_prior_audit_index
-
-        settings.PRIOR_AUDIT_RECONCILE_USERNAME = "poller"
-        with patch(
-            "connect_labs.audit.prior_audit_tasks.call_command",
-            side_effect=CommandError("2 opportunit(ies) drifted"),
-        ):
-            assert reconcile_prior_audit_index().startswith("drift:")
-
-    def test_does_not_repair_by_default(self, settings):
-        from connect_labs.audit.prior_audit_tasks import reconcile_prior_audit_index
-
-        settings.PRIOR_AUDIT_RECONCILE_USERNAME = "poller"
-        with patch("connect_labs.audit.prior_audit_tasks.call_command") as spy:
-            reconcile_prior_audit_index()
-        assert "--repair" not in spy.call_args[0]

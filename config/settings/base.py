@@ -636,18 +636,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.audit_trail.tasks.emit_canary_event",
         "schedule": crontab(minute="*/30"),
     },
-    # Prior-audit projection reconciliation. Labs does not own the source --
-    # audit sessions live in Connect -- and record_session deliberately swallows
-    # its errors so a failed projection write cannot 500 an audit the user has
-    # already completed. This closes that loop. Daily rather than hourly: drift
-    # only appears when a dual-write fails, the projection is stale rather than
-    # wrong in the interim, and each run re-reads every built opportunity's
-    # sessions from Connect. Report-only; repair stays a human decision because
-    # rebuilding under a narrowed identity would delete real verdicts.
-    "prior-audit-reconcile": {
-        "task": "connect_labs.audit.reconcile_prior_audit_index",
-        "schedule": crontab(hour=3, minute=30),
-    },
+    # NO prior-audit reconciliation entry, deliberately. It used to live here,
+    # running daily under a named person's stored Connect token. The projection
+    # is now populated just-in-time by the request that needs it -- authorised by
+    # that request, with live credentials -- and staleness is bounded by
+    # prior_audit_projection.STALE_AFTER, so a missed dual-write self-heals on the
+    # next read. A scheduled job would add a standing credential grant to buy
+    # something the read path already does.
     # Pulse ingest. Two speeds because user_visits costs 16KB/row on the wire
     # (99% discarded form_json) while the metadata endpoints cost ~560B/row —
     # see connect_labs/pulse/ingest.py. The FULL backfill remains a manual

@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
+from django.utils import timezone as dj_timezone
 
+from connect_labs.audit import prior_audit_projection as projection
 from connect_labs.audit.data_access import AuditDataAccess
 from connect_labs.audit.models import AuditSessionRecord
 from connect_labs.audit.prior_audit_models import PriorAuditProjectionState, PriorAuditVerdict
@@ -136,3 +138,80 @@ class TestRecordSessionIsBestEffort:
     def test_a_successful_write_reports_its_row_count(self):
         s = _session(1, "completed", {"111": _vr(b1="pass", b2="fail")}, completed_at=_dt(1))
         assert record_session(s) == 2
+
+
+@pytest.mark.django_db
+class TestJustInTimePopulation:
+    """The cache fills from the request that needs it, under that request's own auth.
+
+    The alternative -- a scheduled backfill -- needs a credential to run under,
+    meaning a service account or somebody's cached OAuth token driving a job.
+    None of that is necessary: the caller has already authenticated and already
+    proved access to the opportunity (get_audit_session 404s otherwise) before
+    reaching here.
+    """
+
+    def test_a_miss_computes_live_and_stores_the_result(self):
+        s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
+        assert not is_built(OPP)
+        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]) as spy:
+            index = _da().get_prior_audited_images(opportunity_id=OPP)
+        spy.assert_called_once_with(status="completed")
+        assert index["111:b1"]["result"] == "pass"
+        assert is_built(OPP), "the miss must have populated the cache"
+
+    def test_the_next_read_is_served_from_the_cache(self):
+        s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
+        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]):
+            _da().get_prior_audited_images(opportunity_id=OPP)
+        with patch.object(AuditDataAccess, "get_audit_sessions") as spy:
+            index = _da().get_prior_audited_images(opportunity_id=OPP)
+        spy.assert_not_called()
+        assert index["111:b1"]["result"] == "pass"
+
+    def test_a_stale_cache_is_recomputed_rather_than_served(self):
+        """Bounds how long a missed completion dual-write can go unnoticed."""
+        s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
+        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]):
+            _da().get_prior_audited_images(opportunity_id=OPP)
+
+        state = PriorAuditProjectionState.objects.get(opportunity_id=OPP)
+        PriorAuditProjectionState.objects.filter(pk=state.pk).update(
+            built_at=dj_timezone.now() - (projection.STALE_AFTER * 2)
+        )
+        assert is_built(OPP) and not projection.is_fresh(OPP)
+
+        newer = _session(2, "completed", {"222": _vr(b9="fail")}, completed_at=_dt(2))
+        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s, newer]) as spy:
+            index = _da().get_prior_audited_images(opportunity_id=OPP)
+        spy.assert_called_once()
+        assert set(index) == {"111:b1", "222:b9"}
+
+    def test_a_failed_cache_write_still_returns_the_right_answer(self):
+        """The reader holds a correct answer; a cache write must not 500 it."""
+        s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
+        with (
+            patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]),
+            patch(
+                "connect_labs.audit.prior_audit_projection.rebuild_opportunity",
+                side_effect=RuntimeError("db gone"),
+            ),
+        ):
+            index = _da().get_prior_audited_images(opportunity_id=OPP)
+        assert index["111:b1"]["result"] == "pass"
+        assert not is_built(OPP)
+
+    def test_no_stored_credential_is_consulted_on_the_read_path(self):
+        """Authorisation comes from the live request, never a standing grant.
+
+        get_valid_access_token is how a background job reaches Connect. The read
+        path must never call it -- if it did, the answer would depend on
+        somebody's cached token rather than on the caller.
+        """
+        s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
+        with (
+            patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]),
+            patch("connect_labs.labs.connect_tokens.get_valid_access_token") as tok,
+        ):
+            _da().get_prior_audited_images(opportunity_id=OPP)
+        tok.assert_not_called()
