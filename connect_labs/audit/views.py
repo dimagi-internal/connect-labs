@@ -383,12 +383,49 @@ class ExperimentSaveAuditView(LoginRequiredMixin, View):
                 if not session:
                     return JsonResponse({"error": "Session not found"}, status=404)
 
+                # A completed audit's verdicts must not change through this
+                # endpoint. It does not set status, so without this a completed
+                # session keeps that status while visit_results are replaced
+                # wholesale below -- and the page's read-only-ness was enforced
+                # only in the browser (bulk_assessment.html's isReadOnly), so a
+                # stale tab, a replayed POST or a future client change would be
+                # accepted silently by the server.
+                #
+                # MUAC picture audits are the deliberate exception: that workflow
+                # leaves completed sessions editable on purpose, which is exactly
+                # the distinction isReadOnly draws. The server has the same
+                # predicate the template uses, so it can enforce the same rule
+                # rather than trusting the client to.
+                #
+                # Checked only when the session IS completed. The predicate costs
+                # a workflow-run lookup over the API, and this endpoint is hit by
+                # a debounced autosave -- the overwhelmingly common in-progress
+                # save must not pay for it.
+                #
+                # _is_muac_picture_audit_session fails CLOSED on a lookup error,
+                # so a transient API blip rejects the save rather than allowing an
+                # edit it cannot justify. Autosave keeps hasUnsavedChanges set and
+                # retries, so the auditor's work is not lost.
+                if session.status == "completed" and not _is_muac_picture_audit_session(session, request):
+                    return JsonResponse(
+                        {"error": "This audit is completed. Reopen it before making further changes."},
+                        status=409,
+                    )
+
                 # Get visit_results from frontend
                 visit_results_json = request.POST.get("visit_results")
                 if visit_results_json:
                     try:
                         visit_results = json.loads(visit_results_json)
                         session.data["visit_results"] = visit_results
+                        # When the verdicts were last written. completed_at is
+                        # deliberately NOT touched: it means "when this audit was
+                        # completed", and an edit afterwards does not re-complete
+                        # it. Without a separate field the record asserts a
+                        # completion time while carrying verdicts made later, and
+                        # the review screen renders that stale date next to them
+                        # ("Audited in a prior session on <date>").
+                        session.data["last_edited_at"] = timezone.now().isoformat()
                     except json.JSONDecodeError as e:
                         return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
 
@@ -499,6 +536,10 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
                     try:
                         visit_results = json.loads(visit_results_json)
                         session.data["visit_results"] = visit_results
+                        # Same meaning as on the save path: when the verdicts were
+                        # last written. Stamped here too so the field is never
+                        # absent on a session that has verdicts.
+                        session.data["last_edited_at"] = timezone.now().isoformat()
                     except json.JSONDecodeError as e:
                         return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
 
