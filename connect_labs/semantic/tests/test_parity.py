@@ -296,3 +296,53 @@ def test_denominators_are_reported_alongside_values(conn):
     for m in registry["measures"]:
         if m.get("meta"):
             assert f"{m['name']}_denominator" in cols
+
+
+def test_rollup_equals_per_scope_queries(conn):
+    """One GROUPING SETS pass must give exactly what N separate queries gave.
+
+    This is the guard on the optimisation: the reason to collapse the scopes into
+    one pass is speed, and the only way that is a win rather than a regression is
+    if the numbers are untouched.
+    """
+    from connect_labs.semantic.compiler import compile_rollup_sql
+
+    props_doc = yaml.safe_load((REGISTRY / "properties.yml").read_text())
+    registry = yaml.safe_load((REGISTRY / "indicators.yml").read_text())
+    _load(conn)
+    visit_sql = "SELECT * FROM fixture_visits"
+    as_of = "(DATE '2026-01-01' + 200)"
+    scopes = ["programme", "opportunity", "flw", "month"]
+
+    per_scope = {}
+    cur = conn.cursor()
+    for sc in scopes:
+        cur.execute(compile_indicator_sql(props_doc, registry, visit_sql, scope=sc, as_of=as_of))
+        cols = [c.name for c in cur.description]
+        per_scope[sc] = [dict(zip(cols, r)) for r in cur.fetchall()]
+
+    cur.execute(compile_rollup_sql(props_doc, registry, visit_sql, scopes=scopes, as_of=as_of))
+    rcols = [c.name for c in cur.description]
+    rolled: dict[str, list[dict]] = {s: [] for s in scopes}
+    for r in cur.fetchall():
+        row = dict(zip(rcols, r))
+        rolled.setdefault(row["scope"], []).append(row)
+
+    def key(sc, row):
+        return tuple(str(row.get(c)) for c in ("opportunity_id", "username", "cohort_month"))
+
+    for sc in scopes:
+        assert len(rolled[sc]) == len(per_scope[sc]), f"{sc}: row count differs"
+        a = {key(sc, r): r for r in per_scope[sc]}
+        b = {key(sc, r): r for r in rolled[sc]}
+        assert set(a) == set(b), f"{sc}: grouping keys differ"
+        for k in a:
+            for m in registry["measures"]:
+                n = m["name"]
+                x, y = a[k].get(n), b[k].get(n)
+                if x is None and y is None:
+                    continue
+                assert x is not None and y is not None, f"{sc}/{k}/{n}: {x!r} vs {y!r}"
+                assert math.isclose(
+                    float(x), float(y), rel_tol=1e-9, abs_tol=1e-9
+                ), f"{sc}/{k}/{n}: per-scope={x} rollup={y}"

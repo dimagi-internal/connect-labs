@@ -76,6 +76,28 @@ C20 14.2857 C24 2.5714  C28 14.2857 C31 72.2222
    not `PERCENTILE_CONT`, and not the conventional median. The SQL reproduces the
    JS exactly so the engines agree, but the choice itself is worth revisiting.
 
+## Performance
+
+Calling the compiler once per scope re-runs the whole Layer 1 extraction each
+time. `compile_rollup_sql` collapses every scope into ONE pass over `props` via
+`GROUPING SETS`. Measured on opportunity 10042 (608 babies, 2,691 visits), three
+runs, warm cache:
+
+|                           | run 1  | run 2  | run 3  |
+| ------------------------- | ------ | ------ | ------ |
+| per-scope, 4 queries      | 3.626s | 4.734s | 3.555s |
+| single pass, all 4 scopes | 0.892s | 0.882s | 0.874s |
+| speedup                   | 4.07x  | 5.37x  | 4.07x  |
+
+The single pass costs about the same as ONE per-scope query, which is the point:
+the extraction happens once. `test_rollup_equals_per_scope_queries` pins that the
+collapse does not move any number, and the real-data check re-ran through
+`compile_rollup_sql` at 21 indicators, 0 mismatches.
+
+An earlier measurement of ~28s per scope was a cold read taken just after the
+visit cache was written; warm and repeated it is consistently sub-second. Neither
+that figure nor an earlier 2.25s single run should have been generalised from.
+
 ## What is NOT proven
 
 - **Not yet run against opportunity 10042's real data.** Everything above is a
