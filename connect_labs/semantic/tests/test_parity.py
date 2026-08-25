@@ -70,6 +70,21 @@ VISITS = [
     # changed constant, and "SQL matches JS" would be a weaker claim than it reads.
     ("b8", 0, 1550, "yes", "no", "no", "Registration", 2.0, 1550.0, 1.0),
     ("b8", 29, 1800, "yes", "no", "no", "Follow-up", None, None, None),
+    # b9 — first visit carries NO weight, so the first weighing is 6 days later.
+    # Anchoring the growth window on the first WEIGHT instead of the first VISIT
+    # shifts w28 selection and silently changes C09-C13. Every other fixture baby is
+    # weighed on its first visit, which is exactly why real data caught this and the
+    # fixture did not.
+    # Weights on days 10 and 44 only. Anchored on the FIRST VISIT (day 0) both ages
+    # are 10 and 44 -- outside the [21,35] window -- so early growth is NULL and the
+    # baby is not weight_gain_data_sufficient. Anchored on the first WEIGHT (day 10)
+    # the second reading lands at age 34, inside the window, and the baby wrongly
+    # counts toward C09-C13. The reading has to cross the boundary for the anchor to
+    # matter; an earlier version of this case kept both readings in-window under both
+    # anchors and therefore proved nothing.
+    ("b9", 0, None, "yes", "no", "no", "Registration", 1.0, 1500.0, 1.0),
+    ("b9", 10, 1500, "yes", "no", "no", "Follow-up", None, None, None),
+    ("b9", 44, 1700, "yes", "no", "no", "Follow-up", None, None, None),
     # b7 — birth-copy: enrolment weight == birth weight
     ("b7", 0, 1700, "yes", "no", "no", "Registration", 3.0, 1700.0, 1700.0),
     ("b7", 14, 1850, "yes", "no", "no", "Follow-up", None, None, None),
