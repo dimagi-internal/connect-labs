@@ -133,7 +133,13 @@ def template_supports_default_run(template_key: str | None) -> bool:
     return bool(template and template.get("supports_default_run") and callable(template.get("run_default")))
 
 
-SCHEDULE_OPTION_TYPES = ("int", "multi_int", "bool")
+# The multi-select option types, mapped to the coercion their stored values get. Both
+# behave identically -- a set chosen from choices_from_config -- and differ ONLY in the
+# type of the value, so every place that handles one handles the other through this map
+# rather than through a second copy of the same branch that could drift from the first.
+MULTI_OPTION_COERCERS = {"multi_int": int, "multi_str": str}
+
+SCHEDULE_OPTION_TYPES = ("int", "bool", *MULTI_OPTION_COERCERS)
 
 # The config key every schedulable template keeps its headless-run settings under. Named
 # here rather than per template so the scheduling UI and the endpoint that saves it agree
@@ -188,8 +194,16 @@ def template_schedule_options(template_key: str | None) -> list[dict]:
         if opt_type == "int":
             resolved["min"] = int(opt.get("min", 1))
             resolved["max"] = int(opt.get("max", 1000000))
-        elif opt_type == "multi_int":
+        elif opt_type in MULTI_OPTION_COERCERS:
             resolved["choices_from_config"] = opt.get("choices_from_config") or ""
+            # What to tick when the config has no saved selection yet. The dialog posts
+            # EVERY option it renders, so a multi-select with nothing ticked posts an
+            # empty list, fails the "select at least one" rule, and blocks the whole
+            # schedule from saving - on a setting the user never touched. A declared
+            # default means adding a new required multi-select to a template cannot
+            # break saving for schedules that predate it.
+            default = opt.get("default")
+            resolved["default"] = list(default) if isinstance(default, list) else []
         options.append(resolved)
     return options
 
@@ -218,21 +232,41 @@ def schedule_options_for_definition(definition) -> list[dict]:
     for opt in template_schedule_options(getattr(definition, "template_type", None)):
         filled = dict(opt)
         filled["value"] = defaults.get(opt["key"])
-        if opt["type"] == "multi_int":
+        coerce = MULTI_OPTION_COERCERS.get(opt["type"])
+        if coerce is not None:
             raw = config.get(opt.get("choices_from_config") or "")
             raw = raw if isinstance(raw, dict) else {}
             choices = []
             for value, label in raw.items():
                 try:
-                    choices.append({"value": int(value), "label": str(label)})
+                    choices.append({"value": coerce(value), "label": str(label)})
                 except (TypeError, ValueError):
                     continue
             filled["choices"] = sorted(choices, key=lambda c: c["value"])
-            # Selected set, as ints, so the template can test membership directly. A
-            # non-list value (a bare int, a string) is treated as nothing selected rather
-            # than iterated - iterating a string would silently select its digits.
+            # Selected set, already coerced, so the template can test membership
+            # directly. A non-list value (a bare int, a string) is treated as nothing
+            # selected rather than iterated - iterating a string would silently select
+            # its characters. Values that will not coerce are dropped; values that
+            # coerce but are not among the choices are deliberately KEPT, so a saved id
+            # whose choice has since disappeared shows up still ticked and is refused by
+            # _clean_schedule_defaults with a message naming it. Dropping it here
+            # instead would quietly narrow a live schedule on the next save, with
+            # nothing on screen to say the coverage had changed.
             saved = filled["value"] if isinstance(filled["value"], list) else []
-            filled["selected"] = [int(v) for v in saved if str(v).lstrip("-").isdigit()]
+            if not saved:
+                # Nothing chosen yet -- fall back to the declared default, narrowed to
+                # choices this workflow actually offers.
+                offered = {c["value"] for c in filled["choices"]}
+                saved = [d for d in opt.get("default") or [] if d in offered]
+            selected = []
+            for v in saved:
+                try:
+                    coerced = coerce(v)
+                except (TypeError, ValueError):
+                    continue
+                if coerced not in selected:
+                    selected.append(coerced)
+            filled["selected"] = selected
             # No choices means the config key this option reads is missing or unusable.
             # Left unflagged that renders a labelled control with nothing in it, which
             # posts an empty set, fails validation, and blocks the whole schedule from

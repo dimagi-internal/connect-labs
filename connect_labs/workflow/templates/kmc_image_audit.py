@@ -67,10 +67,32 @@ OPP_META = {
     938: {"llo": "NAMA", "country": "Uganda", "version": "V2", "scale": DIAL, "program": 46},
     1234: {"llo": "GHI-KE", "country": "Kenya", "version": "V2", "scale": DIGITAL, "program": 68, "unverified": True},
     1236: {"llo": "EHA", "country": "Nigeria", "version": "V2+", "scale": DIAL, "program": 114},
-    1487: {"llo": "PIPN", "country": "Uganda", "version": "V3", "scale": DIGITAL, "program": 46},
+    1487: {
+        "llo": "PIPN",
+        "country": "Uganda",
+        "version": "V3",
+        "scale": DIGITAL,
+        "program": 46,
+        # Two live opportunities are both "PIPN V3" and the bare version cannot tell them
+        # apart in a picker. See 2166.
+        "display_name": "PIPN (V3 Apr-26)",
+    },
     1488: {"llo": "NAMA", "country": "Uganda", "version": "V3", "scale": DIAL, "program": 46},
     1739: {"llo": "Kikapu", "country": "Kenya", "version": "V3", "scale": DIGITAL, "program": 68, "unverified": True},
     1790: {"llo": "BERI", "country": "Nigeria", "version": "V3", "scale": DIAL, "program": 114},
+    2166: {
+        "llo": "PIPN",
+        "country": "Uganda",
+        "version": "V3 GW",
+        "scale": DIGITAL,
+        "program": 46,
+        "display_name": "PIPN (V3 GW Aug-26)",
+        "confirmed_on": "2026-08-25",
+        "confirmed_note": (
+            "GiveWell scale-up; SD confirmed digital. Deliver app verified byte-equivalent "
+            "to 1487 on the audited weight path and form name."
+        ),
+    },
 }
 
 # The follow-up weight photo and the typed reading it is checked against. Verified against
@@ -79,6 +101,71 @@ OPP_META = {
 # ~29% of all KMC weight images and is a deliberate, flagged omission, not an oversight.
 WEIGHT_IMAGE_PATH = "anthropometric/upload_weight_image"
 WEIGHT_FIELD_PATH = "child_weight_visit"
+
+# The label a reviewer sees on the typed reading shown beside a weight photo, and the
+# field the scale classifier compares that photo against.
+READING_LABEL = "Scale Weight Reading"
+
+# ── The photo types this workflow can audit ───────────────────────────────────
+# Declared ONCE. This list is what the dashboard's picker offers, what the schedule
+# dialog offers, what run_default turns into audit rules, and what decides whether a
+# type counts toward the machine-checked pass rate. Adding a type here adds it to all
+# four; there is no second list anywhere to keep in step with this one.
+#
+# "scoreable" means an AI classifier exists for that photo. Only the weight photo has
+# one. Equipment and KMC-wrap photos are review-only and always have been -- the older
+# bulk-image workflow never scored them either, because its agents only ever applied to
+# weight and MUAC paths. Marking them here is what keeps them OUT of the pass-rate
+# denominator (they would otherwise read as a quality drop) and out of the classifier's
+# work queue entirely, so they cost no gateway budget.
+#
+# Paths verified on 2026-08-25 against the deliver app definitions of 1487 (PIPN V3),
+# 1790 (BERI V3) and 1236 (EHA). 1487 and 1790 carry all three. EHA carries ONLY the
+# weight photo: searching its whole app for "wrap" or "equipment" returns nothing, so
+# those questions are absent from the app rather than merely unused. The dashboard asks
+# each opportunity what it actually has (the live image-questions endpoint) instead of
+# trusting this note, so an opportunity that lacks a type is shown as lacking it.
+#
+# Only the FOLLOW-UP visit photos are listed. The registration form carries its own
+# weight photo at child_details/upload_weight_image and its own wrap photo, and neither
+# is audited here -- the same deliberate, flagged omission the weight audit already
+# made, kept unchanged so adding photo types does not quietly widen the audit's scope.
+IMAGE_TYPES = [
+    {
+        "key": "weight",
+        "label": "Weight photo",
+        "path": WEIGHT_IMAGE_PATH,
+        "field_path": WEIGHT_FIELD_PATH,
+        "field_label": READING_LABEL,
+        "scoreable": True,
+        "help": "Checked by the scale classifier against the typed reading.",
+    },
+    {
+        "key": "equipment",
+        "label": "Equipment photo",
+        "path": "danger_signs_checklist/equipment_image_capture_checklist/equipments_image_capture",
+        "field_path": "",
+        "field_label": "",
+        "scoreable": False,
+        "help": "Taken before danger-sign screening. No classifier exists - human review only.",
+    },
+    {
+        "key": "wrap",
+        "label": "KMC wrap photo",
+        "path": "commodities_delivered/kmc_wrap_provided_image",
+        "field_path": "",
+        "field_label": "",
+        "scoreable": False,
+        "help": "The wrap handed over at the visit. No classifier exists - human review only.",
+    },
+]
+
+# {path: label}, the shape a multi_str schedule option's choices_from_config expects.
+IMAGE_TYPE_NAMES = {t["path"]: t["label"] for t in IMAGE_TYPES}
+
+# What an audit covers when nothing says otherwise: the weight photo alone, which is
+# exactly what this workflow audited before it could audit anything else.
+DEFAULT_IMAGE_PATHS = [WEIGHT_IMAGE_PATH]
 
 # The ONLY form that carries WEIGHT_IMAGE_PATH, and therefore the only form worth selecting
 # from when capping photos per worker.
@@ -111,7 +198,9 @@ AGENT_FOR_SCALE = {DIGITAL: "scale_validation", DIAL: "scale_dial_read"}
 # Display labels for the opportunities, keyed by id as a STRING because this lands in
 # JSON config. Matches the shape the schedule dialog reads via choices_from_config, and
 # the labels the live workflow already used ("NAMA (V0/V1)").
-OPP_NAMES = {str(opp_id): f"{meta['llo']} ({meta['version']})" for opp_id, meta in OPP_META.items()}
+OPP_NAMES = {
+    str(opp_id): meta.get("display_name") or f"{meta['llo']} ({meta['version']})" for opp_id, meta in OPP_META.items()
+}
 
 DEFINITION = {
     "name": "KMC Image Audit",
@@ -143,6 +232,13 @@ DEFINITION = {
         # Overridable so a form rename upstream can be absorbed with a definition patch
         # instead of a release. See PHOTO_FORM_NAMES for why the cap needs it.
         "photo_form_names": PHOTO_FORM_NAMES,
+        # The photo types this workflow can audit, and their {path: label} map for the
+        # schedule dialog's choices. Both derived from IMAGE_TYPES so a type added there
+        # reaches the dashboard picker and the schedule dialog together. On config rather
+        # than baked into the code so a path renamed upstream can be absorbed with a
+        # definition patch instead of a release.
+        "image_types": IMAGE_TYPES,
+        "image_type_names": IMAGE_TYPE_NAMES,
         "agent_for_scale": AGENT_FOR_SCALE,
     },
     "pipeline_sources": [],
@@ -160,6 +256,60 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
     // child_details/upload_weight_image, which is a different path and is not audited.
     // Used to make the per-worker cap count photos rather than visits (see previewFlwVisits).
     const PHOTO_FORM_NAMES = cfg.photo_form_names || ['Record Visit Details'];
+    // -- Photo types ----------------------------------------------------------
+    // Declared ONCE on config (from IMAGE_TYPES in the template) and read here, by the
+    // schedule dialog and by the headless runner, so all three offer the same set and a
+    // type added in one place appears in all three.
+    //
+    // "scoreable" means a classifier exists for that photo, and only the weight photo has
+    // one. Equipment and KMC-wrap photos are collected for a person to look at, which is
+    // why they are held apart from the machine pass rate below rather than counted as
+    // photos the AI failed to reach.
+    const IMAGE_TYPES = (cfg.image_types && cfg.image_types.length) ? cfg.image_types : [{
+        key: 'weight', label: 'Weight photo', path: WEIGHT_IMAGE_PATH,
+        field_path: WEIGHT_FIELD_PATH, field_label: 'Scale Weight Reading', scoreable: true,
+    }];
+    const typeByPath = {};
+    IMAGE_TYPES.forEach(t => { if (t && t.path) typeByPath[t.path] = t; });
+    const SCOREABLE_PATHS = IMAGE_TYPES.filter(t => t && t.scoreable && t.path).map(t => t.path);
+    const isScoreablePath = (p) => SCOREABLE_PATHS.indexOf(p) >= 0;
+    // Falls back to the last path segment - exactly how the audit app labels a question it
+    // was not told about - so an undeclared photo type still reads as something.
+    const typeLabel = (p) => (typeByPath[p] && typeByPath[p].label)
+        || String(p || '').split('/').pop() || 'Unknown';
+    // A session's photos split by whether a classifier could ever have scored them.
+    //
+    // by_image_type comes from the sessions endpoint (AuditSessionRecord.to_summary_dict).
+    // It is keyed by the IMAGE path - the same vocabulary as the picker, the audit rules
+    // and the per-photo rows - which the assessment-keyed breakdown is NOT: an assessment
+    // is filed under the comparison FIELD it was checked against, so a weight photo lands
+    // under child_weight_visit there. Do not swap one for the other.
+    //
+    // When it is absent (a session created before it existed, or a server that predates
+    // it) everything falls back to the whole image count, which is exactly the behaviour
+    // this dashboard had when it only ever audited weight photos.
+    const splitPhotos = (s) => {
+        const byType = s && s.by_image_type;
+        const imgs = (s && s.image_count) || 0;
+        if (!byType || typeof byType !== 'object') {
+            return { scoreable: imgs, humanOnly: 0, counts: null };
+        }
+        let scoreable = 0, humanOnly = 0;
+        const counts = {};
+        Object.keys(byType).forEach(path => {
+            const n = (byType[path] && byType[path].total) || 0;
+            counts[path] = n;
+            if (isScoreablePath(path)) scoreable += n; else humanOnly += n;
+        });
+        return { scoreable: scoreable, humanOnly: humanOnly, counts: counts };
+    };
+    // "W 8 - E 3 - K 2" rather than a column per type: the point is to see at a glance
+    // what a worker's photos are, and three sparse columns cost more width than they buy.
+    const typeInitial = (path) => {
+        const t = typeByPath[path];
+        const word = (t && t.label) || String(path || '').split('/').pop() || '?';
+        return word.replace(/^KMC /, '').charAt(0).toUpperCase();
+    };
     const AGENT_FOR_SCALE = cfg.agent_for_scale || { digital: 'scale_validation', dial: 'scale_dial_read' };
     // Sessions created by a scale-hardware probe carry this tag so they can be told apart from real
     // audit sessions and excluded from every figure the run reports.
@@ -183,15 +333,52 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
     const [endDate, setEndDate] = React.useState(runState.window_end || '');
     // Volume control. sample_percentage is the ONLY lever this backend honours for a
     // date_range audit: count_per_flw applies solely to last_n_per_flw, and there is no
-    // max_flws in AuditCriteria at all (passing one is silently ignored).
-    //
-    // It is a single random sample ACROSS THE OPPORTUNITY, not per worker: the backend
-    // does order_by('?') then one LIMIT, with no partition on username (contrast
-    // last_n_per_user right above it, which does partition) -- see
-    // backends/sql/cache.py filter_visits. So a low-volume worker can drop out of a run
-    // entirely, and which workers appear moves between runs on identical data. The
-    // per-worker cap below is what evens out contribution; sampling does not.
+    // max_flws in AuditCriteria at all (passing one is silently ignored). Sampling is per
+    // FLW, so every worker keeps representation rather than the busiest ones crowding out
+    // the rest -- see filter_visits_for_audit.
     const [samplePct, setSamplePct] = React.useState(runState.sample_percentage != null ? runState.sample_percentage : 100);
+    // Which photo types to audit. Defaults to the weight photo alone, which is what this
+    // workflow audited before it could audit anything else, so an existing run reopens
+    // unchanged.
+    const [imageTypes, setImageTypes] = React.useState(
+        (runState.image_paths && runState.image_paths.length) ? runState.image_paths : [WEIGHT_IMAGE_PATH]);
+    // What photo types an opportunity ACTUALLY has, asked of the opportunity itself
+    // rather than assumed from a list written down here. The image-questions endpoint
+    // samples recent visits and reports the image questions it finds, so this is the app's
+    // own answer and it stays right when an app changes.
+    //
+    // Fetched on demand and cached per opportunity, never automatically: that endpoint
+    // streams visit data to sample it, so firing it for every opportunity on every
+    // selection change would be an expensive request storm for a line of reassurance.
+    const [typeAvail, setTypeAvail] = React.useState({});
+    const loadTypeAvail = (oppId) => {
+        if (typeAvail[oppId]) return;
+        setTypeAvail(prev => Object.assign({}, prev, { [oppId]: { loading: true } }));
+        fetch('/audit/api/opportunity/' + oppId + '/image-questions/')
+            .then(r => r.json())
+            .then(d => {
+                // {id, label, path} per question; id and path are both the image path.
+                const paths = Array.isArray(d) ? d.map(q => q && (q.path || q.id)).filter(Boolean) : [];
+                setTypeAvail(prev => Object.assign({}, prev, { [oppId]: { loading: false, paths: paths } }));
+            })
+            .catch(e => setTypeAvail(prev => Object.assign({}, prev,
+                { [oppId]: { loading: false, error: String((e && e.message) || e) } })));
+    };
+    const checkTypeAvail = () => (selected || []).forEach(loadTypeAvail);
+    const availAnswered = (selected || []).filter(id => typeAvail[id] && typeAvail[id].paths);
+    const availLoading = (selected || []).some(id => typeAvail[id] && typeAvail[id].loading);
+    // Selected opportunities whose app has no such question. Only ever computed from
+    // opportunities that actually answered, so "none missing" cannot be an artefact of
+    // nobody having asked.
+    const missingFor = (path) => availAnswered.filter(id => typeAvail[id].paths.indexOf(path) < 0);
+    const toggleImageType = (path) => setImageTypes(prev => {
+        const next = prev.indexOf(path) >= 0 ? prev.filter(p => p !== path) : prev.concat([path]);
+        // Never leave nothing selected: an audit with no photo type selects no visits at
+        // all and reports an empty window, which reads exactly like a quiet day.
+        if (!next.length) return [WEIGHT_IMAGE_PATH];
+        // Keep declaration order so the rules, the columns and the chips all agree.
+        return IMAGE_TYPES.filter(t => t && t.path && next.indexOf(t.path) >= 0).map(t => t.path);
+    });
     // Hard cap on photos per field worker. sample_percentage is proportional, so a worker with 200
     // visits still contributes ~8x one with 25 — the busiest crowd out the rest and the volume of a
     // run is unpredictable. A flat cap fixes both: 100 workers x 20 = 2,000 photos, whatever the
@@ -353,16 +540,17 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
     const selectScale = (kind) => setSelected(allOppIds.filter(id => scaleOf(id) === kind));
 
     const buildCriteria = (oppId) => {
-        // filter_by_image narrows VISIT selection to visits carrying the weight photo, so we
-        // do not pull visits with no photo at all. It does not narrow the images themselves:
-        // every image on a matched visit is extracted, which is why the summary reports how
-        // many arrived without a reading rather than pretending the run is weight-only.
-        const relatedFields = [{
-            image_path: WEIGHT_IMAGE_PATH,
-            field_path: WEIGHT_FIELD_PATH,
-            label: 'Scale Weight Reading',
+        // One filter_by_image rule per chosen photo type. Several such rules are OR-ed by
+        // the selection layer: a visit is kept if it carries ANY of the chosen types, and
+        // only images of those types are kept - which is what lets one audit cover weight
+        // plus equipment plus wrap without also dragging in the immunization card and
+        // house photos those same visits carry.
+        const relatedFields = imageTypes.map(p => ({
+            image_path: p,
+            field_path: (typeByPath[p] && typeByPath[p].field_path) || '',
+            label: (typeByPath[p] && typeByPath[p].field_label) || '',
             filter_by_image: true,
-        }];
+        }));
         return {
             audit_type: 'date_range',
             granularity: 'per_flw',
@@ -429,6 +617,10 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
             date_preset: datePreset, sample_percentage: Number(samplePct),
             max_per_flw: maxPerFlw === '' ? null : Number(maxPerFlw),
             agent_override: agentOverride,
+            // Without this a run that audited three photo types is indistinguishable in
+            // the history from a weight-only one, and its lower machine-reviewed share
+            // looks like a classifier failure rather than the extra photos it was.
+            image_paths: imageTypes,
         });
 
         let done = 0, failed = 0;
@@ -472,13 +664,36 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
                         continue;
                     }
                 }
-                const res = await actions.createAudit({
+                // One photo type, and it is the scoreable one: the single-agent call this
+                // workflow has always made, left exactly as it was. It is also the only
+                // shape that names the classifier on the run summary - the per-image-type
+                // path reports "per-image-type" instead.
+                //
+                // Anything else MUST go down the per-image-type path, because a single
+                // ai_agent_id is applied to every image in the session: the scale
+                // classifier would be handed equipment and wrap photos and would report
+                // each one as a mismatch - false flags at full gateway cost. Giving only
+                // the scoreable type a reviewer makes the review task skip the others,
+                // which is what leaves them for a person.
+                const weightOnly = imageTypes.length === 1 && isScoreablePath(imageTypes[0]);
+                const reviewArgs = weightOnly
+                    ? { ai_agent_id: effectiveAgent(oid) }
+                    : { image_audits: imageTypes.map(p => ({
+                        image_path: p,
+                        reviewers: isScoreablePath(p) ? [{
+                            agent_id: effectiveAgent(oid),
+                            config: (typeByPath[p] && typeByPath[p].field_path) ? {
+                                comparison_field: typeByPath[p].field_path,
+                                label: (typeByPath[p] && typeByPath[p].field_label) || '',
+                            } : {},
+                        }] : [],
+                    })) };
+                const res = await actions.createAudit(Object.assign({
                     opportunities: [{ id: oid, name: oppLabel(oid) }],
                     criteria: criteria,
                     flw_visit_ids: flwVisitIds || undefined,
                     workflow_run_id: instance.id,
-                    ai_agent_id: effectiveAgent(oid),
-                });
+                }, reviewArgs));
                 if (!(res && res.success && res.task_id)) { failed += 1; await onOne(); continue; }
                 setProgress({ status: 'running', message: 'Auditing ' + oppLabel(oid) + ' (' + (k + 1) + ' of ' + total + ')…', processed: done, total: total });
 
@@ -552,30 +767,34 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
     // session data here.
     //
     // Substitutions, both verified against live run 13250:
-    //   image_count                           the number of IMAGES extracted for this session
-    //   image_count - assessment_stats.total  == images the AI never reached
-    //
-    // Use image_count, NEVER visit_count. visit_images is keyed by VISIT and each value is a LIST of
-    // images (audit/data_access.py: image_count = sum(len(imgs) for imgs in visit_images.values())),
-    // so a visit can carry several weight photos or none at all. Counting visits as photos inflated
-    // the denominator and invented a "never reviewed" gap on runs that were in fact complete: run
-    // 14978 reported 163 of 394 unreviewed when it was 231 images and 231 assessments — 100% done.
+    //   visit_count == image count            858 == 858 (this audit takes one weight photo per visit)
+    //   visit_count - assessment_stats.total  == the images the AI never reached (13, exact)
     const rollup = React.useMemo(() => {
         const byOpp = {}; const byLlo = {};
-        const T = { flws: 0, images: 0, assessed: 0, match: 0, noMatch: 0, error: 0, aiPending: 0,
+        const T = { flws: 0, images: 0, scoreableImages: 0, humanOnlyImages: 0, assessed: 0,
+            match: 0, noMatch: 0, error: 0, aiPending: 0,
             humanPass: 0, humanFail: 0, humanPending: 0, notReviewed: 0, unstarted: 0 };
         sessions.forEach(s => {
             const oid = s.opportunity_id || s._requested_opp;
             const m = meta(oid);
             const o = byOpp[oid] || (byOpp[oid] = { opp: oid, llo: m.llo || '?', scale: m.scale || '?',
-                sessions: 0, images: 0, assessed: 0, match: 0, noMatch: 0, error: 0, aiPending: 0,
+                sessions: 0, images: 0, scoreableImages: 0, humanOnlyImages: 0, assessed: 0,
+                match: 0, noMatch: 0, error: 0, aiPending: 0,
                 humanPass: 0, humanFail: 0, humanPending: 0, notReviewed: 0, unstarted: 0 });
             const st = s.assessment_stats || {};
             const imgs = s.image_count || 0;
             const assessed = st.total || 0;
-            const gap = Math.max(0, imgs - assessed);
+            // The gap is measured against the photos a classifier could score, NOT every
+            // photo. Measured against every photo, an audit that also collected equipment
+            // and wrap photos reports each of them as one the AI "never reached" - a red
+            // count that reads as a classifier failure when it is work waiting for a
+            // person, and the reason this split exists at all.
+            const split = splitPhotos(s);
+            const gap = Math.max(0, split.scoreable - assessed);
             o.sessions += 1; T.flws += 1;
             o.images += imgs; T.images += imgs;
+            o.scoreableImages += split.scoreable; T.scoreableImages += split.scoreable;
+            o.humanOnlyImages += split.humanOnly; T.humanOnlyImages += split.humanOnly;
             o.assessed += assessed; T.assessed += assessed;
             o.match += st.ai_match || 0; T.match += st.ai_match || 0;
             o.noMatch += st.ai_no_match || 0; T.noMatch += st.ai_no_match || 0;
@@ -585,13 +804,18 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
             o.humanFail += st.fail || 0; T.humanFail += st.fail || 0;
             o.humanPending += st.pending || 0; T.humanPending += st.pending || 0;
             o.notReviewed += gap; T.notReviewed += gap;
-            if (imgs > 0 && assessed === 0) { o.unstarted += 1; T.unstarted += 1; }
+            // "Nothing was scored here" is about the photos that COULD be scored: a
+            // session of wrap photos alone has no classifier work to start, so counting it
+            // as an unstarted audit would be a false alarm on every such run.
+            if (split.scoreable > 0 && assessed === 0) { o.unstarted += 1; T.unstarted += 1; }
         });
         Object.keys(byOpp).forEach(k => {
             const o = byOpp[k];
             const l = byLlo[o.llo] || (byLlo[o.llo] = { llo: o.llo, scale: o.scale, opps: 0, sessions: 0,
-                images: 0, assessed: 0, match: 0, noMatch: 0, error: 0, notReviewed: 0, unstarted: 0 });
+                images: 0, scoreableImages: 0, humanOnlyImages: 0, assessed: 0, match: 0, noMatch: 0,
+                error: 0, notReviewed: 0, unstarted: 0 });
             l.opps += 1; l.sessions += o.sessions; l.images += o.images; l.assessed += o.assessed;
+            l.scoreableImages += o.scoreableImages; l.humanOnlyImages += o.humanOnlyImages;
             l.match += o.match; l.noMatch += o.noMatch; l.error += o.error;
             l.notReviewed += o.notReviewed; l.unstarted += o.unstarted;
         });
@@ -627,6 +851,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
             const oid = s.opportunity_id || s._requested_opp;
             const photos = s.image_count || 0;
             const assessed = st.total || 0;
+            const split = splitPhotos(s);
             const pass = st.pass || 0;
             const fail = st.fail || 0;
             const pending = st.pending || 0;
@@ -636,9 +861,12 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
                 flw: s.flw_display_name || s.flw_username || ('Session ' + s.id),
                 username: s.flw_username || '',
                 photos: photos, assessed: assessed,
+                scoreablePhotos: split.scoreable, humanOnlyPhotos: split.humanOnly,
+                typeCounts: split.counts,
                 match: st.ai_match || 0, noMatch: st.ai_no_match || 0, error: st.ai_error || 0,
                 pass: pass, fail: fail, pending: pending, humanDone: humanDone,
-                neverReviewed: Math.max(0, photos - assessed),
+                // Against the scoreable photos only - see the rollup for why.
+                neverReviewed: Math.max(0, split.scoreable - assessed),
                 pctPassed: humanDone > 0 ? Math.round(100 * pass / humanDone) : null,
                 reviewStatus: humanDone === 0 ? 'Pending' : (pending > 0 ? 'In review' : 'Reviewed'),
                 sessionStatus: s.status || 'open',
@@ -654,8 +882,18 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
     // Per-photo filter for the expanded detail. The platform's review page filters on the HUMAN
     // result only, so with every photo still pending there is no way to isolate what the AI
     // actually said — which is the question people are trying to answer. Filter on both.
-    const [photoAi, setPhotoAi] = React.useState('flagged');
+    // Default to ALL photos, not just the flagged ones. Defaulting to 'flagged' meant a
+    // worker whose photos all matched expanded to an empty list - indistinguishable from
+    // 'nothing was reviewed'. The verdict on a passed photo is evidence too, and it is the
+    // answer to 'did the AI actually look at this?'. The chips below still narrow to
+    // Needs-a-look in one click.
+    const [photoAi, setPhotoAi] = React.useState('');
     const [photoHuman, setPhotoHuman] = React.useState('');
+    // Which photo TYPE to show. Empty means all of them. This is the filter a reviewer
+    // wants when an audit covered more than one type: "just show me the wrap photos".
+    // It reads x.question_id, which the bulk-data rows already carry - it is the image's
+    // own path, the same key the picker and the audit rules use.
+    const [photoType, setPhotoType] = React.useState('');
     const [lloFilter, setLloFilter] = React.useState('');
     const [flwSearch, setFlwSearch] = React.useState('');
     const lloOptions = React.useMemo(() => {
@@ -843,7 +1081,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
             r.pass, r.fail, r.pending, (r.pctPassed == null ? '' : r.pctPassed), r.reviewStatus,
         ].map(esc).join(',')));
         // Leading BOM so Excel opens the file as UTF-8 rather than mangling non-ASCII worker names.
-        const blob = new Blob(['\\ufeff' + lines.join('\\r\\n')], { type: 'text/csv;charset=utf-8;' });
+        const blob = new Blob(['﻿' + lines.join('\\r\\n')], { type: 'text/csv;charset=utf-8;' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = 'kmc-image-audit-run' + instance.id + '.csv';
@@ -1063,13 +1301,17 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
                 <div>
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                         <Card label="FLW audits" value={num(rollup.flws)} sub={rollup.byOpp.length + ' opportunit' + (rollup.byOpp.length === 1 ? 'y' : 'ies')} tone="border-blue-400" />
-                        <Card label="Weight photos" value={num(rollup.images)} sub="one per audited visit" tone="border-gray-300" />
+                        <Card label="Photos" value={num(rollup.images)}
+                            sub={rollup.humanOnlyImages
+                                ? (num(rollup.scoreableImages) + ' weight \\u00b7 ' + num(rollup.humanOnlyImages) + ' for human review')
+                                : 'one per audited visit'}
+                            tone="border-gray-300" />
                         <Card label="AI scored" value={num(rollup.reviewed)}
                             sub={rollup.aiPending
                                 ? (rollup.aiPending + ' awaiting a verdict')
                                 : rollup.notReviewed
                                     ? (rollup.notReviewed + ' never reviewed')
-                                    : (pct(rollup.reviewed, rollup.images) + ' of photos')}
+                                    : (pct(rollup.reviewed, rollup.scoreableImages) + ' of weight photos')}
                             tone={rollup.notReviewed ? 'border-red-500' : 'border-indigo-400'} />
                         <Card label="Match" value={num(rollup.match)} sub={pct(rollup.match, rollup.scored) + ' of scored'} tone="border-green-500" />
                         <Card label="No match" value={num(rollup.noMatch)} sub={rollup.noMatchPct + '% of scored'} tone="border-amber-500" />
@@ -1078,6 +1320,11 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
                     <p className="text-xs text-gray-500 mt-2">
                         "Scored" = match + no-match, i.e. images the AI actually judged. Errors are not verdicts —
                         an errored image is unreviewed and still needs a human.
+                        {rollup.humanOnlyImages ? (
+                            <span> Match, no-match and errored are counted over <strong>weight photos only</strong>
+                                {' '}(excludes the {num(rollup.humanOnlyImages)} equipment and KMC-wrap photos, which
+                                {' '}no classifier can read and which are waiting on a person).</span>
+                        ) : null}
                     </p>
                 </div>
             ) : null}
@@ -1367,18 +1614,75 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
                         </div>
                         <div>
                             <label className="block text-xs text-gray-500 mb-1"
-                                title="A hard ceiling on photos per field worker. Sample % is proportional, so a worker with 200 visits contributes far more than one with 25. A cap makes every worker count the same and makes the size of a run predictable.">
-                                Max photos per worker
+                                title="A hard ceiling on VISITS per field worker. Sample % is proportional, so a worker with 200 visits contributes far more than one with 25. A cap makes every worker count the same and makes the size of a run predictable. Each capped visit yields one photo of each selected type.">
+                                Max visits per worker
                             </label>
                             <div className="flex items-center gap-2">
                                 <input type="number" min="1" value={maxPerFlw} placeholder="no cap"
                                     onChange={(e) => setMaxPerFlw(e.target.value === '' ? '' : Math.max(1, Number(e.target.value)))}
                                     className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm w-24" />
                                 {maxPerFlw !== '' ? (
-                                    <span className="text-xs text-gray-400">≈ {selected.length * 25 * Number(maxPerFlw)} photos max</span>
+                                    <span className="text-xs text-gray-400">
+                                        ≈ {selected.length * 25 * Number(maxPerFlw) * Math.max(1, imageTypes.length)} photos max
+                                    </span>
                                 ) : <span className="text-xs text-gray-400">unbounded</span>}
                             </div>
                         </div>
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-gray-100">
+                        <label className="block text-xs text-gray-500 mb-1.5"
+                            title="Which photos from each audited visit to collect. Only the weight photo has a classifier; the rest are collected for a person to review.">
+                            Photos to audit
+                        </label>
+                        <div className="flex items-center gap-4 flex-wrap">
+                            {IMAGE_TYPES.map(t => {
+                                const missing = missingFor(t.path);
+                                return (
+                                    <label key={t.path} className="flex items-center gap-1.5 text-sm cursor-pointer"
+                                        title={t.help || ''}>
+                                        <input type="checkbox" checked={imageTypes.indexOf(t.path) >= 0}
+                                            onChange={() => toggleImageType(t.path)} />
+                                        <span className={imageTypes.indexOf(t.path) >= 0 ? 'text-gray-900' : 'text-gray-500'}>
+                                            {t.label}
+                                        </span>
+                                        {t.scoreable
+                                            ? <span className="text-[11px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">AI</span>
+                                            : <span className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200"
+                                                title="No classifier exists for this photo — it is collected for a person to review and is left out of the machine pass rate.">human</span>}
+                                        {missing.length ? (
+                                            <span className="text-[11px] text-amber-700"
+                                                title={'Not found in recent visits for: ' + missing.map(oppLabel).join(', ')}>
+                                                · not in {missing.length} selected
+                                            </span>
+                                        ) : null}
+                                    </label>
+                                );
+                            })}
+                        </div>
+                        {/* The answer comes from the opportunity, not from a list written down
+                            here, so a photo type an app never had cannot be silently audited to
+                            nothing. Behind a button because the endpoint samples live visits. */}
+                        <div className="mt-2 flex items-center gap-2 flex-wrap">
+                            <button type="button" onClick={checkTypeAvail}
+                                disabled={!selected.length || availLoading}
+                                className="text-xs px-2 py-1 rounded border border-gray-300 hover:border-blue-400 hover:text-blue-700 disabled:opacity-50">
+                                {availLoading ? 'Checking…' : 'Check which selected opportunities have these'}
+                            </button>
+                            {availAnswered.length ? (
+                                <span className="text-xs text-gray-500">
+                                    checked {availAnswered.length} of {selected.length} selected
+                                </span>
+                            ) : null}
+                        </div>
+                        {imageTypes.some(pth => !isScoreablePath(pth)) ? (
+                            <p className="text-xs text-gray-600 mt-2 bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                                <i className="fa-solid fa-circle-info mr-1 text-gray-400"></i>
+                                No classifier exists for equipment or KMC-wrap photos, so they arrive as
+                                <span className="font-medium"> AI: not reviewed</span> and wait for a person. They are
+                                left out of the match / no-match figures, so adding them does not read as a drop in
+                                quality. The classifier is only ever handed the weight photo.
+                            </p>
+                        ) : null}
                     </div>
                     {maxPerFlw !== '' ? (
                         <p className="text-xs text-gray-600 mt-2 bg-gray-50 border border-gray-200 rounded px-3 py-2">
@@ -1387,6 +1691,11 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
                             <span className="font-medium">{maxPerFlw}</span> per worker and audits exactly those. Every
                             worker counts equally regardless of how busy they were, and the run size is predictable.
                             If that selection step fails for an opportunity it is skipped rather than run uncapped.
+                            {imageTypes.length > 1 ? (
+                                <span> The cap counts <strong>visits</strong>, not photos: with {imageTypes.length}{' '}
+                                    photo types selected each capped visit can carry one of each, so a worker can
+                                    contribute up to {Number(maxPerFlw) * imageTypes.length} photos.</span>
+                            ) : null}
                         </p>
                     ) : null}
                     <p className="text-xs text-gray-500 mt-3">
@@ -1396,64 +1705,36 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
                     </p>
                 </div>
 
-                {/* When to run */}
+                {/* Where scheduling lives.
+                    This page used to offer "Later, once" and "Every day" as well. Both were a
+                    setTimeout on this page: they only fired while the tab stayed open, which is
+                    not what anyone means by scheduling. Real scheduling is now a server-side
+                    record — it mints its own token and runs unattended — so the in-page timer was
+                    removed rather than left to quietly not work. Pointing at the real thing here,
+                    because a section that simply vanishes reads as a missing feature. */}
                 <div className="border-t border-gray-200 pt-4">
                     <div className="text-sm font-semibold text-gray-800 mb-2">When to run</div>
-                    <div className="flex items-center gap-4 flex-wrap text-sm">
-                        {[['now', 'Now'], ['at', 'Later, once'], ['daily', 'Every day']].map(o => (
-                            <label key={o[0]} className="inline-flex items-center gap-1.5 cursor-pointer">
-                                <input type="radio" name="kmc-schedule-mode" checked={scheduleMode === o[0]}
-                                    onChange={() => setScheduleMode(o[0])} />
-                                <span className={scheduleMode === o[0] ? 'font-medium text-gray-900' : 'text-gray-600'}>{o[1]}</span>
-                            </label>
-                        ))}
-                        {scheduleMode !== 'now' ? (
-                            <span className="inline-flex items-center gap-2">
-                                <span className="text-gray-500">at</span>
-                                <input type="time" value={scheduleTime}
-                                    onChange={e => setScheduleTime(e.target.value)}
-                                    className="px-2 py-1 border border-gray-300 rounded" />
-                                <span className="text-xs text-gray-400">
-                                    your local time
-                                    {nextOccurrence(scheduleTime)
-                                        ? ' · first run ' + new Date(nextOccurrence(scheduleTime)).toLocaleString()
-                                        : ' · enter a valid HH:MM'}
-                                </span>
-                            </span>
-                        ) : null}
-                    </div>
-                    {scheduleMode !== 'now' ? (
-                        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 mt-2">
-                            <i className="fa-solid fa-triangle-exclamation mr-1"></i>
-                            <span className="font-medium">This tab must stay open for a scheduled run to start.</span>{' '}
-                            Labs has no server-side scheduler a workflow can call — creating an audit needs the
-                            login token that only exists in your browser session — so the timer lives on this page.
-                            Once a run has started, the AI pass itself runs on the server and finishes even if you
-                            close the page. Overnight is the point: the classifiers are least contended then.
-                        </p>
-                    ) : null}
+                    <p className="text-sm text-gray-600">
+                        This runs <span className="font-medium text-gray-900">now</span>.
+                    </p>
+                    <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded p-2 mt-2">
+                        <i className="fa-regular fa-clock mr-1"></i>
+                        To run this on a schedule instead, use <span className="font-medium">Schedule</span> on the
+                        Workflows list page. That one runs on the server — daily, weekly or monthly, at a time you
+                        pick — and does not need this tab, or your laptop, to be open.
+                    </p>
                 </div>
 
                 {/* Submit */}
                 <div className="border-t border-gray-200 pt-4">
-                    <button onClick={() => {
-                        if (scheduleMode === 'now') { handleCreate(); return; }
-                        const at = nextOccurrence(scheduleTime);
-                        if (!at) { setRunError('Enter the time as HH:MM before scheduling.'); return; }
-                        setRunError(null);
-                        onUpdateState({ schedule_mode: scheduleMode, schedule_time: scheduleTime });
-                        setNowTs(Date.now());
-                        setArmedFor(at);
-                    }}
+                    <button onClick={() => { handleCreate(); }}
                         disabled={!selected.length || !startDate || !endDate || isRunning}
                         title={!selected.length ? 'Select at least one opportunity' : (!startDate || !endDate ? 'Set a window' : '')}
                         className={'inline-flex items-center px-6 py-3 rounded-lg font-medium text-white '
                             + (!selected.length || !startDate || !endDate || isRunning ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700')}>
-                        <i className={'mr-2 fa-solid ' + (isRunning ? 'fa-spinner fa-spin' : (scheduleMode === 'now' ? 'fa-play' : 'fa-clock'))}></i>
+                        <i className={'mr-2 fa-solid ' + (isRunning ? 'fa-spinner fa-spin' : 'fa-play')}></i>
                         {isRunning ? 'Creating…'
-                            : (scheduleMode === 'now'
-                                ? ('Create ' + selected.length + ' audit' + (selected.length === 1 ? '' : 's') + ' with AI')
-                                : ('Schedule ' + selected.length + ' audit' + (selected.length === 1 ? '' : 's')))}
+                            : ('Create ' + selected.length + ' audit' + (selected.length === 1 ? '' : 's') + ' with AI')}
                     </button>
                     <p className="text-xs text-gray-500 mt-2">
                         Opportunities are audited <span className="font-medium">one after another</span>, not in parallel —
@@ -1740,11 +2021,25 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
                                                 : ai === photoAi;
                                         const okHuman = !photoHuman
                                             || (photoHuman === 'pending' ? !x.result : x.result === photoHuman);
-                                        return okAi && okHuman;
+                                        const okType = !photoType || x.question_id === photoType;
+                                        return okAi && okHuman && okType;
                                     });
                                     const tally = allRows.reduce((acc, x) => {
                                         acc[aiOf(x)] = (acc[aiOf(x)] || 0) + 1; return acc;
                                     }, {});
+                                    // Types actually present in THIS worker's photos, in
+                                    // declaration order, with the undeclared ones after.
+                                    // Built from the rows rather than from the run's
+                                    // settings, so it shows what arrived, not what was asked
+                                    // for - the two differ whenever an opportunity's app has
+                                    // no such question.
+                                    const typeTally = allRows.reduce((acc, x) => {
+                                        const q = x.question_id || '';
+                                        acc[q] = (acc[q] || 0) + 1; return acc;
+                                    }, {});
+                                    const presentTypes = IMAGE_TYPES
+                                        .map(t => t && t.path).filter(pth => pth && typeTally[pth])
+                                        .concat(Object.keys(typeTally).filter(q => q && !typeByPath[q]));
                                     return [
                                         <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50">
                                             <td className="px-3 py-2 whitespace-nowrap">
@@ -1768,7 +2063,22 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
                                                 <span className="text-gray-400 font-mono ml-1">#{r.opp}</span>
                                                 <span className="ml-1"><ScalePill kind={scaleOf(r.opp)} unverified={meta(r.opp).unverified} /></span>
                                             </td>
-                                            <td className="px-3 py-2 text-right">{r.photos}</td>
+                                            {/* One cell, not a column per type: the question is
+                                                "what are this worker's photos", and three sparse
+                                                columns cost more width than they buy. */}
+                                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                                                {r.photos}
+                                                {r.typeCounts && Object.keys(r.typeCounts).length > 1 ? (
+                                                    <div className="text-[11px] text-gray-500 font-mono"
+                                                        title={Object.keys(r.typeCounts)
+                                                            .map(pth => typeLabel(pth) + ': ' + r.typeCounts[pth]).join(', ')}>
+                                                        {IMAGE_TYPES.map(t => t && t.path)
+                                                            .filter(pth => pth && r.typeCounts[pth])
+                                                            .map(pth => typeInitial(pth) + ' ' + r.typeCounts[pth])
+                                                            .join(' \\u00b7 ')}
+                                                    </div>
+                                                ) : null}
+                                            </td>
                                             <td className="px-3 py-2 text-center whitespace-nowrap">
                                                 <span className="text-green-700 font-semibold">{r.match}</span>
                                                 <span className="text-gray-300"> / </span>
@@ -1812,7 +2122,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
                                             <td className="px-3 py-2 text-right whitespace-nowrap">
                                                 <button onClick={() => loadDetail(r.id)}
                                                     className="text-xs underline text-gray-600 hover:text-gray-900 mr-3">
-                                                    {expanded === r.id ? 'Hide reasons' : 'Flagged photos & reasons'}
+                                                    {expanded === r.id ? 'Hide photos' : 'Photos & AI verdicts'}
                                                 </button>
                                                 <a className="text-xs font-medium text-blue-600 hover:underline"
                                                     href={'/audit/' + r.id + '/bulk/?opportunity_id=' + r.opp}
@@ -1843,6 +2153,31 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, actions, onUpdateSt
                                                                     {o[1]} ({o[2]})
                                                                 </button>
                                                             ))}
+                                                            {presentTypes.length > 1 ? (
+                                                                <React.Fragment>
+                                                                    <span className="ml-2 text-gray-500">Type:</span>
+                                                                    <button onClick={() => setPhotoType('')}
+                                                                        className={'px-2 py-0.5 rounded border '
+                                                                            + (photoType === ''
+                                                                                ? 'bg-blue-600 text-white border-blue-600'
+                                                                                : 'bg-white border-gray-300 text-gray-700 hover:border-blue-400')}>
+                                                                        All ({allRows.length})
+                                                                    </button>
+                                                                    {presentTypes.map(pth => (
+                                                                        <button key={pth} onClick={() => setPhotoType(pth)}
+                                                                            title={isScoreablePath(pth)
+                                                                                ? 'Checked by the scale classifier'
+                                                                                : 'No classifier for this photo - human review only'}
+                                                                            className={'px-2 py-0.5 rounded border '
+                                                                                + (photoType === pth
+                                                                                    ? 'bg-blue-600 text-white border-blue-600'
+                                                                                    : 'bg-white border-gray-300 text-gray-700 hover:border-blue-400')}>
+                                                                            {typeLabel(pth)} ({typeTally[pth]})
+                                                                            {isScoreablePath(pth) ? '' : ' \\u00b7 human'}
+                                                                        </button>
+                                                                    ))}
+                                                                </React.Fragment>
+                                                            ) : null}
                                                             <span className="ml-2 text-gray-500">Human:</span>
                                                             <select value={photoHuman} onChange={e => setPhotoHuman(e.target.value)}
                                                                 className="px-1 py-0.5 border border-gray-300 rounded">
@@ -1975,10 +2310,106 @@ TEMPLATE = {
 #     }
 SCHEDULE_DEFAULTS_KEY = "schedule_defaults"
 SESSION_TAG = "kmc_weight_photo"
-READING_LABEL = "Scale Weight Reading"
 
 
-def _scheduled_criteria(*, opp_id, opp_meta, window_start, window_end, sample_percentage, image_path, field_path):
+def _resolve_image_paths(configured, image_types):
+    """The photo types a run should audit, as paths, in the order they are declared.
+
+    Anything not declared in image_types is dropped rather than passed through: an audit
+    rule naming a path no opportunity has would select nothing and report an empty window,
+    which is indistinguishable from a genuinely quiet day. Falls back to the weight photo
+    alone, which is what this workflow audited before it could audit anything else, so an
+    existing schedule that has never heard of image_paths keeps its exact behaviour.
+    """
+    declared = [t.get("path") for t in image_types if isinstance(t, dict) and t.get("path")]
+    wanted = configured if isinstance(configured, list) else []
+    # dict.fromkeys: dedupe while keeping declaration order, so two rules for one path
+    # (which would double every image of that type) cannot be built.
+    chosen = [p for p in declared if p in set(wanted)]
+    dropped = [p for p in dict.fromkeys(wanted) if p not in declared]
+    if dropped:
+        logger.warning("kmc_image_audit ignoring unknown image paths %s", dropped)
+    if chosen:
+        return chosen
+    scoreable = [t["path"] for t in image_types if isinstance(t, dict) and t.get("scoreable") and t.get("path")]
+    return scoreable or list(DEFAULT_IMAGE_PATHS)
+
+
+def _effective_image_types(cfg):
+    """image_types with the older weight-path config keys folded in.
+
+    config has carried weight_image_path / weight_field_path since before this workflow
+    could audit anything but the weight photo, and the live workflows set them. Folding
+    them into the scoreable entry leaves ONE effective answer for where the weight photo
+    is, instead of two config keys that can be edited independently and disagree - at
+    which point the picker would offer one path and the audit would select the other.
+    """
+    types = [dict(t) for t in (cfg.get("image_types") or IMAGE_TYPES) if isinstance(t, dict)]
+    weight_path = cfg.get("weight_image_path")
+    weight_field = cfg.get("weight_field_path")
+    for spec in types:
+        if spec.get("scoreable"):
+            if weight_path:
+                spec["path"] = weight_path
+            if weight_field:
+                spec["field_path"] = weight_field
+            break
+    return types
+
+
+def _image_rules(*, image_paths, image_types):
+    """related_fields rules for the chosen photo types.
+
+    One rule per type, each with filter_by_image. Several such rules are OR-ed by
+    AuditDataAccess._filter_visits_by_related_fields - a visit is kept if it carries ANY
+    of the chosen types, and only images of those types are kept - which is what lets one
+    audit cover weight plus equipment plus wrap without also dragging in the immunization
+    card and house photos those same visits carry.
+    """
+    by_path = {t.get("path"): t for t in image_types if isinstance(t, dict) and t.get("path")}
+    return [
+        {
+            "image_path": path,
+            # Empty for a type with nothing to compare against; from_dict explicitly
+            # allows it ("image-only filter rules are valid") and _extract_field_value
+            # returns None for an empty path, so no stray related field is attached.
+            "field_path": (by_path.get(path) or {}).get("field_path") or "",
+            "label": (by_path.get(path) or {}).get("field_label") or "",
+            "filter_by_image": True,
+        }
+        for path in image_paths
+    ]
+
+
+def _image_audits(*, image_paths, image_types, agent_id):
+    """The per-photo-type reviewer payload run_audit_creation accepts.
+
+    Needed the moment a run covers more than the weight photo. With a single global
+    ai_agent_id "the same single agent applies to every question_id" (see
+    tasks._run_ai_review_on_sessions), so the scale classifier would be handed equipment
+    and wrap photos and would dutifully report every one of them as a scale mismatch -
+    false flags on photos it was never meant to see, at full gateway cost.
+
+    Giving only the scoreable type a reviewer makes the review task skip the others
+    outright ("no reviewer configured for this image type"). They are still collected and
+    still shown, simply as not yet reviewed, which is what a human reviewer is for.
+    """
+    by_path = {t.get("path"): t for t in image_types if isinstance(t, dict) and t.get("path")}
+    entries = []
+    for path in image_paths:
+        spec = by_path.get(path) or {}
+        reviewers = []
+        if spec.get("scoreable") and agent_id:
+            config = {}
+            if spec.get("field_path"):
+                config["comparison_field"] = spec["field_path"]
+                config["label"] = spec.get("field_label") or ""
+            reviewers.append({"agent_id": agent_id, "config": config})
+        entries.append({"image_path": path, "reviewers": reviewers})
+    return entries
+
+
+def _scheduled_criteria(*, opp_id, opp_meta, window_start, window_end, sample_percentage, image_rules):
     """The same AuditCriteria the render code builds, assembled server-side.
 
     filter_by_image narrows the IMAGES kept once a visit's form JSON has been parsed,
@@ -1996,14 +2427,7 @@ def _scheduled_criteria(*, opp_id, opp_meta, window_start, window_end, sample_pe
         "start_date": window_start,
         "end_date": window_end,
         "sample_percentage": sample_percentage,
-        "related_fields": [
-            {
-                "image_path": image_path,
-                "field_path": field_path,
-                "label": READING_LABEL,
-                "filter_by_image": True,
-            }
-        ],
+        "related_fields": list(image_rules),
         "title": f"KMC Image Audit - {label} - {window_start} to {window_end}",
         "tag": SESSION_TAG,
     }
@@ -2030,7 +2454,13 @@ class _FormRenamed(Exception):
 
 
 def _capped_flw_visit_ids(*, data_access, opp_id, criteria, cap, photo_form_names):
-    """Pick up to ``cap`` photo-bearing visits per field worker, most recent first.
+    """Pick up to ``cap`` photo-bearing VISITS per field worker, most recent first.
+
+    The cap is on visits, not photos. That was the same thing while this workflow audited
+    only the weight photo - one per visit - but a visit carries one photo of every selected
+    type, so a cap of 5 across three types yields up to 15 photos for a worker. Capping
+    photos instead is not available here: selection happens per visit, before the form JSON
+    has been parsed and before it is known which photos a visit actually holds.
 
     Returns ``(flw_visit_ids, visit_ids)`` - the per-worker mapping run_audit_creation
     groups sessions by, and the flat union that lets it skip its own visit-fetch stage.
@@ -2112,10 +2542,14 @@ def run_default(*, definition, access_token, request=None, window=None, cadence=
     A per-opportunity failure is recorded and the loop continues - one
     unreachable opportunity must not cost the others their audits.
 
-    schedule_defaults.max_per_flw caps photos per field worker. It is applied here
-    rather than through AuditCriteria because no criteria field expresses "at most N
-    per worker WITHIN a date window" - count_per_flw belongs to last_n_per_flw, which
-    ignores the window. See _capped_flw_visit_ids.
+    schedule_defaults.max_per_flw caps VISITS per field worker (one photo of each
+    selected type per visit - see _capped_flw_visit_ids). It is applied here rather than
+    through AuditCriteria because no criteria field expresses "at most N per worker WITHIN
+    a date window" - count_per_flw belongs to last_n_per_flw, which ignores the window.
+
+    schedule_defaults.image_paths chooses WHICH photo types to audit. Unset means the
+    weight photo alone, which is what this workflow audited before it could audit anything
+    else, so an existing schedule keeps its exact behaviour.
 
     Returns {"run_id", "sessions_created", "status"}; status is "ready" if
     anything was created and "failed" if nothing was.
@@ -2131,9 +2565,16 @@ def run_default(*, definition, access_token, request=None, window=None, cadence=
     defaults = cfg.get(SCHEDULE_DEFAULTS_KEY) or {}
     opp_meta = cfg.get("opp_meta") or OPP_META
     agent_for_scale = cfg.get("agent_for_scale") or AGENT_FOR_SCALE
-    image_path = cfg.get("weight_image_path") or WEIGHT_IMAGE_PATH
-    field_path = cfg.get("weight_field_path") or WEIGHT_FIELD_PATH
     photo_form_names = cfg.get("photo_form_names") or PHOTO_FORM_NAMES
+    image_types = _effective_image_types(cfg)
+    # Which photo types this run covers. Unset means the weight photo alone, so a
+    # schedule saved before this setting existed audits exactly what it always did.
+    image_paths = _resolve_image_paths(defaults.get("image_paths"), image_types)
+    image_rules = _image_rules(image_paths=image_paths, image_types=image_types)
+    # Only the weight photo has a classifier, so anything beyond it makes this a
+    # partly human-reviewed run. That distinction decides how the audit is dispatched
+    # below, and is worth recording on the run either way.
+    scoreable_paths = [t["path"] for t in image_types if t.get("scoreable") and t["path"] in image_paths]
 
     # Deduped and sorted. The dialog already dedupes, but config is hand-editable and a
     # repeated id would audit that opportunity twice - the second pass resuming onto the
@@ -2210,6 +2651,11 @@ def run_default(*, definition, access_token, request=None, window=None, cadence=
                 # Mirrors what the render code writes, so a scheduled run reads the
                 # same in the run-history table as a hand-triggered one.
                 "llo_summary": llo_summary,
+                # Which photo types this run covered. Without it a run that audited
+                # equipment and wrap photos is indistinguishable in the history from a
+                # weight-only one, and its lower machine-reviewed share looks like a
+                # classifier failure rather than the extra photos it actually was.
+                "image_paths": image_paths,
             },
         )
     finally:
@@ -2237,8 +2683,7 @@ def run_default(*, definition, access_token, request=None, window=None, cadence=
             window_start=window_start,
             window_end=window_end,
             sample_percentage=sample_percentage,
-            image_path=image_path,
-            field_path=field_path,
+            image_rules=image_rules,
         )
         try:
             extra_kwargs = {}
@@ -2301,6 +2746,23 @@ def run_default(*, definition, access_token, request=None, window=None, cadence=
                 logger.info("kmc_image_audit DRY RUN opp %s: %s", opp_id, planned[-1])
                 continue
 
+            # One photo type, and it is the scoreable one: the single-agent call this
+            # workflow has always made, left EXACTLY as it was. It is what the nightly
+            # schedule runs unattended, and it is also the only shape that reports the
+            # classifier by name on the run summary - the per-image-type path reports
+            # "per-image-type" instead. Nothing here needed changing to add photo types,
+            # so nothing here was changed.
+            #
+            # Anything else needs per-type reviewers, because a single ai_agent_id is
+            # applied to EVERY image in the session: the scale classifier would be handed
+            # equipment and wrap photos and would report each as a mismatch.
+            review_kwargs = (
+                {"ai_agent_id": agent_id}
+                if image_paths == scoreable_paths and len(image_paths) == 1
+                else {
+                    "image_audits": _image_audits(image_paths=image_paths, image_types=image_types, agent_id=agent_id)
+                }
+            )
             eager = run_audit_creation.apply(
                 kwargs={
                     "access_token": access_token,
@@ -2308,7 +2770,7 @@ def run_default(*, definition, access_token, request=None, window=None, cadence=
                     "opportunities": [{"id": opp_id, "name": meta.get("llo") or str(opp_id)}],
                     "criteria": criteria,
                     "workflow_run_id": run.id,
-                    "ai_agent_id": agent_id,
+                    **review_kwargs,
                     **extra_kwargs,
                 }
             )
@@ -2377,6 +2839,7 @@ def run_default(*, definition, access_token, request=None, window=None, cadence=
         # Named rather than folded into sessions_created, so "20 sessions" cannot quietly
         # mean "17 reviewable ones and 3 nobody can open".
         outcome["sessions_without_images"] = empty_sessions
+    outcome["image_paths"] = image_paths
     if dry_run:
         outcome["dry_run"] = True
         outcome["planned"] = planned
@@ -2399,6 +2862,7 @@ def run_default(*, definition, access_token, request=None, window=None, cadence=
                     "max_per_flw": max_per_flw or None,
                     "dry_run": dry_run,
                     "planned": planned,
+                    "image_paths": image_paths,
                 },
             )
         finally:
@@ -2432,12 +2896,34 @@ TEMPLATE["schedule_options"] = [
         "hardware requires. Selecting none would audit nothing, so at least one is required.",
     },
     {
+        "key": "image_paths",
+        "type": "multi_str",
+        "label": "Photo types to audit",
+        # image_type_names lives on this workflow's own config, derived from IMAGE_TYPES,
+        # so the dialog, the dashboard picker and run_default all offer the same set.
+        "choices_from_config": "image_type_names",
+        # Pre-ticked, so a schedule saved before this option existed does not have to
+        # choose anything to keep saving, and keeps auditing exactly what it audited.
+        "default": list(DEFAULT_IMAGE_PATHS),
+        "help": (
+            "Leave the weight photo alone to keep the audit exactly as it has been. Only "
+            "the weight photo has a classifier: equipment and KMC-wrap photos are "
+            "collected for human review and show as not reviewed, and they are left out "
+            "of the machine pass rate so adding them does not read as a drop in quality. "
+            "EHA has neither of those questions in its app, so selecting them adds nothing "
+            "for EHA - the run summary reports what each opportunity actually yielded."
+        ),
+    },
+    {
         "key": "max_per_flw",
         "type": "int",
-        "label": "Max photos per field worker",
+        "label": "Max visits per field worker",
         "help": (
             "Blank means no cap. Sampling is proportional, so without a cap the busiest "
-            "workers crowd out the rest and a run's size is unpredictable."
+            "workers crowd out the rest and a run's size is unpredictable. The cap counts "
+            "VISITS: with one photo type that is one photo each, but a visit carries one "
+            "photo of every selected type, so N types multiply the photos a capped worker "
+            "contributes."
         ),
         "min": 1,
         "max": 500,
