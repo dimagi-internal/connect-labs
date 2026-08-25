@@ -56,6 +56,14 @@ TIER_CADENCE_SECONDS = {
     "cheap": 15 * 60,
 }
 
+# Retry schedule for a cursor whose polls keep failing (see
+# PulseCursor.failure_backoff_seconds): 60s, 120s, 240s ... capped at 6h.
+# The cap is what makes this recoverable rather than terminal -- a cursor whose
+# access is restored resumes on its own within six hours, with no operator step.
+_FAILURE_BACKOFF_BASE_SECONDS = 60
+_FAILURE_BACKOFF_CAP_SECONDS = 6 * 60 * 60
+_FAILURE_BACKOFF_MAX_DOUBLINGS = 16
+
 TIER_INTERVALS_SECONDS = {
     # 15s, not 60. This is the floor on how fresh the live view can be: a hot
     # opportunity is only re-polled once its cursor is due, so at 60 a visit
@@ -402,6 +410,11 @@ class PulseCursor(models.Model):
 
     consecutive_failures = models.IntegerField(default=0)
     last_error = models.TextField(blank=True)
+    # Only ``last_polled_at`` existed, and it is set on SUCCESS only. So a
+    # cursor that always fails kept a frozen (or null) last_polled_at, stayed
+    # permanently past due, and was re-polled on every single sweep -- forever,
+    # with no record of when it last tried. Backoff needs its own clock. (#1277)
+    last_failed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         unique_together = [("opportunity_id", "endpoint")]
@@ -418,10 +431,36 @@ class PulseCursor(models.Model):
         ``now`` first and compare against this, so a freshly-evaluated ``now()``
         is always a few microseconds *later* and the cursor is never due. That
         bug polls nothing, forever, while looking perfectly healthy.
+
+        A failing cursor backs off exponentially from its last ATTEMPT. Without
+        this, an opportunity the poller cannot read (deleted upstream, or moved
+        out of the poller user's org membership -- indistinguishable, since
+        Connect answers both with 404) is retried at its tier cadence, which for
+        a hot cursor is every 15 seconds, indefinitely. Measured 2026-08-25: 80
+        such cursors, the worst at 71,905 consecutive failures dating to
+        2026-07-29, together spending ~130k failed calls a day against
+        production Connect. Backoff is capped rather than terminal so access
+        that comes back is picked up on its own within the cap.
         """
+        if self.consecutive_failures and self.last_failed_at is not None:
+            return self.last_failed_at + timedelta(seconds=self.failure_backoff_seconds)
         if self.last_polled_at is None:
             return _EPOCH
         return self.last_polled_at + timedelta(seconds=TIER_INTERVALS_SECONDS[self.tier])
+
+    @property
+    def failure_backoff_seconds(self) -> int:
+        """Delay before retrying a failing cursor: 60s doubling to a 6h ceiling.
+
+        The exponent is clamped before shifting, not after -- ``2 **
+        consecutive_failures`` on the real worst-case value (71,905) is an
+        integer with ~21,600 digits, and computing one per cursor per sweep to
+        then throw it away would be its own outage.
+        """
+        if not self.consecutive_failures:
+            return 0
+        exponent = min(self.consecutive_failures - 1, _FAILURE_BACKOFF_MAX_DOUBLINGS)
+        return min(_FAILURE_BACKOFF_BASE_SECONDS * (2**exponent), _FAILURE_BACKOFF_CAP_SECONDS)
 
     def is_due(self, now=None) -> bool:
         return (now or timezone.now()) >= self.due_at
