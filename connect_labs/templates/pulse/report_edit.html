@@ -29,11 +29,13 @@
     {% endfor %}
   {% endif %}
 
-  {# The single most important thing on this page: whether the chosen window
-     can actually be reported on. Verified delivery counts come from rollups,
-     which only reach as far back as Pulse has ever rolled up -- so a window
-     outside that must be called out here, at authoring time, rather than
-     silently producing a smaller number on the printed page. #}
+  {% comment %}
+  The single most important thing on this page: whether the chosen window
+  can actually be reported on. Verified delivery counts come from rollups,
+  which only reach as far back as Pulse has ever rolled up -- so a window
+  outside that must be called out here, at authoring time, rather than
+  silently producing a smaller number on the printed page.
+  {% endcomment %}
   {% if not metrics.services_are_visits %}
     <div class="mb-5 border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-sm">
       <p class="font-medium text-amber-900">Counting payment units, not individual services.</p>
