@@ -131,11 +131,11 @@ properties:
 
   - name: days_since_first_visit
     type: int
-    sql: 'FLOOR(EXTRACT(EPOCH FROM (:as_of - first_visit)) / 86400)::int'
+    sql: 'FLOOR(EXTRACT(EPOCH FROM ((:as_of)::timestamp - first_visit::timestamp)) / 86400)::int'
 
   - name: days_first_to_last
     type: int
-    sql: 'ROUND(EXTRACT(EPOCH FROM (last_visit - first_visit)) / 86400)::int'
+    sql: 'ROUND(EXTRACT(EPOCH FROM (last_visit::timestamp - first_visit::timestamp)) / 86400)::int'
 
   - name: eligible
     type: bool

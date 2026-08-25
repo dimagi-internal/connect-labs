@@ -273,11 +273,24 @@ weight_days AS (
       AND {C(ws['valid']).replace('weight_g', 'weights')}
     GROUP BY 1, 2
 ),
+baby_first AS (
+    SELECT baby_case_id AS baby_id, MIN(visit_date)::date AS first_visit_day
+    FROM visits
+    WHERE baby_case_id IS NOT NULL
+    GROUP BY 1
+),
 weight_seq AS (
-    SELECT baby_id, day, w,
-           LAG(w) OVER (PARTITION BY baby_id ORDER BY day) AS prev_w,
-           (day - MIN(day) OVER (PARTITION BY baby_id))::int AS age_days
-    FROM weight_days
+    -- age_days is measured from the baby's FIRST VISIT, not its first weight
+    -- reading. The render code uses `(p.day - fv) / DAY` where fv is the first
+    -- visit; anchoring on the first weighing instead shifts the growth window for
+    -- every baby whose first visit carried no weight, and silently changes
+    -- C09-C13. Caught only on real data -- every fixture baby happened to be
+    -- weighed on its first visit.
+    SELECT wd.baby_id, wd.day, wd.w,
+           LAG(wd.w) OVER (PARTITION BY wd.baby_id ORDER BY wd.day) AS prev_w,
+           (wd.day - bf.first_visit_day)::int AS age_days
+    FROM weight_days wd
+    JOIN baby_first bf USING (baby_id)
 ),
 weight_agg AS (
     SELECT baby_id,
