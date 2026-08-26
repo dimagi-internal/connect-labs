@@ -231,10 +231,32 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
         here degrades to the old behaviour rather than breaking the page.
         """
         try:
-            return {d.id: d for d in pipeline_access.list_definitions()}
+            cache = {d.id: d for d in pipeline_access.list_definitions()}
         except Exception:
             logger.warning("Pipeline prefetch failed; falling back to per-id loads", exc_info=True)
             return {}
+        # Diagnostic, not decoration. On 2026-08-26 this prefetch shipped, deployed,
+        # and did NOTHING in program mode: a `/labs/workflow/` load at 13:40 UTC made
+        # the list call and then 15 per-id calls anyway. It did not raise, and no
+        # per-id fetch failed -- the prefetched set and the referenced set were simply
+        # DISJOINT, so every lookup fell through and the page cost was unchanged.
+        #
+        # Which of those two sets is wrong cannot be read from the outside: the miss
+        # looks identical whether the prefetch came back empty or came back full of
+        # the wrong records. `BaseDataAccess` needs an OAuth token from a user session,
+        # so a management shell cannot reproduce the call either.
+        #
+        # Log what it actually got, so the next program-mode page load answers it
+        # instead of the next guess doing so. See #1302; remove once that lands.
+        logger.info(
+            "[pipeline-prefetch] scope=%s prefetched=%d ids=%s",
+            getattr(pipeline_access, "program_id", None)
+            and f"program_id={pipeline_access.program_id}"
+            or f"opportunity_id={getattr(pipeline_access, 'opportunity_id', None)}",
+            len(cache),
+            sorted(cache)[:40],
+        )
+        return cache
 
     def _build_workflow_row(self, definition, runs, pipeline_access, pipeline_cache, schedules_by_def):
         """Enrich one definition into a template row: sorted runs + pipeline names
@@ -269,6 +291,15 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             if not pipeline_id:
                 continue
             if pipeline_id not in pipeline_cache:
+                # A miss here is one sequential HTTPS round-trip to Connect. Say so,
+                # with the type, because an int/str key mismatch and a genuine
+                # out-of-scope record produce the SAME miss (#1302).
+                logger.info(
+                    "[pipeline-prefetch] MISS id=%r (%s) definition=%s",
+                    pipeline_id,
+                    type(pipeline_id).__name__,
+                    definition.id,
+                )
                 try:
                     pipeline_cache[pipeline_id] = pipeline_access.get_definition(pipeline_id)
                 except Exception:
