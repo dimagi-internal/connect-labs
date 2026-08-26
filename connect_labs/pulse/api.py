@@ -23,6 +23,7 @@ from django.utils import timezone
 from django.views import View
 
 from connect_labs.pulse.client import PulseAuthError, get_poller_user
+from connect_labs.pulse.ingest import SCALAR_SCOPE_DRIFT
 from connect_labs.pulse.models import (
     TIER_HOT,
     TIER_INTERVALS_SECONDS,
@@ -94,10 +95,26 @@ def _ingest_state() -> dict:
         healthy = False
         message = message or "No Pulse poller configured — ingest cannot run."
 
+    # Opportunities Pulse still tracks but this poller cannot read. Reported
+    # beside the poller name for the same reason that is on the page: scope is
+    # bounded by one account's org membership, and getting it wrong does not
+    # error -- it just makes the figures below quietly smaller. `poller` says
+    # WHO we poll as; this says what that choice is currently costing.
+    #
+    # Deliberately does NOT clear live_ok. Ingest is healthy for everything in
+    # scope, and flipping the LIVE badge for a configuration issue would train
+    # people to ignore it.
+    drift = (PulseScalar.objects.filter(key=SCALAR_SCOPE_DRIFT).first() or PulseScalar(value={})).value or {}
+    drift_count = drift.get("count") or 0
+    drift_since = drift.get("since") or ""
+
     return {
         "live_ok": healthy,
         "poller": poller,
         "poller_error": poller_error,
+        "scope_drift_count": drift_count,
+        "scope_drift_since": drift_since,
+        "scope_drift_ids": (drift.get("opportunity_ids") or [])[:20],
         "last_success_at": last_success.isoformat() if last_success else None,
         "staleness_seconds": staleness,
         "hot_interval_seconds": TIER_INTERVALS_SECONDS[TIER_HOT],

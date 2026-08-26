@@ -80,6 +80,12 @@ MAX_ROWS_PER_TAIL = 5000
 
 SCALAR_SCOPE = "scope"
 SCALAR_OFF_MAP = "off_map_points"
+SCALAR_SCOPE_DRIFT = "scope_drift"
+
+# Cap on how many drifted ids the scalar carries. The count is the signal; the
+# ids are for whoever goes looking. 200 is far more than a real drift event and
+# keeps a pathological case from writing an unbounded JSON blob every poll.
+_DRIFT_ID_SAMPLE = 200
 
 
 # ---------------------------------------------------------------------------
@@ -220,8 +226,78 @@ def refresh_opportunities(client) -> dict:
     elif current.value != scope:
         current.value = scope
         current.save(update_fields=["value", "updated_at"])
+    record_scope_drift(o.get("id") for o in opps)
     logger.info("[pulse] refreshed %s opportunities; scope=%s", seen, scope)
     return scope
+
+
+def record_scope_drift(entitled_ids) -> dict:
+    """Opportunities Pulse still tracks but the poller can no longer see.
+
+    Cursors are never deleted, so ``PulseCursor`` accumulates the union of
+    everything any poller identity has ever been able to read. When the poller
+    changes -- or its Connect org membership does -- the opportunities outside
+    the new identity's scope do not error in any way that names the cause. Every
+    poll for them 404s, and upstream a 404 means "not found OR not yours"
+    indistinguishably, so from labs' side a de-scoped opportunity and a deleted
+    one look identical.
+
+    That is not hypothetical. Naming the poller explicitly (#1043, deployed
+    2026-07-29 15:58 UTC) moved Pulse off an accidentally-inferred account and
+    onto a named one with different memberships. 110 opportunities -- 16 of them
+    still active, one running to 2026-12-27 -- fell out of scope at 16:05 UTC
+    that day and were never ingested again. Nothing reported it. It surfaced a
+    month later only because the wasted retries showed up in an unrelated
+    telemetry review, and even then the first three diagnoses were wrong.
+
+    The retry cost is fixed (#1277 backoff), and that fix would have made this
+    permanently *quieter*: the stranded cursors now fail politely every six
+    hours forever. So the count has to be stated somewhere. This is a
+    configuration-drift signal, not an ingest failure -- ingest is working fine
+    for everything still in scope -- so it is reported, never used to fail the
+    LIVE badge.
+
+    ``since`` is the first detection of the CURRENT drift and survives
+    re-detection, which is what makes "how long have we been blind?" answerable
+    from the row. It clears when scope is whole again.
+    """
+    entitled = {int(i) for i in entitled_ids if i is not None}
+    tracked = set(PulseCursor.objects.values_list("opportunity_id", flat=True).distinct())
+    drifted = sorted(tracked - entitled)
+
+    current = PulseScalar.objects.filter(key=SCALAR_SCOPE_DRIFT).first()
+    previous = (current.value if current else None) or {}
+    since = None
+    if drifted:
+        # Held across polls so the age is real; only a return to full scope resets it.
+        since = previous.get("since") if previous.get("count") else None
+        since = since or timezone.now().isoformat()
+
+    value = {
+        "count": len(drifted),
+        "opportunity_ids": drifted[:_DRIFT_ID_SAMPLE],
+        "truncated": len(drifted) > _DRIFT_ID_SAMPLE,
+        "since": since,
+    }
+
+    # Same write discipline as SCALAR_SCOPE above: PulseScalar carries auto_now,
+    # and this runs every five minutes, so an unconditional write would churn
+    # the row forever to say nothing changed.
+    if current is None:
+        PulseScalar.objects.create(key=SCALAR_SCOPE_DRIFT, value=value)
+    elif current.value != value:
+        current.value = value
+        current.save(update_fields=["value", "updated_at"])
+
+    if drifted:
+        logger.warning(
+            "[pulse] %s tracked opportunit%s outside the poller's scope since %s (e.g. %s)",
+            len(drifted),
+            "y is" if len(drifted) == 1 else "ies are",
+            since,
+            drifted[:5],
+        )
+    return value
 
 
 def refresh_opportunity_countries() -> int:

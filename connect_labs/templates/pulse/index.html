@@ -51,6 +51,30 @@
       </div>
     {% endif %}
 
+    {# Scope drift. Tracked opportunities the poller can no longer read: their  #}
+    {# ingest has stopped, and upstream 404s the same way for "deleted" and     #}
+    {# "not yours", so nothing else on this page would ever say so. 110 opps    #}
+    {# sat like this for a month after the poller was renamed (#1043/#1277).    #}
+    {% if ingest.scope_drift_count %}
+      <div class="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3 mb-4 text-sm">
+        <span class="font-medium">
+          {{ ingest.scope_drift_count }} tracked
+          opportunit{{ ingest.scope_drift_count|pluralize:"y,ies" }}
+          no longer visible to this poller.
+        </span>
+        Ingest for {{ ingest.scope_drift_count|pluralize:"it,them" }} stopped
+        {% if ingest.scope_drift_since %}on {{ ingest.scope_drift_since|slice:":10" }}{% endif %}
+        — either the account lacks the org membership, or
+        {{ ingest.scope_drift_count|pluralize:"it was,they were" }} removed in Connect.
+        The two are indistinguishable from here; Connect answers both with 404.
+        {% if ingest.scope_drift_ids %}
+          <span class="block mt-1 text-xs text-amber-800">
+            e.g. {{ ingest.scope_drift_ids|slice:":10"|join:", " }}
+          </span>
+        {% endif %}
+      </div>
+    {% endif %}
+
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="bg-gray-50 text-left text-xs text-gray-500 uppercase">
