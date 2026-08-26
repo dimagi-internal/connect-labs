@@ -208,6 +208,29 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
 
     template_name = "workflow/list.html"
 
+    def _prefetch_pipeline_cache(self, pipeline_access):
+        """Seed the per-request pipeline cache with ONE list call instead of one
+        round-trip per pipeline.
+
+        The list view only needs each pipeline's *name*, but the LabsRecord API
+        lives on production Connect, so the old per-id ``get_definition`` loop cost
+        one sequential HTTPS call per distinct pipeline. Page time was therefore
+        ``2 + N`` outbound calls: measured at 6.6-10.1s for a user with 10
+        pipelines and up to 68s for one with 22 (2026-08-26 telemetry, 263 loads
+        over 5s across 12 users in a week). ``list_definitions`` returns the whole
+        in-scope set in a single call, which makes the page cost constant.
+
+        Anything NOT in scope (a cross-opp or shared pipeline) is simply absent
+        from the returned dict, so ``_build_workflow_row`` still falls through to
+        its per-id fetch and its ``Pipeline {id}`` fallback for those. A failure
+        here degrades to the old behaviour rather than breaking the page.
+        """
+        try:
+            return {d.id: d for d in pipeline_access.list_definitions()}
+        except Exception:
+            logger.warning("Pipeline prefetch failed; falling back to per-id loads", exc_info=True)
+            return {}
+
     def _build_workflow_row(self, definition, runs, pipeline_access, pipeline_cache, schedules_by_def):
         """Enrich one definition into a template row: sorted runs + pipeline names
         + scheduling info.
@@ -375,7 +398,7 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
                 for s in WorkflowSchedule.objects.filter(owner=self.request.user, opportunity_id=opportunity_id)
             }
 
-            pipeline_cache = {}
+            pipeline_cache = self._prefetch_pipeline_cache(pipeline_access)
             workflows_with_runs = [
                 self._build_workflow_row(
                     definition,
@@ -440,7 +463,7 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
                 for s in WorkflowSchedule.objects.filter(owner=self.request.user, program_id=program_id)
             }
 
-            pipeline_cache = {}
+            pipeline_cache = self._prefetch_pipeline_cache(pipeline_access)
             workflows_with_runs = [
                 self._build_workflow_row(
                     definition,
