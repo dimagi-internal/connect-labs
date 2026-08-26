@@ -98,6 +98,29 @@ An earlier measurement of ~28s per scope was a cold read taken just after the
 visit cache was written; warm and repeated it is consistently sub-second. Neither
 that figure nor an earlier 2.25s single run should have been generalised from.
 
+## Two defects this project introduced, and the guards that now hold them
+
+**`llo` scope compiled but could not run.** `SCOPES` declared it, the compiler
+emitted `props.llo`, and execution failed with `column props.llo does not exist` —
+there is no LLO on a visit row (the existing dashboard carries an org→LLO map in
+render code). `validate()` missed it because `llo` had been **whitelisted in the
+known-columns set**: the check defeating itself. Now `llo` must be materialised by
+passing `llo_map={opportunity_id: 'LLO'}`, asking for it without one is a loud
+error, and `test_every_declared_scope_actually_executes` runs every scope in
+`SCOPES` against Postgres — compiling was never the bar.
+
+**Suppression was declared and ignored.** `indicators.yml` carried the
+`suppression:` block from the start and the compiler never read it, so C14 would
+have published a mortality figure for an LLO the workbook says does not record
+deaths credibly — the same gap this project raised about the other
+implementation. `_suppression_columns` now emits `<measure>_suppressed` per rule,
+a rule scoped by `llo` without an `llo_map` is an error rather than a silently
+skipped gate, and the value is still computed: suppression is a display decision,
+not deletion.
+
+Both guards are mutation-verified — restoring the whitelist, and making
+suppression a no-op, each turn the suite red.
+
 ## What is NOT proven
 
 - **Not yet run against opportunity 10042's real data.** Everything above is a
