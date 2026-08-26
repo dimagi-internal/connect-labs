@@ -119,13 +119,47 @@ carries `outbound_ms`, `db_ms` and `self_ms` (whatever is left after both waits)
 | --- | --- | --- |
 | `outbound_ms` | we are waiting on an upstream, usually Connect | cache/batch the call, or move it off the request path; if Connect itself is slow, that is a Connect bug — file it there |
 | `db_ms` | a genuinely expensive query, not an N+1 (the count would be low) | read the plan; index or narrow it |
-| `self_ms` | our own Python | profile the view |
+| `self_ms` | our own Python — **but see the caveat below before you believe it** | profile the view |
 
 This split exists because 2026-08-11 hit a shape the counts alone could not
 resolve: `/audit/api/<id>/bulk-data/` at 9–87s on **2** outbound calls and ~16
 queries. Too few calls for `outbound_fanout`, too few queries for `db_fanout`,
 and nothing recorded said where the seconds went. Read these three before
 forming a hypothesis; they are cheaper than being wrong.
+
+### `self_ms` is a REMAINDER, not a measurement — check the clients first
+
+`self_ms` is computed as `duration_ms - outbound_ms - db_ms`. It is not observed;
+it is whatever the other two failed to account for. So an outbound call made by a
+client that does **not** report itself does not merely go uncounted — it is
+silently reclassified as our own Python, and this table then sends you to profile
+a view that is sitting on a socket.
+
+Counting is opt-in. A client is instrumented only if it was built with
+`event_hooks=request_telemetry.httpx_event_hooks()`, or calls
+`request_telemetry.record_outbound_call()` itself. **A bare `httpx.get(...)` takes
+no hooks and can never be counted.** Before trusting a dominant `self_ms`:
+
+```bash
+grep -rn "httpx.Client(\|httpx.get(\|httpx.post(" --include="*.py" connect_labs/ \
+  | grep -v request_telemetry
+```
+
+and confirm every client on the path in question reports itself.
+
+The cheap cross-check that does not depend on any of this: **httpx logs every
+request at INFO**, so the web log has the ground truth regardless of who opted in.
+Pull the raw lines for the request's own time window and count them.
+
+*Why this is here:* on 2026-08-26 `/labs/workflow/<id>/run/` logged
+`outbound_calls: 0, outbound_ms: 0, self_ms: 15832` — a textbook "our own Python"
+read. It was making **22 sequential Google Drive round-trips**. `DriveClient` used
+the module-level `httpx.get` and `ExportAPIClient` had omitted the hooks; only
+`api_client.py` had opted in, so two entire integrations were invisible and every
+second they spent waiting was booked to us. Both report themselves as of #1300 —
+but the general trap outlives that fix, because the next client added will not be
+instrumented either unless someone remembers. `outbound_calls: 0` means *nothing
+that opted in made a call*; it does not mean no call was made.
 
 **If that returns nothing**, the app was too saturated to log, or the telemetry
 predates the request. Fall back to ALB access logs, recorded outside the process:
