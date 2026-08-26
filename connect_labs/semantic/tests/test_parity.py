@@ -346,3 +346,81 @@ def test_rollup_equals_per_scope_queries(conn):
                 assert math.isclose(
                     float(x), float(y), rel_tol=1e-9, abs_tol=1e-9
                 ), f"{sc}/{k}/{n}: per-scope={x} rollup={y}"
+
+
+def test_every_declared_scope_actually_executes(conn):
+    """Compiling is not the bar -- the SQL has to RUN.
+
+    `llo` compiled cleanly for weeks and failed at execution with "column
+    props.llo does not exist". A test that only asserted compilation could never
+    have caught it, so this one executes every scope in SCOPES against Postgres.
+    Scopes needing a caller-supplied column are driven with one.
+    """
+    from connect_labs.semantic.compiler import INTRINSIC_SCOPE_COLUMNS, SCOPES
+
+    props_doc = yaml.safe_load((REGISTRY / "properties.yml").read_text())
+    registry = yaml.safe_load((REGISTRY / "indicators.yml").read_text())
+    _load(conn)
+    cur = conn.cursor()
+    as_of = "(DATE '2026-01-01' + 200)"
+
+    for scope in SCOPES:
+        needs_llo = "llo" in SCOPES[scope]
+        sql = compile_indicator_sql(
+            props_doc,
+            registry,
+            "SELECT * FROM fixture_visits",
+            scope=scope,
+            as_of=as_of,
+            llo_map={1: "PIPN"} if needs_llo else None,
+        )
+        try:
+            cur.execute(sql)
+            cur.fetchall()
+        except Exception as exc:  # pragma: no cover - the point is the message
+            conn.rollback()
+            raise AssertionError(f"scope {scope!r} compiled but did not run: {exc}") from exc
+
+    # And the intrinsic set really is intrinsic: no map needed.
+    for scope in SCOPES:
+        if set(SCOPES[scope]) <= set(INTRINSIC_SCOPE_COLUMNS):
+            cur.execute(
+                compile_indicator_sql(
+                    props_doc,
+                    registry,
+                    "SELECT * FROM fixture_visits",
+                    scope=scope,
+                    as_of=as_of,
+                )
+            )
+            cur.fetchall()
+
+
+def test_suppression_marks_the_non_credible_llo(conn):
+    """C14 must come back flagged for an LLO the settings say is not credible.
+
+    The registry declared these rules and the compiler ignored them, so a
+    mortality figure would have been published for an LLO the workbook says does
+    not record deaths credibly -- the exact gap this project raised about the
+    other implementation.
+    """
+    props_doc = yaml.safe_load((REGISTRY / "properties.yml").read_text())
+    registry = yaml.safe_load((REGISTRY / "indicators.yml").read_text())
+    _load(conn)
+    cur = conn.cursor()
+    cur.execute(
+        compile_indicator_sql(
+            props_doc,
+            registry,
+            "SELECT * FROM fixture_visits",
+            scope="llo",
+            as_of="(DATE '2026-01-01' + 200)",
+            llo_map={1: "GHI"},
+            settings={"mortality_recording_credible": {"PIPN": True, "GHI": False}},
+        )
+    )
+    cols = [c.name for c in cur.description]
+    row = dict(zip(cols, cur.fetchone()))
+    assert "c14_suppressed" in cols, "suppression column was not emitted"
+    assert row["c14_suppressed"] is True, "GHI is not credible but C14 came back unsuppressed"
+    assert row["c14"] is not None, "the value is still computed -- suppression is display, not deletion"
