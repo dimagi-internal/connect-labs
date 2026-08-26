@@ -56,8 +56,9 @@ def refresh_org_data(request):
 
     access_token = labs_oauth["access_token"]
 
-    # Fetch fresh organization data
-    org_data = fetch_user_organization_data(access_token)
+    # Fetch fresh organization data. force_refresh because this view exists purely to
+    # defeat staleness -- serving it the cached tree would make the button a no-op.
+    org_data = fetch_user_organization_data(access_token, force_refresh=True)
 
     if org_data:
         # Update session with fresh data

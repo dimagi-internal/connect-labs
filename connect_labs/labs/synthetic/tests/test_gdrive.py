@@ -278,11 +278,19 @@ def test_drive_reads_are_counted_against_the_in_flight_request(httpx_mock, fake_
 
 def test_drive_telemetry_never_breaks_the_call_it_measures(httpx_mock, fake_creds, monkeypatch):
     """Outside a request there are no stats to record against, and a broken
-    recorder must not take the Drive read down with it."""
-    from connect_labs.labs.synthetic import gdrive as gdrive_mod
+    recorder must not take the Drive read down with it.
 
+    The invariant is unchanged; only its location moved. #1300 protected it in
+    ``DriveClient._timed_get``, which counted each Drive read by hand. #1298 closed
+    the same blind spot at the source for every httpx caller, so the counting -- and
+    the guard around it -- now lives in the shared response hook. Break the recorder
+    there and the Drive read must still return its bytes.
+    """
+    from connect_labs.utils import request_telemetry
+
+    request_telemetry.install_httpx_instrumentation()
     monkeypatch.setattr(
-        gdrive_mod,
+        request_telemetry,
         "record_outbound_call",
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("telemetry exploded")),
     )
