@@ -1396,8 +1396,20 @@ class AuditDataAccess(BaseDataAccess):
         self,
         username: str | None = None,
         status: str | None = None,
+        **data_filters,
     ) -> list[AuditSessionRecord]:
         """Query audit sessions.
+
+        ``**data_filters`` are forwarded to the records endpoint as ``data__``
+        lookups, so a caller can bound the query server-side instead of pulling
+        every session and filtering in Python -- e.g.
+        ``completed_at__gt=<iso>`` for the prior-audit watermark, which returns
+        only sessions that changed since the projection last ingested.
+
+        It is a passthrough on purpose rather than a named argument per filter:
+        the endpoint copies every query param into ``LabsRecord.objects.filter``,
+        so what is expressible here is whatever the ORM accepts on the JSON
+        field.
 
         Program-scoped callers (self.program_id set, no self.opportunity_id)
         get the union of every session across the program's member
@@ -1410,7 +1422,7 @@ class AuditDataAccess(BaseDataAccess):
         created under one of the program's opportunities, which is exactly
         the "some but not all audits show under the program" bug this fixes.
         """
-        kwargs = {}
+        kwargs = dict(data_filters)
         if status:
             kwargs["status"] = status
         return self._query_audit_sessions(username=username, **kwargs)

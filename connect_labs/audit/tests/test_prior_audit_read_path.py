@@ -57,9 +57,11 @@ def _da():
 class TestReadPathFallback:
     def test_unbuilt_opportunity_falls_back_to_live(self):
         s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]) as spy:
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[s]) as spy:
             index = _da().get_prior_audited_images(opportunity_id=OPP)
-        spy.assert_called_once_with(status="completed")
+        # kwargs rather than assert_called_once_with: the mocks are autospec'd,
+        # so `self` is part of the call and asserting on it adds nothing.
+        assert spy.call_count == 1 and spy.call_args.kwargs == {"status": "completed"}
         assert index["111:b1"]["result"] == "pass"
 
     def test_a_built_opportunity_asks_only_the_cheap_question(self):
@@ -72,7 +74,7 @@ class TestReadPathFallback:
         """
         s = _session(1, "completed", {"111": _vr(b1="fail")}, completed_at=_dt(1))
         rebuild_opportunity(OPP, [s])
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[]) as spy:
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[]) as spy:
             index = _da().get_prior_audited_images(opportunity_id=OPP)
         assert spy.call_count == 1
         assert "completed_at__gt" in spy.call_args.kwargs, "must be the bounded query, not a full fetch"
@@ -90,7 +92,7 @@ class TestReadPathFallback:
         assert not is_built(OPP)
 
         live_only = _session(2, "completed", {"222": _vr(b9="fail")}, completed_at=_dt(2))
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[live_only]) as spy:
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[live_only]) as spy:
             index = _da().get_prior_audited_images(opportunity_id=OPP)
         spy.assert_called_once()
         assert set(index) == {"222:b9"}, "must serve the live answer, not the partial table"
@@ -106,13 +108,13 @@ class TestReadPathFallback:
         # No completed sessions means no watermark to bound a query with, so this
         # takes the full path -- which is cheap precisely because there is nothing
         # to return. What matters is that it does not report stale or wrong data.
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[]):
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[]):
             assert _da().get_prior_audited_images(opportunity_id=OPP) == {}
 
     def test_exclude_session_id_is_honoured_on_the_projection_path(self):
         s = _session(7, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
         rebuild_opportunity(OPP, [s])
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[]):
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[]):
             assert _da().get_prior_audited_images(opportunity_id=OPP, exclude_session_id=7) == {}
 
     def test_other_opportunities_are_unaffected_by_a_build(self):
@@ -164,18 +166,20 @@ class TestJustInTimePopulation:
     def test_a_miss_computes_live_and_stores_the_result(self):
         s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
         assert not is_built(OPP)
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]) as spy:
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[s]) as spy:
             index = _da().get_prior_audited_images(opportunity_id=OPP)
-        spy.assert_called_once_with(status="completed")
+        # kwargs rather than assert_called_once_with: the mocks are autospec'd,
+        # so `self` is part of the call and asserting on it adds nothing.
+        assert spy.call_count == 1 and spy.call_args.kwargs == {"status": "completed"}
         assert index["111:b1"]["result"] == "pass"
         assert is_built(OPP), "the miss must have populated the cache"
 
     def test_the_next_read_is_served_from_the_cache(self):
         s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]):
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[s]):
             _da().get_prior_audited_images(opportunity_id=OPP)
         # Second read serves from cache after one bounded check -- no full fetch.
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[]) as spy:
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[]) as spy:
             index = _da().get_prior_audited_images(opportunity_id=OPP)
         assert "completed_at__gt" in spy.call_args.kwargs
         assert index["111:b1"]["result"] == "pass"
@@ -183,7 +187,7 @@ class TestJustInTimePopulation:
     def test_a_stale_cache_is_recomputed_rather_than_served(self):
         """Bounds how long a missed completion dual-write can go unnoticed."""
         s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]):
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[s]):
             _da().get_prior_audited_images(opportunity_id=OPP)
 
         state = PriorAuditProjectionState.objects.get(opportunity_id=OPP)
@@ -193,7 +197,7 @@ class TestJustInTimePopulation:
         assert is_built(OPP) and not projection.is_fresh(OPP)
 
         newer = _session(2, "completed", {"222": _vr(b9="fail")}, completed_at=_dt(2))
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s, newer]) as spy:
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[s, newer]) as spy:
             index = _da().get_prior_audited_images(opportunity_id=OPP)
         spy.assert_called_once()
         assert set(index) == {"111:b1", "222:b9"}
@@ -202,7 +206,7 @@ class TestJustInTimePopulation:
         """The reader holds a correct answer; a cache write must not 500 it."""
         s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
         with (
-            patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]),
+            patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[s]),
             patch(
                 "connect_labs.audit.prior_audit_projection.rebuild_opportunity",
                 side_effect=RuntimeError("db gone"),
@@ -221,7 +225,7 @@ class TestJustInTimePopulation:
         """
         s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
         with (
-            patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]),
+            patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[s]),
             patch("connect_labs.labs.connect_tokens.get_valid_access_token") as tok,
         ):
             _da().get_prior_audited_images(opportunity_id=OPP)
