@@ -64,7 +64,7 @@ class TestWatermarkFreshness:
     def test_an_idle_opportunity_does_no_work(self):
         """The point: nothing changed, so nothing is rebuilt."""
         rebuild_opportunity(OPP, [_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))])
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[]) as spy:
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[]) as spy:
             index = _da().get_prior_audited_images(opportunity_id=OPP)
         # Asked only the cheap question, and only for records past the watermark.
         assert spy.call_count == 1
@@ -75,7 +75,7 @@ class TestWatermarkFreshness:
         """No second round trip: the staleness check already returned the work."""
         rebuild_opportunity(OPP, [_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))])
         newer = _session(2, "completed", {"222": _vr(b9="fail")}, completed_at=_dt(9))
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[newer]) as spy:
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[newer]) as spy:
             index = _da().get_prior_audited_images(opportunity_id=OPP)
         assert spy.call_count == 1
         assert set(index) == {"111:b1", "222:b9"}
@@ -85,7 +85,7 @@ class TestWatermarkFreshness:
         """No staleness window -- the TTL version could miss this for 15 minutes."""
         rebuild_opportunity(OPP, [_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))])
         edited = _session(1, "completed", {"111": _vr(b1="fail")}, completed_at=_dt(9))
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[edited]):
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[edited]):
             index = _da().get_prior_audited_images(opportunity_id=OPP)
         assert index["111:b1"]["result"] == "fail"
 
@@ -103,14 +103,14 @@ class TestWatermarkFreshness:
             built_at=dj_timezone.now() - (projection.STALE_AFTER + timedelta(hours=1))
         )
         survivor = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[survivor]) as spy:
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[survivor]) as spy:
             _da().get_prior_audited_images(opportunity_id=OPP)
         # Full path: asked for ALL completed sessions, not just later ones.
         assert "completed_at__gt" not in spy.call_args.kwargs
 
     def test_an_unbuilt_opportunity_still_takes_the_cold_path(self):
         s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
-        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]) as spy:
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[s]) as spy:
             index = _da().get_prior_audited_images(opportunity_id=OPP)
         assert "completed_at__gt" not in spy.call_args.kwargs
         assert index["111:b1"]["result"] == "pass"
@@ -119,3 +119,39 @@ class TestWatermarkFreshness:
         rebuild_opportunity(OPP, [_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))])
         projection.merge_changed(OPP, [_session(1, "in_progress", {"111": _vr(b1="pass")})])
         assert read_index(OPP) == {}
+
+
+class TestTheWatermarkKwargIsActuallyAccepted:
+    """The real signature, not a mock's.
+
+    The watermark shipped broken: get_prior_audited_images called
+    get_audit_sessions(completed_at__gt=...) and the real method took only
+    (username, status), so it raised TypeError in production. Every test passed,
+    because they patched get_audit_sessions with a bare Mock -- which accepts
+    any signature at all.
+
+    The view catches that exception and falls back to an EMPTY prior-audit
+    index, so the failure showed auditors "nothing was previously audited"
+    rather than erroring. Exactly the silent wrong answer this projection exists
+    to prevent.
+
+    Every mock of that method is now autospec'd so a signature mismatch fails
+    the test; this one skips mocks entirely and inspects the callable.
+    """
+
+    def test_get_audit_sessions_accepts_arbitrary_data_filters(self):
+        import inspect
+
+        sig = inspect.signature(AuditDataAccess.get_audit_sessions)
+        assert any(p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()), (
+            "get_audit_sessions must accept **data_filters; the watermark read path passes "
+            "completed_at__gt through it"
+        )
+
+    def test_binding_the_watermark_call_does_not_raise(self):
+        """What production actually did, checked against the real signature."""
+        import inspect
+
+        inspect.signature(AuditDataAccess.get_audit_sessions).bind(
+            None, status="completed", completed_at__gt="2026-05-01T00:00:00+00:00"
+        )
