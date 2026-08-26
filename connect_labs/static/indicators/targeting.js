@@ -1,0 +1,362 @@
+/* Targeting surface: choropleth of under-5 mortality, a threshold, and the
+ * births that sit above it.
+ *
+ * The map is painted once from the full ADM1 GeoJSON; moving the threshold
+ * repaints client-side from a feature-state flag rather than refetching
+ * geometry, so the slider stays responsive. Only the numbers and the table come
+ * back from the server, because only they require the rollup rules.
+ */
+(function () {
+  'use strict';
+
+  var TG = window.TG;
+  var map = null;
+  var selected = new Set();
+  var geojson = null;
+  var debounceTimer = null;
+
+  // Sequential ramp for the mortality choropleth. Stops are the conventional
+  // reporting breaks for under-5 mortality, not an even split — 25/50/75/100
+  // are the numbers people already have intuitions about.
+  var STOPS = [
+    [0, '#f0f9f8'],
+    [25, '#c3e5e1'],
+    [50, '#8fcac4'],
+    [75, '#57a9a2'],
+    [100, '#2f867f'],
+    [150, '#14554f'],
+  ];
+
+  function fmt(n) {
+    if (n === null || n === undefined) return '—';
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return Math.round(n / 1e3) + 'k';
+    return Math.round(n).toLocaleString();
+  }
+
+  function fmtFull(n) {
+    if (n === null || n === undefined) return '—';
+    return Math.round(n).toLocaleString();
+  }
+
+  function legend() {
+    var el = document.getElementById('tg-legend');
+    el.innerHTML = '';
+    STOPS.forEach(function (s, i) {
+      var box = document.createElement('span');
+      box.className = 'inline-flex items-center gap-1';
+      var sw = document.createElement('span');
+      sw.className = 'inline-block w-3 h-3 rounded-sm';
+      sw.style.background = s[1];
+      var lbl = document.createElement('span');
+      lbl.textContent = i === STOPS.length - 1 ? s[0] + '+' : s[0];
+      box.appendChild(sw);
+      box.appendChild(lbl);
+      el.appendChild(box);
+    });
+  }
+
+  function colorExpression() {
+    var expr = [
+      'interpolate',
+      ['linear'],
+      ['coalesce', ['get', TG.indicator], -1],
+    ];
+    STOPS.forEach(function (s) {
+      expr.push(s[0], s[1]);
+    });
+    return [
+      'case',
+      ['==', ['coalesce', ['get', TG.indicator], -1], -1],
+      '#e7e5e4',
+      expr,
+    ];
+  }
+
+  function initMap() {
+    if (!window.MAPBOX_TOKEN) {
+      document.getElementById('tg-map').innerHTML =
+        '<div class="flex items-center justify-center h-full text-stone-500 text-sm">' +
+        'Map unavailable — MAPBOX_TOKEN is not configured. The table and download still work.</div>';
+      return Promise.resolve();
+    }
+    mapboxgl.accessToken = window.MAPBOX_TOKEN;
+    map = new mapboxgl.Map({
+      container: 'tg-map',
+      style: 'mapbox://styles/mapbox/light-v11',
+      center: [17, 2],
+      zoom: 2.4,
+    });
+    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+    return new Promise(function (resolve) {
+      map.on('load', resolve);
+    });
+  }
+
+  function paint() {
+    if (!map || !geojson) return;
+
+    if (!map.getSource('areas')) {
+      map.addSource('areas', {
+        type: 'geojson',
+        data: geojson,
+        promoteId: 'pk',
+      });
+      map.addLayer({
+        id: 'areas-fill',
+        type: 'fill',
+        source: 'areas',
+        paint: { 'fill-color': colorExpression(), 'fill-opacity': 0.85 },
+      });
+      map.addLayer({
+        id: 'areas-line',
+        type: 'line',
+        source: 'areas',
+        paint: {
+          'line-color': [
+            'case',
+            ['boolean', ['feature-state', 'above'], false],
+            '#0f766e',
+            '#ffffff',
+          ],
+          'line-width': [
+            'case',
+            ['boolean', ['feature-state', 'above'], false],
+            1.6,
+            0.4,
+          ],
+        },
+      });
+      map.addLayer({
+        id: 'areas-dim',
+        type: 'fill',
+        source: 'areas',
+        paint: {
+          'fill-color': '#ffffff',
+          'fill-opacity': [
+            'case',
+            ['boolean', ['feature-state', 'above'], false],
+            0,
+            0.55,
+          ],
+        },
+      });
+      wireTooltip();
+    }
+  }
+
+  function wireTooltip() {
+    var popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false });
+    map.on('mousemove', 'areas-fill', function (e) {
+      var p = e.features[0].properties;
+      map.getCanvas().style.cursor = 'pointer';
+      var rate = p[TG.indicator];
+      var inherited = p.inherited === true || p.inherited === 'true';
+      popup
+        .setLngLat(e.lngLat)
+        .setHTML(
+          '<div style="font:13px/1.4 system-ui;min-width:180px">' +
+            '<div style="font-weight:600">' +
+            p.name +
+            '</div>' +
+            '<div style="color:#57534e">' +
+            p.country +
+            '</div>' +
+            '<hr style="margin:6px 0;border:0;border-top:1px solid #e7e5e4">' +
+            '<div>U5MR: <b>' +
+            (rate === null || rate === 'null' ? 'no data' : rate) +
+            '</b> per 1,000</div>' +
+            '<div>Births/yr: <b>' +
+            fmtFull(p.births === 'null' ? null : p.births) +
+            '</b></div>' +
+            '<div>Under-5: <b>' +
+            fmtFull(p.pop_u5 === 'null' ? null : p.pop_u5) +
+            '</b></div>' +
+            '<div style="color:#78716c;margin-top:4px;font-size:11px">' +
+            (p.source || 'no source') +
+            (inherited ? ' · national figure applied here' : '') +
+            '</div>' +
+            '</div>',
+        )
+        .addTo(map);
+    });
+    map.on('mouseleave', 'areas-fill', function () {
+      map.getCanvas().style.cursor = '';
+      popup.remove();
+    });
+  }
+
+  function applySelection(pks) {
+    if (!map || !map.getSource('areas')) return;
+    selected.forEach(function (pk) {
+      map.setFeatureState({ source: 'areas', id: pk }, { above: false });
+    });
+    selected = new Set(pks);
+    selected.forEach(function (pk) {
+      map.setFeatureState({ source: 'areas', id: pk }, { above: true });
+    });
+  }
+
+  function renderTable(data) {
+    var tbody = document.getElementById('tg-rows');
+    tbody.innerHTML = '';
+
+    if (!data.rows.length) {
+      tbody.innerHTML =
+        '<tr><td colspan="6" class="px-5 py-8 text-center text-stone-400">' +
+        'No area is above this threshold.</td></tr>';
+      return;
+    }
+
+    data.rows.forEach(function (r) {
+      var tr = document.createElement('tr');
+      tr.className = 'hover:bg-stone-50';
+
+      var scope = r.whole_country
+        ? '<span class="ml-2 text-xs bg-teal-50 text-teal-800 px-1.5 py-0.5 rounded">whole country · ' +
+          r.units_covered +
+          ' regions</span>'
+        : '';
+
+      var basis = r.source || '—';
+      if (r.inherited) {
+        basis +=
+          '<span class="block text-xs text-amber-700">national figure, from ' +
+          r.measured_at +
+          '</span>';
+      }
+
+      tr.innerHTML =
+        '<td class="px-5 py-2 font-medium text-stone-900">' +
+        r.name +
+        scope +
+        '</td>' +
+        '<td class="px-3 py-2 text-stone-600">' +
+        r.country +
+        '</td>' +
+        '<td class="px-3 py-2 text-right tg-num">' +
+        (r.value === null ? '—' : r.value) +
+        '</td>' +
+        '<td class="px-3 py-2 text-right tg-num font-medium">' +
+        fmtFull(r.births) +
+        '</td>' +
+        '<td class="px-3 py-2 text-right tg-num text-stone-600">' +
+        fmtFull(r.pop_u5) +
+        '</td>' +
+        '<td class="px-5 py-2 text-xs text-stone-500">' +
+        basis +
+        '</td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderHeadline(data) {
+    document.getElementById('tg-births').textContent = fmt(data.totals.births);
+    document.getElementById('tg-popu5').textContent = fmt(data.totals.pop_u5);
+    document.getElementById('tg-poptotal').textContent = fmt(
+      data.totals.pop_total,
+    );
+
+    var c = data.counts;
+    document.getElementById('tg-scope').textContent =
+      fmtFull(data.totals.births) +
+      ' births across ' +
+      c.units +
+      ' region' +
+      (c.units === 1 ? '' : 's') +
+      ' in ' +
+      c.countries +
+      ' countr' +
+      (c.countries === 1 ? 'y' : 'ies');
+
+    document.getElementById('tg-rowcount').textContent =
+      c.rows +
+      ' row' +
+      (c.rows === 1 ? '' : 's') +
+      ' · ' +
+      c.units +
+      ' underlying regions';
+
+    var gaps = [];
+    if (data.countries_fully_above.length) {
+      gaps.push(
+        '<strong>Entirely above threshold:</strong> ' +
+          data.countries_fully_above.join(', '),
+      );
+    }
+    if (data.skipped_no_data.length) {
+      gaps.push(
+        '<strong>No mortality data, excluded:</strong> ' +
+          data.skipped_no_data.join(', '),
+      );
+    }
+    document.getElementById('tg-gaps').innerHTML = gaps.join('<br>');
+  }
+
+  function threshold() {
+    return parseFloat(document.getElementById('tg-threshold').value);
+  }
+
+  function updateThresholdLabels() {
+    var t = threshold();
+    document.getElementById('tg-threshold-pct').textContent =
+      (t / 10).toFixed(1) + '%';
+    document.getElementById('tg-threshold-abs').textContent = t;
+    document.getElementById('tg-download').href =
+      TG.urls.download + '?indicator=' + TG.indicator + '&threshold=' + t;
+  }
+
+  function fetchSelection() {
+    var t = threshold();
+    document.getElementById('tg-births').textContent = '…';
+    return fetch(
+      TG.urls.selection + '?indicator=' + TG.indicator + '&threshold=' + t,
+    )
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (data) {
+        renderHeadline(data);
+        renderTable(data);
+        applySelection(data.selected_pks);
+      })
+      .catch(function (err) {
+        document.getElementById('tg-births').textContent = 'error';
+        document.getElementById('tg-rows').innerHTML =
+          '<tr><td colspan="6" class="px-5 py-8 text-center text-red-600">' +
+          'Could not load the selection: ' +
+          err +
+          '</td></tr>';
+      });
+  }
+
+  function onSlide() {
+    updateThresholdLabels();
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(fetchSelection, 250);
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    legend();
+    updateThresholdLabels();
+    document.getElementById('tg-threshold').addEventListener('input', onSlide);
+
+    initMap()
+      .then(function () {
+        return fetch(TG.urls.map + '?indicator=' + TG.indicator);
+      })
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (data) {
+        geojson = data;
+        paint();
+        return fetchSelection();
+      })
+      .catch(function (err) {
+        console.error('targeting: map load failed', err);
+        fetchSelection();
+      });
+  });
+})();
