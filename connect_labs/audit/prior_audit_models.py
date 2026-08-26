@@ -139,5 +139,15 @@ class PriorAuditProjectionState(models.Model):
     source_sessions = models.IntegerField(default=0)
     rows = models.IntegerField(default=0)
 
+    # Highest completed_at this projection has ingested. The next read asks the
+    # export API only for sessions later than this, which is both the staleness
+    # CHECK and the incremental update -- the records that come back are exactly
+    # the ones that changed.
+    #
+    # Only usable because completed_at now MOVES when a completed session is
+    # edited (#1286). While it was frozen at completion there was no timestamp
+    # that tracked a verdict change, which is why this started as a blunt TTL.
+    watermark = models.DateTimeField(null=True, blank=True)
+
     def __str__(self) -> str:
         return f"opp {self.opportunity_id}: {self.rows} rows from {self.source_sessions} sessions"
