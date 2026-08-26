@@ -26,16 +26,39 @@ drift apart again.
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
 from django.test import RequestFactory
 
-from connect_labs.labs.analysis.models import FLWRow, VisitRow
-from connect_labs.workflow.data_access import PipelineDataAccess
+from connect_labs.labs.analysis.models import EntityRow, FLWRow, VisitRow
+from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
 from connect_labs.workflow.views import PipelineDataStreamView
 
-# Keys the framework stamps onto a live row but not onto a cached one (the
-# cached path stamps it a layer up, in get_cached_pipeline_data). Excluded from
-# the key-set comparison; everything else must match exactly.
-FRAMEWORK_ONLY_LIVE_KEYS = {"opportunity_id"}
+# The snapshot path resolves pipeline definitions through the labs-only
+# synthetic registry, which is a real DB lookup.
+pytestmark = pytest.mark.django_db
+
+# The real schema of pipeline 5226 (opp 10046), the visit_level pipeline from
+# the ace#1657 report.
+PIPELINE_SCHEMA = {
+    "name": "Bednet follow-up submissions",
+    "fields": [
+        {"name": "consent_confirmed", "path": "form.agree_again.consent_confirmed", "aggregation": "first"},
+        {"name": "slept_under_net", "path": "form.net_check.slept_under_net", "aggregation": "first"},
+        {"name": "net_visibly_hanging", "path": "form.net_check.net_visibly_hanging", "aggregation": "first"},
+    ],
+    "filters": {},
+    "data_source": {"type": "connect_csv"},
+    "grouping_key": "username",
+    "terminal_stage": "visit_level",
+}
+
+ALIAS = "performance_data"
+OPP_ID = 10046
+PIPELINE_ID = 5226
+DEFINITION_ID = 5230
+
+# Both sides are compared at the layer a dashboard actually reads, so there is
+# no escape hatch: the two key sets must be equal, `opportunity_id` included.
 
 
 def _visit_rows():
@@ -63,14 +86,74 @@ def _visit_rows():
 
 
 def _snapshot_rows(rows):
-    """Serialize via the real cached/snapshot code path."""
-    access = PipelineDataAccess(access_token="t", opportunity_id=10046)
+    """Serialize via the real snapshot code path.
+
+    Deliberately entered at `WorkflowDataAccess.get_cached_pipeline_data` — the
+    function that actually builds `instance.snapshot.pipelines.<alias>.rows` —
+    rather than at the inner `_serialize_pipeline_rows`. The framework's
+    `opportunity_id` stamp lives in that outer layer, so comparing any lower
+    would force the parity test to except it, and an excepted key is exactly
+    where a divergence hides.
+    """
+    result = MagicMock()
+    result.rows = rows
+
+    definition = MagicMock(
+        pipeline_sources=[{"pipeline_id": PIPELINE_ID, "alias": ALIAS}],
+        opportunity_ids=[OPP_ID],
+    )
+    pipeline_def = MagicMock(schema=dict(PIPELINE_SCHEMA))
+    pipeline_def.name = "Bednet follow-up submissions"
+
+    access = WorkflowDataAccess(access_token="t", opportunity_id=OPP_ID)
     try:
-        result = MagicMock()
-        result.rows = rows
-        return access._serialize_pipeline_rows(result)
+        with (
+            patch.object(WorkflowDataAccess, "get_definition", return_value=definition),
+            patch.object(PipelineDataAccess, "get_definition", return_value=pipeline_def),
+            patch(
+                "connect_labs.workflow.views._resolve_pipeline_sources_for_run",
+                return_value=(definition.pipeline_sources, {}),
+            ),
+            patch("connect_labs.labs.analysis.pipeline.AnalysisPipeline") as MockPipeline,
+        ):
+            # Real PipelineDataAccess, real _serialize_pipeline_rows, real
+            # opportunity_id stamp — only the cache read underneath is stubbed.
+            MockPipeline.return_value.get_cached_result_only.return_value = result
+            data = access.get_cached_pipeline_data(DEFINITION_ID, OPP_ID)
     finally:
         access.close()
+    return data[ALIAS]["rows"]
+
+
+def _preview_rows(rows):
+    """Serialize via the real MCP `pipeline_preview` tool.
+
+    Entered at the tool function itself, not at the serializer it calls — the
+    point of this helper is to catch `pipelines.py` growing its own row dict
+    again, which a helper that called the shared serializer directly could
+    never do.
+    """
+    from connect_labs.mcp.tools.pipelines import pipeline_preview
+
+    result = MagicMock()
+    result.rows = rows
+
+    pipeline_def = MagicMock(schema=dict(PIPELINE_SCHEMA))
+    pipeline_def.name = "Bednet follow-up submissions"
+
+    with (
+        patch("connect_labs.mcp.tools.pipelines.require_connect_token", return_value="t"),
+        patch.object(PipelineDataAccess, "get_definition", return_value=pipeline_def),
+        patch("connect_labs.labs.analysis.pipeline.AnalysisPipeline") as MockPipeline,
+    ):
+        MockPipeline.return_value.stream_analysis_ignore_events.return_value = result
+        payload = pipeline_preview(
+            user=MagicMock(),
+            pipeline_id=PIPELINE_ID,
+            opportunity_id=OPP_ID,
+            schema_override=dict(PIPELINE_SCHEMA),
+        )
+    return payload["rows"]
 
 
 def _live_rows(rows, rf: RequestFactory):
@@ -87,7 +170,7 @@ def _live_rows(rows, rf: RequestFactory):
 
     request = rf.get("/labs/workflow/api/5230/pipeline-data/stream/?opportunity_id=10046")
     request.user = MagicMock(is_authenticated=True)
-    request.labs_context = {"opportunity_id": 10046}
+    request.labs_context = {"opportunity_id": OPP_ID}
     request.session = {"labs_oauth": {"access_token": "t"}}
 
     definition = MagicMock(
@@ -127,9 +210,9 @@ class TestLiveAndSnapshotPayloadParity:
 
         assert len(live) == len(snapshot) == 2
         for live_row, snapshot_row in zip(live, snapshot):
-            assert set(live_row) - FRAMEWORK_ONLY_LIVE_KEYS == set(snapshot_row), (
+            assert set(live_row) == set(snapshot_row), (
                 "live SSE and snapshot payloads disagree on row keys; "
-                f"live-only={set(live_row) - FRAMEWORK_ONLY_LIVE_KEYS - set(snapshot_row)} "
+                f"live-only={set(live_row) - set(snapshot_row)} "
                 f"snapshot-only={set(snapshot_row) - set(live_row)}"
             )
 
@@ -141,8 +224,27 @@ class TestLiveAndSnapshotPayloadParity:
         live = _live_rows(rows, rf)
         snapshot = _snapshot_rows(rows)
 
+        assert len(live) == len(snapshot) == 2
         for live_row, snapshot_row in zip(live, snapshot):
-            assert set(live_row) - FRAMEWORK_ONLY_LIVE_KEYS == set(snapshot_row)
+            assert set(live_row) == set(snapshot_row)
+
+    def test_preview_payload_matches_too(self, rf: RequestFactory):
+        """`pipeline_preview` is the THIRD producer, and it had the same defect:
+        it hand-rolled a row dict omitting entity_id, entity_name, status and
+        flagged. It is the surface an author checks a pipeline with *before*
+        wiring a dashboard to it, so it reported "no review outcome" from the
+        same root cause, one step earlier in the workflow."""
+        rows = _visit_rows()
+        preview = _preview_rows(rows)
+        live = _live_rows(rows, rf)
+
+        assert len(preview) == len(live) == 2
+        for preview_row, live_row in zip(preview, live):
+            assert set(preview_row) == set(live_row), (
+                f"preview-only={set(preview_row) - set(live_row)} " f"live-only={set(live_row) - set(preview_row)}"
+            )
+        assert [r["status"] for r in preview] == ["approved", "rejected"]
+        assert [r["flagged"] for r in preview] == [False, True]
 
     def test_live_payload_carries_the_review_outcome(self, rf: RequestFactory):
         """The ace#1657 regression itself: `status` and `flagged` must survive
@@ -155,7 +257,7 @@ class TestLiveAndSnapshotPayloadParity:
 
     def test_live_payload_still_tags_source_opportunity(self, rf: RequestFactory):
         live = _live_rows(_visit_rows(), rf)
-        assert {r["opportunity_id"] for r in live} == {10046}
+        assert {r["opportunity_id"] for r in live} == {OPP_ID}
 
     def test_a_pipeline_field_still_overrides_the_framework_opportunity_tag(self, rf: RequestFactory):
         """`chc_audit_history` declares a pipeline field literally named
@@ -190,6 +292,21 @@ class TestVisitLevelAggregateCountersAreStructurallyZero:
     def test_counters_are_zero_on_a_visit_row(self):
         (row,) = _snapshot_rows([VisitRow(id="v1", username="flw", status="rejected", flagged=True)])
         assert [row[c] for c in self.COUNTERS] == [0, 0, 0, 0, 0]
+
+    def test_an_entity_row_gets_null_rather_than_zero(self):
+        """`EntityRow` declares `total_visits` but not the other four, and its
+        `__getattr__` fallback intercepts before `getattr`'s default can apply
+        — so on an entity-level payload those four are `null`, not `0`. A render
+        binding them therefore gets a *different* falsy value depending on the
+        pipeline's terminal stage. Documented here so it is not a surprise."""
+        (row,) = _snapshot_rows([EntityRow(entity_id="e1", entity_name="HH 1", total_visits=4)])
+        assert row["total_visits"] == 4
+        assert [row[c] for c in ("approved_visits", "pending_visits", "rejected_visits", "flagged_visits")] == [
+            None,
+            None,
+            None,
+            None,
+        ]
 
     def test_a_declared_pipeline_field_of_the_same_name_still_wins(self):
         """The one escape hatch: a schema that declares e.g. a `total_visits`
