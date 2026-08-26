@@ -1,0 +1,181 @@
+"""DHS Program loader — subnational mortality and fertility.
+
+The DHS API is open, unauthenticated, and the only public source of *subnational*
+under-5 mortality. Nigeria's 2024 survey reports 43 units at state level; across
+84 countries there are ~4,200 subnational U5MR records.
+
+Two honesty notes that surface in ``method``:
+
+  * A DHS mortality rate is a **period estimate** covering roughly the ten years
+    before fieldwork, not a reading of the survey year. We store ``SurveyYear``
+    as ``year`` because that is what a user means by "the 2024 DHS", and say so.
+  * Survey labels nest — ``North Central`` is a zone containing ``..Benue``. We
+    match the leaves (real ADM1 units) and drop the aggregates, which would
+    otherwise double-count.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from connect_labs.labs.indicators.models import License, Source
+from connect_labs.labs.indicators.sources.base import BoundaryMatcher, Row, http_json
+
+logger = logging.getLogger(__name__)
+
+API = "https://api.dhsprogram.com/rest/dhs"
+
+#: DHS indicator id → our measure code. Value plus its published CI bounds.
+INDICATORS = {
+    "u5mr": {"value": "CM_ECMR_C_U5M", "lo": "CM_ECMR_C_U5L", "hi": "CM_ECMR_C_U5U"},
+    "imr": {"value": "CM_ECMR_C_IMR", "lo": "CM_ECMR_C_IML", "hi": "CM_ECMR_C_IMU"},
+    "tfr": {"value": "FE_FRTR_W_TFR", "lo": None, "hi": None},
+}
+
+METHOD = (
+    "DHS {survey}. Direct estimate from birth histories; the published rate covers "
+    "a multi-year period preceding fieldwork, not the survey year alone. Stored "
+    "against the survey year."
+)
+
+
+def african_countries() -> dict[str, str]:
+    """DHS 2-letter code → ISO-3, for African countries only."""
+    data = http_json(
+        f"{API}/countries",
+        {
+            "returnFields": "DHS_CountryCode,ISO3_CountryCode,CountryName,RegionName",
+            "f": "json",
+            "perpage": "300",
+        },
+    )["Data"]
+    return {
+        c["DHS_CountryCode"]: c["ISO3_CountryCode"]
+        for c in data
+        if "Africa" in (c.get("RegionName") or "") and c.get("ISO3_CountryCode")
+    }
+
+
+def _fetch(indicator_ids: list[str], breakdown: str) -> list[dict]:
+    ids = ",".join(i for i in indicator_ids if i)
+    out: list[dict] = []
+    page = 1
+    while True:
+        payload = http_json(
+            f"{API}/data",
+            {
+                "indicatorIds": ids,
+                "breakdown": breakdown,
+                "f": "json",
+                "perpage": "5000",
+                "page": str(page),
+                "returnFields": (
+                    "DHS_CountryCode,CountryName,SurveyYear,SurveyId,"
+                    "IndicatorId,CharacteristicLabel,CharacteristicCategory,Value"
+                ),
+            },
+        )
+        out.extend(payload.get("Data") or [])
+        if page >= int(payload.get("TotalPages") or 1):
+            break
+        page += 1
+    return out
+
+
+def _latest_survey_per_country(records: list[dict]) -> dict[tuple[str, str], dict]:
+    """Keep only the most recent survey for each country, then index by region.
+
+    Not "the latest record per region" — that would mix vintages inside one
+    country. Kenya's older surveys report the eight pre-2010 provinces while
+    2022 reports 47 counties; keeping the latest of each label would carry both
+    taxonomies forward and invite double-counting. Nigeria is worse: labels like
+    "Northeast - 1990" survive from a 1990 survey.
+
+    Taking one survey per country means every region in a country shares a
+    vintage, which is also the only defensible basis for comparing them.
+    """
+    latest_year: dict[str, int] = {}
+    for r in records:
+        code = r["DHS_CountryCode"]
+        year = int(r["SurveyYear"])
+        if year > latest_year.get(code, 0):
+            latest_year[code] = year
+
+    best: dict[tuple[str, str], dict] = {}
+    for r in records:
+        code = r["DHS_CountryCode"]
+        if int(r["SurveyYear"]) != latest_year[code]:
+            continue
+        best[(code, r["CharacteristicLabel"])] = r
+    return best
+
+
+def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]:
+    """Build rows for one measure at ADM1, latest survey per region."""
+    spec = INDICATORS[measure]
+    iso_by_dhs = african_countries()
+    wanted_iso = {c.upper() for c in iso_codes} if iso_codes else None
+
+    logger.info("DHS: fetching %s (subnational)", measure)
+    records = _fetch([spec["value"]], "subnational")
+    lo_recs = _latest_survey_per_country(_only(_fetch([spec["lo"]], "subnational"), spec["lo"])) if spec["lo"] else {}
+    hi_recs = _latest_survey_per_country(_only(_fetch([spec["hi"]], "subnational"), spec["hi"])) if spec["hi"] else {}
+
+    latest = _latest_survey_per_country(_only(records, spec["value"]))
+
+    by_country: dict[str, list[tuple[str, dict]]] = {}
+    for (dhs_code, label), rec in latest.items():
+        iso = iso_by_dhs.get(dhs_code)
+        if not iso or (wanted_iso and iso not in wanted_iso):
+            continue
+        by_country.setdefault(iso, []).append((label, rec))
+
+    rows: list[Row] = []
+    for iso, items in sorted(by_country.items()):
+        matcher = BoundaryMatcher(iso, admin_level=1)
+        if not len(matcher):
+            logger.info("DHS: %s has no ADM1 boundaries loaded, skipping", iso)
+            continue
+
+        matched = 0
+        for label, rec in items:
+            boundary = matcher.match(label)
+            if boundary is None:
+                continue  # zone aggregates and unmatched labels are dropped, not guessed
+            value = rec.get("Value")
+            if value in (None, ""):
+                continue
+            key = (rec["DHS_CountryCode"], label)
+            rows.append(
+                Row(
+                    indicator=measure,
+                    boundary=boundary,
+                    year=int(rec["SurveyYear"]),
+                    value=float(value),
+                    ci_low=_val(lo_recs.get(key)),
+                    ci_high=_val(hi_recs.get(key)),
+                    source=Source.DHS,
+                    source_ref=rec.get("SurveyId") or f"{iso}{rec['SurveyYear']}DHS",
+                    license_code=License.OPEN_API,
+                    method=METHOD.format(survey=rec.get("SurveyId") or rec["SurveyYear"]),
+                    extra={"dhs_label": label, "category": rec.get("CharacteristicCategory")},
+                )
+            )
+            matched += 1
+
+        logger.info("DHS %s %s: %d/%d region labels matched to boundaries", iso, measure, matched, len(items))
+        if matcher.misses:
+            logger.debug("DHS %s unmatched labels: %s", iso, matcher.misses[:10])
+
+    return rows
+
+
+def _only(records: list[dict], indicator_id: str) -> list[dict]:
+    return [r for r in records if r.get("IndicatorId") == indicator_id]
+
+
+def _val(rec: dict | None) -> float | None:
+    if not rec:
+        return None
+    v = rec.get("Value")
+    return float(v) if v not in (None, "") else None
