@@ -66,6 +66,17 @@ SCOPES: dict[str, list[str]] = {
     "month": ["cohort_month"],
 }
 
+# Scope columns the CTE chain produces on its own. Anything else has to be
+# supplied by the caller, and asking for a scope whose column cannot be produced
+# is an error rather than SQL that fails at execution time.
+#
+# `llo` is the case in point: there is no LLO on a visit row -- the existing
+# dashboard carries an org->LLO map in its render code -- so the compiler used to
+# emit `props.llo` happily and fail with "column props.llo does not exist". It got
+# past validate() because `llo` had been whitelisted in the known-columns set,
+# which is the check defeating itself.
+INTRINSIC_SCOPE_COLUMNS = frozenset({"opportunity_id", "username", "cohort_month"})
+
 _CUBE_REF = re.compile(r"\{CUBE\}\.([a-zA-Z_][a-zA-Z0-9_]*)")
 # `{CUBE}` is the column namespace, not a measure -- exclude it or a measure sql
 # that references a column (C17 does) tries to resolve a measure named CUBE.
@@ -170,7 +181,11 @@ def compile_measures(registry: dict[str, Any]) -> dict[str, str]:
     return compiled
 
 
-def validate(props_doc: dict[str, Any], registry: dict[str, Any]) -> list[str]:
+def validate(
+    props_doc: dict[str, Any],
+    registry: dict[str, Any],
+    llo_map: dict[Any, str] | None = None,
+) -> list[str]:
     """Every {CUBE}.col must resolve to a real property or aggregate.
 
     This is the check a Cube runtime would do for us and will not, because we do
@@ -179,7 +194,10 @@ def validate(props_doc: dict[str, Any], registry: dict[str, Any]) -> list[str]:
     known = {p["name"] for p in props_doc["properties"]}
     known |= {a["name"] for a in props_doc["aggregates"]}
     known |= {d["name"] for d in props_doc["weight_series"]["derived"]}
-    known |= {"opportunity_id", "username", "llo", "baby_id", "cohort_month", "num_visits"}
+    known |= {"baby_id", "num_visits"}
+    known |= set(INTRINSIC_SCOPE_COLUMNS)
+    if llo_map:
+        known.add("llo")
 
     problems: list[str] = []
     for m in registry["measures"]:
@@ -219,18 +237,28 @@ def _property_levels(properties: list[dict[str, Any]]) -> list[list[dict[str, An
     return levels
 
 
+def _llo_case_sql(llo_map: dict[Any, str]) -> str:
+    """opportunity_id -> LLO as a CASE, so `llo` is a real column to GROUP BY."""
+    whens = " ".join(
+        f"WHEN {int(opp)} THEN '{str(name).replace(chr(39), chr(39) * 2)}'"
+        for opp, name in sorted(llo_map.items(), key=lambda kv: int(kv[0]))
+    )
+    return f"CASE v.opportunity_id {whens} ELSE NULL END"
+
+
 def _build_ctes(
     props_doc: dict[str, Any],
     registry: dict[str, Any],
     visit_sql: str,
     as_of: str,
+    llo_map: dict[Any, str] | None = None,
 ) -> tuple[str, dict[str, str]]:
     """The Layer 1 -> Layer 2 CTE chain, plus every measure's compiled expression.
 
     Shared by both entry points so a multi-scope rollup reuses ONE extraction
     instead of re-running the whole chain per scope.
     """
-    problems = validate(props_doc, registry)
+    problems = validate(props_doc, registry, llo_map=llo_map)
     if problems:
         raise RegistryError("registry does not validate:\n  " + "\n  ".join(problems))
 
@@ -256,6 +284,7 @@ def _build_ctes(
     final_props = prev
 
     compiled = compile_measures(registry)
+    llo_col = f",\n           {_llo_case_sql(llo_map)} AS llo" if llo_map else ""
 
     ctes = f"""WITH visits AS (
 {visit_sql}
@@ -303,13 +332,73 @@ visit_agg AS (
     GROUP BY baby_case_id
 ),
 base_m AS (
-    SELECT v.*, w.*, DATE_TRUNC('month', v.reg_date)::date AS cohort_month
+    SELECT v.*, w.*, DATE_TRUNC('month', v.reg_date)::date AS cohort_month{llo_col}
     FROM visit_agg v
     LEFT JOIN weight_agg w USING (baby_id)
 ),
 {prop_cte_sql},
 props AS (SELECT * FROM {final_props})"""
     return ctes.strip(), compiled
+
+
+def _check_scopes(scopes: list[str], llo_map: dict[Any, str] | None) -> None:
+    """Refuse a scope whose column cannot be produced, loudly and early."""
+    unknown = [sc for sc in scopes if sc not in SCOPES]
+    if unknown:
+        raise RegistryError(f"unknown scope(s) {unknown}; expected from {sorted(SCOPES)}")
+    available = set(INTRINSIC_SCOPE_COLUMNS) | ({"llo"} if llo_map else set())
+    for sc in scopes:
+        missing = [c for c in SCOPES[sc] if c not in available]
+        if missing:
+            raise RegistryError(
+                f"scope {sc!r} needs column(s) {missing}, which the pipeline does not "
+                f"produce. `llo` is not on a visit row -- pass llo_map={{opportunity_id: "
+                f"'LLO'}} to materialise it. Emitting SQL that references a column "
+                f"nothing defines is how this failed silently before."
+            )
+
+
+def _suppression_columns(
+    registry: dict[str, Any],
+    settings: dict[str, dict[Any, bool]] | None,
+    llo_map: dict[Any, str] | None,
+) -> str:
+    """Emit `<measure>_suppressed` for every declared suppression rule.
+
+    These are NOT bands. The workbook's Targets & settings rows say whether an
+    LLO records a thing credibly at all, and an indicator that fails the gate must
+    not be published even though it computes cleanly. The registry declared these
+    rules from the start and the compiler ignored them, which is the same gap this
+    project flagged in the other implementation -- so C14 would have shipped a
+    mortality figure for an LLO the workbook says does not record deaths credibly.
+    """
+    rules = registry.get("suppression") or []
+    if not settings or not rules:
+        return ""
+    by_indicator = {m["meta"]["indicator"]: m["name"] for m in registry["measures"] if m.get("meta")}
+    cols: list[str] = []
+    for rule in rules:
+        ind = rule["indicator"]
+        name = by_indicator.get(ind)
+        if name is None:
+            continue  # declared for an indicator this registry does not compute
+        table = settings.get(rule["setting"])
+        if table is None:
+            continue  # no values supplied for this setting
+        scope_col = rule.get("scope", "llo")
+        if scope_col == "llo" and not llo_map:
+            raise RegistryError(
+                f"suppression rule for {ind} is scoped by llo, but no llo_map was "
+                f"given. Silently not suppressing is the failure this rule exists to "
+                f"prevent, so this is an error rather than a skipped gate."
+            )
+        credible = [k for k, v in table.items() if v]
+        if credible:
+            lits = ", ".join("'" + str(k).replace("'", "''") + "'" for k in credible)
+            cols.append(f"(props.{scope_col} IS NULL OR props.{scope_col} NOT IN ({lits})) " f"AS {name}_suppressed")
+        else:
+            cols.append(f"TRUE AS {name}_suppressed")
+    return ("".join(f"{c},\n    " for c in cols)) if cols else ""
 
 
 def _measure_cols(registry: dict[str, Any], compiled: dict[str, str]) -> str:
@@ -322,18 +411,20 @@ def compile_indicator_sql(
     visit_sql: str,
     scope: str = "programme",
     as_of: str = "CURRENT_DATE",
+    llo_map: dict[Any, str] | None = None,
+    settings: dict[str, dict[Any, bool]] | None = None,
 ) -> str:
     """One statement for ONE scope. Prefer compile_rollup_sql for several."""
-    if scope not in SCOPES:
-        raise RegistryError(f"unknown scope {scope!r}; expected one of {sorted(SCOPES)}")
-    ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of)
+    _check_scopes([scope], llo_map)
+    ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of, llo_map=llo_map)
+    supp = _suppression_columns(registry, settings, llo_map)
     scope_cols = SCOPES[scope]
     scope_select = "".join(f"props.{c},\n    " for c in scope_cols)
     group_by = ("GROUP BY " + ", ".join(f"props.{c}" for c in scope_cols)) if scope_cols else ""
     return f"""{ctes}
 SELECT
     {scope_select}COUNT(*) AS n_cases,
-    {_measure_cols(registry, compiled)}
+    {supp}{_measure_cols(registry, compiled)}
 FROM props
 {group_by}
 """.strip()
@@ -345,6 +436,8 @@ def compile_rollup_sql(
     visit_sql: str,
     scopes: list[str] | None = None,
     as_of: str = "CURRENT_DATE",
+    llo_map: dict[Any, str] | None = None,
+    settings: dict[str, dict[Any, bool]] | None = None,
 ) -> str:
     """EVERY scope from ONE pass over props, via GROUPING SETS.
 
@@ -359,11 +452,10 @@ def compile_rollup_sql(
     Each output row carries a `scope` label naming the grouping set that produced it.
     """
     scopes = scopes or ["programme", "opportunity", "flw", "month"]
-    unknown = [s for s in scopes if s not in SCOPES]
-    if unknown:
-        raise RegistryError(f"unknown scope(s) {unknown}; expected from {sorted(SCOPES)}")
+    _check_scopes(scopes, llo_map)
 
-    ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of)
+    ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of, llo_map=llo_map)
+    supp = _suppression_columns(registry, settings, llo_map)
 
     all_cols: list[str] = []
     for sc in scopes:
@@ -391,7 +483,7 @@ SELECT
         ELSE 'other'
     END AS scope,
     {col_select}COUNT(*) AS n_cases,
-    {_measure_cols(registry, compiled)}
+    {supp}{_measure_cols(registry, compiled)}
 FROM props
 GROUP BY GROUPING SETS ({sets})
 """.strip()

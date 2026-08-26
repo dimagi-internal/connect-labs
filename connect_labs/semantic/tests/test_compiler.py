@@ -107,12 +107,59 @@ def test_number_measures_inline_their_siblings(registry):
     assert "{" not in c09  # every reference resolved
 
 
-def test_compiles_for_every_scope(props_doc, registry):
-    for scope in ("programme", "opportunity", "llo", "flw", "month"):
+def test_compiles_for_every_intrinsic_scope(props_doc, registry):
+    for scope in ("programme", "opportunity", "flw", "month"):
         sql = compile_indicator_sql(props_doc, registry, "SELECT 1", scope=scope)
         assert "WITH visits AS" in sql
         assert "{CUBE}" not in sql  # no unresolved placeholders
         assert ":ELIG_DAYS" not in sql  # constants substituted
+
+
+def test_llo_scope_without_a_map_is_refused(props_doc, registry):
+    """`llo` is not on a visit row. Emitting SQL for it was a runtime failure.
+
+    The compiler used to happily produce `props.llo` and fail at execution with
+    "column props.llo does not exist" -- and validate() missed it because `llo`
+    had been whitelisted in the known-columns set, i.e. the check defeated itself.
+    """
+    with pytest.raises(RegistryError, match="llo_map"):
+        compile_indicator_sql(props_doc, registry, "SELECT 1", scope="llo")
+
+
+def test_llo_scope_with_a_map_compiles(props_doc, registry):
+    sql = compile_indicator_sql(props_doc, registry, "SELECT 1", scope="llo", llo_map={10042: "PIPN"})
+    assert "AS llo" in sql
+    assert "props.llo" in sql
+
+
+def test_suppression_needs_the_scope_it_is_declared_on(props_doc, registry):
+    """Silently not suppressing is the failure the gate exists to prevent."""
+    with pytest.raises(RegistryError, match="no llo_map"):
+        compile_indicator_sql(
+            props_doc,
+            registry,
+            "SELECT 1",
+            scope="programme",
+            settings={"mortality_recording_credible": {"PIPN": True}},
+        )
+
+
+def test_suppression_emits_a_column_per_rule(props_doc, registry):
+    sql = compile_indicator_sql(
+        props_doc,
+        registry,
+        "SELECT 1",
+        scope="llo",
+        llo_map={10042: "PIPN", 1487: "GHI"},
+        settings={"mortality_recording_credible": {"PIPN": True, "GHI": False}},
+    )
+    assert "c14_suppressed" in sql
+    assert "'PIPN'" in sql  # the credible list drives the NOT IN
+
+
+def test_no_suppression_columns_when_no_settings(props_doc, registry):
+    sql = compile_indicator_sql(props_doc, registry, "SELECT 1", scope="programme")
+    assert "_suppressed" not in sql
 
 
 def test_unknown_scope_is_loud(props_doc, registry):
