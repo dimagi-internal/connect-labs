@@ -9,8 +9,10 @@ from connect_labs.labs.tests.test_settings import LABS_SETTINGS
 # URL the view is mounted at (config/urls.py: path("audit/", ...) + audit/urls.py)
 ENDPOINT = "/audit/api/opportunity/42/image-questions/"
 
-# The Connect API URL that ExportAPIClient will call
-CONNECT_URL = "https://connect.example.com/export/opportunity/42/user_visits/?images=true&page_size=2500"
+# The Connect API URL that ExportAPIClient will call.
+# page_size is the view's MAX_ROWS, not the client's 2500 default -- see
+# test_sampler_never_requests_more_rows_than_it_can_read.
+CONNECT_URL = "https://connect.example.com/export/opportunity/42/user_visits/?images=true&page_size=200"
 
 # ---- Fixtures for form_json / images shapes -----
 #
@@ -240,3 +242,34 @@ def test_image_types_returns_401_when_no_oauth_token(db):
     assert response.status_code == 401
     data = response.json()
     assert "error" in data
+
+
+@override_settings(**LABS_SETTINGS)
+def test_sampler_never_requests_more_rows_than_it_can_read(labs_client, httpx_mock):
+    """The cost property, not the response shape.
+
+    This is a SAMPLER: it reads at most MAX_ROWS rows and stops. But the export
+    client defaults to page_size=2500, and `partial_ok` only avoids fetching the
+    SECOND page -- the first is transferred in full before a single row is read.
+    So the endpoint asked Connect to build and ship 12x more image-bearing visits
+    than it could ever look at, and then waited for them.
+
+    Measured on 2026-08-26, after per-request telemetry could finally see outbound
+    calls at all: 6.9-8.9s per request, of which 4.8-5.2s was outbound wait on ONE
+    call -- fired four times concurrently, one per opportunity, by the audit wizard.
+
+    Asserting on the rendered question ids cannot catch this; the ids are correct
+    either way. Assert on the page_size actually requested.
+    """
+    from connect_labs.audit.views import OpportunityImageTypesAPIView
+
+    httpx_mock.add_response(url=CONNECT_URL, json=_page([]))
+
+    resp = labs_client.get(ENDPOINT)
+    assert resp.status_code == 200
+
+    (request,) = httpx_mock.get_requests()
+    requested = int(request.url.params["page_size"])
+    assert requested <= OpportunityImageTypesAPIView.MAX_ROWS, (
+        f"sampler requested {requested} rows but can only ever read " f"{OpportunityImageTypesAPIView.MAX_ROWS}"
+    )
