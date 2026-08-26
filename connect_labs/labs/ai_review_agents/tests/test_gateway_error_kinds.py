@@ -47,6 +47,23 @@ class _Client:
         return httpx.Response(self._status, json=self._payload, request=request)
 
 
+@pytest.fixture(autouse=True)
+def _dont_actually_back_off(monkeypatch):
+    """Take the gateway retry ladder off the clock.
+
+    Every test here asserts one thing: which ``error_kind`` a failure is reported
+    as. None asserts how long the retry ladder waits. But a connect error is
+    retryable, so ``test_connect_error_stays_unreachable`` sat through the real
+    jittered backoff in base.py -- 10.5-13.9s per agent, four agents, ~49s a run.
+    The rate-limit test already neutralised this by hand; doing it once for the
+    module covers its slower sibling too, and stops the next error-kind test
+    arriving with a hidden sleep attached.
+    """
+    from connect_labs.labs.ai_review_agents import base
+
+    monkeypatch.setattr(base.time, "sleep", lambda _seconds: None)
+
+
 def _context():
     # Every agent takes its image from whichever key it prefers, falling back to
     # the first available -- one context satisfies all four.
@@ -90,11 +107,7 @@ def test_server_error_is_reported_as_a_gateway_error(agent_cls):
 
 @pytest.mark.parametrize("agent_cls", AGENTS, ids=lambda c: c.agent_id)
 @override_settings(SCALE_VALIDATION_API_KEY="test-key")
-def test_exhausted_rate_limit_is_reported_as_rate_limited(agent_cls, monkeypatch):
-    from connect_labs.labs.ai_review_agents import base
-
-    monkeypatch.setattr(base.time, "sleep", lambda s: None)
-
+def test_exhausted_rate_limit_is_reported_as_rate_limited(agent_cls):
     result = _review_with(agent_cls, _Client(status=429))
 
     assert result.details["error_kind"] == ERROR_KIND_RATE_LIMITED
