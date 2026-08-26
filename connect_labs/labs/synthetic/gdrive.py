@@ -19,8 +19,11 @@ import logging
 import os
 import re
 import secrets
+import time
 
 import httpx
+
+from connect_labs.utils.request_telemetry import record_outbound_call
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +68,29 @@ class DriveClient:
             raise DriveAuthError("LABS_SYNTHETIC_GDRIVE_SA_KEY not set — cannot construct DriveClient.")
         self._timeout = timeout
 
+    def _timed_get(self, url: str, **kwargs):
+        """``httpx.get`` that reports itself to the per-request telemetry.
+
+        Drive reads are made with the module-level ``httpx.get``, which takes no
+        ``event_hooks``, so until this existed every Drive call was invisible to
+        ``RequestTelemetryMiddleware``: a page that made 22 of them logged
+        ``outbound_calls: 0`` and charged the whole wait to ``self_ms``. The
+        runbook reads a dominant ``self_ms`` as "the time is in our own Python",
+        so the telemetry actively pointed away from the real cause -- a wrong
+        answer rather than an error. Report the call explicitly instead.
+        """
+        started = time.perf_counter()
+        try:
+            return httpx.get(url, **kwargs)
+        finally:
+            try:
+                record_outbound_call(
+                    httpx.URL(url).host or "drive.googleapis.com",
+                    (time.perf_counter() - started) * 1000,
+                )
+            except Exception:  # telemetry must never break the call it measures
+                logger.debug("drive telemetry failed", exc_info=True)
+
     def _bearer(self) -> str:
         # Google-issued SA tokens live for ~1 hour. google-auth's `valid`
         # property is False when the token is missing or within the
@@ -94,7 +120,7 @@ class DriveClient:
             **_SHARED_DRIVES,
         }
         try:
-            resp = httpx.get(
+            resp = self._timed_get(
                 f"{DRIVE_API}/files",
                 headers=self._headers(),
                 params=params,
@@ -110,7 +136,7 @@ class DriveClient:
     def download_file(self, file_id: str) -> bytes:
         """Return the raw bytes of a Drive file."""
         try:
-            resp = httpx.get(
+            resp = self._timed_get(
                 f"{DRIVE_API}/files/{file_id}",
                 headers=self._headers(),
                 params={"alt": "media", **_SHARED_DRIVES},

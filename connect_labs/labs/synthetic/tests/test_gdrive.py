@@ -229,3 +229,67 @@ def test_all_requests_include_shared_drive_params(httpx_mock, fake_creds):
 
     for req in httpx_mock.get_requests():
         assert "supportsAllDrives=true" in str(req.url), f"missing supportsAllDrives on {req.url}"
+
+
+# ---------------------------------------------------------------------------
+# Per-request telemetry
+# ---------------------------------------------------------------------------
+
+
+def test_drive_reads_are_counted_against_the_in_flight_request(httpx_mock, fake_creds):
+    """Drive reads must show up as outbound calls.
+
+    They did not before 2026-08-26: `DriveClient` uses the module-level
+    `httpx.get`, which takes no `event_hooks`, so a workflow run page making 22
+    Drive round-trips logged `outbound_calls: 0` and charged all ~15s to
+    `self_ms`. The performance runbook reads a dominant `self_ms` as "the time is
+    in our own Python" and says not to look at the dependency — so the telemetry
+    did not merely miss the cause, it pointed away from it.
+    """
+    from connect_labs.utils import request_telemetry
+    from connect_labs.utils.request_telemetry import RequestStats, current_stats
+
+    httpx_mock.add_response(
+        url=(
+            "https://www.googleapis.com/drive/v3/files"
+            "?q=%27folder-abc%27+in+parents+and+trashed+%3D+false"
+            "&fields=files%28id%2Cname%29&pageSize=1000"
+            "&includeItemsFromAllDrives=true&corpora=allDrives&supportsAllDrives=true"
+        ),
+        json={"files": [{"id": "file-1", "name": "user_data.json"}]},
+    )
+    httpx_mock.add_response(
+        url="https://www.googleapis.com/drive/v3/files/file-1?alt=media&supportsAllDrives=true",
+        content=b"[]",
+    )
+
+    token = request_telemetry._stats.set(RequestStats())
+    try:
+        client = gdrive.DriveClient()
+        client.list_folder("folder-abc")
+        client.download_file("file-1")
+
+        stats = current_stats()
+        assert stats.outbound_calls == 2
+        assert stats.outbound_by_host["www.googleapis.com"] == 2
+    finally:
+        request_telemetry._stats.reset(token)
+
+
+def test_drive_telemetry_never_breaks_the_call_it_measures(httpx_mock, fake_creds, monkeypatch):
+    """Outside a request there are no stats to record against, and a broken
+    recorder must not take the Drive read down with it."""
+    from connect_labs.labs.synthetic import gdrive as gdrive_mod
+
+    monkeypatch.setattr(
+        gdrive_mod,
+        "record_outbound_call",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("telemetry exploded")),
+    )
+    httpx_mock.add_response(
+        url="https://www.googleapis.com/drive/v3/files/file-1?alt=media&supportsAllDrives=true",
+        content=b"payload",
+    )
+
+    client = gdrive.DriveClient()
+    assert client.download_file("file-1") == b"payload"
