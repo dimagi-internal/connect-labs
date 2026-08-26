@@ -28,7 +28,12 @@ from connect_labs.labs.context import get_org_data
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.utils.feature_access import can_create_from_template, get_allowed_templates
-from connect_labs.workflow.data_access import PipelineCacheMiss, PipelineDataAccess, WorkflowDataAccess
+from connect_labs.workflow.data_access import (
+    PipelineCacheMiss,
+    PipelineDataAccess,
+    WorkflowDataAccess,
+    serialize_pipeline_row,
+)
 from connect_labs.workflow.templates import MULTI_OPTION_COERCERS, TEMPLATES
 from connect_labs.workflow.templates import create_workflow_from_template as create_from_template
 from connect_labs.workflow.templates import schedule_options_for_definition, template_supports_default_run
@@ -4534,11 +4539,6 @@ class PipelineDataStreamView(BaseSSEStreamView):
             # Determine which opps to pull data from
             opp_ids = definition.opportunity_ids or [int(opportunity_id)]
 
-            def format_date(d):
-                if d and hasattr(d, "isoformat"):
-                    return d.isoformat()
-                return d
-
             # Execute each pipeline source with streaming.
             pipeline_data = {}
             pipeline_access = PipelineDataAccess(
@@ -4631,26 +4631,15 @@ class PipelineDataStreamView(BaseSSEStreamView):
 
                             if result:
                                 yield send_sse_event(f"Processing {alias} data (opp {opp_id})...")
-                                for row in result.rows:
-                                    row_dict = {
-                                        "id": getattr(row, "id", None),
-                                        "entity_id": row.entity_id,
-                                        "entity_name": row.entity_name,
-                                        "username": row.username,
-                                        "visit_date": format_date(row.visit_date),
-                                        "total_visits": getattr(row, "total_visits", 0),
-                                        "approved_visits": getattr(row, "approved_visits", 0),
-                                        "pending_visits": getattr(row, "pending_visits", 0),
-                                        "rejected_visits": getattr(row, "rejected_visits", 0),
-                                        "flagged_visits": getattr(row, "flagged_visits", 0),
-                                        "first_visit_date": format_date(getattr(row, "first_visit_date", None)),
-                                        "last_visit_date": format_date(getattr(row, "last_visit_date", None)),
-                                        "opportunity_id": opp_id,
-                                    }
-                                    custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
-                                    if custom:
-                                        row_dict.update(custom)
-                                    merged_rows.append(row_dict)
+                                # One shared serializer with the cached/snapshot
+                                # path, so the live and snapshot payloads cannot
+                                # drift apart again (ace#1657: this block used to
+                                # hand-roll its own dict and silently dropped
+                                # `status` and `flagged`).
+                                merged_rows.extend(
+                                    serialize_pipeline_row(row, extra={"opportunity_id": opp_id})
+                                    for row in result.rows
+                                )
                         except Exception as e:
                             from connect_labs.labs.analysis.backends.sql.cache import CacheConcurrencyError
                             from connect_labs.labs.integrations.commcare.api_client import CCHQAuthError
