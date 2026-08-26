@@ -62,13 +62,20 @@ class TestReadPathFallback:
         spy.assert_called_once_with(status="completed")
         assert index["111:b1"]["result"] == "pass"
 
-    def test_built_opportunity_does_not_touch_connect_at_all(self):
-        """The whole point: no export-API round trip on a built opportunity."""
+    def test_a_built_opportunity_asks_only_the_cheap_question(self):
+        """Not "no round trip" any more -- one WATERMARK query, not a full fetch.
+
+        Since the watermark landed, a built opportunity asks the export API only
+        for sessions later than what it has ingested. On production opp 2157 that
+        is 0.11s against 1.79s for the full fetch, and it doubles as the
+        incremental update.
+        """
         s = _session(1, "completed", {"111": _vr(b1="fail")}, completed_at=_dt(1))
         rebuild_opportunity(OPP, [s])
-        with patch.object(AuditDataAccess, "get_audit_sessions") as spy:
+        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[]) as spy:
             index = _da().get_prior_audited_images(opportunity_id=OPP)
-        spy.assert_not_called()
+        assert spy.call_count == 1
+        assert "completed_at__gt" in spy.call_args.kwargs, "must be the bounded query, not a full fetch"
         assert index["111:b1"]["result"] == "fail"
 
     def test_rows_without_a_state_row_are_not_trusted(self):
@@ -96,14 +103,17 @@ class TestReadPathFallback:
         """
         rebuild_opportunity(OPP, [_session(1, "in_progress", {"111": _vr(b1="pass")})])
         assert is_built(OPP)
-        with patch.object(AuditDataAccess, "get_audit_sessions") as spy:
+        # No completed sessions means no watermark to bound a query with, so this
+        # takes the full path -- which is cheap precisely because there is nothing
+        # to return. What matters is that it does not report stale or wrong data.
+        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[]):
             assert _da().get_prior_audited_images(opportunity_id=OPP) == {}
-        spy.assert_not_called()
 
     def test_exclude_session_id_is_honoured_on_the_projection_path(self):
         s = _session(7, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
         rebuild_opportunity(OPP, [s])
-        assert _da().get_prior_audited_images(opportunity_id=OPP, exclude_session_id=7) == {}
+        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[]):
+            assert _da().get_prior_audited_images(opportunity_id=OPP, exclude_session_id=7) == {}
 
     def test_other_opportunities_are_unaffected_by_a_build(self):
         rebuild_opportunity(OPP, [_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))])
@@ -164,9 +174,10 @@ class TestJustInTimePopulation:
         s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
         with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[s]):
             _da().get_prior_audited_images(opportunity_id=OPP)
-        with patch.object(AuditDataAccess, "get_audit_sessions") as spy:
+        # Second read serves from cache after one bounded check -- no full fetch.
+        with patch.object(AuditDataAccess, "get_audit_sessions", return_value=[]) as spy:
             index = _da().get_prior_audited_images(opportunity_id=OPP)
-        spy.assert_not_called()
+        assert "completed_at__gt" in spy.call_args.kwargs
         assert index["111:b1"]["result"] == "pass"
 
     def test_a_stale_cache_is_recomputed_rather_than_served(self):
