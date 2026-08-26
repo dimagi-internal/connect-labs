@@ -18,6 +18,8 @@ import re
 
 import httpx
 
+from connect_labs.utils import request_telemetry
+
 logger = logging.getLogger(__name__)
 
 _OPP_ID_RE = re.compile(r"/opportunity/(\d+)/")
@@ -116,6 +118,13 @@ class ExportAPIClient:
             },
             timeout=timeout,
             follow_redirects=True,
+            # Count these against the in-flight request. Without the hooks a
+            # paginated export -- one call per page -- reported `outbound_calls: 0`
+            # and its whole wait landed in `self_ms`, which reads as "our own
+            # Python" and is exactly backwards. Only api_client.py opted in
+            # before; a fan-out through this client could never trip the
+            # `outbound_fanout` reason.
+            event_hooks=request_telemetry.httpx_event_hooks(),
         )
 
     def close(self):
