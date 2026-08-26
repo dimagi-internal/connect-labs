@@ -41,6 +41,15 @@ logger = logging.getLogger(__name__)
 
 BUNDLE_CSS_RELDIR = Path("connect_labs") / "static" / "bundles" / "css"
 
+# The stylesheets the runner page actually links (`connect_labs/templates/
+# base.html`). Deliberately NOT a `*.css` glob of the bundle directory: other
+# builds drop sheets in there that the page never loads — `webpack/
+# build-supply.js` writes `supply-bundle.css`, which defines `.btn`, `.card`,
+# `.field`. Globbing would let a render_code using `btn` read as "available"
+# while rendering completely unstyled, which is a MISSED warning of exactly the
+# class this module exists to catch.
+RUNNER_STYLESHEETS = ("vendors.css", "tailwind.css")
+
 # Cap what we hand back: a render file that fails wholesale (e.g. bundles built
 # from a different branch) should not return a thousand-item list.
 MAX_REPORTED = 25
@@ -67,13 +76,56 @@ _INTERPOLATION_SENTINEL = "\x00"
 # is skipped rather than guessed at.
 _UTILITY_TOKEN_RE = re.compile(r"^(?:[a-z][a-z0-9._-]*:)*-?[a-z][a-zA-Z0-9._-]*(?:\[[^\]\s]+\])?(?:/[0-9.]+)?$")
 
+# Single-word utilities with no `-`, `:` or `/` to identify them by. Any OTHER
+# hyphen-free token is ignored, because the dominant idiom in this repo's render
+# code puts non-class string literals inside a className expression:
+#
+#     className={'px-2 py-1 ' + (session.status === 'completed' ? ... : ...)}
+#
+# `completed` is a comparison operand, not a class. Measured over the 34 render
+# templates in connect_labs/workflow/templates/, that shape yields 15 distinct
+# bogus candidates at 19 sites (`completed`, `pass`, `red`, `error`, `match`,
+# `date_range`, ...), plus `t("Total visits")` -> `visits` and
+# `styles["card-body"]` -> `card-body`. Warning about ~0.6 non-classes per
+# template would make this noise an author learns to skip, which costs exactly
+# the signal labs#1294 needs. Every one of those 19 is hyphen-free, and every
+# utility the issue measured as purged is not.
+_HYPHEN_FREE_UTILITIES = frozenset(
+    """
+    block inline flex grid contents hidden table isolate static fixed absolute relative sticky
+    visible invisible collapse truncate italic underline overline uppercase lowercase capitalize
+    border rounded shadow blur grayscale invert sepia transform transition resize container
+    antialiased outline ring filter snap prose flex-1 grow shrink basis-0
+    """.split()
+)
+
+
+def _is_judgeable(token: str) -> bool:
+    """Whether we are confident enough that `token` is meant to be a CSS class.
+
+    Fail-open in both directions: a hyphen-free utility we forgot is silently
+    skipped (a missed warning), never wrongly reported.
+    """
+    if not _UTILITY_TOKEN_RE.match(token):
+        return False
+    # A token left dangling by string concatenation — `"text-" + colour` yields
+    # `text-`, the same partial-token problem the ${...} sentinel solves for
+    # template literals.
+    if token.endswith(("-", ":")):
+        return False
+    if "-" in token or ":" in token or "/" in token or "[" in token:
+        return True
+    return token in _HYPHEN_FREE_UTILITIES
+
+
 # Class selectors in a compiled stylesheet, including CSS-escaped characters
 # (`.bg-emerald-500\/20`, `.min-w-\[52px\]`, `.hover\:bg-blue-500`).
 _CSS_CLASS_RE = re.compile(r"\.((?:\\.|[A-Za-z0-9_-])+)")
 
 _UNESCAPE_RE = re.compile(r"\\(.)")
 
-_cache: dict[str, object] = {}
+# Single key, published as one tuple so a reader never sees a half-written entry.
+_cache: dict[str, tuple] = {}
 
 
 def _bundle_dir() -> Path:
@@ -92,7 +144,7 @@ def available_classes(bundle_dir: Path | None = None) -> frozenset[str] | None:
     """
     directory = Path(bundle_dir) if bundle_dir is not None else _bundle_dir()
     try:
-        sheets = sorted(directory.glob("*.css"))
+        sheets = [p for p in (directory / name for name in RUNNER_STYLESHEETS) if p.is_file()]
     except OSError:
         return None
     if not sheets:
@@ -103,8 +155,13 @@ def available_classes(bundle_dir: Path | None = None) -> frozenset[str] | None:
         key = (str(directory), tuple((p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in sheets))
     except OSError:
         return None
-    if _cache.get("key") == key:
-        return _cache["classes"]  # type: ignore[return-value]
+    # Read once into a local: publishing `key` and `classes` as two writes left
+    # a window where another thread saw a matching key with no classes yet
+    # (KeyError) or with the previous build's classes. Under gunicorn gthread
+    # that is a live race.
+    cached = _cache.get("state")
+    if cached is not None and cached[0] == key:
+        return cached[1]
 
     classes: set[str] = set()
     for sheet in sheets:
@@ -113,8 +170,7 @@ def available_classes(bundle_dir: Path | None = None) -> frozenset[str] | None:
         except OSError:
             logger.warning("Could not read stylesheet bundle %s", sheet)
     result = frozenset(classes)
-    _cache["key"] = key
-    _cache["classes"] = result
+    _cache["state"] = (key, result)
     return result
 
 
@@ -131,7 +187,7 @@ def extract_class_candidates(source: str) -> set[str]:
             # A token touching an interpolation is not a class we can judge.
             masked = _INTERPOLATION_RE.sub(_INTERPOLATION_SENTINEL, literal)
             for token in masked.split():
-                if _UTILITY_TOKEN_RE.match(token):
+                if _is_judgeable(token):
                     tokens.add(token)
     return tokens
 
