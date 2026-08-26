@@ -14,7 +14,7 @@ import logging
 import re
 
 from connect_labs.labs.analysis.backends.sql.query_builder import generate_sql_preview
-from connect_labs.workflow.data_access import PipelineDataAccess
+from connect_labs.workflow.data_access import PipelineDataAccess, serialize_pipeline_row
 
 from ..connect_token import require_connect_token
 from ..tool_registry import MCPToolError, register
@@ -382,31 +382,16 @@ def pipeline_preview(
             except Exception as e:
                 return {"rows": [], "metadata": {"error": str(e)}}
 
+            # Same shared serializer as the dashboard payloads. This block used
+            # to hand-roll its own row dict and omitted `entity_id`,
+            # `entity_name`, `status` and `flagged` — so previewing a
+            # visit_level pipeline reported no review outcome, which is exactly
+            # the defect ace#1657 hit on the live dashboard payload, on the
+            # surface an author uses to check a pipeline BEFORE wiring a
+            # dashboard to it.
             rows = []
             if hasattr(raw_result, "rows"):
-                for row in raw_result.rows:
-
-                    def format_date(d):
-                        if d and hasattr(d, "isoformat"):
-                            return d.isoformat()
-                        return str(d) if d else None
-
-                    row_dict = {
-                        "id": getattr(row, "id", None),
-                        "username": getattr(row, "username", None),
-                        "visit_date": format_date(getattr(row, "visit_date", None)),
-                        "total_visits": getattr(row, "total_visits", 0),
-                        "approved_visits": getattr(row, "approved_visits", 0),
-                        "pending_visits": getattr(row, "pending_visits", 0),
-                        "rejected_visits": getattr(row, "rejected_visits", 0),
-                        "flagged_visits": getattr(row, "flagged_visits", 0),
-                        "first_visit_date": format_date(getattr(row, "first_visit_date", None)),
-                        "last_visit_date": format_date(getattr(row, "last_visit_date", None)),
-                    }
-                    custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
-                    if custom:
-                        row_dict.update(custom)
-                    rows.append(row_dict)
+                rows = [serialize_pipeline_row(row) for row in raw_result.rows]
 
             return {
                 "rows": rows,
