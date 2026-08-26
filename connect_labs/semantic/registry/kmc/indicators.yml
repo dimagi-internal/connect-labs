@@ -545,6 +545,41 @@ measures:
     type: sum
     sql: '{CUBE}.n_weight_readings'
 
+  # ── Input-availability gates ─────────────────────────────────────────────
+  # Not indicators (no `meta`), so they are emitted as columns but never treated
+  # as one. They reproduce the render's inputState(): an indicator whose input the
+  # scope never records must read n/a, not 0. At programme level every input
+  # exists somewhere, so this only bites on a drill -- 268 of 5,302 per-FLW checks
+  # disagreed until these were added, all on C20/C21.
+  #
+  # `max` over a 0/1 expression, staying inside Cube's measure vocabulary.
+  # ZERO_IS_ABSENT fields (referred, ever_danger_sign, self_referral_count) test
+  # for a TRUTHY value: a recorded zero means "nothing was recorded", not a real 0.
+  - name: anyrec_weights
+    type: max
+    sql: 'CASE WHEN COALESCE({CUBE}.n_weights, 0) > 0 THEN 1 ELSE 0 END'
+  - name: anyrec_days_discharge_to_reg
+    type: max
+    sql: 'CASE WHEN {CUBE}.days_discharge_to_reg IS NOT NULL THEN 1 ELSE 0 END'
+  - name: anyrec_referred
+    type: max
+    sql: 'CASE WHEN {CUBE}.referred THEN 1 ELSE 0 END'
+  - name: anyrec_ever_danger_sign
+    type: max
+    sql: 'CASE WHEN {CUBE}.ever_danger_sign THEN 1 ELSE 0 END'
+  - name: anyrec_self_referral_count
+    type: max
+    sql: 'CASE WHEN COALESCE({CUBE}.self_referral_count, 0) > 0 THEN 1 ELSE 0 END'
+  - name: anyrec_kmc_hours_mean
+    type: max
+    sql: 'CASE WHEN {CUBE}.kmc_hours_mean IS NOT NULL THEN 1 ELSE 0 END'
+  - name: anyrec_birth_weight_g
+    type: max
+    sql: 'CASE WHEN {CUBE}.birth_weight_g IS NOT NULL THEN 1 ELSE 0 END'
+  - name: anyrec_enrollment_weight_g
+    type: max
+    sql: 'CASE WHEN {CUBE}.enrollment_weight_g IS NOT NULL THEN 1 ELSE 0 END'
+
 # ---------------------------------------------------------------------------
 # Suppression -- the channel the workbook needs and Neal's schema does not yet have.
 # These are NOT bands. They decide whether a computed number may be shown at all.

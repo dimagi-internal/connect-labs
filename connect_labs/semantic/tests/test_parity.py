@@ -94,7 +94,7 @@ VISITS = [
 DDL = """
 DROP TABLE IF EXISTS fixture_visits;
 CREATE TABLE fixture_visits (
-    baby_case_id text, visit_date timestamp, weights double precision,
+    baby_case_id text, visit_date timestamp, weight_g double precision,
     child_alive_no boolean, danger_sign_yes boolean, referred_yes boolean,
     self_referral_yes boolean, ebf_recorded boolean, form_name text,
     days_discharge_to_reg double precision, birth_weight_g double precision,

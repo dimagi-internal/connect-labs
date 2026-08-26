@@ -25,12 +25,13 @@ entity: baby
 
 constants:
   ELIG_DAYS: 28 # eligibility gate, days from FIRST VISIT
-  SWING: 0.25 # max fractional change between consecutive weights
+  SWING: 0.3 # max fractional change between consecutive weights (render js: SWING = 0.3)
   GROWTH_LO_DAY: 21 # early-growth window, lower bound (days from first visit)
   GROWTH_HI_DAY: 35 # early-growth window, upper bound
   PLAUSIBLE_LO: 10 # g/kg/day - PROVISIONAL, not the workbook's definition
   PLAUSIBLE_HI: 20 # g/kg/day - PROVISIONAL
-  WMIN: 400 # implausible weight floor (g), drops the reading
+  WMIN: 250 # implausible weight floor (g). 250, not 400: these are preterm
+  # babies and a 400g floor silently discards real low-birth-weight readings.
   WMAX: 8000 # implausible weight ceiling (g)
 
 # ---------------------------------------------------------------------------
@@ -45,7 +46,7 @@ aggregates:
   - name: last_visit
     sql: 'MAX(visit_date)'
   - name: reg_date
-    sql: 'MIN(reg_date) FILTER (WHERE reg_date IS NOT NULL)'
+    sql: 'MIN(reg_date::timestamp) FILTER (WHERE reg_date IS NOT NULL)'
   - name: birth_weight_g
     sql: 'MIN(birth_weight_g) FILTER (WHERE birth_weight_g IS NOT NULL)'
   - name: enrollment_weight_g
@@ -79,9 +80,9 @@ aggregates:
   # RAW weights array, so both must be computed here before the day collapse -- using
   # n_weight_days here would silently change the denominator of the rounding rate.
   - name: n_weight_readings
-    sql: 'COUNT(*) FILTER (WHERE weights IS NOT NULL)'
+    sql: 'COUNT(*) FILTER (WHERE weight_g IS NOT NULL)'
   - name: n_weights_round_100_raw
-    sql: 'COUNT(*) FILTER (WHERE weights IS NOT NULL AND weights::numeric % 100 = 0)'
+    sql: 'COUNT(*) FILTER (WHERE weight_g IS NOT NULL AND weight_g::numeric % 100 = 0)'
 
 # ---------------------------------------------------------------------------
 # Weight-series properties. These are the two the browser does with a loop; in
