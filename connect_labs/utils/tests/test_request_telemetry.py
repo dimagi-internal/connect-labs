@@ -11,7 +11,7 @@ A clean request must stay completely silent — this runs on every request, so
 import json
 import logging
 import time
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -326,3 +326,129 @@ class TestDurationAttribution:
             assert current_stats().outbound_ms == 0.0
         finally:
             request_telemetry._stats.reset(token)
+
+
+class TestHttpxInstrumentationIsDefaultOn:
+    """Every outbound call counts, not only the one client that opted in.
+
+    connect-labs#1298: ``/labs/callback/`` was logged at 4-16.5s with
+    ``outbound_calls: 0``, ``outbound_ms: 0`` and ``self_ms`` ~99% of duration, which
+    reads as "our own CPU" and sent the investigation hunting for a hot loop. The view
+    provably makes four outbound calls; none were counted, because the hooks were
+    opt-in and only ``LabsRecordAPIClient`` opted in. ``self_ms`` is a RESIDUAL
+    (duration - outbound - db), so everything unmeasured lands in it wearing the label
+    of our own code.
+
+    The fix is that instrumentation is no longer something a call site has to know
+    about. These tests pin that.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _installed(self):
+        request_telemetry.install_httpx_instrumentation()
+
+    def _hooks_of(self, client):
+        return client.event_hooks["request"], client.event_hooks["response"]
+
+    def test_a_plain_client_is_instrumented(self):
+        """This is the shape ``httpx.get`` / ``httpx.post`` build internally.
+
+        The module-level helpers construct a bare ``httpx.Client`` per call, which is
+        exactly what the OAuth callback uses for all four of its requests.
+        """
+        import httpx
+
+        req, resp = self._hooks_of(httpx.Client())
+        assert request_telemetry._on_request in req
+        assert request_telemetry._on_response in resp
+
+    def test_an_async_client_gets_awaitable_hooks(self):
+        """AsyncClient ``await``s its hooks; a sync function there would raise."""
+        import inspect
+
+        import httpx
+
+        req, resp = self._hooks_of(httpx.AsyncClient())
+        assert all(inspect.iscoroutinefunction(h) for h in req)
+        assert all(inspect.iscoroutinefunction(h) for h in resp)
+
+    def test_caller_supplied_hooks_are_kept(self):
+        import httpx
+
+        mine = MagicMock()
+        req, resp = self._hooks_of(httpx.Client(event_hooks={"request": [mine], "response": [mine]}))
+        assert mine in req and mine in resp
+        assert request_telemetry._on_request in req
+        assert request_telemetry._on_response in resp
+
+    def test_an_explicitly_opted_in_client_is_not_counted_twice(self):
+        """``LabsRecordAPIClient`` still passes ``httpx_event_hooks()`` by hand."""
+        import httpx
+
+        req, resp = self._hooks_of(httpx.Client(event_hooks=request_telemetry.httpx_event_hooks()))
+        assert req.count(request_telemetry._on_request) == 1
+        assert resp.count(request_telemetry._on_response) == 1
+
+    def test_install_is_idempotent(self):
+        """Middleware is constructed once per process, but never rely on that."""
+        import httpx
+
+        for _ in range(3):
+            request_telemetry.install_httpx_instrumentation()
+
+        req, resp = self._hooks_of(httpx.Client())
+        assert req.count(request_telemetry._on_request) == 1
+        assert resp.count(request_telemetry._on_response) == 1
+
+    def test_an_uninstrumented_client_now_lands_in_outbound_not_self(self):
+        """End-to-end: the number #1298 needed. No opt-in anywhere in this test."""
+        import httpx
+
+        transport = httpx.MockTransport(lambda request: httpx.Response(200, json={}))
+
+        token = request_telemetry._stats.set(RequestStats())
+        try:
+            with httpx.Client(transport=transport) as client:
+                client.get("https://connect.dimagi.com/export/opp_org_program_list/")
+
+            stats = current_stats()
+            assert stats.outbound_calls == 1
+            assert stats.outbound_by_host == {"connect.dimagi.com": 1}
+        finally:
+            request_telemetry._stats.reset(token)
+
+    def test_middleware_construction_installs_it(self):
+        """The install point: once per worker, before any request is served."""
+        import httpx
+
+        _middleware(lambda r: "ok")
+        req, _ = self._hooks_of(httpx.Client())
+        assert request_telemetry._on_request in req
+
+    def test_the_1298_line_now_attributes_the_wait_to_outbound(self, request_obj, caplog):
+        """The regression, stated as the log line an operator actually reads.
+
+        Before: ``outbound_calls: 0``, ``outbound_ms: 0``, ``self_ms`` ~= duration —
+        which says "our own CPU" about a request that was waiting on Connect.
+        """
+        import httpx
+
+        def handler(request):
+            time.sleep(0.05)
+            return httpx.Response(200, json={})
+
+        def view_that_calls_connect(_request):
+            # No event_hooks anywhere: the shape of every call in oauth_views.py.
+            with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+                client.get("https://connect.dimagi.com/export/opp_org_program_list/")
+            return "ok"
+
+        caplog.set_level("WARNING")
+        with patch.object(request_telemetry, "SLOW_REQUEST_MS", 1):
+            _middleware(view_that_calls_connect)(request_obj)
+
+        (line,) = _lines(caplog)
+        assert line["outbound_calls"] == 1
+        assert line["outbound_by_host"] == {"connect.dimagi.com": 1}
+        assert line["outbound_ms"] >= 50, "the wait must land in outbound_ms"
+        assert line["self_ms"] < line["outbound_ms"], "and must NOT be relabelled as our own CPU"
