@@ -1,5 +1,6 @@
 """Workflow tools — live-instance iteration from Claude Code."""
 
+import logging
 import re
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAc
 
 from ..connect_token import require_connect_token
 from ..tool_registry import MCPToolError, register
+
+logger = logging.getLogger(__name__)
 
 
 def _collect_user_opportunity_ids(access_token: str) -> set[int]:
@@ -257,6 +260,28 @@ def _validate_render_code(jsx: str) -> None:
             f"render_code exceeds {_MAX_RENDER_CODE_BYTES // 1024} KB. Split it into helper "
             "workflows or move data to pipelines.",
         )
+
+
+def _attach_render_code_warning(result: dict, jsx: str) -> dict:
+    """Name any CSS class the deployed stylesheet bundles don't define.
+
+    Advisory only, attached to a SUCCESSFUL write. render_code lives in the
+    database, so Tailwind never scans it and silently ships without whatever
+    utilities labs' own sources happen not to contain — an invisible bar, a
+    zero-height wrapper, no error anywhere (labs#1294). This is the signal an
+    authoring agent needs at the moment of the write. It is not a rejection:
+    see connect_labs/workflow/render_code_lint.py for why.
+    """
+    from connect_labs.workflow.render_code_lint import render_code_warning
+
+    try:
+        warning = render_code_warning(jsx)
+    except Exception:  # never let an advisory check break a successful write
+        logger.exception("render_code class check failed")
+        return result
+    if warning:
+        result["render_code_warning"] = warning
+    return result
 
 
 from connect_labs.workflow.templates import (  # noqa: E402
@@ -869,13 +894,16 @@ def workflow_create(
             )
             render_code_version = saved.version
 
-        return {
+        result = {
             "workflow_id": definition.id,
             "render_code_version": render_code_version,
             "opportunity_ids": list(cleaned_opp_ids),
             "_version_before": None,
             "_version_after": 1,
         }
+        if render_code is not None:
+            result = _attach_render_code_warning(result, render_code)
+        return result
     finally:
         if hasattr(wda, "close"):
             wda.close()
@@ -1150,12 +1178,15 @@ def workflow_update_render_code(
             component_code=component_code,
             version=expected_version + 1,
         )
-        return {
-            "workflow_id": workflow_id,
-            "new_version": new_record.version,
-            "_version_before": expected_version,
-            "_version_after": new_record.version,
-        }
+        return _attach_render_code_warning(
+            {
+                "workflow_id": workflow_id,
+                "new_version": new_record.version,
+                "_version_before": expected_version,
+                "_version_after": new_record.version,
+            },
+            component_code,
+        )
     finally:
         if hasattr(wda, "close"):
             wda.close()
@@ -1251,14 +1282,17 @@ def workflow_patch_render_code(
             component_code=patched,
             version=expected_version + 1,
         )
-        return {
-            "workflow_id": workflow_id,
-            "new_version": new_record.version,
-            "chars_before": len(existing),
-            "chars_after": len(patched),
-            "_version_before": expected_version,
-            "_version_after": new_record.version,
-        }
+        return _attach_render_code_warning(
+            {
+                "workflow_id": workflow_id,
+                "new_version": new_record.version,
+                "chars_before": len(existing),
+                "chars_after": len(patched),
+                "_version_before": expected_version,
+                "_version_after": new_record.version,
+            },
+            patched,
+        )
     finally:
         if hasattr(wda, "close"):
             wda.close()
