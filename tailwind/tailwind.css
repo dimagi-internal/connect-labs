@@ -4,6 +4,10 @@
 @import '@fortawesome/fontawesome-free/css/all.min.css';
 
 @source "./safelists.txt";
+/* Guaranteed utility floor for DB-stored workflow render_code, which Tailwind
+   never scans. Generated -- see connect_labs/labs/tailwind_safelist.py and
+   dimagi-internal/connect-labs#1294. */
+@source "./safelist-generated.txt";
 
 @custom-variant dark (&:is(.dark *));
 

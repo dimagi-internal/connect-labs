@@ -2523,13 +2523,20 @@ def save_render_code_api(request, definition_id):
         if definition_data:
             data_access.update_definition(definition_id, definition_data)
 
-        return JsonResponse(
-            {
-                "success": True,
-                "definition_id": definition_id,
-                "render_code_id": render_code_record.id,
-            }
-        )
+        payload = {
+            "success": True,
+            "definition_id": definition_id,
+            "render_code_id": render_code_record.id,
+        }
+        # Non-blocking: name any CSS class the deployed bundles don't define, so
+        # the author hears about it now instead of shipping an invisible panel
+        # (labs#1294). Never fails the save — see render_code_lint's docstring.
+        from connect_labs.workflow.render_code_lint import render_code_warning
+
+        warning = render_code_warning(component_code)
+        if warning:
+            payload["render_code_warning"] = warning
+        return JsonResponse(payload)
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
