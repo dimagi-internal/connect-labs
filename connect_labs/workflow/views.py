@@ -5,10 +5,12 @@ These views handle listing, viewing, and executing workflows that are stored
 as LabsRecord objects with React component code for rendering.
 """
 
+import contextvars
 import json
 import logging
 import re
 from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
 from django.conf import settings
@@ -743,6 +745,59 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 return opp
         return None
 
+    @staticmethod
+    def _load_workers(data_access, effective_opp_ids):
+        """Workers for every opportunity a (possibly multi-opp) workflow spans.
+
+        Concurrent, because these are independent and almost entirely network wait.
+        Measured 2026-08-26 on /labs/workflow/13234/run/: eleven SEQUENTIAL calls to
+        /export/opportunity/<id>/user_data/, ~350-580ms each, 4.3s of a 6.3s page.
+
+        Caching would be the other obvious move and it is WRONG here. A worker record
+        carries visit_count / last_active / approved_visits / flagged_visits -- live
+        numbers, on a page someone drives an audit from. The sibling Drive-backed path
+        IS cached (#1300) because fixtures are static; the two arms look identical and
+        have opposite caching properties. See #1301.
+        """
+        if not effective_opp_ids:
+            return []
+
+        # One context copy PER TASK, made HERE in the request thread.
+        #
+        # request_telemetry counts outbound calls in a ContextVar, and a pool thread
+        # starts with an EMPTY context -- so calling copy_context() inside the worker
+        # copies the worker's own blank context and every call goes uncounted. That
+        # would re-create, in a new place, exactly the blind spot #1300 removed. It
+        # has to be copied on this side of the submit.
+        #
+        # A separate copy each, not one shared: Context.run() refuses to be entered
+        # re-entrantly, so a single copy submitted N times raises "cannot enter
+        # context: already entered". The copies share the same RequestStats object,
+        # which is what makes the counts add up.
+        contexts = {oid: contextvars.copy_context() for oid in effective_opp_ids}
+
+        # Bounded: this runs inside a request on a shared web task, and an unbounded
+        # pool over a large multi-opp workflow would open that many sockets at once.
+        max_workers = min(len(effective_opp_ids), 8)
+        results: dict[int, list[dict]] = {}
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="wf-workers") as pool:
+            futures = {pool.submit(contexts[oid].run, data_access.get_workers, oid): oid for oid in effective_opp_ids}
+            for fut in as_completed(futures):
+                oid = futures[fut]
+                try:
+                    results[oid] = fut.result()
+                except Exception:
+                    logger.exception("Failed to load workers for opp %s", oid)
+
+        # Re-assembled in the ORIGINAL opportunity order. as_completed yields by
+        # completion time, and the runner renders this list as given -- so consuming
+        # that order would shuffle the roster nondeterministically between loads.
+        workers: list[dict] = []
+        for oid in effective_opp_ids:
+            for w in results.get(oid, []):
+                workers.append({**w, "opportunity_id": oid})
+        return workers
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         definition_id = self.kwargs.get("definition_id")
@@ -841,14 +896,9 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # multi-opp list, so drop the None primary in that case.
             effective_opp_ids = definition.opportunity_ids or ([opportunity_id] if opportunity_id else [])
 
-            # Fetch workers for each opp and tag with opportunity_id
-            workers: list[dict] = []
-            for oid in effective_opp_ids:
-                try:
-                    for w in data_access.get_workers(oid):
-                        workers.append({**w, "opportunity_id": oid})
-                except Exception:
-                    logger.exception("Failed to load workers for opp %s", oid)
+            # Bound to a local as well: workflow_data below serialises the same list
+            # into the runner payload.
+            workers = self._load_workers(data_access, effective_opp_ids)
             context["workers"] = workers
 
             # Hoisted: flags are loaded only on the run-id branch (live
