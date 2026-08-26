@@ -83,6 +83,24 @@ class _ReadingAgent:
         return ReviewResult.success(match=True)
 
 
+@pytest.fixture(autouse=True)
+def _dont_actually_back_off(monkeypatch):
+    """Take the retry-sweep backoff off the clock.
+
+    Nothing in this file asserts anything about waiting. But five of these tests
+    drive ``agent_timeout``, and ``timeout`` is a saturation kind, so each one
+    tripped the real ``_RETRY_SWEEP_BACKOFF_SECONDS`` sleep in
+    ``_run_ai_review_on_sessions`` -- 30 seconds of wall clock, five times, for
+    assertions about log lines and error tallies. That was ~150s of every CI run
+    and every local run, buying no coverage: the backoff itself is deliberately
+    tested in test_ai_review_retry_sweep.py, which records the sleeps instead of
+    taking them and asserts both their total and their slice size.
+
+    Same idiom as that file, so the two stay recognisable as the same trick.
+    """
+    monkeypatch.setattr(tasks.time, "sleep", lambda _seconds: None)
+
+
 @pytest.fixture
 def patched_registry(monkeypatch):
     agents = {
