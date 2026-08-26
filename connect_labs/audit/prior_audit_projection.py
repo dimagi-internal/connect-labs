@@ -152,6 +152,11 @@ def rebuild_opportunity(opportunity_id: int, sessions, built_by: str = "", prune
         state.built_by = (built_by or "")[:150]
         state.source_sessions = len(sessions)
     state.rows = total_rows
+    # A full rebuild has ingested everything it was handed, so the watermark
+    # moves to that batch's high mark and the next reader asks only for later.
+    wm = compute_watermark(sessions)
+    if wm and (state.watermark is None or wm > state.watermark):
+        state.watermark = wm
     state.save()
 
     return {
@@ -278,18 +283,74 @@ def verify_opportunity(
     )
 
 
-#: How stale a projection may be before the next reader rebuilds it.
+#: Backstop only. The watermark below is the primary freshness mechanism; this
+#: bounds the one thing a watermark structurally CANNOT see.
 #:
-#: Not a correctness mechanism -- ``record_session`` keeps the table in step as
-#: sessions complete and reopen. This bounds how long a MISSED dual-write can go
-#: unnoticed, and a missed one is expected: record_session deliberately swallows
-#: its errors so a failed cache write cannot 500 an audit already completed.
+#: A watermark asks "what completed_at is later than mine?", so it finds additions
+#: and edits. It cannot find a REMOVAL: a session that was reopened has its
+#: completed_at cleared, so it simply stops appearing rather than showing up as
+#: changed. Retractions are handled by record_session at the write chokepoint --
+#: but that is deliberately best-effort and swallows its errors, so a failed one
+#: leaves a verdict standing that should have been withdrawn.
 #:
-#: Fifteen minutes costs at most one live computation per opportunity per quarter
-#: hour -- which is what the code did on EVERY request before any of this existed
-#: -- and it removes the need for a scheduled reconciler running under somebody's
-#: stored credential.
-STALE_AFTER = timedelta(minutes=15)
+#: A daily full rebuild costs one extra fetch per opportunity per day and closes
+#: that hole. It is long precisely because it is no longer doing the routine
+#: work: before the watermark this was 15 minutes and every reader past it paid
+#: for a full rebuild whether anything had changed or not.
+STALE_AFTER = timedelta(hours=24)
+
+
+def get_state(opportunity_id: int):
+    return PriorAuditProjectionState.objects.filter(opportunity_id=opportunity_id).first()
+
+
+def compute_watermark(sessions):
+    """Highest completed_at across these sessions, or None."""
+    stamps = [_as_dt(getattr(s, "completed_at", None)) for s in sessions]
+    stamps = [t for t in stamps if t is not None]
+    return max(stamps) if stamps else None
+
+
+@transaction.atomic
+def merge_changed(opportunity_id: int, changed_sessions, built_by: str = "") -> dict:
+    """Fold in only the sessions that changed since the last watermark.
+
+    Deliberately NOT rebuild_opportunity: that refreshes every session it is
+    handed, and the whole point here is to touch only what moved. Same
+    per-session semantics though -- a session seen and still completed has its
+    rows refreshed, one seen and no longer completed loses them.
+
+    The watermark only advances; a batch that somehow arrives with an older max
+    must not rewind it and cause the same records to be re-fetched forever.
+    """
+    state = PriorAuditProjectionState.objects.select_for_update().get(opportunity_id=opportunity_id)
+    written = 0
+    for session in changed_sessions:
+        PriorAuditVerdict.objects.filter(session_id=session.id).delete()
+        rows = rows_for_session(session)
+        if rows:
+            PriorAuditVerdict.objects.bulk_create(rows, batch_size=1000)
+            written += len(rows)
+
+    new_wm = compute_watermark(changed_sessions)
+    if new_wm and (state.watermark is None or new_wm > state.watermark):
+        state.watermark = new_wm
+    state.rows = PriorAuditVerdict.objects.filter(opportunity_id=opportunity_id).count()
+    if built_by:
+        state.built_by = built_by[:150]
+    state.save()
+    return {
+        "opportunity_id": opportunity_id,
+        "sessions_merged": len(changed_sessions),
+        "rows_written": written,
+        "rows_total": state.rows,
+        "watermark": state.watermark,
+    }
+
+
+def is_stale(state) -> bool:
+    """Past the full-rebuild floor. See STALE_AFTER for why one still exists."""
+    return (timezone.now() - state.built_at) >= STALE_AFTER
 
 
 def is_fresh(opportunity_id: int) -> bool:

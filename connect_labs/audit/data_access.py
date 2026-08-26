@@ -1416,50 +1416,56 @@ class AuditDataAccess(BaseDataAccess):
         return self._query_audit_sessions(username=username, **kwargs)
 
     def get_prior_audited_images(self, opportunity_id, exclude_session_id=None) -> dict:
-        """Prior-audit index for one opportunity, cached just-in-time.
+        """Prior-audit index for one opportunity, kept current by watermark.
 
-        Serves the local projection when it is fresh; otherwise computes the
-        index live with THIS caller's credentials, stores it, and returns it.
+        Three paths, cheapest first:
 
-        WHY JUST-IN-TIME, AND WHY NO STORED CREDENTIAL
-        The alternative -- backfill every opportunity in a batch, then read from
-        the table -- needs a credential for the batch to run under: a service
-        account, or some person's cached OAuth token driving a scheduled job.
-        That is a standing grant, it outlives the session that created it, and it
-        makes the data's completeness a function of whichever identity ran the
-        job.
+        1. **Built and current** -- ask the export API only for sessions whose
+           completed_at is later than the watermark. Nothing back means nothing
+           changed, and the cached index is served. Measured on opp 2157
+           (339 completed sessions): **0.11s**, against 1.79s for a full fetch.
+        2. **Built, something changed** -- that same query already RETURNED the
+           changed sessions, so they are merged in directly. No second round
+           trip, and only what moved is re-processed.
+        3. **Cold, or older than STALE_AFTER** -- full build.
 
-        None of it is necessary. The request that needs this answer has already
-        authenticated AND already proved access to the opportunity -- the caller
-        fetched an audit session in it (404 otherwise) before reaching here. So
-        the read that populates the cache is authorised by the very request that
-        wanted it, with live credentials, and nothing is stored on anyone's
-        behalf.
+        WHY A WATERMARK RATHER THAN A TIMER
+        The earlier version rebuilt on a 15-minute TTL, so a reader past the
+        window paid a full fetch whether or not anything had changed, and a
+        change inside the window went unseen for up to 15 minutes. The watermark
+        is both cheaper and fresher: no work when idle, and a change is picked up
+        by the very next read.
 
-        WHY ONE REQUESTER'S VIEW IS THE WHOLE VIEW
-        The export API authorises at OPPORTUNITY level --
-        LabsRecordDataView._check_get_permissions -> _get_opportunity_or_404 --
-        with no per-session ACL beneath it. Anyone allowed to read one of an
-        opportunity's audit sessions may read all of them, so an index built by
-        any authorised caller is complete for that opportunity.
+        This is only possible because completed_at now MOVES when a completed
+        session is edited (#1286). While it was frozen there was no timestamp
+        that tracked a verdict change at all.
 
-        WHY THE ACL IS RE-CHECKED EVERY TIME, NOT INHERITED
-        Because the check IS the caller's own fetch, on every request -- not a
-        permission recorded when the row was written. A user whose access is
-        revoked stops getting past get_audit_session immediately; nothing here
-        can serve them from a grant that has since been taken away.
+        WHAT THE WATERMARK CANNOT SEE, AND WHY THE BACKSTOP REMAINS
+        Removals. A reopened session has its completed_at cleared, so it stops
+        appearing rather than showing up as changed. Retractions are handled at
+        the write chokepoint by record_session -- which is best-effort by design
+        -- so STALE_AFTER (24h) stays as a full-rebuild floor to catch a
+        dual-write that failed.
 
-        Staleness is bounded by projection.STALE_AFTER rather than by a scheduled
-        reconciler, so a missed completion dual-write self-heals on the next read.
+        Authorisation is unchanged: every path uses THIS caller's credentials,
+        and the caller has already proved access to the opportunity to get here.
         """
         from connect_labs.audit import prior_audit_projection as projection
 
-        if projection.is_fresh(opportunity_id):
+        state = projection.get_state(opportunity_id)
+        if state and state.watermark and not projection.is_stale(state):
+            changed = [
+                s
+                for s in self.get_audit_sessions(status="completed", completed_at__gt=state.watermark.isoformat())
+                if s.opportunity_id == opportunity_id
+            ]
+            if changed:
+                projection.merge_changed(opportunity_id, changed, built_by=self._requesting_username())
             return projection.read_index(opportunity_id, exclude_session_id=exclude_session_id)
 
         # status="completed" is pushed down to the API rather than left to
         # build_prior_audit_index, which drops non-completed sessions anyway.
-        # Verified against production 2026-08-25: server-filtered counts match
+        # Verified against production: server-filtered counts match
         # Python-filtered exactly across five opportunities.
         #
         # opportunity_id is deliberately NOT pushed down alongside it: an id is
