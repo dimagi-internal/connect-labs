@@ -77,44 +77,69 @@ def refresh_connect_token(request) -> bool:
 # for an account with almost no membership and 4.7-15.0s for broad Dimagi staff
 # access. Labs was asking 182-455 times a day against 1-7 logins (#1298).
 #
-# 300s is the same window audit/link_helpers.py already chose for this exact call in
-# #1175, kept identical so there is one number to reason about rather than two. It
-# collapses the bursts that dominate the volume (calls arrive seconds apart) while
-# keeping a membership change visible within five minutes — and staleness cannot
-# produce a false denial, because mcp/tools/synthetic.py asks production directly
-# when its copy of the list does not contain the opportunity in question (#1212).
-_ORG_DATA_CACHE_TTL = 300
+# An hour, not the 300s #1310 shipped, because almost nothing downstream needs this
+# list to be current to the minute and the one field that looks time-sensitive is not
+# read from here anyway. `visit_count` reaches pipelines through
+# labs_context["opportunity"], which context.py builds from get_org_data(request) --
+# the SESSION copy, written once at login and thereafter only by the refresh button.
+# A long-lived session is already running on a count that is hours or days old, so an
+# extra hour at the moment of login is noise against that, not a new class of
+# staleness. Anything that genuinely needs an exact visit count should ask for it
+# directly rather than read it off this payload.
+#
+# The escape hatch is what makes the hour safe: "Refresh organization data" forces a
+# live fetch and repopulates the entry the next login will read.
+_ORG_DATA_CACHE_TTL = 3600
 
 
-def _org_data_cache_key(access_token: str) -> str:
-    """Cache key for one token's org tree.
+def _org_data_cache_key(access_token: str, owner: str | None = None) -> str:
+    """Cache key for one org tree, keyed on its OWNER where that can be proven.
 
-    Hashed, never the token itself: this key goes to Redis, which is not a
-    credential store. Keyed on the TOKEN rather than the user because that is all
-    the request-less callers (MCP tools, Celery) have, and because a fresh login
-    mints a fresh token — so the OAuth callback always misses and always gets live
-    data, which is what you want at login.
+    Hashed either way: this key goes to Redis, which is not a credential store, and
+    the usernames here are frequently @dimagi.com addresses.
+
+    ``owner`` must be derived FROM the credential -- the username OAuth introspection
+    returned for this token, or the user whose ``UserConnectToken`` this is -- never
+    from an ambient ``request.user`` that merely happens to be nearby. That is what
+    keeps the key's scope identical to the payload's authorization scope; get it
+    wrong and one user is served another's org tree.
+
+    #1310 keyed on the token alone. That is trivially safe but could never serve the
+    case the issue was about: a sign-in mints a new token, so login always missed, a
+    silent ``refresh_connect_token`` rotation orphaned a good entry, and the ~400
+    calls a day that dominate the volume warmed nothing for logins despite carrying a
+    different token for the same person. Callers that cannot prove alignment (CLI,
+    management commands, Celery) still pass no owner and keep that behaviour, where
+    the worst case is a miss.
     """
-    return f"labs:org_data:{hashlib.sha256(access_token.encode()).hexdigest()}"
+    if owner:
+        return f"labs:org_data:owner:{hashlib.sha256(owner.encode()).hexdigest()}"
+    return f"labs:org_data:token:{hashlib.sha256(access_token.encode()).hexdigest()}"
 
 
-def fetch_user_organization_data(access_token: str, force_refresh: bool = False) -> dict | None:
+def fetch_user_organization_data(
+    access_token: str, force_refresh: bool = False, owner: str | None = None
+) -> dict | None:
     """
     Fetch user's organizations, programs, and opportunities from Connect production.
 
-    Cached per access token for ``_ORG_DATA_CACHE_TTL``. Only a SUCCESSFUL fetch is
-    cached: caching the ``None`` would make one network blip look like a revoked
-    permission for the whole window, which is the failure #1195 was filed for.
+    Cached for ``_ORG_DATA_CACHE_TTL``, keyed by ``owner`` when the caller can prove
+    the token belongs to them and by the token otherwise -- see
+    ``_org_data_cache_key``. Only a SUCCESSFUL fetch is cached: caching the ``None``
+    would make one network blip look like a revoked permission for the whole window,
+    which is the failure #1195 was filed for.
 
     Args:
         access_token: OAuth Bearer token for Connect production
         force_refresh: skip the cache and repopulate it. For the "refresh org data"
             view, whose entire purpose is to defeat staleness.
+        owner: username the token belongs to, derived from the token itself. Omit
+            rather than guess.
 
     Returns:
         Dict with 'organizations', 'programs', 'opportunities' keys, or None if fails.
     """
-    cache_key = _org_data_cache_key(access_token)
+    cache_key = _org_data_cache_key(access_token, owner)
     if not force_refresh:
         cached = cache.get(cache_key)
         if cached is not None:

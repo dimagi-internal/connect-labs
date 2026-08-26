@@ -252,7 +252,7 @@ def test_accessible_opp_ids_uses_user_token(user, monkeypatch):
         captured["user"] = u
         return "tok-abc"
 
-    def _fake_fetch(token):
+    def _fake_fetch(token, **_):
         captured["token"] = token
         return {"opportunities": [{"id": 1}, {"id": 2}, {"id": 3}]}
 
@@ -689,7 +689,7 @@ def test_access_set_is_fetched_once_per_bulk_operation(user, monkeypatch):
     monkeypatch.setattr(
         _oauth,
         "fetch_user_organization_data",
-        lambda tok: (calls.append(1), {"opportunities": [{"id": i} for i in (523, 524, 675)]})[1],
+        lambda tok, **_: (calls.append(1), {"opportunities": [{"id": i} for i in (523, 524, 675)]})[1],
     )
     monkeypatch.setattr(syn, "_require_opportunity_access", _REAL_REQUIRE_OPPORTUNITY_ACCESS)
     for opp in (523, 524, 675):
@@ -707,7 +707,7 @@ def test_upstream_failure_is_not_reported_as_permission_denied(user, monkeypatch
     monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
     import connect_labs.labs.integrations.connect.oauth as _oauth
 
-    monkeypatch.setattr(_oauth, "fetch_user_organization_data", lambda tok: None)
+    monkeypatch.setattr(_oauth, "fetch_user_organization_data", lambda tok, **_: None)
     with pytest.raises(MCPToolError) as exc:
         syn._accessible_opp_ids_for_user(user)
     assert exc.value.code == "UPSTREAM_ERROR"
@@ -731,7 +731,9 @@ def test_truncated_list_does_not_deny_access_production_confirms(user, monkeypat
     monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
     # The truncated list: everything below 948 is missing.
     monkeypatch.setattr(
-        _oauth, "fetch_user_organization_data", lambda tok: {"opportunities": [{"id": i} for i in (948, 1116, 1739)]}
+        _oauth,
+        "fetch_user_organization_data",
+        lambda tok, **_: {"opportunities": [{"id": i} for i in (948, 1116, 1739)]},
     )
 
     monkeypatch.setattr(syn, "_fetch_endpoint", lambda *a, **k: {"id": 523, "name": "NAMA"})
@@ -750,7 +752,7 @@ def test_a_real_denial_is_still_a_denial(user, monkeypatch):
     syn._ACCESS_CACHE.clear()
     syn._PROBE_CACHE.clear()
     monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
-    monkeypatch.setattr(_oauth, "fetch_user_organization_data", lambda tok: {"opportunities": [{"id": 948}]})
+    monkeypatch.setattr(_oauth, "fetch_user_organization_data", lambda tok, **_: {"opportunities": [{"id": 948}]})
 
     def _refuse(*a, **k):
         raise RuntimeError("403 Forbidden")
@@ -772,7 +774,7 @@ def test_unreachable_production_is_not_a_grant(user, monkeypatch):
     syn._ACCESS_CACHE.clear()
     syn._PROBE_CACHE.clear()
     monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
-    monkeypatch.setattr(_oauth, "fetch_user_organization_data", lambda tok: {"opportunities": [{"id": 948}]})
+    monkeypatch.setattr(_oauth, "fetch_user_organization_data", lambda tok, **_: {"opportunities": [{"id": 948}]})
 
     def _boom(*a, **k):
         raise RuntimeError("network down")
@@ -907,7 +909,7 @@ def test_denial_names_the_identity_labs_resolved(user, monkeypatch):
     monkeypatch.setattr(
         _oauth,
         "fetch_user_organization_data",
-        lambda tok: {
+        lambda tok, **_: {
             "opportunities": [{"id": 948}],
             "organizations": [{"slug": "dimagi-kmc", "name": "Dimagi KMC"}],
         },

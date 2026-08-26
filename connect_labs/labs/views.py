@@ -56,9 +56,12 @@ def refresh_org_data(request):
 
     access_token = labs_oauth["access_token"]
 
-    # Fetch fresh organization data. force_refresh because this view exists purely to
-    # defeat staleness -- serving it the cached tree would make the button a no-op.
-    org_data = fetch_user_organization_data(access_token, force_refresh=True)
+    # force_refresh because this view exists purely to defeat staleness -- serving it
+    # the cached tree would make the button a no-op. owner= matters just as much: the
+    # entry it repopulates is the one the next login reads, and without it the button
+    # would refresh this session while leaving every other reader on the stale copy.
+    # The token is this session's, so request.user IS its owner.
+    org_data = fetch_user_organization_data(access_token, force_refresh=True, owner=request.user.username)
 
     if org_data:
         # Update session with fresh data
