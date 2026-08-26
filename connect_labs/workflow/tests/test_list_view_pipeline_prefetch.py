@@ -90,3 +90,91 @@ def test_prefetch_failure_degrades_to_the_old_per_id_behaviour():
     assert cache == {}
     row = view._build_workflow_row(_fake_def(1, [{"pipeline_id": 100, "alias": "a"}]), [], access, cache, {})
     assert row["pipelines"][0]["name"] == "Fetched by id"
+
+
+def test_program_scope_prefetch_sweeps_member_opportunities():
+    """The case production actually hits, and the one the original tests lacked.
+
+    Pipeline definitions are OPPORTUNITY-owned, so a program-scoped
+    `list_definitions()` returns nothing. #1309's logging measured exactly that on
+    five separate real loads:
+
+        [pipeline-prefetch] scope=program_id=217 prefetched=0 ids=[]
+        [pipeline-prefetch] MISS id=16588 (int) definition=16590
+        ... 14 more MISSes ...
+
+    while opportunity mode was fine (`scope=opportunity_id=2190 prefetched=1`).
+    That asymmetry is why the first fix looked correct and shipped green: the
+    original tests mock `list_definitions` to return the referenced pipelines, so
+    they assume away the very condition that breaks it.
+
+    Here the program scope returns NOTHING and the pipelines are reachable only
+    per-opportunity -- so a passing test requires the sweep, and no amount of
+    correct rendering can fake it.
+    """
+    access = mock.Mock()
+
+    def list_definitions(include_shared=False, opportunity_id=None):
+        if opportunity_id is None:
+            return []  # program scope owns no pipelines
+        return {11: [_pipeline(100, "From opp 11")], 22: [_pipeline(200, "From opp 22")]}.get(opportunity_id, [])
+
+    access.list_definitions.side_effect = list_definitions
+
+    cache = WorkflowListView()._prefetch_pipeline_cache(access, opportunity_ids=[11, 22])
+
+    assert sorted(cache) == [100, 200]
+    assert access.list_definitions.call_count == 2  # one per opportunity, not per pipeline
+
+
+def test_program_scope_prefetch_survives_one_bad_opportunity():
+    """A scope that errors must not discard the scopes that already succeeded."""
+    access = mock.Mock()
+
+    def list_definitions(include_shared=False, opportunity_id=None):
+        if opportunity_id == 11:
+            raise Exception("Connect unavailable for this opp")
+        return [_pipeline(200, "From opp 22")]
+
+    access.list_definitions.side_effect = list_definitions
+
+    cache = WorkflowListView()._prefetch_pipeline_cache(access, opportunity_ids=[11, 22])
+
+    assert sorted(cache) == [200]
+
+
+def test_explicit_opportunity_scope_replaces_the_clients_program_scope():
+    """The AND-filter trap, pinned.
+
+    The production API AND-filters every scope param, so sending program_id
+    alongside an explicit opportunity_id returns an opportunity-owned record as
+    "not found" -- which is the failure this whole fix is about, reintroduced one
+    layer down. `BaseDataAccess.__init__` documents the same trap for the session
+    -context case.
+    """
+    from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
+
+    client = LabsRecordAPIClient("token", program_id=217)
+    # Isolate param construction: the labs-only dispatch check queries the DB and
+    # is not what this test is about.
+    client._is_labs_only = lambda *_a, **_k: False
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return []
+
+    def fake_get(url, params=None):
+        captured.update(params or {})
+        return FakeResponse()
+
+    client.http_client = mock.Mock()
+    client.http_client.get.side_effect = fake_get
+
+    client.get_records(experiment="pipeline", type="pipeline_definition", opportunity_id=11)
+
+    assert captured.get("opportunity_id") == 11
+    assert "program_id" not in captured, "program_id must not stack onto an explicit opportunity scope"
