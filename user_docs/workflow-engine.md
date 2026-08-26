@@ -216,6 +216,18 @@ Previously, some dashboard elements could appear invisible or unstyled with no e
 
 This has been fixed. All colours and sizing options available to dashboard authors now render correctly. If you previously noticed a chart, figure, or panel that looked blank, collapsed, or oddly coloured, it should now display as intended. If you still see a dashboard element that appears missing or unstyled, contact whoever manages your program's dashboards so they can review the configuration.
 
+### Review outcome counts on open runs
+
+On a dashboard backed by a visit-level pipeline — such as an in-progress audit run — the summary figures for flagged and rejected visits now show correct counts even while the run is still open. Previously, those counts showed **0 flagged** and **0 rejected** on any run that had not yet been marked complete, even when flagged and rejected records were already present.
+
+This fix applies in three places:
+
+- The **live dashboard** for an open run
+- The **run list**, which displays summary counts next to each run
+- The **pipeline preview**, which program authors use to check a pipeline's output before wiring a dashboard to it
+
+If you were previously cross-checking flagged or rejected counts between a dashboard and a pipeline preview and saw zeroes in one or both places, those figures should now match the actual records.
+
 ---
 
 ## Flags and Actions
@@ -236,15 +248,4 @@ Every row has an **Actions** column. What the Actions cell shows depends on whet
 
 **When no audit or task exists yet**, the cell shows two menu buttons: **Create Audit ▾** and **Create Task ▾**.
 
-The dropdown menus display each option as an outlined button so every option is clearly clickable. The open menu has a coloured border and header band matching its trigger button — blue for **Create Audit**, purple for **Create Task** — so the menu is visually connected to the button that opened it.
-
-**Menu positioning:** When a row is near the bottom of the screen, the Create Audit and Create Task dropdown menus open upward instead of downward, so the options are always fully visible and never hidden below the edge of the screen.
-
-**Create Audit menu** always contains exactly two options:
-
-- **New Audit** — opens a blank audit record for that worker
-- **Audit Last 7 days** — opens an audit pre-scoped to the most recent seven days of that worker's visits
-
-**Create Task menu** contains:
-
-- **New Task** — opens a
+The dropdown menus
