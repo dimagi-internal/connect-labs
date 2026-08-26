@@ -26,7 +26,16 @@ logger = logging.getLogger(__name__)
 
 
 def _format_pipeline_date(d):
-    """Serialize a pipeline row's date/datetime field for JSON."""
+    """Serialize a pipeline row's date/datetime field for JSON.
+
+    This is the cached/snapshot path's historical behaviour. The live SSE path
+    had its own copy that returned a non-date value *unchanged* instead of
+    `str(d) if d else None`; unifying on this one is deliberate — the snapshot
+    is the reference shape. The only reachable difference is a falsy-but-not-
+    None `VisitRow.visit_date` (the SQL backend passes a non-`date` straight
+    through, `backends/sql/backend.py`), where the live payload now emits
+    `null` where it used to emit `""`.
+    """
     if d and hasattr(d, "isoformat"):
         return d.isoformat()
     return str(d) if d else None
@@ -35,13 +44,16 @@ def _format_pipeline_date(d):
 def serialize_pipeline_row(row, extra: dict | None = None) -> dict:
     """Canonical JSON shape for ONE pipeline result row.
 
-    This is the single producer of pipeline row dicts. Every payload path must
-    go through it so their key sets cannot drift apart:
+    This is the single producer of pipeline row dicts. Every payload path goes
+    through it so their key sets cannot drift apart:
 
       * the cached/snapshot reads (`_serialize_pipeline_rows` below), which feed
-        a completed run's `instance.snapshot.pipelines.<alias>.rows`, and
+        a completed run's `instance.snapshot.pipelines.<alias>.rows`,
       * the live SSE stream (`PipelineDataStreamView.stream_data`), which feeds
-        an `in_progress` run's dashboard.
+        an `in_progress` run's dashboard, and
+      * the MCP `pipeline_preview` tool (`connect_labs/mcp/tools/pipelines.py`),
+        which is what an author checks a pipeline with before wiring a
+        dashboard to it.
 
     They *did* drift. The SSE view hand-rolled its own row dict that omitted
     `status` and `flagged` — the two fields `VisitRow` carries and `FLWRow`
@@ -55,9 +67,21 @@ def serialize_pipeline_row(row, extra: dict | None = None) -> dict:
     See ace#1657.
 
     `extra` is merged *before* the row's computed/custom fields, matching the
-    pre-existing SSE behaviour where a pipeline field of the same name (e.g.
-    the `opportunity_id` field declared by `chc_audit_history`) wins over the
-    framework-supplied value.
+    pre-existing SSE behaviour where a pipeline field of the same name wins
+    over the framework-supplied value.
+
+    That last point is preserved for compatibility, not because it is settled.
+    `chc_audit_history` declares a pipeline field literally named
+    `opportunity_id`, and the three payload producers disagree about which
+    value wins: the live SSE path lets the pipeline field win (via `extra`
+    here), while `get_pipeline_data` and `get_cached_pipeline_data` stamp
+    `{**row, "opportunity_id": opp_id}` *after* the merge, so the framework
+    value wins. If those two values ever differ, that dashboard reads one
+    thing live and another from its own snapshot — the same failure shape as
+    ace#1657, one field over. Unifying the key sets (what this function is
+    for) does not fix the value precedence; that needs a separate change and
+    live data to confirm which value is correct. Tracked in
+    dimagi-internal/connect-labs#1306.
     """
     row_dict = {
         "id": getattr(row, "id", None),
