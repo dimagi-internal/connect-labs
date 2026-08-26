@@ -388,6 +388,54 @@ Resources:
   # 2026-08-14 four runs skipped all 260 of their images (image_download_failed)
   # and the line sat unread for four days until a manual log review found it.
   # A log nobody reads is not a signal, so this makes it one.
+  # ── Web worker crash loop ─────────────────────────────────────────────────
+  # gunicorn workers being killed. On 2026-08-24 the web tier killed 453 of them
+  # in a day and NOTHING noticed, because the obvious alarm to reach for -- memory
+  # -- would not have caught it: MemoryUtilization read 29-35% throughout. The
+  # spike is per-REQUEST (one request materialised 61,917 visit rows), so the
+  # process is reaped between two 1-minute metric samples and the gauge never
+  # moves. Workers were dying 22-90 seconds after booting.
+  #
+  # So the signal has to be the restart itself, counted from the log, not memory
+  # observed after the fact. This is the alarm that would have caught it.
+  WebWorkerKilledMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WebLogGroupName
+      FilterPattern: '"was sent SIGKILL"'
+      MetricTransformations:
+        - MetricNamespace: Labs/Web
+          MetricName: WorkerKilled
+          MetricValue: '1'
+          DefaultValue: 0
+
+  WebWorkerCrashLoopAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-web-worker-crash-loop
+      AlarmDescription: >-
+        gunicorn workers are being killed repeatedly on the web tier. Almost always
+        a single request allocating far too much at once -- the 2026-08-24 case was
+        requests materialising a whole opportunity's visits to answer a one-row
+        question. Look in /ecs/labs-jj-web for a "[SQL] Loaded N visits" line near
+        the kills, and for the request that triggered it. NOTE the memory graph will
+        probably look fine: the spike is shorter than a metric sample, which is why
+        this alarm counts restarts instead.
+      Namespace: Labs/Web
+      MetricName: WorkerKilled
+      Statistic: Sum
+      # 5 kills per 5 minutes, sustained over two periods. Calibrated against the
+      # 2026-08-24 incident (58/71/160 per hour through 12:00-14:00, i.e. ~5-13 per
+      # 5 min) so it fires on that, while a stray one-off kill -- which happens on
+      # ordinary days and is not actionable -- does not.
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
   WebEmptyAiAuditMetricFilter:
     Type: AWS::Logs::MetricFilter
     Properties:
