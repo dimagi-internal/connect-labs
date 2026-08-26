@@ -1726,12 +1726,20 @@ class PipelineDataAccess(BaseDataAccess):
     # Pipeline Definition Methods
     # -------------------------------------------------------------------------
 
-    def list_definitions(self, include_shared: bool = False) -> list[PipelineDefinitionRecord]:
-        """List pipeline definitions."""
+    def list_definitions(
+        self, include_shared: bool = False, opportunity_id: int | None = None
+    ) -> list[PipelineDefinitionRecord]:
+        """List pipeline definitions.
+
+        ``opportunity_id`` re-scopes this one call, so a program-scoped caller can
+        sweep its member opportunities on a single client. Pipeline definitions are
+        OPPORTUNITY-owned, so a program-scoped list returns nothing (#1302).
+        """
         records = self.labs_api.get_records(
             experiment=self.EXPERIMENT,
             type="pipeline_definition",
             model_class=PipelineDefinitionRecord,
+            opportunity_id=opportunity_id,
         )
 
         if include_shared:

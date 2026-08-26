@@ -213,7 +213,7 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
 
     template_name = "workflow/list.html"
 
-    def _prefetch_pipeline_cache(self, pipeline_access):
+    def _prefetch_pipeline_cache(self, pipeline_access, opportunity_ids=None):
         """Seed the per-request pipeline cache with ONE list call instead of one
         round-trip per pipeline.
 
@@ -230,11 +230,32 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
         its per-id fetch and its ``Pipeline {id}`` fallback for those. A failure
         here degrades to the old behaviour rather than breaking the page.
         """
-        try:
-            cache = {d.id: d for d in pipeline_access.list_definitions()}
-        except Exception:
-            logger.warning("Pipeline prefetch failed; falling back to per-id loads", exc_info=True)
-            return {}
+        # Pipeline definitions are OPPORTUNITY-owned. A program-scoped list therefore
+        # matches nothing, which is why this prefetch was a silent no-op in program
+        # mode: #1309's logging measured `scope=program_id=217 prefetched=0 ids=[]` on
+        # every one of five real user loads, while each referenced pipeline resolved
+        # fine on a per-id call carrying the identical scope string. Opportunity mode
+        # was unaffected (`scope=opportunity_id=2190 prefetched=1`), which is why the
+        # original fix looked like it worked.
+        #
+        # So in program mode, sweep the program's member opportunities instead. Same
+        # single client, one call per opportunity -- and a program has far fewer
+        # opportunities than its workflows have pipelines (4 vs 15 on program 217),
+        # which is the whole win.
+        scopes = list(opportunity_ids) if opportunity_ids else [None]
+        cache = {}
+        for scope in scopes:
+            try:
+                for d in pipeline_access.list_definitions(opportunity_id=scope):
+                    cache[d.id] = d
+            except Exception:
+                # Degrade to per-id loads for whatever this scope would have covered,
+                # rather than losing the scopes that already succeeded.
+                logger.warning(
+                    "Pipeline prefetch failed for scope %s; falling back to per-id loads",
+                    scope,
+                    exc_info=True,
+                )
         # Diagnostic, not decoration. On 2026-08-26 this prefetch shipped, deployed,
         # and did NOTHING in program mode: a `/labs/workflow/` load at 13:40 UTC made
         # the list call and then 15 per-id calls anyway. It did not raise, and no
@@ -499,7 +520,10 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
                 for s in WorkflowSchedule.objects.filter(owner=self.request.user, program_id=program_id)
             }
 
-            pipeline_cache = self._prefetch_pipeline_cache(pipeline_access)
+            pipeline_cache = self._prefetch_pipeline_cache(
+                pipeline_access,
+                opportunity_ids=[o["id"] for o in context.get("program_member_opps") or []],
+            )
             workflows_with_runs = [
                 self._build_workflow_row(
                     definition,

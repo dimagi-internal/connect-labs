@@ -230,6 +230,7 @@ class LabsRecordAPIClient:
         labs_record_id: int | None = None,
         model_class: type[LocalLabsRecord] | None = None,
         public: bool | None = None,
+        opportunity_id: int | None = None,
         **data_filters,
     ) -> list[LocalLabsRecord]:
         """Fetch records from production API.
@@ -243,6 +244,11 @@ class LabsRecordAPIClient:
             labs_record_id: Filter by parent record ID
             model_class: Optional proxy model class to instantiate (e.g., AuditSessionRecord)
             public: Filter by public flag (True = public records queryable without scope)
+            opportunity_id: Override the client's opportunity scope for this one call.
+                Lets a caller sweep several opportunity scopes on a SINGLE client --
+                one connection pool, HTTP keep-alive, one TLS handshake -- instead of
+                constructing a client per opportunity. Mirrors the override
+                ``get_record_by_id`` already takes, for the same reason.
             **data_filters: Additional filters for JSON data fields
 
         Returns:
@@ -251,9 +257,9 @@ class LabsRecordAPIClient:
         Raises:
             LabsAPIError: If API request fails
         """
-        if self._is_labs_only():
+        if self._is_labs_only(opportunity_id):
             return _local_backend.get_records(
-                opportunity_id=self.opportunity_id,
+                opportunity_id=self._effective_opportunity_id(opportunity_id),
                 experiment=experiment,
                 type=type,
                 username=username,
@@ -293,12 +299,20 @@ class LabsRecordAPIClient:
                     params["organization_id"] = organization_id
                 elif self.organization_id and isinstance(self.organization_id, int):
                     params["organization_id"] = self.organization_id
-                if program_id:
-                    params["program_id"] = program_id
-                elif self.program_id:
-                    params["program_id"] = self.program_id
-                if self.opportunity_id:
-                    params["opportunity_id"] = self.opportunity_id
+                # An EXPLICIT opportunity_id is a deliberate re-scope of this one
+                # call, so it replaces the client's ambient program scope rather
+                # than stacking on it. The production API AND-filters every scope
+                # param it is given, so sending both returns an opportunity-owned
+                # record as "not found" -- the same trap BaseDataAccess.__init__
+                # documents for the session-context case.
+                if opportunity_id is None:
+                    if program_id:
+                        params["program_id"] = program_id
+                    elif self.program_id:
+                        params["program_id"] = self.program_id
+                effective_opportunity_id = self._effective_opportunity_id(opportunity_id)
+                if effective_opportunity_id:
+                    params["opportunity_id"] = effective_opportunity_id
             if labs_record_id:
                 params["labs_record_id"] = labs_record_id
 
