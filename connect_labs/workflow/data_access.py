@@ -25,6 +25,64 @@ from connect_labs.labs.models import LocalLabsRecord
 logger = logging.getLogger(__name__)
 
 
+def _format_pipeline_date(d):
+    """Serialize a pipeline row's date/datetime field for JSON."""
+    if d and hasattr(d, "isoformat"):
+        return d.isoformat()
+    return str(d) if d else None
+
+
+def serialize_pipeline_row(row, extra: dict | None = None) -> dict:
+    """Canonical JSON shape for ONE pipeline result row.
+
+    This is the single producer of pipeline row dicts. Every payload path must
+    go through it so their key sets cannot drift apart:
+
+      * the cached/snapshot reads (`_serialize_pipeline_rows` below), which feed
+        a completed run's `instance.snapshot.pipelines.<alias>.rows`, and
+      * the live SSE stream (`PipelineDataStreamView.stream_data`), which feeds
+        an `in_progress` run's dashboard.
+
+    They *did* drift. The SSE view hand-rolled its own row dict that omitted
+    `status` and `flagged` — the two fields `VisitRow` carries and `FLWRow`
+    does not (`connect_labs/labs/analysis/models.py`) — so a `visit_level`
+    pipeline read live returned 276 rows with no review outcome on any of
+    them. Because ace#1162 requires the one dashboard that shows a reviewer
+    *taking* a decision to be left `in_progress` (completing a run makes the
+    page read-only), the review dashboard was precisely the one reading the
+    payload missing the review outcome: it rendered `0 flagged` / `0 rejected`
+    over a dataset with 14 flagged and 6 rejected visits, with no error.
+    See ace#1657.
+
+    `extra` is merged *before* the row's computed/custom fields, matching the
+    pre-existing SSE behaviour where a pipeline field of the same name (e.g.
+    the `opportunity_id` field declared by `chc_audit_history`) wins over the
+    framework-supplied value.
+    """
+    row_dict = {
+        "id": getattr(row, "id", None),
+        "username": getattr(row, "username", None),
+        "visit_date": _format_pipeline_date(getattr(row, "visit_date", None)),
+        "total_visits": getattr(row, "total_visits", 0),
+        "approved_visits": getattr(row, "approved_visits", 0),
+        "pending_visits": getattr(row, "pending_visits", 0),
+        "rejected_visits": getattr(row, "rejected_visits", 0),
+        "flagged_visits": getattr(row, "flagged_visits", 0),
+        "first_visit_date": _format_pipeline_date(getattr(row, "first_visit_date", None)),
+        "last_visit_date": _format_pipeline_date(getattr(row, "last_visit_date", None)),
+        "entity_id": getattr(row, "entity_id", None),
+        "entity_name": getattr(row, "entity_name", None),
+        "status": getattr(row, "status", None),
+        "flagged": getattr(row, "flagged", None),
+    }
+    if extra:
+        row_dict.update(extra)
+    custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
+    if custom:
+        row_dict.update(custom)
+    return row_dict
+
+
 class PipelineCacheMiss(Exception):
     """Raised by the cached-only pipeline read when a required pipeline has no
     usable processed cache for an opportunity. Callers (run completion) should
@@ -2307,37 +2365,14 @@ class PipelineDataAccess(BaseDataAccess):
             return {"rows": [], "metadata": {"error": str(e)}}
 
     def _serialize_pipeline_rows(self, result) -> list:
-        """Convert pipeline result rows to serializable dicts."""
+        """Convert pipeline result rows to serializable dicts.
 
-        def format_date(d):
-            if d and hasattr(d, "isoformat"):
-                return d.isoformat()
-            return str(d) if d else None
-
-        rows = []
-        if hasattr(result, "rows"):
-            for row in result.rows:
-                row_dict = {
-                    "id": getattr(row, "id", None),
-                    "username": getattr(row, "username", None),
-                    "visit_date": format_date(getattr(row, "visit_date", None)),
-                    "total_visits": getattr(row, "total_visits", 0),
-                    "approved_visits": getattr(row, "approved_visits", 0),
-                    "pending_visits": getattr(row, "pending_visits", 0),
-                    "rejected_visits": getattr(row, "rejected_visits", 0),
-                    "flagged_visits": getattr(row, "flagged_visits", 0),
-                    "first_visit_date": format_date(getattr(row, "first_visit_date", None)),
-                    "last_visit_date": format_date(getattr(row, "last_visit_date", None)),
-                    "entity_id": getattr(row, "entity_id", None),
-                    "entity_name": getattr(row, "entity_name", None),
-                    "status": getattr(row, "status", None),
-                    "flagged": getattr(row, "flagged", None),
-                }
-                custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
-                if custom:
-                    row_dict.update(custom)
-                rows.append(row_dict)
-        return rows
+        Delegates to the module-level `serialize_pipeline_row` so this payload
+        and the live SSE payload share one key set (ace#1657).
+        """
+        if not hasattr(result, "rows"):
+            return []
+        return [serialize_pipeline_row(row) for row in result.rows]
 
     def _schema_to_config(self, schema: dict, definition_id: int):
         """Convert JSON schema to AnalysisPipelineConfig."""
