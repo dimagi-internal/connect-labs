@@ -1304,6 +1304,17 @@ function WorkflowRunner({
 
       const result = await response.json();
       if (result.success) {
+        // Classes this render code uses that no deployed stylesheet defines.
+        // They fail silently in the browser (a missing colour paints nothing, a
+        // missing size collapses the element), so surface them here rather than
+        // let the author discover it by looking at a blank panel. Advisory —
+        // the save has already succeeded. See labs#1294.
+        if (result.render_code_warning) {
+          console.warn(
+            '[render_code] ' + result.render_code_warning.message,
+            result.render_code_warning.unresolved_classes,
+          );
+        }
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 2000);
       } else {
