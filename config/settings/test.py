@@ -50,3 +50,18 @@ MIDDLEWARE.insert(_auth_idx + 1, "connect_labs.campaign.middleware.CampaignOAuth
 # Summary caching off: tests assert the payload tracks DB changes within a
 # single run, which a TTL cache would (correctly, in prod) prevent.
 PULSE_SUMMARY_CACHE_SECONDS = 0
+
+# CACHES
+# ------------------------------------------------------------------------------
+# Tests must not reach a live Redis, and must not share cache state with each
+# other or with a developer's running instance. base.py points `default` at
+# REDIS_URL, which under django_redis' IGNORE_EXCEPTIONS quietly degrades to a
+# permanent miss when Redis is absent — so a cache-dependent test would pass
+# locally for the wrong reason and behave differently in CI. locmem is explicit;
+# tests that care clear it between cases.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "labs-tests",
+    }
+}
