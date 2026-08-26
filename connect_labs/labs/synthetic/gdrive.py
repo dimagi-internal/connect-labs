@@ -19,11 +19,8 @@ import logging
 import os
 import re
 import secrets
-import time
 
 import httpx
-
-from connect_labs.utils.request_telemetry import record_outbound_call
 
 logger = logging.getLogger(__name__)
 
@@ -69,27 +66,22 @@ class DriveClient:
         self._timeout = timeout
 
     def _timed_get(self, url: str, **kwargs):
-        """``httpx.get`` that reports itself to the per-request telemetry.
+        """``httpx.get``, counted against the in-flight request.
 
-        Drive reads are made with the module-level ``httpx.get``, which takes no
-        ``event_hooks``, so until this existed every Drive call was invisible to
-        ``RequestTelemetryMiddleware``: a page that made 22 of them logged
-        ``outbound_calls: 0`` and charged the whole wait to ``self_ms``. The
-        runbook reads a dominant ``self_ms`` as "the time is in our own Python",
-        so the telemetry actively pointed away from the real cause -- a wrong
-        answer rather than an error. Report the call explicitly instead.
+        #1300 established WHY this must be counted: Drive reads are made with the
+        module-level ``httpx.get``, which takes no ``event_hooks``, so a page making
+        22 of them logged ``outbound_calls: 0`` and charged the whole wait to
+        ``self_ms`` -- and the runbook reads a dominant ``self_ms`` as "the time is
+        in our own Python". The telemetry pointed away from the cause: a wrong
+        answer rather than an error.
+
+        It counted itself by hand to fix that. It no longer has to -- #1298 found the
+        same blind spot on the OAuth login path and closed it at the source, so
+        ``install_httpx_instrumentation`` now hooks httpx's own client constructors
+        and the plain call below is counted like any other. Counting here as well
+        would report every Drive read twice.
         """
-        started = time.perf_counter()
-        try:
-            return httpx.get(url, **kwargs)
-        finally:
-            try:
-                record_outbound_call(
-                    httpx.URL(url).host or "drive.googleapis.com",
-                    (time.perf_counter() - started) * 1000,
-                )
-            except Exception:  # telemetry must never break the call it measures
-                logger.debug("drive telemetry failed", exc_info=True)
+        return httpx.get(url, **kwargs)
 
     def _bearer(self) -> str:
         # Google-issued SA tokens live for ~1 hour. google-auth's `valid`
