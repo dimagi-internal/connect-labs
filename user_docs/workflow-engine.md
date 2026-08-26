@@ -208,6 +208,14 @@ A typical workflow dashboard shows a **table of field workers** with performance
 
 Click any row to see that worker's detailed record — individual visit data, timeline of activities, and linked cases.
 
+### Dashboard display and colours
+
+Dashboards in Connect Labs are built by program authors and can include charts, bar graphs, and highlighted figures — for example, a consent-rate percentage shown in red when it falls below a target threshold, or a bar chart tracking weekly visit counts over twelve weeks.
+
+Previously, some dashboard elements could appear invisible or unstyled with no error message: a warning figure might show in near-black instead of red, or a bar chart might render at zero height even though all the underlying data was present and the page otherwise loaded normally. These problems were silent — nothing on screen indicated that anything was wrong.
+
+This has been fixed. All colours and sizing options available to dashboard authors now render correctly. If you previously noticed a chart, figure, or panel that looked blank, collapsed, or oddly coloured, it should now display as intended. If you still see a dashboard element that appears missing or unstyled, contact whoever manages your program's dashboards so they can review the configuration.
+
 ---
 
 ## Flags and Actions
@@ -239,12 +247,4 @@ The dropdown menus display each option as an outlined button so every option is 
 
 **Create Task menu** contains:
 
-- **New Task** — opens a blank task record for that worker
-- **Coach on Flag implications** — only appears when the row carries at least one flag; opens a coaching task whose prompt is composed from the specific flag labels active on that row, so the coaching prompt stays relevant whether the FLW tripped SAM-low, MAM-low, gender-skew, or any combination of those flags
-
-**When an audit or task has already been created**, the create menus are replaced by plain links:
-
-- **View Audit** — appears in place of the Create Audit menu when an audit already exists for that worker in this run; clicking it opens that audit record directly
-- **View Task** — appears in place of the Create Task menu when a task already exists for that worker in this run; clicking it opens that task record directly
-
-**On a completed (saved) run**, rows that have no existing audit or task show greyed-out, non-interactive Create Audit and Create Task buttons. A saved run is
+- **New Task** — opens a
