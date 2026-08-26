@@ -49,22 +49,31 @@ the property the accidental-coverage status quo lacks.
 **Cost, measured** (`npx webpack --mode production --config webpack/prod.config.js`,
 `connect_labs/static/bundles/css/tailwind.css`, this repo, Tailwind 4.1.11):
 
-    tier                                              raw       gzip
-    baseline (no generated safelist)               365,976     53,945
-    bg/text/border colours only            (726)   404,561     58,708
-    THIS FILE: + spacing/sizing scale     (1,776)  475,909     64,757
-    + ring/fill/stroke colours            (2,502)  521,033     69,701
-    + all 16 colour prefixes              (3,872)  908,460     86,965
-    + all 16 colour prefixes and spacing  (4,922)  979,808     92,736
+    tier                                                raw       gzip
+    baseline (no generated safelist)                 365,976     53,945
+    bg/text/border colours only              (726)   404,561     58,708
+    + spacing/sizing scale                 (1,776)   475,909     64,757
+    THIS FILE: + negatives + structural    (2,377)   502,252     67,239
+    (rejected) + ring/fill/stroke colours  (2,502)   521,033     69,701
+    (rejected) + all 16 colour prefixes    (3,872)   908,460     86,965
+    (rejected) + all 16 prefixes, spacing  (4,922)   979,808     92,736
 
-+10.8 KB gzip over baseline. The tiers above it were rejected on cost: the
++13.3 KB gzip (+24.6%) over baseline. The rejected tiers cost a further 2.5 to
+25 KB gzip for utilities no observed dashboard failure has involved; the
 thirteen extra colour prefixes (`from-`/`via-`/`to-`, `divide-`, `shadow-`,
-etc.) cost a further 22 KB gzip for utilities no observed dashboard failure has
-involved. They can be added here if one ever does.
+etc.) are the expensive ones because each emits several custom properties. Add
+them here if a failure ever does involve one.
 
 **Arbitrary values are deliberately out of scope.** An arbitrary-value utility
 (a bracketed literal such as a hard-coded pixel min-width) cannot be
-enumerated, so no safelist can cover it. Note that arbitrary-vs-standard is NOT
+enumerated, so no safelist can cover it. **Variants are the same class of
+residual**, and are easy to miss: Tailwind generates per candidate *string*, so
+safelisting a colour utility does NOT safelist its `hover:` / `focus:` /
+`md:` form, and does not cover a `/opacity` suffix either. Enumerating
+variant x palette would multiply the matrix by the number of variants; the
+write-time check covers them instead.
+
+An arbitrary value Note that arbitrary-vs-standard is NOT
 the axis: some arbitrary values survive because labs' own templates happen to
 use them, and plenty of ordinary utilities do not. The governing rule is just
 "whatever string labs' own scanned sources contain". That residual is what the
@@ -150,6 +159,217 @@ SPACING = (
     "96",
 )
 
+# Negative spacing. The repo's own render code uses these (`-mb-px` in
+# flw_audit_trend_dashboard, `-mx-4 sm:-mx-6 lg:-mx-8` in kmc_flw_flags), and
+# `SIZE_PREFIXES x SPACING` alone emits only the positive forms.
+NEGATABLE_PREFIXES = ("m", "mx", "my", "mt", "mr", "mb", "ml", "top", "right", "bottom", "left", "inset")
+
+# The structural core: layout, typography and border utilities that carry no
+# colour or spacing value, so they fall outside both matrices above but make up
+# the head of what real render code actually uses. Cross-referencing the
+# extractor's output over this repo's 34 render templates against the colour +
+# spacing tiers alone covered 201/427 distinct tokens; the uncovered head was
+# almost entirely this list.
+STRUCTURAL_UTILITIES = (
+    # display / layout
+    "block",
+    "inline",
+    "inline-block",
+    "inline-flex",
+    "flex",
+    "inline-grid",
+    "grid",
+    "contents",
+    "hidden",
+    "table",
+    "table-cell",
+    "table-row",
+    "flow-root",
+    "isolate",
+    "flex-row",
+    "flex-col",
+    "flex-wrap",
+    "flex-nowrap",
+    "flex-1",
+    "flex-auto",
+    "flex-none",
+    "grow",
+    "grow-0",
+    "shrink",
+    "shrink-0",
+    "grid-cols-1",
+    "grid-cols-2",
+    "grid-cols-3",
+    "grid-cols-4",
+    "grid-cols-5",
+    "grid-cols-6",
+    "grid-cols-12",
+    "col-span-1",
+    "col-span-2",
+    "col-span-3",
+    "col-span-full",
+    "items-start",
+    "items-center",
+    "items-end",
+    "items-baseline",
+    "items-stretch",
+    "justify-start",
+    "justify-center",
+    "justify-end",
+    "justify-between",
+    "justify-around",
+    "self-start",
+    "self-center",
+    "self-end",
+    "self-stretch",
+    "static",
+    "relative",
+    "absolute",
+    "fixed",
+    "sticky",
+    "overflow-auto",
+    "overflow-hidden",
+    "overflow-x-auto",
+    "overflow-y-auto",
+    "overflow-visible",
+    "w-full",
+    "w-auto",
+    "w-screen",
+    "h-full",
+    "h-auto",
+    "h-screen",
+    "min-w-full",
+    "min-h-full",
+    "max-w-full",
+    "max-w-none",
+    "max-w-xs",
+    "max-w-sm",
+    "max-w-md",
+    "max-w-lg",
+    "max-w-xl",
+    "max-w-2xl",
+    "max-w-3xl",
+    "max-w-4xl",
+    "max-w-5xl",
+    "max-w-6xl",
+    "max-w-7xl",
+    "mx-auto",
+    "my-auto",
+    "ml-auto",
+    "mr-auto",
+    # typography
+    "text-xs",
+    "text-sm",
+    "text-base",
+    "text-lg",
+    "text-xl",
+    "text-2xl",
+    "text-3xl",
+    "text-4xl",
+    "text-left",
+    "text-center",
+    "text-right",
+    "text-justify",
+    "font-thin",
+    "font-light",
+    "font-normal",
+    "font-medium",
+    "font-semibold",
+    "font-bold",
+    "font-extrabold",
+    "font-mono",
+    "font-sans",
+    "font-serif",
+    "italic",
+    "not-italic",
+    "underline",
+    "line-through",
+    "no-underline",
+    "uppercase",
+    "lowercase",
+    "capitalize",
+    "normal-case",
+    "truncate",
+    "whitespace-nowrap",
+    "whitespace-normal",
+    "whitespace-pre-wrap",
+    "break-words",
+    "break-all",
+    "tabular-nums",
+    "tracking-tight",
+    "tracking-wide",
+    "leading-none",
+    "leading-tight",
+    "leading-snug",
+    "leading-normal",
+    "leading-relaxed",
+    "leading-loose",
+    "list-disc",
+    "list-decimal",
+    "list-none",
+    "list-inside",
+    # borders / effects
+    "border",
+    "border-0",
+    "border-2",
+    "border-4",
+    "border-8",
+    "border-t",
+    "border-r",
+    "border-b",
+    "border-l",
+    "border-none",
+    "rounded",
+    "rounded-none",
+    "rounded-sm",
+    "rounded-md",
+    "rounded-lg",
+    "rounded-xl",
+    "rounded-2xl",
+    "rounded-3xl",
+    "rounded-full",
+    "shadow",
+    "shadow-none",
+    "shadow-sm",
+    "shadow-md",
+    "shadow-lg",
+    "shadow-xl",
+    "shadow-2xl",
+    "opacity-0",
+    "opacity-25",
+    "opacity-50",
+    "opacity-75",
+    "opacity-100",
+    "cursor-pointer",
+    "cursor-default",
+    "cursor-not-allowed",
+    "select-none",
+    "pointer-events-none",
+    "transition",
+    "transition-all",
+    "transition-colors",
+    "duration-150",
+    "duration-200",
+    "duration-300",
+    "visible",
+    "invisible",
+    "sr-only",
+    "antialiased",
+    # colour keywords outside the family x shade matrix
+    "bg-white",
+    "bg-black",
+    "bg-transparent",
+    "bg-current",
+    "text-white",
+    "text-black",
+    "text-transparent",
+    "text-current",
+    "border-white",
+    "border-black",
+    "border-transparent",
+    "border-current",
+)
+
 SIZE_PREFIXES = (
     "h",
     "w",
@@ -210,12 +430,14 @@ def color_utilities() -> list[str]:
 
 
 def size_utilities() -> list[str]:
-    return [f"{prefix}-{value}" for prefix in SIZE_PREFIXES for value in SPACING]
+    positive = [f"{prefix}-{value}" for prefix in SIZE_PREFIXES for value in SPACING]
+    negative = [f"-{prefix}-{value}" for prefix in NEGATABLE_PREFIXES for value in SPACING if value != "0"]
+    return positive + negative
 
 
 def generate_safelist() -> str:
     """Return the full contents of `tailwind/safelist-generated.txt`."""
-    utilities = color_utilities() + size_utilities()
+    utilities = color_utilities() + size_utilities() + list(STRUCTURAL_UTILITIES)
     return HEADER + "\n" + "\n".join(utilities) + "\n"
 
 
