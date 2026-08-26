@@ -749,10 +749,6 @@ class AuditDataAccess(BaseDataAccess):
     # Visit Data Methods
     # =========================================================================
 
-    def _fetch_visits_for_opportunity(self, opportunity_id: int) -> list[dict]:
-        """Fetch all visits for an opportunity (with form_json for backward compat)."""
-        return self.pipeline.fetch_raw_visits(opportunity_id=opportunity_id)
-
     def get_visit_data(
         self, visit_id: int, opportunity_id: int | None = None, visit_cache: dict | None = None
     ) -> dict | None:
@@ -764,9 +760,19 @@ class AuditDataAccess(BaseDataAccess):
         if not opp_id:
             raise ValueError("opportunity_id required when visit_cache not provided")
 
-        visits = self._fetch_visits_for_opportunity(opp_id)
+        # Filter in SQL, not in Python. This used to call
+        # _fetch_visits_for_opportunity(opp_id) -- every visit in the opportunity,
+        # WITH form_json (the heaviest column) -- and then linear-scan the list for
+        # one id. On a large opportunity that is a ~62k-row materialisation to
+        # return a single row, which is what put the web tier into a worker crash
+        # loop on 2026-08-24 (453 killed workers). fetch_raw_visits already accepts
+        # filter_visit_ids and pushes it into the query.
+        visits = self.pipeline.fetch_raw_visits(
+            opportunity_id=opp_id,
+            filter_visit_ids={visit_id},
+        )
         for visit in visits:
-            if visit["id"] == visit_id:
+            if str(visit["id"]) == str(visit_id):
                 return visit
 
         return None
@@ -779,8 +785,15 @@ class AuditDataAccess(BaseDataAccess):
         visits return int ids from the raw API response) -- see the identical fix at
         ExperimentBulkAssessmentDataView.get's additional_case_info backfill.
         """
-        all_visits = self._fetch_visits_for_opportunity(opportunity_id)
+        # Same fix as get_visit_data: push the id filter into the query instead of
+        # loading the whole opportunity and filtering in Python. The str-normalising
+        # comparison below still stands, because a cache-hit returns str ids and a
+        # cache-miss returns int ids.
         visit_id_strs = {str(vid) for vid in visit_ids}
+        all_visits = self.pipeline.fetch_raw_visits(
+            opportunity_id=opportunity_id,
+            filter_visit_ids=set(visit_ids),
+        )
         return [v for v in all_visits if str(v["id"]) in visit_id_strs]
 
     # =========================================================================
