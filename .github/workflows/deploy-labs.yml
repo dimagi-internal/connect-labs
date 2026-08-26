@@ -9,21 +9,26 @@ on:
         required: true
         default: false
 
-# Serialize deploys. This workflow does a HARD CUTOVER (stop tasks +
-# force-new-deployment) and, combined with the wait-for-steady-state step at
-# the end of the deploy job, must never run concurrently with itself: two
-# overlapping cutovers can leave 0 healthy tasks behind the ALB → site-wide
-# 503 (observed 2026-07-01: 3 deploys in ~13 min → repeated ALB health-check
-# "Request timed out" → outage). A single fixed group forces every run into
-# one lane. cancel-in-progress is FALSE on purpose: cancelling a run that has
-# already issued its update-service call would abort the GitHub job WITHOUT
-# rolling back ECS, leaving a half-done cutover — the exact failure we're
-# preventing. Queue instead, so each cutover finishes cleanly before the next
-# begins. (GitHub keeps only the latest queued run per group, which is the
-# right behavior for deploys — no need to replay intermediate triggers.)
+# HISTORY, because the reasoning here inverted and the old comment would now
+# mislead. This workflow used to do a HARD CUTOVER: stop every running task, then
+# force a new deployment. That guaranteed ~10s of downtime on every deploy, and
+# two overlapping cutovers could leave 0 healthy tasks behind the ALB — a
+# site-wide 503 (observed 2026-07-01: 3 deploys in ~13 min). The response at the
+# time was to serialise: one lane, never cancel, queue each cutover behind the
+# last.
+#
+# The cutover was the problem, not the concurrency. Fargate replaces tasks
+# gracefully by itself, so dropping the stop-task loop removes the downtime AND
+# the reason deploys had to run one at a time. See the deploy step below.
+# With the rolling deploy above, overlapping runs are no longer capable of
+# emptying the service, so this group exists to avoid WASTED work rather than to
+# prevent an outage. cancel-in-progress is true: when several merges land close
+# together -- the normal case when several people are shipping through agents --
+# only the newest image is worth deploying, and the superseded run should stop
+# rather than queue behind a 10-minute wait to ship code that is already stale.
 concurrency:
   group: deploy-labs
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   AWS_REGION: us-east-1
@@ -402,25 +407,39 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy services (hard cutover)
+      - name: Deploy services (rolling, zero downtime)
         run: |
-          # Stop existing tasks first for instant cutover (no rolling deploy)
-          # This causes ~10s downtime but avoids waiting for graceful rolling update
-          echo "Stopping old tasks..."
+          # ROLLING, NOT A CUTOVER.
+          #
+          # This step used to stop every running task first -- "instant cutover
+          # (no rolling deploy) ... ~10s downtime but avoids waiting for a
+          # graceful rolling update". That traded a guaranteed outage window for
+          # wall-clock, and it is also what made concurrent deploys dangerous:
+          # two overlapping cutovers could leave 0 healthy tasks behind the ALB
+          # (observed 2026-07-01, site-wide 503s).
+          #
+          # Fargate replaces tasks gracefully on its own. update-service with
+          # --force-new-deployment starts new tasks, waits for them to pass the
+          # ALB health check, and only then drains the old ones, governed by the
+          # minimumHealthyPercent/maximumPercent set below. Deleting the stop-task
+          # loop removes the downtime AND the reason deploys had to be serialised:
+          # ECS supersedes an in-flight deployment safely by design.
+          #
+          # Why this matters here specifically: deploys are frequent and are
+          # triggered by several people working through AI agents. A deploy path
+          # that is only safe when exactly one runs at a time is the wrong shape
+          # for that; it has to be safe when three land at once.
+          echo "Setting rolling deployment policy + circuit breaker..."
           for SERVICE in ${{ env.ECS_WEB_SERVICE }} ${{ env.ECS_WORKER_SERVICE }}; do
-            TASK_ARNS=$(aws ecs list-tasks \
+            aws ecs update-service \
               --cluster ${{ env.ECS_CLUSTER }} \
-              --service-name $SERVICE \
-              --query 'taskArns[]' \
-              --output text 2>/dev/null) || true
-            if [ -n "$TASK_ARNS" ] && [ "$TASK_ARNS" != "None" ]; then
-              for TASK in $TASK_ARNS; do
-                aws ecs stop-task --cluster ${{ env.ECS_CLUSTER }} --task $TASK --output text > /dev/null 2>&1 || true
-              done
-            fi
+              --service $SERVICE \
+              --deployment-configuration \
+                'minimumHealthyPercent=100,maximumPercent=200,deploymentCircuitBreaker={enable=true,rollback=true}' \
+              --output text > /dev/null
           done
 
-          echo "Forcing new deployment onto the repo-defined task definitions..."
+          echo "Rolling new deployment onto the repo-defined task definitions..."
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_WEB_SERVICE }} \
