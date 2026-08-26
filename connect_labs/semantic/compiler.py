@@ -290,16 +290,22 @@ def _build_ctes(
 {visit_sql}
 ),
 weight_days AS (
-    SELECT baby_case_id AS baby_id,
+    -- The baby key is (opportunity, case), NOT the case id alone. 829 case ids in
+    -- the KMC cohort appear in more than one opportunity, and grouping on the id
+    -- by itself merged them into a single baby -- 7,889 cases instead of 8,718,
+    -- silently changing every denominator. The render code keys on opp+case for
+    -- exactly this reason.
+    SELECT opportunity_id || '|' || baby_case_id AS baby_id,
            visit_date::date AS day,
-           {ws['day_collapse'].replace('weight_g', 'weights')} AS w
+           {ws['day_collapse']} AS w
     FROM visits
     WHERE baby_case_id IS NOT NULL
-      AND {C(ws['valid']).replace('weight_g', 'weights')}
+      AND {C(ws['valid'])}
     GROUP BY 1, 2
 ),
 baby_first AS (
-    SELECT baby_case_id AS baby_id, MIN(visit_date)::date AS first_visit_day
+    SELECT opportunity_id || '|' || baby_case_id AS baby_id,
+           MIN(visit_date)::date AS first_visit_day
     FROM visits
     WHERE baby_case_id IS NOT NULL
     GROUP BY 1
@@ -323,16 +329,16 @@ weight_agg AS (
     GROUP BY baby_id
 ),
 visit_agg AS (
-    SELECT baby_case_id AS baby_id,
+    SELECT opportunity_id || '|' || baby_case_id AS baby_id,
            MIN(opportunity_id) AS opportunity_id,
            MIN(username) AS username,
     {agg_cols}
     FROM visits
     WHERE baby_case_id IS NOT NULL
-    GROUP BY baby_case_id
+    GROUP BY opportunity_id, baby_case_id
 ),
 base_m AS (
-    SELECT v.*, w.*, DATE_TRUNC('month', v.reg_date)::date AS cohort_month{llo_col}
+    SELECT v.*, w.*, DATE_TRUNC('month', v.reg_date::timestamp)::date AS cohort_month{llo_col}
     FROM visit_agg v
     LEFT JOIN weight_agg w USING (baby_id)
 ),

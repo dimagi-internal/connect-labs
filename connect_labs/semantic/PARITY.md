@@ -1,135 +1,84 @@
-# KMC semantic layer — what is proven, and what is not
+# KMC semantic layer — parity with the existing dashboard
 
-## The change
+## The result
 
-`kmc_programme_metrics` derives Layer 2 (case properties) and aggregates Layer 3
-(indicators) **in the browser**, in JavaScript, over one row per baby carrying a
-weights array plus one row per visit for the weight series. That forces the
-in-memory shape: indicators cannot be pushed into SQL because none of the
-properties they reference exist in the database to `GROUP BY`.
+Against the existing `kmc_programme_metrics` dashboard's own frozen run (5218),
+all 11 opportunities, `as_of` pinned to that run's snapshot time:
 
-This package moves both layers into SQL, driven by declarative definitions:
+| scope       | rows | indicator checks | mismatches |
+| ----------- | ---- | ---------------- | ---------- |
+| programme   | 1    | 22               | **0**      |
+| opportunity | 11   | 242              | **0**      |
+| llo         | 6    | 132              | **0**      |
+| flw         | 241  | 5,302            | **0**      |
+| **total**   |      | **5,698**        | **0**      |
 
-|                         | before                                        | after                                       |
-| ----------------------- | --------------------------------------------- | ------------------------------------------- |
-| Layer 1 paths → columns | pipeline schema (SQL)                         | unchanged                                   |
-| Layer 2 properties      | 26 derived in JS per baby                     | `properties.yml` → SQL columns              |
-| Layer 3 indicators      | `var IND` closures, evaluated per scope in JS | `indicators.yml` (Cube syntax) → `GROUP BY` |
-| browser receives        | ~8.7k case rows + ~35k visit rows             | aggregates                                  |
+Structure matches too: 8,718 cases · 35,453 visits · 11 opps · 6 LLOs · 241 FLWs.
+Value AND denominator, exact, at every scope. One `GROUPING SETS` query, ~12s.
 
-The existing workflow is **untouched**.
+The render is **unchanged**: the existing template already short-circuits every
+scope memo on `frozen`, so this is the same UI with the numbers computed in SQL.
 
-## Why Cube syntax, given nothing runs Cube
+## What the comparison caught
 
-The registry uses Cube's measure notation restricted to Cube's real measure types
-(`count`, `count_distinct`, `count_distinct_approx`, `sum`, `avg`, `min`, `max`,
-`number`). No extensions — `test_rejects_a_type_outside_cube` enforces it.
+Every one of these was a defect in THIS project, and each was found by a
+different mechanism. None would have been caught by the others.
 
-Scout (the sibling Dimagi product) is putting its semantic layer on Cube on
-`codex/semantic-model-work`, and its pipeline settles the layering question:
-raw JSONB → its own generated dbt SQL → typed tables → Cube. Cube never
-normalises there, and its `SemanticField.MeasureType` has no `first`/`last` even
-after a migration named `expand_measure_types`. So shaping stays below the
-semantic layer, and we do not invent dialect a Cube tool would reject.
+**Guessed constants** — `WMIN` was 400; the render uses **250**. These are preterm
+babies, so a 400g floor silently discarded real low-birth-weight readings.
+`SWING` was 0.25; the render uses **0.3**. Those two alone moved the whole growth
+chain (C07–C13) from wrong to exact. They were invented, not read.
 
-The notation is what makes these definitions readable by a second engine
-(a local Python analysis over the same programme) instead of being trapped in
-render code that only a browser can execute.
+**Layer 1 was paraphrased** — the hand-written extraction carried 3 of 10
+danger-sign paths, 3 of 6 referral, 3 of 4 kmc-hours. Exactly those indicators
+(C19, C20, C23) disagreed. `layer1.build_visit_sql` now generates it from the
+pipeline's own schema, and 6 tests pin that no path can be dropped again.
 
-## What is proven
+**The baby key was wrong** — grouping on `baby_case_id` alone merged the 829 case
+ids that appear in more than one opportunity: 7,889 cases instead of 8,718,
+changing every denominator. The key is `(opportunity, case)`.
 
-`connect_labs/semantic/tests/` — 11 tests, all green.
+**The visit cache is partitioned by pipeline** — the same visit is cached once per
+pipeline that has fetched it, so an un-deduped read double-counted.
 
-- The registry compiles: every `{CUBE}.col` resolves to a real property or
-  aggregate (`validate`), every `{measure}` reference resolves, and every measure
-  type is a real Cube type.
-- Every indicator carries its denominator measure — the workbook's "no bare
-  numbers" rule, enforced structurally rather than by convention.
-- **The SQL executes against real Postgres and equals the JavaScript.**
-  `test_parity.py` runs the compiled statement and compares 14 indicators against
-  a faithful port of the render code over the same fixture:
+**The growth window was anchored on the wrong event** — the render measures a
+weighing's age from the first VISIT; this measured from the first WEIGHING. Only
+matters for babies whose first visit carried no weight, which no fixture had.
 
-```
-C01 8.0000  C02 7.0000  C05 8.0000  C07 83.3333  C08 83.3333
-C09 66.6667 C10 0.0000  C13 5.1945  C14 16.6667  C15 14.2857
-C20 14.2857 C24 2.5714  C28 14.2857 C31 72.2222
-14 indicators compared, 0 mismatches
-```
+**Input availability was missing** — an indicator whose input the scope never
+records must read n/a, not 0. Invisible at programme level; 268 of 5,302 per-FLW
+checks disagreed until it was ported.
 
-- **The parity test is mutation-verified.** Changing `ELIG_DAYS` from 28 to 30 in
-  `properties.yml` makes C14 and C15 diverge and the test fails. An earlier
-  version of the fixture did _not_ catch that mutation — no case straddled the
-  gate — so `b8` (last visit at day 29) was added specifically to make the test
-  load-bearing. Without it "SQL matches JS" was a weaker claim than it read.
+**`as_of` was unpinned** — comparing a live 28-day eligibility gate against a
+two-day-old snapshot is a bug in the test, not the code.
 
-## Two definition bugs this surfaced
+## Where each guard now lives
 
-1. **C31 denominator.** The render code sums `n_weight_readings` (raw pipeline
-   count) and counts round values over the **raw** weights array, while
-   `d.n_weights` elsewhere is day-collapsed. Defining the property once as
-   day-collapsed would have silently changed the rounding rate's denominator.
-   Now computed before the day collapse, as `n_weight_readings` /
-   `n_weights_round_100_raw`, and covered by the parity test.
-
-2. **C17 median is the upper median.** `mv[Math.floor(mv.length/2)]` on a
-   0-indexed sorted array returns the upper of the two middle values for even n —
-   not `PERCENTILE_CONT`, and not the conventional median. The SQL reproduces the
-   JS exactly so the engines agree, but the choice itself is worth revisiting.
+- `test_every_declared_scope_actually_executes` — compiling is not the bar; `llo`
+  compiled cleanly for weeks and failed at execution.
+- `test_rollup_equals_per_scope_queries` — the `GROUPING SETS` collapse moves no number.
+- `test_layer1.py` — every extraction path survives; dedup and widening are pinned.
+- `test_gates.py` — input availability and credibility, including that both fail
+  OPEN on a missing gate: blanking a real indicator on our own wiring error is
+  the worse failure.
+- `test_parity.py` — mutation-verified: changing `ELIG_DAYS`, restoring the `llo`
+  whitelist, or making suppression a no-op each turns the suite red.
 
 ## Performance
 
-Calling the compiler once per scope re-runs the whole Layer 1 extraction each
-time. `compile_rollup_sql` collapses every scope into ONE pass over `props` via
-`GROUPING SETS`. Measured on opportunity 10042 (608 babies, 2,691 visits), three
-runs, warm cache:
+`compile_rollup_sql` returns every scope from ONE pass over `props` via
+`GROUPING SETS`. Measured on opportunity 10042 (608 babies), warm, 3 runs:
+per-scope 3.626 / 4.734 / 3.555s versus single-pass 0.892 / 0.882 / 0.874s —
+**4.1–5.4x**, with the single pass costing about what one scope cost.
 
-|                           | run 1  | run 2  | run 3  |
-| ------------------------- | ------ | ------ | ------ |
-| per-scope, 4 queries      | 3.626s | 4.734s | 3.555s |
-| single pass, all 4 scopes | 0.892s | 0.882s | 0.874s |
-| speedup                   | 4.07x  | 5.37x  | 4.07x  |
+Two earlier figures should not have been generalised from: a ~28s-per-scope
+measurement was a cold read taken right after the cache was written, and a 2.25s
+single run was one warm sample.
 
-The single pass costs about the same as ONE per-scope query, which is the point:
-the extraction happens once. `test_rollup_equals_per_scope_queries` pins that the
-collapse does not move any number, and the real-data check re-ran through
-`compile_rollup_sql` at 21 indicators, 0 mismatches.
+## Still open
 
-An earlier measurement of ~28s per scope was a cold read taken just after the
-visit cache was written; warm and repeated it is consistently sub-second. Neither
-that figure nor an earlier 2.25s single run should have been generalised from.
-
-## Two defects this project introduced, and the guards that now hold them
-
-**`llo` scope compiled but could not run.** `SCOPES` declared it, the compiler
-emitted `props.llo`, and execution failed with `column props.llo does not exist` —
-there is no LLO on a visit row (the existing dashboard carries an org→LLO map in
-render code). `validate()` missed it because `llo` had been **whitelisted in the
-known-columns set**: the check defeating itself. Now `llo` must be materialised by
-passing `llo_map={opportunity_id: 'LLO'}`, asking for it without one is a loud
-error, and `test_every_declared_scope_actually_executes` runs every scope in
-`SCOPES` against Postgres — compiling was never the bar.
-
-**Suppression was declared and ignored.** `indicators.yml` carried the
-`suppression:` block from the start and the compiler never read it, so C14 would
-have published a mortality figure for an LLO the workbook says does not record
-deaths credibly — the same gap this project raised about the other
-implementation. `_suppression_columns` now emits `<measure>_suppressed` per rule,
-a rule scoped by `llo` without an `llo_map` is an error rather than a silently
-skipped gate, and the value is still computed: suppression is a display decision,
-not deletion.
-
-Both guards are mutation-verified — restoring the whitelist, and making
-suppression a no-op, each turn the suite red.
-
-## What is NOT proven
-
-- **Not yet run against opportunity 10042's real data.** Everything above is a
-  fixture. There is no path to execute arbitrary SQL against the labs database
-  without deploying, so real-data verification comes after this merges.
-- **No render layer yet.** This proves the compute; the new workflow template that
-  consumes these aggregates is the next step.
-- **`visit_sql` is wired by contract, not yet by execution** — the compiler takes
-  the pipeline's own `visit_extraction_sql` as its inner query, verified by reading
-  `pipeline_sql` for pipeline 5108, but the two have not yet run joined together.
-- Six workbook indicators (C03, C04, C18, C22, C29, C30) remain uncomputed for the
-  same reasons as in the existing dashboard; C32/C33 need thresholds that are TBD.
+- No server-side endpoint compiles and runs the registry per request; the run
+  carries computed results. That needs a labs deploy.
+- C18/C22 stay uncomputed pending the workbook's completion-gate definition.
+- C17 reproduces the render's UPPER median (`mv[floor(n/2)]`) deliberately, for
+  parity. Whether that is the right statistic is a question for the workbook.
