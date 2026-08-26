@@ -1,7 +1,7 @@
 """Write `tailwind/safelist-generated.txt` from `connect_labs.labs.tailwind_safelist`."""
 
 from django.conf import settings
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from connect_labs.labs.tailwind_safelist import generate_safelist, safelist_path
 
@@ -25,7 +25,7 @@ class Command(BaseCommand):
             if current == expected:
                 self.stdout.write(self.style.SUCCESS(f"{path} is up to date."))
                 return
-            raise SystemExit(f"{path} is stale. Run: python manage.py generate_tailwind_safelist")
+            raise CommandError(f"{path} is stale. Run: python manage.py generate_tailwind_safelist")
 
         if current == expected:
             self.stdout.write(f"{path} already up to date.")
