@@ -89,3 +89,69 @@ class TestEveryMutationPointUpdatesTheProjection:
         assert before.status == after.status
         assert before.completed_at == after.completed_at
         assert not hasattr(before, "date_modified")
+
+
+@pytest.mark.django_db
+class TestTheDualWriteLivesAtTheChokepoint:
+    """Any writer gets it, not just the two views that happened to be wired.
+
+    save_audit_session is where every audit-session write converges:
+    complete_audit_session sets the status and delegates to it, the
+    bulk-assessment save and uncomplete paths call it directly, and so does
+    anything else that persists a session. The dual-write used to sit at three
+    separate call sites in views.py, so a task, a management command or an MCP
+    tool that completed a session would silently skip it and leave the
+    projection serving stale verdicts.
+    """
+
+    def _data_access(self):
+        from connect_labs.audit.data_access import AuditDataAccess
+
+        # Bypass __init__ (it demands an OAuth token); nothing here hits the network.
+        return AuditDataAccess.__new__(AuditDataAccess)
+
+    def _saved(self, session):
+        """Drive save_audit_session with the remote write stubbed out.
+
+        labs_api is set on the INSTANCE: it lives on BaseDataAccess, and __init__
+        is bypassed here anyway because it demands an OAuth token.
+        """
+        remote = type(
+            "R",
+            (),
+            {
+                "id": session.id,
+                "experiment": "audit",
+                "type": "AuditSession",
+                "data": session.data,
+                "username": None,
+                "opportunity_id": OPP,
+                "organization_id": None,
+                "program_id": None,
+                "labs_record_id": None,
+            },
+        )()
+        da = self._data_access()
+        da.opportunity_id = OPP
+        da.labs_api = type("API", (), {"update_record": staticmethod(lambda **kw: remote)})()
+        return da.save_audit_session(session)
+
+    def test_saving_a_completed_session_records_it_without_any_view(self):
+        self._saved(_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1)))
+        assert read_index(OPP)["111:b1"]["result"] == "pass"
+
+    def test_saving_a_reopened_session_withdraws_it_without_any_view(self):
+        self._saved(_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1)))
+        self._saved(_session(1, "in_progress", {"111": _vr(b1="pass")}))
+        assert read_index(OPP) == {}
+
+    def test_a_projection_failure_never_breaks_the_save(self):
+        """The session is already persisted; a cache write must not undo that."""
+        from unittest.mock import patch
+
+        with patch(
+            "connect_labs.audit.prior_audit_projection.replace_session",
+            side_effect=RuntimeError("db gone"),
+        ):
+            saved = self._saved(_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1)))
+        assert saved.id == 1

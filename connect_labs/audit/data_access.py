@@ -23,6 +23,7 @@ import pandas as pd
 from django.core.cache import cache
 from django.http import HttpRequest
 
+from connect_labs.audit import prior_audit_projection
 from connect_labs.audit.analysis_config import AUDIT_EXTRACTION_CONFIG
 from connect_labs.audit.models import AuditSessionRecord
 from connect_labs.labs.analysis.computations import compute_visit_fields
@@ -1634,7 +1635,7 @@ class AuditDataAccess(BaseDataAccess):
             if scoped_api is not None:
                 scoped_api.close()
 
-        return AuditSessionRecord(
+        saved = AuditSessionRecord(
             {
                 "id": updated.id,
                 "experiment": updated.experiment,
@@ -1647,6 +1648,19 @@ class AuditDataAccess(BaseDataAccess):
                 "labs_record_id": updated.labs_record_id,
             }
         )
+        # Keep the prior-audit projection in step, here rather than at the call
+        # sites. THIS is the chokepoint: complete_audit_session sets the status
+        # and then delegates here, the bulk-assessment save and uncomplete paths
+        # call it directly, and so does anything else that writes a session. The
+        # dual-write used to sit in three separate places in views.py, which
+        # meant any future writer -- a task, a management command, an MCP tool --
+        # silently skipped it and left the projection serving stale verdicts.
+        #
+        # Uses the session just written, so it needs no fetch and no credential;
+        # best-effort, so a cache failure cannot break a save the user has
+        # already been told succeeded.
+        prior_audit_projection.record_session(saved)
+        return saved
 
     def complete_audit_session(
         self,
