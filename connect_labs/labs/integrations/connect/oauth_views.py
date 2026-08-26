@@ -202,7 +202,9 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
         logger.warning("Failed to fetch OIDC userinfo", exc_info=True)
 
     # Fetch organization data from production API
-    org_data = fetch_user_organization_data(access_token)
+    # owner= is safe here specifically because profile_data came from introspecting
+    # THIS token a few lines up -- it is the token's owner, not an ambient user.
+    org_data = fetch_user_organization_data(access_token, owner=profile_data.get("username"))
 
     # Warn user if organization data fetch failed
     if not org_data:

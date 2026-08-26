@@ -14,7 +14,7 @@ from ..tool_registry import MCPToolError, register
 logger = logging.getLogger(__name__)
 
 
-def _collect_user_opportunity_ids(access_token: str) -> set[int]:
+def _collect_user_opportunity_ids(access_token: str, user=None) -> set[int]:
     """Return the set of opportunity IDs the caller can see on production Connect.
 
     Used to validate opportunity_ids before persisting them on a workflow
@@ -23,7 +23,9 @@ def _collect_user_opportunity_ids(access_token: str) -> set[int]:
     Returns an empty set if the upstream call fails; the caller is expected to
     treat that as \"cannot validate\" and either error or skip as appropriate.
     """
-    data = fetch_user_organization_data(access_token)
+    # ``user`` is who require_connect_token minted this token for, so it is the
+    # token's proven owner and safe to key the org-tree cache on.
+    data = fetch_user_organization_data(access_token, owner=getattr(user, "username", None))
     if not data:
         return set()
     return {opp.get("id") for opp in data.get("opportunities") or [] if opp.get("id") is not None}
@@ -547,7 +549,7 @@ def workflow_update_opportunity_ids(
         # Validate every id is something the caller can actually access. Mirrors
         # the check Labs does at workflow/views.py so we don't persist ids the
         # user couldn't otherwise set via the UI.
-        user_opp_ids = _collect_user_opportunity_ids(token) | _collect_labs_only_opp_ids(user)
+        user_opp_ids = _collect_user_opportunity_ids(token, user) | _collect_labs_only_opp_ids(user)
         if not user_opp_ids:
             raise MCPToolError(
                 "UPSTREAM_ERROR",
@@ -682,7 +684,7 @@ def workflow_create_from_template(
             if oid not in seen:
                 seen.add(oid)
                 cleaned_opp_ids.append(oid)
-        user_opp_ids = _collect_user_opportunity_ids(token) | _collect_labs_only_opp_ids(user)
+        user_opp_ids = _collect_user_opportunity_ids(token, user) | _collect_labs_only_opp_ids(user)
         if not user_opp_ids:
             raise MCPToolError(
                 "UPSTREAM_ERROR",
@@ -847,7 +849,7 @@ def workflow_create(
             if oid not in seen:
                 seen.add(oid)
                 cleaned_opp_ids.append(oid)
-        user_opp_ids = _collect_user_opportunity_ids(token) | _collect_labs_only_opp_ids(user)
+        user_opp_ids = _collect_user_opportunity_ids(token, user) | _collect_labs_only_opp_ids(user)
         if not user_opp_ids:
             raise MCPToolError(
                 "UPSTREAM_ERROR",
