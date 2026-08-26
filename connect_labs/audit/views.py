@@ -2503,7 +2503,15 @@ class OpportunityImageTypesAPIView(LoginRequiredMixin, View):
         from connect_labs.labs.integrations.connect.factory import get_export_client
 
         endpoint = f"/export/opportunity/{opp_id}/user_visits/"
-        params = {"images": "true"}
+        # page_size, or the sampler asks for 2500 and reads 200 of them. The export
+        # client defaults to DEFAULT_PAGE_SIZE=2500, and `partial_ok` only saves the
+        # SECOND page -- the first one is fetched in full before a single row is
+        # examined. So this endpoint spent ~5s waiting on Connect to build and ship
+        # 12x more image-bearing visits than MAX_ROWS can ever look at, on every call.
+        # Measured 2026-08-26: 6.9-8.9s per request, avg 4.8-5.2s of it in outbound
+        # wait on ONE call, fired four times concurrently (one per opportunity) by
+        # the audit wizard. `paginate` uses setdefault, so an explicit value wins.
+        params = {"images": "true", "page_size": self.MAX_ROWS}
 
         seen_question_ids: set[str] = set()
         rows_with_images = 0
@@ -2587,7 +2595,9 @@ class OpportunityFieldQuestionsAPIView(LoginRequiredMixin, View):
         from connect_labs.labs.integrations.connect.factory import get_export_client
 
         endpoint = f"/export/opportunity/{opp_id}/user_visits/"
-        params = {"images": "true"}
+        # Same page_size cap as OpportunityImageTypesAPIView, for the same reason --
+        # this sampler is a copy of that one and inherited the defect with it.
+        params = {"images": "true", "page_size": self.MAX_ROWS}
 
         seen_paths: set[str] = set()
         rows_processed = 0
