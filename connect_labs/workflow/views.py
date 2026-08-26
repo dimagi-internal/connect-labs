@@ -2530,12 +2530,18 @@ def save_render_code_api(request, definition_id):
         }
         # Non-blocking: name any CSS class the deployed bundles don't define, so
         # the author hears about it now instead of shipping an invisible panel
-        # (labs#1294). Never fails the save — see render_code_lint's docstring.
-        from connect_labs.workflow.render_code_lint import render_code_warning
+        # (labs#1294). The record is ALREADY written at this point, and this
+        # whole block sits inside a try whose handler returns a 500 — so an
+        # unguarded advisory check would report a failed save on a save that
+        # succeeded, and the author would retry a write that already landed.
+        try:
+            from connect_labs.workflow.render_code_lint import render_code_warning
 
-        warning = render_code_warning(component_code)
-        if warning:
-            payload["render_code_warning"] = warning
+            warning = render_code_warning(component_code)
+            if warning:
+                payload["render_code_warning"] = warning
+        except Exception:
+            logger.exception("render_code class check failed for definition %s", definition_id)
         return JsonResponse(payload)
 
     except json.JSONDecodeError:
