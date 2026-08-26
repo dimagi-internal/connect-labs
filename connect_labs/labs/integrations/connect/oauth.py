@@ -4,10 +4,12 @@ Connect OAuth Helper Functions.
 Shared OAuth utilities for both web and CLI authentication flows.
 """
 
+import hashlib
 import logging
 
 import httpx
 from django.conf import settings
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -69,16 +71,55 @@ def refresh_connect_token(request) -> bool:
         return False
 
 
-def fetch_user_organization_data(access_token: str) -> dict | None:
+# How long a successful org tree is reused. Production computes this list by
+# annotating every opportunity the caller can see with Count("uservisit") over its
+# largest table, so the cost scales with the caller's access: measured at 0.28-0.37s
+# for an account with almost no membership and 4.7-15.0s for broad Dimagi staff
+# access. Labs was asking 182-455 times a day against 1-7 logins (#1298).
+#
+# 300s is the same window audit/link_helpers.py already chose for this exact call in
+# #1175, kept identical so there is one number to reason about rather than two. It
+# collapses the bursts that dominate the volume (calls arrive seconds apart) while
+# keeping a membership change visible within five minutes — and staleness cannot
+# produce a false denial, because mcp/tools/synthetic.py asks production directly
+# when its copy of the list does not contain the opportunity in question (#1212).
+_ORG_DATA_CACHE_TTL = 300
+
+
+def _org_data_cache_key(access_token: str) -> str:
+    """Cache key for one token's org tree.
+
+    Hashed, never the token itself: this key goes to Redis, which is not a
+    credential store. Keyed on the TOKEN rather than the user because that is all
+    the request-less callers (MCP tools, Celery) have, and because a fresh login
+    mints a fresh token — so the OAuth callback always misses and always gets live
+    data, which is what you want at login.
+    """
+    return f"labs:org_data:{hashlib.sha256(access_token.encode()).hexdigest()}"
+
+
+def fetch_user_organization_data(access_token: str, force_refresh: bool = False) -> dict | None:
     """
     Fetch user's organizations, programs, and opportunities from Connect production.
 
+    Cached per access token for ``_ORG_DATA_CACHE_TTL``. Only a SUCCESSFUL fetch is
+    cached: caching the ``None`` would make one network blip look like a revoked
+    permission for the whole window, which is the failure #1195 was filed for.
+
     Args:
         access_token: OAuth Bearer token for Connect production
+        force_refresh: skip the cache and repopulate it. For the "refresh org data"
+            view, whose entire purpose is to defeat staleness.
 
     Returns:
         Dict with 'organizations', 'programs', 'opportunities' keys, or None if fails.
     """
+    cache_key = _org_data_cache_key(access_token)
+    if not force_refresh:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
     try:
         response = httpx.get(
             f"{settings.CONNECT_PRODUCTION_URL}/export/opp_org_program_list/",
@@ -94,6 +135,7 @@ def fetch_user_organization_data(access_token: str) -> dict | None:
         )
         response.raise_for_status()
         data = response.json()
+        cache.set(cache_key, data, _ORG_DATA_CACHE_TTL)
         return data
 
     except Exception as e:
