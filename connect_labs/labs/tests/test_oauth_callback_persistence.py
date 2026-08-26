@@ -143,3 +143,45 @@ def test_callback_upserts_token_on_repeated_login():
     token = UserConnectToken.objects.get(user=existing_user)
     assert token.access_token == "second-access-token"
     assert token.refresh_token == "second-refresh-token"
+
+
+@pytest.mark.django_db
+def test_callback_keys_the_org_cache_on_the_tokens_owner():
+    """Login must read the same cache entry the rest of labs warms.
+
+    The whole value of owner-keying is that the ~400 calls a day other callers make
+    for the SAME person warm the entry a login then hits — a sign-in mints a new
+    token, so a token-keyed entry could never serve it (#1298, #1310). Dropping this
+    kwarg would silently restore a guaranteed miss on the one request every user
+    pays, so it is pinned here rather than left to review.
+
+    The owner passed must be the username introspection returned for THIS token, not
+    an ambient user: that is what keeps the key's scope equal to the payload's.
+    """
+    factory = RequestFactory()
+    request = factory.get("/labs/callback/", {"state": "test-state", "code": "auth-code-123"})
+    request.session = {
+        "oauth_state": "test-state",
+        "oauth_code_verifier": "pkce-verifier-value",
+        "oauth_next": "/labs/overview/",
+    }
+
+    with (
+        patch("httpx.post", return_value=_make_token_response()),
+        patch("httpx.get", return_value=_make_userinfo_response()),
+        patch(
+            "connect_labs.labs.integrations.connect.oauth_views.introspect_token",
+            return_value=_PROFILE_DATA,
+        ),
+        patch(
+            "connect_labs.labs.integrations.connect.oauth_views.fetch_user_organization_data",
+            return_value=_ORG_DATA,
+        ) as fetch,
+        patch("connect_labs.labs.integrations.connect.oauth_views.login"),
+        patch("connect_labs.labs.integrations.connect.oauth_views.messages"),
+    ):
+        from connect_labs.labs.integrations.connect.oauth_views import labs_oauth_callback
+
+        labs_oauth_callback(request)
+
+    assert fetch.call_args.kwargs.get("owner") == _PROFILE_DATA["username"]

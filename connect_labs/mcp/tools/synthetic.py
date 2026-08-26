@@ -90,7 +90,8 @@ def _accessible_opp_ids_for_user(user) -> set[int]:
         if cached is not None and (now - cached[0]) < _ACCESS_CACHE_TTL_SECONDS:
             return cached[1]
 
-    org_data = fetch_user_organization_data(token)
+    # require_connect_token(user) returned this token FOR this user, so the owner is proven.
+    org_data = fetch_user_organization_data(token, owner=getattr(user, "username", None))
     if org_data is None:
         # Distinguish "we could not ask" from "you may not". Collapsing the two
         # made a transient upstream blip surface as a confident PERMISSION_DENIED

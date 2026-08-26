@@ -81,7 +81,8 @@ def _program_summary(prog: dict, opportunities: list[dict]) -> dict:
 )
 def labs_context(user, search: str = None) -> dict[str, Any]:
     token = require_connect_token(user)
-    data = fetch_user_organization_data(token)
+    # require_connect_token(user) returned this token FOR this user, so the owner is proven.
+    data = fetch_user_organization_data(token, owner=getattr(user, "username", None))
     if data is None:
         raise MCPToolError(
             "UPSTREAM_ERROR",
