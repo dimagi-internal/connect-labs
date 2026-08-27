@@ -207,10 +207,12 @@ class SelectionView(OpenLocallyMixin, View):
                 "indicator": indicator,
                 "indicator_label": measure.label,
                 "indicator_unit": measure.unit,
+                "lower_is_worse": indicator in measures.LOWER_IS_WORSE,
                 "threshold": threshold,
                 "threshold_pct": threshold / 10.0,
                 "totals": {
                     "expected_deaths": selection.totals.get("expected_deaths"),
+                    "ors_gap_children": selection.totals.get("ors_gap_children"),
                     "births": selection.totals.get("births"),
                     "pop_u5": selection.totals.get("pop_u5"),
                     "pop_total": selection.totals.get("pop_total"),
@@ -257,6 +259,7 @@ class SelectionView(OpenLocallyMixin, View):
                             f"{r.measured_at.name} (ADM{r.measured_at.admin_level})" if r and r.inherited else None
                         ),
                         "expected_deaths": _round_or_none(a.counts.get("expected_deaths")),
+                        "ors_gap_children": _round_or_none(a.counts.get("ors_gap_children")),
                         "births": _round_or_none(a.counts.get("births")),
                         "pop_u5": _round_or_none(a.counts.get("pop_u5")),
                         "pop_total": _round_or_none(a.counts.get("pop_total")),
@@ -306,6 +309,20 @@ class MethodsView(OpenLocallyMixin, View):
             {
                 "resolutions": availability.resolutions(),
                 "default": DEFAULT_METHOD,
+                "indicators": [
+                    {
+                        "code": m.code,
+                        "label": m.label,
+                        "unit": m.unit,
+                        "description": m.description,
+                        "lower_is_worse": m.code in measures.LOWER_IS_WORSE,
+                        "per_1000": "1,000" in m.unit,
+                        "threshold_min": m.threshold_min,
+                        "threshold_max": m.threshold_max,
+                        "threshold_default": m.threshold_default,
+                    }
+                    for m in measures.targetable()
+                ],
                 **availability.matrix(indicator),
             }
         )

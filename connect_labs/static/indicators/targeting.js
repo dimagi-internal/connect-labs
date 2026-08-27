@@ -12,6 +12,8 @@
   var TG = window.TG;
   var methodInfo = null;
   var currentMethod = null;
+  var currentIndicator = null;
+  var indicatorMeta = {};
   var map = null;
   var selected = new Set();
   var geojson = null;
@@ -96,14 +98,14 @@
     var expr = [
       'interpolate',
       ['linear'],
-      ['coalesce', ['get', TG.indicator], -1],
+      ['coalesce', ['get', currentIndicator], -1],
     ];
     STOPS.forEach(function (s) {
       expr.push(s[0], s[1]);
     });
     return [
       'case',
-      ['==', ['coalesce', ['get', TG.indicator], -1], -1],
+      ['==', ['coalesce', ['get', currentIndicator], -1], -1],
       '#e7e5e4',
       expr,
     ];
@@ -195,7 +197,7 @@
     map.on('mousemove', 'areas-fill', function (e) {
       var p = e.features[0].properties;
       map.getCanvas().style.cursor = 'pointer';
-      var rate = p[TG.indicator];
+      var rate = p[currentIndicator];
       var inherited = p.inherited === true || p.inherited === 'true';
       popup
         .setLngLat(e.lngLat)
@@ -242,7 +244,23 @@
     });
   }
 
+  // Which burden count belongs beside this indicator: deaths for mortality,
+  // untreated children for a diarrhoea/ORS view.
+  function burdenIsOrs() {
+    return (
+      currentIndicator === 'diarrhoea_prevalence' ||
+      currentIndicator === 'ors_coverage'
+    );
+  }
+
+  function burdenOf(r) {
+    return burdenIsOrs() ? r.ors_gap_children : r.expected_deaths;
+  }
+
   function renderTable(data) {
+    var th = document.getElementById('th-burden');
+    if (th) th.textContent = burdenIsOrs() ? 'Untreated/now' : 'Deaths/yr';
+
     var tbody = document.getElementById('tg-rows');
     tbody.innerHTML = '';
 
@@ -316,9 +334,9 @@
         (r.value === null ? '—' : r.value) +
         '</td>' +
         '<td class="px-3 py-2 text-right tg-num font-medium">' +
-        (r.expected_deaths === null
+        (burdenOf(r) === null
           ? '<span class="text-stone-400">—</span>'
-          : fmtFull(r.expected_deaths)) +
+          : fmtFull(burdenOf(r))) +
         '</td>' +
         '<td class="px-3 py-2 text-right tg-num text-stone-600">' +
         birthsCell +
@@ -346,8 +364,16 @@
   function renderHeadline(data) {
     document.getElementById('tg-births').textContent = fmt(data.totals.births);
     document.getElementById('tg-deaths').textContent = fmt(
-      data.totals.expected_deaths,
+      burdenIsOrs()
+        ? data.totals.ors_gap_children
+        : data.totals.expected_deaths,
     );
+    var dl = document.querySelector('#tg-deaths');
+    if (dl && dl.previousElementSibling) {
+      dl.previousElementSibling.textContent = burdenIsOrs()
+        ? 'Children with untreated diarrhoea'
+        : 'Expected under-5 deaths / year';
+    }
     document.getElementById('tg-popu5').textContent = fmt(data.totals.pop_u5);
     document.getElementById('tg-poptotal').textContent = fmt(
       data.totals.pop_total,
@@ -503,10 +529,88 @@
     cover.textContent = text;
   }
 
+  function renderIndicatorSelect() {
+    var sel = document.getElementById('tg-indicator');
+    sel.innerHTML = '';
+    (methodInfo.indicators || []).forEach(function (i) {
+      indicatorMeta[i.code] = i;
+      var o = document.createElement('option');
+      o.value = i.code;
+      o.textContent = i.label;
+      o.selected = i.code === currentIndicator;
+      sel.appendChild(o);
+    });
+    sel.onchange = function () {
+      currentIndicator = sel.value;
+      applyThresholdScale();
+      // Availability is per indicator as well as per method — IGME models
+      // mortality, not diarrhoea — so the whole picker is rebuilt.
+      return fetch(TG.urls.methods + '?indicator=' + currentIndicator)
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (info) {
+          methodInfo = info;
+          if (
+            !methodInfo.methods[currentMethod] ||
+            !methodInfo.methods[currentMethod].countries_available
+          ) {
+            var best = Object.keys(methodInfo.methods).filter(function (c) {
+              return methodInfo.methods[c].countries_available > 0;
+            });
+            if (best.length) currentMethod = best[0];
+          }
+          renderPicker();
+          return reload();
+        });
+    };
+  }
+
+  // Each measure carries its own slider range and starting point. Leaving an
+  // 80-per-1,000 mortality threshold in place when switching to a percentage
+  // indicator selects almost nothing and looks like missing data.
+  function applyThresholdScale() {
+    var meta = indicatorMeta[currentIndicator];
+    if (!meta) return;
+    var el = document.getElementById('tg-threshold');
+    el.min = meta.threshold_min;
+    el.max = meta.threshold_max;
+    el.step = meta.per_1000 ? 5 : 1;
+    el.value = meta.threshold_default;
+    document.getElementById('tg-scale-min').textContent = meta.per_1000
+      ? (meta.threshold_min / 10).toFixed(0) + '%'
+      : meta.threshold_min + '%';
+    document.getElementById('tg-scale-max').textContent = meta.per_1000
+      ? (meta.threshold_max / 10).toFixed(0) + '%'
+      : meta.threshold_max + '%';
+  }
+
   function renderPicker() {
+    renderIndicatorSelect();
     renderResolutionToggle();
     renderMethodSelect();
     renderMethodNotes();
+    renderThresholdLabels();
+  }
+
+  // Thresholds mean different things per indicator: a rate per 1,000, a
+  // percentage, or a coverage figure where LOW is the problem.
+  function renderThresholdLabels() {
+    var meta = indicatorMeta[currentIndicator] || {};
+    var direction = meta.lower_is_worse ? 'below' : 'above';
+    document.getElementById('tg-threshold-label').textContent =
+      'Select places ' +
+      direction +
+      ' this ' +
+      (meta.label || '').toLowerCase();
+    document.getElementById('tg-threshold-unit').textContent = meta.per_1000
+      ? 'of live births'
+      : meta.unit || '';
+    document.getElementById('tg-threshold-alt').style.display = meta.per_1000
+      ? ''
+      : 'none';
+    document.getElementById('tg-headline-label').textContent =
+      'Estimated annual births ' + direction + ' threshold';
   }
 
   function reload() {
@@ -520,7 +624,11 @@
       selected = new Set();
     }
     return fetch(
-      TG.urls.map + '?indicator=' + TG.indicator + '&method=' + currentMethod,
+      TG.urls.map +
+        '?indicator=' +
+        currentIndicator +
+        '&method=' +
+        currentMethod,
     )
       .then(function (r) {
         return r.json();
@@ -544,7 +652,7 @@
     document.getElementById('tg-download').href =
       TG.urls.download +
       '?indicator=' +
-      TG.indicator +
+      currentIndicator +
       '&threshold=' +
       t +
       (currentMethod ? '&method=' + currentMethod : '');
@@ -556,7 +664,7 @@
     return fetch(
       TG.urls.selection +
         '?indicator=' +
-        TG.indicator +
+        currentIndicator +
         '&threshold=' +
         t +
         (currentMethod ? '&method=' + currentMethod : ''),
@@ -599,6 +707,9 @@
       .then(function (info) {
         methodInfo = info;
         currentMethod = TG.defaultMethod || info.default;
+        currentIndicator = TG.indicator;
+        renderIndicatorSelect();
+        applyThresholdScale();
         renderPicker();
         return initMap();
       })

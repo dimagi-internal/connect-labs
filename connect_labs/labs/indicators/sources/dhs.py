@@ -30,6 +30,13 @@ INDICATORS = {
     "u5mr": {"value": "CM_ECMR_C_U5M", "lo": "CM_ECMR_C_U5L", "hi": "CM_ECMR_C_U5U"},
     "imr": {"value": "CM_ECMR_C_IMR", "lo": "CM_ECMR_C_IML", "hi": "CM_ECMR_C_IMU"},
     "tfr": {"value": "FE_FRTR_W_TFR", "lo": None, "hi": None},
+    # Child-health indicators. DHS is the only subnational source for these —
+    # IHME's 5 km diarrhoea and breastfeeding surfaces are licence-blocked and
+    # stopped being updated in 2022 regardless.
+    "diarrhoea_prevalence": {"value": "CH_DIAR_C_DIA", "lo": None, "hi": None},
+    "ors_coverage": {"value": "CH_DIAT_C_ORS", "lo": None, "hi": None},
+    "diarrhoea_untreated": {"value": "CH_DIAT_C_NON", "lo": None, "hi": None},
+    "exclusive_breastfeeding": {"value": "CN_BFSS_C_EBF", "lo": None, "hi": None},
 }
 
 METHOD = (

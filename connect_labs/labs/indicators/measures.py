@@ -50,6 +50,13 @@ class Measure:
     # own. Counts must not — see module docstring.
     downscale: bool = False
     description: str = ""
+    #: Threshold slider range and starting point, in this measure's own units.
+    #: Carrying 80 across from a per-1,000 mortality rate to a percentage
+    #: indicator selects almost nothing and reads as missing data, so each
+    #: targetable measure states its own scale.
+    threshold_min: float = 0
+    threshold_max: float = 100
+    threshold_default: float = 50
 
     @property
     def is_rate(self) -> bool:
@@ -183,6 +190,9 @@ register(
 register(
     Measure(
         code="u5mr",
+        threshold_min=10,
+        threshold_max=200,
+        threshold_default=80,
         label="Under-5 mortality rate",
         kind=Kind.RATE,
         unit="per 1,000 live births",
@@ -214,6 +224,9 @@ register(
 register(
     Measure(
         code="nmr",
+        threshold_min=5,
+        threshold_max=80,
+        threshold_default=30,
         label="Neonatal mortality rate",
         kind=Kind.RATE,
         unit="per 1,000 live births",
@@ -240,6 +253,103 @@ register(
     )
 )
 
+# --------------------------------------------------------------------------
+# Child health. Proportions, so they weight by the population they describe and
+# inherit downward like any other rate.
+# --------------------------------------------------------------------------
+
+register(
+    Measure(
+        code="diarrhoea_prevalence",
+        threshold_min=2,
+        threshold_max=40,
+        threshold_default=15,
+        label="Under-5 diarrhoea prevalence",
+        kind=Kind.RATE,
+        unit="% of under-5s, two-week recall",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_u5",
+        downscale=True,
+        description=(
+            "Share of children under five reported to have had diarrhoea in the "
+            "two weeks before the survey. A point prevalence, not an annual "
+            "episode count."
+        ),
+    )
+)
+
+register(
+    Measure(
+        code="ors_coverage",
+        threshold_min=10,
+        threshold_max=90,
+        threshold_default=50,
+        label="ORS treatment coverage",
+        kind=Kind.RATE,
+        unit="% of under-5s with diarrhoea",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_u5",
+        downscale=True,
+        description=(
+            "Share of children with diarrhoea who received oral rehydration "
+            "solution. The complement is the gap an ORS programme addresses."
+        ),
+    )
+)
+
+register(
+    Measure(
+        code="diarrhoea_untreated",
+        label="Diarrhoea receiving no ORS, RHF or fluids",
+        kind=Kind.RATE,
+        unit="% of under-5s with diarrhoea",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_u5",
+        downscale=True,
+        description=(
+            "DHS's own untreated share. Kept beside the ORS-coverage complement "
+            "because the two are not quite the same question — a child may get "
+            "increased fluids without ORS."
+        ),
+    )
+)
+
+register(
+    Measure(
+        code="ors_gap_children",
+        label="Children with untreated diarrhoea",
+        kind=Kind.COUNT,
+        unit="children",
+        agg=Agg.SUM,
+        description=(
+            "Under-5s with diarrhoea not receiving ORS, at any given moment. "
+            "The denominator an ORS deployment acts on. A point-prevalence "
+            "count — not annualised, because that needs an episode-frequency "
+            "assumption the survey does not supply."
+        ),
+    )
+)
+
+register(
+    Measure(
+        code="exclusive_breastfeeding",
+        threshold_min=10,
+        threshold_max=90,
+        threshold_default=50,
+        label="Exclusive breastfeeding under 6 months",
+        kind=Kind.RATE,
+        unit="% of infants under 6 months",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="births",
+        downscale=True,
+        description=(
+            "Share of infants under six months exclusively breastfed. Weighted "
+            "by births, the closest available proxy for the infant cohort it "
+            "describes."
+        ),
+    )
+)
+
 register(
     Measure(
         code="tfr",
@@ -252,5 +362,26 @@ register(
         description="Lifetime births per woman. Weighted by women of childbearing age.",
     )
 )
+
+#: Rates a user can sensibly threshold on to pick places. Counts are outcomes
+#: of a selection, not criteria for one, so they are excluded.
+TARGETABLE = (
+    "u5mr",
+    "nmr",
+    "diarrhoea_prevalence",
+    "exclusive_breastfeeding",
+    "ors_coverage",
+)
+
+
+def targetable() -> list[Measure]:
+    return [MEASURES[c] for c in TARGETABLE if c in MEASURES]
+
+
+#: Measures where a LOW value is the problem. Thresholding "above" a coverage
+#: figure would select the places already doing well, which is the opposite of
+#: targeting.
+LOWER_IS_WORSE = frozenset({"exclusive_breastfeeding", "ors_coverage"})
+
 
 validate_registry()

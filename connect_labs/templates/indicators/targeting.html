@@ -49,6 +49,10 @@
     <div class="space-y-4">
 
       <div class="bg-white rounded-lg border border-stone-200 p-5">
+        <label for="tg-indicator" class="block text-sm font-medium text-stone-800">Target on</label>
+        <select id="tg-indicator"
+                class="w-full mt-1 mb-4 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
+
         <div class="text-sm font-medium text-stone-800">Level of detail</div>
         <div class="flex gap-1 mt-2 p-1 bg-stone-100 rounded-lg" id="tg-resolution"></div>
         <label for="tg-method" class="block text-xs font-medium text-stone-600 mt-4">Method</label>
@@ -60,25 +64,26 @@
       </div>
 
       <div class="bg-white rounded-lg border border-stone-200 p-5">
-        <label for="tg-threshold" class="block text-sm font-medium text-stone-800">
+        <label for="tg-threshold" id="tg-threshold-label"
+               class="block text-sm font-medium text-stone-800">
           High-mortality threshold
         </label>
         <div class="flex items-baseline gap-2 mt-2">
           <span id="tg-threshold-pct" class="text-3xl font-semibold text-teal-800 tg-num">8.0%</span>
-          <span class="text-stone-500 text-sm">of live births</span>
+          <span id="tg-threshold-unit" class="text-stone-500 text-sm">of live births</span>
         </div>
-        <div class="text-sm text-stone-500 tg-num mt-0.5">
+        <div id="tg-threshold-alt" class="text-sm text-stone-500 tg-num mt-0.5">
           = <span id="tg-threshold-abs">80</span> per 1,000
         </div>
         <input id="tg-threshold" type="range" class="tg-slider w-full mt-3"
                min="10" max="200" step="5" value="{{ default_threshold|floatformat:0 }}">
         <div class="flex justify-between text-xs text-stone-400 tg-num">
-          <span>1%</span><span>20%</span>
+          <span id="tg-scale-min">1%</span><span id="tg-scale-max">20%</span>
         </div>
       </div>
 
       <div class="bg-teal-800 text-white rounded-lg p-5">
-        <div class="text-xs uppercase tracking-wider text-teal-200">Estimated annual births above threshold</div>
+        <div id="tg-headline-label" class="text-xs uppercase tracking-wider text-teal-200">Estimated annual births above threshold</div>
         <div id="tg-births" class="text-4xl font-semibold mt-1 tg-num">—</div>
         <div id="tg-scope" class="text-sm text-teal-100 mt-2">—</div>
         <!-- Sits inside the headline card on purpose: a qualifier printed below
@@ -148,7 +153,7 @@
             <th class="text-left px-5 py-2 font-medium">Area</th>
             <th class="text-left px-3 py-2 font-medium">Country</th>
             <th class="text-right px-3 py-2 font-medium">U5MR</th>
-            <th class="text-right px-3 py-2 font-medium">Deaths/yr</th>
+            <th class="text-right px-3 py-2 font-medium" id="th-burden">Deaths/yr</th>
             <th class="text-right px-3 py-2 font-medium">Births/yr</th>
             <th class="text-right px-3 py-2 font-medium">Under-5 pop</th>
             <th class="text-left px-3 py-2 font-medium">Source</th>
