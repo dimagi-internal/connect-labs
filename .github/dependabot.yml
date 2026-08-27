@@ -1,0 +1,45 @@
+# Why this exists: the 2026-07-29 audit counted 197 open alerts; four weeks later
+# it was 239, with zero security bumps landed in between (#1031). Nothing was
+# opening the PRs, so the backlog could only grow. Weekly batched PRs keep the
+# tail short enough that each one is reviewable.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /requirements
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    # One PR per ecosystem for the patch/minor tail. A 60-package PR is not
+    # reviewable and a 60-PR week is not either; grouping is what makes the
+    # routine bumps a single merge and leaves majors on their own.
+    groups:
+      python-patch-and-minor:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+    labels: ['dependencies']
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      js-patch-and-minor:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+    labels: ['dependencies']
+    ignore:
+      # The runtime JS alerts (dompurify, mermaid, lodash-es) all sit behind
+      # `ai`, and clearing them needs a breaking ai@5 -> ai@7 migration. Left to
+      # a deliberate pass rather than an automated PR that can only ever fail
+      # review. Tracked in #1031.
+      - dependency-name: 'ai'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: ['github_actions']

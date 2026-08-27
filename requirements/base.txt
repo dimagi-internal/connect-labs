@@ -12,7 +12,7 @@ aiofile==3.9.0
     # via py-key-value-aio
 aiohappyeyeballs==2.6.1
     # via aiohttp
-aiohttp==3.13.3
+aiohttp==3.14.3
     # via xai-sdk
 aiosignal==1.4.0
     # via aiohttp
@@ -113,7 +113,7 @@ crispy-tailwind==1.0.3
     # via -r requirements/base.in
 cron-descriptor==1.4.5
     # via django-celery-beat
-cryptography==46.0.5
+cryptography==50.0.1
     # via
     #   authlib
     #   google-auth
@@ -127,7 +127,7 @@ distro==1.9.0
     #   google-genai
     #   groq
     #   openai
-django==5.2.12
+django==5.2.17
     # via
     #   -r requirements/base.in
     #   crispy-tailwind
@@ -210,7 +210,7 @@ executing==2.2.1
     # via logfire
 fastavro==1.12.1
     # via cohere
-fastmcp==3.1.1
+fastmcp==3.2.4
     # via
     #   -r requirements/base.in
     #   pydantic-ai-slim
@@ -249,7 +249,9 @@ googleapis-common-protos==1.73.0
 greenlet==3.3.2
     # via gevent
 griffelib==2.0.0
-    # via pydantic-ai-slim
+    # via
+    #   fastmcp
+    #   pydantic-ai-slim
 groq==1.1.1
     # via pydantic-ai-slim
 grpcio==1.78.0
@@ -357,7 +359,7 @@ markdown==3.10.2
     # via -r requirements/base.in
 markdown-it-py==4.0.0
     # via rich
-mcp==1.26.0
+mcp==1.29.1
     # via
     #   -r requirements/base.in
     #   fastmcp
@@ -452,10 +454,12 @@ pandas==3.0.1
     #   ortools
 pathable==0.5.0
     # via jsonschema-path
-pillow==12.1.1
+pillow==12.3.0
     # via -r requirements/base.in
 platformdirs==4.9.4
-    # via fastmcp
+    # via
+    #   fastmcp
+    #   fastmcp-slim
 prompt-toolkit==3.0.52
     # via
     #   click-repl
@@ -476,7 +480,7 @@ psycopg2-binary==2.9.11
     # via -r requirements/base.in
 py-key-value-aio[filetree,keyring,memory]==0.4.4
     # via fastmcp
-pyasn1==0.6.3
+pyasn1==0.6.4
     # via pyasn1-modules
 pyasn1-modules==0.4.2
     # via google-auth
@@ -515,10 +519,12 @@ pydantic-evals==1.69.0
 pydantic-graph==1.69.0
     # via pydantic-ai-slim
 pydantic-settings==2.13.1
-    # via mcp
+    # via
+    #   fastmcp-slim
+    #   mcp
 pygments==2.19.2
     # via rich
-pyjwt[crypto]==2.12.1
+pyjwt[crypto]==2.13.0
     # via mcp
 pyogrio==0.12.1
     # via geopandas
@@ -539,8 +545,9 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
     # via
     #   fastmcp
+    #   fastmcp-slim
     #   pydantic-settings
-python-multipart==0.0.22
+python-multipart==0.0.32
     # via mcp
 python-slugify==8.0.4
     # via -r requirements/base.in
@@ -579,6 +586,7 @@ rich==14.3.3
     # via
     #   cyclopts
     #   fastmcp
+    #   fastmcp-slim
     #   logfire
     #   pydantic-ai-slim
     #   pydantic-evals
@@ -618,11 +626,11 @@ sniffio==1.3.1
     #   google-genai
     #   groq
     #   openai
-sqlparse==0.5.5
+sqlparse==0.6.0
     # via django
 sse-starlette==3.3.2
     # via mcp
-starlette==0.52.1
+starlette==1.6.0
     # via
     #   mcp
     #   pydantic-ai-slim
@@ -655,11 +663,13 @@ types-requests==2.32.4.20260107
     # via cohere
 typing-extensions==4.15.0
     # via
+    #   aiohttp
     #   aiosignal
     #   anthropic
     #   anyio
     #   cohere
     #   exceptiongroup
+    #   fastmcp-slim
     #   google-genai
     #   groq
     #   grpcio
@@ -699,7 +709,7 @@ uncalled-for==0.2.0
     # via fastmcp
 uritemplate==4.2.0
     # via drf-spectacular
-urllib3==2.6.3
+urllib3==2.7.0
     # via
     #   botocore
     #   django-anymail
