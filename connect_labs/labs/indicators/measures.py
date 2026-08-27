@@ -57,6 +57,10 @@ class Measure:
     threshold_min: float = 0
     threshold_max: float = 100
     threshold_default: float = 50
+    #: For a coverage measure: the count it applies to. Lets the unreached
+    #: population be derived generically — ``denominator x (1 - coverage)`` —
+    #: instead of hand-writing a gap per indicator.
+    coverage_of: str | None = None
 
     @property
     def is_rate(self) -> bool:
@@ -281,6 +285,7 @@ register(
 register(
     Measure(
         code="ors_coverage",
+        coverage_of="pop_u5",
         threshold_min=10,
         threshold_max=90,
         threshold_default=50,
@@ -363,14 +368,222 @@ register(
     )
 )
 
+# --------------------------------------------------------------------------
+# Wider child-health and household indicators. All proportions, so each weights
+# by the population it describes and inherits downward like any other rate.
+# A `coverage_of` entry means an unreached count is derived automatically.
+# --------------------------------------------------------------------------
+
+
+def _coverage(code, label, weight, denominator, unit, desc, lo=10, hi=95, default=50):
+    return register(
+        Measure(
+            code=code,
+            label=label,
+            kind=Kind.RATE,
+            unit=unit,
+            agg=Agg.WEIGHTED_MEAN,
+            weight_by=weight,
+            downscale=True,
+            description=desc,
+            coverage_of=denominator,
+            threshold_min=lo,
+            threshold_max=hi,
+            threshold_default=default,
+        )
+    )
+
+
+def _prevalence(code, label, weight, unit, desc, lo=1, hi=60, default=20):
+    return register(
+        Measure(
+            code=code,
+            label=label,
+            kind=Kind.RATE,
+            unit=unit,
+            agg=Agg.WEIGHTED_MEAN,
+            weight_by=weight,
+            downscale=True,
+            description=desc,
+            threshold_min=lo,
+            threshold_max=hi,
+            threshold_default=default,
+        )
+    )
+
+
+_coverage(
+    "vitamin_a_coverage",
+    "Vitamin A supplementation",
+    "pop_u5",
+    "pop_u5",
+    "% of children 6-59 months",
+    "Children who received a vitamin A supplement in the last six months.",
+)
+
+_coverage(
+    "itn_use_children",
+    "ITN use, under-5s",
+    "pop_u5",
+    "pop_u5",
+    "% of children under 5",
+    "Children who slept under an insecticide-treated net the previous night.",
+)
+
+_coverage(
+    "measles_vaccination",
+    "Measles vaccination",
+    "births",
+    "births",
+    "% of children 12-23 months",
+    "Children who received a measles-containing vaccine.",
+)
+
+_coverage(
+    "dpt3_vaccination",
+    "DPT3 vaccination",
+    "births",
+    "births",
+    "% of children 12-23 months",
+    "Children who received the third dose of DPT.",
+)
+
+_coverage(
+    "full_immunisation",
+    "Fully vaccinated",
+    "births",
+    "births",
+    "% of children 12-23 months",
+    "Children who received all eight basic antigens.",
+)
+
+_coverage(
+    "skilled_birth_attendance",
+    "Skilled birth attendance",
+    "births",
+    "births",
+    "% of live births",
+    "Births assisted by a skilled provider.",
+)
+
+_coverage(
+    "anc4",
+    "Antenatal care, 4+ visits",
+    "births",
+    "births",
+    "% of pregnancies",
+    "Pregnancies with four or more antenatal visits.",
+)
+
+_coverage(
+    "zinc_coverage",
+    "Zinc for diarrhoea",
+    "pop_u5",
+    "pop_u5",
+    "% of under-5s with diarrhoea",
+    "Children with diarrhoea who received zinc supplements.",
+    lo=1,
+    hi=80,
+    default=30,
+)
+
+_coverage(
+    "ari_antibiotics",
+    "Antibiotics for ARI",
+    "pop_u5",
+    "pop_u5",
+    "% of under-5s with ARI symptoms",
+    "Children with acute respiratory symptoms who received antibiotics.",
+)
+
+_coverage(
+    "improved_water",
+    "Improved drinking water",
+    "pop_total",
+    "pop_total",
+    "% of population",
+    "Population using an improved drinking-water source.",
+)
+
+_coverage(
+    "improved_sanitation",
+    "Improved sanitation",
+    "pop_total",
+    "pop_total",
+    "% of population",
+    "Population with an improved sanitation facility.",
+)
+
+_prevalence(
+    "stunting",
+    "Stunting, under-5s",
+    "pop_u5",
+    "% of children under 5",
+    "Children more than two standard deviations below median height-for-age.",
+    lo=5,
+    hi=60,
+    default=30,
+)
+
+_prevalence(
+    "wasting",
+    "Wasting, under-5s",
+    "pop_u5",
+    "% of children under 5",
+    "Children more than two standard deviations below median weight-for-height.",
+    lo=1,
+    hi=30,
+    default=10,
+)
+
+_prevalence(
+    "ari_prevalence",
+    "ARI symptoms, under-5s",
+    "pop_u5",
+    "% of children under 5",
+    "Children with symptoms of acute respiratory infection in the last two weeks.",
+    lo=1,
+    hi=30,
+    default=8,
+)
+
+# Every coverage measure gets a matching unreached count, registered here so the
+# rollup treats it as the summable quantity it is.
+for _m in [m for m in list(MEASURES.values()) if m.coverage_of]:
+    register(
+        Measure(
+            code=f"{_m.code}_gap",
+            label=f"Unreached: {_m.label.lower()}",
+            kind=Kind.COUNT,
+            unit="people",
+            agg=Agg.SUM,
+            description=(f"Population not covered by {_m.label.lower()} — " f"{_m.coverage_of} x (1 - coverage)."),
+        )
+    )
+
+
 #: Rates a user can sensibly threshold on to pick places. Counts are outcomes
 #: of a selection, not criteria for one, so they are excluded.
 TARGETABLE = (
     "u5mr",
     "nmr",
     "diarrhoea_prevalence",
-    "exclusive_breastfeeding",
     "ors_coverage",
+    "stunting",
+    "wasting",
+    "ari_prevalence",
+    "exclusive_breastfeeding",
+    "vitamin_a_coverage",
+    "itn_use_children",
+    "measles_vaccination",
+    "dpt3_vaccination",
+    "full_immunisation",
+    "skilled_birth_attendance",
+    "anc4",
+    "zinc_coverage",
+    "ari_antibiotics",
+    "improved_water",
+    "improved_sanitation",
 )
 
 
@@ -381,7 +594,15 @@ def targetable() -> list[Measure]:
 #: Measures where a LOW value is the problem. Thresholding "above" a coverage
 #: figure would select the places already doing well, which is the opposite of
 #: targeting.
-LOWER_IS_WORSE = frozenset({"exclusive_breastfeeding", "ors_coverage"})
+#: Derived from the registry: any measure that describes coverage of something
+#: is worse when low. Kept as a computed set so adding a coverage measure cannot
+#: forget to invert its selection.
+LOWER_IS_WORSE = frozenset({"exclusive_breastfeeding"} | {c for c, m in MEASURES.items() if m.coverage_of is not None})
+
+
+def coverage_measures() -> list[Measure]:
+    """Measures with a denominator, so an unreached count can be derived."""
+    return [m for m in MEASURES.values() if m.coverage_of]
 
 
 validate_registry()

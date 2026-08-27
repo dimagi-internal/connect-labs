@@ -233,6 +233,20 @@ class Command(BaseCommand):
             "ors_coverage",
             "diarrhoea_untreated",
             "exclusive_breastfeeding",
+            "stunting",
+            "wasting",
+            "vitamin_a_coverage",
+            "measles_vaccination",
+            "dpt3_vaccination",
+            "full_immunisation",
+            "itn_use_children",
+            "ari_prevalence",
+            "ari_antibiotics",
+            "zinc_coverage",
+            "skilled_birth_attendance",
+            "anc4",
+            "improved_water",
+            "improved_sanitation",
         ):
             with self._run(Source.DHS, measure) as ctx:
                 rows = dhs.load(measure, iso_codes=codes)
@@ -241,6 +255,12 @@ class Command(BaseCommand):
 
         with self._run(Source.DERIVED, "ors_gap_children") as ctx:
             rows = derive.load_ors_gap(iso_codes=codes)
+            ctx["rows"] = base.upsert(rows)
+            ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
+        # One row per coverage measure, driven by the registry.
+        with self._run(Source.DERIVED, "coverage_gaps") as ctx:
+            rows = derive.load_coverage_gaps(iso_codes=codes)
             ctx["rows"] = base.upsert(rows)
             ctx["countries"] = len({r.boundary.iso_code for r in rows})
 

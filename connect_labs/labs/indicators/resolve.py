@@ -394,14 +394,30 @@ class Selection:
         return max(0, total - got)
 
 
-#: Counts carried alongside the threshold indicator on every selection row.
+#: Counts carried on every selection regardless of indicator.
 CARRIED_COUNTS = (
     "births",
     "expected_deaths",
-    "ors_gap_children",
     "pop_u5",
     "pop_total",
 )
+
+
+def carried_for(indicator: str) -> tuple[str, ...]:
+    """Counts to carry for this indicator.
+
+    The base set plus the unreached count belonging to the chosen measure, so a
+    coverage view shows the population it is actually about. Resolving all
+    eleven gap measures on every query would cost eleven lookups per boundary to
+    display one.
+    """
+    extra: list[str] = []
+    gap = f"{indicator}_gap"
+    if gap in measures.MEASURES:
+        extra.append(gap)
+    if indicator in ("diarrhoea_prevalence", "ors_coverage"):
+        extra.append("ors_gap_children")
+    return CARRIED_COUNTS + tuple(dict.fromkeys(extra))
 
 
 def _country_name(iso: str, adm0: AdminBoundary | None) -> str:
@@ -437,6 +453,7 @@ def select_above(
     a country total can never disagree with the regions beneath it.
     """
     measure = measures.get(indicator)
+    carried = carried_for(indicator)
 
     # A method fixes both which sources may answer and what level to work at.
     # Without one the historical default stands, so existing callers are
@@ -547,7 +564,7 @@ def select_above(
                     units_covered=max(len(children), 1),
                     values={indicator: r},
                 )
-                for c in CARRIED_COUNTS:
+                for c in carried:
                     got = [v.value for ch in children if (v := bulk.get(c, ch)) is not None]
                     area.counts[c] = sum(got) if got else None
                     area.coverage[c] = (len(got), max(len(children), 1))
@@ -566,7 +583,7 @@ def select_above(
                 units_covered=len(above),
                 values={indicator: _rollup_rate(indicator, above, bulk)},
             )
-            for c in CARRIED_COUNTS:
+            for c in carried:
                 got = [r.value for b, _ in above if (r := bulk.get(c, b)) is not None]
                 area.counts[c] = sum(got) if got else None
                 area.coverage[c] = (len(got), len(above))
@@ -582,7 +599,7 @@ def select_above(
                     admin_level=b.admin_level,
                     values={indicator: r},
                 )
-                for c in CARRIED_COUNTS:
+                for c in carried:
                     got = bulk.get(c, b)
                     area.counts[c] = got.value if got else None
                     area.coverage[c] = (1 if got else 0, 1)
@@ -590,7 +607,7 @@ def select_above(
 
     totals: dict[str, float | None] = {}
     coverage: dict[str, tuple[int, int]] = {}
-    for c in CARRIED_COUNTS:
+    for c in carried:
         present = [a.counts[c] for a in areas if a.counts.get(c) is not None]
         # None, not 0, when nothing is known — the caller decides how to say so.
         totals[c] = sum(present) if present else None

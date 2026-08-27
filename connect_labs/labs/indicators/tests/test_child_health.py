@@ -102,3 +102,58 @@ class TestLowerIsWorseSelection:
         # regions qualify and collapse into a single whole-country row.
         assert high_coverage.unit_count > low_coverage.unit_count
         assert high_coverage.areas[0].is_whole_country is True
+
+
+class TestGenericCoverageGaps:
+    """Every coverage measure gets an unreached count without bespoke code."""
+
+    def test_a_gap_measure_exists_for_every_coverage_measure(self):
+        for m in measures.coverage_measures():
+            assert f"{m.code}_gap" in measures.MEASURES, m.code
+
+    def test_gap_measures_are_summable_counts(self):
+        for m in measures.coverage_measures():
+            gap = measures.get(f"{m.code}_gap")
+            assert gap.agg is measures.Agg.SUM
+            assert not gap.downscale
+
+    def test_unreached_is_denominator_times_the_shortfall(self):
+        from connect_labs.labs.indicators.sources import derive
+
+        make_boundary("NGA", 0, "Nigeria", "NGA-0")
+        r = make_boundary("NGA", 1, "Kano", "NGA-1", x=2)
+        set_value(r, "measles_vaccination", 40.0, source=Source.DHS)
+        set_value(r, "births", 500_000, source=Source.DERIVED)
+
+        rows = {x.indicator: x.value for x in derive.load_coverage_gaps(iso_codes=["NGA"])}
+        # 500,000 births x (1 - 40%)
+        assert rows["measles_vaccination_gap"] == pytest.approx(300_000)
+
+    def test_absent_coverage_produces_no_gap(self):
+        from connect_labs.labs.indicators.sources import derive
+
+        make_boundary("NGA", 0, "Nigeria", "NGA-0")
+        r = make_boundary("NGA", 1, "Kano", "NGA-1", x=2)
+        set_value(r, "births", 500_000, source=Source.DERIVED)
+        # no coverage reading at all
+
+        gaps = [x for x in derive.load_coverage_gaps(iso_codes=["NGA"]) if x.indicator == "measles_vaccination_gap"]
+        # Assuming zero coverage would invent an unreached population the size
+        # of the entire denominator.
+        assert gaps == []
+
+    def test_selection_carries_only_the_relevant_gap(self):
+        from connect_labs.labs.indicators.resolve import carried_for
+
+        carried = carried_for("measles_vaccination")
+        assert "measles_vaccination_gap" in carried
+        # Resolving all eleven gaps on every query to display one would be
+        # eleven lookups per boundary.
+        assert "improved_water_gap" not in carried
+
+    def test_a_prevalence_indicator_carries_no_gap(self):
+        from connect_labs.labs.indicators.resolve import carried_for
+
+        # Stunting is a prevalence, not a coverage figure — there is no
+        # "unreached" population to compute.
+        assert "stunting_gap" not in carried_for("stunting")

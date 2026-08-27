@@ -246,6 +246,11 @@
 
   // Which burden count belongs beside this indicator: deaths for mortality,
   // untreated children for a diarrhoea/ORS view.
+  // Which burden count belongs beside the chosen indicator: untreated children
+  // for a diarrhoea/ORS view, the unreached population for any other coverage
+  // measure, expected deaths for mortality.
+  var lastData = null;
+
   function burdenIsOrs() {
     return (
       currentIndicator === 'diarrhoea_prevalence' ||
@@ -253,13 +258,27 @@
     );
   }
 
+  function burdenLabel() {
+    if (burdenIsOrs()) return 'Children with untreated diarrhoea';
+    if (lastData && lastData.gap_label) return lastData.gap_label;
+    return 'Expected under-5 deaths / year';
+  }
+
+  function burdenHeader() {
+    if (burdenIsOrs()) return 'Untreated/now';
+    if (lastData && lastData.gap_label) return 'Unreached';
+    return 'Deaths/yr';
+  }
+
   function burdenOf(r) {
-    return burdenIsOrs() ? r.ors_gap_children : r.expected_deaths;
+    if (burdenIsOrs()) return r.ors_gap_children;
+    if (r.gap !== null && r.gap !== undefined) return r.gap;
+    return r.expected_deaths;
   }
 
   function renderTable(data) {
     var th = document.getElementById('th-burden');
-    if (th) th.textContent = burdenIsOrs() ? 'Untreated/now' : 'Deaths/yr';
+    if (th) th.textContent = burdenHeader();
 
     var tbody = document.getElementById('tg-rows');
     tbody.innerHTML = '';
@@ -362,6 +381,7 @@
   }
 
   function renderHeadline(data) {
+    lastData = data;
     document.getElementById('tg-births').textContent = fmt(data.totals.births);
     document.getElementById('tg-deaths').textContent = fmt(
       burdenIsOrs()
