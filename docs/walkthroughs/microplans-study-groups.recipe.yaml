@@ -10,6 +10,11 @@ setup:
 why_brief: microplans-study-groups.why_brief.yaml
 scenes:
 - id: the-goal-measure-the-program-s-real-effect
+  narrative: >-
+    Maya runs a vitamin-A programme in Kaura. Her workers log every visit and the coverage
+    number looks good, but a logged visit is not proof a household was reached. To measure
+    the programme's real effect she needs a comparison group — somewhere the programme did
+    not go, matched closely enough that the difference between the two means something.
   url: /microplans/program/10008/
   role: overview
   pace: teach
@@ -31,6 +36,9 @@ scenes:
   - kind: hold
     seconds: 6
 - id: maya-starts-a-study-from-scratch
+  narrative: >-
+    Her programme workspace already holds earlier rounds. One click starts a brand-new two-
+    arm study, and she lands on its empty page ready to add the first one.
   actions:
   - kind: wait_for
     target: Studies & plan groups
@@ -41,6 +49,7 @@ scenes:
     note: one click creates an "Untitled study" and routes to its empty manage page
       — no name dialog
     target: css:#new-study
+    say: study
   - kind: wait_for
     must_succeed: true
     note: 'terminal state: the empty study page'
@@ -60,6 +69,9 @@ scenes:
   pace: flow
   url: /microplans/program/10008/
 - id: maya-opens-the-plan-editor-on-the-empty-study
+  narrative: >-
+    She opens the plan editor, which loads scoped to that study, and switches on the layer
+    showing the programme's own service delivery.
   actions:
   - kind: wait_for
     target: No plans in this group yet
@@ -67,6 +79,7 @@ scenes:
     must_succeed: true
     note: opens the single-plan editor at /program/10008/new/?group=<id>
     target: + Add a plan in the editor
+    say: plan
   - kind: wait_for
     must_succeed: true
     note: the single-plan editor, area-definition section open by default
@@ -81,6 +94,7 @@ scenes:
     must_succeed: false
     note: turn on the Service-delivery layer in the editor's LAYERS panel
     target: aria:toggle Service delivery
+    say: delivery
   - kind: scroll_to
     must_succeed: false
     note: keep the LAYERS panel framed after the toggle flips on (it now reads "on"
@@ -104,6 +118,10 @@ scenes:
     the editor”; it loads scoped to the study (?group=…) and she switches on the Kaura
     CHC opportunity's service-delivery layer.
 - id: maya-sees-the-programme-covered-all-of-attakar
+  narrative: >-
+    She picks the opportunity that served the area — the Kaura community health campaign —
+    then shows its individual service points. On the map they blanket the whole of Attakar:
+    everywhere Connect logged a visit.
   actions:
   - kind: wait_for
     target: Define boundaries
@@ -111,6 +129,7 @@ scenes:
     must_succeed: false
     note: open the opportunity picker
     target: Pick opportunities
+    say: opportunity
   - kind: wait_for
     must_succeed: false
     note: the opp row in the OPEN modal (the picker has a hidden template + the visible
@@ -121,6 +140,7 @@ scenes:
     must_succeed: false
     note: select the Kaura CHC service-delivery opp (10010, same programme)
     target: css:[data-testid=sd-opp-10010]:visible
+    say: kaura
   - kind: click
     must_succeed: false
     note: close the opportunity picker
@@ -131,6 +151,7 @@ scenes:
       duplicate); fitTo zooms the map to the Attakar delivery cloud (padding 60, maxZoom
       15)
     target: css:[data-testid=sd-show]:visible
+    say: points
   - kind: hold
     note: let the fitTo camera animation to the Attakar cloud fully settle before
       framing
@@ -140,6 +161,7 @@ scenes:
     note: center the 50vh map pane in-frame so the fitted ~435-point Attakar delivery
       cloud (the narrated saturation) is the legible subject, not a thumbnail
     target: css:#map-pane
+    say: map
   - kind: hold
     note: the delivery cloud saturates the whole Attakar ward — legibly framed
     seconds: 5
@@ -155,9 +177,17 @@ scenes:
   show: In the single-plan editor Maya picks the Kaura CHC opportunity for the Service
     delivery layer; its visits saturate the entire Attakar ward on the map.
 - id: maya-compares-the-surrounding-wards-to-find-a-match
+  narrative: >-
+    She opens the boundaries panel, switches to sampling mode, and searches for Attakar, the
+    ward the programme served, tagging it the intervention arm. Compare then ranks every
+    bordering ward. Match summarises how close each one is; balance is the column that
+    decides, the predicted imbalance on the characteristics the pairing is built on,
+    settlement density chief among them; and common support keeps both wards inside the
+    density range they actually share.
   actions:
   - kind: click
     target: css:#btn-area-admin
+    say: boundaries
     must_succeed: false
     note: Boundaries tab — the boundary search + source controls mount in the map's
       LAYERS panel
@@ -168,6 +198,7 @@ scenes:
     note: the boundary search box is ready
   - kind: click
     target: css:#btn-mode-sampling
+    say: sampling
     must_succeed: false
     note: Sampling mode — enables the two-arm workflow (Compare only offers once an
       intervention ward is picked in sampling mode)
@@ -176,6 +207,7 @@ scenes:
     note: sampling mode engaged
   - kind: fill
     target: css:.mp-ab-search:visible
+    say: attakar
     value: Attakar
     must_succeed: false
     note: search Attakar by name (the ward the programme served) — the debounced geocode
@@ -190,6 +222,7 @@ scenes:
     note: let the debounced result settle before clicking
   - kind: click
     target: css:.mp-ab-results:visible button
+    say: intervention
     must_succeed: false
     note: click the Attakar result — adds it to the plan area tagged the intervention
       arm; this is the reference the Compare ranking needs
@@ -204,6 +237,7 @@ scenes:
     note: Attakar tagged intervention; the Compare button is live
   - kind: click
     target: css:.mp-ab-compare:visible
+    say: compare
     must_succeed: false
     note: run Compare — rank every neighbouring ward against Attakar by density overlap
   - kind: wait_for
@@ -219,6 +253,7 @@ scenes:
       chart and row colour
   - kind: click
     target: css:.mp-ab-col-i[data-col="match"]:visible
+    say: match
     must_succeed: false
     note: highlight the Match column as the narration introduces 'Match is how similar
       the two wards look overall'
@@ -227,6 +262,7 @@ scenes:
     note: Match column highlighted — the overall-similarity metric
   - kind: click
     target: css:.mp-ab-col-i[data-col="balance"]:visible
+    say: balance
     must_succeed: false
     note: Matched balance — the column that decides the match
   - kind: hold
@@ -234,6 +270,7 @@ scenes:
     note: Matched balance column highlighted
   - kind: click
     target: css:.mp-ab-col-i[data-col="common"]:visible
+    say: support
     must_succeed: false
     note: Common support — matching only draws from the shared density range
   - kind: hold
@@ -252,6 +289,11 @@ scenes:
     a shared-axis distribution chart, and a colour-matched fill on the map.
   pace: teach
 - id: maya-rejects-the-closest-match-and-adds-the-right-match
+  narrative: >-
+    Zankan ranks well, but it was the programme's own ward last cycle, so it is out. Sopp
+    and Gura both score 0.02 — lower is closer. Gura shares more common ground with Attakar,
+    and though being adjacent carries some spillover risk to weigh, Maya makes it the
+    comparison arm.
   actions:
   - kind: click
     target: css:.mp-ab-col-i[data-col="common"]:visible
@@ -272,6 +314,7 @@ scenes:
       legible
   - kind: click
     target: css:.mp-ab-addbnd[data-name="Gura"]:visible
+    say: gura
     must_succeed: false
     note: Add Gura — the closest un-served neighbour that shares the most common support
       — as the comparison arm
@@ -292,6 +335,11 @@ scenes:
     arm beside Attakar, each with its Interv / Match pill.
   pace: teach
 - id: maya-generates-the-two-arm-plan-in-place
+  narrative: >-
+    Back in sampling mode she clicks generate. The engine draws both arms in one pass,
+    recording the seed, each site's selection probability and its survey weights, so the
+    sample is reproducible and auditable. She opens the layers tab, turns on building
+    footprints, and the finished plan is filed into the study.
   actions:
   - kind: click
     must_succeed: false
@@ -306,6 +354,7 @@ scenes:
     must_succeed: true
     note: ‘Generate plan’ — samples both arms and creates the plan in place
     target: css:#btn-generate-sample
+    say: generate
   - kind: wait_for
     must_succeed: true
     note: 'create-in-place: sampling BOTH arms (two Overture fetches + PPS) creates
@@ -318,6 +367,7 @@ scenes:
     target: Work areas
   - kind: click
     target: css:.mp-panel-tabs button[data-tab="layers"]
+    say: layers
     must_succeed: false
     note: open the Layers tab (panel auto-switches to Inspect after Generate) so the
       footprints toggle is visible
@@ -328,6 +378,7 @@ scenes:
       just drew, sitting over the ward's rooftops. The toggle is the footprints row
       in the right-hand Layers panel (map_panel.js).
     target: css:[data-testid="layer-toggle-footprints"]
+    say: footprints
   - kind: hold
     note: 'HOLD ON THE MAP. The sample auto-paints + the map fits to it (renderSample
       → PlanLayers.pins/hulls + Microplans.fitTo): each pin is one sampled settlement
@@ -357,6 +408,7 @@ scenes:
       alone clipped the comparability panel''s header above the fold; #study-readout
       sits directly above the KPIs and frames both panels whole.'
     target: css:#study-readout
+    say: filed
   - kind: hold
     note: both arms' sampled work areas + KPIs on one map, filed into the study
     seconds: 6
@@ -375,6 +427,10 @@ scenes:
     and creates the single plan in place — the page becomes the plan's review map
     with work areas and KPIs, filed into the study.
 - id: maya-completes-the-study
+  narrative: >-
+    She submits it for review, then marks it approved. The Connect export carries no arm
+    column, so the surveyors stay blind, and the full sampling record travels with the
+    study. It is ready for a survey firm.
   actions:
   - kind: wait_for
     target: Candidate plans
@@ -398,6 +454,7 @@ scenes:
       plans and 4493 is in draft
   - kind: click
     target: css:button[data-transition="4493"][data-to="in_review"]:visible
+    say: review
     must_succeed: true
     note: Submit for review — advance 4493 draft → in_review
   - kind: wait_for
@@ -410,6 +467,7 @@ scenes:
     note: in review
   - kind: click
     target: css:button[data-transition="4493"][data-to="approved"]:visible
+    say: approved
     must_succeed: true
     note: Approve — advance in_review → approved; the study is ready for a survey
       firm
