@@ -31,6 +31,7 @@ COLUMNS = [
     ("u5mr_source_url", "U5MR source link"),
     ("u5mr_measured_at", "U5MR measured at"),
     ("expected_deaths", "Est. annual under-5 deaths"),
+    ("ors_gap_children", "Children with untreated diarrhoea"),
     ("births", "Est. annual births"),
     ("pop_u5", "Population under 5"),
     ("pop_total", "Total population"),
@@ -81,6 +82,7 @@ def _rows(selection: Selection):
                 f"{r.measured_at.name} (ADM{r.measured_at.admin_level})" if r and r.inherited else "this area"
             ),
             "expected_deaths": _cell(a.counts.get("expected_deaths")),
+            "ors_gap_children": _cell(a.counts.get("ors_gap_children")),
             "births": _cell(a.counts.get("births")),
             "pop_u5": _cell(a.counts.get("pop_u5")),
             "pop_total": _cell(a.counts.get("pop_total")),

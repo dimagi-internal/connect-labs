@@ -185,6 +185,41 @@ Adding a method is an entry in the registry plus, if it needs one, a loader.
 Selection and rollup code does not change — it asks the registry which sources
 to prefer and at what level to work.
 
+## Targeting on something other than mortality
+
+The indicator is a choice, not a constant. `measures.TARGETABLE` lists the rates
+you can threshold on; availability is computed per _(method, indicator)_ pair,
+so IGME's model answers for mortality and DHS answers for child health without
+either pretending to cover the other.
+
+| indicator                 | source              | subnational coverage  |
+| ------------------------- | ------------------- | --------------------- |
+| `u5mr`, `nmr`             | IGME model / DHS    | 25 / 41 countries     |
+| `diarrhoea_prevalence`    | DHS `CH_DIAR_C_DIA` | 41 countries, to 2024 |
+| `ors_coverage`            | DHS `CH_DIAT_C_ORS` | 38 countries, to 2024 |
+| `diarrhoea_untreated`     | DHS `CH_DIAT_C_NON` | 38 countries          |
+| `exclusive_breastfeeding` | DHS `CN_BFSS_C_EBF` | 16 countries, to 2025 |
+
+**Some measures are worse when low.** ORS coverage and exclusive breastfeeding
+are in `LOWER_IS_WORSE`, and selection inverts for them — thresholding _above_ a
+coverage figure would pick the places already doing well. Each targetable
+measure also carries its own slider range, because leaving an 80-per-1,000
+mortality threshold in place when switching to a percentage selects almost
+nothing and looks like missing data.
+
+### The ORS gap
+
+`ors_gap_children` = `pop_u5 × diarrhoea_prevalence × (1 − ors_coverage)` — the
+under-5s with diarrhoea who are not getting ORS. Deliberately a **point
+prevalence** on DHS's two-week recall, not an annual figure: annualising needs
+an episode-frequency assumption (commonly ~3 per child-year) the survey does not
+supply, and burying that in a headline would make a modelled number look
+measured. Where a region has prevalence but no ORS reading, no gap is produced
+at all rather than assuming zero coverage.
+
+At 15% prevalence this finds **6.35M children** across 183 regions in 36
+countries.
+
 ## Burden, not just rate
 
 `expected_deaths` = `u5mr × births ÷ 1000`. Targeting on rate alone excluded

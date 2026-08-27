@@ -193,6 +193,62 @@ def load_expected_deaths(iso_codes: list[str] | None = None, year: int | None = 
     return rows
 
 
+def load_ors_gap(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
+    """Under-5s with diarrhoea who are not getting ORS.
+
+    The quantity an ORS deployment acts on:
+
+        children = pop_u5 x diarrhoea_prevalence x (1 - ors_coverage)
+
+    Deliberately a point-prevalence count on DHS's two-week recall, not an
+    annual figure. Annualising needs an episode-frequency assumption (commonly
+    ~3 episodes per child-year) that the survey does not supply, and burying
+    that in a headline would make a modelled number look measured.
+    """
+    rows: list[Row] = []
+    for boundary in _boundaries(iso_codes):
+        pop = resolve("pop_u5", boundary, year)
+        prev = resolve("diarrhoea_prevalence", boundary, year)
+        ors = resolve("ors_coverage", boundary, year)
+        if not (pop and prev):
+            continue
+
+        # No ORS reading means we cannot say what share is unmet; treating that
+        # as zero coverage would invent a gap.
+        if ors is None:
+            continue
+
+        unmet = max(0.0, 1.0 - ors.value / 100.0)
+        rows.append(
+            Row(
+                indicator="ors_gap_children",
+                boundary=boundary,
+                year=min(pop.year, prev.year, ors.year),
+                value=pop.value * (prev.value / 100.0) * unmet,
+                source=Source.DERIVED,
+                source_ref=f"ORS gap ({prev.source} + {ors.source})",
+                license_code=License.DERIVED,
+                method=(
+                    "Derived: under-5s with diarrhoea and no ORS = pop_u5 x "
+                    f"diarrhoea prevalence ({prev.value:.1f}%) x (1 - ORS coverage "
+                    f"({ors.value:.1f}%)). Point prevalence on a two-week recall, "
+                    "not an annual episode count. Inputs: "
+                    f"pop_u5 from {pop.source_ref or pop.source}; "
+                    f"prevalence from {prev.provenance}; ORS from {ors.provenance}."
+                ),
+                extra={
+                    "pop_u5": pop.value,
+                    "diarrhoea_prevalence": prev.value,
+                    "ors_coverage": ors.value,
+                    "prevalence_inherited": prev.inherited,
+                    "ors_inherited": ors.inherited,
+                },
+            )
+        )
+    logger.info("derive: %d ORS-gap rows", len(rows))
+    return rows
+
+
 def births_divergence(iso_codes: list[str] | None = None) -> dict[int, float]:
     """How far apart the two births methods are, per boundary.
 

@@ -32,7 +32,7 @@ from connect_labs.labs.indicators.sources import (
     worldpop,
 )
 
-STAGES = ("mortality", "calibrate", "fertility", "population", "births")
+STAGES = ("mortality", "calibrate", "fertility", "population", "births", "child_health")
 
 
 class Command(BaseCommand):
@@ -222,6 +222,27 @@ class Command(BaseCommand):
         if div:
             wide = sum(1 for d in div.values() if d > 0.25)
             self.stdout.write(f"  births cross-check: {wide} of {len(div)} regions disagree by >25%")
+
+    def _stage_child_health(self, codes, opts):
+        """Diarrhoea, ORS and breastfeeding — and the ORS gap they imply.
+
+        Runs after population and births, since the derived gap needs pop_u5.
+        """
+        for measure in (
+            "diarrhoea_prevalence",
+            "ors_coverage",
+            "diarrhoea_untreated",
+            "exclusive_breastfeeding",
+        ):
+            with self._run(Source.DHS, measure) as ctx:
+                rows = dhs.load(measure, iso_codes=codes)
+                ctx["rows"] = base.upsert(rows)
+                ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
+        with self._run(Source.DERIVED, "ors_gap_children") as ctx:
+            rows = derive.load_ors_gap(iso_codes=codes)
+            ctx["rows"] = base.upsert(rows)
+            ctx["countries"] = len({r.boundary.iso_code for r in rows})
 
     # -- run bookkeeping ---------------------------------------------------
 

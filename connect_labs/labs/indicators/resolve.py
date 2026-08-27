@@ -395,7 +395,13 @@ class Selection:
 
 
 #: Counts carried alongside the threshold indicator on every selection row.
-CARRIED_COUNTS = ("births", "expected_deaths", "pop_u5", "pop_total")
+CARRIED_COUNTS = (
+    "births",
+    "expected_deaths",
+    "ors_gap_children",
+    "pop_u5",
+    "pop_total",
+)
 
 
 def _country_name(iso: str, adm0: AdminBoundary | None) -> str:
@@ -510,7 +516,13 @@ def select_above(
             skipped.append(cname)
             continue
 
-        above = [(b, r) for b, r in evaluated if r.value > threshold]
+        # For a coverage measure the problem is a LOW value, so "selected" means
+        # below the threshold. Thresholding above would pick the places already
+        # doing well, which is the opposite of targeting.
+        if indicator in measures.LOWER_IS_WORSE:
+            above = [(b, r) for b, r in evaluated if r.value < threshold]
+        else:
+            above = [(b, r) for b, r in evaluated if r.value > threshold]
         if not above:
             continue
 
