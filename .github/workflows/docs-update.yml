@@ -31,7 +31,7 @@ jobs:
           # bypass actor — but a deploy key can (and is, on this repo's ruleset).
           ssh-key: ${{ secrets.DOCS_BOT_DEPLOY_KEY }}
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
