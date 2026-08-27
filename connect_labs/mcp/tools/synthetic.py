@@ -36,6 +36,7 @@ from connect_labs.labs.synthetic.generator.io.uploader import upload_and_registe
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
 from connect_labs.labs.synthetic.provisioning import register_labs_only_opp
 from connect_labs.labs.synthetic.registry import invalidate_cache
+from connect_labs.labs.synthetic.visit_count import resync_visit_count
 
 from ..connect_token import require_connect_token
 from ..progress import NULL_PROGRESS
@@ -282,16 +283,23 @@ def synthetic_register(
     }
     if label is not None:
         defaults["label"] = label
+    existing = SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id).first()
+    previous_folder_id = existing.gdrive_folder_id if existing else None
     row, _created = SyntheticOpportunity.objects.update_or_create(
         opportunity_id=opportunity_id,
         defaults=defaults,
     )
     invalidate_cache()
+    # The row now points at different fixtures, so the cached count describes
+    # the old ones. Left alone it prints in the labs chrome next to the new
+    # data (#1197). No-ops when the folder didn't actually change.
+    resync_visit_count(row, previous_folder_id=previous_folder_id)
     return {
         "opportunity_id": row.opportunity_id,
         "gdrive_folder_id": row.gdrive_folder_id,
         "enabled": row.enabled,
         "label": row.label,
+        "visit_count": row.visit_count,
     }
 
 
@@ -384,12 +392,14 @@ def synthetic_repoint_by_source(
     row.enabled = enabled
     row.save(update_fields=["gdrive_folder_id", "enabled", "updated_at"])
     invalidate_cache()
+    resync_visit_count(row, previous_folder_id=previous)
     return {
         "opportunity_id": row.opportunity_id,
         "source_opportunity_id": source_opportunity_id,
         "previous_gdrive_folder_id": previous,
         "gdrive_folder_id": row.gdrive_folder_id,
         "enabled": row.enabled,
+        "visit_count": row.visit_count,
     }
 
 
