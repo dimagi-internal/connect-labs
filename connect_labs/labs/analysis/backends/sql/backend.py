@@ -22,7 +22,7 @@ from connect_labs.labs.analysis.backends.sql.query_builder import (
     execute_flw_aggregation,
     execute_visit_extraction,
 )
-from connect_labs.labs.analysis.config import AnalysisPipelineConfig, CacheStage
+from connect_labs.labs.analysis.config import VISIT_PASSTHROUGH_COLUMNS, AnalysisPipelineConfig, CacheStage
 from connect_labs.labs.analysis.models import (
     EntityAnalysisResult,
     EntityRow,
@@ -33,6 +33,35 @@ from connect_labs.labs.analysis.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _with_passthrough_columns(row: dict, computed: dict) -> dict:
+    """Fold the base columns `VisitRow` has no attribute for into `computed`.
+
+    `flag_reason`, `date_created` and `review_status` are selected per visit but
+    have nowhere to live on the row object, and `ComputedVisitCache` denormalizes
+    only eight base columns — so anything not in `computed_fields` is dropped the
+    moment a result is served from cache. Riding in `computed` is what makes them
+    identical on the fresh and cached paths without a migration (#1198).
+
+    `flag_reason` is JSONB and a raw cursor hands it back as JSON *text*, while
+    the same value read from `computed_fields` (a JSONField) comes back decoded.
+    Decoding here is what stops the fresh and cached paths handing render code
+    two different types for one field — the ace#1657 shape all over again.
+
+    A config field cannot collide here: every one of these names is in
+    `RAW_VISIT_BASE_COLUMNS`, and `AnalysisPipelineConfig.__post_init__` already
+    raises on a field that shadows a base column.
+    """
+    for col in VISIT_PASSTHROUGH_COLUMNS:
+        value = row.get(col)
+        if col == "flag_reason" and isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except (TypeError, ValueError):
+                pass  # not JSON after all — hand it over as-is rather than dropping it
+        computed[col] = value
+    return computed
 
 
 def _flw_data_to_rows(config: AnalysisPipelineConfig, flw_data: list[dict]) -> list[FLWRow]:
@@ -675,7 +704,7 @@ class SQLBackend:
                         pass
 
             # Separate computed fields from base fields
-            computed = {name: row.get(name) for name in computed_field_names}
+            computed = _with_passthrough_columns(row, {name: row.get(name) for name in computed_field_names})
 
             # Apply post-processing transforms that need full visit context
             # (e.g., extract_images_with_question_ids needs both form_json and images)
@@ -797,7 +826,7 @@ class SQLBackend:
             {
                 "visit_id": v.get("visit_id", 0),
                 "username": v.get("username", ""),
-                "computed_fields": {name: v.get(name) for name in computed_field_names},
+                "computed_fields": _with_passthrough_columns(v, {name: v.get(name) for name in computed_field_names}),
             }
             for v in visit_data
         ]
@@ -865,7 +894,7 @@ class SQLBackend:
             {
                 "visit_id": v.get("visit_id", 0),
                 "username": v.get("username", ""),
-                "computed_fields": {name: v.get(name) for name in computed_field_names},
+                "computed_fields": _with_passthrough_columns(v, {name: v.get(name) for name in computed_field_names}),
             }
             for v in visit_data
         ]
