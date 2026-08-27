@@ -213,6 +213,35 @@ register(
 
 register(
     Measure(
+        code="nmr",
+        label="Neonatal mortality rate",
+        kind=Kind.RATE,
+        unit="per 1,000 live births",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="births",
+        downscale=True,
+        description="Deaths in the first 28 days per 1,000 live births.",
+    )
+)
+
+register(
+    Measure(
+        code="expected_deaths",
+        label="Expected under-5 deaths",
+        kind=Kind.COUNT,
+        unit="deaths/year",
+        agg=Agg.SUM,
+        description=(
+            "Annual under-5 deaths implied by this area's mortality rate and "
+            "birth cohort. The quantity an intervention actually acts on — a "
+            "high rate over few children is fewer deaths than a moderate rate "
+            "over many."
+        ),
+    )
+)
+
+register(
+    Measure(
         code="tfr",
         label="Total fertility rate",
         kind=Kind.RATE,

@@ -86,6 +86,15 @@
         <div id="tg-floor" class="hidden mt-3 pt-3 border-t border-teal-600 text-sm text-amber-200"></div>
       </div>
 
+      <div class="bg-white rounded-lg border border-stone-200 p-4">
+        <div class="text-xs text-stone-500">Expected under-5 deaths / year</div>
+        <div id="tg-deaths" class="text-2xl font-semibold text-stone-900 tg-num mt-1">—</div>
+        <p class="text-xs text-stone-500 mt-1">
+          Rate x births. The burden an intervention acts on — a high rate over few
+          children is fewer deaths than a moderate rate over many.
+        </p>
+      </div>
+
       <div class="grid grid-cols-2 gap-3">
         <div class="bg-white rounded-lg border border-stone-200 p-4">
           <div class="text-xs text-stone-500">Under-5 population</div>
@@ -139,6 +148,7 @@
             <th class="text-left px-5 py-2 font-medium">Area</th>
             <th class="text-left px-3 py-2 font-medium">Country</th>
             <th class="text-right px-3 py-2 font-medium">U5MR</th>
+            <th class="text-right px-3 py-2 font-medium">Deaths/yr</th>
             <th class="text-right px-3 py-2 font-medium">Births/yr</th>
             <th class="text-right px-3 py-2 font-medium">Under-5 pop</th>
             <th class="text-left px-3 py-2 font-medium">Source</th>
@@ -147,7 +157,7 @@
           </tr>
         </thead>
         <tbody id="tg-rows" class="divide-y divide-stone-100">
-          <tr><td colspan="8" class="px-5 py-8 text-center text-stone-400">Loading…</td></tr>
+          <tr><td colspan="9" class="px-5 py-8 text-center text-stone-400">Loading…</td></tr>
         </tbody>
       </table>
     </div>

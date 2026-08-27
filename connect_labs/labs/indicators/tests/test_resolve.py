@@ -422,11 +422,40 @@ class TestCalibration:
         rows = calibrate.load("u5mr", iso_codes=["ERI"])
 
         assert len(rows) == 1
-        # 154 * (34.3 / 77.3) ~= 68
-        assert rows[0].value == pytest.approx(154.0 * 34.3 / 77.3)
         assert rows[0].value < 80
         assert rows[0].extra["raw_value"] == 154.0
         assert rows[0].extra["raw_year"] == 2002
+
+    def test_a_single_region_country_is_raked_onto_its_national_figure(self):
+        from connect_labs.labs.indicators.sources import calibrate
+
+        # With only one region, the weighted regional mean *is* that region, so
+        # raking to the control total pins it exactly to the national estimate.
+        # Correct, and worth asserting so the collapse is deliberate rather than
+        # a surprise.
+        _, region = self._country_with_series("ERI", 2002, 154.0, then=77.3, now=34.3)
+        rows = calibrate.load("u5mr", iso_codes=["ERI"])
+
+        assert rows[0].value == pytest.approx(34.3)
+        assert rows[0].extra["rake_factor"] > 0
+
+    def test_raking_preserves_the_regional_pattern(self):
+        from connect_labs.labs.indicators.sources import calibrate
+
+        country = make_boundary("ZMB", 0, "Zambia", "ZMB-0")
+        hi = make_boundary("ZMB", 1, "High", "ZMB-1", x=2)
+        lo = make_boundary("ZMB", 1, "Low", "ZMB-2", x=4)
+        set_value(hi, "u5mr", 120.0, year=2018, source=Source.DHS)
+        set_value(lo, "u5mr", 60.0, year=2018, source=Source.DHS)
+        set_value(country, "u5mr", 90.0, year=2018, source=Source.IGME)
+        set_value(country, "u5mr", 45.0, year=2024, source=Source.IGME)
+
+        rows = {r.boundary.name: r.value for r in calibrate.load("u5mr", iso_codes=["ZMB"])}
+
+        # The 2:1 ratio between regions survives; only the level moves.
+        assert rows["High"] / rows["Low"] == pytest.approx(2.0)
+        # And the unweighted mean lands on the national control total.
+        assert (rows["High"] + rows["Low"]) / 2 == pytest.approx(45.0)
 
     def test_a_rising_trend_scales_the_survey_up(self):
         from connect_labs.labs.indicators.sources import calibrate
@@ -446,8 +475,11 @@ class TestCalibration:
         _, region = self._country_with_series("NGA", 2023, 158.0, then=111.0, now=110.0)
         rows = calibrate.load("u5mr", iso_codes=["NGA"])
 
-        assert rows[0].value == pytest.approx(158.0 * 110.0 / 111.0)
-        assert abs(rows[0].value - 158.0) < 2.0
+        # Single region, so raking pins it to the national figure; the point
+        # here is that a one-year-old survey moves barely at all.
+        # extra["factor"] is stored rounded to 4dp for readability.
+        assert rows[0].extra["factor"] == pytest.approx(110.0 / 111.0, abs=1e-4)
+        assert abs(rows[0].extra["raw_value"] - 158.0) < 0.01
 
     def test_an_implausible_factor_is_refused_not_published(self):
         from connect_labs.labs.indicators.sources import calibrate
@@ -492,3 +524,43 @@ class TestCalibration:
 
         raw = IndicatorValue.objects.get(indicator="u5mr", boundary=region, source=Source.DHS)
         assert raw.value == 106.0
+
+
+class TestExpectedDeaths:
+    """Burden, not rate — the quantity an intervention acts on."""
+
+    def test_expected_deaths_is_rate_times_cohort(self):
+        from connect_labs.labs.indicators.sources import derive
+
+        make_boundary("ETH", 0, "Ethiopia", "ETH-0")
+        region = make_boundary("ETH", 1, "Oromia", "ETH-1", x=2)
+        set_value(region, "u5mr", 60.0, source=Source.IGME_SUBNATIONAL)
+        set_value(region, "births", 1_000_000, source=Source.DERIVED)
+
+        rows = derive.load_expected_deaths(iso_codes=["ETH"])
+
+        assert len(rows) == 1
+        assert rows[0].value == pytest.approx(60_000.0)
+
+    def test_a_big_cohort_at_a_moderate_rate_outranks_a_small_one_at_a_high_rate(self):
+        from connect_labs.labs.indicators.sources import derive
+
+        make_boundary("ETH", 0, "Ethiopia", "ETH-0")
+        big = make_boundary("ETH", 1, "Oromia", "ETH-1", x=2)
+        small = make_boundary("ETH", 1, "Tiny", "ETH-2", x=4)
+        set_value(big, "u5mr", 60.0, source=Source.IGME_SUBNATIONAL)
+        set_value(big, "births", 1_000_000, source=Source.DERIVED)
+        set_value(small, "u5mr", 180.0, source=Source.IGME_SUBNATIONAL)
+        set_value(small, "births", 20_000, source=Source.DERIVED)
+
+        by_name = {r.boundary.name: r.value for r in derive.load_expected_deaths(iso_codes=["ETH"])}
+
+        # This is the case a rate threshold gets backwards.
+        assert by_name["Oromia"] > by_name["Tiny"]
+
+    def test_expected_deaths_sums_like_a_count(self):
+        from connect_labs.labs.indicators import measures
+
+        m = measures.get("expected_deaths")
+        assert m.agg is measures.Agg.SUM
+        assert not m.downscale

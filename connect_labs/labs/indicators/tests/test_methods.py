@@ -43,9 +43,11 @@ class TestRegistry:
             defaults = [m for m in methods.for_resolution(res) if m.default]
             assert len(defaults) == 1, f"{res.value} has {len(defaults)} defaults"
 
-    def test_resolution_maps_to_an_admin_level(self):
+    def test_resolution_maps_to_admin_levels(self):
         assert methods.Resolution.NATIONAL.admin_levels == (0,)
-        assert methods.Resolution.SUBNATIONAL.admin_levels == (1,)
+        # Subnational spans ADM1 and ADM2: IGME models to district level in most
+        # countries it covers. Which one a country uses is decided per country.
+        assert methods.Resolution.SUBNATIONAL.admin_levels == (1, 2)
 
     def test_every_method_states_a_caveat(self):
         # A method with no stated caveat invites being read as the plain truth.
@@ -115,3 +117,48 @@ class TestSelectionByMethod:
         sel = select_above("u5mr", threshold=80, iso_codes=["NGA", "TCD"])
         assert sel.method == ""
         assert sel.resolution == ""
+
+
+class TestIgmeSubnationalLevelFit:
+    """IGME's ADMIN_LEVEL is its own numbering and does not match ours.
+
+    Trusting it scored Madagascar 1 of 22 — its IGME "level 2" is the country's
+    22 regions, which geoBoundaries calls ADM1.
+    """
+
+    def test_level_is_chosen_by_what_actually_matches(self):
+        from connect_labs.labs.indicators.sources.igme_subnational import _best_fit
+
+        # Boundaries exist at ADM1 under these names; ADM2 holds something else.
+        make_boundary("MDG", 1, "Analamanga", "MDG-1-1", x=2)
+        make_boundary("MDG", 1, "Bongolava", "MDG-1-2", x=4)
+        make_boundary("MDG", 2, "Ambalavao", "MDG-2-1", x=6)
+        make_boundary("MDG", 2, "Ambanja", "MDG-2-2", x=8)
+
+        areas = [
+            {"area_name": "Analamanga", "level": 2, "area_code": "MDG-1"},
+            {"area_name": "Bongolava", "level": 2, "area_code": "MDG-2"},
+        ]
+        chosen, boundary_level, rate = _best_fit("MDG", areas)
+
+        # IGME calls them level 2; they are our ADM1, and the fit finds that.
+        assert boundary_level == 1
+        assert rate == 1.0
+        assert len(chosen) == 2
+
+    def test_a_poor_fit_is_rejected_rather_than_published(self):
+        from connect_labs.labs.indicators.sources import igme_subnational
+
+        make_boundary("UGA", 2, "Aringa", "UGA-2-1", x=2)
+        make_boundary("UGA", 2, "Aruu", "UGA-2-2", x=4)
+        areas = [
+            {"area_name": "Wakiso", "level": 2, "area_code": "UGA-1"},
+            {"area_name": "Nebbi", "level": 2, "area_code": "UGA-2"},
+            {"area_name": "Abim", "level": 2, "area_code": "UGA-3"},
+        ]
+        _, _, rate = igme_subnational._best_fit("UGA", areas)
+
+        # Uganda's IGME districts have no counterpart in our county-level ADM2,
+        # so the fit is poor and the loader leaves the country to the survey path
+        # rather than shipping a half-matched map.
+        assert rate < igme_subnational.MIN_MATCH_RATE

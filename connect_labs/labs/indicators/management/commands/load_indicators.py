@@ -20,7 +20,17 @@ from django.utils import timezone
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
-from connect_labs.labs.indicators.sources import base, calibrate, derive, dhs, hapi, igme, worldbank, worldpop
+from connect_labs.labs.indicators.sources import (
+    base,
+    calibrate,
+    derive,
+    dhs,
+    hapi,
+    igme,
+    igme_subnational,
+    worldbank,
+    worldpop,
+)
 
 STAGES = ("mortality", "calibrate", "fertility", "population", "births")
 
@@ -89,6 +99,13 @@ class Command(BaseCommand):
                 ctx["rows"] = base.upsert(rows)
                 ctx["countries"] = len({r.boundary.iso_code for r in rows})
 
+        # IGME's own small-area model — preferred over anything we derive.
+        for measure in ("u5mr", "nmr"):
+            with self._run(Source.IGME_SUBNATIONAL, measure) as ctx:
+                rows = igme_subnational.load(measure, iso_codes=codes)
+                ctx["rows"] = base.upsert(rows)
+                ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
     def _stage_calibrate(self, codes, opts):
         # Runs after mortality: needs both the raw surveys and the IGME series.
         for measure in calibrate.CALIBRATED:
@@ -117,10 +134,11 @@ class Command(BaseCommand):
         # supply pop_u1, so WorldPop still has work to do — but everything HAPI
         # covers is population we do not have to wait for.
         if opts.get("source") in (None, "hapi"):
-            with self._run(Source.HAPI, "") as ctx:
-                rows = hapi.load(codes)
-                ctx["rows"] = base.upsert(rows)
-                ctx["countries"] = len({r.boundary.iso_code for r in rows})
+            for level in (1, 2):
+                with self._run(Source.HAPI, f"adm{level}") as ctx:
+                    rows = hapi.load(codes, admin_level=level)
+                    ctx["rows"] = base.upsert(rows)
+                    ctx["countries"] = len({r.boundary.iso_code for r in rows})
 
         if opts.get("source") == "hapi":
             return
@@ -193,6 +211,17 @@ class Command(BaseCommand):
             rows = derive.load_fertility_crosscheck(iso_codes=codes)
             ctx["rows"] = base.upsert(rows)
             ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
+        # Depends on births, so it runs last in this stage.
+        with self._run(Source.DERIVED, "expected_deaths") as ctx:
+            rows = derive.load_expected_deaths(iso_codes=codes)
+            ctx["rows"] = base.upsert(rows)
+            ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
+        div = derive.births_divergence(iso_codes=codes)
+        if div:
+            wide = sum(1 for d in div.values() if d > 0.25)
+            self.stdout.write(f"  births cross-check: {wide} of {len(div)} regions disagree by >25%")
 
     # -- run bookkeeping ---------------------------------------------------
 

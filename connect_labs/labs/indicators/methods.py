@@ -40,7 +40,12 @@ class Resolution(str, Enum):
 
     @property
     def admin_levels(self) -> tuple[int, ...]:
-        return (0,) if self is Resolution.NATIONAL else (1,)
+        # Subnational spans both levels: IGME models to ADM2 in most countries
+        # it covers, surveys rarely go below ADM1. Which one a given country
+        # uses is decided per country by the deepest level that has data — see
+        # resolve.select_above — so that a district is never set against the
+        # region containing it.
+        return (0,) if self is Resolution.NATIONAL else (1, 2)
 
 
 @dataclass(frozen=True)
@@ -123,6 +128,27 @@ register(
 
 register(
     Method(
+        code="subnational_igme",
+        label="Modelled small-area estimate (UN IGME)",
+        resolution=Resolution.SUBNATIONAL,
+        source_order=("igme_subnational",),
+        default=True,
+        description=(
+            "IGME's own small-area model, on a common reference year rather "
+            "than each survey's year. Reaches district level (ADM2) in most of "
+            "the countries it covers — Uganda has 146 districts here against 4 "
+            "regions from its last survey."
+        ),
+        caveat=(
+            "Covers 25 African countries, not all of them. A model, not a "
+            "measurement: it interpolates between surveys rather than reading "
+            "one."
+        ),
+    )
+)
+
+register(
+    Method(
         code="subnational_relevelled",
         label="Survey pattern, re-levelled to today",
         resolution=Resolution.SUBNATIONAL,
@@ -130,7 +156,6 @@ register(
         # both are the same measurement, one adjusted, so this is not the
         # cross-method fallback the module docstring rules out.
         source_order=("dhs_calibrated", "dhs"),
-        default=True,
         description=(
             "The survey's regional pattern scaled to the present by the national "
             "trend, so an old survey still says which regions are worse without "

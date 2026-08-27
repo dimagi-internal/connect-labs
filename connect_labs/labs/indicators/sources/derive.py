@@ -59,7 +59,9 @@ FERTILITY = "fertility"
 
 
 def _boundaries(iso_codes: list[str] | None) -> list[AdminBoundary]:
-    qs = AdminBoundary.objects.filter(admin_level__in=(0, 1))
+    # Includes ADM2: mortality now resolves that deep in eleven countries, and a
+    # district with a rate but no births contributes nothing to a burden total.
+    qs = AdminBoundary.objects.filter(admin_level__in=(0, 1, 2))
     if iso_codes:
         qs = qs.filter(iso_code__in=[c.upper() for c in iso_codes])
     return list(qs)
@@ -150,6 +152,68 @@ def load(iso_codes: list[str] | None = None, year: int | None = None) -> list[Ro
         missing,
     )
     return rows
+
+
+def load_expected_deaths(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
+    """Annual under-5 deaths implied by this area's rate and birth cohort.
+
+    The quantity an intervention actually acts on. Targeting on rate alone
+    excluded Oromia — the third-largest concentration of under-5 deaths in
+    Africa — because its rate is 60 while its cohort is enormous.
+    """
+    rows: list[Row] = []
+    for boundary in _boundaries(iso_codes):
+        rate = resolve("u5mr", boundary, year)
+        births = resolve("births", boundary, year)
+        if not (rate and births):
+            continue
+        rows.append(
+            Row(
+                indicator="expected_deaths",
+                boundary=boundary,
+                year=min(rate.year, births.year),
+                value=births.value * rate.value / 1000.0,
+                source=Source.DERIVED,
+                source_ref=f"u5mr x births ({rate.source} + {births.source})",
+                license_code=License.DERIVED,
+                method=(
+                    f"Derived: expected under-5 deaths = births x u5mr / 1000. "
+                    f"Inputs: births {births.value:,.0f} from {births.source_ref or births.source}; "
+                    f"u5mr {rate.value:.1f} from {rate.provenance}."
+                ),
+                extra={
+                    "u5mr": rate.value,
+                    "births": births.value,
+                    "u5mr_source": rate.source,
+                    "births_source": births.source,
+                },
+            )
+        )
+    logger.info("derive: %d expected-deaths rows", len(rows))
+    return rows
+
+
+def births_divergence(iso_codes: list[str] | None = None) -> dict[int, float]:
+    """How far apart the two births methods are, per boundary.
+
+    Built as a cross-check and then never consulted, which is its own lesson:
+    16% of regions disagree by more than a quarter and 3% by more than half. A
+    births figure two independent methods cannot agree on should not be summed
+    into a headline with the same confidence as one they do.
+    """
+    from connect_labs.labs.indicators.models import IndicatorValue
+
+    primary = {v.boundary_id: v.value for v in IndicatorValue.objects.filter(indicator="births") if v.value}
+    check = {
+        v.boundary_id: v.value for v in IndicatorValue.objects.filter(indicator="births_fertility_check") if v.value
+    }
+    out: dict[int, float] = {}
+    for pk, a in primary.items():
+        b = check.get(pk)
+        if not b:
+            continue
+        out[pk] = abs(a - b) / max(a, b)
+    return out
 
 
 def load_fertility_crosscheck(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:

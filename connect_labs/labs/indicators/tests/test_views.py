@@ -49,6 +49,10 @@ def africa():
     b2 = make_boundary("NGA", 1, "Cool", "NGA-2", x=10)
 
     for b, rate, births in [(a1, 120, 11_000), (a2, 95, 22_000), (b1, 140, 33_000), (b2, 30, 44_000)]:
+        # The default subnational method reads IGME's small-area model, so the
+        # fixture supplies that; the DHS row alongside keeps the survey methods
+        # answerable from the same fixture.
+        set_value(b, "u5mr", rate, source=Source.IGME_SUBNATIONAL)
         set_value(b, "u5mr", rate, source=Source.DHS)
         set_value(b, "births", births, source=Source.DERIVED)
         set_value(b, "pop_u5", births * 5, source=Source.WORLDPOP)
@@ -169,7 +173,7 @@ class TestDownload:
         resp = client_in.get(reverse("targeting:download"), {"threshold": 80})
         doc = zipfile.ZipFile(io.BytesIO(resp.content)).read("METHODOLOGY.md").decode()
 
-        assert "DHS Program" in doc
+        assert "UN IGME" in doc
         assert "WorldPop" in doc
         assert "births = population aged 0-1" in doc
         # The weighting rule is the thing most likely to be misunderstood.
@@ -220,7 +224,7 @@ class TestMissingBirthsSurfacing:
     def test_selection_api_sends_null_not_zero(self, client_in):
         make_boundary("TCD", 0, "Chad", "TCD-0", x=30)
         r = make_boundary("TCD", 1, "Region", "TCD-1", x=32)
-        set_value(r, "u5mr", 150, source=Source.DHS)
+        set_value(r, "u5mr", 150, source=Source.IGME_SUBNATIONAL)
         set_value(r, "pop_u5", 400_000, source=Source.WORLDPOP)
 
         data = client_in.get(reverse("targeting:selection"), {"threshold": 80}).json()
@@ -233,7 +237,7 @@ class TestMissingBirthsSurfacing:
     def test_csv_leaves_missing_births_blank(self, client_in):
         make_boundary("TCD", 0, "Chad", "TCD-0", x=30)
         r = make_boundary("TCD", 1, "Region", "TCD-1", x=32)
-        set_value(r, "u5mr", 150, source=Source.DHS)
+        set_value(r, "u5mr", 150, source=Source.IGME_SUBNATIONAL)
 
         resp = client_in.get(reverse("targeting:download"), {"threshold": 80, "format": "csv"})
         rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
@@ -244,7 +248,7 @@ class TestMissingBirthsSurfacing:
     def test_methodology_says_the_total_is_a_floor(self, client_in):
         make_boundary("TCD", 0, "Chad", "TCD-0", x=30)
         r = make_boundary("TCD", 1, "Region", "TCD-1", x=32)
-        set_value(r, "u5mr", 150, source=Source.DHS)
+        set_value(r, "u5mr", 150, source=Source.IGME_SUBNATIONAL)
 
         resp = client_in.get(reverse("targeting:download"), {"threshold": 80})
         doc = zipfile.ZipFile(io.BytesIO(resp.content)).read("METHODOLOGY.md").decode()
@@ -263,14 +267,14 @@ class TestSourceColumns:
     def test_selection_splits_name_year_and_link(self, client_in):
         make_boundary("TCD", 0, "Chad", "TCD-0", x=30)
         r = make_boundary("TCD", 1, "Region", "TCD-1", x=32)
-        v = set_value(r, "u5mr", 150, year=2019, source=Source.DHS)
+        v = set_value(r, "u5mr", 150, year=2019, source=Source.IGME_SUBNATIONAL)
         v.source_ref = "Chad DHS 2019"
         v.source_url = "https://dhsprogram.com/methodology/survey/survey-display-123.cfm"
         v.save()
 
         row = client_in.get(reverse("targeting:selection"), {"threshold": 80}).json()["rows"][0]
 
-        assert row["source_name"] == "DHS Program"
+        assert row["source_name"] == "UN IGME (subnational model)"
         assert row["source_detail"] == "Chad DHS 2019"
         assert row["year"] == 2019
         assert row["source_url"].endswith("survey-display-123.cfm")
@@ -287,14 +291,14 @@ class TestSourceColumns:
     def test_csv_carries_the_link(self, client_in):
         make_boundary("TCD", 0, "Chad", "TCD-0", x=30)
         r = make_boundary("TCD", 1, "Region", "TCD-1", x=32)
-        v = set_value(r, "u5mr", 150, source=Source.DHS)
+        v = set_value(r, "u5mr", 150, source=Source.IGME_SUBNATIONAL)
         v.source_url = "https://dhsprogram.com/x.cfm"
         v.save()
 
         resp = client_in.get(reverse("targeting:download"), {"threshold": 80, "format": "csv"})
         rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
 
-        assert rows[0]["U5MR source"] == "DHS Program"
+        assert rows[0]["U5MR source"] == "UN IGME (subnational model)"
         assert rows[0]["U5MR source link"] == "https://dhsprogram.com/x.cfm"
 
     def test_row_values_are_escaped_before_reaching_innerHTML(self, client_in):

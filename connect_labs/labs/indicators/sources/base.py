@@ -144,6 +144,23 @@ ALIASES: dict[str, str] = {
     # "Dossa". Normalising both sides onto the correct spelling is the least-bad
     # fix; the alternative is loosening the fuzzy cutoff for everyone.
     "dossa": "dosso",
+    # Ethiopian zone names reach us transliterated from Amharic while
+    # geoBoundaries carries the English. These are the compass words, which are
+    # what most of the mismatches turn on.
+    "mirab": "west",
+    "misraq": "east",
+    "semien": "north",
+    "debub": "south",
+}
+
+#: Applied token-by-token rather than to the whole string, since these appear as
+#: one word inside a longer name ("Mirab Welega" -> "west welega").
+TOKEN_ALIASES: dict[str, str] = {
+    "mirab": "west",
+    "misraq": "east",
+    "semien": "north",
+    "debub": "south",
+    "mi irabaw": "west",
 }
 
 
@@ -163,6 +180,7 @@ def normalize_name(raw: str) -> str:
     s = _PUNCT.sub(" ", s)
     s = _NOISE.sub(" ", s)
     s = _WS.sub(" ", s).strip()
+    s = " ".join(TOKEN_ALIASES.get(t, t) for t in s.split())
     return ALIASES.get(s, s)
 
 

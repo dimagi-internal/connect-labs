@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 #: When several sources carry the same cell, prefer them in this order.
 #: Subnational survey data beats a national model applied downward.
 DEFAULT_SOURCE_ORDER = (
+    # A purpose-built small-area model beats our own arithmetic wherever it
+    # reaches; see sources/igme_subnational.py.
+    "igme_subnational",
     # A survey re-levelled to the present beats the raw survey: a third of the
     # continent's subnational mortality comes from surveys 8+ years old, and
     # several countries were appearing as high-mortality on 20-year-old numbers.
@@ -392,7 +395,7 @@ class Selection:
 
 
 #: Counts carried alongside the threshold indicator on every selection row.
-CARRIED_COUNTS = ("births", "pop_u5", "pop_total")
+CARRIED_COUNTS = ("births", "expected_deaths", "pop_u5", "pop_total")
 
 
 def _country_name(iso: str, adm0: AdminBoundary | None) -> str:
@@ -483,10 +486,22 @@ def select_above(
 
     for iso in sorted(by_iso):
         adm0 = (by_iso[iso].get(0) or [None])[0]
-        adm1s = [] if national_only else (by_iso[iso].get(1) or [])
         cname = _country_name(iso, adm0)
 
-        units = adm1s or ([adm0] if adm0 is not None else [])
+        if national_only:
+            subs = []
+        else:
+            # Deepest level with actual values for this country. Mixing ADM1 and
+            # ADM2 inside one country would count a district and the region
+            # containing it as two separate places.
+            subs = []
+            for lvl in (2, 1):
+                candidates = by_iso[iso].get(lvl) or []
+                if any(rate_bulk.get(indicator, b) is not None for b in candidates):
+                    subs = candidates
+                    break
+
+        units = subs or ([adm0] if adm0 is not None else [])
         if not units:
             continue
 
@@ -502,7 +517,7 @@ def select_above(
         # A country is only rolled up when it has real regions and all of them
         # qualify — a single-region country would otherwise be relabelled as a
         # whole-country row, which reads as a much stronger claim than it is.
-        rolled_up = bool(adm1s) and len(above) == len(evaluated) and len(evaluated) > 1
+        rolled_up = bool(subs) and len(above) == len(evaluated) and len(evaluated) > 1
 
         # A national-resolution row is one country; its counts come from its
         # regions, the same way a rolled-up country row's do.

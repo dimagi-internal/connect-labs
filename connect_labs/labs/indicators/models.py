@@ -47,6 +47,7 @@ class Source(models.TextChoices):
     WORLDPOP = "worldpop", "WorldPop"
     HAPI = "hapi", "HDX HAPI"
     WORLDBANK = "worldbank", "World Bank (WDI)"
+    IGME_SUBNATIONAL = "igme_subnational", "UN IGME (subnational model)"
     DHS_CALIBRATED = "dhs_calibrated", "DHS (re-levelled)"
     DERIVED = "derived", "Derived"
 

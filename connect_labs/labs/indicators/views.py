@@ -210,6 +210,7 @@ class SelectionView(OpenLocallyMixin, View):
                 "threshold": threshold,
                 "threshold_pct": threshold / 10.0,
                 "totals": {
+                    "expected_deaths": selection.totals.get("expected_deaths"),
                     "births": selection.totals.get("births"),
                     "pop_u5": selection.totals.get("pop_u5"),
                     "pop_total": selection.totals.get("pop_total"),
@@ -255,6 +256,7 @@ class SelectionView(OpenLocallyMixin, View):
                         "measured_at": (
                             f"{r.measured_at.name} (ADM{r.measured_at.admin_level})" if r and r.inherited else None
                         ),
+                        "expected_deaths": _round_or_none(a.counts.get("expected_deaths")),
                         "births": _round_or_none(a.counts.get("births")),
                         "pop_u5": _round_or_none(a.counts.get("pop_u5")),
                         "pop_total": _round_or_none(a.counts.get("pop_total")),
