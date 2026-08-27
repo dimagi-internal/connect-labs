@@ -10,6 +10,8 @@
   'use strict';
 
   var TG = window.TG;
+  var methodInfo = null;
+  var currentMethod = null;
   var map = null;
   var selected = new Set();
   var geojson = null;
@@ -381,6 +383,13 @@
     }
 
     var gaps = [];
+    if (data.countries_unsupported && data.countries_unsupported.length) {
+      gaps.push(
+        '<strong>Cannot answer with this method:</strong> ' +
+          data.countries_unsupported.join(', ') +
+          '. Left out rather than answered at a different level.',
+      );
+    }
     if (data.countries_fully_above.length) {
       gaps.push(
         '<strong>Entirely above threshold:</strong> ' +
@@ -396,6 +405,125 @@
     document.getElementById('tg-gaps').innerHTML = gaps.join('<br>');
   }
 
+  // --- method + resolution picker -----------------------------------------
+
+  function methodsFor(resolution) {
+    return (methodInfo.resolutions[resolution] || []).map(function (code) {
+      return Object.assign({ code: code }, methodInfo.methods[code]);
+    });
+  }
+
+  function currentResolution() {
+    return methodInfo.methods[currentMethod].resolution;
+  }
+
+  function renderResolutionToggle() {
+    var el = document.getElementById('tg-resolution');
+    el.innerHTML = '';
+    Object.keys(methodInfo.resolutions).forEach(function (res) {
+      if (!methodInfo.resolutions[res].length) return;
+      var active = res === currentResolution();
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = res === 'national' ? 'National' : 'Subnational';
+      b.className =
+        'flex-1 text-sm rounded-md py-1.5 transition ' +
+        (active
+          ? 'bg-white shadow-sm font-medium text-stone-900'
+          : 'text-stone-600 hover:text-stone-900');
+      b.onclick = function () {
+        // Switching level picks that level's default method rather than
+        // trying to carry one across — a national method has no subnational
+        // equivalent, and pretending otherwise is how you get a national
+        // number painted onto regions.
+        var candidates = methodsFor(res);
+        if (!candidates.length) return;
+        var pick =
+          candidates.filter(function (m) {
+            return m.default;
+          })[0] || candidates[0];
+        currentMethod = pick.code;
+        renderPicker();
+        reload();
+      };
+      el.appendChild(b);
+    });
+  }
+
+  function renderMethodSelect() {
+    var sel = document.getElementById('tg-method');
+    sel.innerHTML = '';
+    methodsFor(currentResolution()).forEach(function (m) {
+      var o = document.createElement('option');
+      o.value = m.code;
+      o.textContent = m.label;
+      o.selected = m.code === currentMethod;
+      sel.appendChild(o);
+    });
+    sel.onchange = function () {
+      currentMethod = sel.value;
+      renderPicker();
+      reload();
+    };
+  }
+
+  function renderMethodNotes() {
+    var m = methodInfo.methods[currentMethod];
+    document.getElementById('tg-method-desc').textContent = m.description || '';
+    document.getElementById('tg-method-caveat').textContent = m.caveat || '';
+
+    var cover = document.getElementById('tg-method-cover');
+    var missing = m.countries_total - m.countries_available;
+    var text =
+      'Available for ' +
+      m.countries_available +
+      ' of ' +
+      m.countries_total +
+      ' countries';
+    if (missing > 0) {
+      var names = m.unavailable.slice(0, 4).map(function (c) {
+        return c.name;
+      });
+      text +=
+        ' — ' +
+        missing +
+        ' cannot answer with this method (' +
+        names.join(', ') +
+        (missing > names.length ? ', …' : '') +
+        '). They are left out rather than answered at another level.';
+    }
+    cover.textContent = text;
+  }
+
+  function renderPicker() {
+    renderResolutionToggle();
+    renderMethodSelect();
+    renderMethodNotes();
+  }
+
+  function reload() {
+    updateThresholdLabels();
+    geojson = null;
+    if (map && map.getSource('areas')) {
+      map.removeLayer('areas-dim');
+      map.removeLayer('areas-line');
+      map.removeLayer('areas-fill');
+      map.removeSource('areas');
+      selected = new Set();
+    }
+    return fetch(
+      TG.urls.map + '?indicator=' + TG.indicator + '&method=' + currentMethod,
+    )
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (data) {
+        geojson = data;
+        paint();
+        return fetchSelection();
+      });
+  }
+
   function threshold() {
     return parseFloat(document.getElementById('tg-threshold').value);
   }
@@ -406,14 +534,24 @@
       (t / 10).toFixed(1) + '%';
     document.getElementById('tg-threshold-abs').textContent = t;
     document.getElementById('tg-download').href =
-      TG.urls.download + '?indicator=' + TG.indicator + '&threshold=' + t;
+      TG.urls.download +
+      '?indicator=' +
+      TG.indicator +
+      '&threshold=' +
+      t +
+      (currentMethod ? '&method=' + currentMethod : '');
   }
 
   function fetchSelection() {
     var t = threshold();
     document.getElementById('tg-births').textContent = '…';
     return fetch(
-      TG.urls.selection + '?indicator=' + TG.indicator + '&threshold=' + t,
+      TG.urls.selection +
+        '?indicator=' +
+        TG.indicator +
+        '&threshold=' +
+        t +
+        (currentMethod ? '&method=' + currentMethod : ''),
     )
       .then(function (r) {
         return r.json();
@@ -444,20 +582,23 @@
     updateThresholdLabels();
     document.getElementById('tg-threshold').addEventListener('input', onSlide);
 
-    initMap()
-      .then(function () {
-        return fetch(TG.urls.map + '?indicator=' + TG.indicator);
-      })
+    // Methods first: the picker decides which sources answer and at what
+    // level, so the map and table must not load before it is known.
+    fetch(TG.urls.methods + '?indicator=' + TG.indicator)
       .then(function (r) {
         return r.json();
       })
-      .then(function (data) {
-        geojson = data;
-        paint();
-        return fetchSelection();
+      .then(function (info) {
+        methodInfo = info;
+        currentMethod = TG.defaultMethod || info.default;
+        renderPicker();
+        return initMap();
+      })
+      .then(function () {
+        return reload();
       })
       .catch(function (err) {
-        console.error('targeting: map load failed', err);
+        console.error('targeting: load failed', err);
         fetchSelection();
       });
   });

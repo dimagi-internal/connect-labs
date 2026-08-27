@@ -135,6 +135,34 @@ off as complete.
 task takes ~15s whether one or eight are in flight, and pushing harder produced
 read timeouts rather than throughput. This is why HAPI exists in the pipeline.
 
+## Resolution and method
+
+`measures.py` says what an indicator _is_; `methods.py` says how a value for it
+was _produced_, which is the thing that varies by country. A method declares its
+**resolution** (national or subnational), which stored **sources** can satisfy
+it, and the **caveat** a reader should hold in mind.
+
+| method                   | resolution  | countries | notes                                        |
+| ------------------------ | ----------- | --------- | -------------------------------------------- |
+| `national_igme`          | national    | 54 / 55   | one number per country, current, everywhere  |
+| `subnational_relevelled` | subnational | 41 / 55   | survey pattern scaled to today — the default |
+| `subnational_survey`     | subnational | 41 / 55   | the survey as measured, carrying its date    |
+
+**Methods never fall back to each other.** If you ask for subnational and a
+country cannot answer, it is reported as unsupported, not quietly answered at
+national level — comparing a Nigerian state against the whole of Chad is not a
+comparison. `availability.py` computes who can answer what from the stored data
+rather than a hand-kept list, so it cannot drift.
+
+The three disagree, and that is the point. At an 80-per-1,000 threshold:
+national selects 10 countries; the re-levelled subnational view finds qualifying
+_regions_ in 19; the raw survey view finds them in 27, because it is reading
+older and higher numbers.
+
+Adding a method is an entry in the registry plus, if it needs one, a loader.
+Selection and rollup code does not change — it asks the registry which sources
+to prefer and at what level to work.
+
 ## Old surveys are re-levelled to the present
 
 A third of Africa's subnational mortality comes from surveys eight or more years

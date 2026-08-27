@@ -126,11 +126,28 @@ class TestMapApi:
         assert props["Hot"]["u5mr"] == 140.0
         assert props["Hot"]["births"] == 33_000
 
-    def test_country_without_regions_falls_back_to_its_outline(self, client_in, africa):
+    def test_a_subnational_map_omits_a_country_with_no_regional_data(self, client_in, africa):
+        # It used to fall back to the country outline. That painted a national
+        # figure where the legend promises regional detail, so the country is
+        # now simply absent from a subnational map.
         make_boundary("MLI", 0, "Regionless", "MLI-0", x=12)
-        data = client_in.get(reverse("targeting:map_data")).json()
+        data = client_in.get(reverse("targeting:map_data"), {"method": "subnational_survey"}).json()
         names = {f["properties"]["name"] for f in data["features"]}
-        assert "Regionless" in names
+        assert "Regionless" not in names
+
+    def test_a_national_map_draws_one_shape_per_country(self, client_in, africa):
+        from connect_labs.labs.admin_boundaries.models import AdminBoundary
+
+        # The shared fixture only carries survey values on regions; a national
+        # method needs a national estimate to have anything to draw.
+        for iso in ("NER", "NGA"):
+            adm0 = AdminBoundary.objects.get(iso_code=iso, admin_level=0)
+            set_value(adm0, "u5mr", 100, source=Source.IGME)
+
+        data = client_in.get(reverse("targeting:map_data"), {"method": "national_igme"}).json()
+
+        assert {f["properties"]["level"] for f in data["features"]} == {0}
+        assert len(data["features"]) == 2
 
 
 class TestDownload:
@@ -166,18 +183,37 @@ class TestDownload:
         assert "80 per 1,000 live births" in doc
         assert "8%" in doc
 
-    def test_inherited_rows_say_where_the_number_came_from(self, client_in):
+    def test_a_subnational_method_does_not_borrow_the_national_figure(self, client_in):
+        # A region with no survey of its own must not quietly inherit its
+        # country's number when the user asked for subnational detail.
         country = make_boundary("TCD", 0, "Inheritland", "TCD-0", x=20)
         region = make_boundary("TCD", 1, "Only", "TCD-1", x=22)
         set_value(country, "u5mr", 150, source=Source.IGME)
         set_value(region, "births", 5_000, source=Source.DERIVED)
 
-        resp = client_in.get(reverse("targeting:download"), {"threshold": 80, "format": "csv"})
+        resp = client_in.get(
+            reverse("targeting:download"),
+            {"threshold": 80, "format": "csv", "method": "subnational_survey"},
+        )
+        rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
+
+        assert rows == []
+
+    def test_the_national_method_answers_that_country_directly(self, client_in):
+        country = make_boundary("TCD", 0, "Inheritland", "TCD-0", x=20)
+        region = make_boundary("TCD", 1, "Only", "TCD-1", x=22)
+        set_value(country, "u5mr", 150, source=Source.IGME)
+        set_value(region, "births", 5_000, source=Source.DERIVED)
+
+        resp = client_in.get(
+            reverse("targeting:download"),
+            {"threshold": 80, "format": "csv", "method": "national_igme"},
+        )
         rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
 
         assert len(rows) == 1
-        assert "Inheritland" in rows[0]["U5MR measured at"]  # the ADM0 boundary's own name
-        assert rows[0]["U5MR measured at"] != "this area"
+        assert rows[0]["Country"] == "Chad"
+        assert rows[0]["Est. annual births"] == "5000"
 
 
 class TestMissingBirthsSurfacing:

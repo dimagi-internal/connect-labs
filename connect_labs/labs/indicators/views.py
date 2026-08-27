@@ -13,7 +13,7 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
-from connect_labs.labs.indicators import export, measures
+from connect_labs.labs.indicators import availability, export, measures, methods
 from connect_labs.labs.indicators.africa import ISO_CODES, name_for
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
 from connect_labs.labs.indicators.resolve import BulkResolver, select_above
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_THRESHOLD = 80.0
 DEFAULT_INDICATOR = "u5mr"
+DEFAULT_METHOD = methods.default_for(methods.Resolution.SUBNATIONAL).code
 
 #: Degrees of simplification for map geometry. ADM1 polygons carry tens of
 #: thousands of vertices; at continent zoom the difference is invisible and the
@@ -71,6 +72,17 @@ def _round_or_none(value):
     return None if value is None else round(value)
 
 
+def _method(request) -> str:
+    """The requested method, or the default for its resolution."""
+    code = request.GET.get("method")
+    if code and code in methods.METHODS:
+        return code
+    resolution = request.GET.get("resolution")
+    if resolution in (r.value for r in methods.Resolution):
+        return methods.default_for(methods.Resolution(resolution)).code
+    return DEFAULT_METHOD
+
+
 def _float(request, key, default):
     try:
         return float(request.GET.get(key, default))
@@ -103,6 +115,7 @@ class TargetingView(OpenLocallyMixin, TemplateView):
                 "countries_with_u5mr": with_u5mr,
                 "africa_total": len(ISO_CODES),
                 "last_runs": list(IngestRun.objects.filter(ok=True)[:5]),
+                "default_method": DEFAULT_METHOD,
             }
         )
         return ctx
@@ -121,12 +134,16 @@ class MapDataView(OpenLocallyMixin, View):
         year = int(year) if year and year.isdigit() else None
         simplify = _float(request, "simplify", MAP_SIMPLIFY)
 
-        boundaries = list(AdminBoundary.objects.filter(iso_code__in=ISO_CODES, admin_level__in=(0, 1)))
-        # Prefer ADM1; keep ADM0 only for countries that have no regions loaded.
-        have_adm1 = {b.iso_code for b in boundaries if b.admin_level == 1}
-        units = [b for b in boundaries if b.admin_level == 1 or b.iso_code not in have_adm1]
+        method = methods.get(_method(request))
+        supported = set(availability.countries_supporting(method, indicator))
 
-        bulk = BulkResolver(units, year=year)
+        # A national method paints one shape per country. Painting a national
+        # figure onto regions would look like subnational detail that does not
+        # exist. Countries the method cannot answer for are simply absent.
+        level = 0 if method.is_national else 1
+        units = list(AdminBoundary.objects.filter(iso_code__in=supported, admin_level=level))
+
+        bulk = BulkResolver(units, year=year, source_order=method.source_order)
         features = []
 
         for b in units:
@@ -174,7 +191,15 @@ class SelectionView(OpenLocallyMixin, View):
 
         # Scoped to Africa exactly as the map is: a table listing places the
         # map cannot show would be a quiet contradiction.
-        selection = select_above(indicator=indicator, threshold=threshold, year=year, iso_codes=ISO_CODES)
+        # Scoped to Africa exactly as the map is, and produced with the
+        # requested method so the table and the map always agree.
+        selection = select_above(
+            indicator=indicator,
+            threshold=threshold,
+            year=year,
+            iso_codes=ISO_CODES,
+            method=_method(request),
+        )
         measure = measures.get(indicator)
 
         return JsonResponse(
@@ -199,6 +224,9 @@ class SelectionView(OpenLocallyMixin, View):
                 # these fall short the total is a floor, and the UI says so
                 # rather than presenting an undercount as a measurement.
                 "coverage": {c: {"with_value": got, "of": total} for c, (got, total) in selection.coverage.items()},
+                "method": selection.method,
+                "resolution": selection.resolution,
+                "countries_unsupported": selection.countries_unsupported,
                 "countries_fully_above": selection.countries_fully_above,
                 "countries_partly_above": selection.countries_partly_above,
                 "skipped_no_data": selection.skipped_no_data,
@@ -248,7 +276,13 @@ class SelectionDownloadView(OpenLocallyMixin, View):
         year = int(year) if year and year.isdigit() else None
         fmt = request.GET.get("format", "zip")
 
-        selection = select_above(indicator=indicator, threshold=threshold, year=year, iso_codes=ISO_CODES)
+        selection = select_above(
+            indicator=indicator,
+            threshold=threshold,
+            year=year,
+            iso_codes=ISO_CODES,
+            method=_method(request),
+        )
         stem = export.filename_stem(selection)
 
         if fmt == "csv":
@@ -259,6 +293,20 @@ class SelectionDownloadView(OpenLocallyMixin, View):
         resp = HttpResponse(export.to_zip(selection), content_type="application/zip")
         resp["Content-Disposition"] = f'attachment; filename="{stem}.zip"'
         return resp
+
+
+class MethodsView(OpenLocallyMixin, View):
+    """What methods exist, and how much of the continent each can answer for."""
+
+    def get(self, request):
+        indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
+        return JsonResponse(
+            {
+                "resolutions": availability.resolutions(),
+                "default": DEFAULT_METHOD,
+                **availability.matrix(indicator),
+            }
+        )
 
 
 class CoverageView(OpenLocallyMixin, View):
