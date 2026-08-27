@@ -253,11 +253,13 @@ class WorkflowSchedule(models.Model):
     CADENCE_DAILY = "daily"
     CADENCE_WEEKDAYS = "weekdays"
     CADENCE_WEEKLY = "weekly"
+    CADENCE_BIWEEKLY = "biweekly"
     CADENCE_MONTHLY = "monthly"
     CADENCE_CHOICES = [
         (CADENCE_DAILY, "Daily"),
         (CADENCE_WEEKDAYS, "Weekdays (Mon–Fri)"),
         (CADENCE_WEEKLY, "Weekly"),
+        (CADENCE_BIWEEKLY, "Every 2 weeks"),
         (CADENCE_MONTHLY, "Monthly"),
     ]
 

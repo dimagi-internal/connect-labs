@@ -3841,13 +3841,17 @@ def schedule_upsert_api(request, definition_id):
 
     day_of_week = body.get("day_of_week")
     day_of_month = body.get("day_of_month")
-    if cadence == WorkflowSchedule.CADENCE_WEEKLY:
+    # Biweekly is weekly-with-a-skip: it needs the same day_of_week, and rejecting it
+    # here would let a schedule save with day_of_week None, which compute_next_run then
+    # uses in arithmetic.
+    if cadence in (WorkflowSchedule.CADENCE_WEEKLY, WorkflowSchedule.CADENCE_BIWEEKLY):
+        label = "weekly" if cadence == WorkflowSchedule.CADENCE_WEEKLY else "biweekly"
         try:
             day_of_week = int(day_of_week)
         except (TypeError, ValueError):
-            return JsonResponse({"error": "weekly cadence needs day_of_week 0-6"}, status=400)
+            return JsonResponse({"error": f"{label} cadence needs day_of_week 0-6"}, status=400)
         if not 0 <= day_of_week <= 6:
-            return JsonResponse({"error": "weekly cadence needs day_of_week 0-6"}, status=400)
+            return JsonResponse({"error": f"{label} cadence needs day_of_week 0-6"}, status=400)
         day_of_month = None
     elif cadence == WorkflowSchedule.CADENCE_MONTHLY:
         try:
