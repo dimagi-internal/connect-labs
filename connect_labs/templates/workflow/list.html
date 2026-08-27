@@ -700,7 +700,8 @@
                     const f = this.scheduleForm;
                     const body = { cadence: f.cadence, hour: Number(f.hour) };
                     if (Object.keys(this.scheduleDefaults).length) body.defaults = this.scheduleDefaults;
-                    if (f.cadence === 'weekly') body.day_of_week = Number(f.day_of_week);
+                    // Both weekly and biweekly send a day; the endpoint rejects either without one.
+                    if (f.cadence === 'weekly' || f.cadence === 'biweekly') body.day_of_week = Number(f.day_of_week);
                     if (f.cadence === 'monthly') body.day_of_month = Number(f.day_of_month);
                     try {
                         const response = await fetch('{% url 'labs:workflow:api_schedule_upsert' workflow.definition.id %}', {
@@ -1356,10 +1357,17 @@
                         <option value="daily">Daily</option>
                         <option value="weekdays">Weekdays (Mon&ndash;Fri)</option>
                         <option value="weekly">Weekly</option>
+                        <option value="biweekly">Every 2 weeks</option>
                         <option value="monthly">Monthly</option>
                     </select>
 
-                    <template x-if="scheduleForm.cadence === 'weekly'">
+                    {% comment %}
+                    Biweekly picks a day of the week exactly as weekly does - it is weekly
+                    with every other firing skipped - so the same picker has to show for it.
+                    Left gated on 'weekly' alone, a biweekly schedule would offer no day at
+                    all and post whatever value happened to be in the form.
+                    {% endcomment %}
+                    <template x-if="scheduleForm.cadence === 'weekly' || scheduleForm.cadence === 'biweekly'">
                         <div class="mb-3">
                             <label class="block text-sm font-medium mb-1">Day of week</label>
                             <select x-model="scheduleForm.day_of_week" class="w-full border rounded px-3 py-2">

@@ -97,6 +97,11 @@ _WINDOW_PRESET_BY_CADENCE = {
     schedules.DAILY: "yesterday",
     schedules.WEEKDAYS: "yesterday",
     schedules.WEEKLY: "last_week",
+    # Fires every 14 days and audits exactly those 14 days, so consecutive runs abut
+    # rather than overlap. A 14-day window on a WEEKLY cadence would re-audit half of
+    # what the previous run already did -- duplicate sessions for reviewers and repeat
+    # classifier calls for the same photos.
+    schedules.BIWEEKLY: "last_14_days",
     schedules.MONTHLY: "last_month",
 }
 
