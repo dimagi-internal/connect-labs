@@ -90,6 +90,35 @@ DEFAULT_TIMEOUT = 60.0
 DEFAULT_PAGE_SIZE = 2500
 
 
+def _status_error_message(status_code: int, url: str) -> str:
+    """Turn an HTTP status from the export API into something diagnosable.
+
+    Connect answers "not authorized" and "not found" with the SAME 404, because
+    `_get_opportunity_or_404` filters by org membership and raises NotFound on a
+    miss. Reporting that as a bare "returned 404" sends the reader hunting for a
+    wrong URL when the actual cause is almost always membership — which is
+    exactly what happened in #1193, where a 404 on a URL that demonstrably
+    exists cost an investigation.
+
+    #1285 fixed this same misreading in the pulse, audit and workflow clients;
+    this is the export client, which it did not cover.
+    """
+    if status_code == 404:
+        return (
+            f"Export API returned 404 for {url}. NOTE: Connect returns 404 for BOTH "
+            "'this does not exist' AND 'you may not read this' — the permission check "
+            "filters by org/program membership and raises NotFound on a miss. Before "
+            "assuming a bad URL, confirm the token's user has membership in the "
+            "owning organization or program."
+        )
+    if status_code in (401, 403):
+        return (
+            f"Export API returned {status_code} for {url} — the token is missing, "
+            "expired, or lacks the 'export' scope."
+        )
+    return f"Export API returned {status_code} for {url}"
+
+
 class ExportAPIError(Exception):
     """Raised when the export API returns an error or pagination fails."""
 
@@ -215,7 +244,7 @@ class ExportAPIClient:
                 response = self.http_client.get(url, params=request_params)
                 response.raise_for_status()
             except httpx.HTTPStatusError as e:
-                raise ExportAPIError(f"Export API returned {e.response.status_code} for {url}") from e
+                raise ExportAPIError(_status_error_message(e.response.status_code, url)) from e
             except httpx.HTTPError as e:
                 raise ExportAPIError(f"Export API request failed for {url}: {e}") from e
 
