@@ -331,6 +331,12 @@ Output rows shape:
 | `median`         | Interpolated 50th percentile               | float         |
 | `mode`           | Most frequent non-null value               | same as input |
 | `mode_share`     | Share (0..1) of rows equal to the mode     | float         |
+| `dup_share`      | Share (0..1) of rows whose value repeats   | float         |
+
+> **FLW-grouping only:** `mode_share` and `dup_share` are compiled as correlated
+> subqueries scoped to `(opportunity_id, username)`, so they work at FLW
+> (`username`) grouping but are rejected at entity stage. Same restriction applies
+> to `pre_aggregate_by`.
 
 ### Transform Types
 

@@ -14,6 +14,7 @@ import logging
 import re
 
 from connect_labs.labs.analysis.backends.sql.query_builder import generate_sql_preview
+from connect_labs.labs.analysis.config import VALID_AGGREGATIONS
 from connect_labs.workflow.data_access import PipelineDataAccess, serialize_pipeline_row
 
 from ..connect_token import require_connect_token
@@ -178,22 +179,11 @@ def pipeline_get(user, pipeline_id: int, opportunity_id: int):
         pda.close()
 
 
-# Kept in lockstep with the SQL query_builder's `_aggregation_to_sql`. Add
-# here AND in the SQL builder when extending; the builder raises on unknown
-# aggregations so a stale MCP allow-list would surface as a server error
-# rather than a silent default.
-_VALID_AGGREGATIONS = {
-    "sum",
-    "count",
-    "count_distinct",
-    "count_unique",
-    "avg",
-    "min",
-    "max",
-    "first",
-    "last",
-    "list",
-}
+# Deliberately NOT a second list. `VALID_AGGREGATIONS` is derived from the
+# `AggregationType` Literal in labs/analysis/config.py, which is the same
+# constant the pipeline engine validates against — so an aggregation the SQL
+# builder implements can never be rejected here for having been forgotten.
+# The hand-maintained copy this replaced had drifted by four names (#1183).
 
 
 def _validate_pipeline_schema(schema: dict) -> None:
@@ -212,11 +202,11 @@ def _validate_pipeline_schema(schema: dict) -> None:
         if not isinstance(f, dict):
             raise MCPToolError("INVALID_SCHEMA", f"schema.fields[{i}] must be a dict")
         agg = f.get("aggregation")
-        if agg and agg not in _VALID_AGGREGATIONS:
+        if agg and agg not in VALID_AGGREGATIONS:
             raise MCPToolError(
                 "INVALID_SCHEMA",
                 f"Unknown aggregation {agg!r} on field {f.get('name', '<unnamed>')!r}. "
-                f"Valid: {sorted(_VALID_AGGREGATIONS)}",
+                f"Valid: {sorted(VALID_AGGREGATIONS)}",
             )
 
 
