@@ -110,6 +110,37 @@
         <div id="tg-floor" class="hidden mt-3 pt-3 border-t border-stone-200 text-sm text-amber-700"></div>
       </div>
 
+      <!-- Costing. Two inputs and the arithmetic follows: a unit price, and the
+           unit it is priced in. Which unit applies is a property of the
+           programme, not of the data. -->
+      <div class="bg-white rounded-lg border border-stone-200 p-5">
+        <div class="text-sm font-medium text-stone-800">What could this absorb?</div>
+
+        <label for="tg-preset" class="block text-xs font-medium text-stone-600 mt-3">Preset</label>
+        <select id="tg-preset"
+                class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
+
+        <div class="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <label for="tg-basis" class="block text-xs font-medium text-stone-600">Priced per</label>
+            <select id="tg-basis"
+                    class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
+          </div>
+          <div>
+            <label for="tg-unitcost" class="block text-xs font-medium text-stone-600">Unit cost (USD)</label>
+            <input id="tg-unitcost" type="number" min="0" step="0.10" value="60"
+                   class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white tg-num">
+          </div>
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-stone-200">
+          <div class="text-xs text-stone-500">Absorbable spend</div>
+          <div id="tg-absorb" class="text-3xl font-semibold text-stone-900 tg-num mt-1">—</div>
+          <div id="tg-absorb-detail" class="text-sm text-stone-600 mt-1">—</div>
+          <div id="tg-absorb-caveat" class="text-xs text-amber-700 mt-2"></div>
+        </div>
+      </div>
+
       <a id="tg-download" href="#"
          class="block text-center bg-stone-900 text-white rounded-lg px-4 py-3 text-sm font-medium hover:bg-stone-700">
         Download table + methodology (.zip)
@@ -183,6 +214,8 @@
       urls: {
         map: "{% url 'targeting:map_data' %}",
         methods: "{% url 'targeting:methods' %}",
+        interventions: "{% url 'targeting:interventions' %}",
+        scenario: "{% url 'targeting:scenario' %}",
         selection: "{% url 'targeting:selection' %}",
         download: "{% url 'targeting:download' %}"
       }

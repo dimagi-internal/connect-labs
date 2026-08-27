@@ -249,6 +249,50 @@ def load_ors_gap(iso_codes: list[str] | None = None, year: int | None = None) ->
     return rows
 
 
+def load_households(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
+    """Households = population / mean household size.
+
+    Worth being explicit about the division of labour, because it is the thing
+    most likely to be misread: the **population** comes from WorldPop or a
+    national statistics office via HAPI, and only the **ratio** comes from DHS.
+    A household survey samples tens of thousands of households — it cannot count
+    a population, but estimating an average is precisely what it is for.
+
+    No source counts households subnationally across Africa, so this is derived
+    rather than measured, and says so.
+    """
+    rows: list[Row] = []
+    for boundary in _boundaries(iso_codes):
+        pop = resolve("pop_total", boundary, year)
+        size = resolve("mean_household_size", boundary, year)
+        if not (pop and size) or size.value <= 0:
+            continue
+        rows.append(
+            Row(
+                indicator="households",
+                boundary=boundary,
+                year=min(pop.year, size.year),
+                value=pop.value / size.value,
+                source=Source.DERIVED,
+                source_ref=f"population / household size ({pop.source} + {size.source})",
+                license_code=License.DERIVED,
+                method=(
+                    f"Derived: households = total population / mean household size "
+                    f"({size.value:.2f}). Population {pop.value:,.0f} from "
+                    f"{pop.source_ref or pop.source}; household size from "
+                    f"{size.provenance}."
+                ),
+                extra={
+                    "pop_total": pop.value,
+                    "mean_household_size": size.value,
+                    "size_inherited": size.inherited,
+                },
+            )
+        )
+    logger.info("derive: %d household rows", len(rows))
+    return rows
+
+
 def load_coverage_gaps(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
     """Unreached population for every coverage measure, generically.
 

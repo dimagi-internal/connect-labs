@@ -165,14 +165,15 @@ class TestIgmeSubnationalLevelFit:
 
 
 class TestInterventionCosting:
-    """The question the whole thing was built for."""
+    """A cost is a unit price and a unit of measure — both must be fixed."""
 
-    def test_every_intervention_points_at_a_real_count(self):
+    def test_every_intervention_resolves_to_a_real_count(self):
         from connect_labs.labs.indicators import interventions, measures
 
         for i in interventions.all_interventions():
-            m = measures.get(i.cases)
-            assert not m.is_rate, f"{i.slug} costs a rate"
+            m = i.cases_measure()
+            assert m is not None, i.slug
+            assert not measures.get(m).is_rate, f"{i.slug} costs a rate"
             measures.get(i.targets)
 
     def test_every_intervention_states_a_caveat(self):
@@ -183,31 +184,64 @@ class TestInterventionCosting:
         for i in interventions.all_interventions():
             assert i.caveat, i.slug
 
-    def test_cost_is_cases_times_unit_cost(self):
+    def test_cost_is_units_times_unit_price(self):
         from connect_labs.labs.indicators import interventions
 
-        kmc = interventions.get("kmc")
-        assert interventions.cost(kmc, 1_000) == 60_000
-        assert interventions.cost(kmc, 1_000, unit_cost=45) == 45_000
+        assert interventions.cost(1_000, 60.0) == 60_000
+        assert interventions.cost(1_000, 2.5) == 2_500
 
-    def test_registering_a_rate_as_cases_is_rejected(self):
+    def test_each_basis_maps_to_a_count(self):
+        from connect_labs.labs.indicators import interventions, measures
+
+        for basis in interventions.UnitBasis:
+            m = interventions.measure_for(basis, "u5mr")
+            if m is None:
+                continue
+            assert not measures.get(m).is_rate, basis.value
+
+    def test_the_fixed_bases_are_what_you_would_expect(self):
+        from connect_labs.labs.indicators.interventions import UnitBasis, measure_for
+
+        assert measure_for(UnitBasis.BIRTH, "u5mr") == "births"
+        assert measure_for(UnitBasis.UNDER_5, "u5mr") == "pop_u5"
+        assert measure_for(UnitBasis.PERSON, "u5mr") == "pop_total"
+        assert measure_for(UnitBasis.HOUSEHOLD, "u5mr") == "households"
+
+    def test_a_case_means_something_different_per_indicator(self):
+        from connect_labs.labs.indicators.interventions import UnitBasis, measure_for
+
+        # "A case" is untreated diarrhoea here...
+        assert measure_for(UnitBasis.DISEASE_CASE, "diarrhoea_prevalence") == "ors_gap_children"
+        # ...an unvaccinated child here...
+        assert measure_for(UnitBasis.DISEASE_CASE, "measles_vaccination") == "measles_vaccination_gap"
+        # ...and an expected death when targeting mortality.
+        assert measure_for(UnitBasis.DISEASE_CASE, "u5mr") == "expected_deaths"
+
+    def test_a_case_basis_declines_when_there_is_no_case_count(self):
+        from connect_labs.labs.indicators.interventions import UnitBasis, measure_for
+
+        # Stunting is a prevalence with no coverage figure, so nothing says how
+        # many cases go untreated. Declining beats inventing.
+        assert measure_for(UnitBasis.DISEASE_CASE, "stunting") is None
+
+    def test_registering_an_impossible_basis_is_rejected(self):
         from connect_labs.labs.indicators import interventions
 
-        with pytest.raises(ValueError, match="must be a count"):
+        with pytest.raises(ValueError, match="no count"):
             interventions.register(
                 interventions.Intervention(
                     slug="bogus",
                     label="Bogus",
-                    cases="u5mr",
+                    basis=interventions.UnitBasis.DISEASE_CASE,
                     unit_cost_usd=1.0,
-                    targets="u5mr",
+                    targets="stunting",
                 )
             )
 
-    def test_a_scenario_carries_its_case_measure_even_when_thresholding_elsewhere(self):
+    def test_a_scenario_carries_its_unit_measure_even_when_thresholding_elsewhere(self):
         from connect_labs.labs.indicators.resolve import carried_for
 
-        # ITN is selected on malaria prevalence but costed on the ITN gap, so
-        # the selection has to carry a count its indicator would not.
-        carried = carried_for("malaria_prevalence", ("itn_use_children_gap",))
-        assert "itn_use_children_gap" in carried
+        # A household-priced water programme selected on water coverage still
+        # needs the household count, which that indicator would not carry.
+        carried = carried_for("improved_water", ("households",))
+        assert "households" in carried

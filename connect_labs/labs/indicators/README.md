@@ -381,37 +381,59 @@ non-commercial source is present.
   the WorldPop backfill finishes, continental birth totals are an undercount,
   and the map shows how many features actually carry a figure.
 
-## Interventions and costing
+## Costing: a unit price and a unit of measure
 
-`interventions.py` answers the question the system was built for — _if KMC costs
-$60 a case, how much could high-mortality Africa absorb?_ — by composing pieces
-that already exist rather than calculating anything new.
+The arithmetic is trivial once two things are fixed, and neither can be inferred
+from the data: **what one unit costs**, and **what a unit is**. Which unit
+applies is a property of the programme — KMC is priced per newborn, a bednet per
+child, a water connection per household, a treatment per case of disease — so
+the basis is chosen, not guessed.
 
-| intervention             | cases measure             | default unit cost |
-| ------------------------ | ------------------------- | ----------------- |
-| Kangaroo Mother Care     | `births`                  | $60               |
-| Oral rehydration salts   | `ors_gap_children`        | $2.50             |
-| Measles vaccination      | `measles_vaccination_gap` | $1.80             |
-| Vitamin A                | `vitamin_a_coverage_gap`  | $1.10             |
-| Insecticide-treated nets | `itn_use_children_gap`    | $3.50             |
+| basis             | resolves to              |
+| ----------------- | ------------------------ |
+| per birth         | `births`                 |
+| per child under 5 | `pop_u5`                 |
+| per person        | `pop_total`              |
+| per household     | `households`             |
+| per case          | depends on the indicator |
 
-**No intervention defines its own denominator.** `cases` must name a count
-already in the registry, so the arithmetic behind an eligible-case figure is the
-same arithmetic shown in the table and documented in the export. If a case count
-needs a new quantity, that quantity becomes a measure with a loader and
-provenance like everything else.
+**"Per case" is contextual and that is the point.** Targeting diarrhoea, a case
+is a child with untreated diarrhoea; targeting measles, an unvaccinated child;
+targeting mortality, an expected death. Where an indicator has no coverage
+figure to imply untreated cases — stunting, for instance — the basis is
+**declined** rather than approximated.
 
-That restraint has a visible cost, and KMC is where it shows: its real
-denominator is low-birthweight or preterm newborns, and DHS birth-weight data is
-too thin subnationally to carry one. So KMC counts **all** births and says so in
-its caveat, rather than silently applying a global 15% and calling it measured.
-Every intervention states a caveat, and a test enforces that.
+Named interventions are presets for a basis, a starting price and the indicator
+they belong to; selecting one moves the indicator too, since costing ORS while
+targeting mortality would be the right arithmetic on the wrong quantity.
 
-`GET /labs/targeting/api/scenario/?intervention=kmc&threshold=80` returns cases,
-absorbable spend, and how much of the selection actually had a case count — an
-incomplete selection yields a floor, and says so.
+The same threshold under five bases, at $10 a unit:
 
-## What this is not, yet
+```
+per person       294,869,836   $2.9B
+per household     36,971,372   $370M
+per child u5      49,370,529   $494M
+per birth         11,071,356   $111M
+per case           1,377,332   $13.8M
+```
+
+Every scenario reports how much of the selection actually had a count, so an
+incomplete one gives a floor and says so.
+
+### Households are derived, and the division of labour matters
+
+```
+households = total population / mean household size
+```
+
+The **population** comes from WorldPop or a national statistics office via HDX
+HAPI. Only the **ratio** comes from DHS. That distinction is worth stating
+because it is the thing most likely to be misread: a household survey samples
+tens of thousands of households and cannot count a population, but estimating an
+average is exactly what it is built for. No source counts households
+subnationally across Africa, so this is derived rather than measured.
+
+## What this is not, yet## What this is not, yet
 
 Intervention costing (`eligible_cases × unit_cost`) and AI-assisted querying are
 deliberately out of scope for the first build. The schema supports both —
