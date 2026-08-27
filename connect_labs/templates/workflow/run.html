@@ -38,6 +38,13 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.13.0/mapbox-gl.css"/>
 <div class="max-w-full mx-auto px-4 py-6" style="overflow-x: clip">
+    {% if present_mode %}
+    {% comment %} Presentation mode (connect-labs#1295): the breadcrumb is navigation into
+       the builder, which a link recipient has no use for and no access to.
+       Keep the workflow name as a plain title so the page is not headless —
+       with the shell gone this is the only thing naming what is on screen. {% endcomment %}
+    <h1 class="mb-4 text-2xl font-semibold text-gray-900">{{ definition.name|default:"Run" }}</h1>
+    {% else %}
     <!-- Breadcrumb -->
     <nav class="mb-4">
         <ol class="flex items-center space-x-2 text-sm text-gray-500">
@@ -46,8 +53,11 @@
             <li class="text-gray-900">{{ definition.name|default:"Run" }}</li>
         </ol>
     </nav>
+    {% endif %}
 
-    {% if has_context and not error and workflow_data and workflow_data.multi_opp %}
+    {% comment %} `not present_mode`: the selection summary, the Edit button and the
+       "Edit Opportunities" modal are authoring affordances (connect-labs#1295). {% endcomment %}
+    {% if has_context and not error and workflow_data and workflow_data.multi_opp and not present_mode %}
     {{ user_opportunities|json_script:"user-opportunities" }}
     <div x-data="{
             show: false,
