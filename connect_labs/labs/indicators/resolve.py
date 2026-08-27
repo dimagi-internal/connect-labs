@@ -403,7 +403,7 @@ CARRIED_COUNTS = (
 )
 
 
-def carried_for(indicator: str) -> tuple[str, ...]:
+def carried_for(indicator: str, extra: tuple[str, ...] = ()) -> tuple[str, ...]:
     """Counts to carry for this indicator.
 
     The base set plus the unreached count belonging to the chosen measure, so a
@@ -411,13 +411,13 @@ def carried_for(indicator: str) -> tuple[str, ...]:
     eleven gap measures on every query would cost eleven lookups per boundary to
     display one.
     """
-    extra: list[str] = []
+    wanted: list[str] = [e for e in extra if e in measures.MEASURES]
     gap = f"{indicator}_gap"
     if gap in measures.MEASURES:
-        extra.append(gap)
+        wanted.append(gap)
     if indicator in ("diarrhoea_prevalence", "ors_coverage"):
-        extra.append("ors_gap_children")
-    return CARRIED_COUNTS + tuple(dict.fromkeys(extra))
+        wanted.append("ors_gap_children")
+    return CARRIED_COUNTS + tuple(dict.fromkeys(wanted))
 
 
 def _country_name(iso: str, adm0: AdminBoundary | None) -> str:
@@ -440,6 +440,7 @@ def select_above(
     iso_codes: list[str] | None = None,
     source_order: tuple[str, ...] | None = None,
     method: str | None = None,
+    extra_counts: tuple[str, ...] = (),
 ) -> Selection:
     """Places where ``indicator`` exceeds ``threshold``, at the coarsest honest unit.
 
@@ -453,7 +454,10 @@ def select_above(
     a country total can never disagree with the regions beneath it.
     """
     measure = measures.get(indicator)
-    carried = carried_for(indicator)
+    # A caller may need a count the indicator would not normally carry — a
+    # costing scenario needs its intervention's case measure whatever it is
+    # thresholding on.
+    carried = carried_for(indicator, extra_counts)
 
     # A method fixes both which sources may answer and what level to work at.
     # Without one the historical default stands, so existing callers are

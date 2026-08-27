@@ -380,6 +380,14 @@
         '<td class="px-3 py-2 text-xs text-stone-600">' +
         sourceCell +
         '</td>' +
+        '<td class="px-3 py-2 text-xs text-stone-600">' +
+        esc(r.method_label || '—') +
+        (r.logic
+          ? '<span class="block text-xs text-stone-400 mt-0.5">' +
+            esc(r.logic) +
+            '</span>'
+          : '') +
+        '</td>' +
         '<td class="px-3 py-2 text-xs text-right tg-num ' +
         (r.year && new Date().getFullYear() - r.year >= 8
           ? 'text-amber-700 font-medium'
@@ -397,33 +405,29 @@
   function renderHeadline(data) {
     lastData = data;
     document.getElementById('tg-births').textContent = fmt(data.totals.births);
-    document.getElementById('tg-deaths').textContent = fmt(
-      burdenIsOrs()
-        ? data.totals.ors_gap_children
-        : data.totals.expected_deaths,
-    );
-    var dl = document.querySelector('#tg-deaths');
-    if (dl && dl.previousElementSibling) {
-      dl.previousElementSibling.textContent = burdenIsOrs()
-        ? 'Children with untreated diarrhoea'
-        : 'Expected under-5 deaths / year';
-    }
+    var burdenTotal = burdenIsOrs()
+      ? data.totals.ors_gap_children
+      : data.totals.gap !== null && data.totals.gap !== undefined
+      ? data.totals.gap
+      : data.totals.expected_deaths;
+    document.getElementById('tg-deaths').textContent = fmt(burdenTotal);
+    document.getElementById('tg-burden-label').textContent = burdenLabel();
     document.getElementById('tg-popu5').textContent = fmt(data.totals.pop_u5);
     document.getElementById('tg-poptotal').textContent = fmt(
       data.totals.pop_total,
     );
 
     var c = data.counts;
+    // Neutral now that births is one card among four rather than the headline.
     document.getElementById('tg-scope').textContent =
-      fmtFull(data.totals.births) +
-      ' births across ' +
       c.units +
       ' region' +
       (c.units === 1 ? '' : 's') +
-      ' in ' +
+      ' selected across ' +
       c.countries +
       ' countr' +
-      (c.countries === 1 ? 'y' : 'ies');
+      (c.countries === 1 ? 'y' : 'ies') +
+      (c.rows !== c.units ? ' (' + c.rows + ' rows after rollup)' : '');
 
     document.getElementById('tg-rowcount').textContent =
       c.rows +

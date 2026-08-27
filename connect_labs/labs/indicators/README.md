@@ -381,6 +381,36 @@ non-commercial source is present.
   the WorldPop backfill finishes, continental birth totals are an undercount,
   and the map shows how many features actually carry a figure.
 
+## Interventions and costing
+
+`interventions.py` answers the question the system was built for — _if KMC costs
+$60 a case, how much could high-mortality Africa absorb?_ — by composing pieces
+that already exist rather than calculating anything new.
+
+| intervention             | cases measure             | default unit cost |
+| ------------------------ | ------------------------- | ----------------- |
+| Kangaroo Mother Care     | `births`                  | $60               |
+| Oral rehydration salts   | `ors_gap_children`        | $2.50             |
+| Measles vaccination      | `measles_vaccination_gap` | $1.80             |
+| Vitamin A                | `vitamin_a_coverage_gap`  | $1.10             |
+| Insecticide-treated nets | `itn_use_children_gap`    | $3.50             |
+
+**No intervention defines its own denominator.** `cases` must name a count
+already in the registry, so the arithmetic behind an eligible-case figure is the
+same arithmetic shown in the table and documented in the export. If a case count
+needs a new quantity, that quantity becomes a measure with a loader and
+provenance like everything else.
+
+That restraint has a visible cost, and KMC is where it shows: its real
+denominator is low-birthweight or preterm newborns, and DHS birth-weight data is
+too thin subnationally to carry one. So KMC counts **all** births and says so in
+its caveat, rather than silently applying a global 15% and calling it measured.
+Every intervention states a caveat, and a test enforces that.
+
+`GET /labs/targeting/api/scenario/?intervention=kmc&threshold=80` returns cases,
+absorbable spend, and how much of the selection actually had a case count — an
+incomplete selection yields a floor, and says so.
+
 ## What this is not, yet
 
 Intervention costing (`eligible_cases × unit_cost`) and AI-assisted querying are

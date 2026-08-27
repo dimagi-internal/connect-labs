@@ -162,3 +162,52 @@ class TestIgmeSubnationalLevelFit:
         # so the fit is poor and the loader leaves the country to the survey path
         # rather than shipping a half-matched map.
         assert rate < igme_subnational.MIN_MATCH_RATE
+
+
+class TestInterventionCosting:
+    """The question the whole thing was built for."""
+
+    def test_every_intervention_points_at_a_real_count(self):
+        from connect_labs.labs.indicators import interventions, measures
+
+        for i in interventions.all_interventions():
+            m = measures.get(i.cases)
+            assert not m.is_rate, f"{i.slug} costs a rate"
+            measures.get(i.targets)
+
+    def test_every_intervention_states_a_caveat(self):
+        from connect_labs.labs.indicators import interventions
+
+        # A costed number with no stated caveat is the one most likely to be
+        # quoted back at us.
+        for i in interventions.all_interventions():
+            assert i.caveat, i.slug
+
+    def test_cost_is_cases_times_unit_cost(self):
+        from connect_labs.labs.indicators import interventions
+
+        kmc = interventions.get("kmc")
+        assert interventions.cost(kmc, 1_000) == 60_000
+        assert interventions.cost(kmc, 1_000, unit_cost=45) == 45_000
+
+    def test_registering_a_rate_as_cases_is_rejected(self):
+        from connect_labs.labs.indicators import interventions
+
+        with pytest.raises(ValueError, match="must be a count"):
+            interventions.register(
+                interventions.Intervention(
+                    slug="bogus",
+                    label="Bogus",
+                    cases="u5mr",
+                    unit_cost_usd=1.0,
+                    targets="u5mr",
+                )
+            )
+
+    def test_a_scenario_carries_its_case_measure_even_when_thresholding_elsewhere(self):
+        from connect_labs.labs.indicators.resolve import carried_for
+
+        # ITN is selected on malaria prevalence but costed on the ITN gap, so
+        # the selection has to carry a count its indicator would not.
+        carried = carried_for("malaria_prevalence", ("itn_use_children_gap",))
+        assert "itn_use_children_gap" in carried
