@@ -127,5 +127,10 @@ jobs:
         # Whole test tree, not a hand-maintained app list — the old explicit list
         # silently skipped campaign, mcp, pages, funder_dashboard, and others as
         # they were added. No -x: report every failure, not just the first.
+        #
+        # -n auto spreads the suite over the runner's cores. pytest-django gives each
+        # worker its own database (test_postgres_gwN), which is what makes this safe
+        # for a suite that talks to Postgres in almost every test — and is also why
+        # it removes a class of order-dependent failure rather than adding one.
         run: |
-          .venv/bin/pytest connect_labs/
+          .venv/bin/pytest connect_labs/ -n auto
