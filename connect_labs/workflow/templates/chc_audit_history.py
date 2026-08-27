@@ -38,6 +38,13 @@ AUDIT_REPORTS_SCHEMA = {
     "terminal_stage": "visit_level",
     "fields": [
         {"name": "report_id", "path": "audit_report.id", "aggregation": "first"},
+        # Shadowed by the framework's own per-row opportunity tag as of #1306, so
+        # this extraction no longer reaches the payload. Kept because the upstream
+        # export filters audit reports to the opportunity in the URL, making the
+        # two values equal anyway — and because the framework tag is the one the
+        # audit_entries schema carries, which is what the reports-to-entries join
+        # in the render depends on. Rename it if a source id is ever genuinely
+        # needed alongside.
         {"name": "opportunity_id", "path": "audit_report.opportunity", "aggregation": "first"},
         {"name": "period_start", "path": "audit_report.period_start", "aggregation": "first"},
         {"name": "period_end", "path": "audit_report.period_end", "aggregation": "first"},
