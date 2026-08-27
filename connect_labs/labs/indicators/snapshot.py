@@ -24,6 +24,10 @@ rather than left to be discovered: six places is about 11 cm at the equator,
 against source boundaries digitised at a scale nearer 100 m, and it halves the
 compressed size because the discarded mantissa bits were incompressible noise.
 
+A boundary that quantization would render *invalid* is exported unquantized
+instead — see ``_boundary_rows``. Losing 11 cm is fine; turning a valid polygon
+into a self-intersecting one is not, and it happened to five real ones.
+
 **Why this is safe to redistribute.** Every source is open and permits it —
 geoBoundaries and World Bank CC BY 4.0, WorldPop CC BY 4.0, DHS and HAPI open
 API, IGME CC BY 3.0 IGO. No IHME, whose agreement forbids exactly this. The
@@ -46,7 +50,7 @@ import zipfile
 from datetime import UTC, datetime
 
 from django.contrib.gis.geos import GEOSGeometry
-from django.db.models import Func, TextField, Value
+from django.db.models.expressions import RawSQL
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators.africa import ISO_CODES
@@ -110,18 +114,35 @@ def _boundary_rows(iso_codes: list[str] | None):
     # Quantize in the database rather than in Python: PostGIS zeroes the low
     # mantissa bits in place, and GEOS has no equivalent that keeps the WKB
     # byte-identical to what a re-import will produce.
-    # Hex on the way out of the database only: Django coerces a BinaryField
-    # annotation through force_str and chokes on the first non-UTF-8 byte. The
-    # hex is undone below, so nothing reaches the file doubled.
+    # Two things happen in this one expression, and both matter.
+    #
+    # Quantization can turn a valid polygon invalid: collapsing coordinates
+    # merges near-coincident vertices, and on an intricate coastline that
+    # creates a self-intersection. Measured on the real continent, 5 of 2,350
+    # boundaries did exactly that — Sudan, Comoros, Benin's Littoral. So a
+    # boundary keeps its quantized form only if that form is still valid;
+    # otherwise it is exported whole, at full size. Compression is never
+    # allowed to cost correctness, and the 5 that opt out cost ~2% of the file.
+    #
+    # Hex, because Django coerces a BinaryField annotation through force_str
+    # and chokes on the first non-UTF-8 byte. It is undone below, so nothing
+    # reaches the file doubled.
     qs = qs.annotate(
-        quantized_wkb_hex=Func(
-            Func(
-                Func("geometry", Value(COORD_PRECISION), function="ST_QuantizeCoordinates"),
-                function="ST_AsBinary",
-            ),
-            Value("hex"),
-            function="encode",
-            output_field=TextField(),
+        quantized_wkb_hex=RawSQL(
+            """
+            encode(
+                ST_AsBinary(
+                    CASE
+                        WHEN ST_IsValid(ST_QuantizeCoordinates(geometry, %s))
+                             OR NOT ST_IsValid(geometry)
+                        THEN ST_QuantizeCoordinates(geometry, %s)
+                        ELSE geometry
+                    END
+                ),
+                'hex'
+            )
+            """,
+            (COORD_PRECISION, COORD_PRECISION),
         )
     )
 

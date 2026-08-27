@@ -77,10 +77,29 @@ make manage CMD="targeting_status"
 ```
 
 `--from-manifest` reads the Drive file id pinned in
-[`fixtures/snapshot.json`](fixtures/snapshot.json) and needs
-`LABS_SYNTHETIC_GDRIVE_SA_KEY` in `.env` — the same service-account key the
-synthetic fixtures use. Without it, or without a published snapshot, use a file
-directly:
+[`fixtures/snapshot.json`](fixtures/snapshot.json).
+
+It needs `LABS_SYNTHETIC_GDRIVE_SA_KEY` — the same service-account key the
+synthetic fixtures use. On the deployed environment it is already in the task
+definition. Locally it is not in `.env` by default; it lives in Secrets Manager,
+so fetch it with the `labs` AWS profile:
+
+```bash
+echo "LABS_SYNTHETIC_GDRIVE_SA_KEY=$(aws secretsmanager get-secret-value \
+  --profile labs --secret-id labs-jj-synthetic-gdrive-sa-key \
+  --query SecretString --output text)" >> .env
+```
+
+`.env` is gitignored. If you would rather not keep a service-account key on
+disk, pass it for the one command instead:
+
+```bash
+LABS_SYNTHETIC_GDRIVE_SA_KEY="$(aws secretsmanager get-secret-value --profile labs \
+  --secret-id labs-jj-synthetic-gdrive-sa-key --query SecretString --output text)" \
+  make manage CMD="targeting_import --from-manifest"
+```
+
+With no credentials at all, restore from a file someone hands you:
 
 ```bash
 make manage CMD="targeting_import --path targeting-snapshot-20260827.zip"
@@ -96,12 +115,18 @@ in place.
 After a load that adds or corrects data:
 
 ```bash
-make manage CMD="targeting_export --to-drive <folder_id>"
+make manage CMD="targeting_export --to-drive 1cXbkUDjoE539aG3BOMtIh67r2ROde9sn"
 ```
+
+That folder is `targeting-snapshots`, under the same Drive parent the synthetic
+fixtures use (`LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID`). The Drive filename is
+always `targeting-snapshot-<date>.zip` regardless of the local `--out` path.
 
 Then pin the returned file id, `created_at` and counts in
 `fixtures/snapshot.json` **in the same commit**, so the pointer and the data
-cannot drift apart.
+cannot drift apart. Trash the superseded file rather than leaving two in the
+folder — the pinned id is authoritative, but a stale sibling is an invitation to
+restore the wrong one.
 
 ### What a snapshot is
 
@@ -121,6 +146,9 @@ Two deliberate properties worth knowing:
 - **Coordinates are quantized to 6 decimal places** (~11 cm at the equator,
   against source boundaries digitised nearer 100 m). This halves the file, and
   is the only lossy step — declared in the manifest as `coordinate_precision`.
+  A boundary that quantization would render _invalid_ is exported unquantized
+  instead, so compression can never cost correctness. Five real ones need this
+  (Sudan, Comoros, Benin's Littoral and their parents), at a cost of 0.1 MB.
 - **Licences travel on every row.** The manifest lists them and sets
   `contains_non_commercial`. Everything currently in play (geoBoundaries and
   World Bank CC BY 4.0, WorldPop CC BY 4.0, DHS and HAPI open API, IGME
