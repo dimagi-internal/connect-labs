@@ -9,8 +9,8 @@ from typing import Any, Protocol
 from django.conf import settings
 from django.utils import timezone
 
+from connect_labs.labs.synthetic.invalidation import invalidate_synthetic_caches
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
-from connect_labs.labs.synthetic.registry import invalidate_cache
 from connect_labs.labs.synthetic.visit_count import resync_visit_count
 
 _FILES = (
@@ -87,8 +87,10 @@ def upload_and_register(
             "enabled": True,
         },
     )
-    invalidate_cache()
-    # We just uploaded the fixtures, so the count on the row describes whatever
-    # was there before (#1197).
+    # We just replaced the fixture bytes, so every cache derived from them is
+    # stale — including the analysis rows, which are keyed on config_hash and so
+    # survive even a brand-new pipeline (#1034).
+    invalidate_synthetic_caches(opportunity_id)
+    # And the count on the row describes whatever was there before (#1197).
     resync_visit_count(row, previous_folder_id=previous_folder_id)
     return result

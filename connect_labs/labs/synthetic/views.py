@@ -18,11 +18,11 @@ from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 
 from connect_labs.labs.analysis.sse_streaming import BaseSSEStreamView, send_sse_event
-from connect_labs.labs.integrations.connect import factory
 from connect_labs.labs.synthetic import registry
 from connect_labs.labs.synthetic.dump import dump_generator
 from connect_labs.labs.synthetic.forms import LabsOnlySyntheticOpportunityForm, SyntheticOpportunityForm
 from connect_labs.labs.synthetic.gdrive import DriveAPIError, DriveAuthError, DriveClient
+from connect_labs.labs.synthetic.invalidation import invalidate_synthetic_caches
 from connect_labs.labs.synthetic.models import SyntheticOpportunity, UserSyntheticDataset
 from connect_labs.labs.synthetic.self_service import SyntheticGenerationError, generate_and_save
 
@@ -274,9 +274,12 @@ def reload_fixtures_view(request, pk: int):
     """Drop the in-process fixture cache for one opp so the next call re-pulls from GDrive."""
     opp_ids = registry.accessible_opp_ids(request)
     opp = get_object_or_404(SyntheticOpportunity, pk=pk, opportunity_id__in=opp_ids)
-    store = factory._get_fixture_store()
-    store.reload(opp.opportunity_id)
-    messages.success(request, f"Fixture cache reloaded for opp {opp.opportunity_id}.")
+    # Not just the fixture store: the analysis rows a pipeline reads are keyed on
+    # (opportunity_id, config_hash) and survive a fixture reload, so a dashboard
+    # would keep serving the previous dataset and look perfectly healthy doing it
+    # (#1034).
+    invalidate_synthetic_caches(opp.opportunity_id)
+    messages.success(request, f"Fixtures and analysis cache cleared for opp {opp.opportunity_id}.")
     return HttpResponseRedirect(reverse("labs:synthetic:list"))
 
 
