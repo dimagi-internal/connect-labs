@@ -60,6 +60,16 @@ VALID_FILTER_OPS = frozenset(get_args(FilterOp))
 # AnalysisPipelineConfig.__post_init__ raises on collision rather than letting the
 # silent override happen — the fix is to namespace the custom field (e.g. rename
 # `visit_date` → `form_visit_date` if it extracts a different value than the base).
+#
+# There used to be three of these lists — this one, `_BASE_VISIT_COLUMNS` for
+# window-reference validation, and the literal SELECT in
+# `build_visit_extraction_query` — and all three disagreed. `review_status` was
+# in this one but not the window list; `visit_datetime` was in the window list
+# and is not a column at all; and the SELECT emitted ten names that matched
+# neither. So a window field could legally partition by a column that does not
+# exist and illegally partition by one that does, while `flag_reason`,
+# `date_created` and `review_status` were stored on every row and reachable from
+# nowhere (#1198). One definition now feeds all three.
 RAW_VISIT_BASE_COLUMNS = frozenset(
     {
         "visit_id",
@@ -70,12 +80,54 @@ RAW_VISIT_BASE_COLUMNS = frozenset(
         "entity_name",
         "visit_date",
         "status",
-        "review_status",
-        "flagged",
+        "reason",
         "location",
+        "flagged",
+        "flag_reason",
         "form_json",
+        "completed_work",
+        "status_modified_date",
+        "review_status",
+        "review_created_on",
+        "justification",
+        "date_created",
+        "completed_work_id",
+        "images",
+        "user_id",
+        "user_visit_id",
     }
 )
+
+# The base columns `build_visit_extraction_query` puts in its SELECT, in order.
+# A visit-level pipeline can only render what this emits, so a column that is on
+# the model but missing here is stored-and-unreachable — which is exactly what
+# #1198 reported for the last three entries.
+#
+# Not simply "every column": the cache bookkeeping (`expires_at`, `pipeline_id`,
+# …) is not visit data, and `form_json`/`images` are added conditionally further
+# down because they are large and only some configs need them.
+VISIT_SELECT_COLUMNS = (
+    "visit_id",
+    "username",
+    "visit_date",
+    "status",
+    "flagged",
+    "location",
+    "deliver_unit",
+    "deliver_unit_id",
+    "entity_id",
+    "entity_name",
+    "flag_reason",
+    "date_created",
+    "review_status",
+)
+
+# Of those, the ones `VisitRow` has no attribute for. They ride in `computed`
+# instead, which is what makes them survive the `ComputedVisitCache` round-trip
+# (that table denormalizes only eight base columns, and its `computed_fields`
+# JSONB is the only part that carries anything else) — so they cost no
+# migration.
+VISIT_PASSTHROUGH_COLUMNS = ("flag_reason", "date_created", "review_status")
 
 
 class CacheStage(Enum):
@@ -397,21 +449,12 @@ class HistogramComputation:
 # WindowFieldComputation reference validation — partition_by/order_by can name
 # either a base column (visit_date, visit_id, username, etc.) or an extracted
 # field declared in fields[].
-_BASE_VISIT_COLUMNS = frozenset(
-    {
-        "visit_id",
-        "username",
-        "visit_date",
-        "visit_datetime",
-        "status",
-        "flagged",
-        "location",
-        "deliver_unit",
-        "deliver_unit_id",
-        "entity_id",
-        "entity_name",
-    }
-)
+#
+# Aliased rather than restated: this list drifting from RAW_VISIT_BASE_COLUMNS is
+# the defect #1198 is about. `visit_datetime`, which used to be here, is not a
+# column on the model — `mbw_auditing_v5` orders by it and resolves through
+# `field_names` instead, which is why nothing ever noticed.
+_BASE_VISIT_COLUMNS = RAW_VISIT_BASE_COLUMNS
 
 
 # Window operations supported by WindowFieldComputation.
