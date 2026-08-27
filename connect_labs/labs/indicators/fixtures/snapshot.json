@@ -1,0 +1,12 @@
+{
+  "_comment": "The current targeting snapshot, loaded by `manage.py targeting_import --from-manifest`. Rebuilding this dataset from source costs 30-45 minutes of API calls and can exhaust WorldPop's daily quota for everyone else, so a new environment should restore from here rather than re-fetch. Pin a new drive_file_id whenever the dataset changes materially: export, upload to the folder below (shared with connect-labs-sa), and update the id, created_at and counts in one commit so the file and the record stay together.",
+  "drive_folder_id": null,
+  "drive_file_id": null,
+  "created_at": null,
+  "counts": {
+    "boundaries": null,
+    "values": null,
+    "indicators": null
+  },
+  "notes": "No snapshot published yet. Until one is, `bootstrap_targeting` is the only path — see BOOTSTRAP.md. Publish with: make manage CMD=\"targeting_export --to-drive <folder_id>\""
+}

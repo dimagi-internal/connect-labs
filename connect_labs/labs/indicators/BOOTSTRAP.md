@@ -3,19 +3,28 @@
 Everything needed to recreate this from an empty database — on a new machine, a
 different user account, or the deployed environment.
 
-Nothing here is stored in the repo: all ~32,000 indicator values and ~2,350
-boundaries are fetched from public APIs at load time. There is no fixture to
-copy and no dump to restore. That is deliberate — the data has licences and
-vintages attached, and re-fetching keeps both honest — but it means **the load
-is the install**.
+There are two paths, and the fast one is almost always right.
+
+**Restore a snapshot (~2 minutes).** A 45 MB ZIP in Drive holds every boundary
+and every indicator value. Restoring it produces a database identical to the one
+it was exported from — same counts, same values, same answers — without a single
+API call.
+
+**Rebuild from source (30-45 minutes).** Re-fetches everything from the public
+APIs. Needed to _make_ a snapshot, or to pick up newly published data. Not
+needed to stand up an environment.
+
+Prefer the snapshot. Rebuilding is not just slower: WorldPop enforces an
+undocumented daily quota per client, so a second environment re-fetching what a
+first already has can exhaust it for both.
 
 ---
 
-## Local, from nothing
+## Prerequisites, either path
 
 Assumes the repo is checked out and Postgres/PostGIS is running (`inv up`).
 
-### 1. The three things a worktree lacks
+### The three things a worktree lacks
 
 `make` targets handle these, but they are worth knowing because each fails in a
 way that does not name its real cause:
@@ -29,7 +38,7 @@ way that does not name its real cause:
 `make manage` and `make test` resolve all three. Use them rather than calling
 `python manage.py` directly.
 
-### 2. `.env` needs a Mapbox token
+### `.env` needs a Mapbox token
 
 The map renders nothing without it, and the failure is quiet — the page loads,
 the table works, the map is an empty box with a note.
@@ -42,7 +51,7 @@ op read "op://Employee/Connect Labs .env/MAPBOX_TOKEN"   # then add to .env:
 It is a public `pk.` token. If `.env` came from the main checkout it may already
 have it — check with `grep MAPBOX_TOKEN .env`.
 
-### 3. Front-end bundles
+### Front-end bundles
 
 `connect_labs/static/bundles/` is gitignored, so a fresh checkout has no
 Tailwind and every labs page renders as unstyled HTML:
@@ -52,13 +61,77 @@ npm ci
 inv build-js
 ```
 
-### 4. Migrations
+### Migrations
 
 ```bash
 make manage CMD="migrate indicators"
 ```
 
-### 5. The data
+---
+
+## Fast path: restore a snapshot
+
+```bash
+make manage CMD="targeting_import --from-manifest"
+make manage CMD="targeting_status"
+```
+
+`--from-manifest` reads the Drive file id pinned in
+[`fixtures/snapshot.json`](fixtures/snapshot.json) and needs
+`LABS_SYNTHETIC_GDRIVE_SA_KEY` in `.env` — the same service-account key the
+synthetic fixtures use. Without it, or without a published snapshot, use a file
+directly:
+
+```bash
+make manage CMD="targeting_import --path targeting-snapshot-20260827.zip"
+```
+
+Import is idempotent and upserts on natural keys, so it is safe to re-run, safe
+to interrupt, and safe against a database whose primary keys differ from the
+exporter's. Re-running an updated snapshot over an older one corrects the values
+in place.
+
+### Publishing a new snapshot
+
+After a load that adds or corrects data:
+
+```bash
+make manage CMD="targeting_export --to-drive <folder_id>"
+```
+
+Then pin the returned file id, `created_at` and counts in
+`fixtures/snapshot.json` **in the same commit**, so the pointer and the data
+cannot drift apart.
+
+### What a snapshot is
+
+| member           | holds                                                      |
+| ---------------- | ---------------------------------------------------------- |
+| `manifest.json`  | counts, licences, SHA-256 per member, coordinate precision |
+| `values.csv`     | every indicator value with its full provenance — 0.9 MB    |
+| `boundaries.csv` | boundary attributes, indexed into the geometry             |
+| `geometry.bin`   | the polygons as concatenated WKB — the other 44 MB         |
+
+Checksums are verified on import; a corrupt or tampered member is refused rather
+than half-loaded, and a snapshot from a future schema is refused rather than
+silently misread.
+
+Two deliberate properties worth knowing:
+
+- **Coordinates are quantized to 6 decimal places** (~11 cm at the equator,
+  against source boundaries digitised nearer 100 m). This halves the file, and
+  is the only lossy step — declared in the manifest as `coordinate_precision`.
+- **Licences travel on every row.** The manifest lists them and sets
+  `contains_non_commercial`. Everything currently in play (geoBoundaries and
+  World Bank CC BY 4.0, WorldPop CC BY 4.0, DHS and HAPI open API, IGME
+  CC BY 3.0 IGO) permits redistribution. Check that flag before sharing a
+  snapshot outside Dimagi.
+
+---
+
+## Slow path: rebuild from source
+
+### The data
 
 One command, correct order, idempotent:
 
@@ -78,7 +151,7 @@ make manage CMD="load_indicators --stage population --source worldpop --missing-
 make manage CMD="load_indicators --stage births"
 ```
 
-### 6. Check it
+### Check it
 
 ```bash
 make manage CMD="targeting_status"
@@ -97,7 +170,7 @@ national_igme 54/55 · subnational_igme 25/55 · subnational_relevelled 41/55
 21/21 targetable indicators have data
 ```
 
-### 7. Run it
+## Run it
 
 ```bash
 make manage CMD="runserver 8899"
@@ -128,12 +201,21 @@ gh workflow run deploy-labs.yml --repo dimagi-internal/connect-labs \
   --ref main --field run_migrations=true
 ```
 
-Then run the bootstrap **inside the running container**, not locally against the
-prod database:
+Then load the data **inside the running container**, not locally against the
+prod database. Restore the snapshot — two minutes, no API calls, and it cannot
+spend the WorldPop quota that local development also draws on:
 
 ```bash
 aws ecs execute-command --profile labs --cluster labs-jj-cluster \
   --task <task-id> --container web --interactive \
+  --command "python manage.py targeting_import --from-manifest"
+```
+
+`LABS_SYNTHETIC_GDRIVE_SA_KEY` is already in the task definition for the
+synthetic fixtures, so no new secret is needed. Only if there is no published
+snapshot:
+
+```bash
   --command "python manage.py bootstrap_targeting --skip-worldpop"
 ```
 
@@ -203,15 +285,21 @@ duplicates. `--from-stage <name>` resumes partway.
 
 ## Recreating on a second machine
 
-The full sequence, assuming the repo is cloned and Postgres is up:
+With a published snapshot — the normal case:
 
 ```bash
 grep MAPBOX_TOKEN .env || echo "MAPBOX_TOKEN=$(op read 'op://Employee/Connect Labs .env/MAPBOX_TOKEN')" >> .env
 npm ci && inv build-js
 make manage CMD="migrate"
-make manage CMD="bootstrap_targeting --skip-worldpop"
+make manage CMD="targeting_import --from-manifest"
 make manage CMD="targeting_status"
 make manage CMD="runserver 8899"
 ```
 
-Roughly 30–45 minutes end to end, nearly all of it waiting on downloads.
+A few minutes, nearly all of it `npm ci`.
+
+Without one, substitute the rebuild and add half an hour:
+
+```bash
+make manage CMD="bootstrap_targeting --skip-worldpop"
+```
