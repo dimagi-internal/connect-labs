@@ -406,6 +406,34 @@ def detect_template_key_from_name(definition_name: str) -> str | None:
     return None
 
 
+def resolve_snapshot_opp_scope(run, definition, requested_opportunity_id=None):
+    """Work out which opportunity a snapshot is being taken *for*, and over which.
+
+    Returns ``(primary_opp_id, effective_opp_ids)``.
+
+    Both callers used to resolve this as ``run.opportunity_id or
+    definition.opportunity_id`` and give up if that was falsy. For a
+    program-owned multi-opp definition both are null by design — the opps live
+    in ``definition.opportunity_ids`` — so such a run could be created and never
+    concluded, from the runner page or the MCP (#1182). The list is the fallback,
+    and its first entry is the primary-opp convention the rest of the multi-opp
+    contract already uses (WORKFLOW_REFERENCE §8).
+
+    ``requested_opportunity_id`` wins when a caller names one explicitly, so an
+    opp-scoped save is unaffected.
+    """
+    effective = [oid for oid in (getattr(definition, "opportunity_ids", None) or []) if oid]
+    primary = (
+        requested_opportunity_id
+        or getattr(run, "opportunity_id", None)
+        or getattr(definition, "opportunity_id", None)
+        or (effective[0] if effective else None)
+    )
+    if not effective and primary:
+        effective = [primary]
+    return primary, effective
+
+
 def resolve_snapshot_contract(definition) -> dict:
     """Resolve which snapshot contract governs run completion for a workflow.
 
@@ -819,6 +847,10 @@ __all__ = [
     "list_templates",
     "create_workflow_from_template",
     "run_default_for_definition",
+    "resolve_snapshot_contract",
+    "resolve_snapshot_opp_scope",
+    "build_snapshot_for_contract",
+    "SnapshotTooLargeError",
     # Individual template modules
     "performance_review",
     "ocs_outreach",
