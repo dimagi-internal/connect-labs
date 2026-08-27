@@ -29,27 +29,51 @@ Assumes the repo is checked out and Postgres/PostGIS is running (`inv up`).
 `make` targets handle these, but they are worth knowing because each fails in a
 way that does not name its real cause:
 
-| missing                                            | symptom                                          |
-| -------------------------------------------------- | ------------------------------------------------ |
-| the venv (it lives in the main checkout)           | `pytest: command not found`                      |
-| `.env` (untracked, so absent in a fresh worktree)  | `ImproperlyConfigured`                           |
-| `GDAL_LIBRARY_PATH` / `GEOS_LIBRARY_PATH` on macOS | "Set the GDAL_LIBRARY_PATH environment variable" |
+| missing                                             | symptom                                           |
+| --------------------------------------------------- | ------------------------------------------------- |
+| the venv (it lives in the main checkout)            | `pytest: command not found`                       |
+| `.env` (untracked, so absent — or stale, see below) | `ImproperlyConfigured`, or a silently missing var |
+| `GDAL_LIBRARY_PATH` / `GEOS_LIBRARY_PATH` on macOS  | "Set the GDAL_LIBRARY_PATH environment variable"  |
 
 `make manage` and `make test` resolve all three. Use them rather than calling
 `python manage.py` directly.
 
+### A worktree's `.env` is a copy, not a link
+
+`make manage` links `.env` from the main checkout **only if the worktree has
+none** (`if [ ! -e .env ]`). Tools that create worktrees — emdash does — seed a
+real copy, so the link never happens and the two files drift silently: a
+variable added to the main checkout is simply absent here, and the app degrades
+without saying why.
+
+So check the `.env` you are actually running against, not the one you edited:
+
+```bash
+grep MAPBOX_TOKEN .env || grep MAPBOX_TOKEN "$(dirname "$(git rev-parse --git-common-dir)")/.env" >> .env
+```
+
+Django reads `.env` once at startup, so **restart `runserver`** afterwards; the
+autoreloader watches Python files and will not pick the change up on its own.
+
 ### `.env` needs a Mapbox token
 
 The map renders nothing without it, and the failure is quiet — the page loads,
-the table works, the map is an empty box with a note.
+the table works, the map is an empty box saying `MAPBOX_TOKEN is not
+configured`. That message is the symptom of the `.env` drift above at least as
+often as of a genuinely missing token.
+
+It is a public `pk.` token, and it lives in three places. In the deployed
+environment it is an ECS **secret**, not a task-definition environment variable,
+which is the copy to trust:
 
 ```bash
-op read "op://Employee/Connect Labs .env/MAPBOX_TOKEN"   # then add to .env:
-# MAPBOX_TOKEN=pk.eyJ1...
+aws --profile labs secretsmanager get-secret-value \
+  --secret-id labs-jj-mapbox-token --query SecretString --output text
 ```
 
-It is a public `pk.` token. If `.env` came from the main checkout it may already
-have it — check with `grep MAPBOX_TOKEN .env`.
+`op read "op://Employee/Connect Labs .env/MAPBOX_TOKEN"` reaches the same token,
+but only from an account with the `Employee` vault — an agent service account
+has its own vaults and will fail with "isn't a vault in this account".
 
 ### Front-end bundles
 
