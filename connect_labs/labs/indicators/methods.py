@@ -136,8 +136,8 @@ register(
         description=(
             "IGME's own small-area model, on a common reference year rather "
             "than each survey's year. Reaches district level (ADM2) in most of "
-            "the countries it covers — Uganda has 146 districts here against 4 "
-            "regions from its last survey."
+            "the countries it covers — Angola has 146 districts here against the "
+            "18 provinces its last survey reports."
         ),
         caveat=(
             "Covers 25 African countries, not all of them. A model, not a "

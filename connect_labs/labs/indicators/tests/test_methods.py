@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from django.utils import timezone
 
 from connect_labs.labs.indicators import availability, methods
 from connect_labs.labs.indicators.models import Source
@@ -162,6 +163,74 @@ class TestIgmeSubnationalLevelFit:
         # so the fit is poor and the loader leaves the country to the survey path
         # rather than shipping a half-matched map.
         assert rate < igme_subnational.MIN_MATCH_RATE
+
+    def test_refusing_a_country_retracts_what_an_earlier_run_stored(self):
+        """Skipping a country stops the write; it does not undo an old one.
+
+        Tightening the match floor left 59 Uganda districts in the database from
+        a looser run. Availability is computed from stored values, so Uganda kept
+        presenting as covered while 92 of its 151 units were blank — the
+        half-matched map the floor exists to prevent, arriving through the back
+        door. A refusal that does not retract is not a refusal.
+        """
+        from connect_labs.labs.indicators.models import IndicatorValue, License, Source
+        from connect_labs.labs.indicators.sources import igme_subnational
+
+        boundary = make_boundary("UGA", 2, "Aringa", "UGA-2-1", x=2)
+        IndicatorValue.objects.create(
+            indicator="u5mr",
+            boundary=boundary,
+            iso_code="UGA",
+            admin_level=2,
+            year=2021,
+            value=45.8,
+            source=Source.IGME_SUBNATIONAL,
+            license_code=License.CC_BY_3_IGO,
+            retrieved_at=timezone.now(),
+        )
+        # A country that passed must not be touched by another's refusal.
+        kept = make_boundary("AGO", 2, "Cazenga", "AGO-2-1", x=4)
+        IndicatorValue.objects.create(
+            indicator="u5mr",
+            boundary=kept,
+            iso_code="AGO",
+            admin_level=2,
+            year=2021,
+            value=61.2,
+            source=Source.IGME_SUBNATIONAL,
+            license_code=License.CC_BY_3_IGO,
+            retrieved_at=timezone.now(),
+        )
+
+        deleted = igme_subnational._retract("u5mr", ["UGA"])
+
+        assert deleted == 1
+        assert not IndicatorValue.objects.filter(iso_code="UGA", source=Source.IGME_SUBNATIONAL).exists()
+        assert IndicatorValue.objects.filter(iso_code="AGO", source=Source.IGME_SUBNATIONAL).exists()
+
+    def test_retraction_is_scoped_to_the_measure_being_loaded(self):
+        """A u5mr refusal must not delete the nmr layer, which fits separately."""
+        from connect_labs.labs.indicators.models import IndicatorValue, License, Source
+        from connect_labs.labs.indicators.sources import igme_subnational
+
+        boundary = make_boundary("UGA", 2, "Aruu", "UGA-2-2", x=6)
+        for indicator in ("u5mr", "nmr"):
+            IndicatorValue.objects.create(
+                indicator=indicator,
+                boundary=boundary,
+                iso_code="UGA",
+                admin_level=2,
+                year=2021,
+                value=30.0,
+                source=Source.IGME_SUBNATIONAL,
+                license_code=License.CC_BY_3_IGO,
+                retrieved_at=timezone.now(),
+            )
+
+        igme_subnational._retract("u5mr", ["UGA"])
+
+        remaining = list(IndicatorValue.objects.filter(iso_code="UGA").values_list("indicator", flat=True))
+        assert remaining == ["nmr"]
 
 
 class TestInterventionCosting:

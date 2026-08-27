@@ -9,6 +9,11 @@ The scale of the difference is easiest to see in the country that prompted the
 search. Uganda from DHS: **4 regions, measured 2016**. Uganda from IGME:
 **146 districts, estimated to 2021**.
 
+Uganda is also the cautionary case: those 146 districts have no counterpart in
+the ADM2 layer we hold for it, which is a 151-county tier with different names.
+It matches at 41% and is therefore refused (see ``MIN_MATCH_RATE``) until a
+district layer is loaded — the gain is real but it is not yet collectable.
+
 Two things make this preferable to our own arithmetic wherever it reaches:
 
   * It is a model built for the purpose, by the agency whose national series we
@@ -34,7 +39,7 @@ from collections import defaultdict
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators.africa import ISO_CODES
-from connect_labs.labs.indicators.models import License, Source
+from connect_labs.labs.indicators.models import IndicatorValue, License, Source
 from connect_labs.labs.indicators.sources.base import BoundaryMatcher, Row, http_json
 
 logger = logging.getLogger(__name__)
@@ -200,10 +205,13 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
     rows: list[Row] = []
     rejected: list[str] = []
 
+    refused_isos: list[str] = []
+
     for iso, areas in sorted(by_country.items()):
         at_level, boundary_level, rate = _best_fit(iso, areas)
         if not at_level or rate < MIN_MATCH_RATE:
             rejected.append(f"{iso} ({rate:.0%})")
+            refused_isos.append(iso)
             continue
 
         matcher = BoundaryMatcher(iso, admin_level=boundary_level)
@@ -252,7 +260,40 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
             MIN_MATCH_RATE * 100,
             ", ".join(rejected),
         )
+
+    _retract(measure, refused_isos)
     return rows
+
+
+def _retract(measure: str, isos: list[str]) -> int:
+    """Remove stored values for countries this run refuses.
+
+    Skipping a country only stops it being *written*; it does not remove what an
+    earlier, looser run already wrote. Tightening the match floor therefore left
+    Uganda's 59 districts in place — a country the guard now refuses, still
+    rendering as if mapped, with 92 of its 151 units silently blank. That is
+    exactly the half-matched map ``MIN_MATCH_RATE`` exists to prevent, arriving
+    through the back door.
+
+    Availability is computed from what is stored, so a refusal that does not
+    retract is not a refusal at all. Deleting here keeps one invariant true: the
+    stored IGME-subnational layer contains exactly the countries that passed.
+    """
+    if not isos:
+        return 0
+    deleted, _ = IndicatorValue.objects.filter(
+        indicator=measure,
+        source=Source.IGME_SUBNATIONAL,
+        iso_code__in=isos,
+    ).delete()
+    if deleted:
+        logger.info(
+            "IGME subnational %s: retracted %d stored values for refused countries: %s",
+            measure,
+            deleted,
+            ", ".join(sorted(isos)),
+        )
+    return deleted
 
 
 def coverage_summary(iso_codes: list[str] | None = None) -> dict:
