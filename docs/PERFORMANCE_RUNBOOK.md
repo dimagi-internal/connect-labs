@@ -27,9 +27,10 @@ re-run narrow around it to size it** — a 10-minute saturation that is obvious 
 
 | Fact | Consequence |
 | --- | --- |
-| Web runs `cpu=1024` (**1 vCPU**) with `WEB_CONCURRENCY=3` | 3 uvicorn workers contend for one core. One expensive request path saturates the site. |
+| Web runs `cpu=1024` (**1 vCPU**) with `WEB_CONCURRENCY=3` | 3 threads contend for one core, per task. Measured 2026-08-27: web CPU peaked **90.3%** while average in-flight requests hit **5.6 against 6 slots** (2 tasks x 3) — so the pool is ~93% utilised at ordinary load and a handful of slow requests really does saturate the site. See #1152. |
 | `desiredCount=2` (raised from 1 on 2026-07-29) | Losing one task halves capacity but is not an outage. `HealthyHostCount < 1` is. |
-| RDS is `db.t3.small`, ~155 connection slots | **Performance Insights is NOT supported on this class.** Do not propose a PI dashboard. |
+| RDS is `db.m6g.large`, ~829 connection slots (resized from `db.t3.small`/~155 on 2026-08-18) | Connection-slot exhaustion is no longer the near-term wall — a 2026-08-27 reading peaked at **42 slots, 5.1%**. Look at web CPU first. |
+| Performance Insights is **supported** on `db.m6g.large` but currently **disabled** | It was genuinely unavailable on the old `db.t3.small`, and this runbook used to say "do not propose a PI dashboard". That is no longer true: PI is now an option that has to be turned on, not a dead end. |
 | `gunicorn --timeout 600`, ALB `idle_timeout=600` | **Deliberate.** Long-running audit work needs them. Slow requests hang rather than 504 — an inconvenience, not the bug. Never "fix" this. |
 | Celery beat runs in the **worker** service only | Web tasks never double-fire scheduled jobs. |
 | MCP is `stateless_http=True` | No sticky sessions required; any task can serve any request. |
