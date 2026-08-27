@@ -52,10 +52,18 @@ not wired in — see "Licences" below.
 | indicator                                      | source                                      | resolution                      |
 | ---------------------------------------------- | ------------------------------------------- | ------------------------------- |
 | `u5mr`, `imr`, `tfr`                           | DHS Program API                             | ADM1, latest survey per country |
-| `u5mr`, `imr` (fallback)                       | UN IGME via UNICEF SDMX                     | national                        |
-| `pop_total`, `pop_u1`, `pop_u5`, `pop_f_15_49` | WorldPop hosted zonal stats                 | any polygon                     |
-| `pop_*` (alternative)                          | HDX HAPI                                    | ADM1, where covered             |
+| `u5mr`, `imr` (fallback)                       | UN IGME via UNICEF SDMX                     | national, inherited             |
+| `tfr` (fallback)                               | World Bank WDI                              | national, inherited             |
+| `pop_total`, `pop_u5`, `pop_f_15_49`           | HDX HAPI — the fast path                    | ADM1, ~46 African countries     |
+| `pop_total`, `pop_u1`, `pop_u5`, `pop_f_15_49` | WorldPop hosted zonal stats                 | any polygon, universal          |
 | boundaries                                     | geoBoundaries (via `labs.admin_boundaries`) | ADM0 + ADM1                     |
+
+Only WorldPop supplies `pop_u1`, so only WorldPop can feed the cohort births
+method. HAPI's finest infant band is 0–4.
+
+UN WPP would be the natural fertility fallback but now returns **401** on its
+data endpoints; its indicator and location metadata are still open, the values
+are not.
 
 **No IHME.** Its non-commercial agreement excludes for-profit entities _and
 their employees_, and forbids re-hosting. Nobody should register a
@@ -70,9 +78,17 @@ births = population aged 0-1 / (1 - infant mortality rate / 1000)
 ```
 
 The under-1 band is one birth cohort less the infants who died; dividing
-survivorship back out recovers births. An independent estimate from women of
-childbearing age × TFR is stored alongside as `births_fertility_check` — kept
-separate so nothing can mistake the cross-check for the headline, and so
+survivorship back out recovers births.
+
+Where `pop_u1` is unavailable — any boundary covered only by HAPI — the
+derivation falls back to the **fertility method**, `women 15–49 × TFR / 35`,
+rather than leaving the place with no births at all. Which method produced a
+value is recorded in `method` and `extra.method_key`, because the two are not
+equally good and a reader should be able to tell them apart.
+
+The fertility estimate is _also_ stored independently as
+`births_fertility_check` for every boundary that can support it — kept as its
+own measure so nothing can mistake the cross-check for the headline, and so
 disagreement between the two stays visible.
 
 ## Running an ingest
@@ -82,16 +98,20 @@ Order matters: births derive from mortality and population.
 ```bash
 make manage CMD="load_africa_boundaries"                    # ADM0 + ADM1, all of Africa
 make manage CMD="load_indicators --stage mortality"         # DHS + IGME, minutes
-make manage CMD="load_indicators --stage fertility"
-make manage CMD="load_indicators --stage population"        # WorldPop, ~1 hour for the continent
+make manage CMD="load_indicators --stage fertility"          # DHS + World Bank
+make manage CMD="load_indicators --stage population"        # HAPI (fast) then WorldPop (slow)
 make manage CMD="load_indicators --stage births"            # derived, seconds
 ```
 
 Useful flags: `--iso NGA,KEN` to scope, `--missing-only` to resume the
-population stage, `--limit N` for a trial run.
+population stage, `--source hapi|worldpop` to run one of them, `--limit N` for a
+trial run.
 
-The population stage is the slow one and the only one that touches a rate-limited
-service. It writes incrementally and is safe to interrupt and resume.
+The population stage runs HAPI first, then WorldPop. **HAPI covers most of the
+continent in under a minute; WorldPop takes hours** — it queues tasks
+server-side, so raising `--workers` buys nothing. Both write incrementally and
+are safe to interrupt and resume, so the useful pattern is to take HAPI now and
+let WorldPop backfill `pop_u1` in the background.
 
 ### WorldPop's three sharp edges
 
@@ -111,7 +131,9 @@ shatter into dozens of specks keep the largest pieces covering 99.5% of the
 area; the omitted share is written into the value's `method` rather than passed
 off as complete.
 
-More workers is not faster — it produces read timeouts. See `MAX_WORKERS`.
+**More workers is not faster.** WorldPop queues our tasks server-side: a single
+task takes ~15s whether one or eight are in flight, and pushing harder produced
+read timeouts rather than throughput. This is why HAPI exists in the pipeline.
 
 ## Licences
 
@@ -134,7 +156,12 @@ non-commercial source is present.
 - **Years are not aligned.** Mortality is the latest survey per country, which
   varies; population is WorldPop 2020. Both years are shown.
 - **Some boundary sets are coarse.** geoBoundaries gives Niger 6 ADM1 units with
-  merged names like `Zinder/Diffa`, against the 8 regions DHS reports.
+  merged names like `Zinder/Diffa`, against the 8 regions DHS reports. It also
+  misspells Niger's Dosso region as "Dossa" — aliased in `sources/base.py`.
+- **Births coverage trails population coverage.** A boundary needs either
+  `pop_u1` (WorldPop) or `pop_f_15_49` + `tfr` to get a births estimate. Until
+  the WorldPop backfill finishes, continental birth totals are an undercount,
+  and the map shows how many features actually carry a figure.
 
 ## What this is not, yet
 

@@ -126,7 +126,11 @@ class Command(BaseCommand):
         # Africa is far over the service's 100,000 km2 area cap anyway.
         boundaries = list(AdminBoundary.objects.filter(iso_code__in=codes, admin_level=1).order_by("iso_code", "name"))
         if opts.get("missing_only"):
-            have = set(IndicatorValue.objects.filter(indicator="pop_total").values_list("boundary_id", flat=True))
+            # Keyed on pop_u1, NOT pop_total. HAPI supplies a total but has no
+            # 0-1 band, so keying on pop_total would skip precisely the
+            # boundaries that still need WorldPop — and births coverage would
+            # silently plateau.
+            have = set(IndicatorValue.objects.filter(indicator="pop_u1").values_list("boundary_id", flat=True))
             before = len(boundaries)
             boundaries = [b for b in boundaries if b.pk not in have]
             self.stdout.write(f"  skipping {before - len(boundaries)} boundaries already loaded")
