@@ -130,7 +130,9 @@ def _user(cu, current_username) -> dict:
         "role": roles.to_short(cu.role),
         "scope": cu.scope,
         "status": cu.status,
-        "last": cu.last_login_at.strftime("%b %-d, %Y") if cu.last_login_at else "—",
+        "last": (
+            f"{cu.last_login_at:%b} {cu.last_login_at.day}, {cu.last_login_at.year}" if cu.last_login_at else "—"
+        ),
         "you": cu.commcare_username == current_username,
     }
 
@@ -169,7 +171,7 @@ def _microplan(m) -> dict:
 
 def _audit(a) -> dict:
     return {
-        "at": a.at.strftime("%b %-d, %Y · %H:%M"),
+        "at": f"{a.at:%b} {a.at.day}, {a.at.year} · {a.at:%H:%M}",
         "user": a.user,
         "action": a.action,
         "module": a.module,

@@ -1,4 +1,5 @@
 """Pure mutation logic for worker payments + KYC, with the authoritative fraud guard."""
+
 from __future__ import annotations
 
 from django.utils import timezone
@@ -60,7 +61,8 @@ def save_investigation(w, status: str, outcome, note, by_name: str):
     inv["status"] = status or inv.get("status", "Open")
     inv["outcome"] = outcome
     if note and note.strip():
-        stamp = timezone.now().strftime("%b %-d, %Y · %H:%M")
+        _now = timezone.now()
+        stamp = f"{_now:%b} {_now.day}, {_now.year} · {_now:%H:%M}"
         inv["notes"] = [{"at": stamp, "by": by_name, "text": note.strip()}, *(inv.get("notes") or [])]
     w.investigation = inv
     w.save(update_fields=["investigation"])
