@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from .models import LABS_ONLY_OPP_ID_FLOOR, SyntheticOpportunity  # noqa: F401
 from .registry import invalidate_cache
+from .visit_count import resync_visit_count
 
 
 def allocate_shared_program_id() -> int:
@@ -57,6 +58,12 @@ def register_labs_only_opp(
     if created_by is not None:
         defaults["created_by"] = created_by
 
+    existing = SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id).first()
+    previous_folder_id = existing.gdrive_folder_id if existing else None
     row, _created = SyntheticOpportunity.objects.update_or_create(opportunity_id=opportunity_id, defaults=defaults)
     invalidate_cache()
+    # Re-registration deliberately preserves an existing folder when none is
+    # passed, so this no-ops on that path and only fires when the fixtures
+    # actually moved (#1197).
+    resync_visit_count(row, previous_folder_id=previous_folder_id)
     return row

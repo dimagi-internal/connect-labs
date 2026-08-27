@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
 from connect_labs.labs.synthetic.registry import invalidate_cache
+from connect_labs.labs.synthetic.visit_count import resync_visit_count
 
 _FILES = (
     ("opportunity", "opportunity.json"),
@@ -76,7 +77,9 @@ def upload_and_register(
     fixtures: dict[str, Any],
 ) -> UploadResult:
     result = upload_fixtures(drive=drive, opportunity_id=opportunity_id, fixtures=fixtures)
-    SyntheticOpportunity.objects.update_or_create(
+    existing = SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id).first()
+    previous_folder_id = existing.gdrive_folder_id if existing else None
+    row, _created = SyntheticOpportunity.objects.update_or_create(
         opportunity_id=opportunity_id,
         defaults={
             "label": opportunity_name,
@@ -85,4 +88,7 @@ def upload_and_register(
         },
     )
     invalidate_cache()
+    # We just uploaded the fixtures, so the count on the row describes whatever
+    # was there before (#1197).
+    resync_visit_count(row, previous_folder_id=previous_folder_id)
     return result

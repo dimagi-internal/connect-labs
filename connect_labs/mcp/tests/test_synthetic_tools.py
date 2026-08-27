@@ -960,3 +960,82 @@ def test_org_list_fetch_follows_redirects(monkeypatch):
     monkeypatch.setattr(_oauth.httpx, "get", _get)
     _oauth.fetch_user_organization_data("tok")
     assert seen.get("follow_redirects") is True, f"bare httpx.get — kwargs were {seen}"
+
+
+@pytest.mark.django_db
+def test_synthetic_register_does_not_leave_a_stale_visit_count(user, monkeypatch):
+    """#1197: repointing an opp at new fixtures used to keep the old count, and
+    the labs-context picker renders that column directly."""
+    from connect_labs.mcp.tools import synthetic as syn
+
+    SyntheticOpportunity.objects.create(opportunity_id=4243, gdrive_folder_id="old", visit_count=940)
+
+    seen = {}
+
+    def _fake_resync(row, *, previous_folder_id=None):
+        seen["opportunity_id"] = row.opportunity_id
+        seen["previous_folder_id"] = previous_folder_id
+        seen["current_folder_id"] = row.gdrive_folder_id
+        row.visit_count = 12
+        row.save(update_fields=["visit_count"])
+        return 12
+
+    monkeypatch.setattr(syn, "resync_visit_count", _fake_resync)
+
+    result = get_tool("synthetic_register").handler(
+        user=user, opportunity_id=4243, gdrive_folder_id="new", enabled=True, label=None
+    )
+
+    assert seen == {"opportunity_id": 4243, "previous_folder_id": "old", "current_folder_id": "new"}
+    assert result["visit_count"] == 12
+    assert SyntheticOpportunity.objects.get(opportunity_id=4243).visit_count == 12
+
+
+@pytest.mark.django_db
+def test_synthetic_repoint_by_source_does_not_leave_a_stale_visit_count(user, monkeypatch):
+    from connect_labs.mcp.tools import synthetic as syn
+
+    SyntheticOpportunity.objects.create(
+        opportunity_id=4244,
+        gdrive_folder_id="old",
+        cloned_from_opportunity_id=879,
+        visit_count=940,
+    )
+
+    seen = {}
+
+    def _fake_resync(row, *, previous_folder_id=None):
+        seen["previous_folder_id"] = previous_folder_id
+        seen["current_folder_id"] = row.gdrive_folder_id
+        return None
+
+    monkeypatch.setattr(syn, "resync_visit_count", _fake_resync)
+
+    get_tool("synthetic_repoint_by_source").handler(
+        user=user, source_opportunity_id=879, gdrive_folder_id="new", enabled=True
+    )
+
+    assert seen == {"previous_folder_id": "old", "current_folder_id": "new"}
+
+
+def test_every_registration_path_resyncs_the_visit_count():
+    """Only synthetic_generate_from_manifest ever refreshed this column, which
+    is exactly how four other write paths shipped leaving it stale (#1197).
+    A new registration path that forgets should fail here."""
+    import inspect
+
+    from connect_labs.labs.synthetic import provisioning
+    from connect_labs.labs.synthetic.generator.io import uploader
+
+    for label, fn in (
+        ("synthetic_register", get_tool("synthetic_register").handler),
+        ("synthetic_repoint_by_source", get_tool("synthetic_repoint_by_source").handler),
+        ("upload_and_register", uploader.upload_and_register),
+        ("register_labs_only_opp", provisioning.register_labs_only_opp),
+    ):
+        src = inspect.getsource(fn)
+        assert "update_or_create" in src or "row.save" in src, f"{label} changed shape — update this test"
+        assert "resync_visit_count" in src, (
+            f"{label} points an opp at a fixture folder without resyncing visit_count; "
+            "the labs picker will print the previous fixture's count (#1197)"
+        )
