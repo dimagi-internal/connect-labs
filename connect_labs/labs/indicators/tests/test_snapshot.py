@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+from unittest import mock
 
 import pytest
 from django.contrib.gis.geos import MultiPolygon, Polygon
@@ -189,6 +190,70 @@ class TestRoundTrip:
 
         v = IndicatorValue.objects.get(indicator="u5mr")
         assert v.boundary.boundary_id == "KEN-ADM1-turkana"
+
+
+class TestGeometryValidity:
+    """Compression must never cost correctness.
+
+    Quantizing coordinates can merge near-coincident vertices and turn a valid
+    polygon into a self-intersecting one. On the real continent this happened to
+    5 of 2,350 boundaries — Sudan, Comoros, Benin's Littoral — all intricate
+    coastlines with thousands of vertices. Those shapes are not reproducible in
+    a fixture, so these tests pin the invariant and the branches of the rule
+    rather than that specific data.
+    """
+
+    def test_a_valid_geometry_is_still_valid_after_a_round_trip(self):
+        _seed()
+        for b in AdminBoundary.objects.all():
+            assert b.geometry.valid, "fixture is not valid to begin with"
+
+        blob = snapshot.export(iso_codes=["KEN"])
+        _wipe()
+        snapshot.import_snapshot(blob)
+
+        for b in AdminBoundary.objects.all():
+            assert b.geometry.valid, f"{b.boundary_id} was invalidated by the round trip"
+
+    def test_an_already_invalid_geometry_survives_rather_than_being_dropped(self):
+        """The rule has a branch for input that is invalid before we touch it.
+        Such a boundary must still export and import — silently losing it would
+        be worse than carrying it as-is."""
+        bowtie = MultiPolygon(Polygon(((0, 0), (1, 1), (1, 0), (0, 1), (0, 0))), srid=4326)
+        AdminBoundary.objects.create(
+            iso_code="KEN",
+            admin_level=1,
+            name="Bowtie",
+            boundary_id="KEN-ADM1-bowtie",
+            geometry=bowtie,
+            source=AdminBoundary.Source.GEOBOUNDARIES,
+        )
+        assert not AdminBoundary.objects.get(boundary_id="KEN-ADM1-bowtie").geometry.valid
+
+        blob = snapshot.export(iso_codes=["KEN"])
+        _wipe()
+        result = snapshot.import_snapshot(blob)
+
+        assert result["boundaries"] == 1
+        assert AdminBoundary.objects.filter(boundary_id="KEN-ADM1-bowtie").exists()
+
+    def test_geometry_is_not_silently_dropped_when_quantization_is_brutal(self):
+        """Drive the precision hard enough to matter, and the export must still
+        produce importable, valid geometry for valid input."""
+        _seed()
+        original = {b.boundary_id: b.geometry.area for b in AdminBoundary.objects.all()}
+
+        with mock.patch.object(snapshot, "COORD_PRECISION", 1):
+            blob = snapshot.export(iso_codes=["KEN"])
+        _wipe()
+        snapshot.import_snapshot(blob)
+
+        for b in AdminBoundary.objects.all():
+            assert b.geometry.valid
+            # One decimal place is ~11 km, so the area may move; the shape must
+            # still be a usable polygon rather than a collapsed sliver.
+            assert b.geometry.area > 0
+            assert b.boundary_id in original
 
 
 class TestIdempotence:

@@ -43,7 +43,11 @@ class Command(BaseCommand):
         blob = snapshot.export(iso_codes=iso, include_geometry=not opts["no_geometry"])
 
         stamp = datetime.now(UTC).strftime("%Y%m%d")
-        out = Path(opts["out"] or f"targeting-snapshot-{stamp}.zip")
+        # The Drive name is always canonical, whatever the local path is. A
+        # published artifact called "snap2.zip" because that was someone's
+        # scratch filename is how the wrong file gets restored later.
+        canonical = f"targeting-snapshot-{stamp}.zip"
+        out = Path(opts["out"] or canonical)
         out.write_bytes(blob)
         self.stdout.write(self.style.SUCCESS(f"  wrote {out} ({len(blob) / 1e6:.1f} MB)"))
 
@@ -59,12 +63,12 @@ class Command(BaseCommand):
                 ) from e
             self.stdout.write(f"  uploading {len(blob) / 1e6:.1f} MB ...")
             try:
-                file_id = client.upload_file(opts["to_drive"], out.name, blob)
+                file_id = client.upload_file(opts["to_drive"], canonical, blob)
             except DriveAPIError as e:
                 # The local file is already written, so the upload failing is
                 # not a lost export — say so rather than leaving it ambiguous.
                 raise CommandError(f"Upload failed: {e}\nThe snapshot is still at {out}.") from e
-            self.stdout.write(self.style.SUCCESS(f"  uploaded to Drive as {file_id}"))
+            self.stdout.write(self.style.SUCCESS(f"  uploaded to Drive as {canonical} ({file_id})"))
             self.stdout.write(
                 "  Pin it in connect_labs/labs/indicators/fixtures/snapshot.json so\n"
                 "  `targeting_import --from-manifest` finds it."
