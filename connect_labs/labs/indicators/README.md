@@ -200,13 +200,21 @@ you can threshold on; availability is computed per _(method, indicator)_ pair,
 so IGME's model answers for mortality and DHS answers for child health without
 either pretending to cover the other.
 
-| indicator                 | source              | subnational coverage  |
-| ------------------------- | ------------------- | --------------------- |
-| `u5mr`, `nmr`             | IGME model / DHS    | 25 / 41 countries     |
-| `diarrhoea_prevalence`    | DHS `CH_DIAR_C_DIA` | 41 countries, to 2024 |
-| `ors_coverage`            | DHS `CH_DIAT_C_ORS` | 38 countries, to 2024 |
-| `diarrhoea_untreated`     | DHS `CH_DIAT_C_NON` | 38 countries          |
-| `exclusive_breastfeeding` | DHS `CN_BFSS_C_EBF` | 16 countries, to 2025 |
+**21 targetable indicators**, 44 measures in all, ~35,000 values:
+
+| group        | indicators                                                                     | countries |
+| ------------ | ------------------------------------------------------------------------------ | --------- |
+| mortality    | `u5mr`, `nmr`                                                                  | 54 / 23   |
+| diarrhoea    | `diarrhoea_prevalence`, `ors_coverage`, `diarrhoea_untreated`, `zinc_coverage` | 33–41     |
+| malaria      | `malaria_prevalence`, `malaria_treatment`, `itn_use_children`                  | 24–33     |
+| nutrition    | `stunting`, `wasting`, `vitamin_a_coverage`, `exclusive_breastfeeding`         | 16–39     |
+| immunisation | `measles_vaccination`, `dpt3_vaccination`, `full_immunisation`                 | 39        |
+| respiratory  | `ari_prevalence`, `ari_antibiotics`                                            | 30–39     |
+| maternal     | `skilled_birth_attendance`, `anc4`                                             | 38–41     |
+| household    | `improved_water`, `improved_sanitation`                                        | 38        |
+
+Adding another is an entry in `dhs.INDICATORS` plus a measure — the loader,
+availability, rollup and UI are all indicator-agnostic.
 
 **Some measures are worse when low.** ORS coverage and exclusive breastfeeding
 are in `LOWER_IS_WORSE`, and selection inverts for them — thresholding _above_ a
@@ -214,6 +222,48 @@ coverage figure would pick the places already doing well. Each targetable
 measure also carries its own slider range, because leaving an 80-per-1,000
 mortality threshold in place when switching to a percentage selects almost
 nothing and looks like missing data.
+
+### Unreached populations, derived generically
+
+A measure with `coverage_of` set declares the count it applies to, and
+`derive.load_coverage_gaps` turns every one of them into an unreached
+population:
+
+```
+unreached = denominator x (1 - coverage)
+```
+
+So `measles_vaccination_gap`, `improved_water_gap` and ten others exist without
+a line of bespoke code each. `LOWER_IS_WORSE` is computed from the same field,
+so a coverage measure cannot be added and then forget to invert its selection.
+
+A selection carries only the gap belonging to the chosen indicator — resolving
+all of them on every query to display one would be a dozen lookups per boundary.
+A missing coverage reading yields no row at all: assuming zero coverage would
+invent an unreached population the size of the whole denominator.
+
+### Uncertainty is shown, not discarded
+
+DHS publishes confidence bounds for some indicators — malaria prevalence and the
+mortality rates among them. We were storing them in `ci_low`/`ci_high` and
+displaying nothing. The table now prints the interval and marks a row amber when
+it **spans the threshold**: at a 20% malaria cut, Haut-Katanga reads 20.5%
+against an interval of 8.0–33.0, so its inclusion is not distinguishable from
+chance. 59 of 144 rows in that selection are in that position. The CSV carries
+`Confidence interval` and `Within uncertainty of threshold`.
+
+### The Malaria Atlas Project was rejected, deliberately
+
+MAP was on the acquisition list and is **not** ingested. Its ready-to-use
+admin-level tables (annual parasite incidence, confirmed cases) effectively stop
+around 2015 — 768 admin-1 rows for 2014, zero by 2020. Its current products
+(August 2025) are rasters and survey points, which would need zonal statistics
+to reach admin level.
+
+Taking a 2015 model over DHS's measured malaria prevalence — 24 countries, with
+published confidence bounds — would repeat exactly the staleness criticism made
+of IHME's frozen 5 km layers. The MAP raster path is worth doing later; the
+stale admin tables are not.
 
 ### The ORS gap
 
