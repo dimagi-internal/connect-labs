@@ -233,6 +233,9 @@ MIDDLEWARE = [
     # flushes them after the response (outside ATOMIC_REQUESTS). Must run
     # after AuthenticationMiddleware.
     "connect_labs.audit_trail.middleware.AuditTrailMiddleware",
+    # Report-only to start — see connect_labs/utils/csp.py for why, and for how
+    # to tighten it into an enforcing policy (#1032 item H).
+    "connect_labs.utils.csp.ContentSecurityPolicyMiddleware",
 ]
 
 # Per-request cost telemetry, prepended so it is the OUTERMOST middleware and
