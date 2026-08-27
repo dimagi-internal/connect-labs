@@ -5,8 +5,8 @@ existing folder/program when re-registered."""
 
 from __future__ import annotations
 
+from .invalidation import invalidate_synthetic_caches
 from .models import LABS_ONLY_OPP_ID_FLOOR, SyntheticOpportunity  # noqa: F401
-from .registry import invalidate_cache
 from .visit_count import resync_visit_count
 
 
@@ -61,7 +61,7 @@ def register_labs_only_opp(
     existing = SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id).first()
     previous_folder_id = existing.gdrive_folder_id if existing else None
     row, _created = SyntheticOpportunity.objects.update_or_create(opportunity_id=opportunity_id, defaults=defaults)
-    invalidate_cache()
+    invalidate_synthetic_caches(opportunity_id)
     # Re-registration deliberately preserves an existing folder when none is
     # passed, so this no-ops on that path and only fires when the fixtures
     # actually moved (#1197).

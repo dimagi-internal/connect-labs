@@ -33,6 +33,7 @@ from connect_labs.labs.synthetic.generator.fixtures.manifest import (
 from connect_labs.labs.synthetic.generator.fixtures.profiler import profile as _profile
 from connect_labs.labs.synthetic.generator.fixtures.schema_loader import FormSchema, parse_form_schema_from_app_json
 from connect_labs.labs.synthetic.generator.io.uploader import upload_and_register
+from connect_labs.labs.synthetic.invalidation import invalidate_synthetic_caches
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
 from connect_labs.labs.synthetic.provisioning import register_labs_only_opp
 from connect_labs.labs.synthetic.registry import invalidate_cache
@@ -289,7 +290,11 @@ def synthetic_register(
         opportunity_id=opportunity_id,
         defaults=defaults,
     )
-    invalidate_cache()
+    # Everything downstream of the fixtures, not just the registry: the fixture
+    # store, and the raw/computed analysis rows keyed on (opp, pipeline) and
+    # (opp, config_hash). Clearing only the registry is what made a regenerated
+    # dataset unreachable from a dashboard (#1034).
+    invalidate_synthetic_caches(opportunity_id)
     # The row now points at different fixtures, so the cached count describes
     # the old ones. Left alone it prints in the labs chrome next to the new
     # data (#1197). No-ops when the folder didn't actually change.
@@ -300,6 +305,51 @@ def synthetic_register(
         "enabled": row.enabled,
         "label": row.label,
         "visit_count": row.visit_count,
+    }
+
+
+@register(
+    name="synthetic_reload_fixtures",
+    description=(
+        "Force an opportunity to re-read its fixtures from GDrive and drop every "
+        "cached artifact derived from them: the fixture store (across all worker "
+        "processes), and the raw + computed analysis rows a pipeline reads.\n\n"
+        "Use this after editing fixture files IN PLACE in a registered Drive "
+        "folder. Registering a new folder id, minting a new pipeline and bumping "
+        "a schema version do NOT achieve this on their own -- the analysis caches "
+        "are keyed on (opportunity_id, config_hash), so two pipelines with "
+        "identical schemas share rows. Until this is called the dashboard renders "
+        "cleanly while serving the previous dataset."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"opportunity_id": {"type": "integer"}},
+        "required": ["opportunity_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_reload_fixtures(user, *, opportunity_id: int) -> dict[str, Any]:
+    """The escape hatch that existed in code but was reachable from nowhere.
+
+    `FixtureStore.reload` has been the right answer since it was written, but its
+    only caller was a button in the labs UI -- so anyone driving labs over MCP
+    (the normal way to iterate a synthetic dataset) had no way to invoke it, and
+    #1034 burned an afternoon rediscovering that.
+    """
+    _require_opportunity_access(user, opportunity_id)
+    try:
+        row = SyntheticOpportunity.objects.get(opportunity_id=opportunity_id)
+    except SyntheticOpportunity.DoesNotExist:
+        raise MCPToolError("NOT_FOUND", f"No synthetic entry for opportunity_id={opportunity_id}")
+
+    outcome = invalidate_synthetic_caches(opportunity_id)
+    count = resync_visit_count(row, previous_folder_id=None)
+    return {
+        "opportunity_id": opportunity_id,
+        "gdrive_folder_id": row.gdrive_folder_id,
+        "invalidated": outcome,
+        "visit_count": count,
     }
 
 
@@ -391,7 +441,7 @@ def synthetic_repoint_by_source(
     row.gdrive_folder_id = gdrive_folder_id
     row.enabled = enabled
     row.save(update_fields=["gdrive_folder_id", "enabled", "updated_at"])
-    invalidate_cache()
+    invalidate_synthetic_caches(row.opportunity_id)
     resync_visit_count(row, previous_folder_id=previous)
     return {
         "opportunity_id": row.opportunity_id,
