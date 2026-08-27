@@ -34,14 +34,32 @@ Streamable-HTTP handler, which builds the real protocol envelope.
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
+from unittest.mock import patch
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
-from fastmcp.server.dependencies import _task_access_token
 
 from .models import MCPAccessToken
 from .server import PAT_SCOPES, _run_registry_tool, _write_audit, current_user
 from .tool_registry import MCPToolError, get_tool
+
+
+@contextmanager
+def _as_authenticated(access: AccessToken):
+    """Run the block as if FastMCP had authenticated ``access``.
+
+    This used to set `fastmcp.server.dependencies._task_access_token` directly.
+    That is a private contextvar, and fastmcp 3.2 removed it — the import broke
+    collection of every MCP test module at once, on a routine security bump.
+
+    Patching the function our own code actually calls is version-proof: `server`
+    imports `get_access_token` by name (`server.py:50`) and `current_user` calls
+    it (`server.py:180`), so overriding that one binding is the whole surface,
+    whatever fastmcp does with its internals next.
+    """
+    with patch("connect_labs.mcp.server.get_access_token", return_value=access):
+        yield
 
 
 def _verify(raw: str | None) -> AccessToken | None:
@@ -84,8 +102,7 @@ def call_tool(raw_pat: str | None, tool_name: str, arguments: dict | None = None
     if access is None:
         return {"error": {"code": "PERMISSION_DENIED", "message": "Invalid or expired token"}}
 
-    ctx_token = _task_access_token.set(access)
-    try:
+    with _as_authenticated(access):
         spec = get_tool(tool_name)
         if spec is None:
             _write_audit(current_user(), tool_name, arguments, success=False, error_code="NOT_FOUND")
@@ -113,9 +130,6 @@ def call_tool(raw_pat: str | None, tool_name: str, arguments: dict | None = None
                     "structuredContent": {"error": error},
                 }
             }
-    finally:
-        _task_access_token.reset(ctx_token)
-
     return {
         "result": {
             "isError": False,
