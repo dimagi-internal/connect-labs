@@ -93,25 +93,29 @@ disagreement between the two stays visible.
 
 ## Running an ingest
 
-Order matters: births derive from mortality and population.
+**See [BOOTSTRAP.md](BOOTSTRAP.md)** for the full setup — a new machine, a new
+user account, or a deploy. Nothing is stored in the repo: every value is fetched
+from a public API at load time, so the load _is_ the install.
+
+The short version:
 
 ```bash
-make manage CMD="load_africa_boundaries"                    # ADM0 + ADM1, all of Africa
-make manage CMD="load_indicators --stage mortality"         # DHS + IGME, minutes
-make manage CMD="load_indicators --stage fertility"          # DHS + World Bank
-make manage CMD="load_indicators --stage population"        # HAPI (fast) then WorldPop (slow)
-make manage CMD="load_indicators --stage births"            # derived, seconds
+make manage CMD="migrate"
+make manage CMD="bootstrap_targeting --skip-worldpop"   # ~30 min
+make manage CMD="targeting_status"                      # verify
 ```
 
-Useful flags: `--iso NGA,KEN` to scope, `--missing-only` to resume the
-population stage, `--source hapi|worldpop` to run one of them, `--limit N` for a
-trial run.
+`bootstrap_targeting` encodes the stage order, which matters: births need
+mortality _and_ population, calibration needs both the surveys and the IGME
+series, households need population and the household-size ratio. Getting it
+wrong produces a dataset that looks loaded and is quietly short.
 
-The population stage runs HAPI first, then WorldPop. **HAPI covers most of the
-continent in under a minute; WorldPop takes hours** — it queues tasks
-server-side, so raising `--workers` buys nothing. Both write incrementally and
-are safe to interrupt and resume, so the useful pattern is to take HAPI now and
-let WorldPop backfill `pop_u1` in the background.
+Every stage upserts on `(indicator, boundary, year, source)`, so re-running
+repairs rather than duplicates. `--from-stage <name>` resumes partway;
+`--iso NGA,KEN` scopes to a few countries.
+
+`targeting_status` reports what is loaded, what is missing, and the stage that
+produces anything absent.
 
 ### WorldPop's three sharp edges
 
