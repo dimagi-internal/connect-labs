@@ -61,8 +61,41 @@ the folder ID, select "Use existing folder ID" in the create form, and paste it 
 
 ## Updating fixtures
 
-Edit the JSON files in Drive, then click "Reload fixtures" on that opp's row
-in `/labs/synthetic/` so the in-process fixture cache picks up the changes.
+Edit the JSON files in Drive, then either:
+
+- click **"Reload fixtures"** on that opp's row in `/labs/synthetic/`, or
+- call the **`synthetic_reload_fixtures(opportunity_id)`** MCP tool.
+
+Either one clears everything derived from the fixtures. Re-registering the opp
+(`synthetic_register`, `synthetic_repoint_by_source`) and regenerating
+(`synthetic_generate_from_manifest`) do this for you.
+
+### Why a reload is needed at all
+
+Four independently-keyed caches sit between the Drive folder and a rendered
+dashboard, and **none of them is keyed on fixture content** — so replacing file
+bytes at a stable folder id is invisible to all of them:
+
+| Cache | Key |
+| --- | --- |
+| Registry — is this opp synthetic, which folder | `opportunity_id` |
+| FixtureStore — parsed fixture JSON | `(opp_id, folder_id, endpoint_key)` |
+| RawVisitCache | `(opportunity_id, pipeline_id)` |
+| Computed visit / FLW / entity rows | `(opportunity_id, config_hash, …)` |
+
+Two consequences worth knowing before you go hunting:
+
+- **Minting a fresh pipeline does not escape the computed caches.** They key on
+  `config_hash`, so two pipelines with identical schemas share rows — a new
+  pipeline reads the old one's results.
+- **`pipeline_preview` reporting `"from_cache": false` does not mean a dashboard
+  will show fresh data.** It reads a different layer.
+
+Before this was wired up, the only reliable way to make a regeneration visible
+was an undocumented three-part incantation — new folder id *and* new pipeline
+*and* changed schema content — and every intermediate state rendered cleanly
+while serving superseded numbers (#1034). A confident, wrong dashboard is the
+failure mode this section exists to prevent.
 
 ## Limitations
 
