@@ -41,7 +41,7 @@ jobs:
       # Run pre-commit directly (instead of pre-commit/action@v3.0.0, which pins the
       # deprecated actions/cache@v3 → Node 20 warning) with a current cache action.
       - name: Cache pre-commit environments
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -111,7 +111,7 @@ jobs:
       # workspace path is identical on every runner.
       - name: Cache the installed environment
         id: venv
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .venv
           key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements/base.txt', 'requirements/dev.txt') }}
