@@ -19,6 +19,7 @@ from datetime import timezone as _stdlib_timezone
 import httpx
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.cache import cache
 from django.db import connection, transaction
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse, reverse_lazy
@@ -2479,6 +2480,49 @@ class AIReviewAPIView(LoginRequiredMixin, View):
             return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
+# Discovery results for the two question-sampler endpoints below.
+#
+# These return FORM SCHEMA -- the image question ids and the field paths an app
+# collects. That changes when someone edits the app, i.e. approximately never
+# during an opportunity's life, which is what makes it cacheable at all. Contrast
+# WorkflowRunView's worker list (#1301): same shape of fix, but those records carry
+# live visit_count / last_active, so caching them would be wrong.
+#
+# Worth caching because the call is genuinely expensive on Connect's side and not
+# on ours. Measured 2026-08-26: 6.8-9.2s per request, of which 6.2-8.3s is a SINGLE
+# outbound call, and the audit wizard fires four concurrently (one per opportunity)
+# on every load. Capping page_size to the sampler's MAX_ROWS (#1311) cut the payload
+# 12.5x and bought only ~20% -- the cost is Connect generating the response, so the
+# only thing left is to stop asking for it. Upstream cost is tracked separately.
+#
+# 15 minutes, not longer: the bound is how late a NEWLY added image question can
+# show up in the audit-creation wizard. Long enough that a wizard session and the
+# reloads around it are free, short enough that an app edit is not invisible for an
+# afternoon.
+QUESTION_DISCOVERY_CACHE_SECONDS = 900
+
+
+def _question_cache_key(kind: str, opp_id: int) -> str:
+    return f"audit:question-discovery:v1:{kind}:{opp_id}"
+
+
+def _cached_questions(kind: str, opp_id: int):
+    """Cached discovery result, or None. Never raises -- a cache that can break the
+    page it was added to speed up is worse than no cache."""
+    try:
+        return cache.get(_question_cache_key(kind, opp_id))
+    except Exception:
+        logger.debug("question-discovery cache read failed for %s/%s", kind, opp_id, exc_info=True)
+        return None
+
+
+def _cache_questions(kind: str, opp_id: int, result) -> None:
+    try:
+        cache.set(_question_cache_key(kind, opp_id), result, QUESTION_DISCOVERY_CACHE_SECONDS)
+    except Exception:
+        logger.debug("question-discovery cache write failed for %s/%s", kind, opp_id, exc_info=True)
+
+
 class OpportunityImageTypesAPIView(LoginRequiredMixin, View):
     """Discover image types from Connect blob data by sampling visits.
 
@@ -2498,6 +2542,10 @@ class OpportunityImageTypesAPIView(LoginRequiredMixin, View):
         access_token = labs_oauth.get("access_token", "")
         if not access_token:
             return JsonResponse({"error": "No OAuth token"}, status=401)
+
+        cached = _cached_questions("image", opp_id)
+        if cached is not None:
+            return JsonResponse(cached, safe=False)
 
         from connect_labs.labs.integrations.connect.export_client import ExportAPIError
         from connect_labs.labs.integrations.connect.factory import get_export_client
@@ -2567,6 +2615,7 @@ class OpportunityImageTypesAPIView(LoginRequiredMixin, View):
             return JsonResponse({"error": "An internal error occurred"}, status=500)
 
         result = [{"id": qid, "label": qid.rsplit("/", 1)[-1], "path": qid} for qid in sorted(seen_question_ids)]
+        _cache_questions("image", opp_id, result)
         return JsonResponse(result, safe=False)
 
 
@@ -2589,6 +2638,10 @@ class OpportunityFieldQuestionsAPIView(LoginRequiredMixin, View):
         access_token = labs_oauth.get("access_token", "")
         if not access_token:
             return JsonResponse({"error": "No OAuth token"}, status=401)
+
+        cached = _cached_questions("field", opp_id)
+        if cached is not None:
+            return JsonResponse(cached, safe=False)
 
         from connect_labs.audit.analysis_config import extract_field_paths
         from connect_labs.labs.integrations.connect.export_client import ExportAPIError
@@ -2640,6 +2693,7 @@ class OpportunityFieldQuestionsAPIView(LoginRequiredMixin, View):
             return JsonResponse({"error": "An internal error occurred"}, status=500)
 
         result = [{"id": p, "label": p.rsplit("/", 1)[-1], "path": p} for p in sorted(seen_paths)]
+        _cache_questions("field", opp_id, result)
         return JsonResponse(result, safe=False)
 
 
