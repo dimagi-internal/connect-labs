@@ -259,14 +259,46 @@ class TestLiveAndSnapshotPayloadParity:
         live = _live_rows(_visit_rows(), rf)
         assert {r["opportunity_id"] for r in live} == {OPP_ID}
 
-    def test_a_pipeline_field_still_overrides_the_framework_opportunity_tag(self, rf: RequestFactory):
-        """`chc_audit_history` declares a pipeline field literally named
+    def test_the_framework_tag_wins_over_a_same_named_pipeline_field(self, rf: RequestFactory):
+        """#1306: `chc_audit_history` declares a pipeline field literally named
         `opportunity_id` (connect_labs/workflow/templates/chc_audit_history.py).
-        On the live path that field has always won over the framework's tag;
-        the shared serializer must preserve that ordering."""
+
+        This is the inversion of the behaviour the live path used to have. The
+        cached and snapshot producers stamp `{**row, "opportunity_id": opp_id}`
+        *after* their merge, so the framework value has always won there; only
+        the live path let the pipeline field through, which meant that dashboard
+        could read one value live and another from its own snapshot.
+
+        Framework-wins is the correct side, not just the majority one: upstream
+        filters audit reports to the opportunity in the URL and serializes that
+        FK as its pk, so on the prod path the two are equal by construction, and
+        where they *can* differ (a fixture-backed synthetic opp carrying a source
+        opp id) the framework tag is what keeps chc_audit_history's
+        reports-to-entries join self-consistent — `audit_entries` declares no
+        `opportunity_id`, so its rows only ever carry the framework value.
+        """
         rows = [VisitRow(id="v1", username="flw_one", computed={"opportunity_id": 999})]
         live = _live_rows(rows, rf)
-        assert live[0]["opportunity_id"] == 999
+        assert live[0]["opportunity_id"] == OPP_ID
+
+    def test_all_three_producers_agree_on_the_framework_tag(self, rf: RequestFactory):
+        """The point of #1306 is agreement, not the winner as such — a value that
+        differs between live and snapshot is the ace#1657 failure shape one field
+        over, regardless of which side is right."""
+        rows = [VisitRow(id="v1", username="flw_one", computed={"opportunity_id": 999})]
+        live = _live_rows(rows, rf)
+        (snap,) = _snapshot_rows(rows)
+
+        assert live[0]["opportunity_id"] == snap["opportunity_id"], "live and snapshot must not disagree"
+        assert live[0]["opportunity_id"] == OPP_ID
+
+    def test_a_pipeline_field_not_shadowing_a_framework_key_is_untouched(self, rf: RequestFactory):
+        """Only same-named keys are affected. Ordinary computed fields still
+        land on the row exactly as before."""
+        rows = [VisitRow(id="v1", username="flw_one", computed={"muac_cm": 11.4, "colour": "red"})]
+        live = _live_rows(rows, rf)
+        assert live[0]["muac_cm"] == 11.4
+        assert live[0]["colour"] == "red"
 
 
 class TestVisitLevelAggregateCountersAreStructurallyZero:
