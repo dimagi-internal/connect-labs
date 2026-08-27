@@ -30,7 +30,17 @@ COLUMNS = [
     ("births", "Est. annual births"),
     ("pop_u5", "Population under 5"),
     ("pop_total", "Total population"),
+    ("births_complete", "Births complete for all regions"),
 ]
+
+
+def _cell(value):
+    """Blank, not zero, when there is no estimate.
+
+    A 0 in a births column reads as "nobody is born here"; blank reads as "we
+    could not work it out", which is what is actually true.
+    """
+    return "" if value is None else round(value)
 
 
 def _rows(selection: Selection):
@@ -51,9 +61,10 @@ def _rows(selection: Selection):
             "u5mr_measured_at": (
                 f"{r.measured_at.name} (ADM{r.measured_at.admin_level})" if r and r.inherited else "this area"
             ),
-            "births": round(a.counts.get("births") or 0),
-            "pop_u5": round(a.counts.get("pop_u5") or 0),
-            "pop_total": round(a.counts.get("pop_total") or 0),
+            "births": _cell(a.counts.get("births")),
+            "pop_u5": _cell(a.counts.get("pop_u5")),
+            "pop_total": _cell(a.counts.get("pop_total")),
+            "births_complete": "yes" if a.is_complete("births") else "no",
         }
 
 
@@ -140,6 +151,22 @@ def to_methodology(selection: Selection) -> str:
         )
     else:
         add("No derived quantities in this selection.\n")
+
+    got, total_units = selection.coverage.get("births", (0, 0))
+    if total_units and got < total_units:
+        add("## This total is a floor, not a measurement\n")
+        add(
+            f"**{total_units - got} of {total_units}** selected regions have no births "
+            "estimate, because neither an under-1 population nor a "
+            "women-of-childbearing-age figure is available for them. Those regions "
+            "contribute nothing to the total, so the real number is higher than the "
+            "one reported here.\n"
+        )
+        add(
+            "Rows where this applies are marked `no` in the "
+            "**Births complete for all regions** column, and their births cell is "
+            "blank rather than zero.\n"
+        )
 
     add("## Caveats worth carrying\n")
     add(
