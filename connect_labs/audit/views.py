@@ -408,6 +408,33 @@ class ExperimentBulkAssessmentView(LoginRequiredMixin, DetailView):
         return context
 
 
+def _session_opportunity_hint(request) -> int | None:
+    """The storage opportunity the client already knows this session lives in.
+
+    Locating a session by id costs a request per candidate scope, because the
+    export API authorizes on whichever scope it is handed and has no scope-free
+    by-id endpoint. The bulk page has already resolved that opportunity in order
+    to render at all, so every subsequent call from that page can hand it back
+    instead of making the server rediscover it.
+
+    This matters most for the case that has no cheap rung otherwise: a
+    program-scoped caller. The ambient-scope rung is an *opportunity* scope, so
+    a DAO scoped to a program misses it by construction and pays the full sweep
+    of every opportunity it can see — on every save, every autosave, every
+    reload. See #1169.
+
+    Untrusted by construction: it is a hint, not an authorization. The fetch
+    still goes out with the caller's own token and the server still runs its
+    per-user check, so a wrong value costs one request and a forged one buys
+    nothing. Anything unparseable is simply dropped.
+    """
+    raw = request.POST.get("storage_opportunity_id") or request.GET.get("storage_opportunity_id")
+    try:
+        return int(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
 class ExperimentSaveAuditView(LoginRequiredMixin, View):
     """Save audit progress without completing"""
 
@@ -418,7 +445,7 @@ class ExperimentSaveAuditView(LoginRequiredMixin, View):
 
             try:
                 # Get session
-                session = data_access.get_audit_session(session_id)
+                session = data_access.get_audit_session(session_id, opportunity_id=_session_opportunity_hint(request))
                 if not session:
                     return JsonResponse({"error": "Session not found"}, status=404)
 
@@ -524,7 +551,7 @@ class ExperimentAuditDeleteView(LoginRequiredMixin, View):
             try:
                 # Get session (confirms it exists and the user's OAuth scope can see it
                 # before we attempt the delete)
-                session = data_access.get_audit_session(session_id)
+                session = data_access.get_audit_session(session_id, opportunity_id=_session_opportunity_hint(request))
                 if not session:
                     return JsonResponse({"error": "Session not found"}, status=404)
 
@@ -551,7 +578,7 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
 
             try:
                 # Get session
-                session = data_access.get_audit_session(session_id)
+                session = data_access.get_audit_session(session_id, opportunity_id=_session_opportunity_hint(request))
                 if not session:
                     return JsonResponse({"error": "Session not found"}, status=404)
 
@@ -641,7 +668,7 @@ class ExperimentAuditUncompleteView(LoginRequiredMixin, View):
     def post(self, request, session_id):
         data_access = AuditDataAccess(request=request)
         try:
-            session = data_access.get_audit_session(session_id)
+            session = data_access.get_audit_session(session_id, opportunity_id=_session_opportunity_hint(request))
             if not session:
                 return JsonResponse({"error": "Session not found"}, status=404)
 
@@ -669,7 +696,7 @@ class ExperimentApplyAssessmentResultsView(LoginRequiredMixin, View):
     def post(self, request, session_id):
         data_access = AuditDataAccess(request=request)
         try:
-            session = data_access.get_audit_session(session_id)
+            session = data_access.get_audit_session(session_id, opportunity_id=_session_opportunity_hint(request))
             if not session:
                 return JsonResponse({"error": "Session not found"}, status=404)
 
@@ -736,7 +763,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
     def get(self, request, session_id):
         data_access = AuditDataAccess(request=request)
         try:
-            session = data_access.get_audit_session(session_id)
+            session = data_access.get_audit_session(session_id, opportunity_id=_session_opportunity_hint(request))
             if not session:
                 return JsonResponse({"error": "Session not found"}, status=404)
 
@@ -1140,7 +1167,7 @@ def _resolve_visit_cluster_group(data_access, request, session_id, group_id):
     """Shared lookup for the cluster CSV export and JSON images views: the
     session, the requested group, and per-visit Connect link + GPS data.
     Returns (error_response, context) — context is None when error_response is set."""
-    session = data_access.get_audit_session(session_id)
+    session = data_access.get_audit_session(session_id, opportunity_id=_session_opportunity_hint(request))
     if not session:
         return JsonResponse({"error": "Session not found"}, status=404), None
 

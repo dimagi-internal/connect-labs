@@ -361,3 +361,107 @@ class TestUpstreamErrorsDoNotAbortTheLadder:
 
         assert da.get_audit_session(13) is None
         da.search_opportunities.assert_not_called()
+
+
+class TestCallerSuppliedOpportunityHint:
+    """#1169: rung 0 — the caller says where the session lives.
+
+    A program-scoped DAO has no cheap rung at all. The ambient-scope probe is an
+    *opportunity* scope, so a DAO scoped to a program misses it by construction
+    and falls to the sweep on every single request — which is what let one
+    auditor's save path stay expensive long after the 500s were fixed. The bulk
+    page has already resolved the storage opportunity in order to render, so it
+    hands it back.
+    """
+
+    def test_hint_resolves_a_program_scoped_lookup_without_a_sweep(self):
+        found = FakeSession(id=21, opportunity_id=1978)
+        main_client = MagicMock()
+        main_client.get_record_by_id.side_effect = lambda sid, **kw: (
+            found if kw.get("opportunity_id") == 1978 else None
+        )
+
+        # Program-scoped: opportunity_id is None, so the ambient rung can never hit.
+        da = _data_access(main_client, opportunity_id=None)
+        da.search_opportunities = MagicMock(return_value=[{"id": i} for i in range(1970, 2000)])
+
+        session = da.get_audit_session(21, opportunity_id=1978)
+
+        assert session is found
+        # The whole point: one request, and the sweep never ran.
+        assert main_client.get_record_by_id.call_count == 1
+        da.search_opportunities.assert_not_called()
+
+    def test_a_wrong_hint_costs_one_request_and_the_ladder_still_resolves(self):
+        """A hint is a shortcut, never an authorization — being wrong must not
+        turn a resolvable session into a 404."""
+        found = FakeSession(id=22, opportunity_id=1976)
+        main_client = MagicMock()
+        main_client.get_record_by_id.side_effect = lambda sid, **kw: (
+            found if kw.get("opportunity_id") == 1976 else None
+        )
+
+        da = _data_access(main_client, opportunity_id=1973)
+        da.search_opportunities = MagicMock(return_value=[{"id": 1973}, {"id": 1976}])
+
+        session = da.get_audit_session(22, opportunity_id=9999)
+
+        assert session is found
+        probed = [c.kwargs.get("opportunity_id") for c in main_client.get_record_by_id.call_args_list]
+        assert probed[0] == 9999, "the hint is tried first"
+        assert probed.count(9999) == 1, "and only once"
+
+    def test_the_hint_still_goes_through_the_callers_own_token(self):
+        """A forged hint buys nothing: the fetch is a normal scoped read, so the
+        server runs its per-user authorization exactly as it would otherwise."""
+        main_client = MagicMock()
+        main_client.get_record_by_id.return_value = None
+
+        da = _data_access(main_client, opportunity_id=1973, access_token="caller-token")
+        da.search_opportunities = MagicMock(return_value=[])
+
+        assert da.get_audit_session(23, opportunity_id=4242) is None
+        # No privileged path, no unscoped read — just the ordinary by-id call.
+        main_client.get_record_by_id.assert_any_call(
+            23,
+            experiment="audit",
+            type="AuditSession",
+            model_class=AuditSessionRecord,
+            opportunity_id=4242,
+        )
+        main_client.get_records.assert_not_called()
+
+    def test_a_correct_hint_is_remembered_for_callers_that_have_none(self):
+        found = FakeSession(id=24, opportunity_id=1978)
+        main_client = MagicMock()
+        main_client.get_record_by_id.side_effect = lambda sid, **kw: (
+            found if kw.get("opportunity_id") == 1978 else None
+        )
+
+        da = _data_access(main_client, opportunity_id=None)
+        da.search_opportunities = MagicMock(return_value=[{"id": i} for i in range(1970, 2000)])
+
+        assert da.get_audit_session(24, opportunity_id=1978) is found
+        main_client.get_record_by_id.reset_mock()
+        da.search_opportunities.reset_mock()
+
+        # A later caller with no hint rides the memo the hinted call populated.
+        assert da.get_audit_session(24) is found
+        assert main_client.get_record_by_id.call_count == 1
+        da.search_opportunities.assert_not_called()
+
+    def test_no_hint_behaves_exactly_as_before(self):
+        found = FakeSession(id=25, opportunity_id=1973)
+        main_client = MagicMock()
+        main_client.get_record_by_id.return_value = found
+
+        da = _data_access(main_client)
+
+        assert da.get_audit_session(25) is found
+        main_client.get_record_by_id.assert_called_once_with(
+            25,
+            experiment="audit",
+            type="AuditSession",
+            model_class=AuditSessionRecord,
+            opportunity_id=None,
+        )

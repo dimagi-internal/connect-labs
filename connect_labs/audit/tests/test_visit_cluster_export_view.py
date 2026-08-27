@@ -71,7 +71,7 @@ def test_export_csv_returns_one_row_per_image_in_the_group(labs_client, monkeypa
             # accessing the attribute happens regardless of that short-circuit).
             self.access_token = "test-token-abc"
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def get_visits_batch(self, visit_ids, opportunity_id):
@@ -122,7 +122,7 @@ def test_export_csv_returns_404_for_unknown_group(labs_client, monkeypatch):
         def __init__(self, *a, **k):
             pass
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def close(self):
@@ -150,7 +150,7 @@ def test_export_csv_degrades_gracefully_when_visit_batch_fetch_fails(labs_client
             # accessing the attribute happens regardless of that short-circuit).
             self.access_token = "test-token-abc"
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def get_visits_batch(self, visit_ids, opportunity_id):
