@@ -159,7 +159,7 @@ def test_bulk_assessment_page_renders_for_every_scoping_and_status_combo(monkeyp
         def __init__(self, *a, **k):
             pass
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def close(self):

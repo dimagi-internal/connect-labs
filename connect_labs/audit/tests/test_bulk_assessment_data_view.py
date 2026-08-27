@@ -77,7 +77,7 @@ def test_bulk_primary_flw_name_resolves_via_flw_names(labs_client, monkeypatch):
         def __init__(self, *a, **k):
             pass
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def get_opportunity_details(self, opportunity_id):
@@ -115,7 +115,7 @@ def test_response_includes_visit_clusters_for_client_side_duplicate_tagging(labs
         def __init__(self, *a, **k):
             pass
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def get_opportunity_details(self, opportunity_id):
@@ -147,7 +147,7 @@ def test_response_defaults_visit_clusters_to_empty_list_when_absent(labs_client,
         def __init__(self, *a, **k):
             pass
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def get_opportunity_details(self, opportunity_id):
@@ -184,7 +184,7 @@ def test_assessment_case_info_passes_through_when_already_stored(labs_client, mo
         def __init__(self, *a, **k):
             pass
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def get_opportunity_details(self, opportunity_id):
@@ -245,7 +245,7 @@ def test_assessment_case_info_backfills_for_legacy_sessions(labs_client, monkeyp
         def __init__(self, *a, **k):
             self.pipeline = FakePipeline()
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def get_opportunity_details(self, opportunity_id):
@@ -282,7 +282,7 @@ def test_bulk_primary_flw_name_falls_back_to_username_when_unresolved(labs_clien
         def __init__(self, *a, **k):
             pass
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def get_opportunity_details(self, opportunity_id):
@@ -315,7 +315,7 @@ def test_prior_audited_fields_present(labs_client, monkeypatch):
         def __init__(self, *a, **k):
             pass
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def get_opportunity_details(self, opportunity_id):
@@ -361,7 +361,7 @@ def test_csv_export_resolves_xform_id_when_visit_batch_returns_string_ids(labs_c
         def __init__(self, *a, **k):
             self.access_token = "test-token-abc"
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def get_opportunity_details(self, opportunity_id):
@@ -446,7 +446,7 @@ def test_visit_results_returns_complete_stored_structure_not_a_flattened_view(la
         def __init__(self, *a, **k):
             pass
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def get_opportunity_details(self, opportunity_id):
@@ -494,7 +494,7 @@ def test_visit_results_preserves_visit_level_result_alongside_assessments(labs_c
         def __init__(self, *a, **k):
             pass
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def get_opportunity_details(self, opportunity_id):
