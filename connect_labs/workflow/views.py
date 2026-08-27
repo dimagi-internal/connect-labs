@@ -2068,6 +2068,7 @@ def complete_run_api(request, run_id):
         SnapshotTooLargeError,
         build_snapshot_for_contract,
         resolve_snapshot_contract,
+        resolve_snapshot_opp_scope,
     )
 
     data_access = None
@@ -2133,9 +2134,16 @@ def complete_run_api(request, run_id):
                     definition_id,
                 )
 
-        opportunity_id = run.opportunity_id or definition.opportunity_id
+        # A program-owned multi-opp definition has neither a run-level nor a
+        # definition-level opportunity_id — its opps are in opportunity_ids — so
+        # resolving only the singular fields made such a run impossible to
+        # conclude from this page (#1182).
+        opportunity_id, snapshot_opp_ids = resolve_snapshot_opp_scope(run, definition)
         if not opportunity_id:
-            return JsonResponse({"error": "Run has no opportunity_id"}, status=400)
+            return JsonResponse(
+                {"error": "Run has no opportunity: neither the run, the definition, nor its opportunity_ids name one"},
+                status=400,
+            )
 
         # Snapshot pipelines come from the processed cache the runner page
         # already populated — never re-executed here. The snapshot's job is to
@@ -2173,7 +2181,7 @@ def complete_run_api(request, run_id):
                     status=409,
                 )
 
-        effective_opp_ids = definition.opportunity_ids or [opportunity_id]
+        effective_opp_ids = snapshot_opp_ids
         workers: list[dict] = []
         for oid in effective_opp_ids:
             try:

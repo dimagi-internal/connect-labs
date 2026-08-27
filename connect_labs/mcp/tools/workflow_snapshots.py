@@ -17,8 +17,13 @@ from typing import Any
 from ..tool_registry import MCPToolError, register
 
 
-def _wda_for_user(user, opportunity_id: int | None = None):
-    """Build a WorkflowDataAccess for the user, scoped if opportunity_id is given.
+def _wda_for_user(user, opportunity_id: int | None = None, program_id: int | None = None):
+    """Build a WorkflowDataAccess scoped to ``opportunity_id`` or ``program_id``.
+
+    The scope rides on the client instance, and the upstream GET is an exact
+    scope match rather than a hierarchical one — so a program-owned run is
+    invisible to an opp-scoped DAO and vice versa. Same contract as
+    ``workflow_create_run._wda_for_user``.
 
     Returns a WorkflowDataAccess; caller is responsible for calling .close()
     (or using a `with` block) since BaseDataAccess wraps an httpx.Client.
@@ -28,7 +33,7 @@ def _wda_for_user(user, opportunity_id: int | None = None):
     from ..connect_token import require_connect_token
 
     token = require_connect_token(user)
-    return WorkflowDataAccess(opportunity_id=opportunity_id, access_token=token)
+    return WorkflowDataAccess(opportunity_id=opportunity_id, program_id=program_id, access_token=token)
 
 
 @register(
@@ -40,19 +45,24 @@ def _wda_for_user(user, opportunity_id: int | None = None):
         "registry (Python build_snapshot hook or template manifest) for "
         "legacy instances. The snapshot is persisted on the run record "
         "as `data.snapshot`, alongside `status=completed` and `completed_at`. "
-        "Mirrors the canonical run-completion endpoint. opportunity_id must "
-        "match the run's owning opp — it scopes the upstream GET so the run "
-        "is actually visible (workflow runs are opp-scoped, not public)."
+        "Mirrors the canonical run-completion endpoint.\n\n"
+        "Provide exactly ONE of opportunity_id / program_id — whichever the run "
+        "is filed under. The scope rides on the client and the upstream GET is "
+        "an exact match, not hierarchical, so a program-owned run is invisible "
+        "to an opp-scoped read and vice versa. Same contract as "
+        "workflow_create_run, so a run created program-scoped can be concluded "
+        "the same way."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "run_id": {"type": "integer"},
             "opportunity_id": {"type": "integer"},
+            "program_id": {"type": "integer"},
             "snapshot_name": {"type": "string"},
             "captured_at": {"type": "string"},
         },
-        "required": ["run_id", "opportunity_id", "snapshot_name", "captured_at"],
+        "required": ["run_id", "snapshot_name", "captured_at"],
         "additionalProperties": False,
     },
     is_write=True,
@@ -61,18 +71,23 @@ def workflow_save_snapshot(
     user,
     *,
     run_id: int,
-    opportunity_id: int,
     snapshot_name: str,
     captured_at: str,
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
 ) -> dict[str, Any]:
     from connect_labs.workflow.data_access import PipelineCacheMiss
     from connect_labs.workflow.templates import (
         SnapshotTooLargeError,
         build_snapshot_for_contract,
         resolve_snapshot_contract,
+        resolve_snapshot_opp_scope,
     )
 
-    wda = _wda_for_user(user, opportunity_id=opportunity_id)
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+
+    wda = _wda_for_user(user, opportunity_id=opportunity_id, program_id=program_id)
     try:
         run = wda.get_run(run_id)
         if run is None:
@@ -108,15 +123,30 @@ def workflow_save_snapshot(
                 "via workflow_update_definition so a snapshot builder can be resolved",
             )
 
-        # Cross-check: the upstream GET already filtered by opportunity_id, so
-        # if the run came back its opp must match — but assert it explicitly to
-        # surface caller mistakes (wrong opp_id passed alongside a foreign run).
-        run_opp = run.opportunity_id or definition.opportunity_id
-        if run_opp and run_opp != opportunity_id:
+        # Cross-check, opp-scoped calls only: the upstream GET already filtered
+        # by opportunity_id, so if the run came back its opp must match — but
+        # assert it explicitly to surface caller mistakes (wrong opp_id passed
+        # alongside a foreign run). A program-scoped run has no singular opp to
+        # compare, and the GET's program filter is what authorized it.
+        if opportunity_id is not None:
+            run_opp = run.opportunity_id or definition.opportunity_id
+            if run_opp and run_opp != opportunity_id:
+                raise MCPToolError(
+                    "INVALID_SCHEMA",
+                    f"run {run_id} belongs to opportunity_id={run_opp}, "
+                    f"not the {opportunity_id} passed to workflow_save_snapshot",
+                )
+
+        # A program-owned multi-opp definition has no run-level or
+        # definition-level opportunity_id — its opps are in opportunity_ids — so
+        # everything downstream (the pipeline read, the worker fan-out, the
+        # builder) needs a resolved scope rather than the singular field (#1182).
+        primary_opp_id, effective_opp_ids = resolve_snapshot_opp_scope(run, definition, opportunity_id)
+        if not primary_opp_id:
             raise MCPToolError(
                 "INVALID_SCHEMA",
-                f"run {run_id} belongs to opportunity_id={run_opp}, "
-                f"not the {opportunity_id} passed to workflow_save_snapshot",
+                f"run {run_id} has no opportunity: neither the run, the definition, nor its "
+                "opportunity_ids name one, so there is nothing to snapshot against",
             )
 
         # Match the views.py:complete_run code path exactly: cache-only,
@@ -130,7 +160,7 @@ def workflow_save_snapshot(
             try:
                 pipelines = wda.get_cached_pipeline_data(
                     definition_id,
-                    opportunity_id,
+                    primary_opp_id,
                     aliases=aliases,
                     # Period-scope pipelines that opt in, so each saved run
                     # freezes its own window rather than the all-time aggregate
@@ -146,7 +176,6 @@ def workflow_save_snapshot(
                     "load the workflow's pipeline data first (open the run page or run the pipelines), "
                     "then retry",
                 ) from e
-        effective_opp_ids = definition.opportunity_ids or [opportunity_id]
         workers: list[dict] = []
         for oid in effective_opp_ids:
             try:
@@ -161,7 +190,7 @@ def workflow_save_snapshot(
                 contract,
                 pipelines=pipelines,
                 state=run.data.get("state", {}),
-                opportunity_id=opportunity_id,
+                opportunity_id=primary_opp_id,
                 workers=workers,
                 opportunity_ids=effective_opp_ids,
                 # Optional context fields some templates' build_snapshot hooks accept
@@ -195,4 +224,6 @@ def workflow_save_snapshot(
         "run_id": run_id,
         "snapshot_name": snapshot_name,
         "captured_at": captured_at,
+        "opportunity_id": primary_opp_id,
+        "opportunity_ids": effective_opp_ids,
     }
