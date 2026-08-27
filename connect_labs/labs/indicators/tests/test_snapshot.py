@@ -1,0 +1,303 @@
+"""Tests for the snapshot round trip.
+
+A snapshot exists so a second environment need not re-fetch anything, which
+means the failure mode that matters is a *quiet* one: an import that reports
+success while dropping values, mangling a polygon, or losing the licence a row
+travels under. Everything here aims at that.
+
+The database is wiped between export and import so nothing can pass by virtue of
+already being there.
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import zipfile
+
+import pytest
+from django.contrib.gis.geos import MultiPolygon, Polygon
+from django.utils import timezone
+
+from connect_labs.labs.admin_boundaries.models import AdminBoundary
+from connect_labs.labs.indicators import snapshot
+from connect_labs.labs.indicators.models import IndicatorValue, License, Source
+
+pytestmark = pytest.mark.django_db
+
+
+def _square(x: float, y: float) -> MultiPolygon:
+    # Deliberately more precision than the export keeps, so quantization is
+    # exercised rather than sidestepped.
+    return MultiPolygon(
+        Polygon(
+            (
+                (x + 0.123456789, y),
+                (x + 1, y),
+                (x + 1, y + 1),
+                (x, y + 1),
+                (x + 0.123456789, y),
+            )
+        ),
+        srid=4326,
+    )
+
+
+def _seed() -> tuple[AdminBoundary, AdminBoundary]:
+    ken = AdminBoundary.objects.create(
+        iso_code="KEN",
+        admin_level=0,
+        name="Kenya",
+        boundary_id="KEN-ADM0",
+        geometry=_square(0, 0),
+        source=AdminBoundary.Source.GEOBOUNDARIES,
+    )
+    turkana = AdminBoundary.objects.create(
+        iso_code="KEN",
+        admin_level=1,
+        name="Turkana",
+        boundary_id="KEN-ADM1-turkana",
+        geometry=_square(2, 0),
+        source=AdminBoundary.Source.GEOBOUNDARIES,
+        parent_boundary_id="KEN-ADM0",
+        extra={"shape_group": "KEN"},
+    )
+    IndicatorValue.objects.create(
+        indicator="u5mr",
+        boundary=turkana,
+        iso_code="KEN",
+        admin_level=1,
+        year=2022,
+        value=61.3,
+        ci_low=54.0,
+        ci_high=70.1,
+        source=Source.IGME_SUBNATIONAL,
+        source_ref="igme-2022",
+        source_url="https://childmortality.org/",
+        license_code=License.CC_BY_3_IGO,
+        method="subnational_igme",
+        retrieved_at=timezone.now(),
+        extra={"note": "kept"},
+    )
+    IndicatorValue.objects.create(
+        indicator="births",
+        boundary=turkana,
+        iso_code="KEN",
+        admin_level=1,
+        year=2022,
+        value=42000.0,
+        source=Source.DERIVED,
+        source_ref="derived-2022",
+        license_code=License.DERIVED,
+        method="derived",
+        retrieved_at=timezone.now(),
+    )
+    return ken, turkana
+
+
+def _wipe() -> None:
+    IndicatorValue.objects.all().delete()
+    AdminBoundary.objects.all().delete()
+
+
+class TestRoundTrip:
+    def test_import_into_an_empty_database_restores_everything(self):
+        _seed()
+        blob = snapshot.export(iso_codes=["KEN"])
+        _wipe()
+
+        result = snapshot.import_snapshot(blob)
+
+        assert result["boundaries"] == 2
+        assert result["values"] == 2
+        assert result["values_skipped"] == 0
+        assert AdminBoundary.objects.count() == 2
+        assert IndicatorValue.objects.count() == 2
+
+    def test_provenance_survives_the_round_trip(self):
+        """A value without its licence and source URL is not reusable."""
+        _seed()
+        blob = snapshot.export(iso_codes=["KEN"])
+        _wipe()
+        snapshot.import_snapshot(blob)
+
+        v = IndicatorValue.objects.get(indicator="u5mr")
+        assert v.value == pytest.approx(61.3)
+        assert (v.ci_low, v.ci_high) == (pytest.approx(54.0), pytest.approx(70.1))
+        assert v.source == Source.IGME_SUBNATIONAL
+        assert v.source_ref == "igme-2022"
+        assert v.source_url == "https://childmortality.org/"
+        assert v.license_code == License.CC_BY_3_IGO
+        assert v.method == "subnational_igme"
+        assert v.extra == {"note": "kept"}
+
+    def test_null_confidence_bounds_stay_null(self):
+        """Empty CSV cells must not become 0.0 — a fabricated bound is worse
+        than an absent one."""
+        _seed()
+        blob = snapshot.export(iso_codes=["KEN"])
+        _wipe()
+        snapshot.import_snapshot(blob)
+
+        v = IndicatorValue.objects.get(indicator="births")
+        assert v.ci_low is None
+        assert v.ci_high is None
+
+    def test_geometry_survives_within_the_declared_precision(self):
+        _, turkana = _seed()
+        before = turkana.geometry
+        blob = snapshot.export(iso_codes=["KEN"])
+        _wipe()
+        snapshot.import_snapshot(blob)
+
+        after = AdminBoundary.objects.get(boundary_id="KEN-ADM1-turkana").geometry
+        assert after.geom_type == "MultiPolygon"
+        assert after.srid == 4326
+        # Quantization is the only permitted change, and it is sub-metre.
+        assert after.equals_exact(before, tolerance=1e-6)
+        assert after.area == pytest.approx(before.area, rel=1e-6)
+
+    def test_boundary_attributes_and_parentage_survive(self):
+        _seed()
+        blob = snapshot.export(iso_codes=["KEN"])
+        _wipe()
+        snapshot.import_snapshot(blob)
+
+        b = AdminBoundary.objects.get(boundary_id="KEN-ADM1-turkana")
+        assert b.name == "Turkana"
+        assert b.admin_level == 1
+        assert b.parent_boundary_id == "KEN-ADM0"
+        assert b.extra == {"shape_group": "KEN"}
+
+    def test_values_relink_to_boundaries_by_natural_key(self):
+        """Primary keys differ between environments; the link must not."""
+        _seed()
+        blob = snapshot.export(iso_codes=["KEN"])
+        _wipe()
+        # Burn the id sequence so the re-created rows cannot land on their old
+        # primary keys by luck.
+        for n in range(5):
+            AdminBoundary.objects.create(
+                iso_code="ZWE",
+                admin_level=1,
+                name=f"filler {n}",
+                boundary_id=f"ZWE-filler-{n}",
+                geometry=_square(10 + n, 10),
+                source=AdminBoundary.Source.GEOBOUNDARIES,
+            )
+        snapshot.import_snapshot(blob)
+
+        v = IndicatorValue.objects.get(indicator="u5mr")
+        assert v.boundary.boundary_id == "KEN-ADM1-turkana"
+
+
+class TestIdempotence:
+    def test_importing_twice_updates_rather_than_duplicates(self):
+        _seed()
+        blob = snapshot.export(iso_codes=["KEN"])
+        _wipe()
+
+        snapshot.import_snapshot(blob)
+        snapshot.import_snapshot(blob)
+
+        assert AdminBoundary.objects.count() == 2
+        assert IndicatorValue.objects.count() == 2
+
+    def test_import_over_a_stale_value_corrects_it(self):
+        _, turkana = _seed()
+        blob = snapshot.export(iso_codes=["KEN"])
+        IndicatorValue.objects.filter(indicator="u5mr").update(value=999.0)
+
+        snapshot.import_snapshot(blob)
+
+        assert IndicatorValue.objects.get(indicator="u5mr").value == pytest.approx(61.3)
+
+
+class TestRefusals:
+    def test_a_corrupt_member_is_refused_not_imported(self):
+        _seed()
+        blob = snapshot.export(iso_codes=["KEN"])
+        _wipe()
+
+        original = zipfile.ZipFile(io.BytesIO(blob))
+        tampered = io.BytesIO()
+        with zipfile.ZipFile(tampered, "w") as out:
+            for name in original.namelist():
+                data = original.read(name)
+                if name == "values.csv":
+                    data = data.replace(b"61.3", b"99.9")
+                out.writestr(name, data)
+
+        with pytest.raises(ValueError, match="checksum mismatch"):
+            snapshot.import_snapshot(tampered.getvalue())
+        assert IndicatorValue.objects.count() == 0
+
+    def test_a_future_schema_is_refused(self):
+        _seed()
+        blob = snapshot.export(iso_codes=["KEN"])
+        _wipe()
+
+        original = zipfile.ZipFile(io.BytesIO(blob))
+        tampered = io.BytesIO()
+        with zipfile.ZipFile(tampered, "w") as out:
+            for name in original.namelist():
+                data = original.read(name)
+                if name == "manifest.json":
+                    m = json.loads(data)
+                    m["schema_version"] = snapshot.SCHEMA_VERSION + 1
+                    # Checksums stay valid, so only the version can refuse it.
+                    data = json.dumps(m).encode()
+                out.writestr(name, data)
+
+        with pytest.raises(ValueError, match="schema"):
+            snapshot.import_snapshot(tampered.getvalue())
+
+
+class TestManifest:
+    def test_manifest_declares_licences_and_the_lossy_step(self):
+        _seed()
+        blob = snapshot.export(iso_codes=["KEN"])
+        m = json.loads(zipfile.ZipFile(io.BytesIO(blob)).read("manifest.json"))
+
+        assert m["counts"] == {"boundaries": 2, "values": 2, "indicators": 2}
+        assert set(m["licenses"]) == {License.CC_BY_3_IGO, License.DERIVED}
+        assert m["coordinate_precision"] == snapshot.COORD_PRECISION
+        # Nothing seeded here is non-commercial, and the flag must say so
+        # rather than defaulting to a reassuring value.
+        assert m["contains_non_commercial"] is False
+
+    def test_non_commercial_data_is_flagged_for_the_person_sharing_it(self):
+        _, turkana = _seed()
+        IndicatorValue.objects.filter(indicator="births").update(
+            license_code=next(iter(sorted(snapshot.NON_COMMERCIAL)))
+        )
+        blob = snapshot.export(iso_codes=["KEN"])
+        m = json.loads(zipfile.ZipFile(io.BytesIO(blob)).read("manifest.json"))
+
+        assert m["contains_non_commercial"] is True
+
+
+class TestValuesOnly:
+    def test_a_values_only_snapshot_skips_rather_than_inventing_boundaries(self):
+        """Without geometry, a value whose boundary is absent has nowhere to
+        go. Skipping it is the only honest option."""
+        _seed()
+        blob = snapshot.export(iso_codes=["KEN"], include_geometry=False)
+        assert len(blob) < 5_000  # values only: kilobytes, not megabytes
+        _wipe()
+
+        result = snapshot.import_snapshot(blob)
+
+        assert result["values"] == 0
+        assert result["values_skipped"] == 2
+        assert IndicatorValue.objects.count() == 0
+
+    def test_a_values_only_snapshot_loads_against_existing_boundaries(self):
+        _seed()
+        blob = snapshot.export(iso_codes=["KEN"], include_geometry=False)
+        IndicatorValue.objects.all().delete()  # boundaries stay
+
+        result = snapshot.import_snapshot(blob)
+
+        assert result["values"] == 2
+        assert result["values_skipped"] == 0
