@@ -89,6 +89,9 @@ def test_bulk_primary_flw_name_resolves_via_flw_names(labs_client, monkeypatch):
         def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
             return {}
 
+        def get_prior_audited_images_for(self, opportunity_id, pairs, exclude_session_id=None):
+            return self.get_prior_audited_images(opportunity_id, exclude_session_id)
+
         def close(self):
             pass
 
@@ -127,6 +130,9 @@ def test_response_includes_visit_clusters_for_client_side_duplicate_tagging(labs
         def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
             return {}
 
+        def get_prior_audited_images_for(self, opportunity_id, pairs, exclude_session_id=None):
+            return self.get_prior_audited_images(opportunity_id, exclude_session_id)
+
         def close(self):
             pass
 
@@ -158,6 +164,9 @@ def test_response_defaults_visit_clusters_to_empty_list_when_absent(labs_client,
 
         def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
             return {}
+
+        def get_prior_audited_images_for(self, opportunity_id, pairs, exclude_session_id=None):
+            return self.get_prior_audited_images(opportunity_id, exclude_session_id)
 
         def close(self):
             pass
@@ -195,6 +204,9 @@ def test_assessment_case_info_passes_through_when_already_stored(labs_client, mo
 
         def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
             return {}
+
+        def get_prior_audited_images_for(self, opportunity_id, pairs, exclude_session_id=None):
+            return self.get_prior_audited_images(opportunity_id, exclude_session_id)
 
         def close(self):
             pass
@@ -257,6 +269,9 @@ def test_assessment_case_info_backfills_for_legacy_sessions(labs_client, monkeyp
         def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
             return {}
 
+        def get_prior_audited_images_for(self, opportunity_id, pairs, exclude_session_id=None):
+            return self.get_prior_audited_images(opportunity_id, exclude_session_id)
+
         def close(self):
             pass
 
@@ -293,6 +308,9 @@ def test_bulk_primary_flw_name_falls_back_to_username_when_unresolved(labs_clien
 
         def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
             return {}
+
+        def get_prior_audited_images_for(self, opportunity_id, pairs, exclude_session_id=None):
+            return self.get_prior_audited_images(opportunity_id, exclude_session_id)
 
         def close(self):
             pass
@@ -334,6 +352,14 @@ def test_prior_audited_fields_present(labs_client, monkeypatch):
                 }
             }
 
+        def get_prior_audited_images_for(self, opportunity_id, pairs, exclude_session_id=None):
+            # Honour `pairs` rather than ignoring it: the view now asks only about
+            # its own images, so a stub that returned everything regardless would
+            # pass even if the view stopped requesting the key it then renders.
+            wanted = {f"{v}:{b}" for v, b in pairs}
+            full = self.get_prior_audited_images(opportunity_id, exclude_session_id)
+            return {k: val for k, val in full.items() if k in wanted}
+
         def close(self):
             pass
 
@@ -372,6 +398,9 @@ def test_csv_export_resolves_xform_id_when_visit_batch_returns_string_ids(labs_c
 
         def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
             return {}
+
+        def get_prior_audited_images_for(self, opportunity_id, pairs, exclude_session_id=None):
+            return self.get_prior_audited_images(opportunity_id, exclude_session_id)
 
         def get_visits_batch(self, visit_ids, opportunity_id):
             assert 111 in visit_ids
@@ -458,6 +487,9 @@ def test_visit_results_returns_complete_stored_structure_not_a_flattened_view(la
         def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
             return {}
 
+        def get_prior_audited_images_for(self, opportunity_id, pairs, exclude_session_id=None):
+            return self.get_prior_audited_images(opportunity_id, exclude_session_id)
+
         def close(self):
             pass
 
@@ -505,6 +537,9 @@ def test_visit_results_preserves_visit_level_result_alongside_assessments(labs_c
 
         def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
             return {}
+
+        def get_prior_audited_images_for(self, opportunity_id, pairs, exclude_session_id=None):
+            return self.get_prior_audited_images(opportunity_id, exclude_session_id)
 
         def close(self):
             pass

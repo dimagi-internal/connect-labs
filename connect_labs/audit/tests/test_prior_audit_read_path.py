@@ -230,3 +230,145 @@ class TestJustInTimePopulation:
         ):
             _da().get_prior_audited_images(opportunity_id=OPP)
         tok.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestTargetedRead:
+    """`prior_verdicts_for` must be `read_index` restricted to a key set -- nothing else.
+
+    The targeted read exists because both callers already know the images they are
+    asking about, while `read_index` materialised the whole opportunity: production
+    opp 2154 held 17,653 verdict rows across 712 sessions to answer ~25 lookups
+    (2026-08-27). That is only a safe swap if the two agree exactly, so these pin
+    the agreement rather than the speed.
+    """
+
+    def test_agrees_with_read_index_on_every_requested_key(self):
+        sessions = [
+            _session(1, "completed", {"111": _vr(b1="pass", b2="fail")}, completed_at=_dt(1)),
+            _session(2, "completed", {"222": _vr(b3="pass")}, completed_at=_dt(2)),
+            _session(3, "completed", {"333": _vr(b4="fail")}, completed_at=_dt(3)),
+        ]
+        rebuild_opportunity(OPP, sessions)
+
+        full = projection.read_index(OPP)
+        pairs = [("111", "b1"), ("111", "b2"), ("222", "b3")]
+        narrow = projection.prior_verdicts_for(OPP, pairs)
+
+        assert set(narrow) == {"111:b1", "111:b2", "222:b3"}
+        for key in narrow:
+            assert narrow[key] == full[key], f"{key} disagrees with the full index"
+        assert "333:b4" in full and "333:b4" not in narrow, "must not return unrequested images"
+
+    def test_the_winner_rule_survives_narrowing(self):
+        """Most-recent-completed-wins is decided on read, so it must hold per-key too.
+
+        The whole-index path gets this from ordering the full scan. A targeted
+        query orders a subset, and if the two disagreed here the narrow read would
+        silently report an OLD verdict as current.
+        """
+        rebuild_opportunity(
+            OPP,
+            [
+                _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1)),
+                _session(2, "completed", {"111": _vr(b1="fail")}, completed_at=_dt(5)),
+                _session(3, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(3)),
+            ],
+        )
+        narrow = projection.prior_verdicts_for(OPP, [("111", "b1")])
+        assert narrow["111:b1"]["result"] == "fail", "the latest completed verdict must win"
+        assert narrow["111:b1"] == projection.read_index(OPP)["111:b1"]
+
+    def test_undated_never_displaces_dated_when_narrowed(self):
+        rebuild_opportunity(
+            OPP,
+            [
+                _session(1, "completed", {"111": _vr(b1="fail")}, completed_at=_dt(2)),
+                _session(2, "completed", {"111": _vr(b1="pass")}),  # no completed_at
+            ],
+        )
+        assert projection.prior_verdicts_for(OPP, [("111", "b1")])["111:b1"]["result"] == "fail"
+
+    def test_exclude_session_id_is_honoured(self):
+        rebuild_opportunity(OPP, [_session(7, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))])
+        assert projection.prior_verdicts_for(OPP, [("111", "b1")], exclude_session_id=7) == {}
+
+    def test_does_not_leak_another_opportunity(self):
+        rebuild_opportunity(OPP, [_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))])
+        rebuild_opportunity(
+            4242, [_session(2, "completed", {"111": _vr(b1="fail")}, completed_at=_dt(2), opportunity_id=4242)]
+        )
+        assert projection.prior_verdicts_for(OPP, [("111", "b1")])["111:b1"]["result"] == "pass"
+
+    def test_empty_pairs_short_circuits_without_a_query(self):
+        rebuild_opportunity(OPP, [_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))])
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as ctx:
+            assert projection.prior_verdicts_for(OPP, []) == {}
+        assert len(ctx) == 0, "no pairs means nothing to ask"
+
+    def test_cost_tracks_the_pairs_not_the_history(self):
+        """The regression this change exists to prevent -- pin the COST, not the behaviour.
+
+        Ten sessions of unrelated history must not change what a one-image lookup
+        reads. Before the targeted read, every one of those rows was fetched and
+        turned into a dict entry on every single call.
+        """
+        history = [
+            _session(i, "completed", {f"v{i}": _vr(**{f"b{i}": "pass"})}, completed_at=_dt(i)) for i in range(1, 11)
+        ]
+        target = _session(99, "completed", {"111": _vr(b1="fail")}, completed_at=_dt(11))
+        rebuild_opportunity(OPP, history + [target])
+
+        assert PriorAuditVerdict.objects.filter(opportunity_id=OPP).count() == 11
+        assert len(projection.read_index(OPP)) == 11, "the full index still reads everything"
+
+        narrow = projection.prior_verdicts_for(OPP, [("111", "b1")])
+        assert len(narrow) == 1, "the targeted read must not scale with unrelated history"
+        assert narrow["111:b1"]["result"] == "fail"
+
+
+@pytest.mark.django_db
+class TestTargetedReadKeepsTheFreshnessGate:
+    """Narrowing the READ must not make the BUILD lazy.
+
+    A cold projection answered from a targeted query would return "nothing was
+    judged before" instead of an error -- a silent under-fetch that re-presents
+    already-judged images as new. These pin that `get_prior_audited_images_for`
+    walks the same three paths as the full version.
+    """
+
+    def test_unbuilt_opportunity_still_builds_before_answering(self):
+        s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[s]) as spy:
+            index = _da().get_prior_audited_images_for(OPP, [("111", "b1")])
+        assert spy.call_args.kwargs == {"status": "completed"}, "cold must take the full build"
+        assert index["111:b1"]["result"] == "pass", "must not answer a cold projection as empty"
+        assert is_built(OPP)
+
+    def test_built_opportunity_asks_only_the_watermark_question(self):
+        rebuild_opportunity(OPP, [_session(1, "completed", {"111": _vr(b1="fail")}, completed_at=_dt(1))])
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[]) as spy:
+            index = _da().get_prior_audited_images_for(OPP, [("111", "b1")])
+        assert "completed_at__gt" in spy.call_args.kwargs, "must be the bounded query, not a full fetch"
+        assert index["111:b1"]["result"] == "fail"
+
+    def test_matches_the_full_api_for_the_same_keys(self):
+        rebuild_opportunity(
+            OPP,
+            [
+                _session(1, "completed", {"111": _vr(b1="pass", b2="fail")}, completed_at=_dt(1)),
+                _session(2, "completed", {"222": _vr(b3="pass")}, completed_at=_dt(2)),
+            ],
+        )
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[]):
+            full = _da().get_prior_audited_images(opportunity_id=OPP)
+            narrow = _da().get_prior_audited_images_for(OPP, [("111", "b1"), ("222", "b3")])
+        assert narrow == {k: full[k] for k in ("111:b1", "222:b3")}
+
+    def test_empty_pairs_never_touches_the_api(self):
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True) as spy:
+            assert _da().get_prior_audited_images_for(OPP, []) == {}
+        assert spy.call_count == 0

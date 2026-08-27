@@ -1619,14 +1619,20 @@ def run_audit_creation(
                 logger.exception(f"[AuditCreation] Failed to fetch visit metadata for clustering, opp={opp_id}")
 
         if audit_criteria.exclude_prior_audited:
-            from connect_labs.audit.data_access import filter_out_prior_audited
+            from connect_labs.audit.data_access import filter_out_prior_audited, prior_audit_pairs
 
+            # Ask about the candidate pool's images only. filter_out_prior_audited
+            # does membership tests over exactly these keys, so the rest of the
+            # opportunity's verdict history was fetched and never read.
             if is_multi_opp_per_flw:
                 prior_index = {}
-                for real_opp in visits_by_opp:
-                    prior_index.update(_data_access_for_opp(real_opp).get_prior_audited_images(real_opp))
+                for real_opp, opp_visit_ids in visits_by_opp.items():
+                    opp_pairs = prior_audit_pairs(all_visit_images, {str(v) for v in opp_visit_ids})
+                    prior_index.update(
+                        _data_access_for_opp(real_opp).get_prior_audited_images_for(real_opp, opp_pairs)
+                    )
             else:
-                prior_index = data_access.get_prior_audited_images(opp_id)
+                prior_index = data_access.get_prior_audited_images_for(opp_id, prior_audit_pairs(all_visit_images))
             all_visit_images, excluded_count = filter_out_prior_audited(all_visit_images, prior_index)
             image_count = sum(len(imgs) for imgs in all_visit_images.values())
             logger.info(f"[AuditCreation] Excluded {excluded_count} previously-audited images; {image_count} remain")

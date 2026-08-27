@@ -800,9 +800,24 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
             except Exception:
                 pass
 
+            # Ask only about THIS session's images. The pairs are already on the
+            # session, so the whole-opportunity index this used to build was pure
+            # overhead: production opp 2154 carries 17,653 verdict rows across 712
+            # sessions, materialised on every load to answer ~25 lookups, and it
+            # grew with every completed audit rather than with the page.
+            stored_visit_images = session.data.get("visit_images", {})
+            prior_pairs = [
+                (visit_id, img.get("blob_id"))
+                for visit_id in visit_ids
+                for img in stored_visit_images.get(str(visit_id), [])
+                if img.get("blob_id")
+            ]
+
             prior_audit_index = {}
             try:
-                prior_audit_index = data_access.get_prior_audited_images(opportunity_id, exclude_session_id=session_id)
+                prior_audit_index = data_access.get_prior_audited_images_for(
+                    opportunity_id, prior_pairs, exclude_session_id=session_id
+                )
             except Exception:
                 logger.warning("Failed to build prior-audit index for opp %s", opportunity_id, exc_info=True)
 
