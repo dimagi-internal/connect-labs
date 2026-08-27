@@ -95,7 +95,13 @@
         </div>
     </div>
 
-    <!-- CDN: Chart.js, Leaflet, MarkerCluster, Marked (markdown) -->
+    <!-- CDN: Chart.js, Leaflet, MarkerCluster, Marked (markdown), DOMPurify -->
+    <!-- marked does NOT sanitize. Its output goes straight to innerHTML below, and
+         the markdown is LLM-generated from fund data, so a prompt-injected or
+         merely unlucky report could carry an <img onerror> into every viewer's
+         page (#1032 item H). DOMPurify has to load first — the render path is
+         hard-failed if it is missing rather than falling back to raw HTML. -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
@@ -230,6 +236,32 @@
 
     <!-- SSE Client -->
     <script>
+    // Markdown from the report agent is LLM-generated, so treat it as untrusted
+    // regardless of where the underlying numbers came from. With no DOMPurify we
+    // render as plain text rather than raw HTML: a degraded report beats an XSS.
+    function renderReportMarkdown(text) {
+        if (typeof DOMPurify === 'undefined') {
+            var pre = document.createElement('pre');
+            pre.className = 'whitespace-pre-wrap';
+            pre.textContent = text;
+            return pre.outerHTML;
+        }
+        var html = (typeof marked !== 'undefined')
+            ? marked.parse(text)
+            : text.replace(/\n/g, '<br>');
+        return DOMPurify.sanitize(html);
+    }
+
+    // Error strings come off the wire (server payload / network stack), so they
+    // are not ours to trust either. textContent, not innerHTML.
+    function setErrorText(el, message) {
+        el.innerHTML = '';
+        var p = document.createElement('p');
+        p.className = 'text-red-600';
+        p.textContent = message;
+        el.appendChild(p);
+    }
+
     (function() {
         var loading = document.getElementById('charts-loading');
         var status = document.getElementById('charts-status');
@@ -504,12 +536,10 @@
                                     var evt = JSON.parse(line.slice(6));
                                     if (evt.event_type === 'delta' && evt.message) {
                                         fullText += evt.message;
-                                        textEl.innerHTML = (typeof marked !== 'undefined')
-                                            ? marked.parse(fullText)
-                                            : fullText.replace(/\n/g, '<br>');
+                                        textEl.innerHTML = renderReportMarkdown(fullText);
                                     }
                                     if (evt.event_type === 'error') {
-                                        textEl.innerHTML = '<p class="text-red-600">' + (evt.error || 'Report generation failed') + '</p>';
+                                        setErrorText(textEl, evt.error || 'Report generation failed');
                                         btn.disabled = false;
                                     }
                                 } catch(e) { /* skip malformed lines */ }
@@ -521,7 +551,7 @@
                 }).catch(function(err) {
                     loadingEl.classList.add('hidden');
                     contentEl.classList.remove('hidden');
-                    textEl.innerHTML = '<p class="text-red-600">Failed to connect: ' + err.message + '</p>';
+                    setErrorText(textEl, 'Failed to connect: ' + err.message);
                     btn.disabled = false;
                 });
             };

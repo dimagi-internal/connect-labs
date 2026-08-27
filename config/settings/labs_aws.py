@@ -34,10 +34,23 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = env.bool("DJANGO_SECURE_SSL_REDIRECT", default=False)
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
-SECURE_HSTS_SECONDS = 3600
+# One year. 3600 was below the 31536000 floor the HSTS preload list requires, so
+# the SECURE_HSTS_PRELOAD directive below was being sent with a max-age that
+# disqualified it — the header claimed preload eligibility the value denied
+# (#1032 item J).
+SECURE_HSTS_SECONDS = env.int("DJANGO_SECURE_HSTS_SECONDS", default=31536000)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", default=True)
 SECURE_HSTS_PRELOAD = env.bool("DJANGO_SECURE_HSTS_PRELOAD", default=True)
 SECURE_CONTENT_TYPE_NOSNIFF = env.bool("DJANGO_SECURE_CONTENT_TYPE_NOSNIFF", default=True)
+
+# Auto-logoff. Django's default is a two-week session with no idle expiry, which
+# is a long way from the HIPAA auto-logoff bar for an app that renders PHI
+# (#1032 item J). 12 hours with a rolling expiry keeps a working day inside one
+# session while closing the "logged in on a shared laptop a fortnight ago" case.
+# SESSION_SAVE_EVERY_REQUEST is what makes the expiry *idle* rather than
+# absolute — without it the cookie ages from login regardless of activity.
+SESSION_COOKIE_AGE = env.int("DJANGO_SESSION_COOKIE_AGE", default=12 * 60 * 60)
+SESSION_SAVE_EVERY_REQUEST = env.bool("DJANGO_SESSION_SAVE_EVERY_REQUEST", default=True)
 
 # STORAGES (S3)
 # ------------------------------------------------------------------------------
