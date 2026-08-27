@@ -22,7 +22,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from django.contrib.gis.geos import GEOSGeometry
+from django.contrib.gis.geos import GEOSGeometry, Polygon
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators.models import License, Source
@@ -42,6 +42,28 @@ LATEST_YEAR = 2020
 #: small enough that the enclosed population is unchanged for a unit this size.
 SIMPLIFY_TOLERANCE = 0.01
 
+#: The service refuses anything larger, with
+#: "The requested area was too large. Requested N km^2 but allowance was 100000."
+#: Left slightly under the stated cap so a projection rounding difference cannot
+#: push a piece over it.
+MAX_AREA_KM2 = 95_000
+
+#: Equal-area projection used to measure a polygon in km². Degrees-squared is
+#: not an area, and the error between the Sahara and the equator is large enough
+#: to matter when the whole point is staying under a limit.
+EQUAL_AREA_SRID = 6933
+
+#: Hard ceiling on pieces per boundary, purely to bound the work. Reached only
+#: by island chains; the coverage rule below almost always bites first.
+MAX_PIECES = 200
+
+#: Keep the largest pieces until this share of the boundary's area is covered.
+#: An island chain can decompose into dozens of specks whose combined population
+#: is a rounding error but whose combined API cost is not. Dropping them by AREA
+#: rather than by COUNT means the omission is measurable, and it is reported in
+#: the method text rather than passed off as a complete figure.
+AREA_COVERAGE = 0.995
+
 POLL_INTERVAL = 3
 POLL_LIMIT = 40
 
@@ -59,13 +81,115 @@ METHOD = (
 )
 
 
-def _geojson_for(boundary: AdminBoundary) -> str:
+def _area_km2(geom: GEOSGeometry) -> float:
+    """Area in km², via an equal-area projection rather than degrees squared."""
+    clone = geom.clone()
+    try:
+        clone.transform(EQUAL_AREA_SRID)
+    except Exception:  # noqa: BLE001 — an unprojectable sliver is not worth failing over
+        return 0.0
+    return clone.area / 1_000_000.0
+
+
+def _explode(geom: GEOSGeometry) -> list[GEOSGeometry]:
+    """Flatten to single Polygons.
+
+    The service rejects MultiPolygon outright ("This operation supports only
+    Polygons"), which is why island-heavy coastal units failed while mainland
+    ones succeeded. Splitting is exact here: the parts are disjoint and
+    population is a count, so summing the parts reproduces the whole.
+    """
+    if geom.geom_type == "Polygon":
+        return [geom]
+    out: list[GEOSGeometry] = []
+    for part in geom:
+        if part.geom_type == "Polygon" and not part.empty:
+            out.append(part)
+    return out
+
+
+def _split_to_limit(poly: GEOSGeometry, depth: int = 0) -> list[GEOSGeometry]:
+    """Bisect a polygon until every piece is under the service's area cap.
+
+    Cuts along the longer axis of the bounding box, recursing on each half. The
+    pieces tile the original exactly — no overlap, no gap — so their population
+    counts sum back to the whole polygon's.
+    """
+    if _area_km2(poly) <= MAX_AREA_KM2 or depth > 8:
+        return [poly]
+
+    xmin, ymin, xmax, ymax = poly.extent
+    if (xmax - xmin) >= (ymax - ymin):
+        mid = (xmin + xmax) / 2
+        boxes = [(xmin, ymin, mid, ymax), (mid, ymin, xmax, ymax)]
+    else:
+        mid = (ymin + ymax) / 2
+        boxes = [(xmin, ymin, xmax, mid), (xmin, mid, xmax, ymax)]
+
+    out: list[GEOSGeometry] = []
+    for box in boxes:
+        try:
+            piece = poly.intersection(Polygon.from_bbox(box))
+        except Exception:  # noqa: BLE001 — a degenerate cut yields nothing useful
+            continue
+        if piece.empty:
+            continue
+        for part in _explode(piece):
+            out.extend(_split_to_limit(part, depth + 1))
+    return out or [poly]
+
+
+def _pieces_for(boundary: AdminBoundary) -> list[str]:
+    """The boundary as one or more GeoJSON Polygons the service will accept."""
     geom: GEOSGeometry = boundary.geometry
     simplified = geom.simplify(SIMPLIFY_TOLERANCE, preserve_topology=True)
-    # Simplification can empty a very small unit; fall back to the original.
     if simplified.empty or simplified.num_coords == 0:
         simplified = geom
-    return simplified.geojson
+
+    pieces: list[GEOSGeometry] = []
+    for part in _explode(simplified):
+        pieces.extend(_split_to_limit(part))
+
+    kept, omitted_share = _select_pieces(pieces)
+    if omitted_share:
+        logger.info(
+            "WorldPop: %s (%s) split into %d pieces; kept %d covering %.3f%% of its area",
+            boundary.name,
+            boundary.iso_code,
+            len(pieces),
+            len(kept),
+            (1 - omitted_share) * 100,
+        )
+
+    return [p.geojson for p in kept], omitted_share
+
+
+def _select_pieces(pieces: list[GEOSGeometry]) -> tuple[list[GEOSGeometry], float]:
+    """Largest pieces first, until AREA_COVERAGE of the total area is covered.
+
+    Returns the kept pieces and the share of area left out, so the caller can
+    say so rather than presenting a short count as a complete one.
+    """
+    if len(pieces) <= 1:
+        return pieces, 0.0
+
+    # Each area costs a projection transform, so measure once and carry it.
+    measured = sorted(((_area_km2(p), p) for p in pieces), key=lambda t: t[0], reverse=True)
+    total = sum(area for area, _ in measured)
+    if total <= 0:
+        return [p for _, p in measured[:MAX_PIECES]], 0.0
+
+    kept: list[GEOSGeometry] = []
+    running = 0.0
+    for area, piece in measured:
+        if len(kept) >= MAX_PIECES:
+            break
+        kept.append(piece)
+        running += area
+        if running / total >= AREA_COVERAGE:
+            break
+
+    return kept, max(0.0, 1.0 - running / total)
 
 
 def _run_task(geojson: str, year: int) -> dict | None:
@@ -120,13 +244,37 @@ def _denominators(pyramid: list[dict]) -> dict[str, float]:
 
 
 def load_boundary(boundary: AdminBoundary, year: int = LATEST_YEAR) -> list[Row]:
-    """Fetch the four population counts for one boundary."""
-    data = _run_task(_geojson_for(boundary), year)
-    if not data or "agesexpyramid" not in data:
+    """Fetch the four population counts for one boundary.
+
+    A boundary may go over the wire as several pieces — islands are separate
+    polygons and a large region exceeds the service's area cap. The pieces tile
+    the boundary exactly, so their counts are summed.
+    """
+    pieces, omitted_share = _pieces_for(boundary)
+    if not pieces:
         return []
 
-    counts = _denominators(data["agesexpyramid"])
+    counts: dict[str, float] = {}
+    got_any = False
+    for geojson in pieces:
+        data = _run_task(geojson, year)
+        if not data or "agesexpyramid" not in data:
+            continue
+        got_any = True
+        for code, value in _denominators(data["agesexpyramid"]).items():
+            counts[code] = counts.get(code, 0.0) + value
+
+    if not got_any:
+        return []
+
     method = METHOD.format(dataset=DATASET, year=year)
+    if len(pieces) > 1:
+        method += f" Submitted as {len(pieces)} disjoint pieces and summed."
+    if omitted_share > 0:
+        method += (
+            f" {omitted_share * 100:.2f}% of the boundary's area (scattered small "
+            "islands) was omitted, so this count is slightly low."
+        )
     return [
         Row(
             indicator=code,
@@ -181,11 +329,14 @@ def load(
                 got = fut.result()
             except Exception as exc:  # noqa: BLE001 — one bad polygon must not stop the run
                 logger.warning("WorldPop failed for %s (%s): %s", b.name, b.iso_code, exc)
-                failures.append(f"{b.iso_code}/{b.name}")
                 got = []
             if got:
                 sink(got)
                 produced += len(got)
+            else:
+                # A task that finishes with no data is just as much a gap as one
+                # that raises, and is easier to miss.
+                failures.append(f"{b.iso_code}/{b.name}")
             if on_progress:
                 on_progress(done, total, b, len(got))
 

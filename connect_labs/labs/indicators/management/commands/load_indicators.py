@@ -19,7 +19,7 @@ from django.utils import timezone
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators.africa import ISO_CODES
-from connect_labs.labs.indicators.models import IngestRun, Source
+from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
 from connect_labs.labs.indicators.sources import base, derive, dhs, igme, worldpop
 
 STAGES = ("mortality", "fertility", "population", "births")
@@ -42,6 +42,11 @@ class Command(BaseCommand):
             help="Concurrent WorldPop requests; more is not faster (see worldpop.MAX_WORKERS)",
         )
         parser.add_argument("--limit", type=int, help="Cap boundaries in the population stage (for a quick trial run)")
+        parser.add_argument(
+            "--missing-only",
+            action="store_true",
+            help="Population stage: fetch only boundaries that have no population yet",
+        )
 
     def handle(self, *args, **opts):
         codes = (
@@ -86,13 +91,23 @@ class Command(BaseCommand):
             ctx["countries"] = len({r.boundary.iso_code for r in rows})
 
     def _stage_population(self, codes, opts):
-        boundaries = list(
-            AdminBoundary.objects.filter(iso_code__in=codes, admin_level__in=(0, 1)).order_by(
-                "iso_code", "admin_level", "name"
-            )
-        )
+        # ADM1 only. A country's population is the sum of its regions — asking
+        # the service for the country outline as well would cost a second
+        # measurement that can only disagree with the first, and every ADM0 in
+        # Africa is far over the service's 100,000 km2 area cap anyway.
+        boundaries = list(AdminBoundary.objects.filter(iso_code__in=codes, admin_level=1).order_by("iso_code", "name"))
+        if opts.get("missing_only"):
+            have = set(IndicatorValue.objects.filter(indicator="pop_total").values_list("boundary_id", flat=True))
+            before = len(boundaries)
+            boundaries = [b for b in boundaries if b.pk not in have]
+            self.stdout.write(f"  skipping {before - len(boundaries)} boundaries already loaded")
+
         if opts.get("limit"):
             boundaries = boundaries[: opts["limit"]]
+
+        if not boundaries:
+            self.stdout.write("  nothing to fetch")
+            return
 
         self.stdout.write(
             f"WorldPop: {len(boundaries)} boundaries, {opts['workers']} workers. "
