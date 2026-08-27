@@ -66,22 +66,31 @@ def serialize_pipeline_row(row, extra: dict | None = None) -> dict:
     over a dataset with 14 flagged and 6 rejected visits, with no error.
     See ace#1657.
 
-    `extra` is merged *before* the row's computed/custom fields, matching the
-    pre-existing SSE behaviour where a pipeline field of the same name wins
-    over the framework-supplied value.
+    `extra` is merged *last*, so a framework-supplied value wins over a pipeline
+    field of the same name. This is the one point on which the three producers
+    used to disagree, and #1306 settled it:
 
-    That last point is preserved for compatibility, not because it is settled.
     `chc_audit_history` declares a pipeline field literally named
-    `opportunity_id`, and the three payload producers disagree about which
-    value wins: the live SSE path lets the pipeline field win (via `extra`
-    here), while `get_pipeline_data` and `get_cached_pipeline_data` stamp
-    `{**row, "opportunity_id": opp_id}` *after* the merge, so the framework
-    value wins. If those two values ever differ, that dashboard reads one
-    thing live and another from its own snapshot — the same failure shape as
-    ace#1657, one field over. Unifying the key sets (what this function is
-    for) does not fix the value precedence; that needs a separate change and
-    live data to confirm which value is correct. Tracked in
-    dimagi-internal/connect-labs#1306.
+    `opportunity_id` (path `audit_report.opportunity`), while
+    `get_pipeline_data` and `get_cached_pipeline_data` stamped
+    `{**row, "opportunity_id": opp_id}` *after* their merge. So the framework
+    value won from cache and snapshot, and the pipeline field won live — the
+    same failure shape as ace#1657, one field over.
+
+    Framework-wins is the correct side of that disagreement, not merely the
+    majority one. Upstream, `AuditReportDataView.get_queryset` filters audit
+    reports to the opportunity named in the URL and serializes that FK as its
+    pk, so on the prod path `audit_report.opportunity` and the iterating
+    `opp_id` are equal by construction and the choice is free. Where they
+    *can* differ — a fixture-backed synthetic opp whose rows carry a source
+    opp id — the framework value is the one that keeps a multi-opp dashboard
+    self-consistent: `chc_audit_history`'s `audit_entries` schema declares no
+    `opportunity_id` at all, so its entries always carry the framework tag,
+    and its reports-to-entries join only works if the reports do too.
+
+    The practical consequence for template authors: a pipeline field named
+    after a framework-supplied key can no longer shadow it. Name such a field
+    something else (`source_opportunity_id`) if you need both.
     """
     row_dict = {
         "id": getattr(row, "id", None),
@@ -99,11 +108,14 @@ def serialize_pipeline_row(row, extra: dict | None = None) -> dict:
         "status": getattr(row, "status", None),
         "flagged": getattr(row, "flagged", None),
     }
-    if extra:
-        row_dict.update(extra)
     custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
     if custom:
         row_dict.update(custom)
+    # Last, so the framework's own tagging wins over a same-named pipeline
+    # field — see the note above (#1306). The cached and snapshot producers
+    # already stamped it after their merge; this is the live path joining them.
+    if extra:
+        row_dict.update(extra)
     return row_dict
 
 
