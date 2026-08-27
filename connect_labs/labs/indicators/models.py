@@ -46,6 +46,7 @@ class Source(models.TextChoices):
     IGME = "igme", "UN IGME (via UNICEF SDMX)"
     WORLDPOP = "worldpop", "WorldPop"
     HAPI = "hapi", "HDX HAPI"
+    WORLDBANK = "worldbank", "World Bank (WDI)"
     DERIVED = "derived", "Derived"
 
 

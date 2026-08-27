@@ -66,45 +66,89 @@ def _boundaries(iso_codes: list[str] | None) -> list[AdminBoundary]:
 
 
 def load(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
-    """Compute births for every boundary that has the inputs."""
+    """Compute births for every boundary that has the inputs.
+
+    Prefers the infant-cohort method. Where ``pop_u1`` is unavailable — HDX HAPI
+    reports no 0-1 band, so any boundary covered only by HAPI lacks it — falls
+    back to the fertility method rather than leaving the place with no births at
+    all. Which method was used is recorded in ``method`` and in
+    ``extra.method_key``, because the two are not equally good and a reader
+    should be able to tell them apart.
+    """
     rows: list[Row] = []
+    by_cohort = 0
+    by_fertility = 0
     missing = 0
 
     for boundary in _boundaries(iso_codes):
         pop_u1 = resolve("pop_u1", boundary, year)
         imr = resolve("imr", boundary, year)
 
-        if pop_u1 and imr:
-            survivorship = 1.0 - (imr.value / 1000.0)
-            if survivorship > 0:
-                rows.append(
-                    Row(
-                        indicator="births",
-                        boundary=boundary,
-                        year=pop_u1.year,
-                        value=pop_u1.value / survivorship,
-                        source=Source.DERIVED,
-                        source_ref=f"infant cohort ({pop_u1.source} + {imr.source})",
-                        license_code=License.DERIVED,
-                        method=METHOD_COHORT.format(
-                            pop_ref=pop_u1.source_ref or pop_u1.source,
-                            imr=imr.value,
-                            imr_ref=imr.provenance,
-                        ),
-                        extra={
-                            "method_key": COHORT,
-                            "pop_u1": pop_u1.value,
-                            "imr": imr.value,
-                            "imr_inherited": imr.inherited,
-                        },
-                    )
+        survivorship = 1.0 - (imr.value / 1000.0) if imr else 0.0
+        if pop_u1 and imr and survivorship > 0:
+            rows.append(
+                Row(
+                    indicator="births",
+                    boundary=boundary,
+                    year=pop_u1.year,
+                    value=pop_u1.value / survivorship,
+                    source=Source.DERIVED,
+                    source_ref=f"infant cohort ({pop_u1.source} + {imr.source})",
+                    license_code=License.DERIVED,
+                    method=METHOD_COHORT.format(
+                        pop_ref=pop_u1.source_ref or pop_u1.source,
+                        imr=imr.value,
+                        imr_ref=imr.provenance,
+                    ),
+                    extra={
+                        "method_key": COHORT,
+                        "pop_u1": pop_u1.value,
+                        "imr": imr.value,
+                        "imr_inherited": imr.inherited,
+                    },
                 )
-            else:
-                missing += 1
-        else:
-            missing += 1
+            )
+            by_cohort += 1
+            continue
 
-    logger.info("derive: %d births rows written, %d boundaries lacked inputs", len(rows), missing)
+        women = resolve("pop_f_15_49", boundary, year)
+        tfr = resolve("tfr", boundary, year)
+        if women and tfr:
+            rows.append(
+                Row(
+                    indicator="births",
+                    boundary=boundary,
+                    year=women.year,
+                    value=women.value * tfr.value / REPRODUCTIVE_SPAN,
+                    source=Source.DERIVED,
+                    source_ref=f"fertility ({women.source} + {tfr.source})",
+                    license_code=License.DERIVED,
+                    method=METHOD_FERTILITY.format(
+                        pop_ref=women.source_ref or women.source,
+                        tfr=tfr.value,
+                        tfr_ref=tfr.provenance,
+                    ),
+                    extra={
+                        "method_key": FERTILITY,
+                        "women_15_49": women.value,
+                        "tfr": tfr.value,
+                        "tfr_inherited": tfr.inherited,
+                        "note": "no under-1 population available for the cohort method",
+                    },
+                )
+            )
+            by_fertility += 1
+            continue
+
+        missing += 1
+
+    logger.info(
+        "derive: %d births rows (%d by infant cohort, %d by fertility), %d boundaries lacked inputs",
+        len(rows),
+        by_cohort,
+        by_fertility,
+        missing,
+    )
     return rows
 
 

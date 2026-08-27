@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 #: When several sources carry the same cell, prefer them in this order.
 #: Subnational survey data beats a national model applied downward.
-DEFAULT_SOURCE_ORDER = ("dhs", "hapi", "worldpop", "igme", "derived")
+DEFAULT_SOURCE_ORDER = ("dhs", "hapi", "worldpop", "igme", "worldbank", "derived")
 
 
 @dataclass
