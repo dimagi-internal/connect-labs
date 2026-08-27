@@ -82,33 +82,32 @@
         </div>
       </div>
 
-      <div class="bg-teal-800 text-white rounded-lg p-5">
-        <div id="tg-headline-label" class="text-xs uppercase tracking-wider text-teal-200">Estimated annual births above threshold</div>
-        <div id="tg-births" class="text-4xl font-semibold mt-1 tg-num">—</div>
-        <div id="tg-scope" class="text-sm text-teal-100 mt-2">—</div>
-        <!-- Sits inside the headline card on purpose: a qualifier printed below
-             a long table is a qualifier nobody reads. -->
-        <div id="tg-floor" class="hidden mt-3 pt-3 border-t border-teal-600 text-sm text-amber-200"></div>
+      <!-- Four quantities of equal standing. Births alone used to dominate the
+           panel, which quietly implied it was the number that mattered; total
+           population, the under-5 cohort and the disease burden are each the
+           headline for a different intervention. -->
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-white rounded-lg border border-stone-200 p-4">
+          <div class="text-xs text-stone-500 leading-tight">Total population</div>
+          <div id="tg-poptotal" class="text-2xl font-semibold text-stone-900 tg-num mt-1">—</div>
+        </div>
+        <div class="bg-white rounded-lg border border-stone-200 p-4">
+          <div class="text-xs text-stone-500 leading-tight">Under-5 population</div>
+          <div id="tg-popu5" class="text-2xl font-semibold text-stone-900 tg-num mt-1">—</div>
+        </div>
+        <div class="bg-white rounded-lg border border-stone-200 p-4">
+          <div class="text-xs text-stone-500 leading-tight">Annual births</div>
+          <div id="tg-births" class="text-2xl font-semibold text-stone-900 tg-num mt-1">—</div>
+        </div>
+        <div class="bg-white rounded-lg border border-teal-300 p-4">
+          <div id="tg-burden-label" class="text-xs text-teal-800 leading-tight">Expected under-5 deaths / year</div>
+          <div id="tg-deaths" class="text-2xl font-semibold text-teal-900 tg-num mt-1">—</div>
+        </div>
       </div>
 
       <div class="bg-white rounded-lg border border-stone-200 p-4">
-        <div class="text-xs text-stone-500">Expected under-5 deaths / year</div>
-        <div id="tg-deaths" class="text-2xl font-semibold text-stone-900 tg-num mt-1">—</div>
-        <p class="text-xs text-stone-500 mt-1">
-          Rate x births. The burden an intervention acts on — a high rate over few
-          children is fewer deaths than a moderate rate over many.
-        </p>
-      </div>
-
-      <div class="grid grid-cols-2 gap-3">
-        <div class="bg-white rounded-lg border border-stone-200 p-4">
-          <div class="text-xs text-stone-500">Under-5 population</div>
-          <div id="tg-popu5" class="text-xl font-semibold text-stone-900 tg-num mt-1">—</div>
-        </div>
-        <div class="bg-white rounded-lg border border-stone-200 p-4">
-          <div class="text-xs text-stone-500">Total population</div>
-          <div id="tg-poptotal" class="text-xl font-semibold text-stone-900 tg-num mt-1">—</div>
-        </div>
+        <div id="tg-scope" class="text-sm text-stone-600">—</div>
+        <div id="tg-floor" class="hidden mt-3 pt-3 border-t border-stone-200 text-sm text-amber-700"></div>
       </div>
 
       <a id="tg-download" href="#"
@@ -157,12 +156,13 @@
             <th class="text-right px-3 py-2 font-medium">Births/yr</th>
             <th class="text-right px-3 py-2 font-medium">Under-5 pop</th>
             <th class="text-left px-3 py-2 font-medium">Source</th>
+            <th class="text-left px-3 py-2 font-medium">Method</th>
             <th class="text-right px-3 py-2 font-medium">Year</th>
             <th class="text-left px-5 py-2 font-medium">Link</th>
           </tr>
         </thead>
         <tbody id="tg-rows" class="divide-y divide-stone-100">
-          <tr><td colspan="9" class="px-5 py-8 text-center text-stone-400">Loading…</td></tr>
+          <tr><td colspan="10" class="px-5 py-8 text-center text-stone-400">Loading…</td></tr>
         </tbody>
       </table>
     </div>

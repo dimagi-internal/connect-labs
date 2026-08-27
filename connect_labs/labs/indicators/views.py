@@ -13,7 +13,7 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
-from connect_labs.labs.indicators import availability, export, measures, methods
+from connect_labs.labs.indicators import availability, export, interventions, measures, methods
 from connect_labs.labs.indicators.africa import ISO_CODES, name_for
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
 from connect_labs.labs.indicators.resolve import BulkResolver, select_above
@@ -65,6 +65,47 @@ def source_name(code: str) -> str:
         return Source(code).label
     except ValueError:
         return code
+
+
+def _row_logic(r, area) -> str:
+    """A short account of how this row's value was arrived at."""
+    if r is None:
+        return ""
+    steps: list[str] = []
+
+    if r.source == "igme_subnational":
+        steps.append(f"IGME small-area model, ADM{area.admin_level}")
+    elif r.source == "igme":
+        steps.append("IGME national model")
+    elif r.source == "dhs_calibrated":
+        f = r.extra.get("factor")
+        steps.append(
+            f"survey {r.measured_year}, re-levelled x{f:.2f}" if f else f"survey {r.measured_year}, re-levelled"
+        )
+        if r.extra.get("rake_factor"):
+            steps.append(f"raked x{r.extra['rake_factor']:.2f} to the national figure")
+    elif r.source == "dhs":
+        steps.append(f"survey {r.measured_year}, as measured")
+    elif "+" in (r.source or ""):
+        steps.append("weighted mean across regions")
+    else:
+        steps.append(r.source or "")
+
+    if r.inherited and r.measured_at is not None:
+        steps.append(f"national figure applied from {r.measured_at.name}")
+    if area.is_whole_country:
+        steps.append(f"rolled up from {area.units_covered} regions")
+
+    return "; ".join(x for x in steps if x)
+
+
+def _plural(noun: str) -> str:
+    """Enough English for the handful of nouns interventions actually use."""
+    if noun.endswith("ild"):
+        return noun + "ren"
+    if noun.endswith(("s", "x", "ch", "sh")):
+        return noun + "es"
+    return noun + "s"
 
 
 def _round_or_none(value):
@@ -255,6 +296,11 @@ class SelectionView(OpenLocallyMixin, View):
                         "straddles_threshold": bool(
                             r and r.ci_low is not None and r.ci_high is not None and r.ci_low <= threshold <= r.ci_high
                         ),
+                        # The logic behind this particular row, not just the
+                        # dataset it came from: which method answered, at what
+                        # level, and what was done to the value on the way.
+                        "method_label": (methods.get(selection.method).label if selection.method else None),
+                        "logic": _row_logic(r, a),
                         "source_name": source_name(r.source) if r else None,
                         "source_detail": (r.source_ref or "") if r else "",
                         "source_url": (r.source_url or "") if r else "",
@@ -337,6 +383,95 @@ class MethodsView(OpenLocallyMixin, View):
                     for m in measures.targetable()
                 ],
                 **availability.matrix(indicator),
+            }
+        )
+
+
+class ScenarioView(OpenLocallyMixin, View):
+    """What an intervention could absorb in the places a threshold selects.
+
+    The question the whole system was built for: "if KMC costs $60 a case, how
+    much could high-mortality Africa absorb?" Answered by composing the pieces
+    already here — a selection, a case-count measure, a unit cost — rather than
+    a bespoke calculation, so every figure traces back through the same
+    provenance as the table.
+    """
+
+    def get(self, request):
+        slug = request.GET.get("intervention", "ors")
+        try:
+            intervention = interventions.get(slug)
+        except KeyError:
+            return JsonResponse({"error": f"unknown intervention {slug!r}"}, status=400)
+
+        indicator = request.GET.get("indicator") or intervention.targets
+        threshold = _float(request, "threshold", measures.get(indicator).threshold_default)
+        unit_cost = _float(request, "unit_cost", intervention.unit_cost_usd)
+
+        selection = select_above(
+            indicator=indicator,
+            threshold=threshold,
+            iso_codes=ISO_CODES,
+            method=_method(request),
+            extra_counts=(intervention.cases,),
+        )
+
+        cases = selection.totals.get(intervention.cases)
+        got, total = selection.coverage.get(intervention.cases, (0, 0))
+
+        return JsonResponse(
+            {
+                "intervention": {
+                    "slug": intervention.slug,
+                    "label": intervention.label,
+                    "unit_noun": intervention.unit_noun,
+                    "unit_noun_plural": _plural(intervention.unit_noun),
+                    "description": intervention.description,
+                    "caveat": intervention.caveat,
+                    "cases_measure": intervention.cases,
+                    "cases_measure_label": measures.get(intervention.cases).label,
+                    "default_unit_cost": intervention.unit_cost_usd,
+                },
+                "indicator": indicator,
+                "indicator_label": measures.get(indicator).label,
+                "threshold": threshold,
+                "unit_cost": unit_cost,
+                "method": selection.method,
+                "cases": cases,
+                "absorbable_usd": (interventions.cost(intervention, cases, unit_cost) if cases else None),
+                # Cases are summed only where a value exists, so an incomplete
+                # selection produces a floor. Saying so is the difference
+                # between a floor and a wrong number.
+                "case_coverage": {"with_value": got, "of": total},
+                "complete": bool(total and got == total),
+                "counts": {
+                    "units": selection.unit_count,
+                    "countries": selection.country_count,
+                },
+                "countries_unsupported": selection.countries_unsupported,
+            }
+        )
+
+
+class InterventionsView(OpenLocallyMixin, View):
+    """The catalogue, for a picker."""
+
+    def get(self, request):
+        return JsonResponse(
+            {
+                "interventions": [
+                    {
+                        "slug": i.slug,
+                        "label": i.label,
+                        "unit_cost_usd": i.unit_cost_usd,
+                        "unit_noun": i.unit_noun,
+                        "targets": i.targets,
+                        "cases_measure": i.cases,
+                        "description": i.description,
+                        "caveat": i.caveat,
+                    }
+                    for i in interventions.all_interventions()
+                ]
             }
         )
 
