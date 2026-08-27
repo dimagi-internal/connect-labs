@@ -129,3 +129,50 @@ class TestWorldPopDecomposition:
 
         assert len(kept) == 2
         assert omitted == pytest.approx(0.0, abs=1e-9)
+
+
+class TestRateLimitHandling:
+    """A quota refusal must stop the run, not be retried.
+
+    Learned the hard way: repeated restarts of the WorldPop backfill exhausted
+    its undocumented daily quota, and each subsequent failure then spent three
+    retries deepening the hole — 463 boundaries returned nothing.
+    """
+
+    def test_a_429_raises_rate_limited_without_retrying(self, monkeypatch):
+        from connect_labs.labs.indicators.sources import base
+
+        calls = {"n": 0}
+
+        class Resp:
+            status_code = 429
+            text = "Your application is sending too many requests per day."
+
+        def fake_post(*a, **kw):
+            calls["n"] += 1
+            return Resp()
+
+        monkeypatch.setattr(base.requests, "post", fake_post)
+
+        with pytest.raises(base.RateLimited):
+            base.http_json_post("https://example.test/x", {"a": "b"}, retries=3)
+
+        # Once, not three times.
+        assert calls["n"] == 1
+
+    def test_an_ordinary_error_still_retries(self, monkeypatch):
+        from connect_labs.labs.indicators.sources import base
+
+        calls = {"n": 0}
+
+        def fake_post(*a, **kw):
+            calls["n"] += 1
+            raise ConnectionError("boom")
+
+        monkeypatch.setattr(base.requests, "post", fake_post)
+        monkeypatch.setattr(base.time, "sleep", lambda *_: None)
+
+        with pytest.raises(RuntimeError):
+            base.http_json_post("https://example.test/x", {"a": "b"}, retries=3)
+
+        assert calls["n"] == 3

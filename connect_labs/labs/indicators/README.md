@@ -131,6 +131,14 @@ shatter into dozens of specks keep the largest pieces covering 99.5% of the
 area; the omitted share is written into the value's `method` rather than passed
 off as complete.
 
+**There is a daily quota, and it is not documented.** Exceeding it returns
+`429 "Your application is sending too many requests per day"` and everything
+fails until it resets. Repeated restarts of a backfill are what exhaust it —
+each restart re-submits work, and a three-retry loop across hundreds of pieces
+turns one refusal into a thousand. The loader now treats a 429 as terminal:
+it stops the run, keeps what was written, and says to resume with
+`--missing-only` later. Restart a WorldPop ingest sparingly.
+
 **More workers is not faster.** WorldPop queues our tasks server-side: a single
 task takes ~15s whether one or eight are in flight, and pushing harder produced
 read timeouts rather than throughput. This is why HAPI exists in the pipeline.
