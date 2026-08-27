@@ -170,6 +170,71 @@ def rebuild_opportunity(opportunity_id: int, sessions, built_by: str = "", prune
     }
 
 
+def _winner_index(qs, wanted: set[str] | None = None) -> dict:
+    """Collapse verdict rows to one winner per image, in the callers' output shape.
+
+    Shared by read_index (whole opportunity) and prior_verdicts_for (a bounded
+    set), so the two cannot drift in either the winner rule or the value shape.
+
+    The ORDER BY is load-bearing -- see read_index for why -- and is applied by
+    the caller so each can keep its own index-friendly filter.
+    """
+    index: dict[str, dict] = {}
+    for row in qs.iterator():
+        key = f"{row.visit_id}:{row.blob_id}"
+        if wanted is not None and key not in wanted:
+            continue
+        index[key] = {
+            "result": row.result,
+            "session_id": row.session_id,
+            "session_title": row.session_title,
+            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+        }
+    return index
+
+
+def prior_verdicts_for(opportunity_id: int, pairs, exclude_session_id: int | None = None) -> dict:
+    """Winners for JUST these ``(visit_id, blob_id)`` pairs.
+
+    Same key, same values, same winner rule as ``read_index`` -- it is that
+    function restricted to a known key set, and ``test_prior_audit_read_path``
+    pins the two to identical output.
+
+    WHY THIS EXISTS
+    Both callers of the prior-audit index already hold the exact images they are
+    asking about: the bulk-data view has one session's ``visit_images``, and
+    audit creation has its candidate pool, which it then uses only for membership
+    tests (``filter_out_prior_audited``). Neither wants an index; both want a
+    lookup. ``read_index`` nevertheless loads every verdict row for the
+    opportunity and builds the whole dict in Python, so cost tracked accumulated
+    audit history rather than the page -- the very property this table was added
+    to remove. Measured in production 2026-08-27: opportunity 2154 held **17,653
+    verdict rows across 712 sessions**, materialised on every bulk-data load to
+    answer roughly 25 lookups.
+
+    WHY IT FILTERS ON visit_id AND FINISHES IN PYTHON
+    Postgres can do ``(visit_id, blob_id) IN ((...), (...))`` but the ORM cannot
+    express it portably, and an OR-of-tuples is pathological for the audit-creation
+    caller, whose pool runs to thousands of images. Filtering on ``visit_id__in``
+    uses the leading columns of ``idx_prior_audit_lookup``
+    (``opportunity_id, visit_id, ...``) and fetches a SUPERSET -- other images of
+    the same visits -- which ``_winner_index`` then drops. The superset is bounded
+    by the visits actually asked about, never by the opportunity's history, which
+    is the property that matters.
+    """
+    pairs = {(str(v), str(b)) for v, b in pairs}
+    if not pairs:
+        return {}
+    wanted = {f"{v}:{b}" for v, b in pairs}
+    visit_ids = {v for v, _ in pairs}
+
+    qs = PriorAuditVerdict.objects.filter(opportunity_id=opportunity_id, visit_id__in=visit_ids)
+    if exclude_session_id is not None:
+        qs = qs.exclude(session_id=exclude_session_id)
+    qs = qs.order_by(F("completed_at").asc(nulls_first=True), "session_id")
+    return _winner_index(qs, wanted)
+
+
 def read_index(opportunity_id: int, exclude_session_id: int | None = None) -> dict:
     """The projection's answer, in build_prior_audit_index's exact output shape.
 
@@ -191,16 +256,7 @@ def read_index(opportunity_id: int, exclude_session_id: int | None = None) -> di
     if exclude_session_id is not None:
         qs = qs.exclude(session_id=exclude_session_id)
     qs = qs.order_by(F("completed_at").asc(nulls_first=True), "session_id")
-
-    index: dict[str, dict] = {}
-    for row in qs.iterator():
-        index[f"{row.visit_id}:{row.blob_id}"] = {
-            "result": row.result,
-            "session_id": row.session_id,
-            "session_title": row.session_title,
-            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
-        }
-    return index
+    return _winner_index(qs)
 
 
 @dataclass

@@ -469,6 +469,26 @@ def all_sessions_completed(sessions) -> bool:
     return bool(sessions) and all(getattr(s, "status", None) == "completed" for s in sessions)
 
 
+def prior_audit_pairs(all_visit_images: dict, only_visits: set | None = None) -> list[tuple]:
+    """The ``(visit_id, blob_id)`` pairs ``filter_out_prior_audited`` will test.
+
+    Its companion: this names the keys, that one uses them. Deriving the pairs up
+    front is what lets the index be fetched for exactly these images instead of
+    for the whole opportunity -- filter_out_prior_audited only ever does
+    membership tests, so anything else fetched was never going to be read.
+
+    ``only_visits`` scopes the pairs to one opportunity's visits, for the
+    multi-opportunity path where each opportunity is queried separately.
+    """
+    return [
+        (visit_key, img.get("blob_id"))
+        for visit_key, images in all_visit_images.items()
+        if only_visits is None or str(visit_key) in only_visits
+        for img in images
+        if img.get("blob_id")
+    ]
+
+
 def filter_out_prior_audited(all_visit_images: dict, prior_index: dict) -> tuple[dict, int]:
     """Drop images whose "<visit_id>:<blob_id>" is in prior_index.
 
@@ -1508,6 +1528,45 @@ class AuditDataAccess(BaseDataAccess):
         projection.populate(opportunity_id, sessions, built_by=self._requesting_username())
 
         return build_prior_audit_index(sessions, exclude_session_id=exclude_session_id)
+
+    def get_prior_audited_images_for(self, opportunity_id, pairs, exclude_session_id=None) -> dict:
+        """``get_prior_audited_images`` restricted to the images you actually asked about.
+
+        Identical answer for those keys, at a cost that tracks the page instead of
+        the opportunity's accumulated audit history. Prefer this wherever the
+        caller already knows its ``(visit_id, blob_id)`` pairs -- which today is
+        both of them.
+
+        THE FRESHNESS GATE IS DELIBERATELY UNCHANGED, and that is the whole
+        subtlety. Making the READ targeted is safe; making the BUILD lazy is not.
+        A cold or stale projection answered from a targeted query would return
+        "no prior verdicts" rather than an error -- a silent UNDER-fetch of
+        exactly the kind ``get_prior_audited_images`` warns about for
+        ``data__opportunity_id``, and one that would quietly re-present already
+        judged images as unjudged. So this walks the same three paths: serve from
+        a current projection, merge what the watermark says changed, or do the
+        full build first. Only the final read narrows.
+        """
+        from connect_labs.audit import prior_audit_projection as projection
+
+        pairs = list(pairs)
+        if not pairs:
+            return {}
+
+        state = projection.get_state(opportunity_id)
+        if state and state.watermark and not projection.is_stale(state):
+            changed = [
+                s
+                for s in self.get_audit_sessions(status="completed", completed_at__gt=state.watermark.isoformat())
+                if s.opportunity_id == opportunity_id
+            ]
+            if changed:
+                projection.merge_changed(opportunity_id, changed, built_by=self._requesting_username())
+            return projection.prior_verdicts_for(opportunity_id, pairs, exclude_session_id=exclude_session_id)
+
+        sessions = [s for s in self.get_audit_sessions(status="completed") if s.opportunity_id == opportunity_id]
+        projection.populate(opportunity_id, sessions, built_by=self._requesting_username())
+        return projection.prior_verdicts_for(opportunity_id, pairs, exclude_session_id=exclude_session_id)
 
     def _requesting_username(self) -> str:
         """Who caused this build, for diagnosis. Never used for authorisation."""
