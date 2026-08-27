@@ -247,6 +247,14 @@ class SelectionView(OpenLocallyMixin, View):
                         "whole_country": a.is_whole_country,
                         "units_covered": a.units_covered,
                         "value": round(r.value, 1) if (r := a.values.get(indicator)) else None,
+                        "ci_low": round(r.ci_low, 1) if r and r.ci_low is not None else None,
+                        "ci_high": round(r.ci_high, 1) if r and r.ci_high is not None else None,
+                        # A published interval that spans the cut point means
+                        # this row's membership is not distinguishable from
+                        # chance at this threshold.
+                        "straddles_threshold": bool(
+                            r and r.ci_low is not None and r.ci_high is not None and r.ci_low <= threshold <= r.ci_high
+                        ),
                         "source_name": source_name(r.source) if r else None,
                         "source_detail": (r.source_ref or "") if r else "",
                         "source_url": (r.source_url or "") if r else "",

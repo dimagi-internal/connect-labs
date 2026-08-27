@@ -351,6 +351,20 @@
         '</td>' +
         '<td class="px-3 py-2 text-right tg-num">' +
         (r.value === null ? '—' : r.value) +
+        (r.ci_low !== null && r.ci_low !== undefined
+          ? '<span class="block text-xs ' +
+            (r.straddles_threshold ? 'text-amber-700' : 'text-stone-400') +
+            '" title="' +
+            (r.straddles_threshold
+              ? 'This interval spans the threshold — inclusion is within uncertainty'
+              : 'Published confidence interval') +
+            '">' +
+            r.ci_low +
+            '–' +
+            r.ci_high +
+            (r.straddles_threshold ? ' ?' : '') +
+            '</span>'
+          : '') +
         '</td>' +
         '<td class="px-3 py-2 text-right tg-num font-medium">' +
         (burdenOf(r) === null

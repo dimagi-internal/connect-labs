@@ -157,3 +157,52 @@ class TestGenericCoverageGaps:
         # Stunting is a prevalence, not a coverage figure — there is no
         # "unreached" population to compute.
         assert "stunting_gap" not in carried_for("stunting")
+
+
+class TestUncertainty:
+    """Published intervals were being stored and then discarded."""
+
+    def test_a_row_whose_interval_spans_the_threshold_is_flagged(self, client=None):
+        from django.contrib.auth import get_user_model
+        from django.test import Client
+        from django.urls import reverse
+
+        make_boundary("NGA", 0, "Nigeria", "NGA-0")
+        r = make_boundary("NGA", 1, "Borderline", "NGA-1", x=2)
+        v = set_value(r, "malaria_prevalence", 22.0, source=Source.DHS)
+        v.ci_low, v.ci_high = 12.0, 32.0
+        v.save()
+
+        u = get_user_model().objects.create_user(username="ci", password="pw")  # noqa: S106
+        c = Client()
+        c.force_login(u)
+        row = c.get(
+            reverse("targeting:selection"),
+            {"indicator": "malaria_prevalence", "threshold": 20, "method": "subnational_survey"},
+        ).json()["rows"][0]
+
+        # 20 sits inside 12-32, so being above the line is not distinguishable
+        # from chance here.
+        assert row["ci_low"] == 12.0
+        assert row["straddles_threshold"] is True
+
+    def test_a_confident_row_is_not_flagged(self):
+        from django.contrib.auth import get_user_model
+        from django.test import Client
+        from django.urls import reverse
+
+        make_boundary("NGA", 0, "Nigeria", "NGA-0")
+        r = make_boundary("NGA", 1, "Clear", "NGA-1", x=2)
+        v = set_value(r, "malaria_prevalence", 54.0, source=Source.DHS)
+        v.ci_low, v.ci_high = 44.0, 64.0
+        v.save()
+
+        u = get_user_model().objects.create_user(username="ci2", password="pw")  # noqa: S106
+        c = Client()
+        c.force_login(u)
+        row = c.get(
+            reverse("targeting:selection"),
+            {"indicator": "malaria_prevalence", "threshold": 20, "method": "subnational_survey"},
+        ).json()["rows"][0]
+
+        assert row["straddles_threshold"] is False

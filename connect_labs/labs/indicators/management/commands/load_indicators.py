@@ -239,6 +239,8 @@ class Command(BaseCommand):
             "measles_vaccination",
             "dpt3_vaccination",
             "full_immunisation",
+            "malaria_prevalence",
+            "malaria_treatment",
             "itn_use_children",
             "ari_prevalence",
             "ari_antibiotics",

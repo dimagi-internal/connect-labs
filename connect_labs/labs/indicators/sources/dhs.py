@@ -45,6 +45,14 @@ INDICATORS = {
     "measles_vaccination": {"value": "CH_VACC_C_MSL", "lo": None, "hi": None},
     "dpt3_vaccination": {"value": "CH_VACC_C_DP3", "lo": None, "hi": None},
     "full_immunisation": {"value": "CH_VACC_C_BAS", "lo": None, "hi": None},
+    # Malaria. Prevalence carries published CI bounds, which most DHS
+    # indicators do not — see the note on ci_low/ci_high in models.py.
+    "malaria_prevalence": {
+        "value": "ML_PMAL_C_RDT",
+        "lo": "ML_PMAL_C_RDL",
+        "hi": "ML_PMAL_C_RDU",
+    },
+    "malaria_treatment": {"value": "ML_FEVT_C_AML", "lo": None, "hi": None},
     # Malaria prevention
     "itn_use_children": {"value": "ML_NETC_C_ITN", "lo": None, "hi": None},
     # Respiratory infection

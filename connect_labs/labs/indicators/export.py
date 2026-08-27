@@ -24,6 +24,8 @@ COLUMNS = [
     ("level", "Admin level"),
     ("scope", "Row covers"),
     ("u5mr", "Under-5 mortality (per 1,000)"),
+    ("u5mr_ci", "Confidence interval"),
+    ("u5mr_within_uncertainty", "Within uncertainty of threshold"),
     ("u5mr_source", "U5MR source"),
     ("u5mr_source_detail", "U5MR source detail"),
     ("u5mr_year", "U5MR survey year"),
@@ -68,6 +70,17 @@ def _rows(selection: Selection):
                 else "single region"
             ),
             "u5mr": round(r.value, 1) if r else "",
+            "u5mr_ci": (
+                f"{r.ci_low:.1f}-{r.ci_high:.1f}" if r and r.ci_low is not None and r.ci_high is not None else ""
+            ),
+            "u5mr_within_uncertainty": (
+                "yes"
+                if r
+                and r.ci_low is not None
+                and r.ci_high is not None
+                and r.ci_low <= selection.threshold <= r.ci_high
+                else ""
+            ),
             "u5mr_source": _source_name(r.source) if r else "",
             "u5mr_source_detail": (r.source_ref or "") if r else "",
             "u5mr_year": r.measured_year if r else "",
