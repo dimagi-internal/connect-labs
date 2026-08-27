@@ -886,6 +886,111 @@ class TestListRunsProgramScopedFanOut:
         assert [r.id for r in runs] == [1]
 
 
+class TestGetRunProgramScopedFanOut:
+    """Regression: same bug class as TestListRunsProgramScopedFanOut, but for
+    get_run(). Confirmed live on workflow 6621 (FLW Weekly Audit Report,
+    program 176) — clicking "Open" on a per-opportunity run (e.g. run 6888,
+    owned by opportunity 1978) from the program-scoped workflow list page
+    404'd with "Workflow run 6888 not found", even though the run genuinely
+    exists and is visible in list_runs() for the same scope. A direct
+    program-scoped get_record_by_id() lookup can never see an
+    opportunity-tagged record (exact-match scope filter, not a hierarchy
+    resolution) — get_run must fall back to fanning out across every
+    definition's own opportunity_ids, same as list_runs."""
+
+    def _patched_client(self, definitions=None, runs_by_scope=None):
+        """Context manager patching LabsRecordAPIClient for the whole test
+        body — the fan-out reconstructs WorkflowDataAccess (and therefore
+        LabsRecordAPIClient) at get_run() CALL time, not just at the outer
+        instance's construction time, so the patch must still be active when
+        get_run() runs, not just when building the fixture."""
+        runs_by_scope = runs_by_scope or {}
+        definitions = definitions or []
+
+        def _make_client(access_token, opportunity_id=None, organization_id=None, program_id=None):
+            client = MagicMock()
+            client.get_records.side_effect = lambda **kwargs: (
+                list(definitions) if kwargs.get("type") == "workflow_definition" else []
+            )
+
+            def _get_record_by_id(**kwargs):
+                for run in runs_by_scope.get((opportunity_id, program_id), []):
+                    if run.id == kwargs.get("record_id"):
+                        return run
+                return None
+
+            client.get_record_by_id.side_effect = _get_record_by_id
+            return client
+
+        return patch("connect_labs.workflow.data_access.LabsRecordAPIClient", side_effect=_make_client)
+
+    def test_falls_back_to_owning_opportunity_when_program_scoped_lookup_misses(self):
+        from connect_labs.workflow.data_access import WorkflowDataAccess
+
+        definition = _make_definition_record(definition_id=6621, data={"name": "WF", "opportunity_ids": [1973, 1978]})
+        opp_run = _make_run_record(6888, 6621, opportunity_id=1978)
+
+        with self._patched_client(
+            definitions=[definition],
+            runs_by_scope={(None, 176): [], (1973, None): [], (1978, None): [opp_run]},
+        ):
+            with patch("connect_labs.workflow.data_access.settings") as mock_settings:
+                mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+                wda = WorkflowDataAccess(access_token="fake", program_id=176)
+                run = wda.get_run(6888)
+
+        assert run is not None
+        assert run.id == 6888
+
+    def test_direct_program_scoped_hit_short_circuits_fan_out(self):
+        """A run that really is program-scoped is returned directly — no need
+        to fan out across every definition's opportunities."""
+        from connect_labs.workflow.data_access import WorkflowDataAccess
+
+        definition = _make_definition_record(definition_id=6621, data={"name": "WF", "opportunity_ids": [1973]})
+        program_run = _make_run_record(6623, 6621)
+
+        with self._patched_client(
+            definitions=[definition],
+            runs_by_scope={(None, 176): [program_run]},
+        ):
+            with patch("connect_labs.workflow.data_access.settings") as mock_settings:
+                mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+                wda = WorkflowDataAccess(access_token="fake", program_id=176)
+                run = wda.get_run(6623)
+
+        assert run is not None
+        assert run.id == 6623
+
+    def test_returns_none_when_run_truly_does_not_exist_anywhere(self):
+        from connect_labs.workflow.data_access import WorkflowDataAccess
+
+        definition = _make_definition_record(definition_id=6621, data={"name": "WF", "opportunity_ids": [1973]})
+
+        with self._patched_client(
+            definitions=[definition],
+            runs_by_scope={(None, 176): [], (1973, None): []},
+        ):
+            with patch("connect_labs.workflow.data_access.settings") as mock_settings:
+                mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+                wda = WorkflowDataAccess(access_token="fake", program_id=176)
+                run = wda.get_run(999999)
+
+        assert run is None
+
+    def test_opportunity_scoped_dao_does_not_fan_out(self, workflow_data_access):
+        """Sanity check: the ordinary opportunity-owned path (self.opportunity_id
+        is set) is untouched by this fix — a miss stays a miss, no extra calls."""
+        wda, mock_api = workflow_data_access  # opportunity_id=700, per the fixture
+        mock_api.get_record_by_id.return_value = None
+
+        with patch("connect_labs.workflow.data_access.WorkflowDataAccess") as MockWDA:
+            run = wda.get_run(1)
+            MockWDA.assert_not_called()
+
+        assert run is None
+
+
 class TestGetPipelineDataDoesNotLeakProgramScope:
     """Pipeline records are opportunity-owned regardless of who owns the
     workflow. A program-owned WorkflowDataAccess (self.program_id set) must
