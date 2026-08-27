@@ -61,6 +61,13 @@ scenes:
   url: /microplans/program/10008/
   pace: teach
 - id: maya-mints-the-call-live-and-lands-on-its-responses-page
+  narrative: >-
+    Maya opens the create form. The coverage is already carried across from the study, so
+    she writes the description, then the scope of work. She sets the solicitation type and
+    the status, then the application deadline, the expected start and end dates, the
+    estimated scale — about twelve thousand households — and her contact email. Finally she
+    adds the question every firm must answer, and on submit Connect mints the call and lands
+    on its responses page.
   concept_claim: The create form pre-seeds the source plan into a Coverage areas panel
     snapshotted at creation, and on submit mints a brand-new active solicitation whose
     id is read off the resulting responses page.
@@ -87,28 +94,33 @@ scenes:
     note: coverage map paints
   - kind: hover
     target: css:#sol-coverage-map
+    say: coverage
     note: glide over the coverage
   - kind: scroll_to
     target: css:#id_description
     note: survey description
   - kind: fill
     target: css:#id_description
+    say: description
     value: Independent household coverage survey across the R6 matched wards — enumerators
       verify vitamin-A delivery at sampled rooftops in both the intervention and match
       areas.
     note: Maya writes the survey description
   - kind: scroll_to
     target: css:#id_scope_of_work
+    say: scope
     note: scope of work, also carried from the study
   - kind: hold
     seconds: 1.1
     note: pre-filled scope
   - kind: select
     target: css:#id_solicitation_type
+    say: type
     value: rfp
     note: pick the call type — a Request for Proposal
   - kind: select
     target: css:#id_status
+    say: status
     value: active
     note: set Status to Active
   - kind: scroll_to
@@ -124,21 +136,25 @@ scenes:
     note: application deadline
   - kind: fill
     target: css:#id_application_deadline
-    value: 08152026
+    say: deadline
+    value: '2026-09-30'
     note: set the deadline
   - kind: fill
     target: css:#id_expected_start_date
-    value: 09012026
+    say: start
+    value: '2026-10-15'
     note: expected start
   - kind: fill
     target: css:#id_expected_end_date
-    value: '11302026'
+    say: end
+    value: '2026-12-31'
     note: expected end
   - kind: scroll_to
     target: css:#id_estimated_scale
     note: estimated scale
   - kind: fill
     target: css:#id_estimated_scale
+    say: scale
     value: ~12,000 households across 56 sampled settlements
     note: the scale
   - kind: scroll_to
@@ -146,6 +162,7 @@ scenes:
     note: contact email
   - kind: fill
     target: css:#id_contact_email
+    say: email
     value: maya.okafor@kaura-health.gov.ng
     note: her contact
   - kind: scroll_to
@@ -153,9 +170,11 @@ scenes:
     note: the Application Questions section
   - kind: click
     target: text:Add Question
+    say: question
     note: add an application question for the firms
   - kind: fill
-    target: css:input[x-model="question.text"]
+    target: css:textarea[x-model="question.text"]
+    say: answer
     value: How many enumerators can you field in Kaura, and what is your experience
       running household coverage surveys?
     note: Maya writes a question the firms must answer
@@ -163,6 +182,11 @@ scenes:
   full_page: false
   pace: teach
 - id: maya-generates-the-scoring-criteria-with-ai
+  narrative: >-
+    Rather than hand-writing the rubric, Maya clicks Generate with AI and the platform
+    drafts weighted evaluation criteria from her scope and her application questions. She
+    reads them, keeps them, and hits publish — so the criteria are fixed before a single
+    firm has responded.
   role: demo
   pace: teach
   concept_claim: Maya clicks Generate with AI and the platform drafts weighted evaluation
@@ -181,6 +205,7 @@ scenes:
     note: about to AI-generate the scoring rubric
   - kind: click
     target: text:Generate with AI
+    say: generate
     note: instead of hand-writing the rubric, Generate with AI
   - kind: wait_for
     target: css:input[x-model="criterion.name"]
@@ -207,6 +232,7 @@ scenes:
       resolves the act on camera.
   - kind: click
     target: css:button[type=submit]:has-text("Create Solicitation")
+    say: publish
     must_succeed: true
     note: Maya clicks Create Solicitation — the REAL publish. This mints a brand-new
       active solicitation on program 10008 (source_group_id=4492) live, on camera;
@@ -262,6 +288,10 @@ scenes:
       "a brand-new call, minted live" tail of the narration on the call Maya just
       created. This is the frame the judge sees as scene 2's hero.
 - id: a-survey-firm-reads-the-open-call-and-ticks-the-area-it-can-staff
+  narrative: >-
+    A survey firm opens the public call. It enters its name — Sahel Field Research — and its
+    contact email, ticks the coverage area it can staff, and writes its answer. Submission
+    stays blocked until an area is chosen.
   concept_claim: A survey firm reads the public solicitation and applies by selecting
     a specific coverage area from a checklist, and submission is blocked until one
     area is chosen.
@@ -312,6 +342,7 @@ scenes:
       firm, not the individual account that submitted the form
   - kind: fill
     target: css:#id_firm_name
+    say: name
     value: Sahel Field Research
     note: the applying firm names itself — Sahel Field Research, a plausible northern-Nigeria
       independent household-survey firm. This is what renders on the responses list
@@ -319,6 +350,7 @@ scenes:
       own ace@dimagi-ai.com dev account.
   - kind: fill
     target: css:#id_firm_email
+    say: email
     value: bids@sahelfieldresearch.org
     note: the firm's contact email — stored as submitted_by_email and shown beside
       the firm name on the responses list, replacing the operator account's email
@@ -328,6 +360,7 @@ scenes:
       to commit the area
   - kind: click
     target: css:#sol-plan-checklist input[type=checkbox]
+    say: area
     must_succeed: true
     note: tick the coverage area — synced two-way with the map; this enables Submit
       (≥1 required). The created call has exactly one plan (R6 — Attakar × Gura),
@@ -341,6 +374,7 @@ scenes:
     note: the firm sees exactly how it will be scored (criteria visible to respondents)
   - kind: fill
     target: css:textarea[name^="question_"]
+    say: answer
     value: We field 28 enumerators across Kaura and have run three prior household
       coverage surveys in northern Nigeria, including a 2025 vitamin-A endline.
     note: the firm drafts its answer
@@ -348,6 +382,14 @@ scenes:
   pace: teach
   full_page: false
 - id: the-ai-coach-sharpens-the-firm-answer
+  narrative: >-
+    Before submitting, the firm asks the AI Application Coach for feedback. It reads the
+    draft against the published criteria and returns specific suggestions — press for
+    verifiable evidence, not unbacked claims. The firm strengthens the answer, then submits.
+  narrative: >-
+    Before submitting, the firm clicks Get Feedback. The AI Application Coach reads the
+    draft against the evaluation criteria and returns specific suggestions to strengthen it.
+    Then the firm submits.
   role: demo
   pace: teach
   concept_claim: Before submitting, the firm clicks Get Feedback and the AI Application
@@ -366,6 +408,7 @@ scenes:
     note: about to get AI feedback on the draft
   - kind: click
     target: css:#coach-btn
+    say: feedback
     note: Get Feedback — the coach reviews the draft answer against the evaluation
       criteria
   - kind: wait_for
@@ -374,6 +417,7 @@ scenes:
     note: AI coach (Anthropic) finishes reviewing the answer
   - kind: scroll_to
     target: css:#coach-content
+    say: suggestions
     note: frame the coaching feedback
   - kind: hold
     seconds: 4
@@ -393,6 +437,7 @@ scenes:
       as the load-bearing one. The submit click then resolves the act on camera.
   - kind: click
     target: css:button[type=submit]:has-text("Submit Response")
+    say: submits
     must_succeed: true
     note: submit the firm's application — the REAL submit; redirects to the call's
       public detail page
@@ -407,6 +452,10 @@ scenes:
       landed — kept short so the ACTION frame above (the completed application) stays
       the load-bearing teach frame
 - id: maya-sees-the-firm-tied-to-the-coverage-she-designed
+  narrative: >-
+    When the window closes, Maya opens the responses and moves to award. The organization
+    column names the firm — Sahel Field Research — beside the exact coverage she designed,
+    the Round 6 Attakar and Gura pair.
   concept_claim: The owner reviewing responses sees each firm's committed coverage
     area resolved from the authoritative snapshot, tying every application to a concrete
     designed coverage.
@@ -433,6 +482,7 @@ scenes:
       in the hero frame below.
   - kind: hover
     target: css:a:has-text("Award")
+    say: award
     seconds: 2.5
     note: glance at the Award action Maya is reaching for next — hover only, the award
       itself happens in scene 5; reading the row does not mutate state. (This may
@@ -440,6 +490,7 @@ scenes:
       hero is un-clipped.)
   - kind: scroll_to
     target: css:th:has-text("Organization")
+    say: organization
     note: scroll the wide responses table back to its LEFT edge so the Organization
       column header + the firm's Organization cell are fully in frame for the hero
       (the earlier Award hover scrolled the table right, clipping "Organization" to
@@ -447,6 +498,7 @@ scenes:
       un-clips the firm identity that finding 1 fixed.
   - kind: hover
     target: css:span:has-text("R6 — Attakar")
+    say: coverage
     seconds: 3.5
     note: settle the cursor on the firm's Selected-coverage chip (R6 — Attakar × Gura),
       now beside a fully visible Organization column reading Sahel Field Research.
@@ -455,6 +507,9 @@ scenes:
   url: /solicitations/${solicitation_id}/responses/?program_id=10008
   pace: teach
 - id: maya-awards-the-firm-and-sees-it-was-notified
+  narrative: >-
+    She sets an optional budget for the awarded work and confirms. The firm is notified on
+    the spot, and the award is recorded against the study it came from.
   concept_claim: Awarding the chosen firm records the decision and notifies the organization,
     while standing up the live Connect opportunity that firm would run is the next
     step, not yet built.
@@ -476,10 +531,12 @@ scenes:
     note: let Maya read the "You're awarding" summary before she commits
   - kind: fill
     target: css:input[name=reward_budget]
+    say: budget
     value: '500000'
     note: optional budget for the awarded firm
   - kind: click
     target: css:button[type=submit]:has-text("Award")
+    say: confirms
     must_succeed: true
     note: award the firm — records the decision and notifies the organization
   - kind: wait_for
