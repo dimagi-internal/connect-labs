@@ -30,7 +30,19 @@ logger = logging.getLogger(__name__)
 
 #: When several sources carry the same cell, prefer them in this order.
 #: Subnational survey data beats a national model applied downward.
-DEFAULT_SOURCE_ORDER = ("dhs", "hapi", "worldpop", "igme", "worldbank", "derived")
+DEFAULT_SOURCE_ORDER = (
+    # A survey re-levelled to the present beats the raw survey: a third of the
+    # continent's subnational mortality comes from surveys 8+ years old, and
+    # several countries were appearing as high-mortality on 20-year-old numbers.
+    # The raw row is kept alongside so the adjustment stays auditable.
+    "dhs_calibrated",
+    "dhs",
+    "hapi",
+    "worldpop",
+    "igme",
+    "worldbank",
+    "derived",
+)
 
 
 @dataclass
@@ -51,6 +63,21 @@ class Resolved:
     #: The boundary the number was actually measured on. Differs from
     #: ``boundary`` when the value was inherited from a coarser ancestor.
     measured_at: AdminBoundary | None = None
+    extra: dict = field(default_factory=dict)
+
+    @property
+    def measured_year(self) -> int:
+        """The year the underlying measurement was taken.
+
+        Differs from ``year`` for a re-levelled survey, which is stamped with the
+        year it now describes. A reader deciding whether to trust a number wants
+        the year of the survey, not the year of the arithmetic.
+        """
+        return self.extra.get("raw_year") or self.year
+
+    @property
+    def adjusted(self) -> bool:
+        return "factor" in self.extra
 
     @property
     def inherited(self) -> bool:
@@ -157,6 +184,7 @@ def resolve(
         ci_low=row.ci_low,
         ci_high=row.ci_high,
         measured_at=measured_at,
+        extra=row.extra or {},
     )
 
 
@@ -243,6 +271,7 @@ class BulkResolver:
                 ci_low=row.ci_low,
                 ci_high=row.ci_high,
                 measured_at=measured_at,
+                extra=row.extra or {},
             )
         return out
 

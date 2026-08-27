@@ -394,3 +394,101 @@ class TestMissingIsNotZero:
 
         assert sel.is_complete("births") is True
         assert sel.missing_units("births") == 0
+
+
+class TestCalibration:
+    """Old surveys are re-levelled to the present.
+
+    Found by asking why Uganda's figure was dated 2016: a third of the
+    continent's subnational mortality came from surveys 8+ years old, and nine
+    countries were selected as high-mortality whose current national rate was
+    already below the threshold.
+    """
+
+    def _country_with_series(self, iso, survey_year, survey_value, then, now, now_year=2024):
+        """A country with a survey and the two IGME endpoints the factor needs."""
+        assert survey_year != now_year, "the two IGME endpoints must be distinct years"
+        country = make_boundary(iso, 0, f"{iso}land", f"{iso}-0")
+        region = make_boundary(iso, 1, "Region", f"{iso}-1", x=2)
+        set_value(region, "u5mr", survey_value, year=survey_year, source=Source.DHS)
+        set_value(country, "u5mr", then, year=survey_year, source=Source.IGME)
+        set_value(country, "u5mr", now, year=now_year, source=Source.IGME)
+        return country, region
+
+    def test_a_falling_trend_scales_the_survey_down(self):
+        from connect_labs.labs.indicators.sources import calibrate
+
+        _, region = self._country_with_series("ERI", 2002, 154.0, then=77.3, now=34.3)
+        rows = calibrate.load("u5mr", iso_codes=["ERI"])
+
+        assert len(rows) == 1
+        # 154 * (34.3 / 77.3) ~= 68
+        assert rows[0].value == pytest.approx(154.0 * 34.3 / 77.3)
+        assert rows[0].value < 80
+        assert rows[0].extra["raw_value"] == 154.0
+        assert rows[0].extra["raw_year"] == 2002
+
+    def test_a_rising_trend_scales_the_survey_up(self):
+        from connect_labs.labs.indicators.sources import calibrate
+
+        # Not a one-way downward adjustment: Zimbabwe's rate rose.
+        _, region = self._country_with_series("ZWE", 2015, 50.0, then=60.0, now=65.0)
+        rows = calibrate.load("u5mr", iso_codes=["ZWE"])
+
+        assert rows[0].value > 50.0
+
+    def test_a_recent_survey_is_near_untouched(self):
+        from connect_labs.labs.indicators.sources import calibrate
+
+        # A survey one year old against a near-flat trend: the adjustment
+        # should be a rounding error, which is why calibration runs uniformly
+        # rather than only on old surveys.
+        _, region = self._country_with_series("NGA", 2023, 158.0, then=111.0, now=110.0)
+        rows = calibrate.load("u5mr", iso_codes=["NGA"])
+
+        assert rows[0].value == pytest.approx(158.0 * 110.0 / 111.0)
+        assert abs(rows[0].value - 158.0) < 2.0
+
+    def test_an_implausible_factor_is_refused_not_published(self):
+        from connect_labs.labs.indicators.sources import calibrate
+
+        # A tenfold "trend" means the series or the survey year is wrong.
+        self._country_with_series("TCD", 2010, 100.0, then=10.0, now=100.0)
+        rows = calibrate.load("u5mr", iso_codes=["TCD"])
+
+        assert rows == []
+
+    def test_a_survey_predating_the_series_keeps_its_raw_value(self):
+        from connect_labs.labs.indicators.sources import calibrate
+
+        country = make_boundary("TUN", 0, "Tunisia", "TUN-0")
+        region = make_boundary("TUN", 1, "Region", "TUN-1", x=2)
+        set_value(region, "u5mr", 48.0, year=1988, source=Source.DHS)
+        set_value(country, "u5mr", 12.0, year=2024, source=Source.IGME)  # no 1988 value
+
+        assert calibrate.load("u5mr", iso_codes=["TUN"]) == []
+        # and the raw survey still resolves, so the region does not vanish
+        assert resolve("u5mr", region).value == 48.0
+
+    def test_the_calibrated_value_wins_over_the_raw_survey(self):
+        from connect_labs.labs.indicators.sources import base, calibrate
+
+        _, region = self._country_with_series("SWZ", 2006, 106.0, then=100.0, now=45.0)
+        base.upsert(calibrate.load("u5mr", iso_codes=["SWZ"]))
+
+        got = resolve("u5mr", region)
+        assert got.source == Source.DHS_CALIBRATED
+        assert got.value < 106.0
+        # The survey year is what a reader needs to judge it, not the year the
+        # arithmetic targeted.
+        assert got.measured_year == 2006
+        assert got.adjusted is True
+
+    def test_the_raw_survey_row_is_kept_for_audit(self):
+        from connect_labs.labs.indicators.sources import base, calibrate
+
+        _, region = self._country_with_series("SWZ", 2006, 106.0, then=100.0, now=45.0)
+        base.upsert(calibrate.load("u5mr", iso_codes=["SWZ"]))
+
+        raw = IndicatorValue.objects.get(indicator="u5mr", boundary=region, source=Source.DHS)
+        assert raw.value == 106.0

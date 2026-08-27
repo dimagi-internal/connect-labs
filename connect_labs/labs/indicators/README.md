@@ -135,6 +135,38 @@ off as complete.
 task takes ~15s whether one or eight are in flight, and pushing harder produced
 read timeouts rather than throughput. This is why HAPI exists in the pipeline.
 
+## Old surveys are re-levelled to the present
+
+A third of Africa's subnational mortality comes from surveys eight or more years
+old, and mortality has fallen a long way since. Taken raw, those surveys put
+countries in the high-mortality bracket on numbers that stopped being true a
+decade ago — Eritrea's 2002 regions read 111–154 against a national rate of 34
+today; Eswatini 106 from 2006 against 45 today. Nine countries were being
+selected at an 80-per-1,000 threshold whose _current_ national rate is already
+below it.
+
+`sources/calibrate.py` keeps the survey's subnational pattern and re-levels it:
+
+```
+factor   = IGME national (latest) / IGME national (survey year)
+adjusted = survey region value x factor
+```
+
+Both ends of the ratio are IGME's own annual series, so the factor is a pure
+trend carrying no difference of method between IGME and DHS. It runs uniformly —
+a 2024 survey gets a factor of ~1.00 — and works both ways: Zimbabwe scales
+_up_, because its rate rose.
+
+**The assumption:** that relative differences between regions persisted while
+the level moved. It weakens the older the survey. So the raw survey row is kept
+beside the adjusted one, every adjusted value records its factor and endpoints,
+and the UI shows the _survey_ year (amber past 8 years) rather than the year the
+arithmetic targeted. Surveys predating the IGME series (Tunisia 1988) get no
+factor and keep their raw value.
+
+At an 80 threshold this moves the selection from 202 regions in 29 countries to
+156 in 21.
+
 ## Every value links back to its source
 
 `source_url` rides on each row beside `license_code`, so the table, the CSV and
