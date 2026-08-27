@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.utils import timezone
 
+from connect_labs.labs.analysis.config import VALID_AGGREGATIONS
 from connect_labs.labs.models import UserConnectToken
 from connect_labs.mcp.models import MCPAccessToken
 from connect_labs.mcp.testing import call_tool
@@ -190,9 +191,13 @@ def test_pipeline_update_schema_rejects_unknown_aggregation(client, auth_user):
 @pytest.mark.django_db
 @patch("connect_labs.mcp.tools.pipelines.PipelineDataAccess")
 def test_pipeline_update_schema_accepts_documented_aggregations(mock_pda_cls, client, auth_user):
-    """count_unique and list are both documented in WORKFLOW_REFERENCE.md and
-    supported by the SQL builder — the allow-list used to miss them, forcing
-    callers to work around a false-positive rejection."""
+    """Every aggregation the SQL builder implements must be accepted here.
+
+    This has now bitten twice: the hand-maintained allow-list first missed
+    count_unique/list, then median/mode/mode_share/dup_share (#1183). The
+    validator reads the engine's own constant, so the list below is the
+    engine's — see test_mcp_allowlist_cannot_drift_from_the_engine.
+    """
     _, raw = auth_user
     mock_pda = mock_pda_cls.return_value
     existing = MagicMock()
@@ -200,7 +205,7 @@ def test_pipeline_update_schema_accepts_documented_aggregations(mock_pda_cls, cl
     mock_pda.get_definition.return_value = existing
     mock_pda.update_definition.return_value = MagicMock(version=2)
 
-    for agg in ["count_unique", "list"]:
+    for agg in sorted(VALID_AGGREGATIONS):
         schema = {"fields": [{"name": "x", "path": "form.x", "aggregation": agg}]}
         data = _call_tool(
             client,
@@ -214,6 +219,41 @@ def test_pipeline_update_schema_accepts_documented_aggregations(mock_pda_cls, cl
             },
         )
         assert data["result"]["isError"] is False, (agg, data)
+
+
+def test_mcp_allowlist_cannot_drift_from_the_engine():
+    """The MCP validator must not keep its own copy of the aggregation names.
+
+    Twice now a second hand-maintained list fell behind the SQL builder and
+    rejected aggregations the engine implements — a false negative that looks
+    to the caller like an unsupported feature (#1183). Asserting identity, not
+    equality of contents, is what makes a future copy-paste fail here.
+    """
+    from connect_labs.mcp.tools import pipelines
+
+    assert pipelines.VALID_AGGREGATIONS is VALID_AGGREGATIONS
+    assert not hasattr(pipelines, "_VALID_AGGREGATIONS")
+
+
+def test_every_documented_aggregation_is_a_real_one():
+    """WORKFLOW_REFERENCE.md is served verbatim by workflow_authoring_guide, so
+    for a repo-less MCP client it *is* the contract. A name in the table the
+    engine doesn't implement is a promise nobody can keep; a name the engine
+    implements that is missing from the table is a silent capability loss —
+    which is how dup_share went undocumented.
+    """
+    import re
+    from pathlib import Path
+
+    ref = Path(__file__).resolve().parents[2] / "workflow" / "WORKFLOW_REFERENCE.md"
+    text = ref.read_text()
+    table = text.split("### Transform Types")[0].split("| Aggregation")[1]
+    documented = set(re.findall(r"^\| `(\w+)`", table, re.MULTILINE))
+
+    assert documented == set(VALID_AGGREGATIONS), {
+        "documented but not implemented": sorted(documented - set(VALID_AGGREGATIONS)),
+        "implemented but undocumented": sorted(set(VALID_AGGREGATIONS) - documented),
+    }
 
 
 @pytest.mark.django_db
