@@ -28,6 +28,7 @@ from connect_labs.labs import s3_export
 from connect_labs.labs.analysis.sse_streaming import BaseSSEStreamView
 from connect_labs.labs.context import get_org_data
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError
+from connect_labs.labs.presentation import is_present_mode
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.utils.feature_access import can_create_from_template, get_allowed_templates
 from connect_labs.workflow.data_access import (
@@ -842,6 +843,11 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         context["opportunity_id"] = opportunity_id
         context["program_id"] = program_id
         context["opportunity_name"] = labs_context.get("opportunity_name")
+        # `?present=1` strips the application shell for a link shared with a
+        # funder/partner (connect-labs#1295). Set before every early return
+        # below, so an error or no-context page shares the same chrome as the
+        # page the recipient was sent to.
+        context["present_mode"] = is_present_mode(self.request)
         context["has_context"] = bool(opportunity_id or program_scoped)
         context["user_opportunities"] = (get_org_data(self.request) or {}).get("opportunities", [])
         # Mapbox token for workflow templates that render maps via the shared
