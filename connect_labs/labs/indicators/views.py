@@ -67,6 +67,32 @@ def source_name(code: str) -> str:
         return code
 
 
+def _row_method_label(r, selected) -> str | None:
+    """The method that actually produced THIS row, not the one that was asked for.
+
+    A region with no value of its own inherits from an ancestor, and what it
+    inherits is not necessarily one of the selected method's sources: most rows
+    under "Survey as measured" for DR Congo are IGME's national figure applied
+    downward, because the survey did not reach those provinces.
+
+    Labelling every row with the selected method contradicted the ``logic``
+    column beside it — "Survey as measured" against "IGME national model" — and
+    hid the one thing a reader needs to weigh the row. Name what answered.
+    """
+    if r is None or selected is None:
+        return selected.label if selected else None
+
+    sources = r.source.split("+") if "+" in r.source else [r.source]
+    if all(src in selected.source_order for src in sources):
+        return selected.label
+
+    labels = []
+    for src in sources:
+        answering = next((m for m in methods.METHODS.values() if m.source_order[:1] == (src,)), None)
+        labels.append(answering.label if answering else source_name(src))
+    return " + ".join(dict.fromkeys(labels))
+
+
 def _row_logic(r, area) -> str:
     """A short account of how this row's value was arrived at."""
     if r is None:
@@ -299,7 +325,9 @@ class SelectionView(OpenLocallyMixin, View):
                         # The logic behind this particular row, not just the
                         # dataset it came from: which method answered, at what
                         # level, and what was done to the value on the way.
-                        "method_label": (methods.get(selection.method).label if selection.method else None),
+                        "method_label": _row_method_label(
+                            r, methods.get(selection.method) if selection.method else None
+                        ),
                         "logic": _row_logic(r, a),
                         "source_name": source_name(r.source) if r else None,
                         "source_detail": (r.source_ref or "") if r else "",

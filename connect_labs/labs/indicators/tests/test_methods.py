@@ -232,6 +232,36 @@ class TestIgmeSubnationalLevelFit:
         remaining = list(IndicatorValue.objects.filter(iso_code="UGA").values_list("indicator", flat=True))
         assert remaining == ["nmr"]
 
+    def test_a_superseded_level_is_dropped_when_the_fit_moves(self):
+        """One level per country. An earlier run's tier must not linger.
+
+        _best_fit settles on a single boundary level, so two levels in the table
+        means a previous run chose differently and was never cleared. Six
+        countries carried both ADM1 and ADM2 that way.
+        """
+        from connect_labs.labs.indicators.models import IndicatorValue, License, Source
+        from connect_labs.labs.indicators.sources import igme_subnational
+
+        region = make_boundary("AGO", 1, "Luanda", "AGO-1-1", x=2)
+        district = make_boundary("AGO", 2, "Cazenga", "AGO-2-1", x=4)
+        for boundary, level in ((region, 1), (district, 2)):
+            IndicatorValue.objects.create(
+                indicator="u5mr",
+                boundary=boundary,
+                iso_code="AGO",
+                admin_level=level,
+                year=2021,
+                value=61.2,
+                source=Source.IGME_SUBNATIONAL,
+                license_code=License.CC_BY_3_IGO,
+                retrieved_at=timezone.now(),
+            )
+
+        igme_subnational._retract_other_levels("u5mr", {"AGO": 2})
+
+        levels = list(IndicatorValue.objects.filter(iso_code="AGO").values_list("admin_level", flat=True))
+        assert levels == [2]
+
 
 class TestInterventionCosting:
     """A cost is a unit price and a unit of measure — both must be fixed."""

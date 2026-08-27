@@ -206,6 +206,7 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
     rejected: list[str] = []
 
     refused_isos: list[str] = []
+    chosen_level: dict[str, int] = {}
 
     for iso, areas in sorted(by_country.items()):
         at_level, boundary_level, rate = _best_fit(iso, areas)
@@ -213,6 +214,7 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
             rejected.append(f"{iso} ({rate:.0%})")
             refused_isos.append(iso)
             continue
+        chosen_level[iso] = boundary_level
 
         matcher = BoundaryMatcher(iso, admin_level=boundary_level)
         matched = 0
@@ -262,6 +264,7 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
         )
 
     _retract(measure, refused_isos)
+    _retract_other_levels(measure, chosen_level)
     return rows
 
 
@@ -292,6 +295,41 @@ def _retract(measure: str, isos: list[str]) -> int:
             measure,
             deleted,
             ", ".join(sorted(isos)),
+        )
+    return deleted
+
+
+def _retract_other_levels(measure: str, chosen: dict[str, int]) -> int:
+    """Drop values at any level this country was not matched at.
+
+    ``_best_fit`` settles on exactly one boundary level per country, so a single
+    run never writes two. Two levels in the table therefore means an earlier run
+    chose differently and its rows were never cleared — six countries carried
+    both ADM1 and ADM2 that way.
+
+    ``select_above`` is not fooled by it: it takes the deepest level holding
+    values and would never count a district and its region as two places. But
+    the stale tier still answers a direct ``resolve()`` on that boundary, and
+    still inflates every coverage figure computed from what is stored. One level
+    per country is the invariant; this keeps it.
+    """
+    deleted = 0
+    for iso, level in chosen.items():
+        n, _ = (
+            IndicatorValue.objects.filter(
+                indicator=measure,
+                source=Source.IGME_SUBNATIONAL,
+                iso_code=iso,
+            )
+            .exclude(admin_level=level)
+            .delete()
+        )
+        deleted += n
+    if deleted:
+        logger.info(
+            "IGME subnational %s: retracted %d values stored at a level no longer matched",
+            measure,
+            deleted,
         )
     return deleted
 

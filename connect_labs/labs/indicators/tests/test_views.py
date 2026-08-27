@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import io
 import zipfile
+from types import SimpleNamespace
 
 import pytest
 from django.test import override_settings
@@ -307,3 +308,41 @@ class TestSourceColumns:
         assert "function esc(" in js
         assert "esc(r.source_name" in js
         assert "esc(r.source_url)" in js
+
+
+class TestRowMethodLabel:
+    """The Method column names what produced the row, not what was asked for."""
+
+    def test_a_row_from_the_selected_method_keeps_its_label(self):
+        from connect_labs.labs.indicators import methods
+        from connect_labs.labs.indicators.views import _row_method_label
+
+        selected = methods.get("subnational_survey")
+        row = SimpleNamespace(source="dhs")
+
+        assert _row_method_label(row, selected) == selected.label
+
+    def test_an_inherited_row_names_the_method_that_answered(self):
+        """DR Congo's provinces are IGME's national figure applied downward.
+
+        Labelling them "Survey as measured" contradicted the logic column beside
+        them and hid the one thing a reader needs to weigh the row.
+        """
+        from connect_labs.labs.indicators import methods
+        from connect_labs.labs.indicators.views import _row_method_label
+
+        row = SimpleNamespace(source="igme")
+
+        label = _row_method_label(row, methods.get("subnational_survey"))
+
+        assert label == methods.get("national_igme").label
+
+    def test_a_rolled_up_row_names_every_method_beneath_it(self):
+        from connect_labs.labs.indicators import methods
+        from connect_labs.labs.indicators.views import _row_method_label
+
+        row = SimpleNamespace(source="dhs+igme")
+
+        label = _row_method_label(row, methods.get("subnational_survey"))
+
+        assert label == "Survey as measured + National estimate (UN IGME)"
