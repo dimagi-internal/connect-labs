@@ -216,6 +216,12 @@ Previously, some dashboard elements could appear invisible or unstyled with no e
 
 This has been fixed. All colours and sizing options available to dashboard authors now render correctly. If you previously noticed a chart, figure, or panel that looked blank, collapsed, or oddly coloured, it should now display as intended. If you still see a dashboard element that appears missing or unstyled, contact whoever manages your program's dashboards so they can review the configuration.
 
+### Consistent data across live view and saved runs
+
+On multi-opportunity dashboards, the figures you see while a run is in progress are now guaranteed to match what is saved once the run completes. Previously, if a pipeline happened to define a field with the same name as one the system fills in automatically — such as an opportunity identifier — the live view and the saved run could show different values for that field. The system now ensures that its own identifier always takes precedence, so all three ways a dashboard's data is produced (live view, saved run, and pipeline preview) agree on the same value.
+
+No dashboard is known to have displayed wrong numbers as a result of this — for real Connect data the two values were always the same. This change closes the gap before it can affect any program.
+
 ### Review outcome counts on open runs
 
 On a dashboard backed by a visit-level pipeline — such as an in-progress audit run — the summary figures for flagged and rejected visits now show correct counts even while the run is still open. Previously, those counts showed **0 flagged** and **0 rejected** on any run that had not yet been marked complete, even when flagged and rejected records were already present.
@@ -238,14 +244,4 @@ Many per-opportunity reports include a **Flags** column. Flags are findings the 
 
 When you open a report, the system reads the data and applies all relevant flags immediately on page load. There is nothing to click to trigger this — flags are already present by the time the dashboard is visible. A row with no concerns shows an em-dash (—).
 
-Each active concern appears as a coloured pill in the Flags cell. The pill displays only the label text — there are no icons inside the pill. A row can carry more than one flag at the same time. Flag pills never break mid-phrase — the FLAGS column widens to fit the full label of whichever flags are active on that row.
-
-**Flagged rows are lightly tinted** so that workers with active flags stand out in the table at a glance, rather than being visually indistinguishable from unflagged rows.
-
-### Actions column
-
-Every row has an **Actions** column. What the Actions cell shows depends on whether an audit or task has already been created for that worker in the current run, and whether the run is still in progress or has been saved as completed.
-
-**When no audit or task exists yet**, the cell shows two menu buttons: **Create Audit ▾** and **Create Task ▾**.
-
-The dropdown menus
+Each active concern appears as a coloured pill in the Flags cell. The pill displays only the label text — there are no icons inside the pill. A row can carry more than one flag at the same
