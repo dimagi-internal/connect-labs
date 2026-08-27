@@ -15,6 +15,7 @@ from django.db import connection
 
 from connect_labs.labs.analysis.config import (
     RAW_VISIT_BASE_COLUMNS,
+    VISIT_SELECT_COLUMNS,
     AnalysisPipelineConfig,
     FieldComputation,
     HistogramComputation,
@@ -288,16 +289,42 @@ def _visit_source_cte_body(config: AnalysisPipelineConfig, opportunity_id: int) 
     return body
 
 
+def _visit_passthrough_select(column: str) -> str:
+    """SELECT expression for one base visit column.
+
+    Two of the columns #1198 added are not plain scalars: `flag_reason` is JSONB
+    and `date_created` a timestamp. Both end up in `computed_fields`, a JSONField
+    written straight from the cursor row, so a `datetime` there would fail to
+    serialize. Casting `date_created` to ISO text at the SELECT keeps the whole
+    path JSON-clean and hands render code the string it wanted anyway.
+    """
+    if column == "date_created":
+        return "to_char(date_created AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SSOF:00') AS date_created"
+    return column
+
+
 def _paths_to_coalesce_sql(paths: list[str], column: str = "form_json") -> str:
     """Convert multiple paths to a COALESCE expression.
 
     Wraps each path in NULLIF(..., '') so empty strings are treated as NULL
     and COALESCE falls through to the next path.
+
+    A path naming a base column on labs_raw_visit_cache is emitted as the bare
+    column rather than a form_json lookup — the same resolution `linking_field`
+    has always had (`_linking_paths_to_coalesce_sql`). Without it a `field` could
+    name `flag_reason` and silently extract NULL, since every path was compiled
+    to `form_json->'...'` unconditionally (#1198). Only applies to the default
+    form_json column, so join-scoped lookups are unaffected.
     """
     if not paths:
         return "NULL"
 
-    sql_paths = [f"NULLIF({_jsonb_path_to_sql(p, column)}, '')" for p in paths]
+    sql_paths = []
+    for p in paths:
+        if column == "form_json" and p in RAW_VISIT_BASE_COLUMNS:
+            sql_paths.append(f"NULLIF({p}::text, '')")
+        else:
+            sql_paths.append(f"NULLIF({_jsonb_path_to_sql(p, column)}, '')")
     return f"COALESCE({', '.join(sql_paths)})"
 
 
@@ -1529,19 +1556,11 @@ def build_visit_extraction_query(
 
     Returns one row per visit with base fields + computed fields from config.
     """
-    # Base visit fields that map to VisitRow
-    select_parts = [
-        "visit_id",
-        "username",
-        "visit_date",
-        "status",
-        "flagged",
-        "location",
-        "deliver_unit",
-        "deliver_unit_id",
-        "entity_id",
-        "entity_name",
-    ]
+    # Base visit fields. Shared with the window-reference and shadow-collision
+    # checks so a column can't be validatable-but-unselectable, or the reverse
+    # (#1198). `flag_reason` is JSONB and `date_created` a timestamp; both are
+    # cast in `_visit_passthrough_select` so they survive a JSON round-trip.
+    select_parts = [_visit_passthrough_select(c) for c in VISIT_SELECT_COLUMNS]
 
     # Check if any field needs full visit context (form_json, images)
     needs_full_context = False
