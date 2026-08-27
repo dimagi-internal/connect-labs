@@ -14,6 +14,8 @@ import httpx
 from django.conf import settings
 from django.http import HttpRequest
 
+from connect_labs.utils.hq_hosts import reject_disallowed_hq_url
+
 logger = logging.getLogger(__name__)
 
 
@@ -152,6 +154,16 @@ class AppDownloaderDataAccess:
         Returns:
             CCZ file bytes or None if download failed
         """
+        # `hq_server_url` comes off a LabsRecord, not configuration, so it is an
+        # SSRF sink: whoever can write that record picks a host this server will
+        # connect to from inside the VPC (#1032 item L). An allowlist is the right
+        # shape here — this talks to CommCare HQ, a short known set of hosts, not
+        # to arbitrary user-supplied URLs.
+        blocked = reject_disallowed_hq_url(hq_server_url)
+        if blocked:
+            logger.error("CCZ download refused for app %s: %s", app_id, blocked)
+            return None
+
         # Use a separate client without the Bearer token for CommCare HQ
         for latest in ["release", "build", "save"]:
             url = f"{hq_server_url}/a/{domain}/apps/api/download_ccz/"

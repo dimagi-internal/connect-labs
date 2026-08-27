@@ -1,8 +1,13 @@
+import logging
+
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.db.models import Max
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
+
 
 LABS_ONLY_OPP_ID_FLOOR = 10_000
 
@@ -160,6 +165,28 @@ class SyntheticOpportunity(models.Model):
         if any(email.endswith(d) for d in DIMAGI_INTERNAL_DOMAINS):
             return True
         if not self.allowed_domains:
+            # Fail-open, and deliberately still the default. This is the one
+            # predicate isolating labs-only tenants, and the audit flagged it as
+            # load-bearing (#1032 item F): paired with `dump.py` uploading raw
+            # prod exports (item E), a "synthetic" opp can serve real PHI to any
+            # authenticated user.
+            #
+            # Not flipped here, because flipping it alone would revoke every
+            # partner's access to every labs-only opp that hasn't named their
+            # domain — that is the documented default, so in practice all of
+            # them — while item E, the thing that makes it dangerous, stays open.
+            # The audit's own guidance is to fix E and F together.
+            #
+            # So: the switch exists, the default preserves today's behaviour, and
+            # every fail-open decision is now logged instead of being invisible.
+            if getattr(settings, "LABS_ONLY_REQUIRE_EXPLICIT_DOMAINS", False):
+                return False
+            logger.info(
+                "labs-only opp %s has no allowed_domains; granting access to %s by default "
+                "(set LABS_ONLY_REQUIRE_EXPLICIT_DOMAINS=True to fail closed)",
+                self.opportunity_id,
+                email or "<no email>",
+            )
             return True
         return any(email.endswith(d.strip().lower()) for d in self.allowed_domains)
 
