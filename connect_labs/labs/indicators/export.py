@@ -25,13 +25,22 @@ COLUMNS = [
     ("scope", "Row covers"),
     ("u5mr", "Under-5 mortality (per 1,000)"),
     ("u5mr_source", "U5MR source"),
+    ("u5mr_source_detail", "U5MR source detail"),
     ("u5mr_year", "U5MR year"),
+    ("u5mr_source_url", "U5MR source link"),
     ("u5mr_measured_at", "U5MR measured at"),
     ("births", "Est. annual births"),
     ("pop_u5", "Population under 5"),
     ("pop_total", "Total population"),
     ("births_complete", "Births complete for all regions"),
 ]
+
+
+def _source_name(code: str) -> str:
+    # Imported lazily: export is also used by tests that never touch views.
+    from connect_labs.labs.indicators.views import source_name
+
+    return source_name(code)
 
 
 def _cell(value):
@@ -56,8 +65,10 @@ def _rows(selection: Selection):
                 else "single region"
             ),
             "u5mr": round(r.value, 1) if r else "",
-            "u5mr_source": (r.source_ref or r.source) if r else "",
+            "u5mr_source": _source_name(r.source) if r else "",
+            "u5mr_source_detail": (r.source_ref or "") if r else "",
             "u5mr_year": r.year if r else "",
+            "u5mr_source_url": (r.source_url or "") if r else "",
             "u5mr_measured_at": (
                 f"{r.measured_at.name} (ADM{r.measured_at.admin_level})" if r and r.inherited else "this area"
             ),
@@ -128,12 +139,13 @@ def to_methodology(selection: Selection) -> str:
     )
 
     add("## Where the numbers come from\n")
-    add("| Indicator | Source | Reference | Licence |")
-    add("|---|---|---|---|")
+    add("| Indicator | Source | Reference | Year | Licence | Link |")
+    add("|---|---|---|---|---|---|")
     for v in _sources_used(selection):
+        link = f"<{v.source_url}>" if v.source_url else "—"
         add(
             f"| `{v.indicator}` | {v.get_source_display()} | {v.source_ref or '—'} "
-            f"| {v.get_license_code_display()} |"
+            f"| {v.year} | {v.get_license_code_display()} | {link} |"
         )
     add("")
 

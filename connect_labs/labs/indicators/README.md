@@ -135,6 +135,24 @@ off as complete.
 task takes ~15s whether one or eight are in flight, and pushing harder produced
 read timeouts rather than throughput. This is why HAPI exists in the pipeline.
 
+## Every value links back to its source
+
+`source_url` rides on each row beside `license_code`, so the table, the CSV and
+METHODOLOGY.md can all point a reader at the thing the number came from:
+
+| source              | link target                                                               |
+| ------------------- | ------------------------------------------------------------------------- |
+| DHS                 | the survey's own page, e.g. `survey-display-609.cfm` for Nigeria DHS 2024 |
+| UN IGME             | `childmortality.org/data?refArea=<ISO3>`                                  |
+| World Bank          | the WDI indicator page, deep-linked to the country                        |
+| WorldPop / HDX HAPI | the product / dataset page                                                |
+| derived             | none — the formula is in `method`, since we computed it                   |
+
+The DHS link needs the survey's internal `SurveyNum`, which the value API does
+not return, so the loader fetches `/surveys` once and indexes it. That index is
+also what turns `NG2024DHS` into "Nigeria DHS 2024" — the raw id told a reader
+nothing and led nowhere.
+
 ## Licences
 
 `license_code` rides on every row rather than living in a README, so "may this

@@ -77,6 +77,11 @@ class IndicatorValue(models.Model):
         blank=True,
         help_text="Specific origin — survey code, dataset release, or API dataset name",
     )
+    source_url = models.URLField(
+        blank=True,
+        max_length=500,
+        help_text="Where a reader can go to see this figure at its source",
+    )
     license_code = models.CharField(max_length=30, choices=License.choices, db_index=True)
     method = models.TextField(
         blank=True,

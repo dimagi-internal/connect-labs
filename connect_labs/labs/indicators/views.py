@@ -15,7 +15,7 @@ from django.views.generic import TemplateView
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators import export, measures
 from connect_labs.labs.indicators.africa import ISO_CODES, name_for
-from connect_labs.labs.indicators.models import IndicatorValue, IngestRun
+from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
 from connect_labs.labs.indicators.resolve import BulkResolver, select_above
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,23 @@ class OpenLocallyMixin(LoginRequiredMixin):
             # Skip LoginRequiredMixin's check, keep the rest of the MRO.
             return super(LoginRequiredMixin, self).dispatch(request, *args, **kwargs)
         return super().dispatch(request, *args, **kwargs)
+
+
+def source_name(code: str) -> str:
+    """Human name for a source code.
+
+    A rolled-up country row can carry several sources joined by "+", because its
+    regions were not all measured the same way; say so rather than picking one.
+    """
+    if not code:
+        return ""
+    if "+" in code:
+        parts = [source_name(c) for c in code.split("+")]
+        return " + ".join(dict.fromkeys(p for p in parts if p))
+    try:
+        return Source(code).label
+    except ValueError:
+        return code
 
 
 def _round_or_none(value):
@@ -131,6 +148,7 @@ class MapDataView(OpenLocallyMixin, View):
                         indicator: round(rate.value, 1) if rate else None,
                         "inherited": bool(rate and rate.inherited),
                         "source": (rate.source_ref or rate.source) if rate else None,
+                        "source_url": (rate.source_url or "") if rate else None,
                         "year": rate.year if rate else None,
                         "births": _round_or_none(r2.value if (r2 := bulk.get("births", b)) else None),
                         "pop_u5": _round_or_none(r3.value if (r3 := bulk.get("pop_u5", b)) else None),
@@ -194,7 +212,9 @@ class SelectionView(OpenLocallyMixin, View):
                         "whole_country": a.is_whole_country,
                         "units_covered": a.units_covered,
                         "value": round(r.value, 1) if (r := a.values.get(indicator)) else None,
-                        "source": (r.source_ref or r.source) if r else None,
+                        "source_name": source_name(r.source) if r else None,
+                        "source_detail": (r.source_ref or "") if r else "",
+                        "source_url": (r.source_url or "") if r else "",
                         "year": r.year if r else None,
                         "inherited": bool(r and r.inherited),
                         "measured_at": (

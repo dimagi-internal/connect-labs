@@ -43,6 +43,31 @@
     return Math.round(n).toLocaleString();
   }
 
+  // Row content is server data, but it lands in innerHTML — escape it rather
+  // than trusting a source name or URL to be markup-free.
+  function esc(v) {
+    return String(v === null || v === undefined ? '' : v).replace(
+      /[&<>"']/g,
+      function (c) {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        }[c];
+      },
+    );
+  }
+
+  function hostOf(url) {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '');
+    } catch (e) {
+      return 'source';
+    }
+  }
+
   function fmtFull(n) {
     if (n === null || n === undefined) return '—';
     return Math.round(n).toLocaleString();
@@ -221,7 +246,7 @@
 
     if (!data.rows.length) {
       tbody.innerHTML =
-        '<tr><td colspan="6" class="px-5 py-8 text-center text-stone-400">' +
+        '<tr><td colspan="8" class="px-5 py-8 text-center text-stone-400">' +
         'No area is above this threshold.</td></tr>';
       return;
     }
@@ -236,13 +261,32 @@
           ' regions</span>'
         : '';
 
-      var basis = r.source || '—';
-      if (r.inherited) {
-        basis +=
-          '<span class="block text-xs text-amber-700">national figure, from ' +
-          r.measured_at +
+      // Source, year and link are three separate columns: "NG2024DHS" in one
+      // cell told a reader nothing and led nowhere.
+      var sourceCell = esc(r.source_name || '—');
+      if (r.source_detail) {
+        sourceCell =
+          '<span title="' +
+          esc(r.source_detail) +
+          '">' +
+          sourceCell +
           '</span>';
       }
+      if (r.inherited) {
+        sourceCell +=
+          '<span class="block text-xs text-amber-700">national figure, from ' +
+          esc(r.measured_at) +
+          '</span>';
+      }
+
+      var linkCell = r.source_url
+        ? '<a href="' +
+          esc(r.source_url) +
+          '" target="_blank" rel="noopener noreferrer" ' +
+          'class="text-teal-700 hover:underline whitespace-nowrap">' +
+          esc(hostOf(r.source_url)) +
+          ' \u2197</a>'
+        : '<span class="text-stone-300">—</span>';
 
       var birthsCell =
         r.births === null
@@ -269,8 +313,14 @@
         '<td class="px-3 py-2 text-right tg-num text-stone-600">' +
         fmtFull(r.pop_u5) +
         '</td>' +
-        '<td class="px-5 py-2 text-xs text-stone-500">' +
-        basis +
+        '<td class="px-3 py-2 text-xs text-stone-600">' +
+        sourceCell +
+        '</td>' +
+        '<td class="px-3 py-2 text-xs text-right tg-num text-stone-600">' +
+        (r.year || '—') +
+        '</td>' +
+        '<td class="px-5 py-2 text-xs">' +
+        linkCell +
         '</td>';
       tbody.appendChild(tr);
     });

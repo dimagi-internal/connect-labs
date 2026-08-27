@@ -72,6 +72,7 @@ class Row:
     value: float
     source: str
     source_ref: str = ""
+    source_url: str = ""
     license_code: str = ""
     method: str = ""
     ci_low: float | None = None
@@ -102,6 +103,7 @@ def upsert(rows: list[Row]) -> int:
                 "ci_low": r.ci_low,
                 "ci_high": r.ci_high,
                 "source_ref": r.source_ref,
+                "source_url": r.source_url,
                 "license_code": r.license_code,
                 "method": r.method,
                 "retrieved_at": now,

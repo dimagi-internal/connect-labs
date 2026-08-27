@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 API = "https://api.worldbank.org/v2"
 
+#: The public indicator page, deep-linked to the country (which WDI keys by
+#: ISO-2, returned alongside each observation).
+INDICATOR_PAGE = "https://data.worldbank.org/indicator/{code}?locations={iso2}"
+
 #: our measure code → World Bank indicator code
 INDICATORS = {
     "tfr": "SP.DYN.TFRT.IN",
@@ -72,6 +76,7 @@ def load(measure: str = "tfr", iso_codes: list[str] | None = None) -> list[Row]:
             if boundary is None or value is None:
                 continue
             year = int(r["date"])
+            iso2 = (r.get("country") or {}).get("id") or ""
             rows.append(
                 Row(
                     indicator=measure,
@@ -79,7 +84,8 @@ def load(measure: str = "tfr", iso_codes: list[str] | None = None) -> list[Row]:
                     year=year,
                     value=float(value),
                     source=Source.WORLDBANK,
-                    source_ref=f"World Bank {code} {year}",
+                    source_ref=f"World Bank WDI {year} (national)",
+                    source_url=INDICATOR_PAGE.format(code=code, iso2=iso2),
                     license_code=License.CC_BY_4,
                     method=METHOD.format(code=code, year=year),
                 )

@@ -34,6 +34,9 @@ STATS = "https://api.worldpop.org/v1/services/stats"
 TASKS = "https://api.worldpop.org/v1/tasks"
 
 DATASET = "wpgpas"
+
+#: Landing page for the age-and-sex product these counts come from.
+PRODUCT_PAGE = "https://hub.worldpop.org/project/categories?id=8"
 LATEST_YEAR = 2020
 
 #: Tolerance in degrees for simplifying a boundary before sending it (~1 km).
@@ -292,7 +295,8 @@ def _rows_from(
             year=year,
             value=value,
             source=Source.WORLDPOP,
-            source_ref=f"WorldPop {DATASET} {year}",
+            source_ref=f"WorldPop age & sex {year}",
+            source_url=PRODUCT_PAGE,
             license_code=License.CC_BY_4,
             method=method,
         )

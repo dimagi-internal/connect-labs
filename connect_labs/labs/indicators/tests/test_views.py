@@ -215,3 +215,55 @@ class TestMissingBirthsSurfacing:
 
         assert "floor, not a measurement" in doc
         assert "1 of 1" in doc
+
+
+class TestSourceColumns:
+    """Source, year and link are separate columns.
+
+    They used to be one cell reading "NG2024DHS", which told a reader nothing
+    and led nowhere.
+    """
+
+    def test_selection_splits_name_year_and_link(self, client_in):
+        make_boundary("TCD", 0, "Chad", "TCD-0", x=30)
+        r = make_boundary("TCD", 1, "Region", "TCD-1", x=32)
+        v = set_value(r, "u5mr", 150, year=2019, source=Source.DHS)
+        v.source_ref = "Chad DHS 2019"
+        v.source_url = "https://dhsprogram.com/methodology/survey/survey-display-123.cfm"
+        v.save()
+
+        row = client_in.get(reverse("targeting:selection"), {"threshold": 80}).json()["rows"][0]
+
+        assert row["source_name"] == "DHS Program"
+        assert row["source_detail"] == "Chad DHS 2019"
+        assert row["year"] == 2019
+        assert row["source_url"].endswith("survey-display-123.cfm")
+
+    def test_a_rolled_up_row_names_every_source_it_mixes(self):
+        from connect_labs.labs.indicators.views import source_name
+
+        # A country row whose regions were not all measured the same way must
+        # not present one source as though it covered them all.
+        assert source_name("dhs+igme") == "DHS Program + UN IGME (via UNICEF SDMX)"
+        assert source_name("dhs") == "DHS Program"
+        assert source_name("") == ""
+
+    def test_csv_carries_the_link(self, client_in):
+        make_boundary("TCD", 0, "Chad", "TCD-0", x=30)
+        r = make_boundary("TCD", 1, "Region", "TCD-1", x=32)
+        v = set_value(r, "u5mr", 150, source=Source.DHS)
+        v.source_url = "https://dhsprogram.com/x.cfm"
+        v.save()
+
+        resp = client_in.get(reverse("targeting:download"), {"threshold": 80, "format": "csv"})
+        rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
+
+        assert rows[0]["U5MR source"] == "DHS Program"
+        assert rows[0]["U5MR source link"] == "https://dhsprogram.com/x.cfm"
+
+    def test_row_values_are_escaped_before_reaching_innerHTML(self, client_in):
+        # Source text is server data, but the table builds HTML by hand.
+        js = open("connect_labs/static/indicators/targeting.js", encoding="utf-8").read()
+        assert "function esc(" in js
+        assert "esc(r.source_name" in js
+        assert "esc(r.source_url)" in js

@@ -44,6 +44,7 @@ class Resolved:
     source: str
     source_ref: str
     license_code: str
+    source_url: str = ""
     method: str = ""
     ci_low: float | None = None
     ci_high: float | None = None
@@ -151,6 +152,7 @@ def resolve(
         source=row.source,
         source_ref=row.source_ref,
         license_code=row.license_code,
+        source_url=row.source_url,
         method=row.method,
         ci_low=row.ci_low,
         ci_high=row.ci_high,
@@ -236,6 +238,7 @@ class BulkResolver:
                 source=row.source,
                 source_ref=row.source_ref,
                 license_code=row.license_code,
+                source_url=row.source_url,
                 method=row.method,
                 ci_low=row.ci_low,
                 ci_high=row.ci_high,
