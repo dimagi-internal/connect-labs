@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 
 API = "https://hapi.humdata.org/api/v1/population-social/population"
 
+#: The HDX dataset page behind these figures.
+DATASET_PAGE = "https://data.humdata.org/dataset/hdx-hapi-population"
+
 #: HAPI wants an "app identifier" — base64 of "appname:email". It is an
 #: attribution courtesy, not a credential, and is documented as such.
 APP_IDENTIFIER = base64.b64encode(b"connect-labs-targeting:labs@dimagi.com").decode()
@@ -128,6 +131,7 @@ def load(iso_codes: list[str]) -> list[Row]:
                         value=value,
                         source=Source.HAPI,
                         source_ref="HDX HAPI baseline population",
+                        source_url=DATASET_PAGE,
                         license_code=License.OPEN_API,
                         method=METHOD.format(period=periods.get(name) or "unstated"),
                     )

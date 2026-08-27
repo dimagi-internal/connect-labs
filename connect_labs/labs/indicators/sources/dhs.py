@@ -39,6 +39,43 @@ METHOD = (
 )
 
 
+#: The DHS survey-display page is keyed by an internal SurveyNum, not by the
+#: SurveyId we carry, so the mapping has to be fetched.
+SURVEY_PAGE = "https://dhsprogram.com/methodology/survey/survey-display-{num}.cfm"
+
+
+def survey_index() -> dict[str, dict]:
+    """SurveyId -> survey metadata, for building links and readable labels.
+
+    "NG2024DHS" is meaningless to anyone who does not already know the scheme;
+    this is what turns it into "Nigeria DHS 2024" pointing at the real survey
+    page.
+    """
+    out: dict[str, dict] = {}
+    page = 1
+    while True:
+        payload = http_json(
+            f"{API}/surveys",
+            {
+                "f": "json",
+                "perpage": "1000",
+                "page": str(page),
+                "returnFields": (
+                    "SurveyId,SurveyNum,SurveyType,SurveyYear,CountryName,"
+                    "FieldworkStart,FieldworkEnd,NumberofHouseholds"
+                ),
+            },
+        )
+        for r in payload.get("Data") or []:
+            if r.get("SurveyId"):
+                out[r["SurveyId"]] = r
+        if page >= int(payload.get("TotalPages") or 1):
+            break
+        page += 1
+    logger.info("DHS: indexed %d surveys for linking", len(out))
+    return out
+
+
 def african_countries() -> dict[str, str]:
     """DHS 2-letter code → ISO-3, for African countries only."""
     data = http_json(
@@ -116,6 +153,8 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
     iso_by_dhs = african_countries()
     wanted_iso = {c.upper() for c in iso_codes} if iso_codes else None
 
+    surveys = survey_index()
+
     logger.info("DHS: fetching %s (subnational)", measure)
     records = _fetch([spec["value"]], "subnational")
     lo_recs = _latest_survey_per_country(_only(_fetch([spec["lo"]], "subnational"), spec["lo"])) if spec["lo"] else {}
@@ -146,6 +185,8 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
             if value in (None, ""):
                 continue
             key = (rec["DHS_CountryCode"], label)
+            survey_id = rec.get("SurveyId") or f"{iso}{rec['SurveyYear']}DHS"
+            meta = surveys.get(survey_id, {})
             rows.append(
                 Row(
                     indicator=measure,
@@ -155,10 +196,19 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
                     ci_low=_val(lo_recs.get(key)),
                     ci_high=_val(hi_recs.get(key)),
                     source=Source.DHS,
-                    source_ref=rec.get("SurveyId") or f"{iso}{rec['SurveyYear']}DHS",
+                    source_ref=_readable(meta, survey_id, rec),
+                    source_url=(SURVEY_PAGE.format(num=meta["SurveyNum"]) if meta.get("SurveyNum") else ""),
                     license_code=License.OPEN_API,
-                    method=METHOD.format(survey=rec.get("SurveyId") or rec["SurveyYear"]),
-                    extra={"dhs_label": label, "category": rec.get("CharacteristicCategory")},
+                    method=METHOD.format(survey=survey_id),
+                    extra={
+                        "dhs_label": label,
+                        "category": rec.get("CharacteristicCategory"),
+                        "survey_id": survey_id,
+                        "fieldwork": f"{meta.get('FieldworkStart', '')} to {meta.get('FieldworkEnd', '')}".strip(
+                            " to"
+                        ),
+                        "households": meta.get("NumberofHouseholds"),
+                    },
                 )
             )
             matched += 1
@@ -168,6 +218,16 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
             logger.debug("DHS %s unmatched labels: %s", iso, matcher.misses[:10])
 
     return rows
+
+
+def _readable(meta: dict, survey_id: str, rec: dict) -> str:
+    """ "Nigeria DHS 2024" rather than "NG2024DHS"."""
+    country = meta.get("CountryName") or rec.get("CountryName")
+    year = meta.get("SurveyYear") or rec.get("SurveyYear")
+    kind = meta.get("SurveyType") or "DHS"
+    if country and year:
+        return f"{country} {kind} {year}"
+    return survey_id
 
 
 def _only(records: list[dict], indicator_id: str) -> list[dict]:

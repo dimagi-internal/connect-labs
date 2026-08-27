@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 SDMX = "https://sdmx.data.unicef.org/ws/public/sdmxapi/rest/data/UNICEF,CME,1.0"
 
+#: IGME's public explorer, deep-linked to the country in question.
+PORTAL = "https://childmortality.org/data?refArea={iso}"
+
 #: our measure code → IGME indicator id
 INDICATORS = {
     "u5mr": "CME_MRY0T4",
@@ -100,7 +103,8 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
                 year=year,
                 value=value,
                 source=Source.IGME,
-                source_ref=f"UN IGME {year}",
+                source_ref=f"UN IGME {year} (national)",
+                source_url=PORTAL.format(iso=iso),
                 license_code=License.CC_BY_3_IGO,
                 method=METHOD.format(year=year),
             )
