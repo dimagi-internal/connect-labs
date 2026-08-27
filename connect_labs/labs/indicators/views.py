@@ -29,6 +29,26 @@ DEFAULT_INDICATOR = "u5mr"
 MAP_SIMPLIFY = 0.02
 
 
+class OpenLocallyMixin(LoginRequiredMixin):
+    """Login-gated when deployed, open when running locally.
+
+    This surface shows only public open data — WorldPop, DHS, UN IGME,
+    geoBoundaries — and nothing specific to the signed-in user, so requiring the
+    Connect OAuth round trip to look at it locally buys no protection and costs
+    real friction: on a laptop with an expired CLI token the OAuth flow simply
+    fails and the page is unreachable.
+
+    Deployments keep the gate, matching every other labs page. If this should be
+    public on labs too, drop the mixin rather than widening the exception.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        if settings.DEBUG:
+            # Skip LoginRequiredMixin's check, keep the rest of the MRO.
+            return super(LoginRequiredMixin, self).dispatch(request, *args, **kwargs)
+        return super().dispatch(request, *args, **kwargs)
+
+
 def _round_or_none(value):
     """Round for display, but keep "no estimate" distinct from zero."""
     return None if value is None else round(value)
@@ -41,7 +61,7 @@ def _float(request, key, default):
         return default
 
 
-class TargetingView(LoginRequiredMixin, TemplateView):
+class TargetingView(OpenLocallyMixin, TemplateView):
     """The map page."""
 
     template_name = "indicators/targeting.html"
@@ -71,7 +91,7 @@ class TargetingView(LoginRequiredMixin, TemplateView):
         return ctx
 
 
-class MapDataView(LoginRequiredMixin, View):
+class MapDataView(OpenLocallyMixin, View):
     """GeoJSON for the choropleth: one feature per ADM1 unit, carrying its numbers.
 
     Countries with no ADM1 boundaries fall back to their ADM0 outline so they
@@ -125,7 +145,7 @@ class MapDataView(LoginRequiredMixin, View):
         )
 
 
-class SelectionView(LoginRequiredMixin, View):
+class SelectionView(OpenLocallyMixin, View):
     """Apply a threshold and return the headline numbers plus the table."""
 
     def get(self, request):
@@ -191,7 +211,7 @@ class SelectionView(LoginRequiredMixin, View):
         )
 
 
-class SelectionDownloadView(LoginRequiredMixin, View):
+class SelectionDownloadView(OpenLocallyMixin, View):
     """The table and its methodology, zipped together."""
 
     def get(self, request):
@@ -214,7 +234,7 @@ class SelectionDownloadView(LoginRequiredMixin, View):
         return resp
 
 
-class CoverageView(LoginRequiredMixin, View):
+class CoverageView(OpenLocallyMixin, View):
     """What data we actually hold — the honest backdrop to any headline number."""
 
     def get(self, request):

@@ -13,6 +13,7 @@ import io
 import zipfile
 
 import pytest
+from django.test import override_settings
 from django.urls import reverse
 
 from connect_labs.labs.indicators.models import Source
@@ -56,9 +57,25 @@ def africa():
 
 
 class TestPage:
-    def test_page_requires_login(self, client):
+    def test_page_requires_login_when_deployed(self, client):
+        # Django forces DEBUG=False under test settings, so this is the
+        # deployed behaviour.
         resp = client.get(reverse("targeting:index"))
         assert resp.status_code in (302, 301)
+
+    def test_page_is_open_locally(self, client, africa):
+        # Locally the page carries only public open data and nothing
+        # user-specific, so it must not demand a Connect OAuth round trip —
+        # which is unusable on a laptop with an expired CLI token.
+        with override_settings(DEBUG=True):
+            resp = client.get(reverse("targeting:index"))
+        assert resp.status_code == 200
+
+    def test_apis_are_open_locally(self, client, africa):
+        with override_settings(DEBUG=True):
+            assert client.get(reverse("targeting:selection"), {"threshold": 80}).status_code == 200
+            assert client.get(reverse("targeting:map_data")).status_code == 200
+            assert client.get(reverse("targeting:download"), {"threshold": 80}).status_code == 200
 
     def test_page_renders(self, client_in, africa):
         resp = client_in.get(reverse("targeting:index"))
