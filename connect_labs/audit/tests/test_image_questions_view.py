@@ -273,3 +273,85 @@ def test_sampler_never_requests_more_rows_than_it_can_read(labs_client, httpx_mo
     assert requested <= OpportunityImageTypesAPIView.MAX_ROWS, (
         f"sampler requested {requested} rows but can only ever read " f"{OpportunityImageTypesAPIView.MAX_ROWS}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Discovery caching (#1315)
+# ---------------------------------------------------------------------------
+
+
+@override_settings(**LABS_SETTINGS)
+def test_second_call_serves_from_cache_without_touching_connect(labs_client, httpx_mock):
+    """The cost property. One Connect round-trip, not one per request.
+
+    This endpoint's ~7s is a SINGLE outbound call that Connect is slow to generate
+    — capping page_size (#1311) cut the payload 12.5x and bought only ~20%, so the
+    only remaining move is to stop asking. The audit wizard fires four of these
+    concurrently (one per opportunity) on every load, and the answer is form schema
+    that changes when someone edits the app, i.e. approximately never.
+
+    Asserting on the returned question ids cannot catch a regression here — they're
+    identical whether the cache works or not. Assert that Connect was called once.
+    """
+    records = [
+        _make_record(1, {"form": {"group": {"photo_a": "img1.jpg"}}}, [{"blob_id": "b1", "name": "img1.jpg"}]),
+    ]
+    httpx_mock.add_response(url=CONNECT_URL, json=_page(records))
+
+    first = labs_client.get(ENDPOINT)
+    assert first.status_code == 200
+    assert first.json() == [{"id": "group/photo_a", "label": "photo_a", "path": "group/photo_a"}]
+
+    # No second mock is registered: a second outbound call would fail the test.
+    second = labs_client.get(ENDPOINT)
+    assert second.status_code == 200
+    assert second.json() == first.json()
+    assert len(httpx_mock.get_requests()) == 1
+
+
+@override_settings(**LABS_SETTINGS)
+def test_cache_is_scoped_per_opportunity(labs_client, httpx_mock):
+    """Two opportunities must not share a discovery result — that would show one
+    opp's image questions while auditing another."""
+    other_url = CONNECT_URL.replace("/opportunity/42/", "/opportunity/99/")
+    httpx_mock.add_response(
+        url=CONNECT_URL,
+        json=_page([_make_record(1, {"form": {"a": "x.jpg"}}, [{"blob_id": "b", "name": "x.jpg"}])]),
+    )
+    httpx_mock.add_response(
+        url=other_url,
+        json=_page([_make_record(2, {"form": {"b": "y.jpg"}}, [{"blob_id": "c", "name": "y.jpg"}])]),
+    )
+
+    assert labs_client.get(ENDPOINT).json() == [{"id": "a", "label": "a", "path": "a"}]
+    other = labs_client.get("/audit/api/opportunity/99/image-questions/")
+    assert other.json() == [{"id": "b", "label": "b", "path": "b"}]
+
+
+@override_settings(**LABS_SETTINGS)
+def test_unavailable_cache_degrades_to_calling_connect(labs_client, httpx_mock, monkeypatch):
+    """Redis down must cost speed, never correctness."""
+    from connect_labs.audit import views as audit_views
+
+    def boom(*_a, **_k):
+        raise RuntimeError("redis is down")
+
+    monkeypatch.setattr(audit_views.cache, "get", boom)
+    monkeypatch.setattr(audit_views.cache, "set", boom)
+
+    httpx_mock.add_response(url=CONNECT_URL, json=_page([]))
+    httpx_mock.add_response(url=CONNECT_URL, json=_page([]))
+
+    assert labs_client.get(ENDPOINT).status_code == 200
+    assert labs_client.get(ENDPOINT).status_code == 200
+    assert len(httpx_mock.get_requests()) == 2
+
+
+@override_settings(**LABS_SETTINGS)
+def test_a_failed_discovery_is_not_cached(labs_client, httpx_mock):
+    """A 502 must not poison the cache for 15 minutes — the next call retries."""
+    httpx_mock.add_response(url=CONNECT_URL, status_code=500)
+    assert labs_client.get(ENDPOINT).status_code == 502
+
+    httpx_mock.add_response(url=CONNECT_URL, json=_page([]))
+    assert labs_client.get(ENDPOINT).status_code == 200
