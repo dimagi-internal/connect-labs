@@ -244,20 +244,29 @@ def _denominators(pyramid: list[dict]) -> dict[str, float]:
 
 
 def load_boundary(boundary: AdminBoundary, year: int = LATEST_YEAR) -> list[Row]:
-    """Fetch the four population counts for one boundary.
+    """Fetch the four population counts for one boundary, pieces done serially.
 
-    A boundary may go over the wire as several pieces — islands are separate
-    polygons and a large region exceeds the service's area cap. The pieces tile
-    the boundary exactly, so their counts are summed.
+    Kept for single-boundary use and tests. ``load()`` does not call it — a
+    continent-wide run parallelises at the piece level instead, because a
+    boundary split into eight pieces would otherwise serialise eight round
+    trips behind one worker.
     """
-    pieces, omitted_share = _pieces_for(boundary)
-    if not pieces:
-        return []
+    pieces, omitted = _pieces_for(boundary)
+    results = [_run_task(gj, year) for gj in pieces]
+    return _rows_from(boundary, results, len(pieces), omitted, year)
 
+
+def _rows_from(
+    boundary: AdminBoundary,
+    results: list[dict | None],
+    n_pieces: int,
+    omitted_share: float,
+    year: int,
+) -> list[Row]:
+    """Sum the pieces' pyramids into one set of counts for the boundary."""
     counts: dict[str, float] = {}
     got_any = False
-    for geojson in pieces:
-        data = _run_task(geojson, year)
+    for data in results:
         if not data or "agesexpyramid" not in data:
             continue
         got_any = True
@@ -268,13 +277,14 @@ def load_boundary(boundary: AdminBoundary, year: int = LATEST_YEAR) -> list[Row]
         return []
 
     method = METHOD.format(dataset=DATASET, year=year)
-    if len(pieces) > 1:
-        method += f" Submitted as {len(pieces)} disjoint pieces and summed."
+    if n_pieces > 1:
+        method += f" Submitted as {n_pieces} disjoint pieces and summed."
     if omitted_share > 0:
         method += (
             f" {omitted_share * 100:.2f}% of the boundary's area (scattered small "
             "islands) was omitted, so this count is slightly low."
         )
+
     return [
         Row(
             indicator=code,
@@ -297,48 +307,77 @@ def load(
     on_progress=None,
     sink=None,
 ) -> tuple[int, list[str]]:
-    """Fetch population for many boundaries concurrently.
+    """Fetch population for many boundaries, parallelising over pieces.
 
-    The service is task-based and each polygon takes seconds, so this is IO-bound
-    fan-out. Workers are kept modest to stay a polite client — this is a free
-    public service, and pushing it harder produced timeouts rather than speed.
+    Work is flattened to (boundary, piece) before dispatch. Fanning out per
+    boundary instead would serialise every piece of a split boundary behind a
+    single worker, and after decomposition most large regions are several
+    pieces — which is the difference between a run of one hour and one of four.
 
-    Results are handed to ``sink`` as each boundary completes rather than
-    accumulated and returned. A continent-wide run is several hundred tasks over
-    many minutes; buffering it all would mean a single late failure discards
-    every polygon already paid for.
+    Rows are handed to ``sink`` as each boundary's last piece lands, rather than
+    accumulated to the end: a run this long must not be all-or-nothing.
 
-    Returns ``(rows_produced, failed_boundaries)`` — the failures are returned
-    rather than merely logged so the caller can record which places have no
-    population, instead of letting them quietly vanish from the map.
+    Returns ``(rows_produced, failed_boundaries)``. Failures are returned rather
+    than merely logged so the caller can record which places have no population,
+    instead of letting them quietly vanish from the map.
     """
     if sink is None:
         raise ValueError("worldpop.load requires a sink to receive rows incrementally")
 
+    # Decompose up front so the pool sees a flat, uniform work list.
+    plans: dict[int, dict] = {}
+    tasks: list[tuple[int, str]] = []
+    for b in boundaries:
+        pieces, omitted = _pieces_for(b)
+        plans[b.pk] = {
+            "boundary": b,
+            "n": len(pieces),
+            "omitted": omitted,
+            "results": [],
+        }
+        for gj in pieces:
+            tasks.append((b.pk, gj))
+
+    logger.info("WorldPop: %d boundaries decomposed into %d pieces", len(boundaries), len(tasks))
+
     produced = 0
-    done = 0
-    total = len(boundaries)
+    finished = 0
     failures: list[str] = []
+    total = len(boundaries)
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {pool.submit(load_boundary, b, year): b for b in boundaries}
+        futures = {pool.submit(_run_task, gj, year): pk for pk, gj in tasks}
         for fut in as_completed(futures):
-            b = futures[fut]
-            done += 1
+            pk = futures[fut]
+            plan = plans[pk]
             try:
-                got = fut.result()
-            except Exception as exc:  # noqa: BLE001 — one bad polygon must not stop the run
-                logger.warning("WorldPop failed for %s (%s): %s", b.name, b.iso_code, exc)
-                got = []
-            if got:
-                sink(got)
-                produced += len(got)
+                plan["results"].append(fut.result())
+            except Exception as exc:  # noqa: BLE001 — one bad piece must not stop the run
+                logger.warning(
+                    "WorldPop piece failed for %s (%s): %s",
+                    plan["boundary"].name,
+                    plan["boundary"].iso_code,
+                    exc,
+                )
+                plan["results"].append(None)
+
+            if len(plan["results"]) < plan["n"]:
+                continue
+
+            # Every piece of this boundary is in; emit it.
+            b = plan["boundary"]
+            rows = _rows_from(b, plan["results"], plan["n"], plan["omitted"], year)
+            finished += 1
+            if rows:
+                sink(rows)
+                produced += len(rows)
             else:
                 # A task that finishes with no data is just as much a gap as one
                 # that raises, and is easier to miss.
                 failures.append(f"{b.iso_code}/{b.name}")
+            plan["results"] = []  # release the payloads
             if on_progress:
-                on_progress(done, total, b, len(got))
+                on_progress(finished, total, b, len(rows))
 
     if failures:
         logger.warning(

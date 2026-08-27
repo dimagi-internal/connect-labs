@@ -32,11 +32,17 @@ API = "https://hapi.humdata.org/api/v1/population-social/population"
 #: attribution courtesy, not a credential, and is documented as such.
 APP_IDENTIFIER = base64.b64encode(b"connect-labs-targeting:labs@dimagi.com").decode()
 
-#: HAPI age_range strings → our measures. Bands vary by contributing source, so
-#: only the ones we can interpret unambiguously are used.
+#: HAPI reports five-year bands plus an "all" total, and gender as f / m / all.
+#: Only the gender="all" cells are read for both-sex measures — summing f and m
+#: alongside "all" would count everyone twice.
 U5_BANDS = {"0-4"}
-INFANT_BANDS = {"0-0"}
 WOMEN_BANDS = {"15-19", "20-24", "25-29", "30-34", "35-39", "40-44", "45-49"}
+ALL = "all"
+
+#: HAPI's finest infant band is 0-4. There is no 0-1 cell, so this source cannot
+#: supply ``pop_u1`` and therefore cannot feed the cohort-based births estimate.
+#: Births for HAPI-only countries come from the fertility method instead — see
+#: sources/derive.py.
 
 METHOD = (
     "HDX HAPI baseline population (admin 1), sourced from national statistics "
@@ -98,13 +104,11 @@ def load(iso_codes: list[str]) -> list[Row]:
 
             # The all-ages, both-sexes cell is the total; summing bands as well
             # would double-count it.
-            if band in ("all", "", "ALL") and gender in ("all", ""):
+            if band == ALL and gender == ALL:
                 totals[name]["pop_total"] += pop
-            if band in U5_BANDS and gender in ("all", ""):
+            elif band in U5_BANDS and gender == ALL:
                 totals[name]["pop_u5"] += pop
-            if band in INFANT_BANDS and gender in ("all", ""):
-                totals[name]["pop_u1"] += pop
-            if band in WOMEN_BANDS and gender == "f":
+            elif band in WOMEN_BANDS and gender == "f":
                 totals[name]["pop_f_15_49"] += pop
 
         matched = 0

@@ -20,7 +20,7 @@ from django.utils import timezone
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
-from connect_labs.labs.indicators.sources import base, derive, dhs, igme, worldpop
+from connect_labs.labs.indicators.sources import base, derive, dhs, hapi, igme, worldbank, worldpop
 
 STAGES = ("mortality", "fertility", "population", "births")
 
@@ -46,6 +46,11 @@ class Command(BaseCommand):
             "--missing-only",
             action="store_true",
             help="Population stage: fetch only boundaries that have no population yet",
+        )
+        parser.add_argument(
+            "--source",
+            choices=("hapi", "worldpop"),
+            help="Population stage: run just one source; default runs HAPI then WorldPop",
         )
 
     def handle(self, *args, **opts):
@@ -90,7 +95,31 @@ class Command(BaseCommand):
             ctx["rows"] = base.upsert(rows)
             ctx["countries"] = len({r.boundary.iso_code for r in rows})
 
+        # National fallback. Without it, a country with no recent DHS has no
+        # route to a births estimate and drops out of continental totals
+        # silently — a worse error than a coarser number.
+        with self._run(Source.WORLDBANK, "tfr") as ctx:
+            rows = worldbank.load("tfr", iso_codes=codes)
+            ctx["rows"] = base.upsert(rows)
+            ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
     def _stage_population(self, codes, opts):
+        # HAPI first: it returns a whole country per request, where WorldPop
+        # needs a task per polygon and queues them server-side. HAPI cannot
+        # supply pop_u1, so WorldPop still has work to do — but everything HAPI
+        # covers is population we do not have to wait for.
+        if opts.get("source") in (None, "hapi"):
+            with self._run(Source.HAPI, "") as ctx:
+                rows = hapi.load(codes)
+                ctx["rows"] = base.upsert(rows)
+                ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
+        if opts.get("source") == "hapi":
+            return
+
+        self._stage_population_worldpop(codes, opts)
+
+    def _stage_population_worldpop(self, codes, opts):
         # ADM1 only. A country's population is the sum of its regions — asking
         # the service for the country outline as well would cost a second
         # measurement that can only disagree with the first, and every ADM0 in
