@@ -3,10 +3,10 @@ repo: dimagi-internal/connect-labs
 scope_contract: triage-plus-quick-wins
 code_ref: b6cc3aca
 open_total: 20
-issues_closed: 4
-prs_merged: 5
+issues_closed: 10   # 4 in the triage pass, 6 more once the follow-up PRs merged
+prs_merged: 12
 prs_closed: 1
-prs_opened: [1322, 1323, 1324, 1325]
+prs_opened: [1322, 1323, 1324, 1325, 1326, 1328, 1329, 1330, 1331, 1332, 1333, 1334]
 triaged: 20
 carried_forward: 0        # prior log (2026-07-22) is prose-only, no sidecar; its 6 issues are all closed
 truncated: false
@@ -87,8 +87,8 @@ verdicts:
       - connect_labs/labs/analysis/backends/sql/backend.py
     duplicate_of: null
     source: fresh
-    action: handed back — effort M, over the quick-wins cap
-    outcome: open
+    action: PR #1328 opened and MERGED — Closes #1198
+    outcome: closed
   - number: 1034
     disposition: implement
     blocking: blocks-e2e
@@ -104,8 +104,8 @@ verdicts:
       - connect_labs/labs/synthetic/provisioning.py
     duplicate_of: null
     source: fresh
-    action: handed back — effort M, over the quick-wins cap
-    outcome: open
+    action: PR #1329 opened and MERGED — Closes #1034
+    outcome: closed
   - number: 1182
     disposition: implement
     blocking: blocks-e2e
@@ -119,8 +119,8 @@ verdicts:
       - connect_labs/workflow/views.py
     duplicate_of: null
     source: fresh
-    action: handed back — effort M, over the quick-wins cap
-    outcome: open
+    action: PR #1330 opened and MERGED — Closes #1182
+    outcome: closed
   - number: 1231
     disposition: blocked
     blocking: blocks-e2e
@@ -208,8 +208,8 @@ verdicts:
       - connect_labs/workflow/WORKFLOW_REFERENCE.md
     duplicate_of: null
     source: fresh
-    action: PR #1322 opened — Closes #1183 and #1317
-    outcome: in review
+    action: PR #1322 MERGED — Closes #1183 and #1317
+    outcome: closed
   - number: 1317
     disposition: close
     blocking: harness
@@ -237,8 +237,8 @@ verdicts:
       - connect_labs/labs/context.py
     duplicate_of: null
     source: fresh
-    action: PR #1324 opened — Refs #1197
-    outcome: in review
+    action: PR #1324 MERGED — Refs #1197; issue commented, closes with #1034 once confirmed
+    outcome: shipped, open
   - number: 1181
     disposition: implement
     blocking: harness
@@ -252,8 +252,8 @@ verdicts:
       - connect_labs/labs/synthetic/generator/fixtures/schema_loader.py
     duplicate_of: null
     source: fresh
-    action: handed back — effort M, over the quick-wins cap
-    outcome: open
+    action: PR #1331 opened and MERGED — Refs #1181 (issue stays open pending a live regeneration of opp 10037)
+    outcome: shipped, open
   - number: 1169
     disposition: implement
     blocking: polish
@@ -266,8 +266,8 @@ verdicts:
       - connect_labs/audit/models.py
     duplicate_of: null
     source: fresh
-    action: PR #1323 opened — Refs #1169 (residual only; issue stays open)
-    outcome: in review
+    action: PR #1323 MERGED — Refs #1169; issue commented with what remains
+    outcome: shipped, open
   - number: 1306
     disposition: implement
     blocking: polish
@@ -280,8 +280,8 @@ verdicts:
       - connect_labs/workflow/tests/test_pipeline_row_serialization.py
     duplicate_of: null
     source: fresh
-    action: PR #1325 opened — Closes #1306
-    outcome: in review
+    action: PR #1325 MERGED — Closes #1306
+    outcome: closed
   - number: 1184
     disposition: implement
     blocking: polish
@@ -294,8 +294,8 @@ verdicts:
       - connect_labs/workflow/tests/templates/test_llo_weekly_review.py
     duplicate_of: null
     source: fresh
-    action: handed back — effort M, over the quick-wins cap
-    outcome: open
+    action: PR #1332 opened and MERGED — Closes #1184
+    outcome: closed
   - number: 1032
     disposition: implement
     blocking: polish
@@ -316,8 +316,8 @@ verdicts:
       - connect_labs/labs/admin/app_data_access.py
     duplicate_of: null
     source: fresh
-    action: handed back — effort L, over the quick-wins cap
-    outcome: open
+    action: PR #1334 opened and MERGED — Refs #1032; items L, H, J-code and F's switch. A/B/C/D/E/G/I and J's infra half remain
+    outcome: partially shipped, open
   - number: 1031
     disposition: implement
     blocking: polish
@@ -332,8 +332,8 @@ verdicts:
       - package-lock.json
     duplicate_of: null
     source: fresh
-    action: handed back — effort L, over the quick-wins cap
-    outcome: open
+    action: PR #1333 opened and MERGED — Refs #1031; 11 alerting python pins + .github/dependabot.yml. npm ai@7 migration remains
+    outcome: partially shipped, open
   - number: 1152
     disposition: blocked
     blocking: polish
@@ -381,3 +381,25 @@ verdicts:
     source: fresh
     action: closed as completed with a comment
     outcome: closed
+
+# Second wave — the scope contract was widened mid-run to a full sweep with
+# deploy ("keep going and deploying, I want to get through everything").
+# Every handed-back implement item was built, shipped and merged.
+wave_2:
+  scope_contract: full-sweep-plus-deploy
+  code_ref: 2b2ea8a2
+  deploys:
+    - sha: fe3d2799
+      migrations: true      # 0020_workflowschedule_biweekly_cadence, from #1282
+      outcome: success
+    - sha: 2b2ea8a2
+      migrations: false
+      outcome: see run log
+  notable:
+    - "fastmcp 3.2 removed the private _task_access_token contextvar that
+       connect_labs/mcp/testing.py imported, breaking collection of all 400 MCP
+       tests. Fixed by patching the binding our own code calls, not the internal."
+    - "The deploy workflow now does a rolling deploy with a steady-state wait —
+       the note in memory that it hard-cuts over with no wait is out of date."
+    - "AWS SSO token expired mid-run, so the CloudWatch readings #1162/#1152/#1231
+       need are still untaken. Everything else about them is ready."
