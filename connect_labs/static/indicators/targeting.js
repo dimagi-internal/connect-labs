@@ -15,6 +15,15 @@
   var geojson = null;
   var debounceTimer = null;
 
+  // Africa's extent, used to frame the map on load. A fixed centre/zoom cannot
+  // do this: the right zoom depends on the container's size, and at a wide
+  // viewport it left the continent small and surrounded by South America and
+  // South Asia.
+  var AFRICA_BOUNDS = [
+    [-18.5, -35.5],
+    [52.0, 38.0],
+  ];
+
   // Sequential ramp for the mortality choropleth. Stops are the conventional
   // reporting breaks for under-5 mortality, not an even split — 25/50/75/100
   // are the numbers people already have intuitions about.
@@ -84,8 +93,12 @@
     map = new mapboxgl.Map({
       container: 'tg-map',
       style: 'mapbox://styles/mapbox/light-v11',
-      center: [17, 2],
-      zoom: 2.4,
+      // Mapbox v3 defaults to a globe at low zoom, which renders Africa as a
+      // patch on a sphere alongside South America. This is a thematic map of
+      // one continent, so a flat projection is the honest frame.
+      projection: 'mercator',
+      bounds: AFRICA_BOUNDS,
+      fitBoundsOptions: { padding: 20 },
     });
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
@@ -117,28 +130,32 @@
           'line-color': [
             'case',
             ['boolean', ['feature-state', 'above'], false],
-            '#0f766e',
+            '#0b3d39',
             '#ffffff',
           ],
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'above'], false],
-            1.6,
+            2,
             0.4,
           ],
         },
       });
+      // Knock back below-threshold areas just enough to make the selection
+      // read, but not so far that the mortality ramp the legend advertises
+      // becomes invisible. At 0.55 the whole continent washed out to near-white
+      // and the choropleth stopped saying anything.
       map.addLayer({
         id: 'areas-dim',
         type: 'fill',
         source: 'areas',
         paint: {
-          'fill-color': '#ffffff',
+          'fill-color': '#f5f5f4',
           'fill-opacity': [
             'case',
             ['boolean', ['feature-state', 'above'], false],
             0,
-            0.55,
+            0.3,
           ],
         },
       });
@@ -227,6 +244,14 @@
           '</span>';
       }
 
+      var birthsCell =
+        r.births === null
+          ? '<span class="text-stone-400" title="No births estimate for this area">—</span>'
+          : fmtFull(r.births) +
+            (r.births_partial
+              ? '<span class="block text-xs text-amber-700">partial</span>'
+              : '');
+
       tr.innerHTML =
         '<td class="px-5 py-2 font-medium text-stone-900">' +
         r.name +
@@ -239,7 +264,7 @@
         (r.value === null ? '—' : r.value) +
         '</td>' +
         '<td class="px-3 py-2 text-right tg-num font-medium">' +
-        fmtFull(r.births) +
+        birthsCell +
         '</td>' +
         '<td class="px-3 py-2 text-right tg-num text-stone-600">' +
         fmtFull(r.pop_u5) +
@@ -277,6 +302,23 @@
       ' · ' +
       c.units +
       ' underlying regions';
+
+    // The floor caveat belongs beside the number it qualifies, not at the foot
+    // of the page under a 150-row table.
+    var floorEl = document.getElementById('tg-floor');
+    var cov = (data.coverage || {}).births;
+    if (cov && cov.of && cov.with_value < cov.of) {
+      floorEl.innerHTML =
+        '<strong>A floor, not a total.</strong> ' +
+        (cov.of - cov.with_value) +
+        ' of ' +
+        cov.of +
+        ' regions have no births estimate yet and contribute nothing here.';
+      floorEl.classList.remove('hidden');
+    } else {
+      floorEl.classList.add('hidden');
+      floorEl.innerHTML = '';
+    }
 
     var gaps = [];
     if (data.countries_fully_above.length) {

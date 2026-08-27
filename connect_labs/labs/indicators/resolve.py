@@ -296,13 +296,23 @@ class Area:
     #: Number of ADM1 units folded into this row (1 for a plain region).
     units_covered: int = 1
     values: dict[str, Resolved | None] = field(default_factory=dict)
-    counts: dict[str, float] = field(default_factory=dict)
+    #: A count is ``None`` when no estimate exists — never 0. A missing births
+    #: figure rendered as "0" reads as "nobody is born here" rather than "we
+    #: could not work it out", and quietly drags a continental total down.
+    counts: dict[str, float | None] = field(default_factory=dict)
+    #: Per count measure, (units contributing a value, units in this row). Lets
+    #: a caller say how much of a rolled-up row is actually covered.
+    coverage: dict[str, tuple[int, int]] = field(default_factory=dict)
 
     def get(self, indicator: str) -> float | None:
         if indicator in self.counts:
             return self.counts[indicator]
         r = self.values.get(indicator)
         return r.value if r else None
+
+    def is_complete(self, indicator: str) -> bool:
+        got, total = self.coverage.get(indicator, (0, 0))
+        return total > 0 and got == total
 
 
 @dataclass
@@ -314,6 +324,9 @@ class Selection:
     year: int | None
     areas: list[Area]
     totals: dict[str, float | None]
+    #: Per count measure, (units with a value, units selected). When these
+    #: differ the total is a floor, not a measurement, and callers must say so.
+    coverage: dict[str, tuple[int, int]]
     countries_fully_above: list[str]
     countries_partly_above: list[str]
     skipped_no_data: list[str]
@@ -330,6 +343,14 @@ class Selection:
     @property
     def country_count(self) -> int:
         return len({a.iso_code for a in self.areas})
+
+    def is_complete(self, indicator: str) -> bool:
+        got, total = self.coverage.get(indicator, (0, 0))
+        return total > 0 and got == total
+
+    def missing_units(self, indicator: str) -> int:
+        got, total = self.coverage.get(indicator, (0, 0))
+        return max(0, total - got)
 
 
 #: Counts carried alongside the threshold indicator on every selection row.
@@ -421,7 +442,9 @@ def select_above(
                 values={indicator: _rollup_rate(indicator, above, bulk)},
             )
             for c in CARRIED_COUNTS:
-                area.counts[c] = sum(bulk.value(c, b) for b, _ in above)
+                got = [r.value for b, _ in above if (r := bulk.get(c, b)) is not None]
+                area.counts[c] = sum(got) if got else None
+                area.coverage[c] = (len(got), len(above))
             areas.append(area)
         else:
             (partly if len(above) < len(evaluated) else fully).append(cname)
@@ -435,17 +458,25 @@ def select_above(
                     values={indicator: r},
                 )
                 for c in CARRIED_COUNTS:
-                    area.counts[c] = bulk.value(c, b)
+                    got = bulk.get(c, b)
+                    area.counts[c] = got.value if got else None
+                    area.coverage[c] = (1 if got else 0, 1)
                 areas.append(area)
 
-    totals: dict[str, float | None] = {c: (sum(a.counts.get(c) or 0.0 for a in areas) or None) for c in CARRIED_COUNTS}
+    totals: dict[str, float | None] = {}
+    coverage: dict[str, tuple[int, int]] = {}
+    for c in CARRIED_COUNTS:
+        present = [a.counts[c] for a in areas if a.counts.get(c) is not None]
+        # None, not 0, when nothing is known — the caller decides how to say so.
+        totals[c] = sum(present) if present else None
+        coverage[c] = (
+            sum(a.coverage.get(c, (0, 0))[0] for a in areas),
+            sum(a.coverage.get(c, (0, 0))[1] for a in areas),
+        )
+
     totals[indicator] = aggregate(
         indicator,
-        [
-            (a.values[indicator].value, a.counts.get(measure.weight_by or "", 0.0))
-            for a in areas
-            if a.values.get(indicator)
-        ],
+        [(a.values[indicator].value, a.counts.get(measure.weight_by or "")) for a in areas if a.values.get(indicator)],
     )
 
     areas.sort(key=lambda a: (-(a.counts.get("births") or 0.0), a.country_name, a.name))
@@ -456,6 +487,7 @@ def select_above(
         year=year,
         areas=areas,
         totals=totals,
+        coverage=coverage,
         countries_fully_above=sorted(set(fully)),
         countries_partly_above=sorted(set(partly)),
         skipped_no_data=sorted(set(skipped)),

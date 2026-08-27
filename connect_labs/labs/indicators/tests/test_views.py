@@ -161,3 +161,40 @@ class TestDownload:
         assert len(rows) == 1
         assert "Inheritland" in rows[0]["U5MR measured at"]  # the ADM0 boundary's own name
         assert rows[0]["U5MR measured at"] != "this area"
+
+
+class TestMissingBirthsSurfacing:
+    def test_selection_api_sends_null_not_zero(self, client_in):
+        make_boundary("TCD", 0, "Chad", "TCD-0", x=30)
+        r = make_boundary("TCD", 1, "Region", "TCD-1", x=32)
+        set_value(r, "u5mr", 150, source=Source.DHS)
+        set_value(r, "pop_u5", 400_000, source=Source.WORLDPOP)
+
+        data = client_in.get(reverse("targeting:selection"), {"threshold": 80}).json()
+        row = data["rows"][0]
+
+        assert row["births"] is None
+        assert row["births_partial"] is True
+        assert data["coverage"]["births"] == {"with_value": 0, "of": 1}
+
+    def test_csv_leaves_missing_births_blank(self, client_in):
+        make_boundary("TCD", 0, "Chad", "TCD-0", x=30)
+        r = make_boundary("TCD", 1, "Region", "TCD-1", x=32)
+        set_value(r, "u5mr", 150, source=Source.DHS)
+
+        resp = client_in.get(reverse("targeting:download"), {"threshold": 80, "format": "csv"})
+        rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
+
+        assert rows[0]["Est. annual births"] == ""
+        assert rows[0]["Births complete for all regions"] == "no"
+
+    def test_methodology_says_the_total_is_a_floor(self, client_in):
+        make_boundary("TCD", 0, "Chad", "TCD-0", x=30)
+        r = make_boundary("TCD", 1, "Region", "TCD-1", x=32)
+        set_value(r, "u5mr", 150, source=Source.DHS)
+
+        resp = client_in.get(reverse("targeting:download"), {"threshold": 80})
+        doc = zipfile.ZipFile(io.BytesIO(resp.content)).read("METHODOLOGY.md").decode()
+
+        assert "floor, not a measurement" in doc
+        assert "1 of 1" in doc

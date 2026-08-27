@@ -320,3 +320,77 @@ class TestBoundaryMatcher:
 
         assert matcher.match("Somewhere Else Entirely") is None
         assert "Somewhere Else Entirely" in matcher.misses
+
+
+class TestMissingIsNotZero:
+    """A count we could not estimate must never render as 0.
+
+    Found by looking at the real page: South Sudan showed "births 0" beside an
+    under-5 population of 2.3 million. The regions simply had no births
+    estimate, and every one of them contributed 0 to the continental headline —
+    an undercount presented as a measurement.
+    """
+
+    def test_area_with_no_births_reports_none_not_zero(self):
+        make_boundary("XZA", 0, "Nodata", "XZA-0")
+        r1 = make_boundary("XZA", 1, "R1", "XZA-1", x=2)
+        set_value(r1, "u5mr", 150)
+        set_value(r1, "pop_u5", 500_000, source=Source.WORLDPOP)
+        # deliberately no births
+
+        sel = select_above("u5mr", threshold=80, iso_codes=["XZA"])
+
+        assert sel.areas[0].counts["births"] is None
+        assert sel.areas[0].counts["pop_u5"] == 500_000
+
+    def test_total_is_none_when_nothing_has_a_births_estimate(self):
+        make_boundary("XZB", 0, "Nodata B", "XZB-0")
+        r1 = make_boundary("XZB", 1, "R1", "XZB-1", x=2)
+        set_value(r1, "u5mr", 150)
+
+        sel = select_above("u5mr", threshold=80, iso_codes=["XZB"])
+
+        assert sel.totals["births"] is None
+
+    def test_coverage_reports_the_shortfall(self):
+        make_boundary("XZC", 0, "Partial", "XZC-0")
+        r1 = make_boundary("XZC", 1, "Has", "XZC-1", x=2)
+        r2 = make_boundary("XZC", 1, "Hasnt", "XZC-2", x=4)
+        for b in (r1, r2):
+            set_value(b, "u5mr", 150)
+        set_value(r1, "births", 10_000, source=Source.DERIVED)
+
+        sel = select_above("u5mr", threshold=80, iso_codes=["XZC"])
+
+        assert sel.totals["births"] == 10_000
+        assert sel.coverage["births"] == (1, 2)
+        assert sel.is_complete("births") is False
+        assert sel.missing_units("births") == 1
+
+    def test_rolled_up_country_row_flags_partial_births(self):
+        make_boundary("XZD", 0, "Rollup", "XZD-0")
+        r1 = make_boundary("XZD", 1, "R1", "XZD-1", x=2)
+        r2 = make_boundary("XZD", 1, "R2", "XZD-2", x=4)
+        for b in (r1, r2):
+            set_value(b, "u5mr", 150)
+        set_value(r1, "births", 7_000, source=Source.DERIVED)
+
+        sel = select_above("u5mr", threshold=80, iso_codes=["XZD"])
+
+        row = sel.areas[0]
+        assert row.is_whole_country is True
+        # The sum of what we have, not a confident figure for the whole country.
+        assert row.counts["births"] == 7_000
+        assert row.is_complete("births") is False
+        assert row.coverage["births"] == (1, 2)
+
+    def test_complete_selection_reports_complete(self):
+        make_boundary("XZE", 0, "Full", "XZE-0")
+        r1 = make_boundary("XZE", 1, "R1", "XZE-1", x=2)
+        set_value(r1, "u5mr", 150)
+        set_value(r1, "births", 3_000, source=Source.DERIVED)
+
+        sel = select_above("u5mr", threshold=80, iso_codes=["XZE"])
+
+        assert sel.is_complete("births") is True
+        assert sel.missing_units("births") == 0

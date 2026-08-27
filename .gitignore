@@ -80,6 +80,10 @@ ENV/
 .direnv
 .envrc
 .env
+# Backups of .env carry the same live secrets but do not match the .env rule;
+# gitleaks caught one already staged by `git add -A`.
+.env.bak*
+.env.*.bak
 
 # Safe-mode Claude Code: Vertex service-account credentials (from 1Password)
 .gcp/

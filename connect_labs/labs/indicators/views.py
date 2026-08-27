@@ -29,6 +29,11 @@ DEFAULT_INDICATOR = "u5mr"
 MAP_SIMPLIFY = 0.02
 
 
+def _round_or_none(value):
+    """Round for display, but keep "no estimate" distinct from zero."""
+    return None if value is None else round(value)
+
+
 def _float(request, key, default):
     try:
         return float(request.GET.get(key, default))
@@ -107,9 +112,9 @@ class MapDataView(LoginRequiredMixin, View):
                         "inherited": bool(rate and rate.inherited),
                         "source": (rate.source_ref or rate.source) if rate else None,
                         "year": rate.year if rate else None,
-                        "births": round(bulk.value("births", b)) or None,
-                        "pop_u5": round(bulk.value("pop_u5", b)) or None,
-                        "pop_total": round(bulk.value("pop_total", b)) or None,
+                        "births": _round_or_none(r2.value if (r2 := bulk.get("births", b)) else None),
+                        "pop_u5": _round_or_none(r3.value if (r3 := bulk.get("pop_u5", b)) else None),
+                        "pop_total": _round_or_none(r4.value if (r4 := bulk.get("pop_total", b)) else None),
                     },
                 }
             )
@@ -152,6 +157,10 @@ class SelectionView(LoginRequiredMixin, View):
                     "units": selection.unit_count,
                     "countries": selection.country_count,
                 },
+                # How much of the selection actually carries each count. Where
+                # these fall short the total is a floor, and the UI says so
+                # rather than presenting an undercount as a measurement.
+                "coverage": {c: {"with_value": got, "of": total} for c, (got, total) in selection.coverage.items()},
                 "countries_fully_above": selection.countries_fully_above,
                 "countries_partly_above": selection.countries_partly_above,
                 "skipped_no_data": selection.skipped_no_data,
@@ -171,9 +180,10 @@ class SelectionView(LoginRequiredMixin, View):
                         "measured_at": (
                             f"{r.measured_at.name} (ADM{r.measured_at.admin_level})" if r and r.inherited else None
                         ),
-                        "births": round(a.counts.get("births") or 0),
-                        "pop_u5": round(a.counts.get("pop_u5") or 0),
-                        "pop_total": round(a.counts.get("pop_total") or 0),
+                        "births": _round_or_none(a.counts.get("births")),
+                        "pop_u5": _round_or_none(a.counts.get("pop_u5")),
+                        "pop_total": _round_or_none(a.counts.get("pop_total")),
+                        "births_partial": not a.is_complete("births"),
                     }
                     for a in selection.areas
                 ],
