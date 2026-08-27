@@ -1,0 +1,383 @@
+run_date: 2026-08-26
+repo: dimagi-internal/connect-labs
+scope_contract: triage-plus-quick-wins
+code_ref: b6cc3aca
+open_total: 20
+issues_closed: 4
+prs_merged: 5
+prs_closed: 1
+prs_opened: [1322, 1323, 1324, 1325]
+triaged: 20
+carried_forward: 0        # prior log (2026-07-22) is prose-only, no sidecar; its 6 issues are all closed
+truncated: false
+clusters:
+  - name: mcp-aggregation-allowlist
+    members: [1183, 1317]
+    one_fix: "mcp/tools/pipelines.py imports VALID_AGGREGATIONS from labs/analysis/config.py instead of restating it"
+  - name: visit-level-pipeline-columns
+    members: [1033, 1190, 1198, 1306]
+    one_fix: "1033/1190 already fixed by merged #1304 (serialize_pipeline_row); 1198 (SQL SELECT gap) and 1306 (opportunity_id precedence) are distinct remaining layers"
+  - name: synthetic-repoint-invalidates-nothing
+    members: [1034, 1197]
+    one_fix: "wire FixtureStore.reload + SQLCacheManager.delete_all_cache + refresh_visit_count into synthetic_register / synthetic_repoint_by_source"
+  - name: labs-capacity-blocked-on-production-observation
+    members: [1162, 1152, 1231, 1298]
+    one_fix: "not one code fix — one validation visit: deploy current main, then take a CloudWatch/Logs-Insights reading. Clears 1162 and 1152; 1231 needs a deliberate overlapping-run load test on the same visit"
+tier_counts: { blocks-e2e: 8, harness: 4, polish: 8 }
+prs:
+  - number: 1282
+    disposition: merge
+    checks: { linter: pass, pytest: pass, CodeRabbit: pass }
+    blocker: null
+    mechanical: false
+    refs_issues: []
+    action: merged (squash)
+    outcome: shipped
+  - number: 1186
+    disposition: close
+    checks: { linter: pass, pytest: pass }
+    blocker: "superseded — identical code merged as #1118 (65a44cda); _REGIONS_BY_COUNTRY is already on main verbatim"
+    mechanical: false
+    refs_issues: []
+    action: closed with evidence
+    outcome: superseded by #1118
+  - number: 1151
+    disposition: merge
+    checks: { linter: pass, pytest: pass, CodeRabbit: pass }
+    blocker: null
+    mechanical: false
+    refs_issues: []
+    action: merged (squash)
+    outcome: shipped
+  - number: 953
+    disposition: merge
+    checks: { linter: pass, pytest: pass }
+    blocker: null
+    mechanical: false
+    refs_issues: []
+    action: merged (squash)
+    outcome: shipped
+  - number: 930
+    disposition: unblock
+    checks: { linter: fail, pytest: pass }
+    blocker: "linter red from a 2026-07-21 `pre-commit run --all-files` on that day's main; .canopy/ is excluded by .pre-commit-config.yaml:1 so this docs-only diff cannot be the cause. Rebase on main and re-run."
+    mechanical: true
+    refs_issues: []
+    action: rebased on main, CI green, merged (squash)
+    outcome: shipped — the red linter was stale, not caused by the diff
+  - number: 895
+    disposition: merge
+    checks: { linter: pass, pytest: pass }
+    blocker: null
+    mechanical: false
+    refs_issues: []
+    action: merged (squash)
+    outcome: shipped
+verdicts:
+  - number: 1198
+    disposition: implement
+    blocking: blocks-e2e
+    confidence: high
+    effort: M
+    cluster: visit-level-pipeline-columns
+    evidence_paths:
+      - connect_labs/labs/analysis/backends/sql/query_builder.py
+      - connect_labs/labs/analysis/backends/sql/models.py
+      - connect_labs/labs/analysis/config.py
+      - connect_labs/labs/analysis/backends/sql/backend.py
+    duplicate_of: null
+    source: fresh
+    action: handed back — effort M, over the quick-wins cap
+    outcome: open
+  - number: 1034
+    disposition: implement
+    blocking: blocks-e2e
+    confidence: high
+    effort: M
+    cluster: synthetic-repoint-invalidates-nothing
+    evidence_paths:
+      - connect_labs/mcp/tools/synthetic.py
+      - connect_labs/labs/synthetic/registry.py
+      - connect_labs/labs/synthetic/fixture_store.py
+      - connect_labs/labs/analysis/backends/sql/cache.py
+      - connect_labs/labs/synthetic/generator/io/uploader.py
+      - connect_labs/labs/synthetic/provisioning.py
+    duplicate_of: null
+    source: fresh
+    action: handed back — effort M, over the quick-wins cap
+    outcome: open
+  - number: 1182
+    disposition: implement
+    blocking: blocks-e2e
+    confidence: high
+    effort: M
+    cluster: null
+    evidence_paths:
+      - connect_labs/mcp/tools/workflow_snapshots.py
+      - connect_labs/mcp/tools/workflow_create_run.py
+      - connect_labs/workflow/data_access.py
+      - connect_labs/workflow/views.py
+    duplicate_of: null
+    source: fresh
+    action: handed back — effort M, over the quick-wins cap
+    outcome: open
+  - number: 1231
+    disposition: blocked
+    blocking: blocks-e2e
+    confidence: high
+    effort: M
+    cluster: labs-capacity-blocked-on-production-observation
+    evidence_paths:
+      - connect_labs/audit/tasks.py
+      - docker/start_celery
+      - infra/labs-monitoring.yml
+    unblocked_by: "3-5 deliberately concurrent AI-review runs on live labs (or the labs-jj-ai-classifier-saturation alarm firing) showing the 73-92% error shape still reproduces on current code"
+    duplicate_of: null
+    source: fresh
+    action: validation ticket commented
+    outcome: open, awaiting the labs-capacity validation visit
+  - number: 1162
+    disposition: blocked
+    blocking: blocks-e2e
+    confidence: medium
+    effort: M
+    cluster: labs-capacity-blocked-on-production-observation
+    evidence_paths:
+      - connect_labs/audit/data_access.py
+      - connect_labs/audit/views.py
+      - connect_labs/labs/analysis/backends/sql/backend.py
+      - connect_labs/labs/analysis/backends/sql/cache.py
+    unblocked_by: "endpoint timing on a deploy containing 2aef25dd + b6cc3aca: is db_ms on /audit/api/*/{bulk-data,save,complete}/ still multi-second, and do `[SQL] Raw cache MISS` lines still appear inside those requests"
+    duplicate_of: null
+    source: fresh
+    action: validation ticket commented
+    outcome: open, awaiting the labs-capacity validation visit
+  - number: 1193
+    disposition: blocked
+    blocking: blocks-e2e
+    confidence: medium
+    effort: n/a
+    cluster: null
+    evidence_paths:
+      - connect_labs/labs/integrations/connect/export_client.py
+      - connect_labs/labs/synthetic/dump.py
+      - connect_labs/labs/analysis/backends/sql/backend.py
+    unblocked_by: "one same-token same-minute request triple for opp 1790 or 1739: GET /export/opportunity/<id>/ vs .../user_visits/ vs .../user_visits/?page_size=2500"
+    duplicate_of: null
+    source: fresh
+    action: validation ticket commented
+    outcome: open, awaiting one prod request triple
+  - number: 1033
+    disposition: close
+    blocking: blocks-e2e
+    confidence: high
+    effort: n/a
+    cluster: visit-level-pipeline-columns
+    evidence_paths:
+      - connect_labs/workflow/data_access.py
+      - connect_labs/workflow/views.py
+      - connect_labs/mcp/tools/pipelines.py
+      - connect_labs/workflow/tests/test_pipeline_row_serialization.py
+    duplicate_of: null
+    source: fresh
+    action: closed as completed with a comment
+    outcome: closed
+  - number: 1190
+    disposition: close
+    blocking: blocks-e2e
+    confidence: high
+    effort: n/a
+    cluster: visit-level-pipeline-columns
+    evidence_paths:
+      - connect_labs/workflow/data_access.py
+      - connect_labs/workflow/views.py
+    duplicate_of: 1033
+    source: fresh
+    action: closed as not-planned (duplicate of #1033)
+    outcome: closed
+  - number: 1183
+    disposition: implement
+    blocking: harness
+    confidence: high
+    effort: S
+    cluster: mcp-aggregation-allowlist
+    evidence_paths:
+      - connect_labs/mcp/tools/pipelines.py
+      - connect_labs/labs/analysis/config.py
+      - connect_labs/labs/analysis/backends/sql/query_builder.py
+      - connect_labs/workflow/WORKFLOW_REFERENCE.md
+    duplicate_of: null
+    source: fresh
+    action: PR #1322 opened — Closes #1183 and #1317
+    outcome: in review
+  - number: 1317
+    disposition: close
+    blocking: harness
+    confidence: high
+    effort: n/a
+    cluster: mcp-aggregation-allowlist
+    evidence_paths:
+      - connect_labs/mcp/tools/pipelines.py
+      - connect_labs/labs/analysis/config.py
+    duplicate_of: 1183
+    source: fresh
+    action: closed as not-planned (duplicate of #1183); unique findings ported to #1183
+    outcome: closed
+  - number: 1197
+    disposition: implement
+    blocking: harness
+    confidence: high
+    effort: S
+    cluster: synthetic-repoint-invalidates-nothing
+    evidence_paths:
+      - connect_labs/mcp/tools/synthetic.py
+      - connect_labs/labs/synthetic/visit_count.py
+      - connect_labs/labs/synthetic/generator/io/uploader.py
+      - connect_labs/labs/synthetic/provisioning.py
+      - connect_labs/labs/context.py
+    duplicate_of: null
+    source: fresh
+    action: PR #1324 opened — Refs #1197
+    outcome: in review
+  - number: 1181
+    disposition: implement
+    blocking: harness
+    confidence: high
+    effort: M
+    cluster: null
+    evidence_paths:
+      - connect_labs/labs/synthetic/generator/fixtures/fields.py
+      - connect_labs/labs/synthetic/generator/fixtures/manifest.py
+      - connect_labs/labs/synthetic/generator/fixtures/engine.py
+      - connect_labs/labs/synthetic/generator/fixtures/schema_loader.py
+    duplicate_of: null
+    source: fresh
+    action: handed back — effort M, over the quick-wins cap
+    outcome: open
+  - number: 1169
+    disposition: implement
+    blocking: polish
+    confidence: high
+    effort: S
+    cluster: null
+    evidence_paths:
+      - connect_labs/audit/data_access.py
+      - connect_labs/audit/views.py
+      - connect_labs/audit/models.py
+    duplicate_of: null
+    source: fresh
+    action: PR #1323 opened — Refs #1169 (residual only; issue stays open)
+    outcome: in review
+  - number: 1306
+    disposition: implement
+    blocking: polish
+    confidence: medium
+    effort: S
+    cluster: visit-level-pipeline-columns
+    evidence_paths:
+      - connect_labs/workflow/data_access.py
+      - connect_labs/workflow/views.py
+      - connect_labs/workflow/tests/test_pipeline_row_serialization.py
+    duplicate_of: null
+    source: fresh
+    action: PR #1325 opened — Closes #1306
+    outcome: in review
+  - number: 1184
+    disposition: implement
+    blocking: polish
+    confidence: high
+    effort: M
+    cluster: null
+    evidence_paths:
+      - connect_labs/workflow/templates/llo_weekly_review.py
+      - connect_labs/workflow/templates/performance_review.py
+      - connect_labs/workflow/tests/templates/test_llo_weekly_review.py
+    duplicate_of: null
+    source: fresh
+    action: handed back — effort M, over the quick-wins cap
+    outcome: open
+  - number: 1032
+    disposition: implement
+    blocking: polish
+    confidence: high
+    effort: L
+    cluster: null
+    evidence_paths:
+      - connect_labs/solicitations/data_access.py
+      - connect_labs/mcp/server.py
+      - connect_labs/microplans/views.py
+      - connect_labs/microplans/core/data_access.py
+      - connect_labs/flags/views.py
+      - connect_labs/labs/synthetic/models.py
+      - connect_labs/labs/synthetic/dump.py
+      - config/settings/labs_aws.py
+      - connect_labs/labs/admin/sql_validator.py
+      - connect_labs/supply/api/execution.py
+      - connect_labs/labs/admin/app_data_access.py
+    duplicate_of: null
+    source: fresh
+    action: handed back — effort L, over the quick-wins cap
+    outcome: open
+  - number: 1031
+    disposition: implement
+    blocking: polish
+    confidence: high
+    effort: L
+    cluster: null
+    evidence_paths:
+      - requirements/base.txt
+      - requirements/base.in
+      - requirements/dev.txt
+      - package.json
+      - package-lock.json
+    duplicate_of: null
+    source: fresh
+    action: handed back — effort L, over the quick-wins cap
+    outcome: open
+  - number: 1152
+    disposition: blocked
+    blocking: polish
+    confidence: high
+    effort: S
+    cluster: labs-capacity-blocked-on-production-observation
+    evidence_paths:
+      - config/uvicorn_worker.py
+      - docker/start
+      - deploy/task-definitions/web.json
+      - infra/labs-monitoring.yml
+      - docs/PERFORMANCE_RUNBOOK.md
+    unblocked_by: "a CloudWatch reading during a real saturation episode of peak concurrent in-flight requests and peak keep-alive sockets per uvicorn worker on labs-jj-web — the number that separates a WEB_LIMIT_CONCURRENCY that trips on overload from one that 503s idle tabs"
+    duplicate_of: null
+    source: fresh
+    action: validation ticket commented
+    outcome: open, awaiting the labs-capacity validation visit
+  - number: 1298
+    disposition: blocked
+    blocking: polish
+    confidence: high
+    effort: n/a
+    cluster: labs-capacity-blocked-on-production-observation
+    evidence_paths:
+      - connect_labs/labs/integrations/connect/oauth.py
+      - connect_labs/labs/integrations/connect/oauth_views.py
+      - connect_labs/utils/request_telemetry.py
+      - config/settings/base.py
+    unblocked_by: "a timing of GET /export/opp_org_program_list/ for a broad-access user against a dimagi/commcare-connect build where ProgramOpportunityOrganizationDataView's Count(uservisit, distinct=True) join is a subquery annotation, showing the cold-login floor drops below ~1s"
+    duplicate_of: null
+    source: fresh
+    action: validation ticket commented
+    outcome: open, blocked on dimagi/commcare-connect
+  - number: 1246
+    disposition: close
+    blocking: polish
+    confidence: high
+    effort: n/a
+    cluster: null
+    evidence_paths:
+      - connect_labs/audit/data_access.py
+      - connect_labs/audit/prior_audit_projection.py
+      - connect_labs/audit/prior_audit_models.py
+    duplicate_of: null
+    source: fresh
+    action: closed as completed with a comment
+    outcome: closed
