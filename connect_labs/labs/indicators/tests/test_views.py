@@ -39,7 +39,7 @@ def africa():
     Real ISO codes, because the map and the selection are both scoped to Africa
     — a fixture using invented codes would test nothing.
     """
-    make_boundary("NER", 0, "Highland", "NER-0")
+    make_boundary("NER", 0, "Highland", "NER-0")  # boundary name is ignored
     a1 = make_boundary("NER", 1, "North", "NER-1", x=2)
     a2 = make_boundary("NER", 1, "South", "NER-2", x=4)
 
@@ -90,7 +90,8 @@ class TestSelectionApi:
         data = client_in.get(reverse("targeting:selection"), {"threshold": 80}).json()
         rolled = [r for r in data["rows"] if r["whole_country"]]
         assert len(rolled) == 1
-        assert rolled[0]["name"] == "Highland"
+        # The curated country name wins over the boundary file's label.
+        assert rolled[0]["name"] == "Niger"
         assert rolled[0]["units_covered"] == 2
 
     def test_bad_threshold_falls_back_rather_than_500s(self, client_in, africa):
@@ -128,7 +129,7 @@ class TestDownload:
         resp = client_in.get(reverse("targeting:download"), {"threshold": 80, "format": "csv"})
         rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
         assert len(rows) == 2  # one rolled-up country, one region
-        assert {r["Country"] for r in rows} == {"Highland", "Mixedland"}
+        assert {r["Country"] for r in rows} == {"Niger", "Nigeria"}
 
     def test_methodology_names_sources_and_the_derivation(self, client_in, africa):
         resp = client_in.get(reverse("targeting:download"), {"threshold": 80})
@@ -158,5 +159,5 @@ class TestDownload:
         rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
 
         assert len(rows) == 1
-        assert "Inheritland" in rows[0]["U5MR measured at"]
+        assert "Inheritland" in rows[0]["U5MR measured at"]  # the ADM0 boundary's own name
         assert rows[0]["U5MR measured at"] != "this area"

@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators import measures
+from connect_labs.labs.indicators.africa import name_for
 from connect_labs.labs.indicators.models import IndicatorValue
 
 logger = logging.getLogger(__name__)
@@ -336,6 +337,15 @@ CARRIED_COUNTS = ("births", "pop_u5", "pop_total")
 
 
 def _country_name(iso: str, adm0: AdminBoundary | None) -> str:
+    """Prefer the common name over the boundary file's formal one.
+
+    geoBoundaries calls Nigeria "the Federal Republic of Nigeria", which is
+    correct and useless in a table. The curated list wins where it has the
+    country; the boundary name is the fallback.
+    """
+    curated = name_for(iso)
+    if curated and curated != iso.upper():
+        return curated
     return adm0.name if adm0 is not None else iso
 
 
