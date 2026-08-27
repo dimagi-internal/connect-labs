@@ -26,7 +26,7 @@ from django.contrib.gis.geos import GEOSGeometry, Polygon
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators.models import License, Source
-from connect_labs.labs.indicators.sources.base import Row, http_json, http_json_post
+from connect_labs.labs.indicators.sources.base import RateLimited, Row, http_json, http_json_post
 
 logger = logging.getLogger(__name__)
 
@@ -346,6 +346,7 @@ def load(
 
     produced = 0
     finished = 0
+    quota_hit = False
     failures: list[str] = []
     total = len(boundaries)
 
@@ -356,6 +357,19 @@ def load(
             plan = plans[pk]
             try:
                 plan["results"].append(fut.result())
+            except RateLimited as exc:
+                # The opposite of one bad piece: nothing further will succeed
+                # today, and continuing only deepens the hole.
+                logger.error(
+                    "WorldPop daily quota exhausted after %d boundaries — stopping. "
+                    "Rows already written are kept; resume with --missing-only once "
+                    "the quota resets. (%s)",
+                    finished,
+                    exc,
+                )
+                pool.shutdown(wait=False, cancel_futures=True)
+                quota_hit = True
+                break
             except Exception as exc:  # noqa: BLE001 — one bad piece must not stop the run
                 logger.warning(
                     "WorldPop piece failed for %s (%s): %s",
@@ -383,6 +397,8 @@ def load(
             if on_progress:
                 on_progress(finished, total, b, len(rows))
 
+    if quota_hit:
+        failures.append("STOPPED: WorldPop daily quota exhausted")
     if failures:
         logger.warning(
             "WorldPop: %d of %d boundaries produced no data: %s",

@@ -41,6 +41,16 @@ def http_json(url: str, params: dict | None = None, retries: int = 3, timeout: i
     raise RuntimeError(f"GET {url} failed after {retries} attempts: {last}")
 
 
+class RateLimited(RuntimeError):
+    """The upstream refused us for quota reasons, not for this request's sake.
+
+    Worth its own type because the right response is the opposite of a normal
+    failure: stop the whole run at once. Retrying spends more of a quota that is
+    already gone, and a three-retry loop across hundreds of pieces turns one
+    refusal into a thousand.
+    """
+
+
 def http_json_post(url: str, data: dict, retries: int = 3, timeout: int | None = None) -> dict:
     """POST form-encoded, expect JSON back.
 
@@ -53,8 +63,12 @@ def http_json_post(url: str, data: dict, retries: int = 3, timeout: int | None =
     for attempt in range(retries):
         try:
             resp = requests.post(url, data=data, timeout=timeout or TIMEOUT, headers={"User-Agent": USER_AGENT})
+            if resp.status_code == 429:
+                raise RateLimited(f"POST {url} refused: quota exhausted ({resp.text[:160]})")
             resp.raise_for_status()
             return resp.json()
+        except RateLimited:
+            raise
         except Exception as exc:  # noqa: BLE001 — retried, then re-raised
             last = exc
             if attempt < retries - 1:
