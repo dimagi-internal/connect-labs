@@ -12,7 +12,16 @@ import datetime as dt
 from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, ValidationError, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    NonNegativeInt,
+    PositiveInt,
+    ValidationError,
+    model_validator,
+)
 
 
 class ManifestValidationError(ValueError):
@@ -23,6 +32,13 @@ class ManifestValidationError(ValueError):
 
 
 class NormalDistribution(BaseModel):
+    # `min`/`max` are accepted as aliases for lo/hi. They are the names an author
+    # reaches for first, and before this they were silently swallowed by pydantic's
+    # default extra="ignore" — a manifest that carefully bounded a field produced
+    # unbounded draws (-0.776 people with a disability) with no error anywhere
+    # (#1181). Anything else unknown now raises rather than vanishing.
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
     distribution: Literal["normal"] = "normal"
     mean: float
     stddev: float = Field(ge=0)
@@ -32,8 +48,12 @@ class NormalDistribution(BaseModel):
     # generated draws are clamped to [lo, hi] so an unbounded Normal can't emit
     # impossible values (negative ages, out-of-range vitals). Outliers may still
     # exceed these for seeded anomalies, but never flip sign on a non-negative field.
-    lo: float | None = None
-    hi: float | None = None
+    lo: float | None = Field(default=None, validation_alias=AliasChoices("lo", "min"))
+    hi: float | None = Field(default=None, validation_alias=AliasChoices("hi", "max"))
+    # Round draws to whole numbers. A count of people is not 32.213 — and the HQ
+    # schema's `int` kind only reaches fields the app declares, so a manifest-only
+    # or orphan path had no way to say so (#1181).
+    integer: bool = False
 
     @model_validator(mode="after")
     def _check_bounds(self):
@@ -43,11 +63,14 @@ class NormalDistribution(BaseModel):
 
 
 class UniformDistribution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     distribution: Literal["uniform"]
     low: float
     high: float
     transform: str | None = None
     null_rate: float = Field(ge=0, le=1, default=0.0)
+    integer: bool = False
 
     @model_validator(mode="after")
     def _check_bounds(self):
@@ -244,10 +267,37 @@ class LongitudinalSpec(BaseModel):
         return self
 
 
+class RelevanceRule(BaseModel):
+    """One XForm ``relevant`` condition, declared on a group base path.
+
+    The generator samples every field independently, so mutually-exclusive
+    relevance groups were BOTH populated on 100% of records — a not-held meeting
+    still carried a `meeting_type`, and any payability predicate that ANDs across
+    the group boundary overcounted by the entire non-occurrence rate. There is no
+    read-side workaround: a pipeline field supports only one filter_path, so an
+    opportunity whose rule spans a relevance group was unreproducible (#1181).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    when: str
+    """Dotted path of the controlling question, e.g. `form.meeting_conducted`."""
+    equals: str | list[str]
+    """Value (or values) of `when` that make this group relevant."""
+
+    def is_relevant(self, controller_value) -> bool:
+        expected = self.equals if isinstance(self.equals, list) else [self.equals]
+        return any(str(controller_value) == str(e) for e in expected)
+
+
 class BeneficiaryCohort(BaseModel):
     id: str
     size: PositiveInt
     field_distributions: dict[str, FieldDistribution]
+    # Group base path -> the condition that makes it relevant, mirroring the
+    # XForm's own `relevant` attribute. Everything at or under a base whose rule
+    # is false is left out of the record entirely.
+    relevance_groups: dict[str, RelevanceRule] = Field(default_factory=dict)
     progression: Progression
     correlation: CorrelationSpec | None = None
     # Repeat groups keyed by their array base path (e.g. "form.children"). Each emits
@@ -263,6 +313,14 @@ AnomalyType = Literal["field_outlier", "missing_visits", "duplicate_submission"]
 
 
 class Anomaly(BaseModel):
+    """An injected defect.
+
+    Leaving both `week` and `weeks` unset means EVERY week, not none. It used to
+    mean none: `_anomalies_at` returned [] unless one was set, so a declared
+    anomaly with only `flw_ids` silently no-opped and the demo simply had no
+    anomaly in it — with nothing logged (#1181).
+    """
+
     id: str
     type: AnomalyType
     flw_ids: list[str]

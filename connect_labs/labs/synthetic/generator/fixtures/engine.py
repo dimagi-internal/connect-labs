@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import datetime as dt
+import logging
 import math
 import random
 import uuid
@@ -25,6 +26,8 @@ from .tasks import build_task_records
 from .timeline import expand_visit_schedule
 from .user_data import build_user_data
 from .works import build_works_and_modules
+
+logger = logging.getLogger(__name__)
 
 
 def _sample_hour(rng: random.Random, temporal) -> int:
@@ -45,11 +48,41 @@ def _anomalies_at(week_index: int, flw_id: str, manifest: Manifest):
     for a in manifest.anomalies:
         if flw_id not in a.flw_ids:
             continue
-        if a.week and a.week == week_index:
-            out.append(a)
-        elif a.weeks and week_index in a.weeks:
+        if a.week is not None:
+            if a.week == week_index:
+                out.append(a)
+        elif a.weeks:
+            if week_index in a.weeks:
+                out.append(a)
+        else:
+            # Neither set: every week. This used to mean NO week — the loop fell
+            # through and returned nothing — so an anomaly declared with only
+            # flw_ids silently no-opped and the demo shipped without the defect it
+            # was supposed to showcase, with nothing logged (#1181).
             out.append(a)
     return out
+
+
+def warn_on_anomalies_that_match_nothing(manifest: Manifest, flw_ids) -> list[str]:
+    """Report anomalies whose ``flw_ids`` match no generated FLW.
+
+    A typo'd or stale id makes an anomaly vanish just as silently as the missing
+    week did, and the output looks like a clean dataset rather than a broken
+    manifest. Returned as well as logged so callers can surface it.
+    """
+    known = set(flw_ids)
+    problems = []
+    for a in manifest.anomalies:
+        missing = [f for f in a.flw_ids if f not in known]
+        if missing:
+            msg = f"anomaly {a.id!r} names FLW ids that were not generated: {missing}"
+            problems.append(msg)
+            logger.warning("synthetic: %s", msg)
+        if not a.flw_ids:
+            msg = f"anomaly {a.id!r} has an empty flw_ids and will never fire"
+            problems.append(msg)
+            logger.warning("synthetic: %s", msg)
+    return problems
 
 
 def _persona_index(manifest: Manifest):
