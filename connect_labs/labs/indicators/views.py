@@ -208,11 +208,15 @@ class SelectionView(OpenLocallyMixin, View):
                 "indicator_label": measure.label,
                 "indicator_unit": measure.unit,
                 "lower_is_worse": indicator in measures.LOWER_IS_WORSE,
+                "gap_label": (
+                    measures.get(f"{indicator}_gap").label if f"{indicator}_gap" in measures.MEASURES else None
+                ),
                 "threshold": threshold,
                 "threshold_pct": threshold / 10.0,
                 "totals": {
                     "expected_deaths": selection.totals.get("expected_deaths"),
                     "ors_gap_children": selection.totals.get("ors_gap_children"),
+                    "gap": selection.totals.get(f"{indicator}_gap"),
                     "births": selection.totals.get("births"),
                     "pop_u5": selection.totals.get("pop_u5"),
                     "pop_total": selection.totals.get("pop_total"),
@@ -260,6 +264,7 @@ class SelectionView(OpenLocallyMixin, View):
                         ),
                         "expected_deaths": _round_or_none(a.counts.get("expected_deaths")),
                         "ors_gap_children": _round_or_none(a.counts.get("ors_gap_children")),
+                        "gap": _round_or_none(a.counts.get(f"{indicator}_gap")),
                         "births": _round_or_none(a.counts.get("births")),
                         "pop_u5": _round_or_none(a.counts.get("pop_u5")),
                         "pop_total": _round_or_none(a.counts.get("pop_total")),

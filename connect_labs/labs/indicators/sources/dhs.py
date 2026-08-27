@@ -37,6 +37,26 @@ INDICATORS = {
     "ors_coverage": {"value": "CH_DIAT_C_ORS", "lo": None, "hi": None},
     "diarrhoea_untreated": {"value": "CH_DIAT_C_NON", "lo": None, "hi": None},
     "exclusive_breastfeeding": {"value": "CN_BFSS_C_EBF", "lo": None, "hi": None},
+    # Nutrition
+    "stunting": {"value": "CN_NUTS_C_HA2", "lo": None, "hi": None},
+    "wasting": {"value": "CN_NUTS_C_WH2", "lo": None, "hi": None},
+    "vitamin_a_coverage": {"value": "CN_MIAC_C_VAS", "lo": None, "hi": None},
+    # Immunisation
+    "measles_vaccination": {"value": "CH_VACC_C_MSL", "lo": None, "hi": None},
+    "dpt3_vaccination": {"value": "CH_VACC_C_DP3", "lo": None, "hi": None},
+    "full_immunisation": {"value": "CH_VACC_C_BAS", "lo": None, "hi": None},
+    # Malaria prevention
+    "itn_use_children": {"value": "ML_NETC_C_ITN", "lo": None, "hi": None},
+    # Respiratory infection
+    "ari_prevalence": {"value": "CH_ARIS_C_ARI", "lo": None, "hi": None},
+    "ari_antibiotics": {"value": "CH_ARIS_C_ABI", "lo": None, "hi": None},
+    "zinc_coverage": {"value": "CH_DIAT_C_ZNC", "lo": None, "hi": None},
+    # Maternal care
+    "skilled_birth_attendance": {"value": "RH_DELA_C_SKP", "lo": None, "hi": None},
+    "anc4": {"value": "RH_ANCN_W_N4P", "lo": None, "hi": None},
+    # Household environment — the background risk for diarrhoeal disease
+    "improved_water": {"value": "WS_SRCE_P_IMP", "lo": None, "hi": None},
+    "improved_sanitation": {"value": "WS_TLET_P_IMP", "lo": None, "hi": None},
 }
 
 METHOD = (

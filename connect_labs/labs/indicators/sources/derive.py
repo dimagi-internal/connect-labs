@@ -249,6 +249,63 @@ def load_ors_gap(iso_codes: list[str] | None = None, year: int | None = None) ->
     return rows
 
 
+def load_coverage_gaps(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
+    """Unreached population for every coverage measure, generically.
+
+        unreached = denominator x (1 - coverage)
+
+    Driven entirely by ``Measure.coverage_of``, so adding an indicator to the
+    registry brings its gap with it rather than needing a bespoke derivation.
+    The ORS gap stays hand-written because it carries a second factor —
+    prevalence — that this shape does not express.
+
+    A missing coverage reading yields no row. Treating absent coverage as zero
+    would invent an unreached population the size of the whole denominator.
+    """
+    from connect_labs.labs.indicators import measures as _measures
+
+    rows: list[Row] = []
+    boundaries = _boundaries(iso_codes)
+
+    for measure in _measures.coverage_measures():
+        denominator = measure.coverage_of
+        made = 0
+        for boundary in boundaries:
+            cov = resolve(measure.code, boundary, year)
+            denom = resolve(denominator, boundary, year)
+            if not (cov and denom):
+                continue
+            unreached = max(0.0, 1.0 - cov.value / 100.0)
+            rows.append(
+                Row(
+                    indicator=f"{measure.code}_gap",
+                    boundary=boundary,
+                    year=min(cov.year, denom.year),
+                    value=denom.value * unreached,
+                    source=Source.DERIVED,
+                    source_ref=f"unreached ({cov.source} + {denom.source})",
+                    license_code=License.DERIVED,
+                    method=(
+                        f"Derived: unreached = {denominator} x (1 - {measure.label} "
+                        f"({cov.value:.1f}%)). Inputs: {denominator} "
+                        f"{denom.value:,.0f} from {denom.source_ref or denom.source}; "
+                        f"coverage from {cov.provenance}."
+                    ),
+                    extra={
+                        "coverage": cov.value,
+                        "denominator": denom.value,
+                        "denominator_measure": denominator,
+                        "coverage_inherited": cov.inherited,
+                    },
+                )
+            )
+            made += 1
+        if made:
+            logger.info("derive: %d %s_gap rows", made, measure.code)
+
+    return rows
+
+
 def births_divergence(iso_codes: list[str] | None = None) -> dict[int, float]:
     """How far apart the two births methods are, per boundary.
 
