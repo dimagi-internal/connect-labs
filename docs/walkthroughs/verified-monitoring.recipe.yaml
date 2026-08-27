@@ -13,10 +13,6 @@ video_viewport_width: 1280
 why_brief: verified-monitoring.why_brief.yaml
 scenes:
 - id: the-goal-independent-drillable-proof-the-program-works
-  narrative: >-
-    The independent survey is what verifies the programme, so Maya can also inspect the
-    quality of the survey itself. The focus shifts from reviewing programme performance to
-    reviewing the surveyors who produced the number.
   role: overview
   pace: teach
   concept_claim: Maya's logged-visit coverage looks high, but she wants independent,
@@ -39,13 +35,6 @@ scenes:
   - kind: hold
     seconds: 6
 - id: six-bi-monthly-rounds-over-time-the-gap-holds
-  narrative: >-
-    She opens the six-round trend. It confirms a real rise in survey-estimated coverage —
-    71.8 percent, against the 89.3 the programme's own records report — with each round's
-    confidence interval and sample size shown, so a change reads as real rather than
-    sampling noise. She checks the third round, then the sixth: every round re-surveys a
-    fresh representative sample of households inside the same matched ward pair, so the
-    trend follows one comparison over time.
   actions:
   - kind: goto
     target: ${runner_path}
@@ -81,11 +70,6 @@ scenes:
     the independent intervention-arm survey at every bi-monthly round, the match-arm
     survey far below — earliest round at left, most recent at right.'
 - id: where-delivery-happened-vs-where-the-survey-checked-the-map-moves
-  narrative: >-
-    On the map, programme delivery points fill only the intervention ward. The survey
-    covered both wards — so the gap between programme-reported and survey-estimated coverage
-    is real, not an artefact of where anyone looked. She toggles the layers to show where
-    each one went.
   actions:
   - kind: scroll
     value: '600'
@@ -137,11 +121,6 @@ scenes:
     clusters toggled on from the shared Layers panel — flying to each cycle's two
     real wards.
 - id: the-per-surveyor-quality-scorecard-catches-a-surveyor
-  narrative: >-
-    Then she checks the surveyors, one row each. The Connect app requires you to be within
-    fifteen metres of the household to submit, so everyone is fully compliant on location;
-    the real signals are the photos, the on-primary rate, and the back-checks. On the
-    scorecard one surveyor trips the quality threshold and is flagged.
   actions:
   - kind: scroll_to
     target: Survey-quality scorecard
@@ -182,10 +161,6 @@ scenes:
     back-check, each computed from that surveyor's own records — with one surveyor
     flagged REVIEW on the non-GPS signals.
 - id: the-independent-back-check-confirms-it
-  narrative: >-
-    She opens that surveyor's back-check — a quality-control enumerator from the survey firm
-    re-visited a random subset of their households. Set against the original records, the
-    revisit disagrees on sex, age, roof, location and the vitamin-A result.
   actions:
   - kind: click
     target: css:[data-cell="T6:backcheck"]
@@ -211,12 +186,6 @@ scenes:
   show: The independent back-check for the flagged surveyor — Identity (incl. roof)
     / Location / Outcome, original over re-survey, the method behind an info button.
 - id: gps-is-clean-the-distributions-screen-catches-the-fabrication
-  narrative: >-
-    Finally the distributions. The flagged surveyor's interviews ran impossibly fast and
-    their roof-type answers collapse onto a single value — statistical warning signs that
-    trigger further investigation, not a verdict. Everyone else varies normally. The flagged
-    work is held for investigation and re-survey before it can count toward the coverage
-    estimate, so one bad surveyor cannot quietly move the number.
   actions:
   - kind: scroll_to
     target: text:Distributions ·

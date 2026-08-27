@@ -61,13 +61,6 @@ scenes:
   url: /microplans/program/10008/
   pace: teach
 - id: maya-mints-the-call-live-and-lands-on-its-responses-page
-  narrative: >-
-    Maya opens the create form. The coverage is already carried across from the study, so
-    she writes the description, then the scope of work. She sets the solicitation type and
-    the status, then the application deadline, the expected start and end dates, the
-    estimated scale — about twelve thousand households — and her contact email. Finally she
-    adds the question every firm must answer, and on submit Connect mints the call and lands
-    on its responses page.
   concept_claim: The create form pre-seeds the source plan into a Coverage areas panel
     snapshotted at creation, and on submit mints a brand-new active solicitation whose
     id is read off the resulting responses page.
@@ -182,11 +175,6 @@ scenes:
   full_page: false
   pace: teach
 - id: maya-generates-the-scoring-criteria-with-ai
-  narrative: >-
-    Rather than hand-writing the rubric, Maya clicks Generate with AI and the platform
-    drafts weighted evaluation criteria from her scope and her application questions. She
-    reads them, keeps them, and hits publish — so the criteria are fixed before a single
-    firm has responded.
   role: demo
   pace: teach
   concept_claim: Maya clicks Generate with AI and the platform drafts weighted evaluation
@@ -288,10 +276,6 @@ scenes:
       "a brand-new call, minted live" tail of the narration on the call Maya just
       created. This is the frame the judge sees as scene 2's hero.
 - id: a-survey-firm-reads-the-open-call-and-ticks-the-area-it-can-staff
-  narrative: >-
-    A survey firm opens the public call. It enters its name — Sahel Field Research — and its
-    contact email, ticks the coverage area it can staff, and writes its answer. Submission
-    stays blocked until an area is chosen.
   concept_claim: A survey firm reads the public solicitation and applies by selecting
     a specific coverage area from a checklist, and submission is blocked until one
     area is chosen.
@@ -382,14 +366,6 @@ scenes:
   pace: teach
   full_page: false
 - id: the-ai-coach-sharpens-the-firm-answer
-  narrative: >-
-    Before submitting, the firm asks the AI Application Coach for feedback. It reads the
-    draft against the published criteria and returns specific suggestions — press for
-    verifiable evidence, not unbacked claims. The firm strengthens the answer, then submits.
-  narrative: >-
-    Before submitting, the firm clicks Get Feedback. The AI Application Coach reads the
-    draft against the evaluation criteria and returns specific suggestions to strengthen it.
-    Then the firm submits.
   role: demo
   pace: teach
   concept_claim: Before submitting, the firm clicks Get Feedback and the AI Application
@@ -452,10 +428,6 @@ scenes:
       landed — kept short so the ACTION frame above (the completed application) stays
       the load-bearing teach frame
 - id: maya-sees-the-firm-tied-to-the-coverage-she-designed
-  narrative: >-
-    When the window closes, Maya opens the responses and moves to award. The organization
-    column names the firm — Sahel Field Research — beside the exact coverage she designed,
-    the Round 6 Attakar and Gura pair.
   concept_claim: The owner reviewing responses sees each firm's committed coverage
     area resolved from the authoritative snapshot, tying every application to a concrete
     designed coverage.
@@ -507,9 +479,6 @@ scenes:
   url: /solicitations/${solicitation_id}/responses/?program_id=10008
   pace: teach
 - id: maya-awards-the-firm-and-sees-it-was-notified
-  narrative: >-
-    She sets an optional budget for the awarded work and confirms. The firm is notified on
-    the spot, and the award is recorded against the study it came from.
   concept_claim: Awarding the chosen firm records the decision and notifies the organization,
     while standing up the live Connect opportunity that firm would run is the next
     step, not yet built.
