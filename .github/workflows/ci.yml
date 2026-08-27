@@ -80,9 +80,12 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Install Geo Dependencies
+        # --no-install-recommends: Django reaches libgdal/libgeos through ctypes, so
+        # the recommended extras (docs, python bindings) are downloaded and unpacked
+        # for nothing on every run. Hard dependencies are still installed.
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             binutils \
             gdal-bin \
             libproj-dev
@@ -92,16 +95,37 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: requirements-dev.txt
+          # The real requirement files, not requirements-dev.txt — that is a
+          # three-line wrapper that just includes these two and has never changed,
+          # so hashing it produced a cache key frozen at whatever the first run
+          # downloaded. The key could not invalidate when a dependency changed, and
+          # equally could not pick up a newly added one.
+          cache-dependency-path: |
+            requirements/base.txt
+            requirements/dev.txt
+
+      # The pip cache above only saves the DOWNLOAD; the install still ran in full
+      # every time (~70s). Cache the built environment itself, keyed on the same
+      # content, so an unchanged dependency set is restored instead of rebuilt. A
+      # venv's scripts hard-code absolute paths, which is fine here because the
+      # workspace path is identical on every runner.
+      - name: Cache the installed environment
+        id: venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements/base.txt', 'requirements/dev.txt') }}
 
       - name: Install Dependencies
+        if: steps.venv.outputs.cache-hit != 'true'
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -r requirements-dev.txt
 
       - name: Run tests
         # Whole test tree, not a hand-maintained app list — the old explicit list
         # silently skipped campaign, mcp, pages, funder_dashboard, and others as
         # they were added. No -x: report every failure, not just the first.
         run: |
-          pytest connect_labs/
+          .venv/bin/pytest connect_labs/
