@@ -12,6 +12,7 @@ pip-tools
 pytest
 pytest-httpx>=0.30
 pytest-playwright
+pytest-xdist
 xml2json @ git+https://github.com/dimagi/xml2json@041b1ef
 
 # Code quality
