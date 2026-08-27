@@ -316,6 +316,11 @@
         (r.value === null ? '—' : r.value) +
         '</td>' +
         '<td class="px-3 py-2 text-right tg-num font-medium">' +
+        (r.expected_deaths === null
+          ? '<span class="text-stone-400">—</span>'
+          : fmtFull(r.expected_deaths)) +
+        '</td>' +
+        '<td class="px-3 py-2 text-right tg-num text-stone-600">' +
         birthsCell +
         '</td>' +
         '<td class="px-3 py-2 text-right tg-num text-stone-600">' +
@@ -340,6 +345,9 @@
 
   function renderHeadline(data) {
     document.getElementById('tg-births').textContent = fmt(data.totals.births);
+    document.getElementById('tg-deaths').textContent = fmt(
+      data.totals.expected_deaths,
+    );
     document.getElementById('tg-popu5').textContent = fmt(data.totals.pop_u5);
     document.getElementById('tg-poptotal').textContent = fmt(
       data.totals.pop_total,

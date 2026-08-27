@@ -65,6 +65,70 @@ MIN_FACTOR = 0.2
 MAX_FACTOR = 2.0
 
 
+def _rake_to_national(rows: list[Row], series: dict[str, dict[int, float]], measure: str) -> list[Row]:
+    """Rescale each country's regions so their weighted mean hits the national.
+
+    Standard practice for small-area estimates: the pattern comes from the
+    survey, the level comes from the control total. Without it the two disagree
+    and there is no principled way to say which is right.
+
+    Weighted by births where we have them, unweighted where we do not — an
+    unweighted mean is a weak control, so those cases are logged rather than
+    silently trusted.
+    """
+    from connect_labs.labs.indicators.resolve import resolve as _resolve
+
+    by_country: dict[str, list[Row]] = defaultdict(list)
+    for r in rows:
+        by_country[r.boundary.iso_code].append(r)
+
+    out: list[Row] = []
+    for iso, country_rows in by_country.items():
+        national = series.get(iso) or {}
+        if not national:
+            out.extend(country_rows)
+            continue
+        target = national[max(national)]
+
+        weights = []
+        for r in country_rows:
+            w = _resolve("births", r.boundary)
+            weights.append(w.value if w else 0.0)
+        total_w = sum(weights)
+
+        if total_w > 0:
+            current = sum(r.value * w for r, w in zip(country_rows, weights)) / total_w
+        else:
+            current = sum(r.value for r in country_rows) / len(country_rows)
+            logger.info("rake %s %s: no birth weights, using an unweighted mean", iso, measure)
+
+        if current <= 0:
+            out.extend(country_rows)
+            continue
+
+        rake = target / current
+        if not (MIN_FACTOR <= rake <= MAX_FACTOR):
+            logger.warning("rake %s %s: refusing raking factor %.2f", iso, measure, rake)
+            out.extend(country_rows)
+            continue
+
+        for r in country_rows:
+            r.value *= rake
+            if r.ci_low is not None:
+                r.ci_low *= rake
+            if r.ci_high is not None:
+                r.ci_high *= rake
+            r.extra["rake_factor"] = round(rake, 4)
+            r.extra["national_target"] = target
+            r.method += (
+                f" Then raked x{rake:.3f} so this country's births-weighted regional "
+                f"mean reproduces the national estimate of {target:.1f}."
+            )
+        out.extend(country_rows)
+
+    return out
+
+
 def _national_series(measure: str) -> dict[str, dict[int, float]]:
     """IGME national values, by ISO then year."""
     series: dict[str, dict[int, float]] = defaultdict(dict)
@@ -154,6 +218,13 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
                 },
             )
         )
+
+    # Rake to the control total. Re-levelling scales every region by one factor,
+    # which preserves whatever bias the survey's regional pattern carries — so
+    # the births-weighted mean of the result did not reproduce the national
+    # figure it was levelled to. Eight countries were out by more than 20%
+    # (Uganda +37%). A second, per-country scaling closes that by construction.
+    rows = _rake_to_national(rows, series, measure)
 
     if adjustments:
         biggest = min(adjustments)

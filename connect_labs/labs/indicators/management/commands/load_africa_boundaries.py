@@ -19,6 +19,30 @@ from connect_labs.labs.indicators.africa import ISO_CODES, name_for
 
 LEVELS = [0, 1]
 
+#: Countries where IGME publishes subnational child mortality at ADM2. Loading
+#: ADM2 everywhere would treble the boundary table for data we cannot use; these
+#: are the ones where a deeper boundary is actually backed by a deeper estimate.
+ADM2_COUNTRIES = [
+    "AGO",
+    "BEN",
+    "CMR",
+    "ETH",
+    "GIN",
+    "LBR",
+    "MDG",
+    "MLI",
+    "MRT",
+    "MWI",
+    "NAM",
+    "RWA",
+    "SEN",
+    "SLE",
+    "TZA",
+    "UGA",
+    "ZMB",
+    "ZWE",
+]
+
 
 class Command(BaseCommand):
     help = "Load ADM0 and ADM1 boundaries for African countries from geoBoundaries (CC BY 4.0)"
@@ -26,6 +50,11 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--iso", help="Comma-separated ISO-3 codes; default is all of Africa")
         parser.add_argument("--clear", action="store_true", help="Delete existing rows for each country first")
+        parser.add_argument(
+            "--adm2",
+            action="store_true",
+            help="Load ADM2 as well, for the countries with ADM2-level mortality estimates",
+        )
         parser.add_argument(
             "--missing-only",
             action="store_true",
@@ -53,8 +82,11 @@ class Command(BaseCommand):
 
         for i, iso in enumerate(codes, 1):
             label = f"[{i}/{len(codes)}] {iso} {name_for(iso)}"
+            levels = list(LEVELS)
+            if opts.get("adm2") and iso in ADM2_COUNTRIES:
+                levels.append(2)
             try:
-                result = loader.load_country(iso, levels=LEVELS, clear=opts["clear"])
+                result = loader.load_country(iso, levels=levels, clear=opts["clear"])
                 total = getattr(result, "total_loaded", 0)
                 if total:
                     ok += 1

@@ -137,6 +137,28 @@ read timeouts rather than throughput. This is why HAPI exists in the pipeline.
 
 ## Resolution and method
 
+| method                   | resolution  | countries | depth                                  |
+| ------------------------ | ----------- | --------- | -------------------------------------- |
+| `subnational_igme`       | subnational | 25 / 55   | **ADM2 in 11 countries** — the default |
+| `subnational_relevelled` | subnational | 41 / 55   | ADM1, survey pattern scaled to today   |
+| `subnational_survey`     | subnational | 41 / 55   | ADM1, the survey as measured           |
+| `national_igme`          | national    | 54 / 55   | one number per country                 |
+
+IGME's own small-area model is preferred wherever it reaches; the re-levelled
+survey is the fallback for the countries it does not cover. That inverted an
+earlier decision — see `sources/igme_subnational.py` for why our own arithmetic
+should not have been the primary method.
+
+### IGME's admin levels are not ours
+
+`ADMIN_LEVEL` in the IGME cube is its own tier numbering and the mapping to
+geoBoundaries differs per country. Madagascar's IGME "level 2" is its 22
+regions, which geoBoundaries calls ADM1 — matched against ADM2 it scored 1 of 22. So the loader tries each combination and keeps whichever actually matches,
+and **refuses any country under a 75% match rate** rather than shipping a
+half-matched map. Uganda is currently refused at 41%: its IGME districts have no
+counterpart in geoBoundaries' county-level ADM2, so it falls back to the survey
+path until a district boundary set is loaded.
+
 `measures.py` says what an indicator _is_; `methods.py` says how a value for it
 was _produced_, which is the thing that varies by country. A method declares its
 **resolution** (national or subnational), which stored **sources** can satisfy
@@ -162,6 +184,13 @@ older and higher numbers.
 Adding a method is an entry in the registry plus, if it needs one, a loader.
 Selection and rollup code does not change — it asks the registry which sources
 to prefer and at what level to work.
+
+## Burden, not just rate
+
+`expected_deaths` = `u5mr × births ÷ 1000`. Targeting on rate alone excluded
+Oromia — the third-largest concentration of under-5 deaths in Africa — because
+its rate is 60 while its birth cohort is enormous. Rate answers "where is it
+worst per child"; burden answers "where are the children we could reach".
 
 ## Old surveys are re-levelled to the present
 
@@ -194,6 +223,24 @@ factor and keep their raw value.
 
 At an 80 threshold this moves the selection from 202 regions in 29 countries to
 156 in 21.
+
+**Then raked to the control total.** Re-levelling scales every region by one
+factor, so it preserves whatever bias the survey's regional pattern carries: the
+births-weighted regional mean did not reproduce the national figure it had been
+levelled to, and eight countries were out by more than 20% (Uganda +37%). A
+second per-country scaling closes that by construction — the pattern comes from
+the survey, the level from the control total. Divergence is now 2 of 24
+countries above 20%.
+
+A consequence worth knowing: for a country with a single region, raking pins
+that region to the national figure exactly. Correct, but it means the "regional"
+estimate carries no regional information there.
+
+**Validated by hold-out.** For every region with two surveys, the earlier one
+was re-levelled forward and scored against what the later survey found — 590
+pairs across 35 countries. Median absolute error **21.7%**, against **34.5%** for
+assuming nothing changed; better in 28 of 35 countries, worse in 7. Good enough
+to rank places, not to cost a programme.
 
 ## Every value links back to its source
 

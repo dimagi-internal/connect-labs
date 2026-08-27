@@ -53,7 +53,7 @@ METHOD = (
 )
 
 
-def _fetch_country(iso: str) -> list[dict]:
+def _fetch_country(iso: str, admin_level: int = 1) -> list[dict]:
     out: list[dict] = []
     offset = 0
     while True:
@@ -61,7 +61,7 @@ def _fetch_country(iso: str) -> list[dict]:
             API,
             {
                 "location_code": iso,
-                "admin_level": "1",
+                "admin_level": str(admin_level),
                 "limit": "10000",
                 "offset": str(offset),
                 "app_identifier": APP_IDENTIFIER,
@@ -75,20 +75,27 @@ def _fetch_country(iso: str) -> list[dict]:
     return out
 
 
-def load(iso_codes: list[str]) -> list[Row]:
-    """Population counts per ADM1, for whichever countries HAPI covers."""
+def load(iso_codes: list[str], admin_level: int = 1) -> list[Row]:
+    """Population counts per admin unit, for whichever countries HAPI covers.
+
+    ADM2 is worth asking for because mortality now resolves that deep in eleven
+    countries, but coverage there is thin and uneven — Zimbabwe has 91 units,
+    Zambia none. Whatever it returns is a fast win; WorldPop remains the
+    universal fallback.
+    """
     rows: list[Row] = []
+    name_key = f"admin{admin_level}_name"
 
     for iso in sorted({c.upper() for c in iso_codes}):
         try:
-            records = _fetch_country(iso)
+            records = _fetch_country(iso, admin_level)
         except Exception as exc:  # noqa: BLE001 — absence is normal, not fatal
             logger.info("HAPI: %s unavailable (%s)", iso, exc)
             continue
         if not records:
             continue
 
-        matcher = BoundaryMatcher(iso, admin_level=1)
+        matcher = BoundaryMatcher(iso, admin_level=admin_level)
         if not len(matcher):
             continue
 
@@ -97,7 +104,7 @@ def load(iso_codes: list[str]) -> list[Row]:
         periods: dict[str, str] = {}
 
         for r in records:
-            name = r.get("admin1_name")
+            name = r.get(name_key)
             if not name:
                 continue
             pop = float(r.get("population") or 0)
@@ -137,6 +144,6 @@ def load(iso_codes: list[str]) -> list[Row]:
                     )
                 )
 
-        logger.info("HAPI %s: %d/%d regions matched", iso, matched, len(totals))
+        logger.info("HAPI %s ADM%d: %d/%d units matched", iso, admin_level, matched, len(totals))
 
     return rows
