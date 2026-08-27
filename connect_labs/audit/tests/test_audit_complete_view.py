@@ -57,7 +57,7 @@ def test_completing_an_already_completed_session_fails_fast_with_clear_message(l
         def __init__(self, *a, **k):
             pass
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def complete_audit_session(self, **kwargs):
@@ -89,7 +89,7 @@ def test_completing_an_in_progress_session_still_works(labs_client, monkeypatch)
         def __init__(self, *a, **k):
             pass
 
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def complete_audit_session(self, session, overall_result, notes, kpi_notes):

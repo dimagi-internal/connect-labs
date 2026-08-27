@@ -1224,7 +1224,7 @@ class AuditDataAccess(BaseDataAccess):
             }
         )
 
-    def get_audit_session(self, session_id: int) -> AuditSessionRecord | None:
+    def get_audit_session(self, session_id: int, opportunity_id: int | None = None) -> AuditSessionRecord | None:
         """Fetch an audit session by id. **This is the only way to do it.**
 
         There used to be a ``try_multiple_opportunities`` flag guarding the
@@ -1242,6 +1242,13 @@ class AuditDataAccess(BaseDataAccess):
 
         Resolution order, cheapest first:
 
+        0. **A caller's hint.** ``opportunity_id``, when the caller already
+           knows where the session lives — the bulk page renders a session it
+           has already resolved, so its save/complete POSTs can say so instead
+           of making the server rediscover it. This is the rung that makes a
+           program-scoped caller cheap: rung 2 is an *opportunity* scope, so a
+           DAO scoped to a program misses it by construction and falls all the
+           way to the sweep on every request. See #1169.
         1. **Remembered location.** A session's storage opportunity is
            immutable, so it is memoised and the common case is one request.
         2. **Ambient scope**, for the ordinary "viewing a session in the
@@ -1278,6 +1285,18 @@ class AuditDataAccess(BaseDataAccess):
         # transient error into a sticky "session not found" for a session that exists
         # -- a worse bug than the 500 this method is being taught to survive.
         errored = False
+
+        # Rung 0. A hint is only ever a shortcut: it is tried with the caller's
+        # own token, so the server still runs its per-user authorization and a
+        # wrong or hostile value can only cost one extra request before the
+        # ladder resumes. It is deliberately tried BEFORE the memo — a caller
+        # who knows the answer should not pay for a stale shared entry.
+        if opportunity_id is not None and opportunity_id != remembered_opp_id:
+            session, failed = self._try_fetch_session(session_id, opportunity_id=opportunity_id)
+            errored |= failed
+            if session:
+                self._remember_session_location(session_id, session)
+                return session
 
         if remembered_opp_id is not None:
             session, failed = self._try_fetch_session(session_id, opportunity_id=remembered_opp_id)
