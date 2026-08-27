@@ -37,7 +37,7 @@ class _FakeDataAccess:
         self._session = session
         self._download = download
 
-    def get_audit_session(self, session_id, try_multiple_opportunities=False):
+    def get_audit_session(self, session_id, opportunity_id=None):
         return self._session
 
     def download_image_from_connect(self, blob_id, opp_id):

@@ -1244,6 +1244,11 @@ function bulkAssessmentInterface() {
       pass: 0,
       fail: 0,
     },
+    // The opportunity this session is filed under. The page only rendered
+    // because the server already resolved it, so handing it back on every
+    // write saves rediscovering it — a program-scoped caller otherwise pays
+    // a full cross-opportunity sweep per request (#1169).
+    storageOpportunityId: '{{ session.storage_opportunity_id|default_if_none:"" }}',
     saveUrl: '{% url "audit:audit_save" session.pk %}',
     applyResultsUrl: '{% url "audit:apply_assessment_results" session.pk %}',
     completeUrl: '{% url "audit:audit_complete" session.pk %}',
@@ -1412,6 +1417,9 @@ function bulkAssessmentInterface() {
       this.loadError = null;
       // Fetch ALL data without filters - filtering happens client-side
       const url = new URL(this.bulkDataUrl, window.location.origin);
+      if (this.storageOpportunityId) {
+        url.searchParams.set('storage_opportunity_id', this.storageOpportunityId);
+      }
       this.controller = new AbortController();
       try {
         const response = await fetch(url.toString(), { signal: this.controller.signal });
@@ -2205,6 +2213,9 @@ function bulkAssessmentInterface() {
       formData.append('notes', this.completionNotes);
       formData.append('kpi_notes', this.kpiNotes);
       formData.append('csrfmiddlewaretoken', this.csrfToken);
+      if (this.storageOpportunityId) {
+        formData.append('storage_opportunity_id', this.storageOpportunityId);
+      }
       return formData;
     },
     async saveAudit() {
@@ -2377,6 +2388,9 @@ function bulkAssessmentInterface() {
       try {
         const formData = new FormData();
         formData.append('csrfmiddlewaretoken', this.csrfToken);
+        if (this.storageOpportunityId) {
+          formData.append('storage_opportunity_id', this.storageOpportunityId);
+        }
         const response = await fetch(this.uncompleteUrl, {
           method: 'POST',
           body: formData,

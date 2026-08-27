@@ -32,7 +32,7 @@ class _FakeDataAccess:
     def __init__(self, session):
         self._session = session
 
-    def get_audit_session(self, session_id, try_multiple_opportunities=False):
+    def get_audit_session(self, session_id, opportunity_id=None):
         return self._session
 
     def download_image_from_connect(self, blob_id, opp_id):
@@ -674,7 +674,7 @@ def test_cancel_key_stops_before_next_session(monkeypatch):
     sessions_by_id = {10: session_1, 20: session_2}
 
     class _MultiSessionDataAccess:
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return sessions_by_id[session_id]
 
         def download_image_from_connect(self, blob_id, opp_id):
@@ -744,7 +744,7 @@ def test_cancel_key_drops_still_queued_futures_mid_session(monkeypatch):
     session = _FakeSession({"visit_images": {"1": images}})
 
     class _SingleSessionDataAccess:
-        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+        def get_audit_session(self, session_id, opportunity_id=None):
             return session
 
         def download_image_from_connect(self, blob_id, opp_id):

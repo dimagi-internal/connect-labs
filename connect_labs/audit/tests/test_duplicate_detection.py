@@ -929,7 +929,7 @@ def test_build_duplicate_warnings_all_kinds():
 
 
 class _FakeDataAccess:
-    def get_audit_session(self, sid):
+    def get_audit_session(self, sid, opportunity_id=None):
         return AuditSessionRecord(
             {"id": sid, "experiment": "audit", "type": "AuditSession", "opportunity_id": 1, "data": {}}
         )
