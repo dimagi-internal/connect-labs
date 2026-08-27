@@ -293,6 +293,47 @@ def _is_numeric_field(spec, effective) -> bool:
     return isinstance(dist, (NormalDistribution, UniformDistribution))
 
 
+def _get_nested(obj: dict, dotted_path: str) -> Any:
+    """Read a dotted path back out of the record being built, or None."""
+    cur: Any = obj
+    for part in dotted_path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+
+def _irrelevant_bases(out: dict, relevance_groups: dict) -> set[str]:
+    """Group base paths whose XForm ``relevant`` condition is currently false.
+
+    Evaluated against the record built SO FAR, which is why controllers have to be
+    drawn first — see `_relevance_ordered`. A controller that hasn't been answered
+    yet leaves its group relevant, so a misdeclared rule can only ever produce the
+    old (over-filled) behaviour, never a silently emptier record.
+    """
+    off = set()
+    for base, rule in (relevance_groups or {}).items():
+        value = _get_nested(out, rule.when)
+        if value is not None and not rule.is_relevant(value):
+            off.add(base)
+    return off
+
+
+def _relevance_ordered(questions, relevance_groups: dict):
+    """Questions with every relevance controller first, order otherwise preserved.
+
+    A gate can only be evaluated once its controller has a value, and the fill loop
+    writes as it goes — so the controllers have to be drawn before anything they
+    gate.
+    """
+    if not relevance_groups:
+        return questions
+    controllers = {rule.when for rule in relevance_groups.values()}
+    first = [q for q in questions if q.json_path in controllers]
+    rest = [q for q in questions if q.json_path not in controllers]
+    return first + rest
+
+
 def _under_repeat(path: str, bases: set[str]) -> bool:
     """True if ``path`` is a repeat base or a scalar leaf nested under one — those are
     owned by the repeat array, not the flat scalar fill."""
@@ -372,11 +413,19 @@ def fill_form_json(
         written_forced.add(path)
     covered_paths |= written_forced
 
-    for spec in schema.questions:
+    relevance_groups = getattr(cohort, "relevance_groups", {}) or {}
+    for spec in _relevance_ordered(schema.questions, relevance_groups):
         if _under_repeat(spec.json_path, repeat_bases):
             continue  # owned by a repeat array, emitted below
         if spec.json_path in written_forced:
             continue  # already set from the transplanted series
+        if _under_repeat(spec.json_path, _irrelevant_bases(out, relevance_groups)):
+            # The XForm would not have shown this question, so a real submission
+            # cannot carry it. Filling it anyway is what let a not-held meeting
+            # still report a meeting_type, and made any payability rule that ANDs
+            # across the group boundary overcount (#1181).
+            covered_paths.add(spec.json_path)
+            continue
         covered_paths.add(spec.json_path)
         if mirror and _is_numeric_field(spec, effective):
             # Faithful sparsity (mirror): numeric fields come ONLY from the transplant
@@ -417,7 +466,7 @@ def fill_form_json(
             transform = getattr(dist, "transform", None)
             if transform:
                 value = _apply_transform(raw, transform, rng)
-            elif spec.kind == "int":
+            elif spec.kind == "int" or getattr(dist, "integer", False):
                 value = int(round(raw))
             elif isinstance(dist, BinaryDistribution) and spec.kind in {"select", "multiselect", "text"}:
                 # A no-transform binary on a choice/text question renders as a
@@ -432,9 +481,12 @@ def fill_form_json(
     # even when the app structure API returns them under different question IDs.
     # Keys consumed by leaf-resolution above already drive a schema question and
     # must NOT be orphan-written (that would double-write the field).
+    irrelevant = _irrelevant_bases(out, relevance_groups)
     for path, dist in effective.items():
         if path in covered_paths or path in consumed_keys or _under_repeat(path, repeat_bases):
             continue
+        if _under_repeat(path, irrelevant):
+            continue  # same gate as above — an orphan under a hidden group is still hidden
         if mirror and isinstance(dist, (NormalDistribution, UniformDistribution)):
             continue  # mirror: numeric orphans come only from the transplant (forced)
         if path in correlated:
@@ -451,7 +503,10 @@ def fill_form_json(
         transform = getattr(dist, "transform", None)
         value = _apply_transform(raw, transform, rng)
         if isinstance(value, float):
-            value = round(value, 3)
+            # An orphan path has no HQ schema question, so `spec.kind == "int"`
+            # can never fire for it — which is how a count of people came out as
+            # 32.213. `integer` is the manifest's way to say so (#1181).
+            value = int(round(value)) if getattr(dist, "integer", False) else round(value, 3)
         _set_nested(out, path, value)
 
     # Repeat groups: emit a JSON array of 0–N filled sub-records at each base path.
