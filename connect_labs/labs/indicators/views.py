@@ -215,7 +215,14 @@ class SelectionView(OpenLocallyMixin, View):
                         "source_name": source_name(r.source) if r else None,
                         "source_detail": (r.source_ref or "") if r else "",
                         "source_url": (r.source_url or "") if r else "",
-                        "year": r.year if r else None,
+                        "year": r.measured_year if r else None,
+                        "adjusted": bool(r and r.adjusted),
+                        "adjusted_note": (
+                            f"survey value {r.extra['raw_value']:.0f} in {r.extra['raw_year']}, "
+                            f"re-levelled x{r.extra['factor']:.2f} to {r.year}"
+                            if r and r.adjusted
+                            else ""
+                        ),
                         "inherited": bool(r and r.inherited),
                         "measured_at": (
                             f"{r.measured_at.name} (ADM{r.measured_at.admin_level})" if r and r.inherited else None

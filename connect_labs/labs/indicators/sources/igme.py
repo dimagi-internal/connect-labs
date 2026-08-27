@@ -26,6 +26,11 @@ SDMX = "https://sdmx.data.unicef.org/ws/public/sdmxapi/rest/data/UNICEF,CME,1.0"
 #: IGME's public explorer, deep-linked to the country in question.
 PORTAL = "https://childmortality.org/data?refArea={iso}"
 
+#: How far back to pull the national series. Far enough to cover the oldest
+#: survey we still rely on (Tunisia 1988 is older, and simply cannot be
+#: re-levelled).
+SERIES_START = 1990
+
 #: our measure code → IGME indicator id
 INDICATORS = {
     "u5mr": "CME_MRY0T4",
@@ -69,8 +74,19 @@ def _parse(payload: dict) -> list[tuple[str, int, float]]:
     return out
 
 
-def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]:
-    """Latest national value per country, attached to the ADM0 boundary."""
+def load(
+    measure: str = "u5mr",
+    iso_codes: list[str] | None = None,
+    start_year: int = SERIES_START,
+) -> list[Row]:
+    """National values per country, attached to the ADM0 boundary.
+
+    Loads the whole annual series rather than only the latest year. The series
+    is what makes it possible to re-level an old subnational survey to the
+    present: the ratio between IGME's estimate for the survey year and for now
+    is a within-source trend, uncontaminated by differences of method between
+    IGME and DHS. See sources/calibrate.py.
+    """
     indicator_id = INDICATORS[measure]
 
     countries = (
@@ -88,7 +104,11 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
     key = f"{'+'.join(sorted(adm0))}.{indicator_id}._T._T."
     payload = http_json(
         f"{SDMX}/{key}",
-        {"format": "sdmx-json", "lastNObservations": "1", "dimensionAtObservation": "AllDimensions"},
+        {
+            "format": "sdmx-json",
+            "startPeriod": str(start_year),
+            "dimensionAtObservation": "AllDimensions",
+        },
     )
 
     rows: list[Row] = []

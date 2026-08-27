@@ -272,6 +272,12 @@
           sourceCell +
           '</span>';
       }
+      if (r.adjusted) {
+        sourceCell +=
+          '<span class="block text-xs text-teal-700" title="' +
+          esc(r.adjusted_note) +
+          '">re-levelled to today</span>';
+      }
       if (r.inherited) {
         sourceCell +=
           '<span class="block text-xs text-amber-700">national figure, from ' +
@@ -316,7 +322,11 @@
         '<td class="px-3 py-2 text-xs text-stone-600">' +
         sourceCell +
         '</td>' +
-        '<td class="px-3 py-2 text-xs text-right tg-num text-stone-600">' +
+        '<td class="px-3 py-2 text-xs text-right tg-num ' +
+        (r.year && new Date().getFullYear() - r.year >= 8
+          ? 'text-amber-700 font-medium'
+          : 'text-stone-600') +
+        '" title="Year the underlying survey was carried out">' +
         (r.year || '—') +
         '</td>' +
         '<td class="px-5 py-2 text-xs">' +

@@ -20,9 +20,9 @@ from django.utils import timezone
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
-from connect_labs.labs.indicators.sources import base, derive, dhs, hapi, igme, worldbank, worldpop
+from connect_labs.labs.indicators.sources import base, calibrate, derive, dhs, hapi, igme, worldbank, worldpop
 
-STAGES = ("mortality", "fertility", "population", "births")
+STAGES = ("mortality", "calibrate", "fertility", "population", "births")
 
 
 class Command(BaseCommand):
@@ -86,6 +86,14 @@ class Command(BaseCommand):
 
             with self._run(Source.IGME, measure) as ctx:
                 rows = igme.load(measure, iso_codes=codes)
+                ctx["rows"] = base.upsert(rows)
+                ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
+    def _stage_calibrate(self, codes, opts):
+        # Runs after mortality: needs both the raw surveys and the IGME series.
+        for measure in calibrate.CALIBRATED:
+            with self._run(Source.DHS_CALIBRATED, measure) as ctx:
+                rows = calibrate.load(measure, iso_codes=codes)
                 ctx["rows"] = base.upsert(rows)
                 ctx["countries"] = len({r.boundary.iso_code for r in rows})
 

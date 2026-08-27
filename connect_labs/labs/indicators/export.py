@@ -26,7 +26,8 @@ COLUMNS = [
     ("u5mr", "Under-5 mortality (per 1,000)"),
     ("u5mr_source", "U5MR source"),
     ("u5mr_source_detail", "U5MR source detail"),
-    ("u5mr_year", "U5MR year"),
+    ("u5mr_year", "U5MR survey year"),
+    ("u5mr_adjustment", "U5MR adjustment"),
     ("u5mr_source_url", "U5MR source link"),
     ("u5mr_measured_at", "U5MR measured at"),
     ("births", "Est. annual births"),
@@ -67,7 +68,13 @@ def _rows(selection: Selection):
             "u5mr": round(r.value, 1) if r else "",
             "u5mr_source": _source_name(r.source) if r else "",
             "u5mr_source_detail": (r.source_ref or "") if r else "",
-            "u5mr_year": r.year if r else "",
+            "u5mr_year": r.measured_year if r else "",
+            "u5mr_adjustment": (
+                f"re-levelled x{r.extra['factor']:.3f} from {r.extra['raw_year']} to {r.year} "
+                f"(raw {r.extra['raw_value']:.1f})"
+                if r and r.adjusted
+                else ""
+            ),
             "u5mr_source_url": (r.source_url or "") if r else "",
             "u5mr_measured_at": (
                 f"{r.measured_at.name} (ADM{r.measured_at.admin_level})" if r and r.inherited else "this area"
@@ -178,6 +185,30 @@ def to_methodology(selection: Selection) -> str:
             "Rows where this applies are marked `no` in the "
             "**Births complete for all regions** column, and their births cell is "
             "blank rather than zero.\n"
+        )
+
+    adjusted = [a for a in selection.areas if (v := a.values.get(selection.indicator)) and v.adjusted]
+    if adjusted:
+        add("## Old surveys are re-levelled to the present\n")
+        add(
+            f"{len(adjusted)} of {len(selection.areas)} rows come from a survey that has "
+            "been re-levelled. A third of Africa's subnational mortality comes from "
+            "surveys eight or more years old, and mortality has moved a long way since: "
+            "taken raw, Eritrea's 2002 regions read 111–154 against a national rate of "
+            "34 today.\n"
+        )
+        add("```")
+        add("factor   = IGME national (latest) / IGME national (survey year)")
+        add("adjusted = survey region value x factor")
+        add("```")
+        add(
+            "Both ends of the ratio are IGME's own series, so the factor is a pure "
+            "trend and carries no difference of method between IGME and the survey. "
+            "**This assumes relative differences between regions persisted while the "
+            "level changed** — an assumption that weakens the older the survey. The "
+            "`U5MR survey year` and `U5MR adjustment` columns show what was done to "
+            "each row, and the unadjusted survey value is kept in the database "
+            "alongside.\n"
         )
 
     add("## Caveats worth carrying\n")
