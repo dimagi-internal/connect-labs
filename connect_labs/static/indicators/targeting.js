@@ -13,6 +13,8 @@
   var methodInfo = null;
   var currentMethod = null;
   var currentIndicator = null;
+  var costInfo = null;
+  var currentBasis = null;
   var indicatorMeta = {};
   var map = null;
   var selected = new Set();
@@ -42,6 +44,7 @@
 
   function fmt(n) {
     if (n === null || n === undefined) return '—';
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
     if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
     if (n >= 1e3) return Math.round(n / 1e3) + 'k';
     return Math.round(n).toLocaleString();
@@ -647,8 +650,8 @@
     document.getElementById('tg-threshold-alt').style.display = meta.per_1000
       ? ''
       : 'none';
-    document.getElementById('tg-headline-label').textContent =
-      'Estimated annual births ' + direction + ' threshold';
+    // The headline label now lives on the burden card and follows the
+    // indicator, so nothing to set here.
   }
 
   function reload() {
@@ -675,6 +678,117 @@
         geojson = data;
         paint();
         return fetchSelection();
+      });
+  }
+
+  // --- costing --------------------------------------------------------------
+
+  function renderCostControls() {
+    var presetSel = document.getElementById('tg-preset');
+    var basisSel = document.getElementById('tg-basis');
+    if (!costInfo) return;
+
+    presetSel.innerHTML = '<option value="">— choose your own —</option>';
+    costInfo.interventions.forEach(function (i) {
+      var o = document.createElement('option');
+      o.value = i.slug;
+      o.textContent =
+        i.label + ' ($' + i.unit_cost_usd.toFixed(2) + ' ' + i.basis + ')';
+      presetSel.appendChild(o);
+    });
+
+    basisSel.innerHTML = '';
+    costInfo.bases.forEach(function (b) {
+      var o = document.createElement('option');
+      o.value = b.code;
+      o.textContent = b.label;
+      // A basis with no count for this indicator is offered but disabled, so
+      // its absence is visible rather than mysterious.
+      o.disabled = !b.available_for_indicator;
+      if (o.disabled) o.textContent += ' — not available for this indicator';
+      o.selected = b.code === currentBasis;
+      basisSel.appendChild(o);
+    });
+
+    presetSel.onchange = function () {
+      var pick = costInfo.interventions.filter(function (i) {
+        return i.slug === presetSel.value;
+      })[0];
+      if (!pick) return fetchScenario();
+      currentBasis = pick.basis;
+      document.getElementById('tg-unitcost').value = pick.unit_cost_usd;
+      basisSel.value = currentBasis;
+
+      // A preset carries the indicator it is meant for. Without this, picking
+      // "ORS" while targeting mortality silently costs expected deaths rather
+      // than untreated diarrhoea — the right arithmetic on the wrong quantity.
+      if (pick.targets && pick.targets !== currentIndicator) {
+        var indSel = document.getElementById('tg-indicator');
+        indSel.value = pick.targets;
+        return indSel.onchange();
+      }
+      return fetchScenario();
+    };
+    basisSel.onchange = function () {
+      currentBasis = basisSel.value;
+      presetSel.value = '';
+      return fetchScenario();
+    };
+    document.getElementById('tg-unitcost').oninput = function () {
+      clearTimeout(window.__costT);
+      window.__costT = setTimeout(fetchScenario, 350);
+    };
+  }
+
+  function fetchScenario() {
+    var cost = parseFloat(document.getElementById('tg-unitcost').value);
+    if (!currentBasis || isNaN(cost)) return Promise.resolve();
+    return fetch(
+      TG.urls.scenario +
+        '?indicator=' +
+        currentIndicator +
+        '&threshold=' +
+        threshold() +
+        '&basis=' +
+        currentBasis +
+        '&unit_cost=' +
+        cost +
+        (currentMethod ? '&method=' + currentMethod : ''),
+    )
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (d) {
+        var el = document.getElementById('tg-absorb');
+        var detail = document.getElementById('tg-absorb-detail');
+        var caveat = document.getElementById('tg-absorb-caveat');
+        if (d.error) {
+          el.textContent = '—';
+          detail.textContent = d.error;
+          caveat.textContent = '';
+          return;
+        }
+        el.textContent =
+          d.absorbable_usd === null ? '—' : '$' + fmt(d.absorbable_usd);
+        detail.textContent =
+          fmtFull(d.units) +
+          ' ' +
+          d.basis.noun_plural +
+          ' — ' +
+          d.basis.measure_label;
+        var notes = [];
+        if (!d.complete) {
+          notes.push(
+            'A floor: ' +
+              (d.unit_coverage.of - d.unit_coverage.with_value) +
+              ' of ' +
+              d.unit_coverage.of +
+              ' regions have no count.',
+          );
+        }
+        if (d.intervention && d.intervention.caveat)
+          notes.push(d.intervention.caveat);
+        caveat.textContent = notes.join(' ');
       });
   }
 
@@ -714,6 +828,7 @@
         renderHeadline(data);
         renderTable(data);
         applySelection(data.selected_pks);
+        fetchScenario();
       })
       .catch(function (err) {
         document.getElementById('tg-births').textContent = 'error';
@@ -752,6 +867,19 @@
         return initMap();
       })
       .then(function () {
+        return fetch(TG.urls.interventions + '?indicator=' + currentIndicator);
+      })
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (info) {
+        costInfo = info;
+        var preset = info.interventions[0];
+        currentBasis = preset ? preset.basis : 'person';
+        document.getElementById('tg-unitcost').value = preset
+          ? preset.unit_cost_usd
+          : 1;
+        renderCostControls();
         return reload();
       })
       .catch(function (err) {

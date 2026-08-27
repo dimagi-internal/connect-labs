@@ -62,6 +62,9 @@ INDICATORS = {
     # Maternal care
     "skilled_birth_attendance": {"value": "RH_DELA_C_SKP", "lo": None, "hi": None},
     "anc4": {"value": "RH_ANCN_W_N4P", "lo": None, "hi": None},
+    # Household composition. DHS supplies the RATIO only — population counts
+    # come from WorldPop and national statistics via HAPI, never from a survey.
+    "mean_household_size": {"value": "HC_MEMB_H_MNM", "lo": None, "hi": None},
     # Household environment — the background risk for diarrhoeal disease
     "improved_water": {"value": "WS_SRCE_P_IMP", "lo": None, "hi": None},
     "improved_sanitation": {"value": "WS_TLET_P_IMP", "lo": None, "hi": None},

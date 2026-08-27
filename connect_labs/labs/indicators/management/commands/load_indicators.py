@@ -247,6 +247,7 @@ class Command(BaseCommand):
             "zinc_coverage",
             "skilled_birth_attendance",
             "anc4",
+            "mean_household_size",
             "improved_water",
             "improved_sanitation",
         ):
@@ -257,6 +258,11 @@ class Command(BaseCommand):
 
         with self._run(Source.DERIVED, "ors_gap_children") as ctx:
             rows = derive.load_ors_gap(iso_codes=codes)
+            ctx["rows"] = base.upsert(rows)
+            ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
+        with self._run(Source.DERIVED, "households") as ctx:
+            rows = derive.load_households(iso_codes=codes)
             ctx["rows"] = base.upsert(rows)
             ctx["countries"] = len({r.boundary.iso_code for r in rows})
 

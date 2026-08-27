@@ -523,6 +523,39 @@ _coverage(
     "Children with fever who took an antimalarial drug.",
 )
 
+register(
+    Measure(
+        code="mean_household_size",
+        label="Mean household size",
+        kind=Kind.RATE,
+        unit="people per household",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_total",
+        downscale=True,
+        description=(
+            "Average usual members per household. A ratio, which is what a "
+            "household survey is designed to measure — the population it is "
+            "divided into comes from WorldPop and national statistics, not "
+            "from DHS."
+        ),
+    )
+)
+
+register(
+    Measure(
+        code="households",
+        label="Households",
+        kind=Kind.COUNT,
+        unit="households",
+        agg=Agg.SUM,
+        description=(
+            "Estimated households: total population divided by mean household "
+            "size. Derived, because no source counts households subnationally "
+            "across Africa."
+        ),
+    )
+)
+
 _prevalence(
     "malaria_prevalence",
     "Malaria prevalence (RDT)",

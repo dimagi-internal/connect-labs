@@ -388,64 +388,107 @@ class MethodsView(OpenLocallyMixin, View):
 
 
 class ScenarioView(OpenLocallyMixin, View):
-    """What an intervention could absorb in the places a threshold selects.
+    """What a unit price buys, over the places a threshold selects.
 
-    The question the whole system was built for: "if KMC costs $60 a case, how
-    much could high-mortality Africa absorb?" Answered by composing the pieces
-    already here — a selection, a case-count measure, a unit cost — rather than
-    a bespoke calculation, so every figure traces back through the same
-    provenance as the table.
+    The arithmetic is trivial once two things are fixed: a **unit cost** and a
+    **unit of measure**. Which unit applies is a property of the intervention,
+    not of the data — a bednet is priced per child, a water connection per
+    household, a treatment per case — so the basis is chosen rather than
+    inferred, and named interventions are presets for a basis and a price.
     """
 
     def get(self, request):
-        slug = request.GET.get("intervention", "ors")
-        try:
-            intervention = interventions.get(slug)
-        except KeyError:
-            return JsonResponse({"error": f"unknown intervention {slug!r}"}, status=400)
+        slug = request.GET.get("intervention")
+        basis_param = request.GET.get("basis")
+        intervention = None
 
-        indicator = request.GET.get("indicator") or intervention.targets
+        if slug:
+            try:
+                intervention = interventions.get(slug)
+            except KeyError:
+                return JsonResponse({"error": f"unknown intervention {slug!r}"}, status=400)
+
+        try:
+            basis = (
+                interventions.UnitBasis(basis_param)
+                if basis_param
+                else (intervention.basis if intervention else interventions.UnitBasis.PERSON)
+            )
+        except ValueError:
+            return JsonResponse(
+                {
+                    "error": f"unknown basis {basis_param!r}",
+                    "valid": [b.value for b in interventions.UnitBasis],
+                },
+                status=400,
+            )
+
+        indicator = request.GET.get("indicator") or (intervention.targets if intervention else DEFAULT_INDICATOR)
+        if indicator not in measures.MEASURES:
+            return JsonResponse({"error": f"unknown indicator {indicator!r}"}, status=400)
+
         threshold = _float(request, "threshold", measures.get(indicator).threshold_default)
-        unit_cost = _float(request, "unit_cost", intervention.unit_cost_usd)
+        default_cost = intervention.unit_cost_usd if intervention else 1.0
+        unit_cost = _float(request, "unit_cost", default_cost)
+
+        cases_measure = interventions.measure_for(basis, indicator)
+        if cases_measure is None:
+            return JsonResponse(
+                {
+                    "error": (
+                        f"a '{basis.value}' basis has no case count for {indicator!r} — "
+                        "that indicator has no coverage figure to imply untreated cases"
+                    )
+                },
+                status=400,
+            )
 
         selection = select_above(
             indicator=indicator,
             threshold=threshold,
             iso_codes=ISO_CODES,
             method=_method(request),
-            extra_counts=(intervention.cases,),
+            extra_counts=(cases_measure,),
         )
 
-        cases = selection.totals.get(intervention.cases)
-        got, total = selection.coverage.get(intervention.cases, (0, 0))
+        cases = selection.totals.get(cases_measure)
+        got, total = selection.coverage.get(cases_measure, (0, 0))
 
         return JsonResponse(
             {
-                "intervention": {
-                    "slug": intervention.slug,
-                    "label": intervention.label,
-                    "unit_noun": intervention.unit_noun,
-                    "unit_noun_plural": _plural(intervention.unit_noun),
-                    "description": intervention.description,
-                    "caveat": intervention.caveat,
-                    "cases_measure": intervention.cases,
-                    "cases_measure_label": measures.get(intervention.cases).label,
-                    "default_unit_cost": intervention.unit_cost_usd,
+                "intervention": (
+                    {
+                        "slug": intervention.slug,
+                        "label": intervention.label,
+                        "description": intervention.description,
+                        "caveat": intervention.caveat,
+                        "default_unit_cost": intervention.unit_cost_usd,
+                    }
+                    if intervention
+                    else None
+                ),
+                "basis": {
+                    "code": basis.value,
+                    "label": basis.label,
+                    "noun": basis.noun,
+                    "noun_plural": _plural(basis.noun),
+                    "measure": cases_measure,
+                    "measure_label": measures.get(cases_measure).label,
                 },
                 "indicator": indicator,
                 "indicator_label": measures.get(indicator).label,
                 "threshold": threshold,
                 "unit_cost": unit_cost,
                 "method": selection.method,
-                "cases": cases,
-                "absorbable_usd": (interventions.cost(intervention, cases, unit_cost) if cases else None),
-                # Cases are summed only where a value exists, so an incomplete
-                # selection produces a floor. Saying so is the difference
-                # between a floor and a wrong number.
-                "case_coverage": {"with_value": got, "of": total},
+                "units": cases,
+                "absorbable_usd": interventions.cost(cases, unit_cost) if cases else None,
+                # Units are summed only where a value exists, so an incomplete
+                # selection yields a floor — which is worth saying rather than
+                # letting a confident total imply completeness.
+                "unit_coverage": {"with_value": got, "of": total},
                 "complete": bool(total and got == total),
                 "counts": {
-                    "units": selection.unit_count,
+                    "regions": selection.unit_count,
                     "countries": selection.country_count,
                 },
                 "countries_unsupported": selection.countries_unsupported,
@@ -454,24 +497,35 @@ class ScenarioView(OpenLocallyMixin, View):
 
 
 class InterventionsView(OpenLocallyMixin, View):
-    """The catalogue, for a picker."""
+    """Unit bases and the intervention presets built on them."""
 
     def get(self, request):
+        indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
         return JsonResponse(
             {
+                "bases": [
+                    {
+                        "code": b.value,
+                        "label": b.label,
+                        "noun": b.noun,
+                        "measure": interventions.measure_for(b, indicator),
+                        "available_for_indicator": interventions.measure_for(b, indicator) is not None,
+                    }
+                    for b in interventions.UnitBasis
+                ],
                 "interventions": [
                     {
                         "slug": i.slug,
                         "label": i.label,
+                        "basis": i.basis.value,
                         "unit_cost_usd": i.unit_cost_usd,
                         "unit_noun": i.unit_noun,
                         "targets": i.targets,
-                        "cases_measure": i.cases,
                         "description": i.description,
                         "caveat": i.caveat,
                     }
                     for i in interventions.all_interventions()
-                ]
+                ],
             }
         )
 
