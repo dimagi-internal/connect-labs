@@ -514,6 +514,28 @@ _coverage(
     "Population with an improved sanitation facility.",
 )
 
+_coverage(
+    "malaria_treatment",
+    "Antimalarial for fever",
+    "pop_u5",
+    "pop_u5",
+    "% of under-5s with fever",
+    "Children with fever who took an antimalarial drug.",
+)
+
+_prevalence(
+    "malaria_prevalence",
+    "Malaria prevalence (RDT)",
+    "pop_u5",
+    "% of children 6-59 months",
+    "Children testing positive for malaria by rapid diagnostic test. A measured "
+    "prevalence, and one of the few DHS indicators carrying published "
+    "confidence bounds.",
+    lo=1,
+    hi=70,
+    default=20,
+)
+
 _prevalence(
     "stunting",
     "Stunting, under-5s",
@@ -569,6 +591,8 @@ TARGETABLE = (
     "nmr",
     "diarrhoea_prevalence",
     "ors_coverage",
+    "malaria_prevalence",
+    "malaria_treatment",
     "stunting",
     "wasting",
     "ari_prevalence",
