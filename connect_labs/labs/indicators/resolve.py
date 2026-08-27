@@ -22,7 +22,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
-from connect_labs.labs.indicators import measures
+from connect_labs.labs.indicators import measures, methods
 from connect_labs.labs.indicators.africa import name_for
 from connect_labs.labs.indicators.models import IndicatorValue
 
@@ -362,6 +362,12 @@ class Selection:
     countries_fully_above: list[str]
     countries_partly_above: list[str]
     skipped_no_data: list[str]
+    #: The method this selection was produced with, and the countries it could
+    #: not answer for. Never silently answered at another resolution — a region
+    #: compared against a whole country is not a comparison.
+    method: str = ""
+    resolution: str = ""
+    countries_unsupported: list[str] = field(default_factory=list)
 
     @property
     def area_count(self) -> int:
@@ -407,7 +413,8 @@ def select_above(
     threshold: float = 80.0,
     year: int | None = None,
     iso_codes: list[str] | None = None,
-    source_order: tuple[str, ...] = DEFAULT_SOURCE_ORDER,
+    source_order: tuple[str, ...] | None = None,
+    method: str | None = None,
 ) -> Selection:
     """Places where ``indicator`` exceeds ``threshold``, at the coarsest honest unit.
 
@@ -422,12 +429,48 @@ def select_above(
     """
     measure = measures.get(indicator)
 
-    qs = AdminBoundary.objects.filter(admin_level__in=(0, 1))
-    if iso_codes:
-        qs = qs.filter(iso_code__in=[c.upper() for c in iso_codes])
+    # A method fixes both which sources may answer and what level to work at.
+    # Without one the historical default stands, so existing callers are
+    # unaffected.
+    chosen = methods.get(method) if method else None
+    if chosen is not None:
+        source_order = chosen.source_order
+        levels = chosen.resolution.admin_levels
+        national_only = chosen.is_national
+    else:
+        source_order = source_order or DEFAULT_SOURCE_ORDER
+        levels = (0, 1)
+        national_only = False
+
+    unsupported: list[str] = []
+    if chosen is not None:
+        from connect_labs.labs.indicators import availability
+
+        supported = set(availability.countries_supporting(chosen, indicator, iso_codes))
+        wanted = [c.upper() for c in (iso_codes or [])] or None
+        qs = AdminBoundary.objects.filter(admin_level__in=levels, iso_code__in=supported)
+        if wanted:
+            qs = qs.filter(iso_code__in=wanted)
+        unsupported = sorted(
+            name_for(r.iso_code) for r in availability.for_method(chosen, indicator, iso_codes) if not r.available
+        )
+    else:
+        qs = AdminBoundary.objects.filter(admin_level__in=levels)
+        if iso_codes:
+            qs = qs.filter(iso_code__in=[c.upper() for c in iso_codes])
     boundaries = list(qs)
 
-    bulk = BulkResolver(boundaries, year=year, source_order=source_order)
+    # Counts (population, births) are stored on regions, never on the country
+    # outline — a country's population is the sum of its regions, and measuring
+    # it twice could only disagree with itself. So a national-resolution row
+    # still has to reach its regions to report how many people it covers.
+    count_units: list[AdminBoundary] = []
+    if national_only:
+        count_qs = AdminBoundary.objects.filter(admin_level=1, iso_code__in={b.iso_code for b in boundaries})
+        count_units = list(count_qs)
+
+    bulk = BulkResolver(boundaries + count_units, year=year, source_order=DEFAULT_SOURCE_ORDER)
+    rate_bulk = BulkResolver(boundaries, year=year, source_order=source_order)
 
     by_iso: dict[str, dict[int, list[AdminBoundary]]] = defaultdict(lambda: defaultdict(list))
     for b in boundaries:
@@ -440,14 +483,14 @@ def select_above(
 
     for iso in sorted(by_iso):
         adm0 = (by_iso[iso].get(0) or [None])[0]
-        adm1s = by_iso[iso].get(1) or []
+        adm1s = [] if national_only else (by_iso[iso].get(1) or [])
         cname = _country_name(iso, adm0)
 
         units = adm1s or ([adm0] if adm0 is not None else [])
         if not units:
             continue
 
-        evaluated = [(b, r) for b in units if (r := bulk.get(indicator, b)) is not None]
+        evaluated = [(b, r) for b in units if (r := rate_bulk.get(indicator, b)) is not None]
         if not evaluated:
             skipped.append(cname)
             continue
@@ -460,6 +503,29 @@ def select_above(
         # qualify — a single-region country would otherwise be relabelled as a
         # whole-country row, which reads as a much stronger claim than it is.
         rolled_up = bool(adm1s) and len(above) == len(evaluated) and len(evaluated) > 1
+
+        # A national-resolution row is one country; its counts come from its
+        # regions, the same way a rolled-up country row's do.
+        if national_only:
+            fully.append(cname)
+            for b, r in above:
+                children = [c for c in count_units if c.iso_code == b.iso_code]
+                area = Area(
+                    boundary=b,
+                    iso_code=iso,
+                    country_name=cname,
+                    name=cname,
+                    admin_level=0,
+                    is_whole_country=True,
+                    units_covered=max(len(children), 1),
+                    values={indicator: r},
+                )
+                for c in CARRIED_COUNTS:
+                    got = [v.value for ch in children if (v := bulk.get(c, ch)) is not None]
+                    area.counts[c] = sum(got) if got else None
+                    area.coverage[c] = (len(got), max(len(children), 1))
+                areas.append(area)
+            continue
 
         if rolled_up:
             fully.append(cname)
@@ -523,6 +589,9 @@ def select_above(
         countries_fully_above=sorted(set(fully)),
         countries_partly_above=sorted(set(partly)),
         skipped_no_data=sorted(set(skipped)),
+        method=chosen.code if chosen else "",
+        resolution=chosen.resolution.value if chosen else "",
+        countries_unsupported=unsupported,
     )
 
 
