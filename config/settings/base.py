@@ -619,6 +619,20 @@ AUDIT_TRAIL_ARCHIVE_BUCKET = env("AUDIT_TRAIL_ARCHIVE_BUCKET", default=None)
 # whose day has a verified S3 archive object.
 AUDIT_TRAIL_HOT_RETENTION_DAYS = env.int("AUDIT_TRAIL_HOT_RETENTION_DAYS", default=400)
 
+# Prior-audit projection: may a STALE projection be served while its full rebuild
+# runs on a worker, instead of the reader rebuilding it inline?
+#
+# Default False is EXACTLY today's behaviour, so the mechanism lands without
+# changing production. It is off rather than on because what it buys is a
+# question about production load, and the measurement that settles it needs real
+# audit traffic against the current deploy (#1162) -- not a number picked from a
+# plausible argument. Turning it on moves the full fetch-and-rebuild of every
+# completed session off `/audit/api/<id>/bulk-data/`; it does NOT add a schedule
+# or a service account -- see prior_audit_projection.schedule_stale_refresh,
+# which is why it does not re-open the decision recorded in CELERY_BEAT_SCHEDULE
+# below against a scheduled prior-audit job.
+PRIOR_AUDIT_ASYNC_STALE_REFRESH = env.bool("PRIOR_AUDIT_ASYNC_STALE_REFRESH", default=False)
+
 # Periodic audit-pipeline jobs. django_celery_beat's DatabaseScheduler syncs
 # these entries into its DB-backed schedule at beat startup.
 CELERY_BEAT_SCHEDULE = {

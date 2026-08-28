@@ -2309,3 +2309,93 @@ def run_audit_creation(
             pass
 
         raise
+
+
+@celery_app.task
+def refresh_prior_audit_projection(opportunity_id: int, username: str) -> dict | None:
+    """Do the prior-audit full rebuild that a request declined to do inline.
+
+    Dispatched by ``prior_audit_projection.schedule_stale_refresh`` when a reader
+    finds a BUILT projection past ``STALE_AFTER``. The point is only to move the
+    cost: this performs exactly the fetch-and-rebuild the request used to perform
+    itself, under the same identity, with the same merge semantics.
+
+    Runs as ``username`` via that user's stored Connect token -- the pattern
+    ``rebuild_prior_audit_index --as`` already uses, and for the reason its
+    docstring gives: the credential stays in the database rather than riding in
+    the task payload through the broker.
+
+    Scope follows that identity, unchanged from the synchronous path it replaces.
+    ``rebuild_opportunity`` merges rather than replaces, so a narrow identity can
+    fail to add rows but can never remove ones it could not see (#1260) -- which
+    is what makes it safe to run this under whoever happened to load the page.
+    Choosing a deliberately-wide identity is a separate question, tracked in
+    #1354; this task does not change today's answer to it either way.
+
+    Returns the rebuild summary, or None if it could not run. Failure is logged
+    and swallowed: the reader that dispatched this already returned a correct
+    answer from the existing projection, and the refresh deadline
+    (``REFRESH_DEADLINE``) is what stops a persistently failing refresh from
+    silently disabling the staleness floor.
+    """
+    from django.contrib.auth import get_user_model
+
+    from connect_labs.audit import prior_audit_projection as projection
+    from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
+
+    try:
+        try:
+            user = get_user_model().objects.get(username=username)
+        except get_user_model().DoesNotExist:
+            logger.warning(
+                "prior-audit refresh: user %r no longer exists; opp %s stays stale until "
+                "a reader rebuilds it inline at the refresh deadline",
+                username,
+                opportunity_id,
+            )
+            return None
+
+        try:
+            token = get_valid_access_token(user)
+        except ConnectTokenError as exc:
+            # An expired refresh token is the failure most easily mistaken for
+            # "nothing to do", so it is logged as the reason the projection is
+            # not moving rather than passed over in silence.
+            logger.warning(
+                "prior-audit refresh: no usable Connect token for %r (%s); opp %s stays stale",
+                username,
+                exc,
+                opportunity_id,
+            )
+            return None
+
+        data_access = AuditDataAccess(opportunity_id=opportunity_id, access_token=token)
+        try:
+            sessions = [
+                s for s in data_access.get_audit_sessions(status="completed") if s.opportunity_id == opportunity_id
+            ]
+            result = projection.rebuild_opportunity(opportunity_id, sessions, built_by=username)
+        finally:
+            try:
+                data_access.close()
+            except Exception:
+                pass
+
+        logger.info(
+            "prior-audit refresh: opp %s rebuilt off the request path as %r (%s rows from %s sessions)",
+            opportunity_id,
+            username,
+            result.get("rows_total"),
+            result.get("sessions_seen"),
+        )
+        return result
+    except Exception:
+        logger.exception("prior-audit refresh: opp %s failed to rebuild as %r", opportunity_id, username)
+        return None
+    finally:
+        # Always release, including on failure: holding the lock for its full TTL
+        # after a failed run would block the retry that the next reader would
+        # otherwise dispatch.
+        from connect_labs.audit import prior_audit_projection as projection
+
+        projection.clear_refresh_lock(opportunity_id)

@@ -20,6 +20,8 @@ import logging
 from dataclasses import dataclass
 from datetime import timedelta
 
+from django.conf import settings
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
@@ -407,6 +409,95 @@ def merge_changed(opportunity_id: int, changed_sessions, built_by: str = "") -> 
 def is_stale(state) -> bool:
     """Past the full-rebuild floor. See STALE_AFTER for why one still exists."""
     return (timezone.now() - state.built_at) >= STALE_AFTER
+
+
+#: How long a stale projection may keep being served while its refresh happens
+#: off the request path, before a reader gives up waiting and rebuilds inline.
+#:
+#: This exists because the async refresh can fail in ways that are SILENT from
+#: the read path: the dispatching user has no stored Connect token, the broker is
+#: down, the worker is saturated, the task raises. Without a deadline every
+#: subsequent request would see "stale, but async is enabled", dispatch another
+#: doomed task, and serve the projection anyway -- so a broken refresh would
+#: quietly disable STALE_AFTER itself, which is the retraction backstop. The
+#: failure would present as a verdict standing that should have been withdrawn,
+#: with nothing in the logs saying the floor had stopped firing.
+#:
+#: 2x rather than a tuned number: it is a fallback, not a schedule. One missed
+#: refresh cycle is tolerated, two means the mechanism is not working and the
+#: reader should pay the cost that the async path was supposed to save.
+REFRESH_DEADLINE = 2 * STALE_AFTER
+
+
+def is_past_refresh_deadline(state) -> bool:
+    """Too old to keep serving while a background refresh is trusted to happen."""
+    return (timezone.now() - state.built_at) >= REFRESH_DEADLINE
+
+
+def async_stale_refresh_enabled() -> bool:
+    """Is the stale full-rebuild allowed to move off the request path?
+
+    Defaults to False, which is EXACTLY today's behaviour: a stale projection is
+    rebuilt synchronously inside the request that found it stale. The flag is
+    the switch for a production-behaviour change whose value cannot be judged
+    from a test suite -- see the module note on the read path in data_access.
+    """
+    return bool(getattr(settings, "PRIOR_AUDIT_ASYNC_STALE_REFRESH", False))
+
+
+#: One in-flight refresh per opportunity. The lock lives in the cache rather than
+#: the DB because losing it is harmless: the deadline above still bounds the
+#: worst case, and django_redis is configured with IGNORE_EXCEPTIONS, so a cache
+#: outage makes `add` falsy and we simply stop dispatching rather than erroring.
+_REFRESH_LOCK_KEY = "prior-audit-refresh:{opportunity_id}"
+_REFRESH_LOCK_TTL = int(STALE_AFTER.total_seconds() // 4)  # 6h
+
+
+def schedule_stale_refresh(opportunity_id: int, username: str) -> bool:
+    """Ask a worker to do the full rebuild. True if this call dispatched one.
+
+    Single-flight, and deliberately on the WORKER side of the boundary. The
+    obvious place for a lock is the request -- but the expensive step is the
+    outbound fetch of every completed session, so an in-request lock leaves the
+    losers either blocking on it (the #1152 pile-up this whole issue is about)
+    or duplicating the work anyway. Out here the losers simply serve the
+    projection they already have and return, which is the answer they wanted.
+
+    Scope is unchanged from the synchronous path: the rebuild runs under the
+    identity of the user whose request found the projection stale, using the
+    token already stored for them. It is not a standing credential grant -- there
+    is no schedule and no service account, and nothing runs when nobody is
+    reading. That distinction is why this does not re-open the decision recorded
+    in CELERY_BEAT_SCHEDULE against a scheduled prior-audit job.
+    """
+    if not username:
+        # Nothing to run as. Refusing is correct: guessing an identity is how
+        # Pulse understated every figure 5x (see pulse.client.get_poller_user).
+        return False
+    if not cache.add(_REFRESH_LOCK_KEY.format(opportunity_id=opportunity_id), username, _REFRESH_LOCK_TTL):
+        return False
+    from connect_labs.audit.tasks import refresh_prior_audit_projection
+
+    try:
+        refresh_prior_audit_projection.delay(opportunity_id, username)
+    except Exception:
+        # A broker that will not accept the task must not turn a working page
+        # into a 500 -- the caller still holds a correct answer either way.
+        # Release the lock so the next reader can retry rather than waiting out
+        # the TTL with no refresh queued.
+        logger.exception(
+            "prior-audit projection: could not queue refresh for opp %s; "
+            "serving the existing projection until the refresh deadline",
+            opportunity_id,
+        )
+        cache.delete(_REFRESH_LOCK_KEY.format(opportunity_id=opportunity_id))
+        return False
+    return True
+
+
+def clear_refresh_lock(opportunity_id: int) -> None:
+    """Let a new refresh be dispatched as soon as the last one finished."""
+    cache.delete(_REFRESH_LOCK_KEY.format(opportunity_id=opportunity_id))
 
 
 def is_fresh(opportunity_id: int) -> bool:
