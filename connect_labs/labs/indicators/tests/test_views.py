@@ -17,6 +17,8 @@ import pytest
 from django.test import override_settings
 from django.urls import reverse
 
+from connect_labs.labs.indicators import measures
+from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.models import Source
 from connect_labs.labs.indicators.tests.test_resolve import make_boundary, set_value
 
@@ -372,3 +374,119 @@ class TestRowMethodLabel:
         label = _row_method_label(row, methods.get("subnational_survey"))
 
         assert label == "Survey as measured + National estimate (UN IGME)"
+
+
+class TestThresholdIsReadInItsOwnUnit:
+    """A threshold means what the indicator's unit says it means.
+
+    The surface divided every threshold by ten to get a percentage, which is
+    right for a rate per 1,000 and wrong for the fourteen indicators already
+    measured in percent — a 50% sanitation threshold rendered as 5.0%.
+    """
+
+    def test_a_per_1000_rate_has_a_percent_reading(self):
+        assert measures.percent_equivalent("u5mr", 80) == 8.0
+
+    def test_an_indicator_already_in_percent_has_none(self):
+        assert measures.percent_equivalent("improved_sanitation", 50) is None
+        assert measures.percent_equivalent("stunting", 30) is None
+
+    def test_the_api_reports_it_that_way(self, client_in):
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        region = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=2)
+        set_value(region, "improved_sanitation", 20)
+
+        resp = client_in.get(
+            reverse("targeting:selection"),
+            {"indicator": "improved_sanitation", "threshold": 50, "resolution": "subnational"},
+        )
+
+        assert resp.json()["threshold_pct"] is None
+
+
+class TestDefaultMethodCanAnswer:
+    """The default adapts to the indicator; an explicit choice does not."""
+
+    def test_the_default_avoids_a_method_with_no_data_for_this_indicator(self, client_in):
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        region = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=2)
+        # Only the survey path carries sanitation; IGME publishes mortality.
+        set_value(region, "improved_sanitation", 20, source=Source.DHS)
+
+        resp = client_in.get(
+            reverse("targeting:selection"),
+            {"indicator": "improved_sanitation", "threshold": 50, "resolution": "subnational"},
+        )
+        body = resp.json()
+
+        assert body["method"] != "subnational_igme"
+        assert body["counts"]["units"] == 1
+
+    def test_an_explicit_method_is_honoured_even_when_it_cannot_answer(self, client_in):
+        """Silently substituting would hide the very thing worth learning."""
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        region = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=2)
+        set_value(region, "improved_sanitation", 20, source=Source.DHS)
+
+        resp = client_in.get(
+            reverse("targeting:selection"),
+            {
+                "indicator": "improved_sanitation",
+                "threshold": 50,
+                "resolution": "subnational",
+                "method": "subnational_igme",
+            },
+        )
+        body = resp.json()
+
+        assert body["method"] == "subnational_igme"
+        assert body["counts"]["units"] == 0
+        assert "Nigeria" in body["countries_unsupported"]
+
+
+class TestMethodologyOnThePage:
+    """The workings are readable before anyone unzips anything."""
+
+    def test_the_page_serves_the_same_text_the_download_ships(self, client_in):
+        from connect_labs.labs.indicators import export
+        from connect_labs.labs.indicators.resolve import select_above
+
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        region = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=2)
+        set_value(region, "u5mr", 150)
+
+        params = {"indicator": "u5mr", "threshold": 80, "method": "subnational_survey"}
+        resp = client_in.get(reverse("targeting:methodology"), params)
+        body = resp.json()
+
+        expected = export.to_methodology(
+            select_above(indicator="u5mr", threshold=80.0, iso_codes=ISO_CODES, method="subnational_survey")
+        )
+        # Same function, not a second copy — a page that paraphrased its own
+        # methodology could drift from the file a funder was sent.
+        assert body["markdown"].splitlines()[3:] == expected.splitlines()[3:]
+        assert "<h2>" in body["html"]
+
+    def test_a_coverage_indicator_reads_the_other_way(self, client_in):
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        region = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=2)
+        set_value(region, "improved_sanitation", 20, source=Source.DHS)
+
+        resp = client_in.get(
+            reverse("targeting:methodology"),
+            {"indicator": "improved_sanitation", "threshold": 50, "resolution": "subnational"},
+        )
+        md = resp.json()["markdown"]
+
+        assert "falls below" in md
+        assert "50% of population" in md
+        # The per-1,000 aside must not appear on an indicator that has no such reading.
+        assert "of live births)" not in md
+
+
+class TestTemplateRenders:
+    def test_no_template_comment_leaks_into_the_page(self, client_in):
+        """Django's {# #} is single-line only; a multi-line one renders as text."""
+        resp = client_in.get(reverse("targeting:index"))
+
+        assert b"{#" not in resp.content

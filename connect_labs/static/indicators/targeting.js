@@ -654,24 +654,92 @@
     renderThresholdLabels();
   }
 
-  // Thresholds mean different things per indicator: a rate per 1,000, a
-  // percentage, or a coverage figure where LOW is the problem.
+  // Thresholds mean different things per indicator, and the sentence is what
+  // carries that. A burden measure is read "worse than X"; a coverage measure
+  // is read "fewer than X% reached", selects the other way, and is really a
+  // question about who is left out.
   function renderThresholdLabels() {
     var meta = indicatorMeta[currentIndicator] || {};
-    var direction = meta.lower_is_worse ? 'below' : 'above';
-    document.getElementById('tg-threshold-label').textContent =
-      'Select places ' +
-      direction +
-      ' this ' +
-      (meta.label || '').toLowerCase();
+    var name = (meta.label || '').toLowerCase();
+    var coverage = !!meta.lower_is_worse;
+
+    document.getElementById('tg-threshold-label').innerHTML = coverage
+      ? 'Show me where <strong class="font-semibold text-stone-900">fewer than</strong> this share of people have ' +
+        esc(name)
+      : 'Show me where ' +
+        esc(name) +
+        ' is <strong class="font-semibold text-stone-900">worse than</strong>';
+
+    document.getElementById('tg-family').textContent = coverage
+      ? 'Coverage measure — lower is worse, so this selects the places below the line.'
+      : 'Burden measure — higher is worse, so this selects the places above the line.';
+
+    // The unit caption sits under the number and must be the indicator's own
+    // unit. It is not always a percentage, and it is never a percentage of
+    // live births unless the measure actually is.
     document.getElementById('tg-threshold-unit').textContent = meta.per_1000
-      ? 'of live births'
+      ? meta.unit || 'per 1,000 live births'
+      : coverage
+      ? (meta.unit || '').replace(/^%\s*of\s*/, 'of the ') + ' reached'
       : meta.unit || '';
-    document.getElementById('tg-threshold-alt').style.display = meta.per_1000
-      ? ''
-      : 'none';
-    // The headline label now lives on the burden card and follows the
-    // indicator, so nothing to set here.
+
+    document.getElementById('tg-legend-title').textContent =
+      (meta.label || '') + (meta.unit ? ' (' + meta.unit + ')' : '');
+    document.getElementById('tg-legend-selected').textContent = coverage
+      ? 'below threshold'
+      : 'above threshold';
+    document.getElementById('tg-table-title').textContent = coverage
+      ? 'Areas below threshold'
+      : 'Areas above threshold';
+    var thValue = document.getElementById('th-value');
+    if (thValue) thValue.textContent = meta.short_label || meta.label || '';
+    document.getElementById('tg-subtitle').textContent = coverage
+      ? 'Where ' +
+        name +
+        ' is lowest across Africa, and how many people that leaves unreached.'
+      : 'Where ' +
+        name +
+        ' is highest across Africa, and the population living there.';
+
+    // The headline number depends on this metadata too, and the first paint
+    // happens before the methods call returns — without this it renders the
+    // fallback ("80%") and never corrects itself.
+    updateThresholdLabels();
+  }
+
+  // The workings, on the page. Same endpoint, same function, same text the
+  // download ships as METHODOLOGY.md — a page that paraphrased its own
+  // methodology would be free to drift from the file a funder was sent.
+  var methodologyToken = 0;
+
+  function loadMethodology() {
+    var mine = ++methodologyToken;
+    var el = document.getElementById('tg-methodology');
+    if (!el) return;
+    var params =
+      '?indicator=' +
+      encodeURIComponent(currentIndicator) +
+      '&threshold=' +
+      threshold() +
+      '&resolution=' +
+      encodeURIComponent(currentResolution()) +
+      (currentMethod ? '&method=' + encodeURIComponent(currentMethod) : '');
+
+    fetch(TG.urls.methodology + params)
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (d) {
+        // A slower earlier request must not overwrite a newer answer.
+        if (mine !== methodologyToken) return;
+        el.innerHTML = d.html || '';
+      })
+      .catch(function () {
+        if (mine !== methodologyToken) return;
+        el.innerHTML =
+          '<p class="text-amber-700">The workings could not be loaded. ' +
+          'The download still carries them.</p>';
+      });
   }
 
   function reload() {
@@ -697,6 +765,7 @@
       .then(function (data) {
         geojson = data;
         paint();
+        loadMethodology();
         return fetchSelection();
       });
   }
@@ -818,9 +887,34 @@
 
   function updateThresholdLabels() {
     var t = threshold();
-    document.getElementById('tg-threshold-pct').textContent =
-      (t / 10).toFixed(1) + '%';
-    document.getElementById('tg-threshold-abs').textContent = t;
+    var meta = indicatorMeta[currentIndicator] || {};
+
+    // The headline is the threshold in the indicator's OWN unit. Dividing
+    // every threshold by ten assumed per-1,000 and made a 50% sanitation
+    // threshold read as 5.0%, which is where "the slider is still a
+    // percentage" came from.
+    document.getElementById('tg-threshold-pct').textContent = meta.per_1000
+      ? String(t)
+      : t + '%';
+
+    // A per-1,000 rate has a second, more legible reading. A measure already
+    // in percent has none, so the line goes away rather than inventing one.
+    var alt = document.getElementById('tg-threshold-alt');
+    if (meta.per_1000) {
+      alt.style.display = '';
+      document.getElementById('tg-threshold-abs').textContent =
+        (t / 10).toFixed(1) + '% of children die before five';
+    } else {
+      alt.style.display = 'none';
+      document.getElementById('tg-threshold-abs').textContent = '';
+    }
+    document.getElementById('tg-download-md').href =
+      TG.urls.download +
+      '?indicator=' +
+      currentIndicator +
+      '&threshold=' +
+      t +
+      (currentMethod ? '&method=' + currentMethod : '');
     document.getElementById('tg-download').href =
       TG.urls.download +
       '?indicator=' +
@@ -863,7 +957,11 @@
   function onSlide() {
     updateThresholdLabels();
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(fetchSelection, 250);
+    debounceTimer = setTimeout(function () {
+      fetchSelection();
+      // The workings quote the threshold, so they go stale with it.
+      loadMethodology();
+    }, 250);
   }
 
   document.addEventListener('DOMContentLoaded', function () {
