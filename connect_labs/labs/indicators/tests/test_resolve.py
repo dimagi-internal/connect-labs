@@ -564,3 +564,92 @@ class TestExpectedDeaths:
         m = measures.get("expected_deaths")
         assert m.agg is measures.Agg.SUM
         assert not m.downscale
+
+
+class TestParentLinking:
+    """geoBoundaries omits the parent link, so the hierarchy has to be derived.
+
+    Without it ``ancestors()`` falls back to "the country with this ISO" and
+    skips ADM1 entirely: a district reaches past its own province to the
+    national figure, and mean household size — held only at ADM1 — cannot reach
+    ADM2 at all, which left every household count empty below the region level.
+    """
+
+    def _nested(self):
+        from django.contrib.gis.geos import MultiPolygon, Polygon
+
+        def box(x0, y0, x1, y1):
+            return MultiPolygon(Polygon(((x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0))), srid=4326)
+
+        country = AdminBoundary.objects.create(
+            iso_code="AGO",
+            admin_level=0,
+            name="Angola",
+            boundary_id="AGO-0",
+            geometry=box(0, 0, 10, 10),
+            source=AdminBoundary.Source.GEOBOUNDARIES,
+        )
+        province = AdminBoundary.objects.create(
+            iso_code="AGO",
+            admin_level=1,
+            name="Moxico",
+            boundary_id="AGO-1-1",
+            geometry=box(0, 0, 5, 5),
+            source=AdminBoundary.Source.GEOBOUNDARIES,
+        )
+        district = AdminBoundary.objects.create(
+            iso_code="AGO",
+            admin_level=2,
+            name="Alto Zambeze",
+            boundary_id="AGO-2-1",
+            geometry=box(1, 1, 2, 2),
+            source=AdminBoundary.Source.GEOBOUNDARIES,
+        )
+        return country, province, district
+
+    def test_a_district_reaches_its_province_once_linked(self):
+        from django.core.management import call_command
+
+        from connect_labs.labs.indicators.resolve import ancestors
+
+        country, province, district = self._nested()
+
+        # Before: the province is invisible, the country is not.
+        assert [b.name for b in ancestors(district)] == ["Angola"]
+
+        call_command("link_admin_parents", "--iso", "AGO")
+        district.refresh_from_db()
+
+        assert [b.name for b in ancestors(district)] == ["Moxico", "Angola"]
+
+    def test_a_rate_held_only_at_adm1_becomes_reachable_from_adm2(self):
+        """The payoff, and the reason households were empty below ADM1."""
+        from django.core.management import call_command
+
+        from connect_labs.labs.indicators.resolve import resolve
+
+        _, province, district = self._nested()
+        set_value(province, "mean_household_size", 5.2)
+
+        assert resolve("mean_household_size", district) is None
+
+        call_command("link_admin_parents", "--iso", "AGO")
+        district.refresh_from_db()
+
+        got = resolve("mean_household_size", district)
+        assert got is not None
+        assert got.value == 5.2
+        assert got.inherited
+
+    def test_relinking_is_not_needed_twice(self):
+        from django.core.management import call_command
+
+        _, _, district = self._nested()
+        call_command("link_admin_parents", "--iso", "AGO")
+        district.refresh_from_db()
+        first = district.parent_boundary_id
+
+        call_command("link_admin_parents", "--iso", "AGO")
+        district.refresh_from_db()
+
+        assert district.parent_boundary_id == first == "AGO-1-1"

@@ -81,6 +81,14 @@ class Command(BaseCommand):
             )
             call_command("load_africa_boundaries", "--adm2", "--missing-only", *iso_args)
 
+            # geoBoundaries publishes each level as a standalone layer with no
+            # pointer upward, so the hierarchy has to be derived before anything
+            # inherits correctly: without it a district reaches past its own
+            # province to the national figure, and household counts — held only
+            # at ADM1 — cannot reach ADM2 at all.
+            self.stdout.write("    Deriving parent links, which the source omits.")
+            call_command("link_admin_parents", *iso_args)
+
         stages = [s for s, _ in STAGE_ORDER]
         if opts.get("from_stage"):
             stages = stages[stages.index(opts["from_stage"]) :]
