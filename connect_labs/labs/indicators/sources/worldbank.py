@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 
-from connect_labs.labs.admin_boundaries.models import AdminBoundary
+from connect_labs.labs.indicators import boundaries
 from connect_labs.labs.indicators.models import License, Source
 from connect_labs.labs.indicators.sources.base import Row, http_json
 
@@ -47,7 +47,7 @@ def load(measure: str = "tfr", iso_codes: list[str] | None = None) -> list[Row]:
     code = INDICATORS[measure]
 
     adm0 = {}
-    qs = AdminBoundary.objects.filter(admin_level=0).order_by("source")
+    qs = boundaries.owned().filter(admin_level=0)
     if iso_codes:
         qs = qs.filter(iso_code__in=[c.upper() for c in iso_codes])
     for b in qs:

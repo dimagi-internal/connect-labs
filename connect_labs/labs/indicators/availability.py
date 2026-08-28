@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-from connect_labs.labs.admin_boundaries.models import AdminBoundary
+from connect_labs.labs.indicators import boundaries
 from connect_labs.labs.indicators.africa import ISO_CODES, name_for
 from connect_labs.labs.indicators.methods import METHODS, Method, Resolution
 from connect_labs.labs.indicators.models import IndicatorValue
@@ -54,7 +54,8 @@ def for_method(
     levels = method.resolution.admin_levels
 
     have_boundaries = set(
-        AdminBoundary.objects.filter(iso_code__in=countries, admin_level__in=levels)
+        boundaries.owned()
+        .filter(iso_code__in=countries, admin_level__in=levels)
         .values_list("iso_code", flat=True)
         .distinct()
     )

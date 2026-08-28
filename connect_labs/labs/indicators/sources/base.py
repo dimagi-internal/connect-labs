@@ -18,6 +18,7 @@ import requests
 from django.utils import timezone
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
+from connect_labs.labs.indicators import boundaries
 from connect_labs.labs.indicators.models import IndicatorValue
 
 logger = logging.getLogger(__name__)
@@ -224,7 +225,7 @@ class BoundaryMatcher:
         self._by_norm: dict[str, AdminBoundary] = {}
         self._ambiguous: set[str] = set()
 
-        for b in AdminBoundary.objects.filter(iso_code=iso_code, admin_level=admin_level):
+        for b in boundaries.owned().filter(iso_code=iso_code, admin_level=admin_level):
             key = normalize_name(b.name)
             if key in self._by_norm and self._by_norm[key].pk != b.pk:
                 self._ambiguous.add(key)

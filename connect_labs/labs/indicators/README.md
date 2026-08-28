@@ -41,6 +41,7 @@ a loader — never new aggregation code.
 | `resolve.py`          | resolution, inheritance, aggregation, threshold selection  |
 | `export.py`           | CSV + METHODOLOGY.md, zipped together                      |
 | `africa.py`           | the country set, stated explicitly rather than inferred    |
+| `boundaries.py`       | the boundary set this app owns — `AdminBoundary` is shared |
 | `sources/`            | one loader per upstream; `base.py` is the only writer      |
 | `views.py`, `urls.py` | the map page and its JSON APIs                             |
 
