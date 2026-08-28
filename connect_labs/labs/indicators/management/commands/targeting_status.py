@@ -12,8 +12,7 @@ import collections
 
 from django.core.management.base import BaseCommand
 
-from connect_labs.labs.admin_boundaries.models import AdminBoundary
-from connect_labs.labs.indicators import availability, measures, methods
+from connect_labs.labs.indicators import availability, boundaries, measures, methods
 from connect_labs.labs.indicators.africa import ISO_CODES, name_for
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun
 
@@ -49,7 +48,7 @@ class Command(BaseCommand):
         ok = True
 
         self.stdout.write(self.style.MIGRATE_HEADING("Boundaries"))
-        b = AdminBoundary.objects.filter(iso_code__in=ISO_CODES)
+        b = boundaries.owned().filter(iso_code__in=ISO_CODES)
         adm0, adm1, adm2 = (b.filter(admin_level=n).count() for n in (0, 1, 2))
         self.stdout.write(f"  ADM0 {adm0:>5}   ADM1 {adm1:>5}   ADM2 {adm2:>5}")
         if adm1 < 700:

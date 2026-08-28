@@ -22,6 +22,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
+from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators import measures, methods
 from connect_labs.labs.indicators.africa import name_for
 from connect_labs.labs.indicators.models import IndicatorValue
@@ -118,7 +119,7 @@ def ancestors(boundary: AdminBoundary) -> list[AdminBoundary]:
 
     # Fallback: ensure the country level is reachable even without a parent chain.
     if boundary.admin_level > 0 and not any(b.admin_level == 0 for b in out):
-        country = AdminBoundary.objects.filter(iso_code=boundary.iso_code, admin_level=0).order_by("source").first()
+        country = boundary_set.owned().filter(iso_code=boundary.iso_code, admin_level=0).first()
         if country is not None and country.pk not in seen:
             out.append(country)
 
@@ -218,7 +219,7 @@ class BulkResolver:
 
         isos = {b.iso_code for b in boundaries}
         self._adm0: dict[str, AdminBoundary] = {}
-        for b in AdminBoundary.objects.filter(iso_code__in=isos, admin_level=0).order_by("source"):
+        for b in boundary_set.owned().filter(iso_code__in=isos, admin_level=0):
             self._adm0.setdefault(b.iso_code, b)
 
         # Country boundaries must be resolvable as inheritance targets even when
@@ -510,14 +511,14 @@ def select_above(
 
         supported = set(availability.countries_supporting(chosen, indicator, iso_codes))
         wanted = [c.upper() for c in (iso_codes or [])] or None
-        qs = AdminBoundary.objects.filter(admin_level__in=levels, iso_code__in=supported)
+        qs = boundary_set.owned().filter(admin_level__in=levels, iso_code__in=supported)
         if wanted:
             qs = qs.filter(iso_code__in=wanted)
         unsupported = sorted(
             name_for(r.iso_code) for r in availability.for_method(chosen, indicator, iso_codes) if not r.available
         )
     else:
-        qs = AdminBoundary.objects.filter(admin_level__in=levels)
+        qs = boundary_set.owned().filter(admin_level__in=levels)
         if iso_codes:
             qs = qs.filter(iso_code__in=[c.upper() for c in iso_codes])
     boundaries = list(qs)
@@ -528,7 +529,7 @@ def select_above(
     # still has to reach its regions to report how many people it covers.
     count_units: list[AdminBoundary] = []
     if national_only:
-        count_qs = AdminBoundary.objects.filter(admin_level=1, iso_code__in={b.iso_code for b in boundaries})
+        count_qs = boundary_set.owned().filter(admin_level=1, iso_code__in={b.iso_code for b in boundaries})
         count_units = list(count_qs)
 
     bulk = BulkResolver(boundaries + count_units, year=year, source_order=DEFAULT_SOURCE_ORDER)

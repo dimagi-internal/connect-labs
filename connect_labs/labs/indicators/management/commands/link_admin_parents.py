@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand
 
-from connect_labs.labs.admin_boundaries.models import AdminBoundary
+from connect_labs.labs.indicators import boundaries
 
 
 class Command(BaseCommand):
@@ -48,14 +48,14 @@ class Command(BaseCommand):
         # Deepest first is not required — each level is matched independently
         # against the one above — but it keeps the reporting readable.
         for level in (1, 2):
-            children = AdminBoundary.objects.filter(admin_level=level)
+            children = boundaries.owned().filter(admin_level=level)
             if codes:
                 children = children.filter(iso_code__in=codes)
             if not opts["relink"]:
                 children = children.filter(parent_boundary_id="")
 
             for child in children.iterator(chunk_size=200):
-                parents = AdminBoundary.objects.filter(
+                parents = boundaries.owned().filter(
                     iso_code=child.iso_code,
                     admin_level=level - 1,
                     source=child.source,

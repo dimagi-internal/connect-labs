@@ -54,6 +54,7 @@ from django.contrib.gis.geos import GEOSGeometry
 from django.db.models.expressions import RawSQL
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
+from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.models import NON_COMMERCIAL, IndicatorValue
 
@@ -110,7 +111,7 @@ def _csv(rows, columns) -> bytes:
 
 def _boundary_rows(iso_codes: list[str] | None):
     """Attribute rows plus the concatenated geometry they index into."""
-    qs = AdminBoundary.objects.filter(admin_level__in=(0, 1, 2))
+    qs = boundary_set.owned().filter(admin_level__in=(0, 1, 2))
     qs = qs.filter(iso_code__in=iso_codes or ISO_CODES)
     # Quantize in the database rather than in Python: PostGIS zeroes the low
     # mantissa bits in place, and GEOS has no equivalent that keeps the WKB

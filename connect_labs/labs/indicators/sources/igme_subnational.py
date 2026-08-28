@@ -37,7 +37,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 
-from connect_labs.labs.admin_boundaries.models import AdminBoundary
+from connect_labs.labs.indicators import boundaries
 from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.models import IndicatorValue, License, Source
 from connect_labs.labs.indicators.sources.base import BoundaryMatcher, Row, http_json
@@ -344,7 +344,7 @@ def coverage_summary(iso_codes: list[str] | None = None) -> dict:
         if iso in wanted:
             per[iso][f"adm{r['level']}"].add(r["area_code"])
     have = {
-        (b.iso_code, b.admin_level) for b in AdminBoundary.objects.filter(iso_code__in=wanted, admin_level__in=(1, 2))
+        (b.iso_code, b.admin_level) for b in boundaries.owned().filter(iso_code__in=wanted, admin_level__in=(1, 2))
     }
     return {
         iso: {

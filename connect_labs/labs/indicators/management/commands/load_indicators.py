@@ -17,7 +17,7 @@ import time
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from connect_labs.labs.admin_boundaries.models import AdminBoundary
+from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
 from connect_labs.labs.indicators.sources import (
@@ -77,7 +77,7 @@ class Command(BaseCommand):
         )
         stages = [opts["stage"]] if opts.get("stage") else list(STAGES)
 
-        if not AdminBoundary.objects.filter(iso_code__in=codes, admin_level=1).exists():
+        if not boundary_set.owned().filter(iso_code__in=codes, admin_level=1).exists():
             self.stdout.write(
                 self.style.ERROR(
                     "No ADM1 boundaries for the requested countries. " "Run `manage.py load_africa_boundaries` first."
@@ -171,9 +171,9 @@ class Command(BaseCommand):
             raise CommandError(f"--levels must be 1 and/or 2, got {opts['levels']!r}")
 
         boundaries = list(
-            AdminBoundary.objects.filter(iso_code__in=codes, admin_level__in=levels).order_by(
-                "admin_level", "iso_code", "name"
-            )
+            boundary_set.owned()
+            .filter(iso_code__in=codes, admin_level__in=levels)
+            .order_by("admin_level", "iso_code", "name")
         )
         if opts.get("missing_only"):
             # Keyed on pop_u1, NOT pop_total. HAPI supplies a total but has no
