@@ -657,6 +657,21 @@ def targetable() -> list[Measure]:
 LOWER_IS_WORSE = frozenset({"exclusive_breastfeeding"} | {c for c, m in MEASURES.items() if m.coverage_of is not None})
 
 
+def percent_equivalent(code: str, value: float) -> float | None:
+    """The same threshold as a percentage — when that is genuinely a different number.
+
+    Under-5 mortality is quoted per 1,000 live births, so a threshold of 80 is
+    8.0% of a birth cohort, and "8% of children die before five" is the sentence
+    people actually reason in. Worth showing.
+
+    An indicator already measured in percent has no second reading. Rendering a
+    50% sanitation threshold as 5.0% is not a conversion, it is an error — and it
+    shipped, which is why every indicator now answers this question for itself
+    rather than the surface assuming per-1,000.
+    """
+    return value / 10.0 if get(code).unit.startswith("per 1,000") else None
+
+
 def coverage_measures() -> list[Measure]:
     """Measures with a denominator, so an unreached count can be derived."""
     return [m for m in MEASURES.values() if m.coverage_of]
