@@ -110,9 +110,10 @@ Parameters:
     Type: Number
     Default: 90
     Description: >-
-      Alarm when web-service CPU stays at/above this for 15 minutes. Median web
-      CPU over the 5 days to 2026-07-29 was 0.8%; above 90% accounts for ~1.1h
-      of those 5 days and is almost entirely the incident itself.
+      Alarm when the BUSIEST web task stays at/above this for 15 minutes (the
+      alarm uses Maximum, not Average — see WebCpuHighAlarm). Median web CPU
+      over the 5 days to 2026-07-29 was 0.8%; above 90% accounts for ~1.1h of
+      those 5 days and is almost entirely the incident itself.
 
   LatencyP95Threshold:
     Type: Number
@@ -280,11 +281,11 @@ Resources:
     Properties:
       AlarmName: labs-jj-web-cpu-high
       AlarmDescription: >-
-        The web service has been pinned near 100% CPU for 15 minutes. It runs a
-        single task on 1 vCPU, so this means requests are queueing and the site
-        is effectively down for everyone. Usual cause is a request path fanning
-        out remote calls in a loop. Check the web log group for one URL repeating
-        at high volume before reaching for a scale-up.
+        A web task has been pinned near 100% CPU for 15 minutes. Each task has
+        1 vCPU, so a pinned task means its requests are queueing behind CPU-bound
+        Python and every user routed to it is stalled. Usual cause is a request
+        path fanning out remote calls in a loop. Check the web log group for one
+        URL repeating at high volume before reaching for a scale-up.
       Namespace: AWS/ECS
       MetricName: CPUUtilization
       Dimensions:
@@ -292,7 +293,27 @@ Resources:
           Value: !Ref ClusterName
         - Name: ServiceName
           Value: !Ref WebServiceName
-      Statistic: Average
+      # Maximum, NOT Average — Average is the mean ACROSS TASKS, and the service
+      # no longer runs one.
+      #
+      # This alarm was written when desiredCount was 1, where Average and Maximum
+      # are the same number. At desiredCount=2 they diverge exactly when it
+      # matters: one task pinned at 100% while the other idles reads as ~50%, and
+      # a threshold of 90 can never be reached no matter how long the pinned task
+      # stays pinned. Nothing about that looks broken — the alarm sits green and
+      # the graph looks half-loaded.
+      #
+      # Measured over 2026-08-24 05:00-10:00 UTC, sixty 5-minute periods:
+      # SEVENTEEN had Maximum >= 90%; ZERO had Average >= 90%; the highest
+      # Average seen was 58.1%. The tier served 502s to real users across that
+      # window (labs-jj-alb-5xx-high caught those, four separate times) and this
+      # alarm — the one whose whole job is to name saturation as the cause —
+      # never left OK.
+      #
+      # The same reasoning is why the latency alarm below is p95 and not Average:
+      # an aggregate that averages away the bad half cannot alarm on the bad half.
+      # It applies across tasks for exactly the reason it applies across requests.
+      Statistic: Maximum
       Period: 300
       EvaluationPeriods: 3
       Threshold: !Ref WebCpuThreshold
@@ -353,16 +374,16 @@ Resources:
       AlarmActions: [!Ref AlertTopic]
 
   # ── No healthy target at all ───────────────────────────────────────
-  # desiredCount is 1, so losing the one task is a full outage with no
-  # redundancy to absorb it.
+  # Fires only when EVERY task is unhealthy: HealthyHostCount is a count, not a
+  # per-task metric, so this stays correct as desiredCount changes.
   NoHealthyTargetsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: labs-jj-web-no-healthy-targets
       AlarmDescription: >-
-        The web target group has no healthy target — labs is down. The service
-        runs desiredCount=1, so a single task death is a total outage and a
-        deploy has no capacity margin.
+        The web target group has no healthy target — labs is down. Every task
+        is failing its health check at once, which a rolling deploy does not
+        cause, so this is the app or its dependencies, not capacity.
       Namespace: AWS/ApplicationELB
       MetricName: HealthyHostCount
       Dimensions:
