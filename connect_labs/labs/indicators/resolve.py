@@ -393,6 +393,38 @@ class Selection:
         got, total = self.coverage.get(indicator, (0, 0))
         return max(0, total - got)
 
+    @property
+    def off_method_units(self) -> int:
+        """Units whose value came from a source this method does not declare.
+
+        ``source_order`` ranks sources; it does not restrict them. A region with
+        no value of its own inherits from an ancestor, and what it inherits may
+        come from outside the method — most of DR Congo's provinces under
+        "Survey as measured" are IGME's national figure, because the survey did
+        not reach them.
+
+        That is defensible and each row says so, but it changes what the
+        selection means: a mixture of measured regional values and one national
+        value repeated. Counting it is the difference between a reader being
+        able to ask "how much of this is really survey data?" and having to take
+        the total on faith.
+
+        A rolled-up row carries the sources of every region beneath it, so it
+        counts as on-method only when all of them are declared.
+        """
+        chosen = methods.get(self.method) if self.method else None
+        if chosen is None:
+            return 0
+        off = 0
+        for area in self.areas:
+            r = area.values.get(self.indicator)
+            if r is None:
+                continue
+            sources = r.source.split("+") if "+" in r.source else [r.source]
+            if not all(src in chosen.source_order for src in sources):
+                off += area.units_covered
+        return off
+
 
 #: Counts carried on every selection regardless of indicator.
 CARRIED_COUNTS = (
