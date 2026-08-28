@@ -1,0 +1,15 @@
+{
+  "_comment": "The current targeting snapshot, loaded by `manage.py targeting_import --from-manifest`. Rebuilding this dataset from source costs 30-45 minutes of API calls and can exhaust WorldPop's daily quota for everyone else, so a new environment should restore from here rather than re-fetch. Pin a new drive_file_id whenever the dataset changes materially: export, upload to the folder below (shared with connect-labs-sa), and update the id, created_at and counts in one commit so the file and the record stay together.",
+  "drive_folder_id": "1cXbkUDjoE539aG3BOMtIh67r2ROde9sn",
+  "drive_file_id": "1QT1HF7jCt45n1OjkMdxB_yBV0XvqjJSK",
+  "created_at": "2026-08-28T03:20:49.183097+00:00",
+  "counts": {
+    "boundaries": 2350,
+    "values": 45355,
+    "indicators": 47
+  },
+  "notes": "Restore with: make manage CMD=\"targeting_import --from-manifest\" (needs LABS_SYNTHETIC_GDRIVE_SA_KEY; it is already in the ECS task definition, and locally can be read from Secrets Manager as labs-jj-synthetic-gdrive-sa-key with the labs AWS profile). Supersedes the 2026-08-27 snapshot (32,043 values): boundaries now carry derived parent links, so ADM2 units inherit from their own province instead of reaching past it to the country, which is what let household counts below the region level exist at all. pop_u1 covers 632 of 778 admin-1 boundaries, up from 315 \u2014 WorldPop's daily quota stopped the backfill again, so births still fall back to the fertility method for the remaining 146.",
+  "filename": "targeting-snapshot-20260828.zip",
+  "licenses": ["cc-by-3.0-igo", "cc-by-4.0", "derived", "open-api"],
+  "contains_non_commercial": false
+}
