@@ -1503,15 +1503,7 @@ class AuditDataAccess(BaseDataAccess):
         """
         from connect_labs.audit import prior_audit_projection as projection
 
-        state = projection.get_state(opportunity_id)
-        if state and state.watermark and not projection.is_stale(state):
-            changed = [
-                s
-                for s in self.get_audit_sessions(status="completed", completed_at__gt=state.watermark.isoformat())
-                if s.opportunity_id == opportunity_id
-            ]
-            if changed:
-                projection.merge_changed(opportunity_id, changed, built_by=self._requesting_username())
+        if self._projection_can_serve(opportunity_id):
             return projection.read_index(opportunity_id, exclude_session_id=exclude_session_id)
 
         # status="completed" is pushed down to the API rather than left to
@@ -1553,20 +1545,79 @@ class AuditDataAccess(BaseDataAccess):
         if not pairs:
             return {}
 
-        state = projection.get_state(opportunity_id)
-        if state and state.watermark and not projection.is_stale(state):
-            changed = [
-                s
-                for s in self.get_audit_sessions(status="completed", completed_at__gt=state.watermark.isoformat())
-                if s.opportunity_id == opportunity_id
-            ]
-            if changed:
-                projection.merge_changed(opportunity_id, changed, built_by=self._requesting_username())
+        if self._projection_can_serve(opportunity_id):
             return projection.prior_verdicts_for(opportunity_id, pairs, exclude_session_id=exclude_session_id)
 
         sessions = [s for s in self.get_audit_sessions(status="completed") if s.opportunity_id == opportunity_id]
         projection.populate(opportunity_id, sessions, built_by=self._requesting_username())
         return projection.prior_verdicts_for(opportunity_id, pairs, exclude_session_id=exclude_session_id)
+
+    def _projection_can_serve(self, opportunity_id) -> bool:
+        """Can the stored projection answer this read, and is it up to date?
+
+        The single home for the freshness decision that both prior-audit readers
+        make. It was written out twice, and the second copy's own docstring says
+        it "walks the same three paths" as the first -- which is a statement that
+        has to be re-proved by eye on every change. The two must agree exactly:
+        one narrows its final read, and nothing else about them differs.
+
+        Returns True having already folded in whatever the watermark says
+        changed, so the caller can read straight from the projection. Returns
+        False when the caller must do the full fetch-and-build itself.
+
+        Three outcomes, and the third is the only new behaviour:
+
+        1. **Never built, or no watermark** -> False. A targeted read of an
+           unbuilt projection answers "no prior verdicts" instead of erroring,
+           which is the silent under-fetch this whole module exists to prevent.
+        2. **Built and current** -> True, after merging the delta.
+        3. **Built but stale** -> today, False (rebuild inline, in the request).
+           With PRIOR_AUDIT_ASYNC_STALE_REFRESH on, True: serve the projection,
+           merge the delta, and hand the full rebuild to a worker. That is the
+           whole point -- the expensive step is the outbound fetch of every
+           completed session, and it is being paid by whichever auditor happens
+           to load the page after the 24h floor expires.
+
+           Bounded by REFRESH_DEADLINE: past it, the reader stops trusting the
+           background refresh and rebuilds inline regardless. Without that, a
+           refresh that never succeeds would keep every reader on this branch
+           forever and silently retire the staleness floor.
+
+           The deadline is evaluated BEFORE the delta merge below, deliberately.
+           ``merge_changed`` saves the state row and ``built_at`` is auto_now, so
+           a merge moves the clock the deadline is measured against. Reading it
+           first keeps this decision about how long the projection has actually
+           gone unrebuilt. (That same auto_now bump is a pre-existing bug in its
+           own right -- on an opportunity receiving completions it keeps
+           ``is_stale`` permanently False, so the 24h floor never fires at all --
+           tracked separately; it is not introduced or worsened here.)
+
+        Authorisation is unchanged on every path: the delta fetch uses THIS
+        caller's credentials, and the caller has already proved access to the
+        opportunity to get here. The async rebuild runs under this same user's
+        stored token -- see refresh_prior_audit_projection.
+        """
+        from connect_labs.audit import prior_audit_projection as projection
+
+        state = projection.get_state(opportunity_id)
+        if not (state and state.watermark):
+            return False
+
+        if projection.is_stale(state):
+            if not projection.async_stale_refresh_enabled():
+                return False
+            if projection.is_past_refresh_deadline(state):
+                return False
+            projection.schedule_stale_refresh(opportunity_id, self._requesting_username())
+
+        changed = [
+            s
+            for s in self.get_audit_sessions(status="completed", completed_at__gt=state.watermark.isoformat())
+            if s.opportunity_id == opportunity_id
+        ]
+        if changed:
+            projection.merge_changed(opportunity_id, changed, built_by=self._requesting_username())
+        return True
 
     def _requesting_username(self) -> str:
         """Who caused this build, for diagnosis. Never used for authorisation."""
