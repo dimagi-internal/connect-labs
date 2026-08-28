@@ -457,6 +457,26 @@
       floorEl.innerHTML = '';
     }
 
+    // source_order ranks sources, it does not restrict them: a region with no
+    // value of its own inherits from an ancestor, which may be a source this
+    // method does not list. Each row names what answered it, but the totals
+    // above are a mixture, and only a count says how much of one.
+    var offEl = document.getElementById('tg-offmethod');
+    if (c.off_method_units && c.units) {
+      offEl.innerHTML =
+        '<strong>' +
+        c.off_method_units +
+        ' of ' +
+        c.units +
+        ' regions</strong> are answered by a source this method does not use — ' +
+        'inherited from a coarser unit because they have no value of their own. ' +
+        'The Method column names what produced each row.';
+      offEl.classList.remove('hidden');
+    } else {
+      offEl.classList.add('hidden');
+      offEl.innerHTML = '';
+    }
+
     var gaps = [];
     if (data.countries_unsupported && data.countries_unsupported.length) {
       gaps.push(

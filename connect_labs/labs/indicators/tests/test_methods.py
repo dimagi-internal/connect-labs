@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from django.utils import timezone
 
@@ -344,3 +346,91 @@ class TestInterventionCosting:
         # needs the household count, which that indicator would not carry.
         carried = carried_for("improved_water", ("households",))
         assert "households" in carried
+
+
+class TestOffMethodUnits:
+    """How much of a selection the chosen method did not actually answer."""
+
+    def test_units_inherited_from_outside_the_method_are_counted(self):
+        """source_order ranks sources; it does not restrict them.
+
+        Most of DR Congo's provinces under "Survey as measured" carry IGME's
+        national figure, because the survey never reached them. Each row says so,
+        but only a count tells a reader how much of the total is really survey
+        data.
+        """
+        from connect_labs.labs.indicators.resolve import Area, Selection
+
+        def area(source, units):
+            boundary = make_boundary("COD", 1, f"P{source}{units}", f"COD-1-{source}{units}", x=units * 2)
+            resolved = SimpleNamespace(source=source)
+            return Area(
+                boundary=boundary,
+                iso_code="COD",
+                country_name="Democratic Republic of the Congo",
+                name=boundary.name,
+                admin_level=1,
+                units_covered=units,
+                values={"u5mr": resolved},
+            )
+
+        selection = Selection(
+            indicator="u5mr",
+            threshold=80.0,
+            year=None,
+            areas=[area("dhs", 2), area("igme", 5)],
+            totals={},
+            coverage={},
+            countries_fully_above=[],
+            countries_partly_above=[],
+            skipped_no_data=[],
+            method="subnational_survey",
+        )
+
+        assert selection.off_method_units == 5
+
+    def test_a_rolled_up_row_counts_as_off_method_unless_all_its_sources_qualify(self):
+        from connect_labs.labs.indicators.resolve import Area, Selection
+
+        boundary = make_boundary("CAF", 1, "Ouham", "CAF-1-1", x=2)
+        selection = Selection(
+            indicator="u5mr",
+            threshold=80.0,
+            year=None,
+            areas=[
+                Area(
+                    boundary=boundary,
+                    iso_code="CAF",
+                    country_name="Central African Republic",
+                    name="Central African Republic",
+                    admin_level=0,
+                    units_covered=17,
+                    values={"u5mr": SimpleNamespace(source="dhs+igme")},
+                )
+            ],
+            totals={},
+            coverage={},
+            countries_fully_above=[],
+            countries_partly_above=[],
+            skipped_no_data=[],
+            method="subnational_survey",
+        )
+
+        assert selection.off_method_units == 17
+
+    def test_no_method_means_nothing_to_be_off(self):
+        from connect_labs.labs.indicators.resolve import Selection
+
+        selection = Selection(
+            indicator="u5mr",
+            threshold=80.0,
+            year=None,
+            areas=[],
+            totals={},
+            coverage={},
+            countries_fully_above=[],
+            countries_partly_above=[],
+            skipped_no_data=[],
+        )
+
+        assert selection.off_method_units == 0
