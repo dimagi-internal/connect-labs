@@ -143,10 +143,20 @@ def _sources_used(selection: Selection) -> list[IndicatorValue]:
     return list(seen.values())
 
 
+def _threshold_phrase(value: float, unit: str) -> str:
+    """ "50% of population", not "50 % of population" — a percent binds to its number."""
+    if unit.startswith("%"):
+        return f"{value:g}%{unit[1:]}"
+    return f"{value:g} {unit}"
+
+
 def to_methodology(selection: Selection) -> str:
     m = measures.get(selection.indicator)
     generated = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
-    pct = selection.threshold / 10.0
+    pct = measures.percent_equivalent(selection.indicator, selection.threshold)
+    # Only per-1,000 rates have a second reading; a percent indicator does not.
+    also = f" ({pct:g}% of live births)" if pct is not None else ""
+    worse = "falls below" if selection.indicator in measures.LOWER_IS_WORSE else "exceeds"
 
     out: list[str] = []
     add = out.append
@@ -156,8 +166,8 @@ def to_methodology(selection: Selection) -> str:
 
     add("## What this table is\n")
     add(
-        f"Every administrative area where **{m.label.lower()}** exceeds "
-        f"**{selection.threshold:g} {m.unit}** ({pct:g}% of live births), together with "
+        f"Every administrative area where **{m.label.lower()}** {worse} "
+        f"**{_threshold_phrase(selection.threshold, m.unit)}**{also}, together with "
         "the estimated annual births and population living there.\n"
     )
     add(
@@ -176,9 +186,9 @@ def to_methodology(selection: Selection) -> str:
         "never disagree with the regions beneath it.\n"
     )
     add(
-        "Counts (births, population) are summed. Rates are never summed — under-5 "
-        f"mortality is aggregated as a mean weighted by `{m.weight_by}`, because a "
-        "mortality rate is a property of a birth cohort rather than of a population.\n"
+        f"Counts (births, population) are summed. Rates are never summed — {m.label.lower()} "
+        f"is aggregated as a mean weighted by `{m.weight_by}`, because a rate is a "
+        "property of the group it is measured over rather than of the land area.\n"
     )
 
     add("## Where the numbers come from\n")

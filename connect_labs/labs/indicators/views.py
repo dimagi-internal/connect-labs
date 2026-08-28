@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 
+import markdown
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count
@@ -140,15 +141,20 @@ def _round_or_none(value):
     return None if value is None else round(value)
 
 
-def _method(request) -> str:
-    """The requested method, or the default for its resolution."""
+def _method(request, indicator: str = "u5mr") -> str:
+    """The requested method, or a default that can actually answer this indicator.
+
+    An explicit choice is honoured even when it has no data — the surface then
+    says so, which is the point. Only the default adapts.
+    """
     code = request.GET.get("method")
     if code and code in methods.METHODS:
         return code
     resolution = request.GET.get("resolution")
-    if resolution in (r.value for r in methods.Resolution):
-        return methods.default_for(methods.Resolution(resolution)).code
-    return DEFAULT_METHOD
+    res = methods.Resolution(resolution) if resolution in (r.value for r in methods.Resolution) else None
+    if res is None:
+        return DEFAULT_METHOD
+    return availability.default_method_for(indicator, res).code
 
 
 def _float(request, key, default):
@@ -202,7 +208,7 @@ class MapDataView(OpenLocallyMixin, View):
         year = int(year) if year and year.isdigit() else None
         simplify = _float(request, "simplify", MAP_SIMPLIFY)
 
-        method = methods.get(_method(request))
+        method = methods.get(_method(request, indicator))
         supported = set(availability.countries_supporting(method, indicator))
 
         # A national method paints one shape per country. Painting a national
@@ -266,7 +272,7 @@ class SelectionView(OpenLocallyMixin, View):
             threshold=threshold,
             year=year,
             iso_codes=ISO_CODES,
-            method=_method(request),
+            method=_method(request, indicator),
         )
         measure = measures.get(indicator)
 
@@ -280,7 +286,7 @@ class SelectionView(OpenLocallyMixin, View):
                     measures.get(f"{indicator}_gap").label if f"{indicator}_gap" in measures.MEASURES else None
                 ),
                 "threshold": threshold,
-                "threshold_pct": threshold / 10.0,
+                "threshold_pct": measures.percent_equivalent(indicator, threshold),
                 "totals": {
                     "expected_deaths": selection.totals.get("expected_deaths"),
                     "ors_gap_children": selection.totals.get("ors_gap_children"),
@@ -379,7 +385,7 @@ class SelectionDownloadView(OpenLocallyMixin, View):
             threshold=threshold,
             year=year,
             iso_codes=ISO_CODES,
-            method=_method(request),
+            method=_method(request, indicator),
         )
         stem = export.filename_stem(selection)
 
@@ -391,6 +397,34 @@ class SelectionDownloadView(OpenLocallyMixin, View):
         resp = HttpResponse(export.to_zip(selection), content_type="application/zip")
         resp["Content-Disposition"] = f'attachment; filename="{stem}.zip"'
         return resp
+
+
+class MethodologyView(OpenLocallyMixin, View):
+    """The workings behind the current selection, rendered for the page.
+
+    This is the same text the download ships as ``METHODOLOGY.md`` — same
+    function, not a second copy — because a methodology the page paraphrases is
+    one that can quietly stop matching the file a funder was sent. Putting it on
+    the page is the point: the arithmetic should be readable before anyone
+    unzips anything, and reproducible from what is on screen.
+    """
+
+    def get(self, request):
+        indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
+        selection = select_above(
+            indicator=indicator,
+            threshold=_float(request, "threshold", measures.get(indicator).threshold_default),
+            year=int(y) if (y := request.GET.get("year")) and y.isdigit() else None,
+            iso_codes=ISO_CODES,
+            method=_method(request, indicator),
+        )
+        source = export.to_methodology(selection)
+        return JsonResponse(
+            {
+                "markdown": source,
+                "html": markdown.markdown(source, extensions=["tables", "fenced_code"]),
+            }
+        )
 
 
 class MethodsView(OpenLocallyMixin, View):
@@ -481,7 +515,7 @@ class ScenarioView(OpenLocallyMixin, View):
             indicator=indicator,
             threshold=threshold,
             iso_codes=ISO_CODES,
-            method=_method(request),
+            method=_method(request, indicator),
             extra_counts=(cases_measure,),
         )
 
