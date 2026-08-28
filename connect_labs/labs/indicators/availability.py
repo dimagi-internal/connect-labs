@@ -144,6 +144,30 @@ def countries_supporting(method: Method, indicator: str = "u5mr", iso_codes: lis
     return [r.iso_code for r in for_method(method, indicator, iso_codes) if r.available]
 
 
+def default_method_for(indicator: str, resolution: Method | None = None):
+    """The method to offer for this indicator, which is not a fixed default.
+
+    The registry's default is per *resolution*, so it was chosen without knowing
+    the indicator — and IGME publishes mortality only. Picking "Improved
+    sanitation" therefore selected a method with data for **0 of 55** countries
+    and drew an empty map, with nothing on the page to say why. Fourteen of the
+    twenty-one targetable indicators land that way.
+
+    A default is ours to choose, so it adapts: the first method at this
+    resolution that can actually answer, registry order (defaults first). An
+    *explicit* choice is not ours to override — the caller honours it and the
+    surface reports "cannot answer with this method", which is the honest
+    outcome and the one that teaches the reader something.
+    """
+    from connect_labs.labs.indicators.methods import Resolution, default_for, for_resolution
+
+    res = resolution if isinstance(resolution, Resolution) else Resolution.SUBNATIONAL
+    for method in for_resolution(res):
+        if any(r.available for r in for_method(method, indicator)):
+            return method
+    return default_for(res)
+
+
 def resolutions() -> dict[str, list[str]]:
     """Method codes grouped by resolution, defaults first."""
     grouped: dict[str, list[str]] = {r.value: [] for r in Resolution}

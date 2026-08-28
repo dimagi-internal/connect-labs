@@ -12,6 +12,7 @@ urlpatterns = [
     path("api/selection/", views.SelectionView.as_view(), name="selection"),
     path("api/coverage/", views.CoverageView.as_view(), name="coverage"),
     path("api/methods/", views.MethodsView.as_view(), name="methods"),
+    path("api/methodology/", views.MethodologyView.as_view(), name="methodology"),
     path("api/interventions/", views.InterventionsView.as_view(), name="interventions"),
     path("api/scenario/", views.ScenarioView.as_view(), name="scenario"),
     path("download/", views.SelectionDownloadView.as_view(), name="download"),
