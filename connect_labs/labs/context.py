@@ -387,6 +387,43 @@ def labs_org_data_context(request):
     }
 
 
+# Sub-resource paths that must NOT be redirected just to decorate the URL.
+#
+# The redirect below exists so a PAGE url is self-describing — paste it to a
+# colleague and they land in the same scope. That is worth one extra round trip
+# on a navigation. It is worth nothing at all on a sub-resource the browser
+# fetches by the hundred and nobody ever shares, and on ``/audit/image/`` it is
+# worse than nothing: the opportunity id is already POSITIONAL in the path
+# (``/audit/image/<opp_id>/<blob_id>/``), so the redirect's entire effect is to
+# append a value the URL is already carrying.
+#
+# The cost is not the redirect itself, it is that a redirect is a whole extra
+# Django request — auth, session load, the full middleware chain and an
+# audit-trail write — for the highest-volume endpoint on the site, on a tier
+# with 1 vCPU per task.
+#
+# Measured in ALB access logs, 2026-08-25 06:00-09:00 UTC: **1,888 redirects to
+# serve 1,839 images**. 1,710 of 1,828 distinct tile URLs show the exact
+# sequence 302-then-200. A bulk-assessment page with 200 tiles issues 400
+# requests. This one prefix is ~half of all `/audit/` traffic in that window.
+#
+# Behaviour is otherwise unchanged: skipping the redirect falls through to
+# ``context = url_context if url_context else session_context`` a few lines
+# below, so the session's scope is still applied to the request. The view then
+# reads its opportunity from the URL kwarg exactly as before. What is dropped is
+# the round trip, not the context.
+#
+# Extend this list only for paths that (a) are fetched by a browser as a
+# sub-resource rather than navigated to, and (b) already carry their scope or do
+# not need it. A page a human can land on belongs in the redirect.
+REDIRECT_EXEMPT_PREFIXES = ("/audit/image/",)
+
+
+def _redirect_is_pointless(path: str) -> bool:
+    """True when decorating this URL with context params buys nothing."""
+    return path.startswith(REDIRECT_EXEMPT_PREFIXES)
+
+
 class LabsContextMiddleware(MiddlewareMixin):
     """Middleware to handle labs context selection.
 
@@ -427,7 +464,7 @@ class LabsContextMiddleware(MiddlewareMixin):
             ]
             is_whitelisted = any(path.startswith(prefix) for prefix in whitelisted_prefixes)
 
-            if is_whitelisted:
+            if is_whitelisted and not _redirect_is_pointless(path):
                 logger.debug(f"Redirecting {path} to add context params from session")
                 redirect_url = add_context_to_url(request.get_full_path(), session_context)
                 return HttpResponseRedirect(redirect_url)

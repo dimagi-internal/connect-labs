@@ -5,6 +5,7 @@ import pytest
 from django.test import RequestFactory
 
 from connect_labs.labs.context import (
+    LabsContextMiddleware,
     add_context_to_url,
     extract_context_from_url,
     get_context_url_params,
@@ -187,3 +188,55 @@ class TestAutoSelection:
 
         assert result is not None
         assert result["program_id"] == 789
+
+
+@pytest.mark.django_db
+class TestContextRedirect:
+    """The session->URL context redirect, and the sub-resources it must skip.
+
+    These pin a COST, not just a behaviour: the property that regressed is
+    "how many HTTP requests does one image tile take", and a test that only
+    asserted the final context would have stayed green through the doubling.
+    """
+
+    def _request(self, path, user):
+        factory = RequestFactory()
+        request = factory.get(path)
+        request.user = user
+        request.session = {"labs_context": {"opportunity_id": 1488}}
+        return request
+
+    def _user(self, db):
+        return User.objects.create_user(username="ctx-redirect", password="x")
+
+    def test_page_path_still_redirects_to_carry_context(self, db):
+        """A navigable page keeps the redirect — that is what makes its URL shareable."""
+        request = self._request("/audit/16722/bulk/", self._user(db))
+        response = LabsContextMiddleware(lambda r: None).process_request(request)
+
+        assert response is not None, "a page under /audit/ must still be decorated"
+        assert response.status_code == 302
+        assert "opportunity_id=1488" in response["Location"]
+
+    def test_image_subresource_is_not_redirected(self, db):
+        """An image tile is fetched, never shared, and already names its opportunity.
+
+        Redirecting it doubles the request count of the highest-volume endpoint
+        on the site: 1,888 redirects to serve 1,839 images over three hours of
+        real traffic (2026-08-25). One request in, one request out.
+        """
+        request = self._request("/audit/image/1488/7d2e7121-b191-46c8-bf55-231e75f83a0f/", self._user(db))
+        response = LabsContextMiddleware(lambda r: None).process_request(request)
+
+        assert response is None, "image tiles must be served, not redirected"
+
+    def test_skipping_the_redirect_still_applies_session_context(self, db):
+        """The context still lands — only the round trip is dropped.
+
+        This is the half that makes the exemption safe, and the half a
+        "does it redirect?" test cannot see.
+        """
+        request = self._request("/audit/image/1488/7d2e7121-b191-46c8-bf55-231e75f83a0f/", self._user(db))
+        LabsContextMiddleware(lambda r: None).process_request(request)
+
+        assert getattr(request, "labs_context", None) is not None
