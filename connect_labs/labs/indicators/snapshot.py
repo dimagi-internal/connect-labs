@@ -42,6 +42,7 @@ imports into a database whose sequences are nothing like the exporter's.
 
 from __future__ import annotations
 
+import binascii
 import csv
 import hashlib
 import io
@@ -244,6 +245,31 @@ def export(iso_codes: list[str] | None = None, include_geometry: bool = True) ->
     return buf.getvalue()
 
 
+def _geometry_at(buffer: bytes, offset: int, length: int) -> GEOSGeometry:
+    """Parse one geometry out of the concatenated WKB, via hex.
+
+    Hex looks like the wasteful choice — it doubles the bytes on the way into
+    GEOS — and the obvious alternative is a ``memoryview`` slice, which copies
+    nothing. That is what this did, and it worked everywhere it was tested and
+    failed in the one place it mattered.
+
+    GEOS 3.11 (the deployed container; 3.14 locally) rejects 34 of the 2,350
+    African boundaries read as **binary** WKB, with "WKB contains too many
+    possible GeometryCollections" — on a header that plainly reads
+    ``numGeoms=2``. Its guard against absurd collection counts compares the
+    declared count against what the stream reports as available, and over an
+    externally-supplied buffer that figure is not the buffer's length. An
+    isolated ``bytes`` copy fails identically, so this is not slicing; the same
+    bytes as hex parse correctly, and to the right geometry.
+
+    So hex, deliberately. It is the one path that reads the same on both
+    versions, the doubling is transient and per-geometry (median 16 KB, not the
+    whole 127 MB), and a snapshot that imports on a laptop but not on the server
+    is not a snapshot.
+    """
+    return GEOSGeometry(binascii.hexlify(buffer[offset : offset + length]).decode("ascii"), srid=4326)
+
+
 def _read_manifest(z: zipfile.ZipFile) -> dict:
     manifest = json.loads(z.read("manifest.json"))
     if manifest.get("schema_version") != SCHEMA_VERSION:
@@ -287,15 +313,7 @@ def import_snapshot(blob: bytes, on_progress=None) -> dict:
                     "parent_boundary_id": row["parent_boundary_id"],
                     "population": float(row["population"]) if row["population"] else None,
                     "extra": json.loads(row["extra"] or "{}"),
-                    # A memoryview, deliberately: GEOSGeometry decodes plain
-                    # bytes as WKT and dies on the first non-UTF-8 byte. The
-                    # slice also avoids copying 127 MB one polygon at a time.
-                    "geometry": GEOSGeometry(
-                        memoryview(geometry)[
-                            int(row["geom_offset"]) : int(row["geom_offset"]) + int(row["geom_length"])
-                        ],
-                        srid=4326,
-                    ),
+                    "geometry": _geometry_at(geometry, int(row["geom_offset"]), int(row["geom_length"])),
                 },
             )
             written["boundaries"] += 1
