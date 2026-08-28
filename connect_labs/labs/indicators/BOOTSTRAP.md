@@ -126,7 +126,7 @@ LABS_SYNTHETIC_GDRIVE_SA_KEY="$(aws secretsmanager get-secret-value --profile la
 With no credentials at all, restore from a file someone hands you:
 
 ```bash
-make manage CMD="targeting_import --path targeting-snapshot-20260827.zip"
+make manage CMD="targeting_import --path targeting-snapshot-20260828-1440.zip"
 ```
 
 Import is idempotent and upserts on natural keys, so it is safe to re-run, safe
@@ -144,7 +144,10 @@ make manage CMD="targeting_export --to-drive 1cXbkUDjoE539aG3BOMtIh67r2ROde9sn"
 
 That folder is `targeting-snapshots`, under the same Drive parent the synthetic
 fixtures use (`LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID`). The Drive filename is
-always `targeting-snapshot-<date>.zip` regardless of the local `--out` path.
+always `targeting-snapshot-<date>-<hhmm>.zip` regardless of the local `--out`
+path. It carries the time as well as the date because a same-day republish —
+which is what correcting a load looks like — would otherwise put two files in
+the folder under one name.
 
 Then pin the returned file id, `created_at` and counts in
 `fixtures/snapshot.json` **in the same commit**, so the pointer and the data
