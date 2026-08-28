@@ -1,4 +1,4 @@
-.PHONY: commit test
+.PHONY: commit test manage
 
 # The main checkout, asked of git rather than guessed. From a worktree,
 # --git-common-dir points at the main repo's .git, so its parent is the checkout
@@ -75,3 +75,30 @@ test:
 		fi; \
 	fi
 	PATH="$(VENV_BIN):$$PATH" $(VENV_BIN)/pytest $(ARGS)
+
+# Run manage.py with everything a worktree lacks — the same three fixes as
+# `test` (venv on PATH, .env linked from the main checkout, GIS library paths on
+# macOS). Without it, any management command in a worktree dies with an
+# ImproperlyConfigured or a GDAL error that names neither the venv nor the
+# missing .env.
+#
+#   make manage CMD="migrate"
+#   make manage CMD="load_africa_boundaries --iso NGA"
+CMD ?= help
+
+manage:
+	@if [ -z "$(VENV_BIN)" ] || [ ! -x "$(VENV_BIN)/python" ]; then \
+		echo "error: no python found at VENV_BIN=$(VENV_BIN)" >&2; \
+		echo "Tried: $(VENV_SEARCH_PATHS)" >&2; \
+		exit 1; \
+	fi
+	@if [ ! -e .env ]; then \
+		if [ -n "$(MAIN_CHECKOUT)" ] && [ -f "$(MAIN_CHECKOUT)/.env" ] && [ "$(MAIN_CHECKOUT)" != "$$(pwd)" ]; then \
+			ln -s "$(MAIN_CHECKOUT)/.env" .env && \
+			echo "note: linked .env -> $(MAIN_CHECKOUT)/.env"; \
+		else \
+			echo "error: no .env here and none found in the main checkout" >&2; \
+			exit 1; \
+		fi; \
+	fi
+	PATH="$(VENV_BIN):$$PATH" $(VENV_BIN)/python manage.py $(CMD)

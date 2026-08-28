@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block css %}
+  {{ block.super }}
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+  <style>
+    .tg-map { height: 620px; border-radius: 0.5rem; overflow: hidden; }
+    .tg-num { font-variant-numeric: tabular-nums; }
+    .tg-table-wrap { max-height: 520px; overflow: auto; }
+    .tg-table thead th { position: sticky; top: 0; z-index: 1; }
+    input[type=range].tg-slider { accent-color: #0f766e; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="py-6" x-data>
+
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold text-stone-900">Intervention targeting</h1>
+    <p class="text-stone-600 mt-1 max-w-3xl">
+      Where under-5 mortality is highest across Africa, and how many births a year happen there.
+      Set a threshold to define "high mortality"; everything below responds to it.
+    </p>
+    <p class="text-xs text-stone-500 mt-2">
+      Boundaries loaded for <span class="tg-num">{{ countries_with_boundaries }}</span> of
+      <span class="tg-num">{{ africa_total }}</span> African countries ·
+      mortality data for <span class="tg-num">{{ countries_with_u5mr }}</span> ·
+      no IHME data (see source research)
+    </p>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Map -->
+    <div class="lg:col-span-2">
+      <div id="tg-map" class="tg-map bg-stone-200"></div>
+      <div class="flex items-center gap-4 mt-3 text-xs text-stone-600">
+        <span class="font-medium">Under-5 mortality (per 1,000 live births)</span>
+        <div class="flex items-center gap-1" id="tg-legend"></div>
+        <span class="ml-auto flex items-center gap-1">
+          <span class="inline-block w-3 h-3 rounded-sm" style="background:#0f766e"></span>
+          above threshold
+        </span>
+      </div>
+    </div>
+
+    <!-- Controls + headline -->
+    <div class="space-y-4">
+
+      <div class="bg-white rounded-lg border border-stone-200 p-5">
+        <label for="tg-indicator" class="block text-sm font-medium text-stone-800">Target on</label>
+        <select id="tg-indicator"
+                class="w-full mt-1 mb-4 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
+
+        <div class="text-sm font-medium text-stone-800">Level of detail</div>
+        <div class="flex gap-1 mt-2 p-1 bg-stone-100 rounded-lg" id="tg-resolution"></div>
+        <label for="tg-method" class="block text-xs font-medium text-stone-600 mt-4">Method</label>
+        <select id="tg-method"
+                class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
+        <p id="tg-method-desc" class="text-xs text-stone-500 mt-2"></p>
+        <p id="tg-method-caveat" class="text-xs text-amber-700 mt-1"></p>
+        <p id="tg-method-cover" class="text-xs text-stone-500 mt-2"></p>
+      </div>
+
+      <div class="bg-white rounded-lg border border-stone-200 p-5">
+        <label for="tg-threshold" id="tg-threshold-label"
+               class="block text-sm font-medium text-stone-800">
+          High-mortality threshold
+        </label>
+        <div class="flex items-baseline gap-2 mt-2">
+          <span id="tg-threshold-pct" class="text-3xl font-semibold text-teal-800 tg-num">8.0%</span>
+          <span id="tg-threshold-unit" class="text-stone-500 text-sm">of live births</span>
+        </div>
+        <div id="tg-threshold-alt" class="text-sm text-stone-500 tg-num mt-0.5">
+          = <span id="tg-threshold-abs">80</span> per 1,000
+        </div>
+        <input id="tg-threshold" type="range" class="tg-slider w-full mt-3"
+               min="10" max="200" step="5" value="{{ default_threshold|floatformat:0 }}">
+        <div class="flex justify-between text-xs text-stone-400 tg-num">
+          <span id="tg-scale-min">1%</span><span id="tg-scale-max">20%</span>
+        </div>
+      </div>
+
+      <!-- Four quantities of equal standing. Births alone used to dominate the
+           panel, which quietly implied it was the number that mattered; total
+           population, the under-5 cohort and the disease burden are each the
+           headline for a different intervention. -->
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-white rounded-lg border border-stone-200 p-4">
+          <div class="text-xs text-stone-500 leading-tight">Total population</div>
+          <div id="tg-poptotal" class="text-2xl font-semibold text-stone-900 tg-num mt-1">—</div>
+        </div>
+        <div class="bg-white rounded-lg border border-stone-200 p-4">
+          <div class="text-xs text-stone-500 leading-tight">Under-5 population</div>
+          <div id="tg-popu5" class="text-2xl font-semibold text-stone-900 tg-num mt-1">—</div>
+        </div>
+        <div class="bg-white rounded-lg border border-stone-200 p-4">
+          <div class="text-xs text-stone-500 leading-tight">Annual births</div>
+          <div id="tg-births" class="text-2xl font-semibold text-stone-900 tg-num mt-1">—</div>
+        </div>
+        <div class="bg-white rounded-lg border border-teal-300 p-4">
+          <div id="tg-burden-label" class="text-xs text-teal-800 leading-tight">Expected under-5 deaths / year</div>
+          <div id="tg-deaths" class="text-2xl font-semibold text-teal-900 tg-num mt-1">—</div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg border border-stone-200 p-4">
+        <div id="tg-scope" class="text-sm text-stone-600">—</div>
+        <div id="tg-floor" class="hidden mt-3 pt-3 border-t border-stone-200 text-sm text-amber-700"></div>
+        <div id="tg-offmethod" class="hidden mt-3 pt-3 border-t border-stone-200 text-sm text-stone-600"></div>
+      </div>
+
+      <!-- Costing. Two inputs and the arithmetic follows: a unit price, and the
+           unit it is priced in. Which unit applies is a property of the
+           programme, not of the data. -->
+      <div class="bg-white rounded-lg border border-stone-200 p-5">
+        <div class="text-sm font-medium text-stone-800">What could this absorb?</div>
+
+        <label for="tg-preset" class="block text-xs font-medium text-stone-600 mt-3">Preset</label>
+        <select id="tg-preset"
+                class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
+
+        <div class="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <label for="tg-basis" class="block text-xs font-medium text-stone-600">Priced per</label>
+            <select id="tg-basis"
+                    class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
+          </div>
+          <div>
+            <label for="tg-unitcost" class="block text-xs font-medium text-stone-600">Unit cost (USD)</label>
+            <input id="tg-unitcost" type="number" min="0" step="0.10" value="60"
+                   class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white tg-num">
+          </div>
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-stone-200">
+          <div class="text-xs text-stone-500">Absorbable spend</div>
+          <div id="tg-absorb" class="text-3xl font-semibold text-stone-900 tg-num mt-1">—</div>
+          <div id="tg-absorb-detail" class="text-sm text-stone-600 mt-1">—</div>
+          <div id="tg-absorb-caveat" class="text-xs text-amber-700 mt-2"></div>
+        </div>
+      </div>
+
+      <a id="tg-download" href="#"
+         class="block text-center bg-stone-900 text-white rounded-lg px-4 py-3 text-sm font-medium hover:bg-stone-700">
+        Download table + methodology (.zip)
+      </a>
+      <p class="text-xs text-stone-500 -mt-2">
+        A CSV of the areas below, plus a METHODOLOGY.md naming every source, its year, its licence,
+        and the formula behind each derived column.
+      </p>
+
+      <details class="bg-white rounded-lg border border-stone-200 p-4">
+        <summary class="text-sm font-medium text-stone-800 cursor-pointer">What is this based on?</summary>
+        <div class="text-xs text-stone-600 mt-3 space-y-2">
+          <p><strong>Mortality</strong> — DHS subnational estimates where a country has a survey,
+             otherwise the UN IGME national figure applied to its regions. Rows say which.</p>
+          <p><strong>Population</strong> — WorldPop 100 m age–sex grids (CC BY 4.0), aggregated
+             over each boundary by WorldPop's own zonal-statistics service.</p>
+          <p><strong>Births</strong> — derived: the under-1 population divided by infant
+             survivorship. Not measured; the formula travels with the download.</p>
+          <p><strong>Boundaries</strong> — geoBoundaries ADM0/ADM1 (CC BY 4.0).</p>
+          <p class="text-stone-500">Mortality is measured at ADM1 at best. Nothing here implies
+             sub-regional mortality.</p>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="mt-8 bg-white rounded-lg border border-stone-200">
+    <div class="px-5 py-4 border-b border-stone-200 flex items-baseline gap-3">
+      <h2 class="text-lg font-semibold text-stone-900">Areas above threshold</h2>
+      <span id="tg-rowcount" class="text-sm text-stone-500"></span>
+      <span class="ml-auto text-xs text-stone-500">
+        Rolled up to the coarsest unit that is entirely above the threshold
+      </span>
+    </div>
+    <div class="tg-table-wrap">
+      <table class="tg-table w-full text-sm">
+        <thead class="bg-stone-50 text-stone-600">
+          <tr>
+            <th class="text-left px-5 py-2 font-medium">Area</th>
+            <th class="text-left px-3 py-2 font-medium">Country</th>
+            <th class="text-right px-3 py-2 font-medium">U5MR</th>
+            <th class="text-right px-3 py-2 font-medium" id="th-burden">Deaths/yr</th>
+            <th class="text-right px-3 py-2 font-medium">Births/yr</th>
+            <th class="text-right px-3 py-2 font-medium">Under-5 pop</th>
+            <th class="text-left px-3 py-2 font-medium">Source</th>
+            <th class="text-left px-3 py-2 font-medium">Method</th>
+            <th class="text-right px-3 py-2 font-medium">Year</th>
+            <th class="text-left px-5 py-2 font-medium">Link</th>
+          </tr>
+        </thead>
+        <tbody id="tg-rows" class="divide-y divide-stone-100">
+          <tr><td colspan="10" class="px-5 py-8 text-center text-stone-400">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="tg-gaps" class="mt-4 text-xs text-stone-500"></div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+  {{ block.super }}
+  <script>
+    window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
+    window.TG = {
+      indicator: "{{ indicator }}",
+      defaultThreshold: {{ default_threshold }},
+      defaultMethod: "{{ default_method }}",
+      urls: {
+        map: "{% url 'targeting:map_data' %}",
+        methods: "{% url 'targeting:methods' %}",
+        interventions: "{% url 'targeting:interventions' %}",
+        scenario: "{% url 'targeting:scenario' %}",
+        selection: "{% url 'targeting:selection' %}",
+        download: "{% url 'targeting:download' %}"
+      }
+    };
+  </script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+  <script src="{% static 'indicators/targeting.js' %}"></script>
+{% endblock %}

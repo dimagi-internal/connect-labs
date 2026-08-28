@@ -43,6 +43,7 @@ urlpatterns = [
     path("labs/audit-trail/", include("connect_labs.audit_trail.urls", namespace="audit_trail")),
     path("labs/pulse/", include("connect_labs.pulse.urls", namespace="pulse")),
     path("labs/admin/", include("connect_labs.labs.admin.urls", namespace="labs_admin")),
+    path("labs/targeting/", include("connect_labs.labs.indicators.urls", namespace="targeting")),
     path("labs/", include("connect_labs.labs.urls", namespace="labs")),
     path(
         "custom_analysis/chc_nutrition/",

@@ -80,6 +80,10 @@ ENV/
 .direnv
 .envrc
 .env
+# Backups of .env carry the same live secrets but do not match the .env rule;
+# gitleaks caught one already staged by `git add -A`.
+.env.bak*
+.env.*.bak
 
 # Safe-mode Claude Code: Vertex service-account credentials (from 1Password)
 .gcp/
@@ -418,3 +422,7 @@ scripts/walkthroughs/**/scenes.json
 
 # Botched redirect target (CLI token accidentally written to "-")
 /-
+
+# Targeting snapshots are published to Drive and pinned by id, never committed —
+# a 46 MB binary is one `git add -A` away from the history.
+targeting-snapshot-*.zip
