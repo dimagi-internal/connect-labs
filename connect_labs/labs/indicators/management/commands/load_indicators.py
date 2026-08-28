@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import time
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
@@ -56,6 +56,14 @@ class Command(BaseCommand):
             "--missing-only",
             action="store_true",
             help="Population stage: fetch only boundaries that have no population yet",
+        )
+        parser.add_argument(
+            "--levels",
+            default="1",
+            help=(
+                "Population stage: comma-separated admin levels for WorldPop (default 1). "
+                "Level 2 is 1,518 more boundaries against a daily quota, so it is opt-in"
+            ),
         )
         parser.add_argument(
             "--source",
@@ -146,11 +154,27 @@ class Command(BaseCommand):
         self._stage_population_worldpop(codes, opts)
 
     def _stage_population_worldpop(self, codes, opts):
-        # ADM1 only. A country's population is the sum of its regions — asking
+        # Never ADM0. A country's population is the sum of its regions — asking
         # the service for the country outline as well would cost a second
         # measurement that can only disagree with the first, and every ADM0 in
         # Africa is far over the service's 100,000 km2 area cap anyway.
-        boundaries = list(AdminBoundary.objects.filter(iso_code__in=codes, admin_level=1).order_by("iso_code", "name"))
+        #
+        # ADM1 is the default because it is the layer every method can use.
+        # ADM2 is opt-in rather than automatic: it is 1,518 more boundaries
+        # against an undocumented daily quota, and spending the quota there
+        # before ADM1 is complete would leave the base layer short. It matters
+        # nonetheless — where a method resolves at ADM2, a district with no
+        # population of its own contributes no births, and population is a
+        # count, so it can never be inherited from the province above.
+        levels = [int(x) for x in str(opts.get("levels") or "1").split(",") if x.strip()]
+        if any(lvl not in (1, 2) for lvl in levels):
+            raise CommandError(f"--levels must be 1 and/or 2, got {opts['levels']!r}")
+
+        boundaries = list(
+            AdminBoundary.objects.filter(iso_code__in=codes, admin_level__in=levels).order_by(
+                "admin_level", "iso_code", "name"
+            )
+        )
         if opts.get("missing_only"):
             # Keyed on pop_u1, NOT pop_total. HAPI supplies a total but has no
             # 0-1 band, so keying on pop_total would skip precisely the

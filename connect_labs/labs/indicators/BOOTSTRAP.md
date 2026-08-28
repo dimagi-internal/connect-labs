@@ -203,6 +203,20 @@ make manage CMD="load_indicators --stage population --source worldpop --missing-
 make manage CMD="load_indicators --stage births"
 ```
 
+WorldPop runs at ADM1 by default, which is the layer every method can use. Where
+a method resolves at **ADM2**, though, a district with no population of its own
+contributes no births — and population is a count, so unlike a rate it can never
+be inherited from the province above. The only way to fill it is to fetch it:
+
+```bash
+make manage CMD="load_indicators --stage population --source worldpop --missing-only --levels 2"
+```
+
+That is 1,518 more boundaries against the daily quota, so it is opt-in and will
+take several days of quota to finish. Do it after ADM1 is complete, not instead:
+`--levels 1,2` runs shallowest first for that reason. Re-run the `births` and
+`child_health` stages afterwards or none of it reaches the surface.
+
 ### Check it
 
 ```bash
