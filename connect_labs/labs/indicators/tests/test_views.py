@@ -302,6 +302,32 @@ class TestSourceColumns:
         assert rows[0]["U5MR source"] == "UN IGME (subnational model)"
         assert rows[0]["U5MR source link"] == "https://dhsprogram.com/x.cfm"
 
+    def test_csv_names_the_method_that_produced_each_row(self, client_in):
+        """The CSV is the copy that leaves the building, without the page beside it.
+
+        A row inherited from IGME's national figure must not travel under the
+        heading of the survey method that was merely asked for.
+        """
+        country = make_boundary("COD", 0, "DR Congo", "COD-0", x=40)
+        measured = make_boundary("COD", 1, "Haut-Katanga", "COD-1-1", x=42)
+        inherits = make_boundary("COD", 1, "North Kivu", "COD-1-2", x=44)
+        set_value(measured, "u5mr", 150, source=Source.DHS)
+        # Only the country carries a value for the second region to inherit.
+        set_value(country, "u5mr", 140, source=Source.IGME)
+        # A third region below the threshold, so the country is not rolled up
+        # into a single row and the per-row labels stay visible.
+        set_value(make_boundary("COD", 1, "Kinshasa", "COD-1-3", x=46), "u5mr", 50, source=Source.DHS)
+
+        resp = client_in.get(
+            reverse("targeting:download"),
+            {"threshold": 80, "format": "csv", "method": "subnational_survey"},
+        )
+        rows = {r["Area"]: r for r in csv.DictReader(io.StringIO(resp.content.decode()))}
+
+        assert rows["Haut-Katanga"]["U5MR method"] == "Survey as measured"
+        assert rows["North Kivu"]["U5MR method"] == "National estimate (UN IGME)"
+        assert inherits.name in rows
+
     def test_row_values_are_escaped_before_reaching_innerHTML(self, client_in):
         # Source text is server data, but the table builds HTML by hand.
         js = open("connect_labs/static/indicators/targeting.js", encoding="utf-8").read()
