@@ -366,3 +366,41 @@ class TestValuesOnly:
 
         assert result["values"] == 2
         assert result["values_skipped"] == 0
+
+
+class TestGeometryReadPath:
+    """How a geometry is handed to GEOS, which is not a free choice.
+
+    The obvious implementation — a memoryview slice into the concatenated WKB —
+    copies nothing and passes every test on a machine with a current GEOS. On
+    GEOS 3.11, which is what the container ships, it rejects 34 of the 2,350
+    African boundaries outright. Hex is the path that reads the same on both.
+    """
+
+    def test_a_geometry_round_trips_through_the_hex_path(self):
+        from django.contrib.gis.geos import MultiPolygon, Polygon
+
+        from connect_labs.labs.indicators.snapshot import _geometry_at
+
+        first = MultiPolygon(Polygon(((0, 0), (1, 0), (1, 1), (0, 1), (0, 0))), srid=4326)
+        second = MultiPolygon(Polygon(((5, 5), (6, 5), (6, 6), (5, 6), (5, 5))), srid=4326)
+        buffer = bytes(first.wkb) + bytes(second.wkb)
+
+        got = _geometry_at(buffer, len(bytes(first.wkb)), len(bytes(second.wkb)))
+
+        assert got.geom_type == "MultiPolygon"
+        assert got.srid == 4326
+        # The second geometry, not the first — the offset must be honoured.
+        assert got.extent == (5.0, 5.0, 6.0, 6.0)
+
+    def test_the_first_geometry_is_reachable_at_offset_zero(self):
+        from django.contrib.gis.geos import MultiPolygon, Polygon
+
+        from connect_labs.labs.indicators.snapshot import _geometry_at
+
+        only = MultiPolygon(Polygon(((0, 0), (2, 0), (2, 2), (0, 2), (0, 0))), srid=4326)
+        wkb = bytes(only.wkb)
+
+        got = _geometry_at(wkb + b"trailing bytes that must not be read", 0, len(wkb))
+
+        assert got.extent == (0.0, 0.0, 2.0, 2.0)
