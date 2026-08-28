@@ -26,7 +26,7 @@ import time
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
-from connect_labs.labs.admin_boundaries.models import AdminBoundary
+from connect_labs.labs.indicators import boundaries
 from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.models import IndicatorValue
 
@@ -125,7 +125,7 @@ class Command(BaseCommand):
             )
 
     def _report_state(self, when: str) -> None:
-        b = AdminBoundary.objects.filter(iso_code__in=ISO_CODES)
+        b = boundaries.owned().filter(iso_code__in=ISO_CODES)
         self.stdout.write(
             f"  {when}: {b.filter(admin_level=0).count()} ADM0, "
             f"{b.filter(admin_level=1).count()} ADM1, "

@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand
 
-from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.admin_boundaries.services import GeoBoundariesLoader
+from connect_labs.labs.indicators import boundaries
 from connect_labs.labs.indicators.africa import ISO_CODES, name_for
 
 LEVELS = [0, 1]
@@ -68,7 +68,8 @@ class Command(BaseCommand):
 
         if opts["missing_only"]:
             have = set(
-                AdminBoundary.objects.filter(admin_level=1, iso_code__in=codes)
+                boundaries.owned()
+                .filter(admin_level=1, iso_code__in=codes)
                 .values_list("iso_code", flat=True)
                 .distinct()
             )
@@ -103,7 +104,7 @@ class Command(BaseCommand):
         if failed:
             self.stdout.write(self.style.WARNING(f"No data for: {', '.join(failed)}"))
 
-        counts = AdminBoundary.objects.filter(iso_code__in=ISO_CODES, admin_level__in=LEVELS)
+        counts = boundaries.owned().filter(iso_code__in=ISO_CODES, admin_level__in=LEVELS)
         self.stdout.write(
             f"Africa now holds {counts.filter(admin_level=0).count()} ADM0 "
             f"and {counts.filter(admin_level=1).count()} ADM1 boundaries"

@@ -653,3 +653,77 @@ class TestParentLinking:
         district.refresh_from_db()
 
         assert district.parent_boundary_id == first == "AGO-1-1"
+
+
+class TestForeignBoundarySources:
+    """AdminBoundary is shared, and the other tenants are not ours to count.
+
+    Targeting loads geoBoundaries; microplans loads GeoPoDe and GRID3 into the
+    same table — a second tessellation of the same land. Filtering on
+    admin_level alone swept them in. Locally that is invisible, because a
+    laptop that only ran the targeting loader has nothing else in the table.
+    On the deployed database a threshold query returned 1,203 regions against
+    307, and the birth total fell from 7.2M to 1.0M: the foreign units inherit
+    a rate from an ancestor, which is enough to clear a threshold, but carry
+    none of this app's counts.
+    """
+
+    def _foreign(self, iso, level, name, bid, x):
+        from connect_labs.labs.admin_boundaries.models import AdminBoundary
+        from connect_labs.labs.indicators.tests.test_resolve import _square
+
+        return AdminBoundary.objects.create(
+            iso_code=iso,
+            admin_level=level,
+            name=name,
+            boundary_id=bid,
+            geometry=_square(x, 0),
+            source=AdminBoundary.Source.GEOPODE,
+        )
+
+    def test_a_foreign_region_is_not_selected(self):
+        from connect_labs.labs.indicators.resolve import select_above
+
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        ours = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=2)
+        set_value(ours, "u5mr", 150)
+        set_value(ours, "births", 1000)
+
+        theirs = self._foreign("NGA", 1, "Kano (GeoPoDe)", "NGA-P-1", x=4)
+        set_value(theirs, "u5mr", 150)
+
+        selection = select_above(indicator="u5mr", threshold=80.0)
+
+        names = {a.name for a in selection.areas}
+        assert "Kano (GeoPoDe)" not in names
+        assert sum(a.units_covered for a in selection.areas) == 1
+
+    def test_a_foreign_region_cannot_inherit_its_way_into_a_selection(self):
+        """The damaging case: no value of its own, so it inherits and qualifies."""
+        from connect_labs.labs.indicators.resolve import select_above
+
+        country = make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        set_value(country, "u5mr", 150)
+        ours = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=2)
+        set_value(ours, "u5mr", 150)
+        self._foreign("NGA", 1, "Ward 12", "NGA-P-1", x=4)
+
+        selection = select_above(indicator="u5mr", threshold=80.0)
+
+        assert {a.name for a in selection.areas} == {"Kano"}
+
+    def test_the_export_carries_only_our_boundaries(self):
+        import csv
+        import io
+        import zipfile
+
+        from connect_labs.labs.indicators import snapshot
+
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        make_boundary("NGA", 1, "Kano", "NGA-1-1", x=2)
+        self._foreign("NGA", 1, "Ward 12", "NGA-P-1", x=4)
+
+        z = zipfile.ZipFile(io.BytesIO(snapshot.export(iso_codes=["NGA"])))
+        rows = list(csv.DictReader(io.StringIO(z.read("boundaries.csv").decode())))
+
+        assert {r["name"] for r in rows} == {"Nigeria", "Kano"}
