@@ -372,18 +372,28 @@ non-commercial source is present.
 ## Known gaps
 
 - **Western Sahara (ESH)** has no geoBoundaries data, so it is absent entirely.
-- **Mortality is ADM1 at best.** Regions without their own survey inherit the
-  national figure; the UI and the export both say so per row. Nothing here
-  implies sub-regional mortality.
+- **Mortality is ADM1 at best.** Regions without their own survey inherit from
+  the nearest ancestor that has one; the UI and the export both say so per row,
+  and name the method that actually produced the value rather than the one that
+  was asked for. Nothing here implies sub-regional mortality.
+- **A method's `source_order` ranks sources; it does not restrict them.** So an
+  inherited value may come from outside the selected method — most regions under
+  "Survey as measured" carry IGME's national figure, because the survey never
+  reached them. Every row discloses this, and a selection reports how many of
+  its regions are answered that way. Whether a method should _filter_ its
+  sources instead is open.
 - **Years are not aligned.** Mortality is the latest survey per country, which
   varies; population is WorldPop 2020. Both years are shown.
 - **Some boundary sets are coarse.** geoBoundaries gives Niger 6 ADM1 units with
   merged names like `Zinder/Diffa`, against the 8 regions DHS reports. It also
   misspells Niger's Dosso region as "Dossa" — aliased in `sources/base.py`.
-- **Births coverage trails population coverage.** A boundary needs either
-  `pop_u1` (WorldPop) or `pop_f_15_49` + `tfr` to get a births estimate. Until
-  the WorldPop backfill finishes, continental birth totals are an undercount,
-  and the map shows how many features actually carry a figure.
+- **Births coverage trails population coverage, and ADM2 trails ADM1.** A
+  boundary needs either `pop_u1` (WorldPop) or `pop_f_15_49` + `tfr` to get a
+  births estimate. WorldPop runs at ADM1 by default, so a selection resolving at
+  district level under-counts: population is a _count_ and can never be
+  inherited from the province above, unlike a rate. `--levels 2` fetches it, at
+  1,518 more boundaries against a daily quota. Every selection reports how many
+  of its regions carry no figure, so the total reads as the floor it is.
 
 ## Costing: a unit price and a unit of measure
 
