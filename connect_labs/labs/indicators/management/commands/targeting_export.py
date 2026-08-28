@@ -42,7 +42,12 @@ class Command(BaseCommand):
         self.stdout.write("Building snapshot ...")
         blob = snapshot.export(iso_codes=iso, include_geometry=not opts["no_geometry"])
 
-        stamp = datetime.now(UTC).strftime("%Y%m%d")
+        # Minutes, not just the date. Two snapshots published the same day —
+        # which happens whenever a load is corrected and republished — otherwise
+        # land in the folder under the identical name, and the rule that keeps
+        # that folder trustworthy ("trash the superseded file, never leave two")
+        # becomes impossible to follow by eye.
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
         # The Drive name is always canonical, whatever the local path is. A
         # published artifact called "snap2.zip" because that was someone's
         # scratch filename is how the wrong file gets restored later.
