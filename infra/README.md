@@ -119,17 +119,26 @@ CPU, sub-ms IO). The added alarms watch the tier that actually failed.
 
 Thresholds come from the measured 5-day distribution, not from feel:
 
-| Alarm                            | Fires when                      | Normal baseline                                       |
-| -------------------------------- | ------------------------------- | ----------------------------------------------------- |
-| `labs-jj-web-cpu-high`           | web CPU ≥ 90% for 15 min        | median **0.8%**                                       |
-| `labs-jj-alb-latency-high`       | ALB **p95** > 10s for 15 min    | median p95 **0.23s**; only 1.7% of buckets exceed 10s |
-| `labs-jj-alb-5xx-high`           | ALB-generated 5xx > 25 in 5 min | ~1–5 per 15 min; incident peaked at 84                |
-| `labs-jj-web-no-healthy-targets` | healthy hosts < 1 for 3 min     | `desiredCount=1`, so this is a full outage            |
-| `labs-jj-rds-connections-high`   | connections > 90 for 10 min     | 5–15; **was 120 and never fired at a 106 peak**       |
+| Alarm                            | Fires when                              | Normal baseline                                        |
+| -------------------------------- | --------------------------------------- | ------------------------------------------------------ |
+| `labs-jj-web-cpu-high`           | **busiest task's** CPU ≥ 90% for 15 min | median **0.8%**                                        |
+| `labs-jj-alb-latency-high`       | ALB **p95** > 10s for 15 min            | median p95 **0.23s**; only 1.7% of buckets exceed 10s  |
+| `labs-jj-alb-5xx-high`           | ALB-generated 5xx > 25 in 5 min         | ~1–5 per 15 min; incident peaked at 84                 |
+| `labs-jj-web-no-healthy-targets` | healthy hosts < 1 for 3 min             | every task unhealthy at once, so this is a full outage |
+| `labs-jj-rds-connections-high`   | connections > 90 for 10 min             | 5–15; **was 120 and never fired at a 106 peak**        |
 
 Latency is alarmed on **p95, not Average** — Average is dragged toward zero by
 health checks and static assets and stayed unremarkable through the whole
 incident.
+
+Web CPU is alarmed on **Maximum, not Average**, for the same reason applied
+across tasks rather than across requests. `Average` on an ECS _service_ metric
+is the mean over its tasks, so at `desiredCount=2` one task pinned at 100%
+beside an idle one reads as ~50% and can never cross a 90% line. Over
+2026-08-24 05:00–10:00 UTC, 17 of 60 five-minute periods had `Maximum ≥ 90%`
+and none had `Average ≥ 90%` (highest Average: 58.1%) — the tier was returning
+502s and this alarm stayed green. **Re-check any per-task statistic here
+whenever `desiredCount` changes.**
 
 Note these are deliberately **not** paired with a timeout reduction: long-running
 audit work legitimately needs the 600s gunicorn and ALB idle timeouts. The

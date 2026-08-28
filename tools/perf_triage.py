@@ -63,7 +63,17 @@ BASELINE = {
     "alb_p95_median_s": 0.23,
     "db_connections_normal": "5-15",
     "db_connection_slots": 829,
-    "db_cpu_normal_pct": "7-12",
+    # Re-measured 2026-08-28 over 7 days on db.m6g.large: hourly Average runs
+    # ~21% with a 77% peak. The old "7-12" was the db.t3.small figure and it
+    # survived the 2026-08-18 resize unnoticed, because — like
+    # db_connection_slots above — a stale baseline does not fail, it prints a
+    # plausible number that quietly reframes a normal reading as an anomaly.
+    # Unlike the slot count this one moved because the *workload* grew as well
+    # as the instance: four other services (canopy-web, ace-web, umami, the
+    # Celery worker) share this instance, and canopy-web's harness polling alone
+    # was 88% of ALB requests in a sampled 2h window. So re-measure it on a
+    # workload change too, not only on a resize.
+    "db_cpu_normal_pct": "18-25",
 }
 WEB_CPU_SATURATED = 90.0
 ALB_P95_SLOW_S = 10.0
