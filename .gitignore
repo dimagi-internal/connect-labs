@@ -422,3 +422,7 @@ scripts/walkthroughs/**/scenes.json
 
 # Botched redirect target (CLI token accidentally written to "-")
 /-
+
+# Targeting snapshots are published to Drive and pinned by id, never committed —
+# a 46 MB binary is one `git add -A` away from the history.
+targeting-snapshot-*.zip
