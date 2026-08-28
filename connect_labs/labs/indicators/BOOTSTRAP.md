@@ -320,6 +320,7 @@ dataset that looks loaded but is quietly short.
 
 ```
 boundaries      geoBoundaries ADM0/1, plus ADM2 where IGME models that deep
+  └ parents       derive each unit's parent, which geoBoundaries omits
   └ mortality     DHS surveys, IGME national series, IGME subnational model
       └ calibrate     needs BOTH the raw surveys and the IGME series
       └ fertility     DHS TFR + World Bank national fallback
@@ -332,6 +333,32 @@ boundaries      geoBoundaries ADM0/1, plus ADM2 where IGME models that deep
 Re-running any stage is safe: values upsert on
 `(indicator, boundary, year, source)`, so a re-run repairs rather than
 duplicates. `--from-stage <name>` resumes partway.
+
+### Parent links are derived, not downloaded
+
+geoBoundaries publishes each admin level as a standalone layer with no pointer
+upward, so `AdminBoundary.parent_boundary_id` arrives empty and `ancestors()`
+falls back to "the country with this ISO" — skipping ADM1 entirely.
+
+That is quietly expensive. Inheritance is meant to reach the _nearest_ ancestor
+holding a value, so a district without its own survey figure should read its
+province's; instead it reaches past the province to the national number. Worse,
+anything held only at ADM1 cannot reach ADM2 **at all**, because there is no
+ADM0 row to inherit from — which is why household counts were empty below the
+region level until the links existed.
+
+`bootstrap_targeting` runs this straight after the boundary load. Run it by hand
+after loading boundaries any other way:
+
+```bash
+make manage CMD="link_admin_parents"
+```
+
+Containment comes from the geometry: a unit's representative point is matched
+against the level above, falling back to the largest area of overlap where
+borders were digitised from different vintages. Idempotent — it only fills links
+that are missing, unless you pass `--relink`. Across Africa it links 2,289 of
+2,296 units, 2 of them by overlap.
 
 ---
 
