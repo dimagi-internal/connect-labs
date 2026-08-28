@@ -26,6 +26,7 @@ COLUMNS = [
     ("u5mr", "Under-5 mortality (per 1,000)"),
     ("u5mr_ci", "Confidence interval"),
     ("u5mr_within_uncertainty", "Within uncertainty of threshold"),
+    ("u5mr_method", "U5MR method"),
     ("u5mr_source", "U5MR source"),
     ("u5mr_source_detail", "U5MR source detail"),
     ("u5mr_year", "U5MR survey year"),
@@ -46,6 +47,23 @@ def _source_name(code: str) -> str:
     from connect_labs.labs.indicators.views import source_name
 
     return source_name(code)
+
+
+def _method_name(r, selection: Selection) -> str:
+    """The method that produced this row, which is not always the one selected.
+
+    The page learned to say this; the CSV is the copy that leaves the building,
+    and it is the one a funder reads without the page beside it. A row inherited
+    from IGME's national figure must not travel under the heading of the survey
+    method that was merely asked for.
+    """
+    from connect_labs.labs.indicators import methods
+    from connect_labs.labs.indicators.views import _row_method_label
+
+    if r is None:
+        return ""
+    selected = methods.get(selection.method) if selection.method else None
+    return _row_method_label(r, selected) or ""
 
 
 def _cell(value):
@@ -81,6 +99,7 @@ def _rows(selection: Selection):
                 and r.ci_low <= selection.threshold <= r.ci_high
                 else ""
             ),
+            "u5mr_method": _method_name(r, selection),
             "u5mr_source": _source_name(r.source) if r else "",
             "u5mr_source_detail": (r.source_ref or "") if r else "",
             "u5mr_year": r.measured_year if r else "",
