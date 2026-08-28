@@ -12,8 +12,9 @@ from django.http import HttpResponse, JsonResponse
 from django.views import View
 from django.views.generic import TemplateView
 
-from connect_labs.labs.admin_boundaries.models import AdminBoundary
-from connect_labs.labs.indicators import availability, export, interventions, measures, methods
+from connect_labs.labs.indicators import availability
+from connect_labs.labs.indicators import boundaries as boundary_set
+from connect_labs.labs.indicators import export, interventions, measures, methods
 from connect_labs.labs.indicators.africa import ISO_CODES, name_for
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
 from connect_labs.labs.indicators.resolve import BulkResolver, select_above
@@ -167,7 +168,7 @@ class TargetingView(OpenLocallyMixin, TemplateView):
         measure = measures.get(DEFAULT_INDICATOR)
 
         loaded = (
-            AdminBoundary.objects.filter(iso_code__in=ISO_CODES, admin_level=1).values("iso_code").distinct().count()
+            boundary_set.owned().filter(iso_code__in=ISO_CODES, admin_level=1).values("iso_code").distinct().count()
         )
         with_u5mr = IndicatorValue.objects.filter(indicator="u5mr").values("iso_code").distinct().count()
 
@@ -208,7 +209,7 @@ class MapDataView(OpenLocallyMixin, View):
         # figure onto regions would look like subnational detail that does not
         # exist. Countries the method cannot answer for are simply absent.
         level = 0 if method.is_national else 1
-        units = list(AdminBoundary.objects.filter(iso_code__in=supported, admin_level=level))
+        units = list(boundary_set.owned().filter(iso_code__in=supported, admin_level=level))
 
         bulk = BulkResolver(units, year=year, source_order=method.source_order)
         features = []
@@ -573,7 +574,8 @@ class CoverageView(OpenLocallyMixin, View):
             .order_by("indicator", "source")
         )
         boundaries = list(
-            AdminBoundary.objects.filter(iso_code__in=ISO_CODES, admin_level__in=(0, 1))
+            boundary_set.owned()
+            .filter(iso_code__in=ISO_CODES, admin_level__in=(0, 1))
             .values("admin_level")
             .annotate(n=Count("id"), countries=Count("iso_code", distinct=True))
             .order_by("admin_level")
@@ -581,7 +583,8 @@ class CoverageView(OpenLocallyMixin, View):
         missing = sorted(
             set(ISO_CODES)
             - set(
-                AdminBoundary.objects.filter(iso_code__in=ISO_CODES, admin_level=1)
+                boundary_set.owned()
+                .filter(iso_code__in=ISO_CODES, admin_level=1)
                 .values_list("iso_code", flat=True)
                 .distinct()
             )

@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
+from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators.models import License, Source
 from connect_labs.labs.indicators.resolve import resolve
 from connect_labs.labs.indicators.sources.base import Row
@@ -61,7 +62,7 @@ FERTILITY = "fertility"
 def _boundaries(iso_codes: list[str] | None) -> list[AdminBoundary]:
     # Includes ADM2: mortality now resolves that deep in eleven countries, and a
     # district with a rate but no births contributes nothing to a burden total.
-    qs = AdminBoundary.objects.filter(admin_level__in=(0, 1, 2))
+    qs = boundary_set.owned().filter(admin_level__in=(0, 1, 2))
     if iso_codes:
         qs = qs.filter(iso_code__in=[c.upper() for c in iso_codes])
     return list(qs)

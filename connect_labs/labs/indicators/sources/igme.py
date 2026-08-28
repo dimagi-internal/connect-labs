@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 
-from connect_labs.labs.admin_boundaries.models import AdminBoundary
+from connect_labs.labs.indicators import boundaries
 from connect_labs.labs.indicators.models import License, Source
 from connect_labs.labs.indicators.sources.base import Row, http_json
 
@@ -92,14 +92,12 @@ def load(
     countries = (
         [c.upper() for c in iso_codes]
         if iso_codes
-        else list(AdminBoundary.objects.filter(admin_level=0).values_list("iso_code", flat=True).distinct())
+        else list(boundaries.owned().filter(admin_level=0).values_list("iso_code", flat=True).distinct())
     )
     if not countries:
         return []
 
-    adm0 = {
-        b.iso_code: b for b in AdminBoundary.objects.filter(admin_level=0, iso_code__in=countries).order_by("source")
-    }
+    adm0 = {b.iso_code: b for b in boundaries.owned().filter(admin_level=0, iso_code__in=countries)}
 
     key = f"{'+'.join(sorted(adm0))}.{indicator_id}._T._T."
     payload = http_json(
