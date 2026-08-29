@@ -43,6 +43,10 @@ DEFAULT_SOURCE_ORDER = (
     "dhs",
     "hapi",
     "worldpop",
+    # After the API, not instead of it: this fills the units WorldPop's stats
+    # service refuses, and where both exist the API figure stays so the
+    # continent does not change under a reader who is mid-argument.
+    "worldpop_raster",
     "igme",
     "worldbank",
     "derived",

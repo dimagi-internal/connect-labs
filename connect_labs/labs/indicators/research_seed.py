@@ -307,40 +307,68 @@ published openly by UNICEF.
         "indicator": "pop_total",
         "topic": "worldpop-adm2-limit",
         "summary": (
-            "The ADM2 population backfill has hit WorldPop's own limit, not a quota: the "
-            "remaining units are ones its stats service refuses outright."
+            "WorldPop's stats API refuses some geometries outright, which stalled the ADM2 "
+            "backfill at 1,005 of 1,518. Reading its raster directly finished it: 1,517."
         ),
         "body": """
 WorldPop's hosted zonal-statistics service answers a polygon with an age-sex
 pyramid, which is what gives us population without local raster work. It has an
-undocumented daily quota, and for a long time that was the constraint on the
-ADM2 backfill.
+undocumented daily quota, and for a long time that looked like the constraint on
+the ADM2 backfill.
 
-It is no longer the constraint. Re-running `--missing-only` against the
-outstanding ADM2 units returns `IndexError` and "No recorded population in this
-area" for essentially all of them — the service refusing those specific
-geometries, not throttling us. Waiting for a quota reset will not finish this.
+It was not. Re-running `--missing-only` against the outstanding units returns
+`IndexError` and "No recorded population in this area" for essentially all of
+them — the service declining those specific geometries, not throttling us. No
+amount of waiting was ever going to finish it.
 
-Reaching the last few hundred units needs a different mechanism: HDX HAPI
-(already a registered source, `--source hapi`), or deriving the unit's share
-from its parent, which is honest only if it is labelled as derived.
+**The raster has those units regardless.** Downloading a country's 1 km grid and
+summing it here sidesteps the service entirely: about 5 MB per country, computed
+once and discarded. ADM1 went 754 -> 778 and ADM2 went 1,005 -> 1,517 of 1,518.
 
-Do not read a *shortfall* in `coverage` on those units as a transient state that
-another run will fix.
+**The two WorldPop products are not the same number.** Across Nigeria's 37 states
+the raster reads about 5% *below* the API, consistently, because the grid used
+here is UN-adjusted (reconciled to UN World Population Prospects) and the API's
+age-sex product is not. That is why both are loaded in full rather than the
+raster filling only gaps: filling gaps alone would silently mix two calibrations
+inside one continental total. The resolution order keeps the API first, so
+nothing moved under a reader mid-argument, and the disagreement stays visible.
+
+**Verification.** Nigeria's grid sums to 206,139,587 against the published
+UN-adjusted figure of 206,139,589. Summing the same grid per ADM1 boundary and
+adding those up loses 0.09% to cell-centre membership across 37 states — that
+number is the check on the whole zonal pipeline, not just on this loader.
+
+**The one unit still missing** is Cameroon's Sanaga-Maritime, and it is a
+boundary problem rather than a data one: geoBoundaries gives it a 1.3 km sliver
+of coast where a department of roughly 200,000 people should be. A `None` there
+is the honest answer.
 """.strip(),
         "checks": [
             {"kind": "source", "indicator": "pop_total", "source": "worldpop", "expected": True},
-            {"kind": "coverage", "indicator": "pop_total", "level": 2, "expected": 1200},
+            {"kind": "source", "indicator": "pop_total", "source": "worldpop_raster", "expected": True},
+            {"kind": "coverage", "indicator": "pop_total", "level": 1, "expected": 778},
+            {"kind": "coverage", "indicator": "pop_total", "level": 2, "expected": 1517},
         ],
         "alternatives": [
+            {
+                "name": "WorldPop 1 km UN-adjusted raster",
+                "url": "https://hub.worldpop.org/geodata/listing?id=75",
+                "licence": "CC BY 4.0",
+                "verdict": "adopted",
+                "why": (
+                    "Finishes what the API could not, is checkable against a published national "
+                    "total, and is UN-adjusted so its country totals agree with the denominators "
+                    "every other source here is calibrated against."
+                ),
+            },
             {
                 "name": "WorldPop hosted stats API",
                 "url": "https://api.worldpop.org/v1/services/stats",
                 "licence": "CC BY 4.0",
                 "verdict": "adopted",
                 "why": (
-                    "Age-sex structure for a polygon with no local raster work. Has a daily quota and refuses some "
-                    "geometries."
+                    "Still the source for the age bands (pop_u1, pop_u5, pop_f_15_49), which the "
+                    "aggregate grid does not carry. Kept first in the resolution order."
                 ),
             },
             {
@@ -348,62 +376,97 @@ another run will fix.
                 "url": "https://hapi.humdata.org/",
                 "licence": "varies by dataset, generally open",
                 "verdict": "candidate",
-                "why": "Already wired as a source. The obvious next move for units WorldPop refuses.",
+                "why": "No longer needed for the gap it was proposed for. Still wired as a source.",
             },
         ],
         "scanned_now": True,
     },
     {
-        "indicator": "",
-        "topic": "travel-time-to-healthcare",
+        "indicator": "travel_time_healthcare",
+        "topic": "which-source",
         "summary": (
-            "MAP hosts the Weiss et al. accessibility surfaces and they are a strong fit for "
-            "CHW targeting, but they are NOT loaded — an area-mean travel time is close to "
-            "meaningless and we have no population grid outside malaria-endemic cells."
+            "Loaded, and it needed two rasters: MAP's travel-time surface answers "
+            "nothing useful without a population grid to weight it by."
         ),
         "body": """
-MAP's GeoServer also hosts the Weiss et al. accessibility surfaces:
-motorized and walking-only travel time to healthcare, global, 2020. "People more
-than two hours' walk from a health facility" is exactly the evidence a CHW
-deployment proposal argues from, so this is the most attractive unloaded dataset
-we know of.
+MAP hosts the Weiss et al. accessibility surfaces — minutes to the nearest
+health facility, walking or motorised, globally at 1 km. "People more than two
+hours' walk from care" is exactly the evidence a community-health deployment is
+argued from, so this was the most attractive unloaded dataset we knew of.
 
-It has deliberately **not** been loaded, and the reason is aggregation, not
-access. The meaningful statistic is not a district's average travel time — an
-area-weighted mean over a large district is dominated by uninhabited land and
-can be badly wrong in both directions. What a proposal needs is *the population
-living beyond a threshold*, which requires a population raster on the same grid.
+It stayed unloaded for a while, and the reason was aggregation rather than
+access. **A district's average travel time is close to meaningless.** An area
+mean over a large unit is dominated by land nobody lives on: a district that is
+nine-tenths desert and one-tenth town reads as remote when almost everyone in it
+is a short walk from a clinic. What a programme argues from is the number of
+people beyond a threshold, and that cannot be computed from the travel surface
+alone.
 
-The trick used for malaria rates does not extend here: the population grid is
-recovered from MAP's incidence count and rate, so it only exists where there is
-malaria. An accessibility surface needs population everywhere.
+Loading WorldPop's 1 km grid unblocked it. Three numbers now come out of the
+pair, all weighted by people rather than by land:
 
-**To unblock this**, we need a real population raster — WorldPop's 1 km global
-mosaic or GHS-POP — clipped to Africa and read on the same cells. That is a
-bounded piece of work and it would also let every other MAP rate be weighted
-without the count/rate trick. Worth doing; not done.
+    travel_time_healthcare   minutes, population-weighted
+    share_beyond_2h          the proportion further than two hours on foot
+    pop_beyond_2h            how many people that is -- a COUNT, so it sums
+                             exactly and can carry a per-person cost
+
+Two hours is the threshold the access literature settled on.
+
+**The trap is co-registration.** Both grids are 30 arc-second, but they are
+published on different extents, so cell (i, j) of one is not cell (i, j) of the
+other. Every population cell centre is looked up in the travel surface *by
+coordinate*. Assuming aligned indices would shift a whole country by some
+fraction of a degree and produce numbers that are wrong everywhere and obviously
+wrong nowhere. There is a test for exactly this.
+
+**Does it look right?** Nigeria: 29.2 minutes on average, 2.9% of people
+(6.0 million) beyond two hours. The worst states are Bayelsa at 18.6%, then
+Borno, Rivers, Yobe and Taraba — the Niger Delta creeks, where travel is by
+boat, and the sparse conflict-affected northeast. That is the correct geography,
+which is the strongest evidence available that the surface is being read right.
+Regional figures sum exactly to the national one.
+
+**Still not loaded:** the motorised surface. It answers a different question
+(referral and facility access rather than community reach) and would double the
+indicator count for a question nobody has asked yet.
+
+**Vintage.** One epoch, 2020. There is no time axis to subset and no newer
+release to bump to, so unlike MAP's malaria layers this one does not refresh.
 """.strip(),
-        "checks": [],
+        "checks": [
+            {"kind": "source", "indicator": "travel_time_healthcare", "source": "map_worldpop", "expected": True},
+            {"kind": "measure", "code": "pop_beyond_2h", "expected": {"kind": "count", "family": "burden"}},
+            {"kind": "measure", "code": "share_beyond_2h", "expected": {"kind": "rate"}},
+            {
+                "kind": "value",
+                "indicator": "share_beyond_2h",
+                "iso": "NGA",
+                "level": 0,
+                "expected": 2.9,
+                "tolerance": 0.1,
+            },
+        ],
         "alternatives": [
             {
-                "name": "MAP / Weiss et al. travel-time-to-healthcare",
+                "name": "MAP / Weiss et al. walking-only travel time to healthcare",
+                "url": "https://data.malariaatlas.org/maps",
+                "licence": "CC BY 3.0 Unported",
+                "verdict": "adopted",
+                "why": "The only global facility-access surface. Useless without a population grid; fine with one.",
+            },
+            {
+                "name": "MAP / Weiss et al. motorized travel time",
                 "url": "https://data.malariaatlas.org/maps",
                 "licence": "CC BY 3.0 Unported",
                 "verdict": "candidate",
-                "why": (
-                    "Blocked on a population raster, not on access. Loading it without one would produce a "
-                    "defensible-looking but weak number."
-                ),
+                "why": "Answers referral access rather than community reach. Load it when asked that question.",
             },
             {
-                "name": "WorldPop 1 km global mosaic (raster download)",
-                "url": "https://hub.worldpop.org/geodata/listing?id=64",
+                "name": "WorldPop 1 km UN-adjusted grid",
+                "url": "https://hub.worldpop.org/geodata/listing?id=75",
                 "licence": "CC BY 4.0",
-                "verdict": "candidate",
-                "why": (
-                    "Would unblock travel time and let every MAP rate be population-weighted directly. ~260 MB for "
-                    "Africa at 1 km."
-                ),
+                "verdict": "adopted",
+                "why": "The weighting layer. Without it the travel surface can only be averaged over land.",
             },
         ],
         "scanned_now": True,

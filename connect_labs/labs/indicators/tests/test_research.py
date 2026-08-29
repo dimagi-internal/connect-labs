@@ -154,3 +154,46 @@ def test_cross_cutting_notes_come_back_for_every_indicator():
     topics = {n.topic for n in research.for_indicator("malaria_cases")}
     assert topics == {"licensing", "which-source"}
     assert {n.topic for n in research.for_indicator("stunting")} == {"licensing"}
+
+
+class TestOwnedBoundaries:
+    """What this app is allowed to count.
+
+    Two collisions have already happened in this table, and both looked like
+    correct data: another app's tessellation of the same land at the same level,
+    and this app's own source at a level it does not use.
+    """
+
+    def test_another_source_at_our_level_is_not_ours(self, db):
+        from connect_labs.labs.indicators import boundaries
+
+        AdminBoundary.objects.create(
+            iso_code="NGA",
+            admin_level=1,
+            name="Kano (geopode)",
+            source=AdminBoundary.Source.GEOPODE,
+            geometry="MULTIPOLYGON(((8 11, 9 11, 9 12, 8 12, 8 11)))",
+        )
+        assert not boundaries.owned().exists()
+
+    def test_our_source_at_a_level_we_do_not_use_is_not_ours(self, db):
+        """Rwanda's 14,815 umudugudu are geoBoundaries ADM5, loaded for a
+        different question. Counting them would put village polygons into a
+        continental snapshot bound for production."""
+        from connect_labs.labs.indicators import boundaries
+
+        for level in (2, 5):
+            AdminBoundary.objects.create(
+                iso_code="RWA",
+                admin_level=level,
+                name=f"unit at ADM{level}",
+                boundary_id=f"RWA-ADM{level}",  # the natural key is (source, boundary_id)
+                source=AdminBoundary.Source.GEOBOUNDARIES,
+                geometry="MULTIPOLYGON(((30 -2, 31 -2, 31 -1, 30 -1, 30 -2)))",
+            )
+        assert [b.admin_level for b in boundaries.owned()] == [2]
+
+    def test_the_levels_are_stated_rather_than_inferred(self):
+        from connect_labs.labs.indicators import boundaries
+
+        assert boundaries.LEVELS == (0, 1, 2)
