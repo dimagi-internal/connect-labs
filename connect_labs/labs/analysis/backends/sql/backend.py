@@ -5,8 +5,10 @@ Uses PostgreSQL tables for caching AND computation.
 All analysis is done via SQL queries, not Python/pandas.
 """
 
+import inspect
 import json
 import logging
+import pathlib
 from collections.abc import Generator
 from datetime import date, datetime
 from decimal import Decimal
@@ -379,7 +381,21 @@ class SQLBackend:
         for row in qs.iterator():
             visits.append(_model_to_visit_dict(row, skip_form_json=skip_form_json))
 
-        logger.info(f"[SQL] Loaded {len(visits)} visits from RawVisitCache")
+        # Name the CALLER, not just the row count. Investigating why one job
+        # re-loaded the same 23,272-row set 81 times (2026-08-29) cost an
+        # afternoon precisely because 264 of these lines were byte-identical
+        # and none of them said who asked. The frame two above _load_from_cache
+        # is the application call site (this is only ever reached through
+        # fetch_raw_visits).
+        try:
+            caller = inspect.stack()[2]
+            origin = f" via {pathlib.Path(caller.filename).name}:{caller.lineno}"
+        except Exception:  # pragma: no cover - diagnostics must never break a fetch
+            origin = ""
+        logger.info(
+            f"[SQL] Loaded {len(visits)} visits from RawVisitCache"
+            f" (filtered={filter_visit_ids is not None}, slim={skip_form_json}){origin}"
+        )
         return visits
 
     def _fetch_from_api(
