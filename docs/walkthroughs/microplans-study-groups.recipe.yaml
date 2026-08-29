@@ -119,11 +119,11 @@ scenes:
     note: the opp row in the OPEN modal (the picker has a hidden template + the visible
       modal — :visible targets the real one, not the hidden duplicate)
     seconds: 15
-    target: css:[data-testid=sd-opp-10010]:visible
+    target: css:[data-testid=sd-opp-10050]:visible
   - kind: click
     must_succeed: false
-    note: select the Kaura CHC service-delivery opp (10010, same programme)
-    target: css:[data-testid=sd-opp-10010]:visible
+    note: select the Kaura CHC service-delivery opp (10050, same programme)
+    target: css:[data-testid=sd-opp-10050]:visible
   - kind: click
     must_succeed: false
     note: close the opportunity picker
@@ -162,7 +162,6 @@ scenes:
   actions:
   - kind: click
     target: css:#btn-area-admin
-    say: boundaries
     must_succeed: false
     note: Boundaries tab — the boundary search + source controls mount in the map's
       LAYERS panel
@@ -173,7 +172,6 @@ scenes:
     note: the boundary search box is ready
   - kind: click
     target: css:#btn-mode-sampling
-    say: sampling
     must_succeed: false
     note: Sampling mode — enables the two-arm workflow (Compare only offers once an
       intervention ward is picked in sampling mode)
