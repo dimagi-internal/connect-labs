@@ -113,7 +113,6 @@ scenes:
     note: pick the call type — a Request for Proposal
   - kind: select
     target: css:#id_status
-    say: status
     value: active
     note: set Status to Active
   - kind: scroll_to
@@ -129,17 +128,15 @@ scenes:
     note: application deadline
   - kind: fill
     target: css:#id_application_deadline
-    say: deadline
+    say: timeline
     value: '2026-09-30'
     note: set the deadline
   - kind: fill
     target: css:#id_expected_start_date
-    say: start
     value: '2026-10-15'
     note: expected start
   - kind: fill
     target: css:#id_expected_end_date
-    say: end
     value: '2026-12-31'
     note: expected end
   - kind: scroll_to
@@ -155,7 +152,7 @@ scenes:
     note: contact email
   - kind: fill
     target: css:#id_contact_email
-    say: email
+    say: contact
     value: maya.okafor@kaura-health.gov.ng
     note: her contact
   - kind: scroll_to
@@ -167,7 +164,7 @@ scenes:
     note: add an application question for the firms
   - kind: fill
     target: css:textarea[x-model="question.text"]
-    say: answer
+    say: question
     value: How many enumerators can you field in Kaura, and what is your experience
       running household coverage surveys?
     note: Maya writes a question the firms must answer
@@ -326,7 +323,6 @@ scenes:
       firm, not the individual account that submitted the form
   - kind: fill
     target: css:#id_firm_name
-    say: name
     value: Sahel Field Research
     note: the applying firm names itself — Sahel Field Research, a plausible northern-Nigeria
       independent household-survey firm. This is what renders on the responses list
@@ -334,7 +330,6 @@ scenes:
       own ace@dimagi-ai.com dev account.
   - kind: fill
     target: css:#id_firm_email
-    say: email
     value: bids@sahelfieldresearch.org
     note: the firm's contact email — stored as submitted_by_email and shown beside
       the firm name on the responses list, replacing the operator account's email
@@ -344,7 +339,6 @@ scenes:
       to commit the area
   - kind: click
     target: css:#sol-plan-checklist input[type=checkbox]
-    say: area
     must_succeed: true
     note: tick the coverage area — synced two-way with the map; this enables Submit
       (≥1 required). The created call has exactly one plan (R6 — Attakar × Gura),
@@ -384,7 +378,7 @@ scenes:
     note: about to get AI feedback on the draft
   - kind: click
     target: css:#coach-btn
-    say: feedback
+    say: coach
     note: Get Feedback — the coach reviews the draft answer against the evaluation
       criteria
   - kind: wait_for
@@ -393,7 +387,7 @@ scenes:
     note: AI coach (Anthropic) finishes reviewing the answer
   - kind: scroll_to
     target: css:#coach-content
-    say: suggestions
+    say: suggests
     note: frame the coaching feedback
   - kind: hold
     seconds: 4
@@ -454,7 +448,6 @@ scenes:
       in the hero frame below.
   - kind: hover
     target: css:a:has-text("Award")
-    say: award
     seconds: 2.5
     note: glance at the Award action Maya is reaching for next — hover only, the award
       itself happens in scene 5; reading the row does not mutate state. (This may
@@ -462,7 +455,6 @@ scenes:
       hero is un-clipped.)
   - kind: scroll_to
     target: css:th:has-text("Organization")
-    say: organization
     note: scroll the wide responses table back to its LEFT edge so the Organization
       column header + the firm's Organization cell are fully in frame for the hero
       (the earlier Award hover scrolled the table right, clipping "Organization" to
@@ -500,7 +492,6 @@ scenes:
     note: let Maya read the "You're awarding" summary before she commits
   - kind: fill
     target: css:input[name=reward_budget]
-    say: budget
     value: '500000'
     note: optional budget for the awarded firm
   - kind: click
