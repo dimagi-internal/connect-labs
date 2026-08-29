@@ -173,8 +173,7 @@ scenes:
   - kind: click
     target: css:#btn-mode-sampling
     must_succeed: false
-    note: Sampling mode — enables the two-arm workflow (Compare only offers once an
-      intervention ward is picked in sampling mode)
+    note: switch to the two-arm mode first
   - kind: hold
     seconds: 1
     note: sampling mode engaged
@@ -266,7 +265,7 @@ scenes:
   - kind: click
     target: css:.mp-ab-col-i[data-col="common"]:visible
     must_succeed: false
-    note: keep Common support highlighted as the narration weighs Sopp vs Gura
+    note: re-sort so the weighed column stays highlighted
   - kind: hold
     seconds: 2
     note: Sopp and Gura both best-balanced at 0.02; Zankan was last cycle's own ward
@@ -274,12 +273,11 @@ scenes:
     target: css:.mp-ab-addbnd[data-name="Gura"]:visible
     seconds: 10
     must_succeed: false
-    note: Gura's row carries an Add-boundary button once the ranking is scored
+    note: wait for the scored table to paint its add control
   - kind: scroll_to
     target: css:.mp-ab-addbnd[data-name="Gura"]:visible
     must_succeed: false
-    note: frame Gura's row so the rejected top row and Gura's Add button are both
-      legible
+    note: frame the chosen row beneath the rejected top row
   - kind: click
     target: css:.mp-ab-addbnd[data-name="Gura"]:visible
     say: gura
@@ -328,11 +326,18 @@ scenes:
   - kind: wait_for
     seconds: 20
     target: Work areas
+  - kind: scroll_to
+    note: 'frame the create-in-place success state from the TOP of the study read-out
+      — the ARM COMPARABILITY verdict/table leads, with the KPI strip following in
+      the same viewport — not the PSU breakdown table far below it. Scrolling to #kpi-strip
+      alone clipped the comparability panel''s header above the fold; #study-readout
+      sits directly above the KPIs and frames both panels whole.'
+    target: css:#study-readout
+    say: record
   - kind: click
     target: css:.mp-panel-tabs button[data-tab="layers"]
     must_succeed: false
-    note: open the Layers tab (panel auto-switches to Inspect after Generate) so the
-      footprints toggle is visible
+    note: reveal the Layers tab (panel auto-switches to Inspect after generating)
   - kind: click
     must_succeed: false
     note: turn ON the Building-footprints (rooftops) overlay in the map Layers panel
@@ -363,14 +368,6 @@ scenes:
   - kind: hold
     seconds: 2
     note: back at the ward view
-  - kind: scroll_to
-    note: 'frame the create-in-place success state from the TOP of the study read-out
-      — the ARM COMPARABILITY verdict/table leads, with the KPI strip following in
-      the same viewport — not the PSU breakdown table far below it. Scrolling to #kpi-strip
-      alone clipped the comparability panel''s header above the fold; #study-readout
-      sits directly above the KPIs and frames both panels whole.'
-    target: css:#study-readout
-    say: record
   - kind: hold
     note: both arms' sampled work areas + KPIs on one map, filed into the study
     seconds: 6
@@ -402,13 +399,12 @@ scenes:
   - kind: scroll_to
     target: css:button[data-transition="4493"][data-to="in_review"]:visible
     must_succeed: false
-    note: frame plan 4493's row — a finished draft ready to advance (NOT toggling
-      the inventory, which is already open)
+    note: frame the 4493 row (do NOT toggle the inventory, already open)
   - kind: wait_for
     target: css:button[data-transition="4493"][data-to="in_review"]:visible
     seconds: 20
     must_succeed: true
-    note: plan 4493's 'Submit for review' button is visible — the board loaded its
+    note: the 4493 'Submit for review' button is visible — the board loaded its
       plans and 4493 is in draft
   - kind: click
     target: css:button[data-transition="4493"][data-to="in_review"]:visible
