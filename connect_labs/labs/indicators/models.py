@@ -30,6 +30,7 @@ class License(models.TextChoices):
 
     CC_BY_4 = "cc-by-4.0", "CC BY 4.0"
     CC_BY_3_IGO = "cc-by-3.0-igo", "CC BY 3.0 IGO"
+    CC_BY_3 = "cc-by-3.0", "CC BY 3.0 Unported"
     CC_BY_NC_SA_3_IGO = "cc-by-nc-sa-3.0-igo", "CC BY-NC-SA 3.0 IGO"
     OPEN_API = "open-api", "Open API, no explicit licence"
     DERIVED = "derived", "Derived (inherits from inputs)"
@@ -49,6 +50,7 @@ class Source(models.TextChoices):
     WORLDBANK = "worldbank", "World Bank (WDI)"
     IGME_SUBNATIONAL = "igme_subnational", "UN IGME (subnational model)"
     DHS_CALIBRATED = "dhs_calibrated", "DHS (re-levelled)"
+    MAP = "map", "Malaria Atlas Project"
     DERIVED = "derived", "Derived"
 
 
@@ -147,3 +149,74 @@ class IngestRun(models.Model):
     def __str__(self):
         state = "ok" if self.ok else "failed"
         return f"{self.source}/{self.indicator or 'all'} {state} ({self.rows_written} rows)"
+
+
+class ResearchNote(models.Model):
+    """What we already worked out about an indicator, and how to tell if it still holds.
+
+    Investigating an indicator properly is expensive — which sources exist,
+    which of them can answer it, what their licences permit, why the ones we
+    rejected were rejected. Doing that again from scratch every time somebody
+    asks about malaria is waste. Trusting a note written months ago is worse
+    than waste, because the data underneath it moves and a stale conclusion
+    reads exactly like a fresh one.
+
+    So a note is not allowed to be only prose. It carries ``checks``: claims
+    small enough to re-run against the live database every time the note is
+    read. A reader gets the thinking *and* a verdict on whether the thinking
+    still describes reality — and when a check has drifted, the note says so
+    instead of being quietly wrong.
+
+    ``scanned_at`` records something the checks cannot: when we last went
+    looking for sources we do not already know about. Checks tell you whether
+    what you found still holds. Only a new scan tells you whether something
+    better has appeared since.
+    """
+
+    #: How long a full alternative-source scan stays fresh. Six months is
+    #: roughly the cadence at which the big providers cut releases — MAP and
+    #: WorldPop annually, DHS continuously but in country-sized lumps. Past
+    #: this the note still reads, but it says a rescan is due rather than
+    #: letting a reader assume the field was swept yesterday.
+    SCAN_INTERVAL_DAYS = 180
+
+    indicator = models.CharField(
+        max_length=40,
+        blank=True,
+        db_index=True,
+        help_text="Measure code this is about; blank for research that spans indicators",
+    )
+    topic = models.SlugField(max_length=80, help_text="Short slug — what question this note answers")
+    summary = models.CharField(max_length=300, help_text="The conclusion, in one line")
+    body = models.TextField(help_text="The reasoning, in markdown. What was tried, what was found, what it means.")
+
+    checks = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Falsifiable claims, re-run every time the note is read. See research.revalidate.",
+    )
+    alternatives = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Sources considered: name, url, licence, verdict, and why it was or was not adopted",
+    )
+    scanned_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When a FULL alternative-source scan was last run for this indicator",
+    )
+    author = models.CharField(max_length=120, blank=True, help_text="Who or what wrote this")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "labs_indicator_research"
+        constraints = [
+            models.UniqueConstraint(fields=["indicator", "topic"], name="labs_indicator_research_uniq"),
+        ]
+        ordering = ["indicator", "topic"]
+        verbose_name = "Research note"
+
+    def __str__(self):
+        return f"{self.indicator or 'general'}/{self.topic}"

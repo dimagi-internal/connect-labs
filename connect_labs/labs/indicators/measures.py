@@ -558,12 +558,15 @@ register(
 
 _prevalence(
     "malaria_prevalence",
-    "Malaria prevalence (RDT)",
+    "Malaria prevalence",
     "pop_u5",
-    "% of children 6-59 months",
-    "Children testing positive for malaria by rapid diagnostic test. A measured "
-    "prevalence, and one of the few DHS indicators carrying published "
-    "confidence bounds.",
+    "% of children",
+    "Children carrying detectable malaria parasites. Two sources answer this "
+    "and they do not use the same age band: DHS measures 6-59 months by rapid "
+    "diagnostic test, MAP models 2-10 years (PfPR2-10) on a 5 km grid. The unit "
+    "stays deliberately vague because pretending they are one definition would "
+    "be the dishonest option -- source_ref on every row names which one "
+    "produced it, and the sanity checks compare them where both exist.",
     lo=1,
     hi=70,
     default=20,
@@ -602,23 +605,138 @@ _prevalence(
     default=8,
 )
 
+#: Rates a user can sensibly threshold on to pick places. Counts are outcomes
+#: of a selection, not criteria for one, so they are excluded.
+# --------------------------------------------------------------------------
+# Malaria, from the Malaria Atlas Project's modelled surfaces.
+#
+# These are a different kind of number from everything above. A DHS figure is a
+# measurement at a sample of points, inherited outward to the region that
+# contains it. A MAP figure is a geostatistical surface evaluated on a 5 km grid
+# for every year to 2024, so it has a value for every boundary at every level
+# without inheriting anything — and it carries counts, which no survey does.
+#
+# The counts are why this matters for costing. Almost every indicator we hold is
+# a rate, and a rate cannot answer "how many cases would we be treating"; the
+# per-case cost basis has to be refused. Malaria is now the exception.
+# --------------------------------------------------------------------------
+
+register(
+    Measure(
+        code="malaria_cases",
+        label="Malaria cases (P. falciparum)",
+        kind=Kind.COUNT,
+        unit="clinical cases per year",
+        agg=Agg.SUM,
+        description=(
+            "Clinical Plasmodium falciparum episodes in a year, from MAP's "
+            "modelled incidence surface. A count, so it sums up the hierarchy "
+            "exactly and can carry a per-case cost."
+        ),
+    )
+)
+
+register(
+    Measure(
+        code="malaria_deaths",
+        label="Malaria deaths (P. falciparum)",
+        kind=Kind.COUNT,
+        unit="deaths per year",
+        agg=Agg.SUM,
+        description=(
+            "Deaths attributed to Plasmodium falciparum in a year, from MAP's " "modelled mortality surface."
+        ),
+    )
+)
+
+register(
+    Measure(
+        code="malaria_incidence",
+        label="Malaria incidence",
+        kind=Kind.RATE,
+        unit="cases per 1,000 people per year",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_total",
+        downscale=True,
+        description=(
+            "Clinical P. falciparum episodes per 1,000 people per year. MAP "
+            "publishes this per person; it is stored per 1,000 so it reads on "
+            "the same scale as the mortality rates beside it."
+        ),
+        threshold_min=10,
+        threshold_max=800,
+        threshold_default=250,
+    )
+)
+
+_coverage(
+    "itn_use",
+    "ITN use, all ages",
+    "pop_total",
+    "pop_total",
+    "% of population",
+    "People who slept under an insecticide-treated net the previous night. "
+    "Population-wide, and modelled continuously across Africa — distinct from "
+    "the under-5 figure a household survey measures.",
+)
+
+_coverage(
+    "itn_access",
+    "ITN access",
+    "pop_total",
+    "pop_total",
+    "% of population",
+    "People living in a household with enough insecticide-treated nets for "
+    "every two members. The gap against ITN use is the behavioural half of the "
+    "problem, and the two are worth reading together.",
+)
+
+_coverage(
+    "irs_coverage",
+    "Indoor residual spraying",
+    "pop_total",
+    "pop_total",
+    "% of population",
+    "People in dwellings sprayed with a residual insecticide in the last year.",
+    lo=0,
+    hi=60,
+    default=10,
+)
+
+_coverage(
+    "antimalarial_effective",
+    "Effective antimalarial treatment",
+    "pop_total",
+    "malaria_cases",
+    "% of cases",
+    "Clinical cases that receive an effective antimalarial. Its denominator is "
+    "a case count rather than a population, so the unreached figure it yields "
+    "is untreated cases — the one number a treatment programme is sized on.",
+)
+
+
 # Every coverage measure gets a matching unreached count, registered here so the
-# rollup treats it as the summable quantity it is.
+# rollup treats it as the summable quantity it is. This runs last, after every
+# coverage measure exists — a gap registered before its denominator would be a
+# gap in something undefined.
 for _m in [m for m in list(MEASURES.values()) if m.coverage_of]:
+    # The gap is counted in whatever the denominator counts. Most denominators
+    # are populations, so most gaps are people; the effective-treatment gap is
+    # denominated in cases, and calling those people would be wrong in the one
+    # place a reader is most likely to multiply by a unit cost.
+    _denominator = MEASURES[_m.coverage_of]
     register(
         Measure(
             code=f"{_m.code}_gap",
             label=f"Unreached: {_m.label.lower()}",
             kind=Kind.COUNT,
-            unit="people",
+            unit=_denominator.unit,
             agg=Agg.SUM,
-            description=(f"Population not covered by {_m.label.lower()} — " f"{_m.coverage_of} x (1 - coverage)."),
+            description=(f"Not covered by {_m.label.lower()} — " f"{_m.coverage_of} x (1 - coverage)."),
         )
     )
 
 
-#: Rates a user can sensibly threshold on to pick places. Counts are outcomes
-#: of a selection, not criteria for one, so they are excluded.
 TARGETABLE = (
     "u5mr",
     "nmr",
@@ -626,6 +744,11 @@ TARGETABLE = (
     "ors_coverage",
     "malaria_prevalence",
     "malaria_treatment",
+    "malaria_incidence",
+    "itn_use",
+    "itn_access",
+    "irs_coverage",
+    "antimalarial_effective",
     "stunting",
     "wasting",
     "ari_prevalence",
