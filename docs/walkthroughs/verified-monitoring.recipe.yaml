@@ -44,12 +44,10 @@ scenes:
     seconds: 1
   - kind: click
     target: role:button:R3
-    say: third
   - kind: hold
     seconds: 1
   - kind: click
     target: role:button:R6
-    say: sixth
   - kind: hold
     seconds: 5.3
   pace: teach
@@ -126,7 +124,7 @@ scenes:
   actions:
   - kind: scroll_to
     target: Survey-quality scorecard
-    say: scorecard
+    say: checks
   - kind: hold
     seconds: 2
   - kind: click
@@ -166,7 +164,7 @@ scenes:
   actions:
   - kind: click
     target: css:[data-cell="T6:backcheck"]
-    say: revisit
+    say: visit
   - kind: wait_for
     target: Identity match
   - kind: hold
