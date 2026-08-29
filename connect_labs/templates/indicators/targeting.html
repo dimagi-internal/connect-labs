@@ -10,6 +10,26 @@
     .tg-table-wrap { max-height: 520px; overflow: auto; }
     .tg-table thead th { position: sticky; top: 0; z-index: 1; }
     input[type=range].tg-slider { accent-color: #0f766e; }
+
+    /* Read-once explanation lives behind an info dot rather than under every
+       control. Plain CSS, not Tailwind utilities: these classes are generated
+       here and cannot be purged out of the build. */
+    .tg-info { display: inline-flex; align-items: center; justify-content: center;
+               width: 15px; height: 15px; border-radius: 50%; border: 1px solid #d6d3d1;
+               color: #78716c; background: #fff; font-size: 10px; font-weight: 600;
+               line-height: 1; cursor: pointer; flex: 0 0 15px; }
+    .tg-info:hover { border-color: #0f766e; color: #0f766e; }
+    .tg-info[aria-expanded="true"] { border-color: #0f766e; color: #fff; background: #0f766e; }
+    .tg-pop-wrap { position: relative; }
+    .tg-pop { position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; width: 302px;
+              background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; padding: 12px 14px;
+              box-shadow: 0 8px 24px rgba(28,25,23,.13); font-size: 12px; line-height: 1.5;
+              color: #57534e; }
+    .tg-pop p { margin: 0 0 .55rem; } .tg-pop p:last-child { margin-bottom: 0; }
+    .tg-pop b, .tg-pop strong { color: #1c1917; font-weight: 600; }
+    .tg-pop .warn { color: #b45309; }
+    /* A right-hand control's popover would overflow the panel. */
+    .tg-pop.right { left: auto; right: 0; }
     /* The rendered methodology: readable prose inside a data surface, so it
        gets real vertical rhythm rather than inheriting the table's density. */
     .tg-prose h1 { font-size: 1.05rem; font-weight: 600; color: #1c1917; margin: 0 0 .5rem; }
@@ -38,47 +58,82 @@
 
     <aside class="w-full lg:w-[350px] lg:shrink-0 space-y-4">
 
-      <div class="bg-white rounded-lg border border-stone-200 p-5 space-y-2">
-        <label for="tg-indicator" class="block text-xs font-semibold tracking-wide uppercase text-stone-500">
-          Indicator
-        </label>
+      <div class="bg-white rounded-lg border border-stone-200 p-4 tg-pop-wrap">
+        <div class="flex items-center gap-1.5 mb-1.5">
+          <label for="tg-indicator" class="text-xs font-semibold tracking-wide uppercase text-stone-500">
+            Indicator
+          </label>
+          <button type="button" class="tg-info" data-pop="pop-indicator" aria-expanded="false"
+                  aria-label="About indicator families">i</button>
+          <span id="tg-family-chip" class="ml-auto text-[11px] text-stone-500"></span>
+        </div>
         <select id="tg-indicator"
-                class="w-full text-sm border border-stone-300 rounded-md px-2 py-2 bg-white"></select>
-        <p id="tg-family" class="text-xs text-stone-500"></p>
+                class="w-full text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
+        <div class="tg-pop hidden" id="pop-indicator">
+          <p id="tg-family"></p>
+          <p>Indicators come in two kinds, and they ask opposite questions. A
+             <b>burden</b> measure is worse when high, so a threshold selects the places
+             <b>above</b> it. A <b>coverage</b> measure is worse when low, so the threshold
+             selects the places <b>below</b> it — and the quantity worth funding is the
+             number of people left <b>unreached</b>, not the coverage rate.</p>
+          <p>Units are not interchangeable either: mortality is quoted per 1,000 live
+             births, most other measures in percent.</p>
+        </div>
       </div>
 
       <!-- The question, not the widget. What changes between indicator families is the sentence — "worse than" against "fewer than" — so the sentence leads and the slider serves it. -->
-      <div class="bg-white rounded-lg border border-stone-200 p-5">
-        <p id="tg-threshold-label" class="text-[15px] leading-relaxed text-stone-600"></p>
-        <div class="flex items-baseline gap-2 mt-3">
+      <div class="bg-white rounded-lg border border-stone-200 p-4">
+        <p id="tg-threshold-label" class="text-sm leading-snug text-stone-600"></p>
+        <div class="flex items-baseline gap-2 mt-2">
           <span id="tg-threshold-pct" class="text-4xl font-semibold text-teal-800 tg-num tracking-tight">80</span>
           <span id="tg-threshold-unit" class="text-stone-600 text-sm"></span>
         </div>
         <div id="tg-threshold-alt" class="text-xs text-stone-500 tg-num mt-1">
           <span id="tg-threshold-abs"></span>
         </div>
-        <input id="tg-threshold" type="range" class="tg-slider w-full mt-3"
+        <input id="tg-threshold" type="range" class="tg-slider w-full mt-2"
                min="10" max="200" step="5" value="{{ default_threshold|floatformat:0 }}">
         <div class="flex justify-between text-xs text-stone-400 tg-num">
           <span id="tg-scale-min">1%</span><span id="tg-scale-max">20%</span>
         </div>
       </div>
 
-      <div class="bg-white rounded-lg border border-stone-200 p-5 space-y-3">
-        <div class="text-xs font-semibold tracking-wide uppercase text-stone-500">How it is measured</div>
-        <div class="flex gap-1 p-1 bg-stone-100 rounded-lg" id="tg-resolution"></div>
+      <div class="bg-white rounded-lg border border-stone-200 p-4 space-y-2 tg-pop-wrap">
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs font-semibold tracking-wide uppercase text-stone-500">How it is measured</span>
+          <button type="button" class="tg-info" data-pop="pop-method" aria-expanded="false"
+                  aria-label="About this method">i</button>
+          <!-- Availability stays on the face of the panel: a method that answers no
+               country is why the map would otherwise come back empty with no reason. -->
+          <span id="tg-method-chip" class="ml-auto text-[11px] tg-num text-stone-500"></span>
+        </div>
+        <div class="flex gap-1 p-0.5 bg-stone-100 rounded-lg" id="tg-resolution"></div>
         <label for="tg-method" class="sr-only">Method</label>
         <select id="tg-method"
-                class="w-full text-sm border border-stone-300 rounded-md px-2 py-2 bg-white"></select>
-        <!-- Availability is the thing that used to be invisible: the default method could answer 0 of 55 countries and the map just came back empty. -->
-        <p id="tg-method-cover" class="text-xs text-stone-500"></p>
-        <p id="tg-method-desc" class="text-xs text-stone-500"></p>
-        <p id="tg-method-caveat" class="text-xs text-amber-700"></p>
+                class="w-full text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
+        <div class="tg-pop hidden" id="pop-method">
+          <p id="tg-method-desc"></p>
+          <p id="tg-method-caveat" class="warn"></p>
+          <p id="tg-method-cover"></p>
+        </div>
       </div>
 
-      <div class="bg-white rounded-lg border border-stone-200 p-5">
-        <div class="text-xs font-semibold tracking-wide uppercase text-stone-500">What could this absorb?</div>
-        <label for="tg-preset" class="block text-xs font-medium text-stone-600 mt-3">Preset</label>
+      <div class="bg-white rounded-lg border border-stone-200 p-4 tg-pop-wrap">
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs font-semibold tracking-wide uppercase text-stone-500">What could this absorb?</span>
+          <button type="button" class="tg-info" data-pop="pop-cost" aria-expanded="false"
+                  aria-label="About costing">i</button>
+        </div>
+        <div class="tg-pop hidden right" id="pop-cost">
+          <p>The arithmetic is trivial once two things are fixed, and neither can be
+             inferred from the data: <b>what one unit costs</b>, and <b>what a unit is</b>.</p>
+          <p>Which unit applies is a property of the programme — KMC is priced per newborn,
+             a bednet per child, a water connection per household, a treatment per case —
+             so it is chosen, not guessed.</p>
+          <p>Where an indicator implies no case count, the per-case basis is declined
+             rather than approximated.</p>
+        </div>
+        <label for="tg-preset" class="block text-xs font-medium text-stone-600 mt-2">Preset</label>
         <select id="tg-preset"
                 class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
         <div class="grid grid-cols-2 gap-3 mt-3">
@@ -102,7 +157,7 @@
       </div>
 
       <a id="tg-download" href="#"
-         class="block text-center bg-stone-900 text-white rounded-lg px-4 py-3 text-sm font-medium hover:bg-stone-700">
+         class="block text-center bg-stone-900 text-white rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-stone-700">
         Download table + methodology (.zip)
       </a>
     </aside>
@@ -122,21 +177,21 @@
 
       <!-- Four quantities of equal standing, except that the one being targeted is emphasised — for a coverage indicator that is the unreached count, which the engine already computes and the old surface buried. -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div class="bg-white rounded-lg border border-stone-200 p-4">
-          <div class="text-xs text-stone-500 leading-tight">Total population</div>
-          <div id="tg-poptotal" class="text-2xl font-semibold text-stone-900 tg-num mt-1">—</div>
+        <div class="bg-white rounded-lg border border-stone-200 p-3">
+          <div class="text-[11px] text-stone-500 leading-tight">Total population</div>
+          <div id="tg-poptotal" class="text-2xl font-semibold text-stone-900 tg-num mt-0.5 tracking-tight">—</div>
         </div>
-        <div class="bg-white rounded-lg border border-stone-200 p-4">
-          <div class="text-xs text-stone-500 leading-tight">Under-5 population</div>
-          <div id="tg-popu5" class="text-2xl font-semibold text-stone-900 tg-num mt-1">—</div>
+        <div class="bg-white rounded-lg border border-stone-200 p-3">
+          <div class="text-[11px] text-stone-500 leading-tight">Under-5 population</div>
+          <div id="tg-popu5" class="text-2xl font-semibold text-stone-900 tg-num mt-0.5 tracking-tight">—</div>
         </div>
-        <div class="bg-white rounded-lg border border-stone-200 p-4">
-          <div class="text-xs text-stone-500 leading-tight">Annual births</div>
-          <div id="tg-births" class="text-2xl font-semibold text-stone-900 tg-num mt-1">—</div>
+        <div class="bg-white rounded-lg border border-stone-200 p-3">
+          <div class="text-[11px] text-stone-500 leading-tight">Annual births</div>
+          <div id="tg-births" class="text-2xl font-semibold text-stone-900 tg-num mt-0.5 tracking-tight">—</div>
         </div>
-        <div class="bg-white rounded-lg border border-teal-300 p-4">
-          <div id="tg-burden-label" class="text-xs text-teal-800 leading-tight">Expected under-5 deaths / year</div>
-          <div id="tg-deaths" class="text-2xl font-semibold text-teal-900 tg-num mt-1">—</div>
+        <div class="bg-white rounded-lg border border-teal-300 p-3">
+          <div id="tg-burden-label" class="text-[11px] text-teal-800 leading-tight">Expected under-5 deaths / year</div>
+          <div id="tg-deaths" class="text-2xl font-semibold text-teal-900 tg-num mt-0.5 tracking-tight">—</div>
         </div>
       </div>
 
@@ -160,10 +215,19 @@
 
       <div class="bg-white rounded-lg border border-stone-200">
         <div class="px-5 py-4 border-b border-stone-200 flex items-baseline gap-3">
-          <h2 class="text-lg font-semibold text-stone-900" id="tg-table-title">Areas above threshold</h2>
+          <h2 class="text-base font-semibold text-stone-900" id="tg-table-title">Areas above threshold</h2>
           <span id="tg-rowcount" class="text-sm text-stone-500"></span>
-          <span class="ml-auto text-xs text-stone-500">
-            Rolled up to the coarsest unit that is entirely above the threshold
+          <span class="ml-auto tg-pop-wrap inline-flex">
+            <button type="button" class="tg-info" data-pop="pop-rollup" aria-expanded="false"
+                    aria-label="About rollup">i</button>
+            <span class="tg-pop hidden right" id="pop-rollup">
+              <span class="block">Rows sit at the coarsest unit that is honestly describable.
+                Where <b>every</b> region of a country clears the threshold, the country appears
+                as one row; where only some do, those regions appear individually.</span>
+              <span class="block mt-2">Counts on a country row are summed from its qualifying
+                regions, never read from a separate national figure, so a country total can
+                never disagree with the regions beneath it.</span>
+            </span>
           </span>
         </div>
         <div class="tg-table-wrap">
@@ -194,9 +258,18 @@
       <!-- The workings, on the page. This is the same text the download ships as METHODOLOGY.md — rendered from the same function, so the two cannot drift — because the arithmetic should be checkable before anyone unzips anything, and quotable into a proposal from here. -->
       <div class="bg-white rounded-lg border border-stone-200">
         <div class="px-5 py-4 border-b border-stone-200 flex items-baseline gap-3">
-          <h2 class="text-lg font-semibold text-stone-900">How these numbers were made</h2>
-          <span class="text-xs text-stone-500">
-            the same text the download ships as METHODOLOGY.md, for exactly this selection
+          <h2 class="text-base font-semibold text-stone-900">How these numbers were made</h2>
+          <span class="tg-pop-wrap inline-flex">
+            <button type="button" class="tg-info" data-pop="pop-meth" aria-expanded="false"
+                    aria-label="About this methodology">i</button>
+            <span class="tg-pop hidden" id="pop-meth">
+              <span class="block">This is the same text the download ships as
+                <b>METHODOLOGY.md</b>, generated by the same function for exactly this
+                selection — so the page and the file a funder receives cannot drift apart.</span>
+              <span class="block mt-2">It includes independent cross-checks of these figures
+                and what every other method would have reported, both computed for this
+                selection rather than asserted in general.</span>
+            </span>
           </span>
           <a id="tg-download-md" href="#" class="ml-auto text-xs text-teal-800 hover:text-teal-900 underline">
             Download as .zip

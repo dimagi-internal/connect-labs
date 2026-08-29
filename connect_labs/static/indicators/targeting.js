@@ -567,6 +567,20 @@
     document.getElementById('tg-method-desc').textContent = m.description || '';
     document.getElementById('tg-method-caveat').textContent = m.caveat || '';
 
+    // The full availability sentence is read-once and lives in the popover; the
+    // count itself is per-query and stays visible, because a method that answers
+    // no country is the whole explanation for an empty map.
+    var chip = document.getElementById('tg-method-chip');
+    if (chip) {
+      chip.textContent =
+        m.countries_available + '/' + m.countries_total + ' countries';
+      chip.className =
+        'ml-auto text-[11px] tg-num ' +
+        (m.countries_available === 0
+          ? 'text-amber-700 font-medium'
+          : 'text-stone-500');
+    }
+
     var cover = document.getElementById('tg-method-cover');
     var missing = m.countries_total - m.countries_available;
     var text =
@@ -673,6 +687,11 @@
     document.getElementById('tg-family').textContent = coverage
       ? 'Coverage measure — lower is worse, so this selects the places below the line.'
       : 'Burden measure — higher is worse, so this selects the places above the line.';
+    var famChip = document.getElementById('tg-family-chip');
+    if (famChip)
+      famChip.textContent = coverage
+        ? 'coverage · selects below'
+        : 'burden · selects above';
 
     // The unit caption sits under the number and must be the indicator's own
     // unit. It is not always a percentage, and it is never a percentage of
@@ -964,7 +983,49 @@
     }, 250);
   }
 
+  // One info dot per read-once explanation. Everything a person needs on every
+  // query stays on the panel; everything they need once sits behind the dot, so
+  // the controls stay dense without the page becoming unexplained.
+  function closePopovers(except) {
+    document.querySelectorAll('.tg-pop').forEach(function (pop) {
+      if (pop === except) return;
+      pop.classList.add('hidden');
+    });
+    document.querySelectorAll('.tg-info').forEach(function (btn) {
+      var pop = document.getElementById(btn.getAttribute('data-pop'));
+      btn.setAttribute(
+        'aria-expanded',
+        pop && !pop.classList.contains('hidden') ? 'true' : 'false',
+      );
+    });
+  }
+
+  function initPopovers() {
+    document.querySelectorAll('.tg-info').forEach(function (btn) {
+      btn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var pop = document.getElementById(btn.getAttribute('data-pop'));
+        if (!pop) return;
+        var willOpen = pop.classList.contains('hidden');
+        closePopovers();
+        if (willOpen) {
+          pop.classList.remove('hidden');
+          btn.setAttribute('aria-expanded', 'true');
+        }
+      });
+    });
+    // Clicking anywhere else, or Escape, dismisses — a popover that traps the
+    // page is worse than the paragraph it replaced.
+    document.addEventListener('click', function (ev) {
+      if (!ev.target.closest || !ev.target.closest('.tg-pop')) closePopovers();
+    });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') closePopovers();
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
+    initPopovers();
     legend();
     updateThresholdLabels();
     document.getElementById('tg-threshold').addEventListener('input', onSlide);
