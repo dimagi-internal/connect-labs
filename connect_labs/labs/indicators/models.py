@@ -46,11 +46,13 @@ class Source(models.TextChoices):
     DHS = "dhs", "DHS Program"
     IGME = "igme", "UN IGME (via UNICEF SDMX)"
     WORLDPOP = "worldpop", "WorldPop"
+    WORLDPOP_RASTER = "worldpop_raster", "WorldPop (1km grid, UN-adjusted)"
     HAPI = "hapi", "HDX HAPI"
     WORLDBANK = "worldbank", "World Bank (WDI)"
     IGME_SUBNATIONAL = "igme_subnational", "UN IGME (subnational model)"
     DHS_CALIBRATED = "dhs_calibrated", "DHS (re-levelled)"
     MAP = "map", "Malaria Atlas Project"
+    MAP_WORLDPOP = "map_worldpop", "MAP accessibility x WorldPop"
     DERIVED = "derived", "Derived"
 
 

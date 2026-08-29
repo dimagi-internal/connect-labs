@@ -111,8 +111,9 @@ def _csv(rows, columns) -> bytes:
 
 def _boundary_rows(iso_codes: list[str] | None):
     """Attribute rows plus the concatenated geometry they index into."""
-    qs = boundary_set.owned().filter(admin_level__in=(0, 1, 2))
-    qs = qs.filter(iso_code__in=iso_codes or ISO_CODES)
+    # owned() already restricts to this app's source *and* its levels; naming the
+    # levels a second time here is how the two copies drift apart.
+    qs = boundary_set.owned().filter(iso_code__in=iso_codes or ISO_CODES)
     # Quantize in the database rather than in Python: PostGIS zeroes the low
     # mantissa bits in place, and GEOS has no equivalent that keeps the WKB
     # byte-identical to what a re-import will produce.
