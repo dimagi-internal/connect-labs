@@ -230,7 +230,7 @@ class SQLBackend:
                 # to re-fetch from API with images included.
                 if include_images:
                     qs = cache_manager.get_raw_visits_queryset()
-                    if filter_visit_ids:
+                    if filter_visit_ids is not None:
                         qs = qs.filter(visit_id__in=filter_visit_ids)
                     has_images = qs.exclude(images=[]).exists()
                     if not has_images:
@@ -254,7 +254,11 @@ class SQLBackend:
         # Apply filters for return value
         # Normalize to strings for comparison — visit_id is CharField in cache
         # but record_to_visit_dict returns int IDs, and callers may pass either type.
-        if filter_visit_ids:
+        #
+        # `is not None`, NOT truthiness: an EMPTY set means "none of them", and
+        # treating it as "no filter" returns the whole opportunity. See
+        # _load_from_cache for the measured cost of that confusion.
+        if filter_visit_ids is not None:
             str_filter = {str(vid) for vid in filter_visit_ids}
             visit_dicts = [v for v in visit_dicts if str(v.get("id")) in str_filter]
 
@@ -370,7 +374,22 @@ class SQLBackend:
         """Load visits from RawVisitCache table."""
         qs = cache_manager.get_raw_visits_queryset()
 
-        if filter_visit_ids:
+        # `is not None`, NOT truthiness. An EMPTY set means "none of these
+        # visits"; truthiness collapses it into `None`, which means "no filter
+        # at all" -- so a caller asking for ZERO visits was handed back EVERY
+        # visit in the opportunity.
+        #
+        # It fails as a slow success, never as an error. The two callers that
+        # re-filter in Python afterwards (get_visit_data, get_visits_batch)
+        # still return the right answer, having materialised the entire
+        # opportunity to do it -- which is why nothing ever surfaced. Measured
+        # 2026-08-26 on one 5h15m audit job: 264 of these, ~23,272 rows and
+        # ~8-10 seconds each, roughly 4.9 million rows and ~37 minutes spent
+        # answering "give me nothing".
+        #
+        # fetch_visits_for_ids does NOT re-filter, so there the empty set was
+        # also a correctness bug: ask for no visits, receive all of them.
+        if filter_visit_ids is not None:
             qs = qs.filter(visit_id__in=filter_visit_ids)
 
         if skip_form_json:
