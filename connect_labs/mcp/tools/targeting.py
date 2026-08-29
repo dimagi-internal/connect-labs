@@ -381,3 +381,215 @@ def targeting_admin_levels(user, *, iso_codes):
             "sources inside one count or it double-counts. Targeting uses geoBoundaries."
         ),
     }
+
+
+@register(
+    name="targeting_research",
+    description=(
+        "Read what has already been worked out about an indicator — which sources can "
+        "answer it, which were rejected and why, what the traps are — so an investigation "
+        "does not start from nothing. "
+        "Every note is REVALIDATED as you read it: each of its claims is re-run against "
+        "the live data and returned with a verdict, so you can see which sentences still "
+        "describe reality. Read 'trust' first: 'holds' means every check passed, 'drifted' "
+        "means at least one figure has moved and must be re-derived before you quote it, "
+        "'unverified' means the note carries no checks and is a lead rather than a finding. "
+        "Then read 'rescan_due': the checks confirm what we found, but only a fresh source "
+        "scan can tell you whether something better has since been published — when it is "
+        "due, ask the user whether to run one before relying on this for a deliverable. "
+        "Call this BEFORE researching an indicator's data sources from scratch."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "indicator": {
+                "type": "string",
+                "description": "Measure code, e.g. 'malaria_prevalence'. Omitted returns every note.",
+            },
+            "topic": {"type": "string", "description": "Narrow to one note by its slug."},
+            "include_body": {
+                "type": "boolean",
+                "description": "Include the full reasoning. Default true; set false for an index.",
+            },
+        },
+        "additionalProperties": False,
+    },
+)
+def targeting_research(user, *, indicator=None, topic=None, include_body=True):
+    from connect_labs.labs.indicators import research
+    from connect_labs.labs.indicators.models import ResearchNote
+
+    notes = research.for_indicator(indicator, topic=topic)
+    described = [research.describe(n, include_body=include_body) for n in notes]
+
+    if not described:
+        return {
+            "notes": [],
+            "count": 0,
+            "advice": (
+                f"Nothing has been recorded about {indicator!r} yet. "
+                if indicator
+                else "No research notes exist yet. "
+            )
+            + "Investigate from first principles, then write what you learn back with "
+            "targeting_research_write so the next session inherits it — including the "
+            "sources you rejected and why, which is the half that never gets written down.",
+        }
+
+    drifted = [d for d in described if d["trust"] == "drifted"]
+    unverified = [d for d in described if d["trust"] == "unverified"]
+    due = [d for d in described if d["rescan_due"]]
+
+    # Say what is unverified as loudly as what has drifted. A summary reading
+    # "all checks hold" over a set of notes that mostly carry no checks is the
+    # exact reassurance this whole mechanism exists to withhold.
+    verdict = []
+    if drifted:
+        verdict.append(f"{len(drifted)} have drifted — re-derive anything they cover before quoting it.")
+    if unverified:
+        verdict.append(
+            f"{len(unverified)} carry no checks and cannot be confirmed — treat those as leads, not findings."
+        )
+    if not drifted and not unverified:
+        verdict.append("Every check holds.")
+
+    return {
+        "notes": described,
+        "count": len(described),
+        "scan_interval_days": ResearchNote.SCAN_INTERVAL_DAYS,
+        "advice": (
+            f"{len(described)} note(s). "
+            + " ".join(verdict)
+            + (
+                f" {len(due)} are due a full source rescan; ask the user whether to run one."
+                if due
+                else " All have been scanned for new sources recently."
+            )
+        ),
+    }
+
+
+@register(
+    name="targeting_research_write",
+    description=(
+        "Record what you worked out about an indicator, so the next session inherits it "
+        "instead of repeating the work. Writes over an existing note with the same "
+        "indicator and topic. "
+        "A note is only as useful as its checks: supply claims narrow enough to re-run "
+        "(a coverage count, a value for one country, whether a source still supplies the "
+        "indicator, whether a measure still has the shape you assumed), and a future "
+        "reader is told which of your sentences to stop believing rather than trusting all "
+        "of them. A note with no checks is stored, but it is reported as unverified. "
+        "Record the sources you REJECTED as well as the one you chose — the reasoning that "
+        "rules an option out is what stops it being reconsidered from scratch every time. "
+        "Set scanned_now only when you have actually swept the field for alternatives, not "
+        "when you looked at one source."
+    ),
+    is_write=True,
+    input_schema={
+        "type": "object",
+        "properties": {
+            "indicator": {
+                "type": "string",
+                "description": "Measure code this concerns; omit for research spanning indicators.",
+            },
+            "topic": {
+                "type": "string",
+                "description": "Short kebab-case slug naming the question this answers, e.g. 'which-source'.",
+            },
+            "summary": {"type": "string", "description": "The conclusion in one line."},
+            "body": {
+                "type": "string",
+                "description": (
+                    "The reasoning, in markdown: what you tried, what you found, what it means, "
+                    "and what would change your mind."
+                ),
+            },
+            "checks": {
+                "type": "array",
+                "description": (
+                    "Claims to re-run on every read. Each is an object with 'kind' and its arguments: "
+                    "{'kind':'coverage','indicator':CODE,'level':1,'expected':N} — N units carry it "
+                    "(passes if coverage has since grown); "
+                    "{'kind':'value','indicator':CODE,'iso':'NGA','level':0,'expected':X,'tolerance':0.05,"
+                    "'source':OPTIONAL} — the figure you reasoned from; "
+                    "{'kind':'source','indicator':CODE,'source':'map','expected':true} — this source still "
+                    "supplies it; "
+                    "{'kind':'measure','code':CODE,'expected':{'kind':'rate','family':'coverage'}} — the "
+                    "measure still has the shape you assumed."
+                ),
+                "items": {"type": "object"},
+            },
+            "alternatives": {
+                "type": "array",
+                "description": (
+                    "Sources considered, each {'name','url','licence','verdict','why'}. Verdict is "
+                    "'adopted', 'rejected' or 'candidate'. Include the rejected ones."
+                ),
+                "items": {"type": "object"},
+            },
+            "scanned_now": {
+                "type": "boolean",
+                "description": "True only if you have just swept the field for alternative sources.",
+            },
+        },
+        "required": ["topic", "summary", "body"],
+        "additionalProperties": False,
+    },
+)
+def targeting_research_write(
+    user, *, topic, summary, body, indicator=None, checks=None, alternatives=None, scanned_now=False
+):
+    from django.utils import timezone
+
+    from connect_labs.labs.indicators import measures, research
+    from connect_labs.labs.indicators.models import ResearchNote
+
+    if indicator:
+        try:
+            measures.get(indicator)
+        except KeyError:
+            raise MCPToolError(
+                "BAD_REQUEST",
+                f"Unknown indicator {indicator!r}. Call targeting_indicators for the list, or omit "
+                "the field for research that spans indicators.",
+            ) from None
+
+    checks = list(checks or [])
+    # Run them now rather than storing a claim that was never true. A check that
+    # fails on the way in is a mistake in the note, not drift.
+    results = [research.run_check(c) for c in checks]
+    failing = [r for r in results if not r.holds]
+
+    defaults = {
+        "summary": summary,
+        "body": body,
+        "checks": checks,
+        "alternatives": list(alternatives or []),
+        "author": getattr(user, "username", "") or "",
+    }
+    if scanned_now:
+        defaults["scanned_at"] = timezone.now()
+
+    note, created = ResearchNote.objects.update_or_create(indicator=indicator or "", topic=topic, defaults=defaults)
+    return {
+        "saved": True,
+        "created": created,
+        "indicator": indicator,
+        "topic": topic,
+        "checks_run": [r.as_dict() for r in results],
+        "warning": (
+            None
+            if not failing
+            else (
+                f"{len(failing)} of the checks you supplied do not pass against the data right now. "
+                "They are stored, but a future reader will see this note as drifted from the moment it "
+                "was written. Fix the expected values or drop those checks."
+            )
+        ),
+        "advice": (
+            "Stored with no checks — a future reader will be told this note is unverified. Add checks " "when you can."
+            if not checks
+            else f"Stored with {len(checks)} checks, re-run on every read."
+        ),
+    }

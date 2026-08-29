@@ -42,6 +42,25 @@ def http_json(url: str, params: dict | None = None, retries: int = 3, timeout: i
     raise RuntimeError(f"GET {url} failed after {retries} attempts: {last}")
 
 
+def http_get_bytes(url: str, params, retries: int = 3, timeout: int | None = None) -> bytes:
+    """GET raw bytes. Takes params as a sequence of pairs, not a dict.
+
+    OGC services repeat a parameter to mean "and also" — a WCS subsets on
+    ``subset=Lat(...)`` *and* ``subset=Long(...)`` — which a dict cannot express.
+    """
+    last: Exception | None = None
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, params=params, timeout=timeout or TIMEOUT, headers={"User-Agent": USER_AGENT})
+            resp.raise_for_status()
+            return resp.content
+        except Exception as exc:  # noqa: BLE001 — retried, then re-raised
+            last = exc
+            if attempt < retries - 1:
+                time.sleep(2 * (attempt + 1))
+    raise RuntimeError(f"GET {url} failed after {retries} attempts: {last}")
+
+
 class RateLimited(RuntimeError):
     """The upstream refused us for quota reasons, not for this request's sake.
 
