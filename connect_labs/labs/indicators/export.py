@@ -14,7 +14,7 @@ import io
 import zipfile
 from datetime import UTC, datetime
 
-from connect_labs.labs.indicators import measures
+from connect_labs.labs.indicators import defence, measures
 from connect_labs.labs.indicators.models import NON_COMMERCIAL, IndicatorValue
 from connect_labs.labs.indicators.resolve import CARRIED_COUNTS, Selection
 
@@ -150,7 +150,20 @@ def _threshold_phrase(value: float, unit: str) -> str:
     return f"{value:g} {unit}"
 
 
-def to_methodology(selection: Selection) -> str:
+def _rerun(selection: Selection, method_code: str) -> Selection:
+    """The same question under a different method, for the comparison table."""
+    from connect_labs.labs.indicators.resolve import select_above
+
+    return select_above(
+        indicator=selection.indicator,
+        threshold=selection.threshold,
+        year=selection.year,
+        iso_codes=[a.iso_code for a in selection.areas] or None,
+        method=method_code,
+    )
+
+
+def to_methodology(selection: Selection, *, alternatives: bool = True) -> str:
     m = measures.get(selection.indicator)
     generated = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     pct = measures.percent_equivalent(selection.indicator, selection.threshold)
@@ -256,6 +269,48 @@ def to_methodology(selection: Selection) -> str:
             "each row, and the unadjusted survey value is kept in the database "
             "alongside.\n"
         )
+
+    # The two sections that argue with the table rather than describing it. They
+    # come before the caveats because a reader who has just been shown the numbers
+    # wants to know whether to believe them, not yet what to hold in mind.
+    add("## Does this survive a sanity check?\n")
+    add(
+        "Every figure above has an independent second opinion available, and each is "
+        "computed for **this** selection rather than asserted in general. A claim that "
+        "our numbers were validated, without saying against what, spends credibility "
+        "rather than earning it.\n"
+    )
+    for check in defence.sanity_checks(selection):
+        add(f"- **{check.name}** — _{check.verdict}_. {check.detail}")
+    add("")
+
+    if alternatives:
+        rows = defence.alternatives(selection, run=lambda code: _rerun(selection, code))
+        if rows:
+            add("## Other methods considered\n")
+            add(
+                "The same question, asked of every other method that works at this "
+                "resolution. Where they agree, the choice of method is not doing the work; "
+                "where they disagree, the disagreement is the finding and is reported "
+                "rather than resolved by preference.\n"
+            )
+            add("| Method | Countries it can answer | Areas | Units | What it would report |")
+            add("|---|---:|---:|---:|---|")
+            for r in rows:
+                if not r["countries"]:
+                    add(f"| {r['label']} | 0 | — | — | Cannot answer this indicator at all. |")
+                    continue
+                head = f"{r['headline']:,.0f}" if r.get("headline") else "—"
+                add(f"| {r['label']} | {r['countries']} | {r.get('areas', '—')} | {r['units']} | {head} |")
+            add("")
+            add(
+                "Sources deliberately **not** used: IHME's estimates, whose non-commercial "
+                "agreement excludes for-profit entities and their employees and forbids "
+                "re-hosting; and the Malaria Atlas Project's administrative tables, which "
+                "are older than the survey figures used here. Neither exclusion is a "
+                "judgement that they are worse — IHME in particular may well be better for "
+                "some indicators, and cannot be used to find out.\n"
+            )
 
     add("## Caveats worth carrying\n")
     add(
