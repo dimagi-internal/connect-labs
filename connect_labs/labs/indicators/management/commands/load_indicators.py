@@ -22,6 +22,7 @@ from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
 from connect_labs.labs.indicators.sources import (
+    accessibility,
     base,
     calibrate,
     derive,
@@ -32,9 +33,20 @@ from connect_labs.labs.indicators.sources import (
     malaria_atlas,
     worldbank,
     worldpop,
+    worldpop_raster,
 )
 
-STAGES = ("mortality", "calibrate", "fertility", "population", "births", "child_health", "malaria")
+STAGES = (
+    "mortality",
+    "calibrate",
+    "fertility",
+    "population",
+    "births",
+    "child_health",
+    "malaria",
+    "population_raster",
+    "accessibility",
+)
 
 
 class Command(BaseCommand):
@@ -328,6 +340,71 @@ class Command(BaseCommand):
                         continue
                     # Writing happens on this thread: the loaders are pure, and
                     # concurrent upserts on the same table buy nothing here.
+                    written += base.upsert(rows)
+                    self.stdout.write(f"  [{done}/{len(codes)}] {iso}: {len(rows)} values")
+            ctx["rows"] = written
+            ctx["countries"] = len(codes)
+
+    def _stage_population_raster(self, codes, opts):
+        """Population summed from WorldPop's own grid, per country.
+
+        Exists because the hosted statistics service refuses some geometries
+        outright — the outstanding ADM2 units come back as errors, not as
+        throttling, so no amount of waiting finishes that backfill. The raster
+        has those units regardless.
+
+        It is also the only population figure we can check: a country's grid
+        summed whole against the same grid summed per boundary. Nigeria loses
+        0.09% to cell-centre membership across 37 states.
+        """
+        levels = tuple(int(x) for x in str(opts.get("levels") or "1,2").split(","))
+        workers = max(1, int(opts.get("workers") or 4))
+        missing_only = bool(opts.get("missing_only"))
+
+        with self._run(Source.WORLDPOP_RASTER, "pop_total") as ctx:
+            written = 0
+            done = 0
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(worldpop_raster.load_country, iso, levels=levels, missing_only=missing_only): iso
+                    for iso in codes
+                }
+                for future in as_completed(futures):
+                    iso = futures[future]
+                    done += 1
+                    try:
+                        rows = future.result()
+                    except Exception as exc:  # noqa: BLE001 — one country must not lose the rest
+                        self.stdout.write(self.style.WARNING(f"  {iso}: {exc}"))
+                        continue
+                    written += base.upsert(rows)
+                    self.stdout.write(f"  [{done}/{len(codes)}] {iso}: {len(rows)} values")
+            ctx["rows"] = written
+            ctx["countries"] = len(codes)
+
+    def _stage_accessibility(self, codes, opts):
+        """Walking time to healthcare, weighted by where the people are.
+
+        Runs after population_raster only by convention — it fetches the
+        population grid itself, because the weighting happens per cell and a
+        boundary total cannot stand in for it.
+        """
+        levels = tuple(int(x) for x in str(opts.get("levels") or "0,1,2").split(","))
+        workers = max(1, int(opts.get("workers") or 4))
+
+        with self._run(Source.MAP_WORLDPOP, "healthcare_access") as ctx:
+            written = 0
+            done = 0
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(accessibility.load_country, iso, levels=levels): iso for iso in codes}
+                for future in as_completed(futures):
+                    iso = futures[future]
+                    done += 1
+                    try:
+                        rows = future.result()
+                    except Exception as exc:  # noqa: BLE001 — one country must not lose the rest
+                        self.stdout.write(self.style.WARNING(f"  {iso}: {exc}"))
+                        continue
                     written += base.upsert(rows)
                     self.stdout.write(f"  [{done}/{len(codes)}] {iso}: {len(rows)} values")
             ctx["rows"] = written

@@ -1,4 +1,4 @@
-"""A small GeoTIFF reader, sufficient for what OGC servers return.
+"""A small GeoTIFF reader, sufficient for the rasters this app reads.
 
 Deliberately not rasterio. The one thing we need — read an uncompressed
 float32 band and know where its cells sit on the globe — is about a hundred
@@ -17,12 +17,16 @@ of a silently wrong number.
 from __future__ import annotations
 
 import struct
+import zlib
 from dataclasses import dataclass
 
 import numpy as np
 
 # TIFF field types → (struct code, byte width). Only the ones a GeoTIFF uses.
-_TYPES = {1: ("B", 1), 2: ("s", 1), 3: ("H", 2), 4: ("I", 4), 5: ("II", 8), 11: ("f", 4), 12: ("d", 8)}
+# 16 is BigTIFF's 64-bit LONG8 — how a large file states a strip offset. Falling
+# back to a byte for an unknown type would read three bytes of an eight-byte
+# offset and report a plausible-looking wrong number, so it is listed here.
+_TYPES = {1: ("B", 1), 2: ("s", 1), 3: ("H", 2), 4: ("I", 4), 5: ("II", 8), 11: ("f", 4), 12: ("d", 8), 16: ("Q", 8)}
 
 _WIDTH = 256
 _LENGTH = 257
@@ -38,6 +42,7 @@ _TILE_LENGTH = 323
 _TILE_OFFSETS = 324
 _TILE_BYTE_COUNTS = 325
 _SAMPLE_FORMAT = 339
+_PREDICTOR = 317
 _PIXEL_SCALE = 33550
 _TIE_POINT = 33922
 _TRANSFORM = 34264
@@ -95,29 +100,162 @@ class Raster:
         return out
 
 
+# --------------------------------------------------------------------------
+# Compression
+#
+# GeoServer answers with uncompressed rasters, but a file you download rather
+# than render is nearly always LZW or Deflate — a 1 km population grid is 6 MB
+# compressed and 25 MB raw, and the people publishing it are shipping terabytes.
+# Deflate is zlib, so it is free. LZW is forty lines, and writing them is a
+# better trade than making the production image carry a bundled GDAL.
+# --------------------------------------------------------------------------
+
+_UNCOMPRESSED = 1
+_LZW = 5
+_DEFLATE = (8, 32946)
+
+_LZW_CLEAR = 256
+_LZW_EOI = 257
+
+
+def _lzw_decode(data: bytes) -> bytes:
+    """TIFF's LZW variant: MSB-first codes, and the early-change quirk.
+
+    TIFF widens its code length one code sooner than a plain reading of LZW
+    suggests — at 511 rather than 512. The difference is invisible for the first
+    few hundred codes and then corrupts everything after, which is exactly the
+    kind of bug that looks like bad data rather than a bad decoder.
+    """
+    out = bytearray()
+    table: list[bytes] = []
+
+    def reset() -> None:
+        table.clear()
+        table.extend(bytes([i]) for i in range(256))
+        table.extend((b"", b""))  # placeholders for Clear and EndOfInformation
+
+    reset()
+    width = 9
+    previous: bytes | None = None
+    bit = 0
+    end = len(data) * 8
+
+    while bit + width <= end:
+        byte, shift = divmod(bit, 8)
+        window = int.from_bytes(data[byte : byte + 3].ljust(3, b"\0"), "big")
+        code = (window >> (24 - shift - width)) & ((1 << width) - 1)
+        bit += width
+
+        if code == _LZW_EOI:
+            break
+        if code == _LZW_CLEAR:
+            reset()
+            width = 9
+            previous = None
+            continue
+
+        if previous is None:
+            entry = table[code]
+        elif code < len(table):
+            entry = table[code]
+            table.append(previous + entry[:1])
+        else:
+            # The encoder used a code it defined on this very symbol.
+            entry = previous + previous[:1]
+            table.append(entry)
+
+        out += entry
+        previous = entry
+        if len(table) + 1 >= (1 << width) and width < 12:
+            width += 1
+
+    return bytes(out)
+
+
+def _decompress(chunk: bytes, compression: int) -> bytes:
+    if compression == _UNCOMPRESSED:
+        return chunk
+    if compression == _LZW:
+        return _lzw_decode(chunk)
+    if compression in _DEFLATE:
+        return zlib.decompress(chunk)
+    raise UnsupportedGeoTIFF(f"compression {compression} is not handled (uncompressed, LZW and Deflate are)")
+
+
+def _unpredict(block: np.ndarray, predictor: int, samples: int, byte_order: str) -> np.ndarray:
+    """Undo horizontal differencing, which stores each cell as a delta.
+
+    Predictor 2 differences whole values along the row. The spec describes it
+    for integers, and libtiff applies it to 32-bit floats by differencing their
+    bit patterns as unsigned words — so the accumulation has to happen on the
+    raw words, with wraparound, before they are read back as floats. Doing it
+    in float arithmetic produces numbers that look almost right.
+    """
+    if predictor in (1, None):
+        return block
+    if predictor != 2:
+        raise UnsupportedGeoTIFF(f"predictor {predictor} is not handled (1 and 2 are)")
+    words = block.view(byte_order + _UNSIGNED[block.dtype.itemsize])
+    np.cumsum(words, axis=1, dtype=words.dtype, out=words)
+    return block
+
+
+#: Same width, no sign — cumulative summing a delta-coded row must wrap rather
+#: than saturate or promote.
+_UNSIGNED = {1: "u1", 2: "u2", 4: "u4", 8: "u8"}
+
+
 def _read_ifd(buf: bytes) -> tuple[str, dict]:
+    """Parse the first image file directory, classic TIFF or BigTIFF.
+
+    The two formats differ only in how wide their counts and offsets are.
+    BigTIFF exists because a 32-bit offset cannot address a file over 4 GB, and
+    a continental population raster is exactly that. Everything downstream is
+    identical, so the widths are read into variables rather than the format
+    being handled twice.
+    """
     if buf[:2] == b"MM":
         bo = ">"
     elif buf[:2] == b"II":
         bo = "<"
     else:
         raise UnsupportedGeoTIFF("not a TIFF: bad byte-order mark")
-    magic, ifd = struct.unpack(bo + "HI", buf[2:8])
-    if magic != 42:
-        raise UnsupportedGeoTIFF(f"BigTIFF or unknown magic {magic}; this reader handles classic TIFF only")
 
+    # Three widths differ between the formats and they are NOT the same width.
+    # ``entries_fmt`` counts the directory's entries; ``count_fmt`` counts one
+    # entry's values; ``off_fmt`` is an offset. Classic TIFF uses 2, 4 and 4
+    # bytes; BigTIFF uses 8 for all three. Reusing one for another reads the
+    # high half of a big-endian field, which is zero — every tag comes back
+    # empty and the file looks corrupt rather than misparsed.
+    magic = struct.unpack(bo + "H", buf[2:4])[0]
+    if magic == 42:
+        ifd = struct.unpack(bo + "I", buf[4:8])[0]
+        entries_fmt, count_fmt, entry_size, off_fmt, inline = "H", "I", 12, "I", 4
+    elif magic == 43:
+        offset_size, pad = struct.unpack(bo + "HH", buf[4:8])
+        if offset_size != 8 or pad != 0:
+            raise UnsupportedGeoTIFF(f"BigTIFF with {offset_size}-byte offsets is not handled")
+        ifd = struct.unpack(bo + "Q", buf[8:16])[0]
+        entries_fmt, count_fmt, entry_size, off_fmt, inline = "Q", "Q", 20, "Q", 8
+    else:
+        raise UnsupportedGeoTIFF(f"unknown TIFF magic {magic}; expected 42 (classic) or 43 (BigTIFF)")
+
+    entries_size = struct.calcsize(bo + entries_fmt)
+    count_size = struct.calcsize(bo + count_fmt)
     tags: dict[int, list] = {}
-    count = struct.unpack(bo + "H", buf[ifd : ifd + 2])[0]
+    count = struct.unpack(bo + entries_fmt, buf[ifd : ifd + entries_size])[0]
     for i in range(count):
-        entry = ifd + 2 + i * 12
-        tag, typ, n = struct.unpack(bo + "HHI", buf[entry : entry + 8])
+        entry = ifd + entries_size + i * entry_size
+        tag, typ = struct.unpack(bo + "HH", buf[entry : entry + 4])
+        n = struct.unpack(bo + count_fmt, buf[entry + 4 : entry + 4 + count_size])[0]
+        payload = entry + 4 + count_size
         code, size = _TYPES.get(typ, ("B", 1))
         total = size * n
-        raw = (
-            buf[entry + 8 : entry + 12]
-            if total <= 4
-            else buf[struct.unpack(bo + "I", buf[entry + 8 : entry + 12])[0] :][:total]
-        )
+        if total <= inline:
+            raw = buf[payload : payload + inline]
+        else:
+            at = struct.unpack(bo + off_fmt, buf[payload : payload + inline])[0]
+            raw = buf[at : at + total]
         if typ == 2:
             tags[tag] = [raw.split(b"\0")[0].decode("latin-1")]
         elif typ == 5:
@@ -142,17 +280,21 @@ def _geotransform(tags: dict) -> tuple[float, float, float, float]:
 
 
 def read(buf: bytes, band: int = 0) -> Raster:
-    """Read one band of an uncompressed strip- or tile-organised GeoTIFF."""
+    """Read one band of a strip- or tile-organised GeoTIFF."""
     bo, tags = _read_ifd(buf)
 
     def one(tag: int, default=None):
-        return tags[tag][0] if tag in tags else default
+        # A present-but-empty tag is a real thing servers emit (GeoServer writes
+        # ExtraSamples with count 0), and indexing it blindly turns a readable
+        # raster into an IndexError from deep inside the reader.
+        values = tags.get(tag)
+        return values[0] if values else default
 
-    if one(_COMPRESSION, 1) != 1:
-        raise UnsupportedGeoTIFF(f"compression {one(_COMPRESSION)} not supported; request an uncompressed GeoTIFF")
     if one(_PLANAR_CONFIG, 1) != 1:
         raise UnsupportedGeoTIFF("planar (band-separate) layout not supported")
 
+    compression = one(_COMPRESSION, _UNCOMPRESSED)
+    predictor = one(_PREDICTOR, 1)
     width, height = one(_WIDTH), one(_LENGTH)
     samples = one(_SAMPLES_PER_PIXEL, 1)
     bits = one(_BITS_PER_SAMPLE, 8)
@@ -164,23 +306,32 @@ def read(buf: bytes, band: int = 0) -> Raster:
         raise UnsupportedGeoTIFF(f"band {band} out of range; the file has {samples}")
     np_dtype = np.dtype(bo + dtype)
 
+    def block(offset: int, length: int, rows: int, cols: int) -> np.ndarray:
+        """One strip or tile, decompressed, un-predicted, as (rows, cols, samples)."""
+        raw = _decompress(buf[offset : offset + length], compression)
+        # A copy, not a view: undoing the predictor writes in place, and a
+        # buffer read straight out of the file is read-only.
+        arr = np.frombuffer(raw, dtype=np_dtype, count=rows * cols * samples).reshape(rows, cols, samples).copy()
+        return _unpredict(arr, predictor, samples, bo)
+
     out = np.zeros((height, width), dtype=np_dtype)
     if _TILE_OFFSETS in tags:
         tw, th = one(_TILE_WIDTH), one(_TILE_LENGTH)
         across = (width + tw - 1) // tw
         for i, (offset, length) in enumerate(zip(tags[_TILE_OFFSETS], tags[_TILE_BYTE_COUNTS])):
-            tile = np.frombuffer(buf[offset : offset + length], dtype=np_dtype).reshape(th, tw, samples)[..., band]
+            tile = block(offset, length, th, tw)[..., band]
             row, col = divmod(i, across)
             y0, x0 = row * th, col * tw
             chunk = tile[: min(th, height - y0), : min(tw, width - x0)]
             out[y0 : y0 + chunk.shape[0], x0 : x0 + chunk.shape[1]] = chunk
     elif _STRIP_OFFSETS in tags:
-        rows = one(_ROWS_PER_STRIP, height)
+        rows_per = one(_ROWS_PER_STRIP, height)
         for i, (offset, length) in enumerate(zip(tags[_STRIP_OFFSETS], tags[_STRIP_BYTE_COUNTS])):
-            y0 = i * rows
-            n = min(rows, height - y0)
-            strip = np.frombuffer(buf[offset : offset + length], dtype=np_dtype).reshape(-1, width, samples)[..., band]
-            out[y0 : y0 + n] = strip[:n]
+            y0 = i * rows_per
+            # The last strip is short, and asking for a full one would either
+            # over-read the buffer or silently reshape someone else's bytes.
+            rows = min(rows_per, height - y0)
+            out[y0 : y0 + rows] = block(offset, length, rows, width)[..., band]
     else:
         raise UnsupportedGeoTIFF("neither TileOffsets nor StripOffsets present")
 

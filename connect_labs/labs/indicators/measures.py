@@ -715,6 +715,74 @@ _coverage(
 )
 
 
+# --------------------------------------------------------------------------
+# Physical access to care, from MAP's accessibility surfaces crossed with
+# WorldPop's population grid.
+#
+# The reason both rasters are needed is the reason this was not loaded earlier:
+# a district's *average* travel time is close to meaningless, because an area
+# mean over a large unit is dominated by land nobody lives on. What a programme
+# argues from is the number of people beyond a threshold, and that cannot be
+# computed from the travel surface alone.
+# --------------------------------------------------------------------------
+
+register(
+    Measure(
+        code="travel_time_healthcare",
+        label="Walking time to healthcare",
+        kind=Kind.RATE,
+        unit="minutes on foot",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_total",
+        downscale=True,
+        description=(
+            "Minutes to reach the nearest health facility on foot, averaged "
+            "over the people rather than over the land. Weiss et al.'s 2020 "
+            "friction surface, evaluated where WorldPop puts the population."
+        ),
+        threshold_min=10,
+        threshold_max=240,
+        threshold_default=60,
+    )
+)
+
+register(
+    Measure(
+        code="share_beyond_2h",
+        label="Beyond two hours' walk",
+        kind=Kind.RATE,
+        unit="% of population",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_total",
+        downscale=True,
+        description=(
+            "Share of the population living more than two hours' walk from a "
+            "health facility. Two hours is the threshold the access literature "
+            "settled on, and it is the one a community-health programme is "
+            "usually justified against."
+        ),
+        threshold_min=5,
+        threshold_max=90,
+        threshold_default=25,
+    )
+)
+
+register(
+    Measure(
+        code="pop_beyond_2h",
+        label="People beyond two hours' walk",
+        kind=Kind.COUNT,
+        unit="people",
+        agg=Agg.SUM,
+        description=(
+            "Population in cells more than two hours' walk from a health "
+            "facility. A count, so it sums exactly and can carry a per-person "
+            "cost — the quantity a deployment is sized on."
+        ),
+    )
+)
+
+
 # Every coverage measure gets a matching unreached count, registered here so the
 # rollup treats it as the summable quantity it is. This runs last, after every
 # coverage measure exists — a gap registered before its denominator would be a
@@ -745,6 +813,8 @@ TARGETABLE = (
     "malaria_prevalence",
     "malaria_treatment",
     "malaria_incidence",
+    "travel_time_healthcare",
+    "share_beyond_2h",
     "itn_use",
     "itn_access",
     "irs_coverage",
