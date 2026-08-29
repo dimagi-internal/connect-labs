@@ -122,6 +122,27 @@ register(
 )
 
 
+register(
+    Method(
+        code="national_map",
+        label="National estimate (Malaria Atlas Project)",
+        resolution=Resolution.NATIONAL,
+        source_order=("map",),
+        description=(
+            "MAP's 5 km surfaces summed or averaged to the whole country. The "
+            "only national method that carries case and death counts rather "
+            "than rates, so it is the one that can answer 'how many'."
+        ),
+        caveat=(
+            "Malaria only. A geostatistical model fitted to survey points and "
+            "routine surveillance, not a count of anything — its national "
+            "totals sit near WHO's but do not match them, and the difference "
+            "is a real disagreement rather than rounding."
+        ),
+    )
+)
+
+
 # ---------------------------------------------------------------------------
 # Subnational
 # ---------------------------------------------------------------------------
@@ -182,6 +203,28 @@ register(
             "Carries the survey's date. A third of African countries were last "
             "surveyed eight or more years ago, and mortality has moved a long "
             "way since."
+        ),
+    )
+)
+
+register(
+    Method(
+        code="subnational_surface",
+        label="Modelled 5 km surface (Malaria Atlas Project)",
+        resolution=Resolution.SUBNATIONAL,
+        source_order=("map",),
+        description=(
+            "A continuous surface read on each unit's own geometry, so every "
+            "boundary at every level gets a value computed for it rather than "
+            "inherited from its parent. Counts are summed over the cells; rates "
+            "are averaged weighted by population, recovered from MAP's own "
+            "incidence count and rate. Annual to 2024."
+        ),
+        caveat=(
+            "Malaria only, and modelled rather than measured: where surveillance "
+            "is thin the surface is the model's opinion, smoothly interpolated "
+            "and therefore looking more certain than it is. Its value for a "
+            "small district is an average over a handful of 5 km cells."
         ),
     )
 )

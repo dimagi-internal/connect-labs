@@ -21,7 +21,6 @@ from . import solicitations  # noqa: F401
 from . import supply_demo  # noqa: F401  -- registers supply_demo_reseed
 from . import synthetic  # noqa: F401  -- registers synthetic_*, incl. synthetic_env_{list,get,ensure}
 from . import synthetic_tasks  # noqa: F401  -- registers task_create_synthetic
-from . import targeting  # noqa: F401  -- registers targeting_* (indicators/select/methodology/scenario/admin_levels)
 from . import templates  # noqa: F401
 from . import workflow_create_run  # noqa: F401  -- registers workflow_create_run
 from . import workflow_resume_dual_track_run  # noqa: F401  -- registers workflow_resume_dual_track_run
@@ -29,3 +28,6 @@ from . import workflow_run_default  # noqa: F401  -- registers workflow_run_defa
 from . import workflow_snapshots  # noqa: F401  -- registers workflow_save_snapshot
 from . import workflow_template_sync  # noqa: F401
 from . import workflows  # noqa: F401
+from . import (  # noqa: F401  -- registers targeting_* (indicators/select/methodology/scenario/admin_levels/research)
+    targeting,
+)

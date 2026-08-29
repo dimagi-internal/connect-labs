@@ -13,6 +13,7 @@ finds fewer inputs and says so.
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
@@ -28,11 +29,12 @@ from connect_labs.labs.indicators.sources import (
     hapi,
     igme,
     igme_subnational,
+    malaria_atlas,
     worldbank,
     worldpop,
 )
 
-STAGES = ("mortality", "calibrate", "fertility", "population", "births", "child_health")
+STAGES = ("mortality", "calibrate", "fertility", "population", "births", "child_health", "malaria")
 
 
 class Command(BaseCommand):
@@ -59,9 +61,9 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--levels",
-            default="1",
             help=(
-                "Population stage: comma-separated admin levels for WorldPop (default 1). "
+                "Comma-separated admin levels. WorldPop defaults to 1; MAP, which has no "
+                "quota to husband, defaults to every level. "
                 "Level 2 is 1,518 more boundaries against a daily quota, so it is opt-in"
             ),
         )
@@ -295,6 +297,41 @@ class Command(BaseCommand):
             rows = derive.load_coverage_gaps(iso_codes=codes)
             ctx["rows"] = base.upsert(rows)
             ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
+    def _stage_malaria(self, codes, opts):
+        """MAP's modelled surfaces, aggregated onto our own boundaries.
+
+        Last, because it is the only stage that reads rasters rather than an
+        API, and because a country that fails here should not cost the survey
+        stages that already succeeded.
+
+        Countries run concurrently. Unlike WorldPop there is no daily quota to
+        husband — the work is one GetCoverage per layer per country, and the
+        time is dominated by the server rendering the subset, so a handful of
+        countries in flight is a straight multiplier.
+        """
+        levels = tuple(int(x) for x in str(opts.get("levels") or "0,1,2").split(","))
+        workers = max(1, int(opts.get("workers") or 4))
+
+        with self._run(Source.MAP, f"map_{malaria_atlas.RELEASE}") as ctx:
+            written = 0
+            done = 0
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(malaria_atlas.load_country, iso, levels=levels): iso for iso in codes}
+                for future in as_completed(futures):
+                    iso = futures[future]
+                    done += 1
+                    try:
+                        rows = future.result()
+                    except Exception as exc:  # noqa: BLE001 — one country must not lose the rest
+                        self.stdout.write(self.style.WARNING(f"  {iso}: {exc}"))
+                        continue
+                    # Writing happens on this thread: the loaders are pure, and
+                    # concurrent upserts on the same table buy nothing here.
+                    written += base.upsert(rows)
+                    self.stdout.write(f"  [{done}/{len(codes)}] {iso}: {len(rows)} values")
+            ctx["rows"] = written
+            ctx["countries"] = len(codes)
 
     # -- run bookkeeping ---------------------------------------------------
 
