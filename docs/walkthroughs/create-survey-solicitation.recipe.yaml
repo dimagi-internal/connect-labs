@@ -112,6 +112,7 @@ scenes:
     value: rfp
     note: pick the call type — a Request for Proposal
   - kind: select
+    say: status
     target: css:#id_status
     value: active
     note: set Status to Active
@@ -124,7 +125,7 @@ scenes:
       + can target known orgs (do NOT check it; a public call hides the owner-as-firm
       response form downstream)'
   - kind: scroll_to
-    say: timeline
+    say: deadline
     target: css:#id_application_deadline
     note: application deadline
   - kind: fill
@@ -133,10 +134,12 @@ scenes:
     value: '2026-09-30'
     note: set the deadline
   - kind: fill
+    say: start
     target: css:#id_expected_start_date
     value: '2026-10-15'
     note: expected start
   - kind: fill
+    say: end
     target: css:#id_expected_end_date
     value: '2026-12-31'
     note: expected end
