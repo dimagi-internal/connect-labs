@@ -14,7 +14,7 @@ import pytest
 from django.utils import timezone
 from shapely.geometry import box
 
-from connect_labs.microplans.core import footprints
+from connect_labs.microplans.core import footprints, overture
 from connect_labs.microplans.models import FootprintArea, FootprintBuilding
 
 pytestmark = pytest.mark.django_db
@@ -177,6 +177,9 @@ def test_query_overture_routes_to_same_region_extract_inside_nigeria(monkeypatch
         "_query_overture_live",
         lambda a, mc: (calls.__setitem__("live", calls["live"] + 1), _fake_buildings())[1],
     )
+    # Pin the extract to the active release: the assertion is about ROUTING, not
+    # about whether Nigeria's extract happens to be current today.
+    monkeypatch.setitem(overture.EXTRACT_REGIONS["nigeria"], "release", overture.OVERTURE_RELEASE)
     footprints._query_overture(box(8.282, 11.770, 8.288, 11.775), None)  # Madobi, Nigeria
     assert calls == {"extract": 1, "live": 0}
 
@@ -203,6 +206,11 @@ def test_extract_release_guard_falls_back_when_release_bumped(monkeypatch):
     live rather than serving stale buildings."""
     from connect_labs.microplans.core import overture
 
-    assert overture.covering_region((8.282, 11.770, 8.288, 11.775)) == "nigeria"
+    madobi = (8.282, 11.770, 8.288, 11.775)
+    monkeypatch.setitem(overture.EXTRACT_REGIONS["nigeria"], "release", overture.OVERTURE_RELEASE)
+    assert overture.covering_region(madobi) == "nigeria"
+
     monkeypatch.setattr(overture, "OVERTURE_RELEASE", "9999-99-99.0")
-    assert overture.covering_region((8.282, 11.770, 8.288, 11.775)) is None
+    assert overture.covering_region(madobi) is None
+    # And the mismatch is reportable, not just silently routed around.
+    assert "nigeria" in overture.stale_extracts()
