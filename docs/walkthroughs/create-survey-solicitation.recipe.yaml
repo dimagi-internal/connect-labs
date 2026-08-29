@@ -124,6 +124,7 @@ scenes:
       + can target known orgs (do NOT check it; a public call hides the owner-as-firm
       response form downstream)'
   - kind: scroll_to
+    say: timeline
     target: css:#id_application_deadline
     note: application deadline
   - kind: fill
@@ -156,11 +157,12 @@ scenes:
     value: maya.okafor@kaura-health.gov.ng
     note: her contact
   - kind: scroll_to
+    say: application
     target: text:Add Question
     note: the Application Questions section
   - kind: click
+    say: application
     target: text:Add Question
-    say: question
     note: add an application question for the firms
   - kind: fill
     target: css:textarea[x-model="question.text"]
@@ -317,6 +319,7 @@ scenes:
       so the before/after pair shows the checklist-commit mechanic end-to-end (disabled
       → submitted)
   - kind: scroll_to
+    say: firm
     target: css:#id_firm_name
     note: bring the "Your organization" identity fields into frame — a real firm names
       itself when it answers a public call; the owner reviews and awards a NAMED survey
@@ -406,8 +409,8 @@ scenes:
       NOT on the result receipt. Sized ~7s so the de-dweller keeps this teach frame
       as the load-bearing one. The submit click then resolves the act on camera.
   - kind: click
-    target: css:button[type=submit]:has-text("Submit Response")
     say: submits
+    target: css:button[type=submit]:has-text("Submit Response")
     must_succeed: true
     note: submit the firm's application — the REAL submit; redirects to the call's
       public detail page
