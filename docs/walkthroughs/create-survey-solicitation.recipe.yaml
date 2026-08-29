@@ -457,7 +457,7 @@ scenes:
       scroll the table right; the trailing hover below scrolls it back so the firm-name
       hero is un-clipped.)
   - kind: scroll_to
-    target: css:th:has-text("Organization")
+    target: css:th:has-text("Applicant")
     note: scroll the wide responses table back to its LEFT edge so the Organization
       column header + the firm's Organization cell are fully in frame for the hero
       (the earlier Award hover scrolled the table right, clipping "Organization" to
