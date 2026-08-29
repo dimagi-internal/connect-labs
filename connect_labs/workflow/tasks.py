@@ -9,6 +9,7 @@ Provides async job execution for workflows with:
 """
 
 import logging
+import time
 from datetime import datetime
 
 from django.utils import timezone as dj_timezone
@@ -113,8 +114,13 @@ def _update_job_state(
         # Merge updates
         updated_job = {**current_job, **job_state_updates}
 
-        # Update run state
-        data_access.update_run_state(run_id, {"active_job": updated_job})
+        # Pass the record we ALREADY fetched three lines up. Without `run=`,
+        # update_run_state re-fetches it over HTTP (workflow/data_access.py) --
+        # so every progress tick made two GETs of the same record microseconds
+        # apart, plus the POST. Measured 2026-08-26 on one 5h15m job: 10,737
+        # workflow_run GETs against 5,902 writes, the 2:1 ratio being exactly
+        # this duplicate.
+        data_access.update_run_state(run_id, {"active_job": updated_job}, run=run)
         data_access.close()
 
     except Exception as e:
@@ -384,6 +390,30 @@ def run_workflow_job(
         program_id=program_id,
     )
 
+    # The heartbeat is a HEARTBEAT, not a ledger: nothing reads `processed`
+    # between ticks, and the only consumer with a deadline is staleness
+    # detection. So write it on an interval rather than on every item.
+    #
+    # Why this matters: the audit handlers call back PER IMAGE, and each call
+    # was a full read-modify-write of the whole workflow_run record across the
+    # network to production Connect. One 5h15m job (2026-08-26, 4,896 images)
+    # spent ~42 minutes on 10,737 GETs + 5,902 POSTs maintaining a counter.
+    #
+    # 15s is chosen against the consumer, not by feel. `job_state.py` resumes a
+    # job only after it has been quiet for WORKER_GONE_GRACE_SECONDS (300s) AND
+    # its worker is confirmed gone, with JOB_STALE_SECONDS at 45 minutes. A 15s
+    # floor keeps a 20x margin on the tighter of those, while collapsing a
+    # once-per-image write into roughly four per minute.
+    #
+    # Two writes are never skipped: the FIRST tick (so the UI gets a real
+    # total promptly rather than the zero seeded above) and the LAST one
+    # (processed >= total), so the finished count is exact rather than
+    # whatever the final interval happened to catch. Terminal status writes
+    # are separate _update_job_state calls outside this callback and are
+    # unaffected.
+    HEARTBEAT_MIN_INTERVAL_S = 15.0
+    _last_heartbeat = [0.0]
+
     def progress_callback(
         message: str,
         processed: int = 0,
@@ -403,7 +433,18 @@ def run_workflow_job(
         if item_result:
             extra_meta["item_result"] = item_result
 
+        # Celery-local and cheap (no network), so it stays on every tick --
+        # this is what /api/audit/task/<id>/status/ streams to the browser.
         set_task_progress(self, stage_msg, **extra_meta)
+
+        now = time.monotonic()
+        is_first = _last_heartbeat[0] == 0.0
+        is_last = total and processed >= total
+        if not (is_first or is_last) and now - _last_heartbeat[0] < HEARTBEAT_MIN_INTERVAL_S:
+            if item_result:
+                _save_item_result(run_id, access_token, opportunity_id, item_result, program_id=program_id)
+            return
+        _last_heartbeat[0] = now
 
         # Update job state with progress. updated_at is the heartbeat
         # connect_labs.workflow.views.active_job_age_seconds reads for
