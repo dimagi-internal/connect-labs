@@ -112,15 +112,6 @@ scenes:
     target: Define boundaries
   - kind: click
     must_succeed: false
-    note: this scene's narration ends "She'll sample by ward", but Plan type sits on
-      Coverage — whose own helper text ("Coverage visits every household") states the
-      opposite. Put the editor in Sampling mode on camera so the state matches the line.
-    target: css:#btn-mode-sampling
-  - kind: hold
-    note: let the Sampling selection paint before the picker opens over it
-    seconds: 1.0
-  - kind: click
-    must_succeed: false
     note: open the opportunity picker
     target: Pick opportunities
   - kind: wait_for
@@ -143,7 +134,7 @@ scenes:
       duplicate); fitTo zooms the map to the Attakar delivery cloud (padding 60, maxZoom
       15)
     target: css:[data-testid=sd-show]:visible
-    say: visits
+    say: points
   - kind: hold
     note: let the fitTo camera animation to the Attakar cloud fully settle before
       framing
