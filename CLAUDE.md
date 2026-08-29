@@ -278,7 +278,7 @@ Connect OAuth token (`~/.commcare-connect/token.json`).
 A remote MCP server hosted inside the labs Django app (`connect_labs/mcp/`)
 at `https://labs.connect.dimagi.com/mcp/`. The protocol endpoint is a
 FastMCP 3.x Streamable-HTTP ASGI app mounted in `config/asgi.py`; the catalog
-registers **86 tools** (write tools are rate-limited and fully argument-logged
+registers **96 tools** (write tools are rate-limited and fully argument-logged
 to `MCPAuditLog`).
 
 **Auth:** Personal Access Tokens (PAT) — a deliberate permanent design, not a
@@ -302,7 +302,7 @@ Seven repo skills (`.claude/skills/`) help Claude iterate on labs and operate th
 - **`deploy-labs`** — trigger the AWS deploy via GitHub Actions.
 - **`aws-env-update`** — add/update env vars and secrets in the ECS task definitions.
 
-The `connect_labs` remote MCP tool families: **workflows** (list/get/create/create_from_template/clone/update render code & definition/patch/add_pipeline_source/update_opportunity_ids/set_template_flag/sync_from_template_file/create_run/save_snapshot/delete), **pipelines** (list/get/update_schema/preview/sql/delete), **synthetic data** (`synthetic_*` — envs, profile/generate, clone-from-prod, repoint, fidelity reports, local-record dump/count, image server), **microplans** (`microplans_*` — plans, transitions, work areas, bulk create, study ensure/reset), **pages** (`pages_*`), **solicitations/responses** (incl. `award_response`), **reviews**, **funds** (incl. allocations), plus `campaign_build_national`, `custom_analysis_run`, `labs_context`, `program_admin_demo_seed`, `task_create_synthetic`, `get_sample_ids`, `get_opportunity_apps`, `list_templates`, and `workflow_authoring_guide`.
+The `connect_labs` remote MCP tool families: **targeting** (`targeting_*` — indicators/select/methodology/scenario/admin_levels: where an indicator crosses a threshold across Africa, who lives there, what it would cost, and the workings), **workflows** (list/get/create/create_from_template/clone/update render code & definition/patch/add_pipeline_source/update_opportunity_ids/set_template_flag/sync_from_template_file/create_run/save_snapshot/delete), **pipelines** (list/get/update_schema/preview/sql/delete), **synthetic data** (`synthetic_*` — envs, profile/generate, clone-from-prod, repoint, fidelity reports, local-record dump/count, image server), **microplans** (`microplans_*` — plans, transitions, work areas, bulk create, study ensure/reset), **pages** (`pages_*`), **solicitations/responses** (incl. `award_response`), **reviews**, **funds** (incl. allocations), plus `campaign_build_national`, `custom_analysis_run`, `labs_context`, `program_admin_demo_seed`, `task_create_synthetic`, `get_sample_ids`, `get_opportunity_apps`, `list_templates`, and `workflow_authoring_guide`.
 
 ## Deeper Documentation
 
