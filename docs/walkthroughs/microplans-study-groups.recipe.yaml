@@ -114,7 +114,6 @@ scenes:
     must_succeed: false
     note: open the opportunity picker
     target: Pick opportunities
-    say: opportunity
   - kind: wait_for
     must_succeed: false
     note: the opp row in the OPEN modal (the picker has a hidden template + the visible
@@ -125,7 +124,6 @@ scenes:
     must_succeed: false
     note: select the Kaura CHC service-delivery opp (10010, same programme)
     target: css:[data-testid=sd-opp-10010]:visible
-    say: kaura
   - kind: click
     must_succeed: false
     note: close the opportunity picker
@@ -136,7 +134,7 @@ scenes:
       duplicate); fitTo zooms the map to the Attakar delivery cloud (padding 60, maxZoom
       15)
     target: css:[data-testid=sd-show]:visible
-    say: points
+    say: visits
   - kind: hold
     note: let the fitTo camera animation to the Attakar cloud fully settle before
       framing
@@ -146,7 +144,6 @@ scenes:
     note: center the 50vh map pane in-frame so the fitted ~435-point Attakar delivery
       cloud (the narrated saturation) is the legible subject, not a thumbnail
     target: css:#map-pane
-    say: map
   - kind: hold
     note: the delivery cloud saturates the whole Attakar ward — legibly framed
     seconds: 5
@@ -335,7 +332,6 @@ scenes:
     target: Work areas
   - kind: click
     target: css:.mp-panel-tabs button[data-tab="layers"]
-    say: layers
     must_succeed: false
     note: open the Layers tab (panel auto-switches to Inspect after Generate) so the
       footprints toggle is visible
@@ -376,7 +372,7 @@ scenes:
       alone clipped the comparability panel''s header above the fold; #study-readout
       sits directly above the KPIs and frames both panels whole.'
     target: css:#study-readout
-    say: filed
+    say: record
   - kind: hold
     note: both arms' sampled work areas + KPIs on one map, filed into the study
     seconds: 6
@@ -418,7 +414,7 @@ scenes:
       plans and 4493 is in draft
   - kind: click
     target: css:button[data-transition="4493"][data-to="in_review"]:visible
-    say: review
+    say: advances
     must_succeed: true
     note: Submit for review — advance 4493 draft → in_review
   - kind: wait_for
