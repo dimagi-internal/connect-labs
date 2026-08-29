@@ -1,14 +1,21 @@
 {
   "_comment": "The current targeting snapshot, loaded by `manage.py targeting_import --from-manifest`. Rebuilding this dataset from source costs 30-45 minutes of API calls and can exhaust WorldPop's daily quota for everyone else, so a new environment should restore from here rather than re-fetch. Pin a new drive_file_id whenever the dataset changes materially: export, upload to the folder below (shared with connect-labs-sa), and update the id, created_at and counts in one commit so the file and the record stay together.",
   "drive_folder_id": "1cXbkUDjoE539aG3BOMtIh67r2ROde9sn",
-  "drive_file_id": "1fmSS-jUuDUg6Zbq50nauNHzyGHU2P9oT",
-  "created_at": "2026-08-29T15:10:46.486861+00:00",
+  "drive_file_id": "1_anid_nRLB6vyXuZ9CRmAA-WCLocuFGI",
+  "created_at": "2026-08-29T20:32:13.500080+00:00",
   "counts": {
     "boundaries": 2350,
-    "values": 54136
+    "values": 90882,
+    "indicators": 61
   },
-  "notes": "Restore with: make manage CMD=\"targeting_import --from-manifest\" (needs LABS_SYNTHETIC_GDRIVE_SA_KEY; already in the ECS task definition, and locally readable from Secrets Manager as labs-jj-synthetic-gdrive-sa-key with the labs AWS profile). ADM2 population is now half loaded (742 of 1,518 admin-2 boundaries have pop_u1, against 0 two days ago), which is what moved births from a thin floor to a usable figure: 1,496 of 1,954 births rows now come from the measured infant cohort rather than the fertility fallback, and a subnational U5MR selection carries a births figure for 285 of 307 units against 78 before. The remaining 776 admin-2 boundaries are WorldPop daily-quota bound.",
-  "filename": "targeting-snapshot-20260829-1510.zip",
-  "licenses": ["cc-by-3.0-igo", "cc-by-4.0", "derived", "open-api"],
+  "notes": "Restore with: make manage CMD=\"targeting_import --from-manifest\" (needs LABS_SYNTHETIC_GDRIVE_SA_KEY; already in the ECS task definition, and locally readable from Secrets Manager as labs-jj-synthetic-gdrive-sa-key with the labs AWS profile). Values went 54,136 -> 90,882 because three raster sources joined the API ones. The Malaria Atlas Project's 5 km surfaces give malaria as COUNTS at every level -- 241.9M P. falciparum cases and 645,961 deaths for Africa, against the WHO World Malaria Report's ~246M and ~569k -- which is what lets a treatment programme be sized rather than merely located. WorldPop's 1 km UN-adjusted grid finished the population backfill that its own statistics API had refused: ADM1 754 -> 778, ADM2 1,005 -> 1,517 of 1,518. And the two together answer physical access: 242.9M people in Africa live more than two hours' walk from a health facility. cc-by-3.0 is new in the licence list and is MAP's; it permits commercial use with attribution. Research notes are NOT in this snapshot -- they live in git and are written by `manage.py seed_targeting_research`, which should be run after any import.",
+  "filename": "targeting-snapshot-20260829-2032.zip",
+  "licenses": [
+    "cc-by-3.0",
+    "cc-by-3.0-igo",
+    "cc-by-4.0",
+    "derived",
+    "open-api"
+  ],
   "contains_non_commercial": false
 }
