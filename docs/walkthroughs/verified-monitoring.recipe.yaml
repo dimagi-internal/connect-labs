@@ -74,6 +74,7 @@ scenes:
   - kind: scroll
     value: '600'
   - kind: scroll_to
+    say: ward
     note: frame the two-ward map region (not the chart above) before the layer comparison
     target: text:MAP · ATTAKAR
   - kind: hold
@@ -96,6 +97,7 @@ scenes:
   - kind: hold
     seconds: 0.4
   - kind: scroll_to
+    say: wards
     note: hold the framing on the two-ward map with service delivery isolated
     target: text:MAP · ATTAKAR
   - kind: hold
