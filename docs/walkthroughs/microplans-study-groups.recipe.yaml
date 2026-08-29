@@ -13,7 +13,7 @@ scenes:
   url: /microplans/program/10008/
   role: overview
   pace: teach
-  concept_claim: 'From her Kaura vitamin-A program workspace — already holding several
+  concept_claim: 'From her Riyom vitamin-A program workspace — already holding several
     study rounds — Maya states her goal: measure the program''s real effect against
     a matched comparison group, using the Connect network to carry out the surveys
     and the Connect platform to design a statistically sound, ongoing comparison of
@@ -21,7 +21,7 @@ scenes:
   design_intent: 'Bet: lead with the WHY and the ambition — an ongoing, statistically
     sound matched comparison run on the Connect network/platform — so the build steps
     read as serving a real measurement goal, not a one-off.'
-  show: 'Open on Maya''s Kaura program workspace and state the goal: measure the program''s
+  show: 'Open on Maya''s Riyom program workspace and state the goal: measure the program''s
     real effect against a matched comparison group — leveraging the Connect network
     to carry it out and the Connect platform to design a statistically sound, ongoing
     study.'
@@ -50,12 +50,12 @@ scenes:
   - kind: hold
     seconds: 1.5
   concept_claim: Maya creates an empty two-arm study from scratch on the labs-only
-    Kaura programme with one click and lands on its manage page, ready to add a plan,
+    Riyom programme with one click and lands on its manage page, ready to add a plan,
     before any wards are committed.
   design_intent: 'Bet: a study should start as an empty container the planner fills
     from the map, not a list of names committed up front — so “+ New study” creates
     it in one click, no name-first form.'
-  show: From the Vitamin-A Kaura programme portfolio — already holding earlier study
+  show: From the Vitamin-A Riyom programme portfolio — already holding earlier study
     rounds — Maya starts a brand-new two-arm study with one click and lands on its
     empty study page, ready to add a plan.
   pace: flow
@@ -95,7 +95,7 @@ scenes:
     seconds: 4
   concept_claim: From the empty study, “+ Add a plan in the editor” opens the polished
     single-plan editor scoped to the study (?group=<id>), where Maya turns on the
-    Kaura CHC opportunity's service-delivery data — one plan, built in the unified
+    Attakar CHC opportunity's service-delivery data — one plan, built in the unified
     plan UI.
   design_intent: 'Bet: a matched study is designed in one real plan editor — the planner
     opens it on the study and grounds it in the opportunity''s own delivery data,
@@ -104,7 +104,7 @@ scenes:
   full_page: false
   pace: flow
   show: From the empty study Maya opens the single-plan editor via “+ Add a plan in
-    the editor”; it loads scoped to the study (?group=…) and she switches on the Kaura
+    the editor”; it loads scoped to the study (?group=…) and she switches on the Attakar
     CHC opportunity's service-delivery layer.
 - id: maya-sees-the-programme-covered-all-of-attakar
   actions:
@@ -119,11 +119,11 @@ scenes:
     note: the opp row in the OPEN modal (the picker has a hidden template + the visible
       modal — :visible targets the real one, not the hidden duplicate)
     seconds: 15
-    target: css:[data-testid=sd-opp-10050]:visible
+    target: css:[data-testid=sd-opp-10053]:visible
   - kind: click
     must_succeed: false
-    note: select the Kaura CHC service-delivery opp (10050, same programme)
-    target: css:[data-testid=sd-opp-10050]:visible
+    note: select the Attakar CHC service-delivery opp (10053, same programme)
+    target: css:[data-testid=sd-opp-10053]:visible
   - kind: click
     must_succeed: false
     note: close the opportunity picker
@@ -147,7 +147,7 @@ scenes:
   - kind: hold
     note: the delivery cloud saturates the whole Attakar ward — legibly framed
     seconds: 5
-  concept_claim: Inside the plan editor, the Kaura CHC opp's service-delivery visits
+  concept_claim: Inside the plan editor, the Attakar CHC opp's service-delivery visits
     saturate the WHOLE of Attakar — ward-wide delivery is why the entire ward is the
     honest survey unit.
   design_intent: 'Bet: the planner chooses the intervention ward from where the programme
@@ -156,7 +156,7 @@ scenes:
     starts.'
   full_page: false
   pace: flow
-  show: In the single-plan editor Maya picks the Kaura CHC opportunity for the Service
+  show: In the single-plan editor Maya picks the Attakar CHC opportunity for the Service
     delivery layer; its visits saturate the entire Attakar ward on the map.
 - id: maya-compares-the-surrounding-wards-to-find-a-match
   actions:
