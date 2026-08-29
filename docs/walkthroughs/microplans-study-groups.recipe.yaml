@@ -162,6 +162,98 @@ scenes:
   show: In the single-plan editor Maya picks the Kaura CHC opportunity for the Service
     delivery layer; its visits saturate the entire Attakar ward on the map.
 - id: maya-compares-the-surrounding-wards-to-find-a-match
+  actions:
+  - kind: click
+    target: css:#btn-area-admin
+    say: boundaries
+    must_succeed: false
+    note: Boundaries tab — the boundary search + source controls mount in the map's
+      LAYERS panel
+  - kind: wait_for
+    target: css:.mp-ab-search:visible
+    seconds: 10
+    must_succeed: false
+    note: the boundary search box is ready
+  - kind: click
+    target: css:#btn-mode-sampling
+    say: sampling
+    must_succeed: false
+    note: Sampling mode — enables the two-arm workflow (Compare only offers once an
+      intervention ward is picked in sampling mode)
+  - kind: hold
+    seconds: 1
+    note: sampling mode engaged
+  - kind: fill
+    target: css:.mp-ab-search:visible
+    say: attakar
+    value: Attakar
+    must_succeed: false
+    note: search Attakar by name (the ward the programme served) — the debounced geocode
+      lists it
+  - kind: wait_for
+    target: css:.mp-ab-results:visible button
+    seconds: 10
+    must_succeed: false
+    note: the search result appears
+  - kind: hold
+    seconds: 2
+    note: let the debounced result settle before clicking
+  - kind: click
+    target: css:.mp-ab-results:visible button
+    say: intervention
+    must_succeed: false
+    note: click the Attakar result — adds it to the plan area tagged the intervention
+      arm; this is the reference the Compare ranking needs
+  - kind: wait_for
+    target: css:.mp-ab-compare:visible
+    seconds: 12
+    must_succeed: false
+    note: Compare surrounding boundaries surfaces once an intervention ward is selected
+      in sampling mode
+  - kind: hold
+    seconds: 2
+    note: Attakar tagged intervention; the Compare button is live
+  - kind: click
+    target: css:.mp-ab-compare:visible
+    say: compare
+    must_succeed: false
+    note: run Compare — rank every neighbouring ward against Attakar by density overlap
+  - kind: wait_for
+    target: best match first
+    seconds: 180
+    must_succeed: false
+    note: wait for the ranking to finish — the header flips from 'Processing N…' to
+      'best match first' once every neighbour is scored
+  - kind: scroll_to
+    target: css:#surrounding-compare
+    must_succeed: false
+    note: frame the ranked comparison table — each neighbour's overlap %, distribution
+      chart and row colour
+  - kind: click
+    target: css:.mp-ab-col-i[data-col="match"]:visible
+    say: match
+    must_succeed: false
+    note: highlight the Match column as the narration introduces 'Match is how similar
+      the two wards look overall'
+  - kind: hold
+    seconds: 8
+    note: Match column highlighted — the overall-similarity metric
+  - kind: click
+    target: css:.mp-ab-col-i[data-col="balance"]:visible
+    say: balance
+    must_succeed: false
+    note: Matched balance — the column that decides the match
+  - kind: hold
+    seconds: 15
+    note: Matched balance column highlighted
+  - kind: click
+    target: css:.mp-ab-col-i[data-col="common"]:visible
+    say: support
+    must_succeed: false
+    note: Common support — matching only draws from the shared density range
+  - kind: hold
+    seconds: 12
+    note: Common support column highlighted
   concept_claim: With Attakar tagged intervention, "Compare surrounding boundaries"
     ranks every bordering ward by how much its building-density distribution overlaps
     Attakar's (best match first) and fills each candidate on the map in its row colour,
