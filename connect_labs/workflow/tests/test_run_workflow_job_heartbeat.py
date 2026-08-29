@@ -22,7 +22,10 @@ def test_run_workflow_job_init_resets_updated_at_even_with_a_stale_prior_heartbe
         inst = mock.Mock()
         inst.get_run.return_value = mock.Mock(data={"state": dict(prior_state)}, definition_id=5110)
 
-        def fake_update_run_state(_run_id, updates):
+        def fake_update_run_state(_run_id, updates, run=None):
+            # `run=` is passed by _update_job_state so the record it already
+            # fetched isn't re-fetched over HTTP; accepted here so the fake
+            # matches the real signature.
             written_active_jobs.append(updates.get("active_job"))
 
         inst.update_run_state.side_effect = fake_update_run_state
