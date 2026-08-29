@@ -129,8 +129,8 @@ scenes:
     target: css:#id_application_deadline
     note: application deadline
   - kind: fill
+    say: deadline
     target: css:#id_application_deadline
-    say: timeline
     value: '2026-09-30'
     note: set the deadline
   - kind: fill
@@ -160,7 +160,6 @@ scenes:
     value: maya.okafor@kaura-health.gov.ng
     note: her contact
   - kind: scroll_to
-    say: application
     target: text:Add Question
     note: the Application Questions section
   - kind: click
@@ -502,7 +501,7 @@ scenes:
     note: optional budget for the awarded firm
   - kind: click
     target: css:button[type=submit]:has-text("Award")
-    say: confirms
+    say: awards
     must_succeed: true
     note: award the firm — records the decision and notifies the organization
   - kind: wait_for
