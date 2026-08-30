@@ -405,8 +405,6 @@ scenes:
   - kind: scroll_to
     note: camera move; submits
     target: css:button[type=submit]:has-text("Submit Response")
-      application — the ACTION frame for this scene is the firm-named, coverage-ticked,
-      Submit-enabled form
   - kind: hold
     seconds: 7.0
     note: ACTION-FRAME teach hold ON the act the narration describes — "ticks the

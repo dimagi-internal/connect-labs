@@ -307,6 +307,7 @@ scenes:
     note: a sampling study, not coverage
     target: css:#btn-mode-sampling
   - kind: scroll_to
+    say: methodology
     target: css:#sampling-config
   - kind: hold
     note: PSUs + building-footprint-size filter — one methodology for both arms
@@ -335,6 +336,7 @@ scenes:
     target: css:#study-readout
     say: record
   - kind: click
+    say: households
     target: css:.mp-panel-tabs button[data-tab="layers"]
     must_succeed: false
     note: reveal the Layers tab (panel auto-switches to Inspect after generating)
