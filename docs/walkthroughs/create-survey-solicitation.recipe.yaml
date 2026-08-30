@@ -187,6 +187,7 @@ scenes:
     flow - give it its own beat so the criteria land on camera under narration.'
   actions:
   - kind: scroll_to
+    say: rubric
     note: frame the generate button
     target: text:Generate with AI
   - kind: hold
@@ -205,6 +206,7 @@ scenes:
     note: 'ACTION-FRAME: the AI-generated scoring criteria appear — name/weight/scoring
       guide'
   - kind: scroll_to
+    say: keeps
     target: css:button[type=submit]:has-text("Create Solicitation")
     note: bring the publish button into frame alongside the just-filled form — the
       ACTION frame for this scene is the completed-but-not-yet-published form (scope
@@ -403,6 +405,7 @@ scenes:
     seconds: 4
     note: 'ACTION-FRAME: the AI coach suggestions for strengthening the answer'
   - kind: scroll_to
+    say: staff
     note: camera move; submits
     target: css:button[type=submit]:has-text("Submit Response")
   - kind: hold
