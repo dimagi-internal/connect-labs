@@ -127,6 +127,23 @@
   const STUDY_STATUS_BADGE = { defining: "bg-gray-100 text-gray-700", sampled: "bg-amber-100 text-amber-800", reviewed: "bg-green-100 text-green-800", exported: "bg-emerald-100 text-emerald-800" };
   // Lifecycle ordering so we can render forward moves as the primary (solid) action
   // and backward moves as muted "← back" controls.
+  // A study's member plans are deliberately hidden from the lifecycle columns
+  // above, so the per-plan Submit/Approve buttons never reach them. Without a
+  // study-level control a study created on this page could never be approved,
+  // and so could never satisfy isReadyToSolicit — the design review had no
+  // finish line. Advance the study as a unit instead: it is the STUDY, not one
+  // arm of it, that gets reviewed and approved.
+  const STUDY_FWD = { draft: "in_review", in_review: "approved" };
+  const STUDY_FWD_LABEL = { in_review: "Submit study for review", approved: "Approve study" };
+  // Only when every arm agrees on where it is — mixed arms are a real divergence
+  // and belong in the per-plan controls, not behind one button.
+  function studyAdvance(members) {
+    if (!members.length) return null;
+    const statuses = new Set(members.map((p) => p.status));
+    if (statuses.size !== 1) return null;
+    const to = STUDY_FWD[[...statuses][0]];
+    return to ? { to, label: STUDY_FWD_LABEL[to] } : null;
+  }
   const ORDER = { draft: 0, in_review: 1, approved: 2, deployed: 3 };
   const FWD_LABEL = { in_review: "Submit for review", approved: "Approve", deployed: "Deploy →" };
 
@@ -289,6 +306,10 @@
       const countLabel = isStudy
         ? `${wardCount} ${wardCount === 1 ? "ward" : "wards"}`
         : `${g.plan_ids.length} ${g.plan_ids.length === 1 ? "plan" : "plans"}`;
+      const advance = isStudy ? studyAdvance(members) : null;
+      const advanceBtn = advance
+        ? `<button class="button button-sm primary-dark" data-study-advance="${g.group_id}" data-to="${advance.to}">${esc(advance.label)}</button>`
+        : "";
       const readyToSolicit = isReadyToSolicit(g);
       const solicitBtn = `<a class="button button-sm ${readyToSolicit ? "primary-dark" : "outline-style"}" href="${groupSolicitationUrl(g.group_id)}" title="Create a survey solicitation covering this group's plans">Create solicitation</a>`;
       // A finished, ready-to-solicit study is the page's hero: span the full grid
@@ -331,7 +352,7 @@
           ${readyToSolicit
             ? `${solicitBtn}<a class="button button-sm outline-style" href="${groupManageUrl(g.group_id)}">Open study</a>`
             : isStudy
-              ? `<a class="button button-sm primary-dark" href="${groupManageUrl(g.group_id)}">Open study</a>${solicitBtn}`
+              ? `${advanceBtn}<a class="button button-sm ${advance ? "outline-style" : "primary-dark"}" href="${groupManageUrl(g.group_id)}">Open study</a>${solicitBtn}`
               : `<a class="button button-sm outline-style" href="${groupShareUrl(g.group_id)}">Open share page</a>
                  <button class="button button-sm outline-style" data-share="${g.group_id}" data-shared="${g.shared}">${g.shared ? "Unshare" : "Mark shared"}</button>${solicitBtn}`}
         </div>
@@ -440,6 +461,23 @@
     selected.clear(); load();
   });
   $("groups").addEventListener("click", async (e) => {
+    const adv = e.target.closest("[data-study-advance]");
+    if (adv) {
+      const gid = adv.dataset.studyAdvance, to = adv.dataset.to;
+      const g = (DATA.groups || []).find((x) => String(x.group_id) === String(gid));
+      if (!g) return;
+      adv.disabled = true;
+      for (const pid of g.plan_ids || []) {
+        const r = await post(transitionUrl(pid), { to });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.status !== "ok") { $("status").textContent = j.detail || ("HTTP " + r.status); adv.disabled = false; return; }
+      }
+      // Every arm approved means the design review is finished — say so on the
+      // study itself, so it stops reading "Sampled" while wearing approved plans
+      // (and becomes the ready-to-solicit hero).
+      if (to === "approved") await post(groupUpdateUrl(gid), { status: "reviewed" });
+      load(); return;
+    }
     const b = e.target.closest("[data-share]"); if (!b) return;
     const r = await post(groupUpdateUrl(b.dataset.share), { shared: b.dataset.shared !== "true" });
     if (r.ok) load();
