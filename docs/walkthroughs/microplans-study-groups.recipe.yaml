@@ -435,7 +435,7 @@ scenes:
     note: in review
   - kind: click
     target: css:button[data-study-advance][data-to="approved"]
-    say: approved
+    say: approves
     must_succeed: true
     note: Approve study - the last arm approved also records "reviewed" on the study
       itself, which is what makes it ready to solicit
