@@ -388,62 +388,68 @@ scenes:
 - id: maya-completes-the-study
   actions:
   - kind: wait_for
-    target: Candidate plans
+    target: Studies & plan groups
     seconds: 20
     must_succeed: true
-    note: the program board loaded; the Candidate plans inventory is open by default
-      (loose drafts present)
+    note: the program board loaded
   - kind: hold
     seconds: 2
-    note: let the plan rows hydrate from the plans API
-  - kind: scroll_to
-    target: css:button[data-transition="4493"][data-to="in_review"]:visible
-    must_succeed: false
-    note: frame the 4493 row (do NOT toggle the inventory, already open)
+    note: let the study and plan cards hydrate from the plans API
   - kind: wait_for
-    target: css:button[data-transition="4493"][data-to="in_review"]:visible
+    target: css:button[data-study-advance][data-to="in_review"]
     seconds: 20
     must_succeed: true
-    note: the 4493 'Submit for review' button is visible — the board loaded its
-      plans and 4493 is in draft
+    note: Maya's own study card offers "Submit study for review". This selector is
+      unambiguous by construction - the only OTHER study on this board is the
+      finished R6 group, whose plan is already approved and so offers no forward
+      step, and loose candidate plans carry data-transition (per-plan), never
+      data-study-advance (per-study).
+  - kind: scroll_to
+    target: css:button[data-study-advance][data-to="in_review"]
+    must_succeed: false
+    note: frame the study card she has just built
   - kind: click
-    target: css:button[data-transition="4493"][data-to="in_review"]:visible
+    target: css:button[data-study-advance][data-to="in_review"]
     say: advances
     must_succeed: true
-    note: Submit for review — advance 4493 draft → in_review
+    note: Submit study for review - advances every arm of HER study, the one built
+      on camera in scenes 2-7, not a stand-in plan.
   - kind: wait_for
-    target: css:button[data-transition="4493"][data-to="approved"]:visible
+    target: css:button[data-study-advance][data-to="approved"]
     seconds: 20
     must_succeed: true
-    note: the row's action flips to 'Approve' once in review
+    note: the card's action flips to "Approve study" once the arms are in review
   - kind: hold
     seconds: 2
     note: in review
   - kind: click
-    target: css:button[data-transition="4493"][data-to="approved"]:visible
+    target: css:button[data-study-advance][data-to="approved"]
     say: approved
     must_succeed: true
-    note: Approve — advance in_review → approved; the study is ready for a survey
-      firm
+    note: Approve study - the last arm approved also records "reviewed" on the study
+      itself, which is what makes it ready to solicit
   - kind: wait_for
-    target: css:button[data-transition="4493"][data-to="deployed"]:visible
+    target: Finished study
     seconds: 20
     must_succeed: false
-    note: the approved plan now offers Deploy → (confirms the transition landed)
+    note: the study settles into its finished hero state, carrying the Create
+      solicitation handoff - the exact door the survey-solicitation walkthrough
+      opens next
   - kind: hold
     seconds: 4
-    note: plan Approved — each area keeps its arm labs-side, but the Connect export
+    note: study Approved - each area keeps its arm labs-side, but the Connect export
       carries no arm column
-  concept_claim: Maya advances the single two-arm plan draft → in_review → approved
-    from the workspace, completing a balanced study. Each work area stores its arm
+  concept_claim: Maya advances the study she just built — draft → in_review →
+    approved — from the workspace, completing a balanced study. Each work area stores its arm
     labs-side so future analysis can distinguish the arms, while the arm is kept out
     of the LLO/field-facing Connect case properties and export — so the arms carry
     forward labs-side without entering the field-facing data the surveyors receive.
-  design_intent: 'Bet: completing the study is approving the one plan that holds both
-    arms; blinding is a display choice, not data loss — each work area keeps its arm
+  design_intent: 'Bet: completing the study is approving the STUDY, not one arm of
+    it — the object a planner reviews is the matched pair; blinding is a display choice, not data loss — each work area keeps its arm
     labs-side for analysis, while the LLO/field-facing surfaces never show it.'
-  show: 'From the program workspace Maya advances the two-arm plan: Submit for review,
-    then Approve, and the card settles into its finished Reviewed state. Each work
+  show: 'From the program workspace Maya advances her own study: Submit study for
+    review, then Approve study, and the card settles into its finished Reviewed
+    state, carrying the Create solicitation handoff. Each work
     area keeps its arm labs-side for analysis, but the Connect-facing export carries
     no arm column — so the field never sees which ward is which arm.'
   url: /microplans/program/10008/
