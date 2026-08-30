@@ -998,11 +998,23 @@
           (p.has_population ? 'people' : 'buildings') +
           ', and less swayed by a single extreme group.',
       ),
-      chip(
-        'Coverage',
-        (k.coverage_pct ?? 100) + ' %',
-        'Share of all buildings in the ward that made it into the active plan: active buildings ÷ (active + excluded buildings) × 100.',
-      ),
+      // This number is the share of the ward's buildings that survived EXCLUSION —
+      // it says nothing about how many get visited. On a coverage plan those are the
+      // same thing, so "Coverage" is right. On a sampling plan they are opposites: a
+      // sample deliberately visits a fraction of the frame, and a "Coverage 100 %"
+      // chip beside a few hundred sampled rooftops reads as "we visit every
+      // household". Same number, honest name.
+      mpMode === 'sampling'
+        ? chip(
+            'Frame retained',
+            (k.coverage_pct ?? 100) + ' %',
+            'Share of the ward’s buildings kept in the sampling FRAME after exclusions — the population the sample is drawn from. This is not survey coverage: a sample visits a subset of this frame by design.',
+          )
+        : chip(
+            'Coverage',
+            (k.coverage_pct ?? 100) + ' %',
+            'Share of all buildings in the ward that made it into the active plan: active buildings ÷ (active + excluded buildings) × 100.',
+          ),
       chip(
         'Excluded',
         (k.excluded ? k.excluded.count : 0) + ' areas',
