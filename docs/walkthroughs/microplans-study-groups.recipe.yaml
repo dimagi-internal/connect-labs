@@ -161,6 +161,7 @@ scenes:
 - id: maya-compares-the-surrounding-wards-to-find-a-match
   actions:
   - kind: click
+    say: boundary
     target: css:#btn-area-admin
     must_succeed: false
     note: Boundaries tab — the boundary search + source controls mount in the map's
@@ -171,6 +172,7 @@ scenes:
     must_succeed: false
     note: the boundary search box is ready
   - kind: click
+    say: sampling
     target: css:#btn-mode-sampling
     must_succeed: false
     note: switch to the two-arm mode first
