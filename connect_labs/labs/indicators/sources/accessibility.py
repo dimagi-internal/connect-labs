@@ -45,6 +45,7 @@ from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators.models import License, Source
 from connect_labs.labs.indicators.sources import geotiff, worldpop_raster
 from connect_labs.labs.indicators.sources.base import Row, http_get_bytes
+from connect_labs.labs.indicators.sources.geotiff import sample_onto
 
 logger = logging.getLogger(__name__)
 
@@ -80,29 +81,6 @@ def fetch_travel(bbox: tuple[float, float, float, float]) -> geotiff.Raster:
     if body[:2] not in (b"MM", b"II"):
         raise RuntimeError(f"accessibility: expected a GeoTIFF, got {body[:200]!r}")
     return geotiff.read(body)
-
-
-def sample_onto(target: geotiff.Raster, source: geotiff.Raster) -> np.ndarray:
-    """Read ``source`` at every cell centre of ``target``.
-
-    Nearest-cell lookup by coordinate. Both grids are 30 arc-second, so this is
-    a re-index rather than a resampling — but it is done by coordinate because
-    the two are published on different extents and index alignment is a
-    coincidence we must not rely on.
-    """
-    xs, ys = target.cell_centres()
-    cols = np.floor((xs - source.origin_x) / source.pixel_w).astype(int)
-    rows = np.floor((ys - source.origin_y) / source.pixel_h).astype(int)
-    inside_x = (cols >= 0) & (cols < source.width)
-    inside_y = (rows >= 0) & (rows < source.height)
-
-    out = np.full((target.height, target.width), np.nan)
-    if not inside_x.any() or not inside_y.any():
-        return out
-    values = source.masked()
-    grid = values[np.ix_(np.clip(rows, 0, source.height - 1), np.clip(cols, 0, source.width - 1))]
-    out[np.ix_(inside_y, inside_x)] = grid[np.ix_(inside_y, inside_x)]
-    return out
 
 
 def _stats(people: np.ndarray, minutes: np.ndarray, mask: np.ndarray) -> dict[str, float] | None:

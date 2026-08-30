@@ -343,3 +343,60 @@ def test_a_sub_cell_boundary_takes_only_its_share_of_the_population():
     r = _grid([[1000.0, 0.0], [0.0, 0.0]])
     speck = shapely.box(0.4, 9.4, 0.5, 9.5)  # a hundredth of a 1x1 cell
     assert worldpop_raster.zonal_sum(r, speck) == pytest.approx(10.0)
+
+
+# --------------------------------------------------------------------------
+# Windowed reading — what makes a global grid usable at all
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("tiled", [False, True])
+def test_a_window_returns_the_right_cells_and_says_where_they_are(tiled):
+    """The window's origin must move with it, or everything downstream shifts."""
+    values = np.arange(16, dtype="f4").reshape(4, 4)
+    raw = _tiff(values, tiled=tiled)
+    # Cells are 1 degree; centres run x = 0.5..3.5 and y = 9.5..6.5.
+    r = geotiff.read(raw, bbox=(1.0, 7.0, 3.0, 9.0))
+    np.testing.assert_allclose(r.masked(), values[1:3, 1:3])
+    assert (r.origin_x, r.origin_y) == (1.0, 9.0)
+    xs, ys = r.cell_centres()
+    np.testing.assert_allclose(xs, [1.5, 2.5])
+    np.testing.assert_allclose(ys, [8.5, 7.5])
+
+
+def test_a_window_covering_everything_is_the_whole_raster():
+    values = np.arange(16, dtype="f4").reshape(4, 4)
+    raw = _tiff(values)
+    np.testing.assert_allclose(geotiff.read(raw, bbox=(-99, -99, 99, 99)).masked(), values)
+
+
+def test_a_window_off_the_raster_says_so():
+    raw = _tiff(np.zeros((4, 4), dtype="f4"))
+    with pytest.raises(geotiff.UnsupportedGeoTIFF, match="does not overlap"):
+        geotiff.read(raw, bbox=(50, 50, 51, 51))
+
+
+def test_planar_is_only_a_problem_when_there_is_more_than_one_band():
+    """GHSL's grid declares planar with a single band, where it means nothing."""
+    raw = bytearray(_tiff(np.arange(4, dtype="f4").reshape(2, 2)))
+    i = raw.find(struct.pack(">HHI", 284, 3, 1))
+    raw[i + 8 : i + 10] = struct.pack(">H", 2)
+    np.testing.assert_allclose(geotiff.read(bytes(raw)).masked(), np.arange(4).reshape(2, 2))
+
+
+# --------------------------------------------------------------------------
+# DEGURBA
+# --------------------------------------------------------------------------
+
+
+def test_rural_is_the_three_degurba_rural_classes_and_nothing_else():
+    from connect_labs.labs.indicators.sources import settlement
+
+    classes = np.array([[10, 11, 12], [13, 21, 30]])
+    np.testing.assert_array_equal(
+        settlement.classify(classes),
+        np.array([[False, True, True], [True, False, False]]),
+    )
+    # Water is not rural. It is the class most likely to be swept in by a
+    # "not urban" test, and it would inflate every coastal district.
+    assert not settlement.classify(np.array([10])).any()

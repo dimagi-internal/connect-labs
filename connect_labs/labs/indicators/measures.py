@@ -783,6 +783,45 @@ register(
 )
 
 
+register(
+    Measure(
+        code="share_rural",
+        label="Rural population share (DEGURBA)",
+        kind=Kind.RATE,
+        unit="% of population",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_total",
+        downscale=True,
+        description=(
+            "Share of the population living in cells DEGURBA classes as rural. "
+            "The definition dominates this number: DEGURBA calls 17% of "
+            "Rwanda's villages rural against a national figure near 72%, "
+            "because Rwanda's density clears its urban threshold nearly "
+            "everywhere. Comparable between countries, which is a different "
+            "property from being right for any one of them -- always quote it "
+            "with the definition that produced it."
+        ),
+        threshold_min=5,
+        threshold_max=95,
+        threshold_default=50,
+    )
+)
+
+register(
+    Measure(
+        code="pop_rural",
+        label="Rural population (DEGURBA)",
+        kind=Kind.COUNT,
+        unit="people",
+        agg=Agg.SUM,
+        description=(
+            "Population in cells DEGURBA classes as rural. A count, so it sums "
+            "exactly and can carry a per-person cost."
+        ),
+    )
+)
+
+
 # Every coverage measure gets a matching unreached count, registered here so the
 # rollup treats it as the summable quantity it is. This runs last, after every
 # coverage measure exists — a gap registered before its denominator would be a
@@ -815,6 +854,7 @@ TARGETABLE = (
     "malaria_incidence",
     "travel_time_healthcare",
     "share_beyond_2h",
+    "share_rural",
     "itn_use",
     "itn_access",
     "irs_coverage",

@@ -31,6 +31,7 @@ from connect_labs.labs.indicators.sources import (
     igme,
     igme_subnational,
     malaria_atlas,
+    settlement,
     worldbank,
     worldpop,
     worldpop_raster,
@@ -46,6 +47,7 @@ STAGES = (
     "malaria",
     "population_raster",
     "accessibility",
+    "settlement",
 )
 
 
@@ -397,6 +399,33 @@ class Command(BaseCommand):
             done = 0
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {pool.submit(accessibility.load_country, iso, levels=levels): iso for iso in codes}
+                for future in as_completed(futures):
+                    iso = futures[future]
+                    done += 1
+                    try:
+                        rows = future.result()
+                    except Exception as exc:  # noqa: BLE001 — one country must not lose the rest
+                        self.stdout.write(self.style.WARNING(f"  {iso}: {exc}"))
+                        continue
+                    written += base.upsert(rows)
+                    self.stdout.write(f"  [{done}/{len(codes)}] {iso}: {len(rows)} values")
+            ctx["rows"] = written
+            ctx["countries"] = len(codes)
+
+    def _stage_settlement(self, codes, opts):
+        """Rural and urban by DEGURBA, counted over people rather than land.
+
+        The global grid is fetched once and shared: it is 33 MB, and every
+        country reads a window out of it rather than its own copy.
+        """
+        levels = tuple(int(x) for x in str(opts.get("levels") or "0,1,2").split(","))
+        workers = max(1, int(opts.get("workers") or 4))
+
+        with self._run(Source.GHSL, "degurba") as ctx:
+            written = 0
+            done = 0
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(settlement.load_country, iso, levels=levels): iso for iso in codes}
                 for future in as_completed(futures):
                     iso = futures[future]
                     done += 1
