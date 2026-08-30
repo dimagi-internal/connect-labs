@@ -76,6 +76,21 @@ def plan_to_json(plan) -> dict:
     }
 
 
+def input_area_ward_name(area) -> str:
+    """An input area's ward name, across both shapes plans store it in.
+
+    A plan built from the boundary picker stores the ward under ``name``; a plan
+    generated in the editor stores it under ``ward``, alongside ``lga``/``state``.
+    Reading only ``name`` reported ``ward_count=0`` for every editor-built plan,
+    which made the program board treat its study as empty scaffolding and hide the
+    card entirely — the study a planner had just built was invisible on the board
+    it was built from. Returns "" when the area names no ward.
+    """
+    if not isinstance(area, dict):
+        return ""
+    return str(area.get("name") or area.get("ward") or "").strip()
+
+
 def plan_summary_row(plan) -> dict:
     """Compact per-plan row for the workspace (status, region, headline KPIs)."""
     from connect_labs.microplans.core import plan as plan_lib
@@ -100,7 +115,7 @@ def plan_summary_row(plan) -> dict:
         # two-arm study plan has 2 (intervention + comparison). The workspace sums
         # this across a study group's member plans so the group card can report the
         # real ward count instead of the number of member plans.
-        "ward_count": len([a for a in input_areas if isinstance(a, dict) and a.get("name")]),
+        "ward_count": len([a for a in input_areas if input_area_ward_name(a)]),
         "max_spread_km": k["plan"]["max_spread_km"],
         "coverage_pct": k["coverage_pct"],
         "excluded": k["excluded"]["count"],
