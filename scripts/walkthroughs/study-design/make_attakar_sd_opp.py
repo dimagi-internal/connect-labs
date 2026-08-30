@@ -4,7 +4,7 @@
 A FULL service-delivery project across ALL of Attakar (the R6 intervention ward), so
 that surveying the whole ward is justified: visits saturate the ward via many
 settlements spread across the real Attakar polygon. Filed under program 10008 (the
-Vitamin-A Kaura study) via the new SyntheticOpportunity.program_id.
+Vitamin-A Riyom study) via the new SyntheticOpportunity.program_id.
 
 Flow (proper synthetic infrastructure, mirrors how Kano opp 10009 was made):
   1. synthetic_create_labs_only(program_id=10008)  -> allocates a labs-only opp id
@@ -44,7 +44,7 @@ def build_manifest(opp_id: int) -> str:
     """A real, ward-spanning CHC service-delivery project inside Attakar."""
     manifest = {
         "opportunity_id": opp_id,
-        "opportunity_name": "Kaura CHC — Service Delivery (Attakar)",
+        "opportunity_name": "Attakar CHC — Service Delivery",
         "random_seed": 20260612,
         "timeline": {
             "start_date": "2026-01-05",
@@ -111,7 +111,7 @@ def main() -> int:
         created, err = s.tool(
             "synthetic_create_labs_only",
             {
-                "label": "Kaura CHC — Service Delivery (Attakar)",
+                "label": "Attakar CHC — Service Delivery",
                 "gdrive_folder_id": "pending",
                 "org_name": "Vitamin-A Program",
                 "program_name": PROGRAM_NAME,

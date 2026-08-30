@@ -112,8 +112,8 @@ scenes:
     value: rfp
     note: pick the call type — a Request for Proposal
   - kind: select
-    target: css:#id_status
     say: status
+    target: css:#id_status
     value: active
     note: set Status to Active
   - kind: scroll_to
@@ -125,21 +125,22 @@ scenes:
       + can target known orgs (do NOT check it; a public call hides the owner-as-firm
       response form downstream)'
   - kind: scroll_to
+    say: deadline
     target: css:#id_application_deadline
     note: application deadline
   - kind: fill
-    target: css:#id_application_deadline
     say: deadline
+    target: css:#id_application_deadline
     value: '2026-09-30'
     note: set the deadline
   - kind: fill
-    target: css:#id_expected_start_date
     say: start
+    target: css:#id_expected_start_date
     value: '2026-10-15'
     note: expected start
   - kind: fill
-    target: css:#id_expected_end_date
     say: end
+    target: css:#id_expected_end_date
     value: '2026-12-31'
     note: expected end
   - kind: scroll_to
@@ -155,19 +156,19 @@ scenes:
     note: contact email
   - kind: fill
     target: css:#id_contact_email
-    say: email
+    say: contact
     value: maya.okafor@kaura-health.gov.ng
     note: her contact
   - kind: scroll_to
     target: text:Add Question
     note: the Application Questions section
   - kind: click
+    say: application
     target: text:Add Question
-    say: question
     note: add an application question for the firms
   - kind: fill
     target: css:textarea[x-model="question.text"]
-    say: answer
+    say: question
     value: How many enumerators can you field in Kaura, and what is your experience
       running household coverage surveys?
     note: Maya writes a question the firms must answer
@@ -186,8 +187,9 @@ scenes:
     flow - give it its own beat so the criteria land on camera under narration.'
   actions:
   - kind: scroll_to
+    say: rubric
+    note: frame the generate button
     target: text:Generate with AI
-    note: the Evaluation Criteria section + Generate with AI
   - kind: hold
     seconds: 1.4
     note: about to AI-generate the scoring rubric
@@ -204,6 +206,7 @@ scenes:
     note: 'ACTION-FRAME: the AI-generated scoring criteria appear — name/weight/scoring
       guide'
   - kind: scroll_to
+    say: keeps
     target: css:button[type=submit]:has-text("Create Solicitation")
     note: bring the publish button into frame alongside the just-filled form — the
       ACTION frame for this scene is the completed-but-not-yet-published form (scope
@@ -290,6 +293,7 @@ scenes:
     committed coverage.
   actions:
   - kind: scroll_to
+    say: coverage
     target: css:#sol-plan-checklist
     note: NON-effecting camera move scrolling the "Which areas can you cover?" checklist
       into frame. CRITICAL for the before-frame — because this leading action is NOT
@@ -299,6 +303,7 @@ scenes:
       a leading wait_for the navigation used wait_until=commit and the before-frame
       caught the crossfading-out owner manage view instead of this respond form.
   - kind: wait_for
+    say: wards
     target: css:#sol-plan-checklist input[type=checkbox]
     note: gate on the coverage CHECKLIST checkbox — the load-bearing, always-present
       DOM element that proves the respond page (for the just-minted call) has loaded.
@@ -320,31 +325,32 @@ scenes:
       so the before/after pair shows the checklist-commit mechanic end-to-end (disabled
       → submitted)
   - kind: scroll_to
+    say: firm
     target: css:#id_firm_name
     note: bring the "Your organization" identity fields into frame — a real firm names
       itself when it answers a public call; the owner reviews and awards a NAMED survey
       firm, not the individual account that submitted the form
   - kind: fill
     target: css:#id_firm_name
-    say: name
     value: Sahel Field Research
     note: the applying firm names itself — Sahel Field Research, a plausible northern-Nigeria
       independent household-survey firm. This is what renders on the responses list
       and award screen (org_name), so scenes 4-5 show a believable firm, NOT the operator's
       own ace@dimagi-ai.com dev account.
   - kind: fill
-    target: css:#id_firm_email
     say: email
+    target: css:#id_firm_email
     value: bids@sahelfieldresearch.org
     note: the firm's contact email — stored as submitted_by_email and shown beside
       the firm name on the responses list, replacing the operator account's email
   - kind: scroll_to
+    say: wards
     target: css:#sol-plan-checklist
     note: scroll back to the coverage checklist now that the firm has identified itself,
       to commit the area
   - kind: click
+    say: staff
     target: css:#sol-plan-checklist input[type=checkbox]
-    say: area
     must_succeed: true
     note: tick the coverage area — synced two-way with the map; this enables Submit
       (≥1 required). The created call has exactly one plan (R6 — Attakar × Gura),
@@ -384,7 +390,7 @@ scenes:
     note: about to get AI feedback on the draft
   - kind: click
     target: css:#coach-btn
-    say: feedback
+    say: coach
     note: Get Feedback — the coach reviews the draft answer against the evaluation
       criteria
   - kind: wait_for
@@ -393,16 +399,15 @@ scenes:
     note: AI coach (Anthropic) finishes reviewing the answer
   - kind: scroll_to
     target: css:#coach-content
-    say: suggestions
+    say: suggests
     note: frame the coaching feedback
   - kind: hold
     seconds: 4
     note: 'ACTION-FRAME: the AI coach suggestions for strengthening the answer'
   - kind: scroll_to
+    say: staff
+    note: camera move; submits
     target: css:button[type=submit]:has-text("Submit Response")
-    note: bring the Submit Response button into frame alongside the now-completed
-      application — the ACTION frame for this scene is the firm-named, coverage-ticked,
-      Submit-enabled form
   - kind: hold
     seconds: 7.0
     note: ACTION-FRAME teach hold ON the act the narration describes — "ticks the
@@ -412,8 +417,8 @@ scenes:
       NOT on the result receipt. Sized ~7s so the de-dweller keeps this teach frame
       as the load-bearing one. The submit click then resolves the act on camera.
   - kind: click
-    target: css:button[type=submit]:has-text("Submit Response")
     say: submits
+    target: css:button[type=submit]:has-text("Submit Response")
     must_succeed: true
     note: submit the firm's application — the REAL submit; redirects to the call's
       public detail page
@@ -454,15 +459,13 @@ scenes:
       in the hero frame below.
   - kind: hover
     target: css:a:has-text("Award")
-    say: award
     seconds: 2.5
     note: glance at the Award action Maya is reaching for next — hover only, the award
       itself happens in scene 5; reading the row does not mutate state. (This may
       scroll the table right; the trailing hover below scrolls it back so the firm-name
       hero is un-clipped.)
   - kind: scroll_to
-    target: css:th:has-text("Organization")
-    say: organization
+    target: css:th:has-text("Applicant")
     note: scroll the wide responses table back to its LEFT edge so the Organization
       column header + the firm's Organization cell are fully in frame for the hero
       (the earlier Award hover scrolled the table right, clipping "Organization" to
@@ -493,6 +496,7 @@ scenes:
     next step, not done for her today.
   actions:
   - kind: wait_for
+    say: budget
     target: css:input[name=reward_budget]
     note: the award form with the firm summary (org name + coverage) has loaded
   - kind: hold
@@ -500,12 +504,11 @@ scenes:
     note: let Maya read the "You're awarding" summary before she commits
   - kind: fill
     target: css:input[name=reward_budget]
-    say: budget
     value: '500000'
     note: optional budget for the awarded firm
   - kind: click
     target: css:button[type=submit]:has-text("Award")
-    say: confirms
+    say: awards
     must_succeed: true
     note: award the firm — records the decision and notifies the organization
   - kind: wait_for
