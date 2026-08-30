@@ -49,6 +49,23 @@ def test_plan_summary_row_ward_count_ignores_unnamed_areas():
     assert serialization.plan_summary_row(plan)["ward_count"] == 1
 
 
+def test_plan_summary_row_counts_editor_built_wards_stored_as_ward():
+    # A plan generated in the editor stores its wards under "ward" (with lga/state
+    # alongside), not "name". Counting only "name" reported ward_count=0 for every
+    # such plan, and the program board hides a study whose members sum to 0 wards —
+    # so a study built in the editor was invisible on the board it was built from.
+    plan = _Plan(
+        id=12,
+        data={
+            "input_areas": [
+                {"ward": "Attakar", "lga": "Riyom", "state": "Plateau", "arm": "intervention"},
+                {"ward": "Gura", "lga": "Riyom", "state": "Plateau", "arm": "comparison"},
+            ]
+        },
+    )
+    assert serialization.plan_summary_row(plan)["ward_count"] == 2
+
+
 def test_plan_summary_row_ward_count_zero_without_input_areas():
     assert serialization.plan_summary_row(_Plan(id=11))["ward_count"] == 0
 
