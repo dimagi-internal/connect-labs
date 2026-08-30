@@ -9,9 +9,9 @@
     "maya-sees-the-firm-tied-to-the-coverage-she-designed",
     "maya-awards-the-firm-and-sees-it-was-notified"
   ],
-  "fetched_at": "2026-08-30T00:16:15.111121+00:00",
+  "fetched_at": "2026-08-30T00:27:07.000255+00:00",
   "name": "create-survey-solicitation",
-  "narrative": "Maya has designed her matched study. But to measure her own program credibly, the survey has to be run by someone independent. So she needs to recruit a survey firm — to visit the households and collect the outcomes. Rather than start a separate process, she turns the finished study into a call for a firm on the Connect network, with the wards, coverage, and scope already attached. Maya's finished Round 6 study sits in her portfolio, flagged ready to solicit — and right on the card is the way to turn that plan into a call for a survey firm, no separate tool. Maya builds the call. The title and coverage carry over from her study, so a firm sees exactly the wards she sampled. She adds a description and the scope of work, sets the type and the status, and leaves it publicly listed across the whole Connect network — or pointed at organizations she already knows work here. Then the deadline and the expected start and end dates, the estimated scale, and her contact. Finally she writes an application question every firm must answer. Then, instead of hand-writing a scoring rubric, she clicks Generate with AI — and the platform drafts the evaluation criteria, weighted, straight from her scope and her questions. Each criterion carries its own weight and a scoring guide, so two reviewers reading the same response should land in the same place. She reads them, keeps them, and publishes the call — the rubric is fixed before a single firm has seen it. A survey firm opens the call. The scoring criteria Maya generated show right beside each question, so the firm knows exactly how it will be judged - and it drafts its answer. Before submitting, the firm runs its draft through the AI Application Coach — which reads it against those same published criteria and suggests where to strengthen it: press for verifiable evidence, not unbacked claims. It is the same rubric the reviewer will use, so the firm is not guessing at what counts. The firm picks the coverage it can staff, and submits. Back in her workspace, Maya opens the responses and sees Sahel Field Research tied to the exact coverage she designed. She awards Sahel Field Research — the screen records the decision and notifies the organization. Standing up the live opportunity is the next step, not yet built.",
+  "narrative": "Maya has designed her matched study. But to measure her own program credibly, the survey has to be run by someone independent. So she needs to recruit a survey firm — to visit the households and collect the outcomes. Rather than start a separate process, she turns the finished study into a call for a firm on the Connect network, with the wards, coverage, and scope already attached. Maya's finished Round 6 study sits in her portfolio, flagged ready to solicit — and right on the card is the way to turn that plan into a call for a survey firm, no separate tool. Maya builds the call. The title and coverage carry over from her study, so a firm sees exactly the wards she sampled. She adds a description and the scope of work, sets the type and the status, and leaves it publicly listed across the whole Connect network — or pointed at organizations she already knows work here. Then the deadline and the expected start and end dates, the estimated scale, and her contact. Finally she writes an application question every firm must answer. Then, instead of hand-writing a scoring rubric, she clicks Generate with AI — and the platform drafts the evaluation criteria, weighted, straight from her scope and her questions. Each criterion carries its own weight and a scoring guide, so two reviewers reading the same response should land in the same place. She reads them, keeps them, and publishes the call — the rubric is fixed before a single firm has seen it. The applicant sees the coverage on offer. The firm names itself, adds an email, confirms the wards it can staff, then reads the criteria it will be judged against beside each question — and drafts its answer. Before submitting, the firm runs its draft through the AI Application Coach — which reads it against those same published criteria and suggests where to strengthen it: press for verifiable evidence, not unbacked claims. It is the same rubric the reviewer will use, so the firm is not guessing at what counts. The firm picks the coverage it can staff, and submits. Back in her workspace, Maya opens the responses and sees Sahel Field Research tied to the exact coverage she designed. Maya sets the budget the winning firm will be paid, then awards Sahel Field Research — the screen records the decision and notifies the organization. Standing up the live opportunity is the next step, not yet built.",
   "personas": {
     "firm": {
       "color": "#059669",
@@ -103,7 +103,7 @@
         }
       ],
       "id": "a-survey-firm-reads-the-open-call-and-ticks-the-area-it-can-staff",
-      "narrative": "A survey firm opens the call. The scoring criteria Maya generated show right beside each question, so the firm knows exactly how it will be judged - and it drafts its answer.",
+      "narrative": "The applicant sees the coverage on offer. The firm names itself, adds an email, confirms the wards it can staff, then reads the criteria it will be judged against beside each question — and drafts its answer.",
       "persona": "firm",
       "provenance": "S5",
       "title": "A survey firm reads the open call and ticks the area it can staff"
@@ -145,12 +145,12 @@
         }
       ],
       "id": "maya-awards-the-firm-and-sees-it-was-notified",
-      "narrative": "She awards Sahel Field Research — the screen records the decision and notifies the organization. Standing up the live opportunity is the next step, not yet built.",
+      "narrative": "Maya sets the budget the winning firm will be paid, then awards Sahel Field Research — the screen records the decision and notifies the organization. Standing up the live opportunity is the next step, not yet built.",
       "persona": "maya",
       "provenance": "S7",
       "title": "Maya awards the firm and sees it was notified"
     }
   ],
   "slug": "create-survey-solicitation",
-  "version": 14
+  "version": 15
 }

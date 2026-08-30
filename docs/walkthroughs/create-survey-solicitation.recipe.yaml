@@ -187,8 +187,8 @@ scenes:
     flow - give it its own beat so the criteria land on camera under narration.'
   actions:
   - kind: scroll_to
+    note: frame the generate button
     target: text:Generate with AI
-    note: the Evaluation Criteria section + Generate with AI
   - kind: hold
     seconds: 1.4
     note: about to AI-generate the scoring rubric
@@ -291,6 +291,7 @@ scenes:
     committed coverage.
   actions:
   - kind: scroll_to
+    say: coverage
     target: css:#sol-plan-checklist
     note: NON-effecting camera move scrolling the "Which areas can you cover?" checklist
       into frame. CRITICAL for the before-frame — because this leading action is NOT
@@ -300,6 +301,7 @@ scenes:
       a leading wait_for the navigation used wait_until=commit and the before-frame
       caught the crossfading-out owner manage view instead of this respond form.
   - kind: wait_for
+    say: wards
     target: css:#sol-plan-checklist input[type=checkbox]
     note: gate on the coverage CHECKLIST checkbox — the load-bearing, always-present
       DOM element that proves the respond page (for the just-minted call) has loaded.
@@ -334,15 +336,18 @@ scenes:
       and award screen (org_name), so scenes 4-5 show a believable firm, NOT the operator's
       own ace@dimagi-ai.com dev account.
   - kind: fill
+    say: email
     target: css:#id_firm_email
     value: bids@sahelfieldresearch.org
     note: the firm's contact email — stored as submitted_by_email and shown beside
       the firm name on the responses list, replacing the operator account's email
   - kind: scroll_to
+    say: wards
     target: css:#sol-plan-checklist
     note: scroll back to the coverage checklist now that the firm has identified itself,
       to commit the area
   - kind: click
+    say: staff
     target: css:#sol-plan-checklist input[type=checkbox]
     must_succeed: true
     note: tick the coverage area — synced two-way with the map; this enables Submit
@@ -398,9 +403,8 @@ scenes:
     seconds: 4
     note: 'ACTION-FRAME: the AI coach suggestions for strengthening the answer'
   - kind: scroll_to
-    say: submits
+    note: camera move; submits
     target: css:button[type=submit]:has-text("Submit Response")
-    note: bring the Submit Response button into frame alongside the now-completed
       application — the ACTION frame for this scene is the firm-named, coverage-ticked,
       Submit-enabled form
   - kind: hold
@@ -491,6 +495,7 @@ scenes:
     next step, not done for her today.
   actions:
   - kind: wait_for
+    say: budget
     target: css:input[name=reward_budget]
     note: the award form with the firm summary (org name + coverage) has loaded
   - kind: hold
