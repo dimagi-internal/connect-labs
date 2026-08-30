@@ -37,11 +37,11 @@ scenes:
   - kind: scroll_to
     target: css:#new-study
   - kind: click
+    say: study
     must_succeed: true
     note: one click creates an "Untitled study" and routes to its empty manage page
       — no name dialog
     target: css:#new-study
-    say: study
   - kind: wait_for
     must_succeed: true
     note: 'terminal state: the empty study page'
@@ -111,6 +111,7 @@ scenes:
   - kind: wait_for
     target: Define boundaries
   - kind: click
+    say: campaign
     must_succeed: false
     note: open the opportunity picker
     target: Pick opportunities
@@ -121,10 +122,12 @@ scenes:
     seconds: 15
     target: css:[data-testid=sd-opp-10053]:visible
   - kind: click
+    say: attakar
     must_succeed: false
     note: select the Attakar CHC service-delivery opp (10053, same programme)
     target: css:[data-testid=sd-opp-10053]:visible
   - kind: click
+    say: confirms
     must_succeed: false
     note: close the opportunity picker
     target: Done
@@ -140,6 +143,7 @@ scenes:
       framing
     seconds: 4
   - kind: scroll_to
+    say: ward
     must_succeed: false
     note: center the 50vh map pane in-frame so the fitted ~435-point Attakar delivery
       cloud (the narrated saturation) is the legible subject, not a thumbnail
@@ -243,8 +247,8 @@ scenes:
     seconds: 15
     note: Matched balance column highlighted
   - kind: click
+    say: common
     target: css:.mp-ab-col-i[data-col="common"]:visible
-    say: support
     must_succeed: false
     note: Common support — matching only draws from the shared density range
   - kind: hold
@@ -265,6 +269,7 @@ scenes:
 - id: maya-rejects-the-closest-match-and-adds-the-right-match
   actions:
   - kind: click
+    say: common
     target: css:.mp-ab-col-i[data-col="common"]:visible
     must_succeed: false
     note: re-sort so the weighed column stays highlighted
@@ -277,12 +282,13 @@ scenes:
     must_succeed: false
     note: wait for the scored table to paint its add control
   - kind: scroll_to
+    say: gura
     target: css:.mp-ab-addbnd[data-name="Gura"]:visible
     must_succeed: false
     note: frame the chosen row beneath the rejected top row
   - kind: click
+    say: adds
     target: css:.mp-ab-addbnd[data-name="Gura"]:visible
-    say: gura
     must_succeed: false
     note: Add Gura — the closest un-served neighbour that shares the most common support
       — as the comparison arm
@@ -409,6 +415,7 @@ scenes:
       step, and loose candidate plans carry data-transition (per-plan), never
       data-study-advance (per-study).
   - kind: scroll_to
+    say: study
     target: css:button[data-study-advance][data-to="in_review"]
     must_succeed: false
     note: frame the study card she has just built
@@ -428,7 +435,7 @@ scenes:
     note: in review
   - kind: click
     target: css:button[data-study-advance][data-to="approved"]
-    say: approved
+    say: approves
     must_succeed: true
     note: Approve study - the last arm approved also records "reviewed" on the study
       itself, which is what makes it ready to solicit
