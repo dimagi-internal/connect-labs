@@ -124,20 +124,22 @@ register(
 
 register(
     Method(
-        code="national_map",
-        label="National estimate (Malaria Atlas Project)",
+        code="national_surface",
+        label="National estimate from gridded surfaces",
         resolution=Resolution.NATIONAL,
-        source_order=("map",),
+        source_order=("map", "map_worldpop", "ghsl"),
         description=(
-            "MAP's 5 km surfaces summed or averaged to the whole country. The "
-            "only national method that carries case and death counts rather "
-            "than rates, so it is the one that can answer 'how many'."
+            "Gridded surfaces summed or averaged to the whole country — MAP's "
+            "malaria layers, the Weiss et al. travel-time surface crossed with "
+            "WorldPop, and DEGURBA. The only national method that carries "
+            "counts rather than rates, so it is the one that can answer 'how "
+            "many' instead of 'how bad'."
         ),
         caveat=(
-            "Malaria only. A geostatistical model fitted to survey points and "
-            "routine surveillance, not a count of anything — its national "
-            "totals sit near WHO's but do not match them, and the difference "
-            "is a real disagreement rather than rounding."
+            "Models, not measurements: fitted to survey points and covariates "
+            "rather than counted. MAP's national malaria totals sit near WHO's "
+            "but do not match them, and that difference is a real disagreement "
+            "between modelling groups rather than rounding."
         ),
     )
 )
@@ -210,21 +212,22 @@ register(
 register(
     Method(
         code="subnational_surface",
-        label="Modelled 5 km surface (Malaria Atlas Project)",
+        label="Modelled surface, read on this unit",
         resolution=Resolution.SUBNATIONAL,
-        source_order=("map",),
+        source_order=("map", "map_worldpop", "ghsl"),
         description=(
-            "A continuous surface read on each unit's own geometry, so every "
+            "A continuous grid read on each unit's own geometry, so every "
             "boundary at every level gets a value computed for it rather than "
             "inherited from its parent. Counts are summed over the cells; rates "
-            "are averaged weighted by population, recovered from MAP's own "
-            "incidence count and rate. Annual to 2024."
+            "are averaged weighted by the population in each cell, never by "
+            "area. Covers malaria (MAP, annual to 2024), physical access to "
+            "care (Weiss et al. 2020 x WorldPop) and rural share (DEGURBA)."
         ),
         caveat=(
-            "Malaria only, and modelled rather than measured: where surveillance "
-            "is thin the surface is the model's opinion, smoothly interpolated "
-            "and therefore looking more certain than it is. Its value for a "
-            "small district is an average over a handful of 5 km cells."
+            "Modelled rather than measured: where the underlying observations "
+            "are thin the surface is the model's opinion, smoothly interpolated "
+            "and therefore looking more certain than it is. A small district's "
+            "value is an average over a handful of cells."
         ),
     )
 )

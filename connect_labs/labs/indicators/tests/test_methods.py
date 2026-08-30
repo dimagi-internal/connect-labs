@@ -434,3 +434,57 @@ class TestOffMethodUnits:
         )
 
         assert selection.off_method_units == 0
+
+
+class TestEveryTargetableIndicatorIsReachable:
+    """A source with no method behind it is invisible, and fails silently.
+
+    ``default_method_for`` picks the first method at a resolution that can
+    answer, and falls back to the registry default when none can. So an
+    indicator whose source nobody declared does not error — it selects a method
+    that cannot see it, returns zero units, and lists every country as
+    unsupported. That is indistinguishable from "there is no burden here".
+
+    It happened: the accessibility and settlement loaders wrote rows under
+    sources (``map_worldpop``, ``ghsl``) that no method's ``source_order``
+    named, so five indicators shipped answerable-looking and unanswerable.
+    """
+
+    def test_every_source_a_loader_writes_belongs_to_some_method(self):
+        from connect_labs.labs.indicators.methods import METHODS
+        from connect_labs.labs.indicators.models import Source
+
+        declared = {s for m in METHODS.values() for s in m.source_order}
+        # Exempt by kind, not by convenience. Derived values are computed from
+        # other rows rather than selected on; the population and fertility
+        # sources supply DENOMINATORS, which resolve through
+        # resolve.DEFAULT_SOURCE_ORDER rather than through a method. Nothing
+        # here is targetable, so none of it can be silently unreachable.
+        exempt = {
+            Source.DERIVED,
+            Source.WORLDPOP,
+            Source.WORLDPOP_RASTER,
+            Source.HAPI,
+            Source.WORLDBANK,
+        }
+        orphans = {s for s in Source.values if s not in declared and s not in exempt}
+        assert not orphans, (
+            f"sources {sorted(orphans)} are written by a loader but named by no method's "
+            "source_order, so any indicator relying on them selects a method that cannot "
+            "see it and silently returns nothing"
+        )
+
+    def test_every_targetable_indicator_has_a_method_declaring_a_source_for_it(self):
+        """Registry-level reachability, independent of what is loaded."""
+        from connect_labs.labs.indicators import measures
+        from connect_labs.labs.indicators.methods import METHODS
+
+        declared = {s for m in METHODS.values() for s in m.source_order}
+        assert declared, "no method declares any source"
+        # Every targetable measure must be answerable by *some* declared source.
+        # The registry cannot know which, so this asserts the weaker but still
+        # load-bearing property: the surface methods exist and name the gridded
+        # sources the raster loaders write.
+        for code in ("share_beyond_2h", "travel_time_healthcare", "share_rural"):
+            measures.get(code)  # raises if the measure went away
+        assert {"map", "map_worldpop", "ghsl"} <= declared
