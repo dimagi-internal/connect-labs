@@ -218,54 +218,95 @@ rather than points. Neither is available at continental scale today.
         "scanned_now": True,
     },
     {
-        "indicator": "",
-        "topic": "rural-urban-definition",
+        "indicator": "share_rural",
+        "topic": "which-definition",
         "summary": (
-            "Rural/urban is definition-dependent and the definition dominates the answer: "
-            "DEGURBA calls 17% of Rwanda's villages rural against a national figure near 72%."
+            "DEGURBA is loaded and is the only rural definition comparable between "
+            "countries -- but the definition dominates the answer, so it is never quoted "
+            "without naming it."
         ),
         "body": """
 There is no neutral answer to "how many rural people are there". DEGURBA
-(GHS-SMOD, endorsed by the UN Statistical Commission in 2020) is the best
-available *comparable* definition, which is a different property from being the
-right one for a given country.
+(GHS-SMOD R2023A, endorsed by the UN Statistical Commission in 2020) is loaded
+here because it is the best available *comparable* definition, which is a
+different property from being the right one for a given country.
 
-Applied to Rwanda's 14,815 villages it classes 2,553 of them (17%) as rural,
-holding 2,616,526 people (20% of the population). Rwanda's own national figure
-is near 72%. Neither is wrong: Rwanda's population density clears DEGURBA's
-urban threshold across most of the country, so a definition built for global
-comparability reads Rwanda as mostly urban while a definition built for Rwanda
-does not.
+**The definition dominates the answer.** Applied to Rwanda's villages it classes
+17% of them as rural; by population it reads 23.6%, or about 3.0 million people.
+Rwanda's own national figure is near 72%. Neither is wrong: Rwanda's density
+clears DEGURBA's urban threshold across most of the country, so a definition
+built for global comparability reads Rwanda as mostly urban while a definition
+built for Rwanda does not. Nigeria comes out at 54.8% (112.8 million), against a
+World Bank figure nearer 48% — the same effect, much smaller.
 
-**Always state which definition produced the number.** A rural figure quoted
-without its definition is not a fact about the world.
+**Egypt is the extreme case and the one to quote when explaining this.** DEGURBA
+reads it as 12.0% rural; Egypt's own statistics say roughly 57%. Both describe
+the same country. Egypt's population is packed along the Nile at densities that
+clear DEGURBA's urban threshold almost everywhere, so a definition built on
+density calls a farming village urban. Nothing is broken; the definition is
+answering a different question.
 
-For reference, the village-size statistics that came out of the same work:
-Rwandan villages average 871 people, median 676. A tempting shortcut — take the
-rural population and divide by an average village size — was tested against the
-register and came out 18% high (3,004 predicted against 2,553 actual). Usable
-as an order-of-magnitude estimate if the error is stated; not usable as a count.
+Africa as a whole comes out at 745.2 million rural, about 55% — close to the
+World Bank's ~56% for sub-Saharan Africa, which is the reassuring part: the
+continental figure is unremarkable and the divergence is concentrated in
+countries whose settlement pattern is unusual. The most rural are South Sudan
+(98.3%), Chad (91.0%) and Somalia (90.8%); the least are Egypt, Rwanda,
+Mauritius and South Africa.
+
+So: **always state which definition produced the number.** A rural figure quoted
+without its definition is not a fact about the world. Every value this loader
+writes says so in its method text.
+
+**Counted over people, not over land.** The classification is a grid, so counting
+rural *cells* would answer a question about area. Both DEGURBA and WorldPop are
+read on the same 30 arc-second cells and the share is of population.
+
+**Rural is classes 11, 12 and 13 only.** Water is class 10 and is deliberately
+excluded — it is the class most likely to be swept in by a "not urban" test, and
+including it would inflate every coastal and lakeside district.
+
+**Sampled by coordinate.** Both grids are 30 arc-second but published on
+different extents, so index alignment is a coincidence, not a fact.
+
+For reference from the village work: Rwandan villages average 871 people, median
+676. A tempting shortcut — rural population divided by an average village size —
+tested 18% high against the register (3,004 predicted against 2,553 actual).
+Usable as an order of magnitude if the error is stated; not usable as a count.
+See [[village-level-geography]].
 """.strip(),
-        "checks": [],
+        "checks": [
+            {"kind": "source", "indicator": "share_rural", "source": "ghsl", "expected": True},
+            {"kind": "measure", "code": "pop_rural", "expected": {"kind": "count"}},
+            {
+                "kind": "value",
+                "indicator": "share_rural",
+                "iso": "RWA",
+                "level": 0,
+                "expected": 23.6,
+                "tolerance": 0.1,
+            },
+        ],
         "alternatives": [
             {
-                "name": "DEGURBA / GHS-SMOD",
+                "name": "DEGURBA / GHS-SMOD R2023A",
                 "url": "https://human-settlement.emergency.copernicus.eu/degurba.php",
                 "licence": "CC BY 4.0",
                 "verdict": "adopted",
                 "why": (
-                    "The only definition comparable across countries, and UN-endorsed. Comparable is not the same as "
-                    "correct for one country."
+                    "The only definition comparable across countries, and UN-endorsed. Comparable is "
+                    "not the same as correct for one country, which is why the definition is carried "
+                    "on every value."
                 ),
             },
             {
                 "name": "National statistical office definitions",
                 "url": "",
                 "licence": "varies",
-                "verdict": "candidate",
+                "verdict": "rejected",
                 "why": (
-                    "Right for single-country work, useless for a continental comparison — the thresholds differ by "
-                    "country."
+                    "Right for single-country work and useless for a continental comparison -- the "
+                    "thresholds differ by country, sometimes sharply. Worth quoting alongside DEGURBA "
+                    "when a proposal is about one country."
                 ),
             },
         ],

@@ -53,6 +53,7 @@ class Source(models.TextChoices):
     DHS_CALIBRATED = "dhs_calibrated", "DHS (re-levelled)"
     MAP = "map", "Malaria Atlas Project"
     MAP_WORLDPOP = "map_worldpop", "MAP accessibility x WorldPop"
+    GHSL = "ghsl", "GHS-SMOD (DEGURBA) x WorldPop"
     DERIVED = "derived", "Derived"
 
 
