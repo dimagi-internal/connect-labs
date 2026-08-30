@@ -398,6 +398,7 @@ scenes:
     seconds: 4
     note: 'ACTION-FRAME: the AI coach suggestions for strengthening the answer'
   - kind: scroll_to
+    say: submits
     target: css:button[type=submit]:has-text("Submit Response")
     note: bring the Submit Response button into frame alongside the now-completed
       application — the ACTION frame for this scene is the firm-named, coverage-ticked,
