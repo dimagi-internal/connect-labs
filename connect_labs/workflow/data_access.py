@@ -2284,16 +2284,26 @@ class PipelineDataAccess(BaseDataAccess):
             result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
 
             rows = self._serialize_pipeline_rows(result)
-            return {
-                "rows": rows,
-                "metadata": {
-                    "row_count": len(rows),
-                    "from_cache": getattr(result, "from_cache", False),
-                    "pipeline_id": definition_id,
-                    "pipeline_name": definition.name,
-                    "terminal_stage": schema.get("terminal_stage", "visit_level"),
-                },
+            metadata = {
+                "row_count": len(rows),
+                "from_cache": getattr(result, "from_cache", False),
+                "pipeline_id": definition_id,
+                "pipeline_name": definition.name,
+                "terminal_stage": schema.get("terminal_stage", "visit_level"),
             }
+            # Surfaced when a raw-visit refetch came back suspiciously smaller
+            # than what was already cached and got rejected in favor of the
+            # previous (larger, still-good) data — see
+            # SQLBackend.stream_raw_visits / fetch_raw_visits and
+            # AnalysisPipeline.stream_analysis. Render code can check this the
+            # same way it already checks metadata.auth_error, to show a
+            # dismissible warning banner rather than silently serving data
+            # that's quietly out of date.
+            result_metadata = getattr(result, "metadata", None)
+            raw_fetch_anomaly = result_metadata.get("raw_fetch_anomaly") if isinstance(result_metadata, dict) else None
+            if raw_fetch_anomaly:
+                metadata["raw_fetch_anomaly"] = raw_fetch_anomaly
+            return {"rows": rows, "metadata": metadata}
 
         except Exception as e:
             logger.exception("Pipeline execution failed")

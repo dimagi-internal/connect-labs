@@ -32,6 +32,7 @@ import type {
   CreateTaskWithOCSParams,
   TaskWithOCSResult,
   PipelineResult,
+  RawFetchAnomaly,
   ActiveJobState,
   SaveWorkerResultParams,
   SaveWorkerResultResponse,
@@ -834,6 +835,27 @@ function WorkflowRunner({
         .map((key) => ({ key, ...(authStatus[key] || {}) }))
         .filter((s) => s.active === false)
     : [];
+
+  // Generic, workflow-agnostic surface for the raw-fetch shrink guard (see
+  // SQLBackend.stream_raw_visits / fetch_raw_visits): a pipeline's refetch
+  // came back suspiciously smaller than what was already cached, so the
+  // backend rejected it and kept serving the previous (larger, still-good)
+  // data. Shown as a dismissible-by-outcome banner above the render — data
+  // keeps showing underneath, unlike the missingAuth gate above, since this
+  // isn't blocking: the page is showing GOOD (if slightly older) data, not
+  // broken data. Mirrors the missingAuth pattern: computed once here from
+  // shared pipelineData state, rendered once, applies to every workflow with
+  // no render-code changes needed.
+  const rawFetchAnomalies = useMemo(
+    () =>
+      Object.entries(pipelineData).flatMap(([alias, result]) =>
+        (result?.metadata?.raw_fetch_anomalies || []).map((a) => ({
+          alias,
+          ...a,
+        })),
+      ),
+    [pipelineData],
+  );
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Tab state for switching between workflow and pipeline editing
@@ -882,6 +904,30 @@ function WorkflowRunner({
     const tolerance = pageParams.get('tolerance');
     if (tolerance) {
       url.searchParams.set('tolerance', tolerance);
+    }
+    // Same forwarding for the raw-fetch-anomaly banner's action links
+    // (?refresh=1 / ?accept_low_count=1 on the PAGE url) — AnalysisPipeline
+    // reads these off the SSE endpoint's own request.GET, so without this
+    // forward they'd have no effect no matter how the page got reloaded.
+    if (pageParams.get('refresh') === '1') {
+      url.searchParams.set('refresh', '1');
+    }
+    if (pageParams.get('accept_low_count') === '1') {
+      url.searchParams.set('accept_low_count', '1');
+      // Unlike ?refresh=1 (harmless to leave sticky — it just means "always
+      // pull fresh"), accept_low_count DISABLES the shrink-guard safety
+      // check for this request. Left in the address bar, a plain reload (F5)
+      // — or the URL getting bookmarked/shared — would keep bypassing the
+      // guard indefinitely, silently reopening the exact overwrite risk this
+      // guard exists to close. Strip it from the visible URL immediately
+      // after honoring it once; the in-flight `url` above still carries it.
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('accept_low_count');
+      window.history.replaceState(
+        null,
+        '',
+        cleanUrl.pathname + cleanUrl.search,
+      );
     }
 
     const eventSource = new EventSource(url.toString());
@@ -1889,11 +1935,62 @@ function WorkflowRunner({
                   <p className="text-sm">{pipelineLoadingStatus}</p>
                 </div>
               ) : (
-                <DynamicWorkflow
-                  {...workflowProps}
-                  renderCode={renderCode}
-                  onError={handleRenderError}
-                />
+                <>
+                  {rawFetchAnomalies.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 mb-4 space-y-3">
+                      {rawFetchAnomalies.map(
+                        (a: RawFetchAnomaly & { alias: string }, i: number) => {
+                          const buildRetryUrl = (
+                            extra: Record<string, string>,
+                          ) => {
+                            const retryUrl = new URL(window.location.href);
+                            retryUrl.searchParams.set('refresh', '1');
+                            Object.entries(extra).forEach(([k, v]) =>
+                              retryUrl.searchParams.set(k, v),
+                            );
+                            return retryUrl.pathname + retryUrl.search;
+                          };
+                          return (
+                            <div
+                              key={`${a.alias}-${a.opportunity_id}-${i}`}
+                              className="text-sm text-amber-900"
+                            >
+                              <strong>{a.alias}</strong> (opportunity{' '}
+                              {a.opportunity_id}): the latest data refresh came
+                              back with only{' '}
+                              {a.attempted_count.toLocaleString()} rows, well
+                              below the {a.previous_count.toLocaleString()}{' '}
+                              already on record — showing the previous data
+                              instead of a possibly-incomplete refresh. This
+                              usually clears up on its own within a few minutes.
+                              <div className="mt-1 flex gap-4">
+                                <a
+                                  href={buildRetryUrl({})}
+                                  className="underline font-semibold"
+                                >
+                                  Retry now
+                                </a>
+                                <a
+                                  href={buildRetryUrl({
+                                    accept_low_count: '1',
+                                  })}
+                                  className="underline font-semibold"
+                                >
+                                  Use the lower count anyway
+                                </a>
+                              </div>
+                            </div>
+                          );
+                        },
+                      )}
+                    </div>
+                  )}
+                  <DynamicWorkflow
+                    {...workflowProps}
+                    renderCode={renderCode}
+                    onError={handleRenderError}
+                  />
+                </>
               )}
             </div>
           </>
