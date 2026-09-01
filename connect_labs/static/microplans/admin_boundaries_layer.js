@@ -604,6 +604,50 @@
     // shared core of a plain click-to-select (intervention) and the surrounding
     // control finder's "Set as control" (comparison). Already-selected → just
     // re-tag the arm. Returns true on success.
+    // Adding an area you cannot see is a dead end, and in the two-arm case it was
+    // actively misleading: the map is framed on the INTERVENTION ward (that is what
+    // Compare ran against), so clicking "Add boundary" on a comparison ward dropped
+    // it in off-screen. The panel said "added" while the map still showed only the
+    // other arm. Frame every selected area after an add, so the arm you just chose
+    // is on screen next to the one you are matching it to.
+    function fitToSelected() {
+      if (!map || !selected.size) return;
+      let west = 180,
+        south = 90,
+        east = -180,
+        north = -90,
+        seen = false;
+      const eat = (c) => {
+        if (typeof c[0] === 'number' && typeof c[1] === 'number') {
+          seen = true;
+          if (c[0] < west) west = c[0];
+          if (c[0] > east) east = c[0];
+          if (c[1] < south) south = c[1];
+          if (c[1] > north) north = c[1];
+          return;
+        }
+        for (let i = 0; i < c.length; i += 1) eat(c[i]);
+      };
+      selected.forEach((v) => {
+        const g = v && v.geometry;
+        const coords =
+          g && (g.coordinates || (g.geometry && g.geometry.coordinates));
+        if (coords) eat(coords);
+      });
+      if (!seen) return;
+      try {
+        map.fitBounds(
+          [
+            [west, south],
+            [east, north],
+          ],
+          { padding: 48, duration: 900, maxZoom: 11 },
+        );
+      } catch (e) {
+        /* unusable geometry, or the style is mid-load — framing is a nicety, never fatal */
+      }
+    }
+
     async function addBoundary(desc, arm) {
       const id = desc.key;
       arm = arm || 'intervention';
@@ -630,6 +674,7 @@
         onAreaAdd(id, d.geometry, desc, arm);
         syncSelectedSource();
         renderSummary();
+        fitToSelected();
         setStatus('');
         return true;
       } catch (e) {
