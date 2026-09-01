@@ -349,7 +349,7 @@ published openly by UNICEF.
         "topic": "worldpop-adm2-limit",
         "summary": (
             "WorldPop's stats API refuses some geometries outright, which stalled the ADM2 "
-            "backfill at 1,005 of 1,518. Reading its raster directly finished it: 1,517."
+            "backfill. Reading its rasters directly finished it -- the total AND the age bands."
         ),
         "body": """
 WorldPop's hosted zonal-statistics service answers a polygon with an age-sex
@@ -362,9 +362,46 @@ It was not. Re-running `--missing-only` against the outstanding units returns
 them — the service declining those specific geometries, not throttling us. No
 amount of waiting was ever going to finish it.
 
-**The raster has those units regardless.** Downloading a country's 1 km grid and
-summing it here sidesteps the service entirely: about 5 MB per country, computed
-once and discarded. ADM1 went 754 -> 778 and ADM2 went 1,005 -> 1,517 of 1,518.
+**The rasters have those units regardless.** Downloading a country's 1 km grid
+and summing it here sidesteps the service entirely: about 5 MB per band per
+country, computed once and discarded.
+
+    pop_total       ADM1  754 -> 778      ADM2  1,005 -> 1,517
+    pop_u5          ADM1  764 -> 778      ADM2  1,321 -> 1,517
+    pop_f_15_49     ADM1  761 -> 778      ADM2  1,321 -> 1,517
+    pop_u1          ADM1  754 -> 778      ADM2  1,159 -> 1,514
+
+The age bands took the same treatment a day after the total, from WorldPop's
+age-sex structure product: eleven rasters per country answer all three
+(single-year f_0/m_0 for under-ones, five-year f_0_4/m_0_4 for under-fives, and
+the seven female bands 15-19 through 45-49). This note previously said the API
+was "still the source for the age bands, which the aggregate grid does not
+carry" -- true when written, and it stopped being true without any check
+noticing, because it was a claim about the world rather than about a number.
+There are now checks on the age bands for exactly that reason.
+
+**The age bands are 2022, the total is 2020.** Both UN-adjusted, so their
+national totals reconcile to UN World Population Prospects and to each other.
+
+**It matters more for the bands than for the total.** A count cannot be
+inherited from the province above -- ``Measure.downscale`` forbids it, correctly
+-- so a district with no age band contributed *nothing at all* to a continental
+total rather than a coarse figure. Half the districts missing was half the
+children missing.
+
+**And it shows up where the tool is actually read.** ``births`` is derived from
+the under-one cohort, and re-deriving it after the bands landed took it from 761
+to 778 of 778 regions and from 1,193 to 1,517 of 1,518 districts, with
+``expected_deaths`` following. The headline question this app exists to answer is
+"how many births a year happen in the places above the threshold", so a births
+figure covering four fifths of districts was the binding constraint on every
+answer rather than a footnote. Re-run the ``births`` stage after any population
+load: it is not automatic, and nothing fails when it is skipped.
+
+The fertility cross-check disagrees with the cohort method by more than 25% in
+460 of 2,294 regions. That is high, the loader says so rather than burying it,
+and it is why ``births_fertility_check`` is stored as its own measure instead of
+being folded into the headline.
 
 **The two WorldPop products are not the same number.** Across Nigeria's 37 states
 the raster reads about 5% *below* the API, consistently, because the grid used
@@ -389,6 +426,13 @@ is the honest answer.
             {"kind": "source", "indicator": "pop_total", "source": "worldpop_raster", "expected": True},
             {"kind": "coverage", "indicator": "pop_total", "level": 1, "expected": 778},
             {"kind": "coverage", "indicator": "pop_total", "level": 2, "expected": 1517},
+            # The age bands, checked rather than asserted in prose. The claim that
+            # the grid could not carry them went stale silently once, because
+            # nothing here could fail when it did.
+            {"kind": "source", "indicator": "pop_u1", "source": "worldpop_raster", "expected": True},
+            {"kind": "coverage", "indicator": "pop_u1", "level": 2, "expected": 1514},
+            {"kind": "coverage", "indicator": "pop_u5", "level": 2, "expected": 1517},
+            {"kind": "coverage", "indicator": "births", "level": 2, "expected": 1517},
         ],
         "alternatives": [
             {
@@ -408,8 +452,18 @@ is the honest answer.
                 "licence": "CC BY 4.0",
                 "verdict": "adopted",
                 "why": (
-                    "Still the source for the age bands (pop_u1, pop_u5, pop_f_15_49), which the "
-                    "aggregate grid does not carry. Kept first in the resolution order."
+                    "Kept first in the policy order so nothing already loaded moved, but no longer "
+                    "the only route to anything: the age-sex rasters answer the bands too."
+                ),
+            },
+            {
+                "name": "WorldPop 1 km age-sex structure (2022, UN-adjusted)",
+                "url": "https://hub.worldpop.org/geodata/listing?id=87",
+                "licence": "CC BY 4.0",
+                "verdict": "adopted",
+                "why": (
+                    "Eleven bands per country answer pop_u1, pop_u5 and pop_f_15_49 without the "
+                    "service that refuses geometries. Two years fresher than the total."
                 ),
             },
             {
