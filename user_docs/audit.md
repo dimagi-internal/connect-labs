@@ -163,5 +163,6 @@ The **Muac Picture Audit** workflow is a full audit-creation tool scoped to the 
 
 All other steps — AI reviewer selection, pass threshold, exclude already-audited images, and so on — work the same way as described in the sections above.
 
-!!! note "Multiple audits on the same run"
-    If you create a second audit on a Muac Picture Audit run you have already used, both audits are now created correctly. Previously, the second audit reported success but produced nothing, showing the first audit's results as if
+The bulk review screen for this workflow works the same as every other audit workflow: each image has a single **Duplicate/Fake** button, and completed reports are read-only. To change a finished audit you press **Reopen**, exactly as you would in any other workflow.
+
+!
