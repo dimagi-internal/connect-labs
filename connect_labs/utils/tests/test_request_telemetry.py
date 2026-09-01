@@ -564,19 +564,24 @@ class TestBodyDownloadIsNotOurCpu:
         finally:
             request_telemetry._stats.reset(token)
 
-    def test_a_client_built_before_instrumentation_is_not_mis_billed(self):
-        """No headers timestamp means the span is unknown; bill it to nobody rather
-        than to the wrong bucket."""
-        import httpx
+    def test_an_unstamped_response_is_billed_to_nobody(self):
+        """No headers timestamp means the span is unknown — bill it to nobody rather
+        than to the wrong bucket.
 
-        request_telemetry.install_httpx_instrumentation()
-        token = request_telemetry._stats.set(RequestStats())
-        try:
-            client = httpx.Client(transport=self._slow_body_transport(0.02))
-            # Simulate the hook never having run for this response.
-            with patch.object(request_telemetry, "_on_response", lambda response: None):
-                with client:
-                    client.get("https://connect.dimagi.com/export/opportunity/1/image/")
-            assert current_stats().outbound_ms == 0
-        finally:
-            request_telemetry._stats.reset(token)
+        Reachable in real life from a client constructed before instrumentation was
+        installed, or from a test double standing in for a response. Asserted against
+        ``_body_ms`` directly: patching ``_on_response`` on the module cannot produce
+        this state, because a client binds the hook function into its own event_hooks
+        list at construction and keeps that reference.
+        """
+
+        class Unstamped:
+            pass
+
+        assert request_telemetry._body_ms(Unstamped()) == 0.0
+
+        # And the same guard on the shape that actually poisons arithmetic: an
+        # attribute that exists but is not a timestamp.
+        bogus = Unstamped()
+        bogus._labs_telemetry_headers_done = "not-a-float"
+        assert request_telemetry._body_ms(bogus) == 0.0
