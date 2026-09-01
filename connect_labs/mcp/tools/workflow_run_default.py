@@ -14,9 +14,43 @@ mirroring `workflow_create_run`'s pattern instead.
 
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from ..tool_registry import MCPToolError, register
+
+
+def _parse_window_bound(value: str, *, field_name: str, end_of_day: bool = False) -> datetime:
+    """Parse an ISO date/datetime string into a UTC-aware datetime.
+
+    Every template's run_default (e.g. flw_daily_summary_report.py,
+    flw_weekly_audit_report.py) does `window_start <= dt < window_end` against
+    parsed datetimes, so a raw string here blows up with a TypeError deep in
+    template code instead of failing cleanly at the tool boundary.
+
+    A bare calendar date (no time component) is midnight UTC on that date.
+    When end_of_day=True (window_end) a bare date is treated as *inclusive* of
+    that whole day -- the natural reading of window_start="2026-08-27",
+    window_end="2026-08-27" as "just August 27th" -- so it's bumped to
+    midnight the following day to serve as the exclusive upper bound every
+    template's `dt < window_end` comparison expects. A value that already
+    carries a time component is used exactly as given (already a precise
+    boundary, not a calendar date to be widened).
+    """
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        pass
+    else:
+        bound = datetime(parsed.year, parsed.month, parsed.day, tzinfo=timezone.utc)
+        return bound + timedelta(days=1) if end_of_day else bound
+    try:
+        parsed_dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as e:
+        raise MCPToolError("INVALID_SCHEMA", f"{field_name} is not a valid ISO date: {value!r}") from e
+    if parsed_dt.tzinfo is None:
+        parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
+    return parsed_dt
 
 
 def _wda_for_user(user, opportunity_id: int | None = None, program_id: int | None = None):
@@ -69,7 +103,10 @@ def _wda_for_user(user, opportunity_id: int | None = None, program_id: int | Non
             },
             "window_end": {
                 "type": "string",
-                "description": "ISO date. Provide with window_start.",
+                "description": (
+                    "ISO date, inclusive (e.g. window_start=window_end='2026-08-27' covers all of "
+                    "that single day). Provide with window_start."
+                ),
             },
         },
         "required": ["definition_id"],
@@ -102,7 +139,9 @@ def workflow_run_default(
 
         run_kwargs: dict[str, Any] = {}
         if window_start and window_end:
-            run_kwargs["window"] = (window_start, window_end)
+            parsed_start = _parse_window_bound(window_start, field_name="window_start")
+            parsed_end = _parse_window_bound(window_end, field_name="window_end", end_of_day=True)
+            run_kwargs["window"] = (parsed_start, parsed_end)
         elif cadence:
             run_kwargs["cadence"] = cadence
 
