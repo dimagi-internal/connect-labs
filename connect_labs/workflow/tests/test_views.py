@@ -1452,3 +1452,72 @@ class TestFlwAuditReportHistoryApi:
 
         assert resp.status_code == 400
         assert "integer" in json.loads(resp.content)["error"]
+
+
+class TestFlwDailySummaryHistoryApi:
+    """The Program 217 FLW day-by-day report reads this endpoint to build its
+    14-day grid from flw_daily_summary_report's saved daily snapshots --
+    the Program-217 sibling of TestFlwDailyIndicatorHistoryApi above, state
+    key flw_daily_summary rather than flw_daily_indicators."""
+
+    def _request(self, rf, user, definition_id=None):
+        params = {"definition_id": str(definition_id)} if definition_id is not None else {}
+        request = rf.get("/labs/workflow/api/flw-daily-summary-history/", params)
+        request.user = user
+        request.labs_context = {"program_id": 217}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+        return request
+
+    def _run(self, run_id, opportunity_id, report=None, completed=True):
+        data = {"status": "completed" if completed else "in_progress"}
+        if report is not None:
+            data["snapshot"] = {"state": {"flw_daily_summary": report}}
+        return SimpleNamespace(id=run_id, opportunity_id=opportunity_id, data=data, is_completed=completed)
+
+    def test_requires_definition_id(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        from connect_labs.workflow.views import flw_daily_summary_history_api
+
+        resp = flw_daily_summary_history_api(self._request(rf, dimagi_user))
+
+        assert resp.status_code == 400
+        assert "definition_id" in json.loads(resp.content)["error"]
+
+    def test_returns_one_entry_per_completed_run_with_a_report(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        report_2154 = {"date": "2026-08-20", "generated_at": "2026-08-21T01:00:00Z", "flws": [{"username": "alice"}]}
+        report_2155 = {"date": "2026-08-20", "generated_at": "2026-08-21T01:00:00Z", "flws": [{"username": "bob"}]}
+        runs = [
+            self._run(1, 2154, report=report_2154),
+            self._run(2, 2155, report=report_2155),
+            self._run(3, 2156, report=None),  # completed but no snapshot yet (shouldn't happen, but tolerate)
+            self._run(4, 2157, report={"date": "2026-08-20", "flws": []}, completed=False),  # in_progress
+        ]
+
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            mock_wda.list_runs.return_value = runs
+            MockWDA.return_value = mock_wda
+
+            from connect_labs.workflow.views import flw_daily_summary_history_api
+
+            resp = flw_daily_summary_history_api(self._request(rf, dimagi_user, definition_id=12898))
+
+        assert resp.status_code == 200
+        body = json.loads(resp.content)
+        mock_wda.list_runs.assert_called_once_with(definition_id=12898)
+        assert {d["opportunity_id"] for d in body["days"]} == {2154, 2155}
+        day_2154 = next(d for d in body["days"] if d["opportunity_id"] == 2154)
+        assert day_2154["flws"] == [{"username": "alice"}]
+
+    def test_invalid_definition_id_returns_400(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        from connect_labs.workflow.views import flw_daily_summary_history_api
+
+        resp = flw_daily_summary_history_api(self._request(rf, dimagi_user, definition_id="not-a-number"))
+
+        assert resp.status_code == 400
+        assert "integer" in json.loads(resp.content)["error"]
