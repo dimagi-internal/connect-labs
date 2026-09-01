@@ -491,9 +491,7 @@ class SQLBackend:
         # Keep surfacing this on later cache-HIT reads too -- see
         # get_pending_raw_fetch_anomaly's docstring for why extend_raw_cache_ttl
         # alone isn't enough.
-        cache_manager.set_pending_raw_fetch_anomaly(
-            self.last_raw_fetch_anomaly, minutes=RAW_CACHE_ANOMALY_TTL_MINUTES
-        )
+        cache_manager.set_pending_raw_fetch_anomaly(self.last_raw_fetch_anomaly, minutes=RAW_CACHE_ANOMALY_TTL_MINUTES)
         old_visit_dicts = self._load_from_cache(cache_manager, skip_form_json=True, filter_visit_ids=None)
         if not old_visit_dicts:
             # The old cache we were protecting vanished from under us (e.g. a
