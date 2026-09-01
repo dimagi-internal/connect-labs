@@ -914,6 +914,20 @@ function WorkflowRunner({
     }
     if (pageParams.get('accept_low_count') === '1') {
       url.searchParams.set('accept_low_count', '1');
+      // Unlike ?refresh=1 (harmless to leave sticky — it just means "always
+      // pull fresh"), accept_low_count DISABLES the shrink-guard safety
+      // check for this request. Left in the address bar, a plain reload (F5)
+      // — or the URL getting bookmarked/shared — would keep bypassing the
+      // guard indefinitely, silently reopening the exact overwrite risk this
+      // guard exists to close. Strip it from the visible URL immediately
+      // after honoring it once; the in-flight `url` above still carries it.
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('accept_low_count');
+      window.history.replaceState(
+        null,
+        '',
+        cleanUrl.pathname + cleanUrl.search,
+      );
     }
 
     const eventSource = new EventSource(url.toString());
@@ -1926,7 +1940,9 @@ function WorkflowRunner({
                     <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 mb-4 space-y-3">
                       {rawFetchAnomalies.map(
                         (a: RawFetchAnomaly & { alias: string }, i: number) => {
-                          const buildRetryUrl = (extra: Record<string, string>) => {
+                          const buildRetryUrl = (
+                            extra: Record<string, string>,
+                          ) => {
                             const retryUrl = new URL(window.location.href);
                             retryUrl.searchParams.set('refresh', '1');
                             Object.entries(extra).forEach(([k, v]) =>
@@ -1941,12 +1957,12 @@ function WorkflowRunner({
                             >
                               <strong>{a.alias}</strong> (opportunity{' '}
                               {a.opportunity_id}): the latest data refresh came
-                              back with only {a.attempted_count.toLocaleString()}{' '}
-                              rows, well below the{' '}
-                              {a.previous_count.toLocaleString()} already on
-                              record — showing the previous data instead of a
-                              possibly-incomplete refresh. This usually clears
-                              up on its own within a few minutes.
+                              back with only{' '}
+                              {a.attempted_count.toLocaleString()} rows, well
+                              below the {a.previous_count.toLocaleString()}{' '}
+                              already on record — showing the previous data
+                              instead of a possibly-incomplete refresh. This
+                              usually clears up on its own within a few minutes.
                               <div className="mt-1 flex gap-4">
                                 <a
                                   href={buildRetryUrl({})}
@@ -1955,7 +1971,9 @@ function WorkflowRunner({
                                   Retry now
                                 </a>
                                 <a
-                                  href={buildRetryUrl({ accept_low_count: '1' })}
+                                  href={buildRetryUrl({
+                                    accept_low_count: '1',
+                                  })}
                                   className="underline font-semibold"
                                 >
                                   Use the lower count anyway

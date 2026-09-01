@@ -261,15 +261,27 @@ export interface PipelineRow {
  * already cached, and got rejected in favor of the previous (larger,
  * still-good) data rather than silently overwriting it — see
  * SQLBackend.stream_raw_visits / fetch_raw_visits in
- * connect_labs/labs/analysis/backends/sql/backend.py. `opportunity_id` is a
- * string because it's a JSON object key server-side (per_opp), coerced to
- * string by serialization.
+ * connect_labs/labs/analysis/backends/sql/backend.py. This is the shape the
+ * backend actually attaches at a single opportunity's scope (`execute_pipeline`
+ * in connect_labs/workflow/data_access.py, and each entry of `per_opp` below)
+ * — no `opportunity_id`, since at that nesting level it's implied by context.
  */
-export interface RawFetchAnomaly {
-  opportunity_id: string;
+export interface RawFetchAnomalyDetail {
   previous_count: number;
   attempted_count: number;
   threshold_pct: number;
+}
+
+/**
+ * The flat, alias-level aggregation of RawFetchAnomalyDetail — see
+ * PipelineDataStreamView.stream_data in connect_labs/workflow/views.py, which
+ * is the only place `opportunity_id` gets added (spread onto each per_opp
+ * entry when building `raw_fetch_anomalies`). `opportunity_id` is a string
+ * because it's a JSON object key server-side (per_opp), coerced to string by
+ * serialization.
+ */
+export interface RawFetchAnomaly extends RawFetchAnomalyDetail {
+  opportunity_id: string;
 }
 
 export interface PipelineMetadata {
@@ -287,6 +299,14 @@ export interface PipelineMetadata {
 
   /** Error message if execution failed */
   error?: string;
+
+  /**
+   * Set when this pipeline's own fetch (non-multi-opp path — see
+   * PipelineDataAccess.execute_pipeline in connect_labs/workflow/data_access.py)
+   * hit the raw-fetch shrink guard. Multi-opp pipelines surface this via
+   * `raw_fetch_anomalies` / `per_opp` below instead.
+   */
+  raw_fetch_anomaly?: RawFetchAnomalyDetail;
 
   /**
    * CommCare HQ auth error, aggregated up from a per-opp failure in a
@@ -315,7 +335,7 @@ export interface PipelineMetadata {
       error?: string;
       auth_error?: string;
       auth_error_domain?: string;
-      raw_fetch_anomaly?: RawFetchAnomaly;
+      raw_fetch_anomaly?: RawFetchAnomalyDetail;
     }
   >;
 

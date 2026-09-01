@@ -372,7 +372,7 @@ def run(
         )
         initial_version = _extract_int(r.get("result", ""))
         if initial_version is None:
-            s.fail(f"unparseable: {r.get('result','')[:160]!r}")
+            s.fail(f"unparseable: {r.get('result', '')[:160]!r}")
             failed.append(s.name)
             return 1
         s.ok(f"v={initial_version}")
@@ -395,7 +395,7 @@ def run(
         )
         new_version = _extract_int(r.get("result", ""))
         if new_version is None or new_version <= initial_version:
-            s.fail(f"expected v>{initial_version}, got {r.get('result','')[:160]!r}")
+            s.fail(f"expected v>{initial_version}, got {r.get('result', '')[:160]!r}")
             failed.append(s.name)
             return 1
         s.ok(f"v={initial_version} → v={new_version}")
@@ -435,7 +435,7 @@ def run(
         )
         revert_version = _extract_int(r.get("result", ""))
         if revert_version is None or revert_version <= new_version:
-            s.fail(f"expected v>{new_version}, got {r.get('result','')[:160]!r}")
+            s.fail(f"expected v>{new_version}, got {r.get('result', '')[:160]!r}")
             failed.append(s.name)
             return 1
         s.ok(f"v={new_version} → v={revert_version}  (JSX restored)")
@@ -468,7 +468,7 @@ def run(
             )
             rows = _extract_int(r.get("result", ""))
             if rows is None:
-                s.fail(f"unparseable row count: {r.get('result','')[:160]!r}")
+                s.fail(f"unparseable row count: {r.get('result', '')[:160]!r}")
                 failed.append(s.name)
                 return 1
             s.ok(f"preview rows = {rows}")
