@@ -290,11 +290,22 @@ scenes:
     say: adds
     target: css:.mp-ab-addbnd[data-name="Gura"]:visible
     must_succeed: false
-    note: Add Gura — the closest un-served neighbour that shares the most common support
-      — as the comparison arm
+    note: Add Gura — the best-balanced ward among those that share most of Attakar's
+      density range, once Zankan is out — as the comparison arm
+  - kind: hold
+    seconds: 2
+    note: let the add land and the map's fitBounds animation settle
+  - kind: scroll_to
+    say: reframes
+    target: css:#map-pane
+    must_succeed: false
+    note: bring the map back into frame. The panel row flips to "added", but the ARM
+      itself is only visible on the map — and until fitToSelected() the map stayed
+      framed on the intervention ward, so the comparison arm Maya just chose was
+      off-screen while the narration said she had added it.
   - kind: hold
     seconds: 4
-    note: Gura added as the match arm — the two-arm design is set
+    note: both arms on the map — the two-arm design is set
   concept_claim: The table ranks candidates by Matched balance, where Sopp and Gura
     tie best at 0.02 and Zankan trails at 0.03; Maya excludes Zankan because the programme
     treated it last cycle, then picks Gura over Sopp because Gura shares more Common
