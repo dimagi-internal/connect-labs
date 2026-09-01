@@ -12,7 +12,7 @@ from django.contrib.gis.geos import MultiPolygon, Polygon
 from django.utils import timezone
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
-from connect_labs.labs.indicators import measures
+from connect_labs.labs.indicators import measures, policy
 from connect_labs.labs.indicators.models import IndicatorValue, License, Source
 from connect_labs.labs.indicators.resolve import BulkResolver, aggregate, resolve, select_above
 
@@ -34,7 +34,19 @@ def make_boundary(iso: str, level: int, name: str, bid: str, x: float = 0.0) -> 
     )
 
 
-def set_value(boundary, indicator, value, year=2024, source=Source.DHS):
+def set_value(boundary, indicator, value, year=2024, source=None):
+    """Write one value, from a source the indicator is actually allowed to use.
+
+    The default used to be DHS for everything, which was fine while source
+    order only *ranked*. Now that an indicator names which sources may answer it
+    (see ``policy.py``), a fixture writing a population from DHS is writing a
+    row the real system would refuse — so the test would be exercising a state
+    production cannot reach. Defaulting to the indicator's own first eligible
+    source keeps every existing call site meaningful; passing one explicitly
+    still overrides, which is how the eligibility rule itself gets tested.
+    """
+    if source is None:
+        source = policy.sources(indicator)[0]
     return IndicatorValue.objects.create(
         indicator=indicator,
         boundary=boundary,

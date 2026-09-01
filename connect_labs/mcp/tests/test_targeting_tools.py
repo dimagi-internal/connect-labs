@@ -52,7 +52,9 @@ class TestIndicators:
 class TestSelect:
     def test_it_returns_totals_and_the_rows_behind_them(self):
         _, region, _ = _nigeria()
-        set_value(region, "u5mr", 150)
+        # The survey source explicitly: this asks for "Survey as measured",
+        # and an indicator may only be answered from a source it names.
+        set_value(region, "u5mr", 150, source=Source.DHS)
         set_value(region, "births", 1000)
 
         got = targeting.targeting_select(None, indicator="u5mr", threshold=80, method="subnational_survey")
@@ -64,8 +66,8 @@ class TestSelect:
 
     def test_coverage_reports_the_shortfall_that_makes_a_total_a_floor(self):
         _, region, other = _nigeria()
-        set_value(region, "u5mr", 150)
-        set_value(other, "u5mr", 150)
+        set_value(region, "u5mr", 150, source=Source.DHS)
+        set_value(other, "u5mr", 150, source=Source.DHS)
         set_value(region, "births", 1000)  # only one of the two selected units
 
         got = targeting.targeting_select(None, indicator="u5mr", threshold=80, method="subnational_survey")
@@ -96,7 +98,7 @@ class TestSelect:
 
     def test_rows_are_capped_so_a_chat_gets_a_summary_not_a_dump(self):
         _, region, _ = _nigeria()
-        set_value(region, "u5mr", 150)
+        set_value(region, "u5mr", 150, source=Source.DHS)
 
         got = targeting.targeting_select(None, indicator="u5mr", threshold=80, method="subnational_survey", limit=9999)
 
@@ -110,7 +112,7 @@ class TestMethodology:
         from connect_labs.labs.indicators.resolve import select_above
 
         _, region, _ = _nigeria()
-        set_value(region, "u5mr", 150)
+        set_value(region, "u5mr", 150, source=Source.DHS)
 
         got = targeting.targeting_methodology(None, indicator="u5mr", threshold=80, method="subnational_survey")
         expected = export.to_methodology(select_above(indicator="u5mr", threshold=80.0, method="subnational_survey"))
@@ -122,8 +124,8 @@ class TestMethodology:
 class TestScenario:
     def test_it_prices_the_selection_and_flags_a_floor(self):
         _, region, other = _nigeria()
-        set_value(region, "u5mr", 150)
-        set_value(other, "u5mr", 150)
+        set_value(region, "u5mr", 150, source=Source.DHS)
+        set_value(other, "u5mr", 150, source=Source.DHS)
         set_value(region, "births", 1000)
 
         got = targeting.targeting_scenario(
