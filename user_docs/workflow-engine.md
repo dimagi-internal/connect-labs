@@ -234,14 +234,8 @@ This fix applies in three places:
 
 If you were previously cross-checking flagged or rejected counts between a dashboard and a pipeline preview and saw zeroes in one or both places, those figures should now match the actual records.
 
----
+### Protection against incomplete data refreshes
 
-## Flags and Actions
+Live workflow dashboards occasionally showed briefly corrupted numbers after a data refresh — for example, a metric like "Weeks to WA Completion" dropping to a fraction of its real value for a short time. This could happen when CommCare's data export returned an incomplete result during a burst of new visit submissions, and the dashboard trusted that incomplete snapshot instead of recognising something looked wrong.
 
-### Flags column
-
-Many per-opportunity reports include a **Flags** column. Flags are findings the system raises automatically based on the metrics — they represent concerns surfaced from the data, not judgments that a manager records manually.
-
-When you open a report, the system reads the data and applies all relevant flags immediately on page load. There is nothing to click to trigger this — flags are already present by the time the dashboard is visible. A row with no concerns shows an em-dash (—).
-
-Each active concern appears as a coloured pill in the Flags cell. The pill displays only the label text — there are no icons inside the pill. A row can carry more than one flag at the same
+The system now checks each fresh data pull before replacing what is already displayed. If the new pull contains significantly fewer records than the previous one — a sign that the export may not have finished — the system retries automatically. If the retried pull still looks too small, the dashboard continues showing the last known-good data rather than the
