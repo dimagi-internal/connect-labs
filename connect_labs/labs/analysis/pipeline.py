@@ -206,8 +206,9 @@ class AnalysisPipeline:
         # Check URL param for force refresh
         if self.request is not None and self.request.GET.get("refresh") == "1":
             force_refresh = True
+        accept_low_count = self.request is not None and self.request.GET.get("accept_low_count") == "1"
 
-        return self.backend.fetch_raw_visits(
+        result = self.backend.fetch_raw_visits(
             opportunity_id=opp_id,
             access_token=self.access_token,
             expected_visit_count=self.expected_visits_for(opp_id),
@@ -216,7 +217,10 @@ class AnalysisPipeline:
             filter_visit_ids=filter_visit_ids,
             include_images=include_images,
             user=getattr(self.request, "user", None),
+            accept_low_count=accept_low_count,
         )
+        self._raw_fetch_anomaly = getattr(self.backend, "last_raw_fetch_anomaly", None)
+        return result
 
     def has_valid_raw_cache(self, opportunity_id: int | None = None) -> bool:
         """Check if valid raw cache exists for the opportunity."""
@@ -429,13 +433,18 @@ class AnalysisPipeline:
         force_refresh: bool = False,
         tolerance_pct: int = 100,
         pipeline_id: int | None = None,
+        accept_low_count: bool = False,
     ) -> Generator[tuple[str, Any], None, None]:
         """
         Consume stream_raw_visits events and yield SSE pipeline events.
 
         Translates backend events (cached/progress/complete) into
         pipeline events (EVENT_STATUS/EVENT_DOWNLOAD). After iteration,
-        self._visit_dicts and self._raw_data_already_stored are set.
+        self._visit_dicts and self._raw_data_already_stored are set, and
+        self._raw_fetch_anomaly reflects backend.last_raw_fetch_anomaly
+        (None unless the backend rejected a suspiciously-small fetch and
+        fell back to serving the previous cache — see
+        SQLBackend.stream_raw_visits).
 
         Usage:
             yield from self._consume_raw_visits_stream(opp_id, ...)
@@ -444,6 +453,7 @@ class AnalysisPipeline:
         """
         self._visit_dicts = None
         self._raw_data_already_stored = False
+        self._raw_fetch_anomaly = None
 
         for event in self.backend.stream_raw_visits(
             opportunity_id=opp_id,
@@ -453,6 +463,7 @@ class AnalysisPipeline:
             tolerance_pct=tolerance_pct,
             pipeline_id=pipeline_id,
             user=getattr(self.request, "user", None),
+            accept_low_count=accept_low_count,
         ):
             event_type = event[0]
             if event_type == "cached":
@@ -469,6 +480,8 @@ class AnalysisPipeline:
                 logger.info(f"[Pipeline/{self.backend_name}] Downloaded and parsed {len(self._visit_dicts)} visits")
                 yield (EVENT_STATUS, {"message": f"Downloaded {len(self._visit_dicts)} visits"})
 
+        self._raw_fetch_anomaly = getattr(self.backend, "last_raw_fetch_anomaly", None)
+
         if self._visit_dicts is None:
             raise RuntimeError("No data received from API")
 
@@ -479,6 +492,15 @@ class AnalysisPipeline:
     ) -> Generator[tuple[str, Any], None, None]:
         """
         Stream analysis pipeline with progress events.
+
+        Thin wrapper around `_stream_analysis_inner` that attaches
+        `self._raw_fetch_anomaly` (set during raw-visit fetching — see
+        `_consume_raw_visits_stream`) onto the final result's `.metadata`
+        dict, regardless of which internal branch of `_stream_analysis_inner`
+        produced it. Kept as a wrapper rather than threading the attachment
+        into every yield site inside `_stream_analysis_inner`, several of
+        which return a result independently (cache-hit, filtered, force
+        -refresh, default paths).
 
         Yields:
             Tuples of (event_type, event_data):
@@ -491,12 +513,27 @@ class AnalysisPipeline:
             config: Analysis configuration
             opportunity_id: Opportunity ID (defaults to labs_context)
         """
+        for event_type, payload in self._stream_analysis_inner(config, opportunity_id):
+            if event_type == EVENT_RESULT and getattr(self, "_raw_fetch_anomaly", None):
+                payload.metadata["raw_fetch_anomaly"] = self._raw_fetch_anomaly
+            yield (event_type, payload)
+
+    def _stream_analysis_inner(
+        self,
+        config: AnalysisPipelineConfig,
+        opportunity_id: int | None = None,
+    ) -> Generator[tuple[str, Any], None, None]:
+        """Implementation behind `stream_analysis` — see that method for the
+        public contract. Split out only so the wrapper above can attach
+        `_raw_fetch_anomaly` to every result path in one place.
+        """
         opp_id = opportunity_id or self.opportunity_id
         if not opp_id:
             yield (EVENT_ERROR, {"message": "No opportunity_id provided"})
             return
 
         force_refresh = self.request is not None and self.request.GET.get("refresh") == "1"
+        accept_low_count = self.request is not None and self.request.GET.get("accept_low_count") == "1"
         terminal_stage = config.terminal_stage
 
         def _stage_name(stage: CacheStage) -> str:
@@ -649,6 +686,7 @@ class AnalysisPipeline:
                                 force_refresh=force_refresh,
                                 tolerance_pct=tolerance,
                                 pipeline_id=unfiltered_config.pipeline_id,
+                                accept_low_count=accept_low_count,
                             )
                             visit_dicts = self._visit_dicts
                             raw_data_already_stored = self._raw_data_already_stored
@@ -781,6 +819,7 @@ class AnalysisPipeline:
                             opp_id,
                             force_refresh=True,
                             pipeline_id=unfiltered_config.pipeline_id,
+                            accept_low_count=accept_low_count,
                         )
                         visit_dicts = self._visit_dicts
                         raw_data_already_stored = self._raw_data_already_stored
@@ -992,6 +1031,7 @@ class AnalysisPipeline:
                 force_refresh=force_refresh,
                 tolerance_pct=tolerance,
                 pipeline_id=config.pipeline_id,
+                accept_low_count=accept_low_count,
             )
             visit_dicts = self._visit_dicts
             raw_data_already_stored = self._raw_data_already_stored

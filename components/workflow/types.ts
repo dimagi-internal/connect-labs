@@ -256,6 +256,22 @@ export interface PipelineRow {
 /**
  * Metadata about a pipeline execution.
  */
+/**
+ * A raw-visit refetch that came back suspiciously smaller than what was
+ * already cached, and got rejected in favor of the previous (larger,
+ * still-good) data rather than silently overwriting it — see
+ * SQLBackend.stream_raw_visits / fetch_raw_visits in
+ * connect_labs/labs/analysis/backends/sql/backend.py. `opportunity_id` is a
+ * string because it's a JSON object key server-side (per_opp), coerced to
+ * string by serialization.
+ */
+export interface RawFetchAnomaly {
+  opportunity_id: string;
+  previous_count: number;
+  attempted_count: number;
+  threshold_pct: number;
+}
+
 export interface PipelineMetadata {
   /** Number of rows returned */
   row_count: number;
@@ -271,6 +287,45 @@ export interface PipelineMetadata {
 
   /** Error message if execution failed */
   error?: string;
+
+  /**
+   * CommCare HQ auth error, aggregated up from a per-opp failure in a
+   * multi-opp workflow so a single check
+   * (pipelines[alias].metadata.auth_error) catches it regardless of which
+   * opportunity failed — see PipelineDataStreamView.stream_data in
+   * connect_labs/workflow/views.py.
+   */
+  auth_error?: string;
+  auth_error_domain?: string;
+  auth_authorize_url?: string;
+
+  /** Opportunities this pipeline executed against (multi-opp workflows). */
+  opportunity_ids?: number[];
+
+  /**
+   * Per-opportunity execution detail, keyed by opportunity_id (a string —
+   * JSON object keys are always strings). Only present for pipelines
+   * fetched via the multi-opp SSE path.
+   */
+  per_opp?: Record<
+    string,
+    {
+      row_count?: number;
+      from_cache?: boolean;
+      error?: string;
+      auth_error?: string;
+      auth_error_domain?: string;
+      raw_fetch_anomaly?: RawFetchAnomaly;
+    }
+  >;
+
+  /**
+   * Same aggregation as auth_error, above, for the raw-fetch shrink guard —
+   * a flat list so a generic UI check doesn't need to dig into `per_opp`
+   * itself. Empty/absent means no anomaly on any opportunity this pipeline
+   * covers.
+   */
+  raw_fetch_anomalies?: RawFetchAnomaly[];
 }
 
 // =============================================================================

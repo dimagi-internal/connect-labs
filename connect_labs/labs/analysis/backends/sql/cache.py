@@ -161,6 +161,42 @@ class SQLCacheManager:
             expires_at__gt=timezone.now(),
         ).count()
 
+    def get_raw_visit_count_ignoring_ttl(self) -> int:
+        """Count of raw visit rows currently occupying this slot, regardless of
+        whether their TTL has already lapsed (excludes in-progress sentinel rows).
+
+        Used as the "what's about to be replaced" baseline for the shrink guard
+        in backend.py. A naturally TTL-expired cache is exactly the case that
+        guard exists to protect -- by the time a fetch reaches that guard, the
+        cache is a "miss" precisely because it *is* expired, so get_raw_visit_count
+        (which filters on expires_at__gt=now()) would always read 0 there and
+        silently disable the guard for the one scenario it was built for.
+        """
+        return RawVisitCache.objects.filter(
+            **self._raw_filter(),
+            visit_count__gt=0,
+        ).count()
+
+    def extend_raw_cache_ttl(self, minutes: int):
+        """Push out expiry on the CURRENT finalized raw cache rows, without
+        touching their data.
+
+        Used when a fresh fetch came back suspiciously smaller than what's
+        already cached (see RAW_CACHE_SHRINK_THRESHOLD_PCT in backend.py) --
+        we keep serving the old, larger, still-good rows rather than
+        overwrite them, but we don't want to wait out the full TTL before
+        checking again, since whatever caused the undercount (replica lag,
+        a network blip) may already have resolved. Only extends forward
+        (`expires_at__lt`) so this never SHORTENS an already-longer-lived
+        entry.
+        """
+        new_expiry = timezone.now() + timedelta(minutes=minutes)
+        RawVisitCache.objects.filter(
+            **self._raw_filter(),
+            visit_count__gt=0,
+            expires_at__lt=new_expiry,
+        ).update(expires_at=new_expiry)
+
     def store_raw_visits(self, visit_dicts: list[dict], visit_count: int):
         """
         Store raw visit data to SQL cache.

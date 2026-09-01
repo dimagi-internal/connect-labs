@@ -36,6 +36,17 @@ from connect_labs.labs.analysis.models import (
 
 logger = logging.getLogger(__name__)
 
+# A fresh raw-visit fetch that comes back below this % of what's already
+# cached is treated as suspicious rather than trusted outright -- see
+# SQLBackend.fetch_raw_visits / stream_raw_visits. Catches transient
+# short-reads (observed cause: Connect's export endpoint returning a
+# partial result, e.g. read-replica lag during a burst of new visit
+# writes) before they silently overwrite a good cache with a bad one.
+RAW_CACHE_SHRINK_THRESHOLD_PCT = 80
+# Total fetch attempts (not retries on top of an initial try) before giving
+# up and keeping the previous cache.
+RAW_CACHE_MAX_ATTEMPTS = 3
+
 
 def _with_passthrough_columns(row: dict, computed: dict) -> dict:
     """Fold the base columns `VisitRow` has no attribute for into `computed`.
@@ -205,6 +216,7 @@ class SQLBackend:
         include_images: bool = False,
         pipeline_id: int | None = None,
         user=None,
+        accept_low_count: bool = False,
     ) -> list[dict]:
         """
         Fetch raw visit data from SQL cache or API.
@@ -215,7 +227,17 @@ class SQLBackend:
         `pipeline_id` scopes the raw cache slot per #116 — must match the value
         the downstream extraction query filters on, or extraction returns 0
         rows because the raw rows are tagged with a different pipeline_id.
+
+        `accept_low_count`: bypass the shrink guard below and trust whatever
+        comes back, even if it's suspiciously smaller than what's cached.
+        Set this when a human has explicitly asked to see fresh data anyway
+        (see `self.last_raw_fetch_anomaly`).
+
+        Sets `self.last_raw_fetch_anomaly` (a dict, or None) as a side
+        effect — callers that care (see AnalysisPipeline._consume_raw_visits_stream)
+        read it back right after calling.
         """
+        self.last_raw_fetch_anomaly = None
         cache_manager = SQLCacheManager(opportunity_id, pipeline_id=pipeline_id)
 
         # Check if we have valid cached data in SQL.
@@ -244,12 +266,51 @@ class SQLBackend:
 
         # Cache miss or force refresh - fetch from API
         logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, fetching from API")
-        visit_dicts = self._fetch_from_api(opportunity_id, access_token, include_images=include_images, user=user)
 
-        # Store full data to SQL cache
-        visit_count = len(visit_dicts)
-        cache_manager.store_raw_visits(visit_dicts, visit_count)
-        logger.info(f"[SQL] Stored {visit_count} visits to RawVisitCache")
+        # Guard against a fetch that comes back suspiciously smaller than what's
+        # already cached (see RAW_CACHE_SHRINK_THRESHOLD_PCT) -- retry a couple
+        # times before trusting it. `prior_count` is 0 for a first-ever fetch,
+        # which always skips the guard (nothing to compare against yet). Uses
+        # the TTL-ignoring count: we got here because the cache is a "miss",
+        # which for the common case (natural TTL expiry, not force_refresh)
+        # means the rows we're about to replace are already expired -- the
+        # TTL-filtered count would read 0 and defeat the whole guard.
+        prior_count = cache_manager.get_raw_visit_count_ignoring_ttl()
+        threshold = prior_count * RAW_CACHE_SHRINK_THRESHOLD_PCT / 100
+        visit_dicts: list[dict] = []
+        for attempt in range(1, RAW_CACHE_MAX_ATTEMPTS + 1):
+            visit_dicts = self._fetch_from_api(opportunity_id, access_token, include_images=include_images, user=user)
+            if prior_count == 0 or accept_low_count or len(visit_dicts) >= threshold:
+                break
+            logger.warning(
+                f"[SQL] Raw fetch for opp {opportunity_id} pipeline {pipeline_id} returned "
+                f"{len(visit_dicts)} rows, below {threshold:.0f} ({RAW_CACHE_SHRINK_THRESHOLD_PCT}% of "
+                f"previously-cached {prior_count}) on attempt {attempt}/{RAW_CACHE_MAX_ATTEMPTS}"
+            )
+
+        if prior_count > 0 and not accept_low_count and len(visit_dicts) < threshold:
+            logger.error(
+                f"[SQL] Raw fetch for opp {opportunity_id} pipeline {pipeline_id} stayed low "
+                f"({len(visit_dicts)} vs previously {prior_count}) after {RAW_CACHE_MAX_ATTEMPTS} attempts "
+                "-- keeping previous cache and flagging the anomaly instead of overwriting it"
+            )
+            sentry_sdk.capture_message(
+                f"Raw visit fetch anomaly: opp {opportunity_id} pipeline {pipeline_id} "
+                f"got {len(visit_dicts)} rows vs {prior_count} previously cached",
+                level="warning",
+            )
+            cache_manager.extend_raw_cache_ttl(minutes=10)
+            self.last_raw_fetch_anomaly = {
+                "previous_count": prior_count,
+                "attempted_count": len(visit_dicts),
+                "threshold_pct": RAW_CACHE_SHRINK_THRESHOLD_PCT,
+            }
+            visit_dicts = self._load_from_cache(cache_manager, skip_form_json=False, filter_visit_ids=None)
+        else:
+            # Store full data to SQL cache
+            visit_count = len(visit_dicts)
+            cache_manager.store_raw_visits(visit_dicts, visit_count)
+            logger.info(f"[SQL] Stored {visit_count} visits to RawVisitCache")
 
         # Apply filters for return value
         # Normalize to strings for comparison — visit_id is CharField in cache
@@ -277,6 +338,7 @@ class SQLBackend:
         tolerance_pct: int = 100,
         pipeline_id: int | None = None,
         user=None,
+        accept_low_count: bool = False,
     ) -> Generator[tuple[str, Any], None, None]:
         """
         Stream raw visit data with progress events using v2 paginated JSON.
@@ -287,6 +349,14 @@ class SQLBackend:
           SQL cache, strip form_json, accumulate slim dicts. Yield
           ("progress", rows_so_far, expected_visit_count) after each page,
           then ("complete", slim_dicts) at the end.
+        - A completed fetch that comes back suspiciously smaller than what's
+          already cached (see RAW_CACHE_SHRINK_THRESHOLD_PCT) is discarded and
+          retried up to RAW_CACHE_MAX_ATTEMPTS times. If it's still low after
+          that, the new (never-finalized) rows are dropped, the OLD cache is
+          kept and its TTL pushed out a little, and the anomaly is surfaced
+          via `self.last_raw_fetch_anomaly` for the caller to display —
+          yielded back as a "cached" event so the rest of the pipeline
+          behaves exactly as a normal cache hit.
 
         Memory note: each page is bounded at DEFAULT_PAGE_SIZE records,
         so we never need a temp file like the v1 streaming CSV path did.
@@ -295,6 +365,7 @@ class SQLBackend:
         from connect_labs.labs.integrations.connect.export_client import ExportAPIError
         from connect_labs.labs.integrations.connect.factory import get_export_client
 
+        self.last_raw_fetch_anomaly = None
         cache_manager = SQLCacheManager(opportunity_id, pipeline_id=pipeline_id)
 
         # Check SQL cache first
@@ -309,50 +380,88 @@ class SQLBackend:
         logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, paginating export API")
 
         endpoint = f"/export/opportunity/{opportunity_id}/user_visits/"
+        # See the matching comment in fetch_raw_visits: must ignore TTL, since
+        # reaching this "miss" branch on the common (non-force_refresh) path
+        # means the existing rows are already expired.
+        prior_count = cache_manager.get_raw_visit_count_ignoring_ttl()
+        threshold = prior_count * RAW_CACHE_SHRINK_THRESHOLD_PCT / 100
 
-        # Prepare cache for batched inserts. estimated_count is just a hint
-        # for the cache; finalize() will set the real count below.
-        cache_manager.store_raw_visits_start(expected_visit_count or 0)
+        for attempt in range(1, RAW_CACHE_MAX_ATTEMPTS + 1):
+            # Prepare cache for batched inserts. estimated_count is just a hint
+            # for the cache; finalize() will set the real count below. Each
+            # attempt gets its own sentinel (store_raw_visits_start), so a
+            # retry never touches the previous attempt's (already-aborted)
+            # rows or the still-valid old cache.
+            cache_manager.store_raw_visits_start(expected_visit_count or 0)
 
-        slim_dicts: list[dict] = []
-        rows_so_far = 0
+            slim_dicts: list[dict] = []
+            rows_so_far = 0
 
-        try:
-            with get_export_client(
-                opportunity_id=opportunity_id,
-                access_token=access_token,
-                timeout=180.0,
-                user=user,
-            ) as client:
-                for page in client.paginate(endpoint):
-                    # Convert v2 records to visit dicts (with form_json)
-                    batch = [record_to_visit_dict(record, opportunity_id) for record in page]
-                    if not batch:
-                        continue
+            try:
+                with get_export_client(
+                    opportunity_id=opportunity_id,
+                    access_token=access_token,
+                    timeout=180.0,
+                    user=user,
+                ) as client:
+                    for page in client.paginate(endpoint):
+                        # Convert v2 records to visit dicts (with form_json)
+                        batch = [record_to_visit_dict(record, opportunity_id) for record in page]
+                        if not batch:
+                            continue
 
-                    # Store the full batch (with form_json) to the SQL cache
-                    cache_manager.store_raw_visits_batch(batch)
+                        # Store the full batch (with form_json) to the SQL cache
+                        cache_manager.store_raw_visits_batch(batch)
 
-                    # Strip form_json from in-memory dicts to save memory; the
-                    # SQL extraction step reads form_json from the DB.
-                    for v in batch:
-                        v["form_json"] = {}
-                    slim_dicts.extend(batch)
-                    rows_so_far += len(batch)
+                        # Strip form_json from in-memory dicts to save memory; the
+                        # SQL extraction step reads form_json from the DB.
+                        for v in batch:
+                            v["form_json"] = {}
+                        slim_dicts.extend(batch)
+                        rows_so_far += len(batch)
 
-                    yield ("progress", rows_so_far, expected_visit_count or 0)
+                        yield ("progress", rows_so_far, expected_visit_count or 0)
 
-        except ExportAPIError as e:
+            except ExportAPIError as e:
+                cache_manager.store_raw_visits_abort()
+                logger.error(f"[SQL] Export API failure for opp {opportunity_id}: {e}")
+                sentry_sdk.capture_exception(e)
+                raise RuntimeError(f"Connect export API error: {e}") from e
+
+            if prior_count == 0 or accept_low_count or rows_so_far >= threshold:
+                # Atomically finalize cache with the real count
+                cache_manager.store_raw_visits_finalize(rows_so_far)
+                logger.info(f"[SQL] Streamed {rows_so_far} visits to DB, keeping {len(slim_dicts)} slim dicts")
+                yield ("complete", slim_dicts)
+                return
+
+            logger.warning(
+                f"[SQL] Raw stream for opp {opportunity_id} pipeline {pipeline_id} returned {rows_so_far} "
+                f"rows, below {threshold:.0f} ({RAW_CACHE_SHRINK_THRESHOLD_PCT}% of previously-cached "
+                f"{prior_count}) on attempt {attempt}/{RAW_CACHE_MAX_ATTEMPTS} -- discarding and retrying"
+            )
             cache_manager.store_raw_visits_abort()
-            logger.error(f"[SQL] Export API failure for opp {opportunity_id}: {e}")
-            sentry_sdk.capture_exception(e)
-            raise RuntimeError(f"Connect export API error: {e}") from e
 
-        # Atomically finalize cache with the real count
-        cache_manager.store_raw_visits_finalize(rows_so_far)
-        logger.info(f"[SQL] Streamed {rows_so_far} visits to DB, keeping {len(slim_dicts)} slim dicts")
-
-        yield ("complete", slim_dicts)
+        # Exhausted every attempt and it's still low: never finalized over the
+        # old cache, so it's untouched. Keep serving it, push its TTL out a
+        # little so we re-check sooner than the full TTL, and flag the anomaly.
+        logger.error(
+            f"[SQL] Raw stream for opp {opportunity_id} pipeline {pipeline_id} stayed low after "
+            f"{RAW_CACHE_MAX_ATTEMPTS} attempts -- keeping previous cache and flagging the anomaly"
+        )
+        sentry_sdk.capture_message(
+            f"Raw visit fetch anomaly: opp {opportunity_id} pipeline {pipeline_id} stayed low "
+            f"({rows_so_far} rows) vs {prior_count} previously cached after {RAW_CACHE_MAX_ATTEMPTS} attempts",
+            level="warning",
+        )
+        cache_manager.extend_raw_cache_ttl(minutes=10)
+        self.last_raw_fetch_anomaly = {
+            "previous_count": prior_count,
+            "attempted_count": rows_so_far,
+            "threshold_pct": RAW_CACHE_SHRINK_THRESHOLD_PCT,
+        }
+        old_visit_dicts = self._load_from_cache(cache_manager, skip_form_json=True, filter_visit_ids=None)
+        yield ("cached", old_visit_dicts)
 
     def has_valid_raw_cache(
         self,
