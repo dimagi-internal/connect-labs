@@ -4826,8 +4826,11 @@ class PipelineDataStreamView(BaseSSEStreamView):
                             # (see the alias-level aggregation below): a render
                             # checking only pipelines[alias].metadata would
                             # never see it if it stayed nested here alone.
+                            result_metadata = getattr(result, "metadata", None) if result else None
                             raw_fetch_anomaly = (
-                                getattr(result, "metadata", {}).get("raw_fetch_anomaly") if result else None
+                                result_metadata.get("raw_fetch_anomaly")
+                                if isinstance(result_metadata, dict)
+                                else None
                             )
                             if raw_fetch_anomaly:
                                 per_opp_meta[str(opp_id)]["raw_fetch_anomaly"] = raw_fetch_anomaly

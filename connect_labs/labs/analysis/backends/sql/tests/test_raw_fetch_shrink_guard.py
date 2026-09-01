@@ -17,7 +17,6 @@ expired cache and silently defeat the whole guard.
 from datetime import timedelta
 
 import pytest
-from django.test import override_settings
 from django.utils import timezone
 
 from connect_labs.labs.analysis.backends.sql.backend import (
@@ -30,6 +29,16 @@ from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
 
 OPP_ID = 42
 PIPELINE_ID = 1001
+
+
+@pytest.fixture(autouse=True)
+def _connect_production_url(settings):
+    """`@override_settings` as a class decorator only works on Django
+    SimpleTestCase subclasses -- these are plain pytest classes, so the
+    pytest-django `settings` fixture is the equivalent for every test here,
+    not just the ones under TestFetchRawVisitsShrinkGuard/
+    TestStreamRawVisitsShrinkGuard that actually need it."""
+    settings.CONNECT_PRODUCTION_URL = "https://connect.example.com"
 
 
 def _seed_expired_cache(count: int, pipeline_id: int = PIPELINE_ID) -> SQLCacheManager:
@@ -125,7 +134,6 @@ class TestExtendRawCacheTtl:
 
 
 @pytest.mark.django_db
-@override_settings(CONNECT_PRODUCTION_URL="https://connect.example.com")
 class TestFetchRawVisitsShrinkGuard:
     def test_first_ever_fetch_skips_guard_even_if_small(self, httpx_mock):
         """prior_count == 0 (nothing cached yet) must never be treated as a shrink."""
@@ -268,7 +276,6 @@ class TestFetchRawVisitsShrinkGuard:
 
 
 @pytest.mark.django_db
-@override_settings(CONNECT_PRODUCTION_URL="https://connect.example.com")
 class TestStreamRawVisitsShrinkGuard:
     def test_first_ever_stream_skips_guard_even_if_small(self, httpx_mock):
         httpx_mock.add_response(**_single_page_response(2))

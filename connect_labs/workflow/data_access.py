@@ -2299,7 +2299,8 @@ class PipelineDataAccess(BaseDataAccess):
             # same way it already checks metadata.auth_error, to show a
             # dismissible warning banner rather than silently serving data
             # that's quietly out of date.
-            raw_fetch_anomaly = getattr(result, "metadata", {}).get("raw_fetch_anomaly")
+            result_metadata = getattr(result, "metadata", None)
+            raw_fetch_anomaly = result_metadata.get("raw_fetch_anomaly") if isinstance(result_metadata, dict) else None
             if raw_fetch_anomaly:
                 metadata["raw_fetch_anomaly"] = raw_fetch_anomaly
             return {"rows": rows, "metadata": metadata}
