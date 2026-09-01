@@ -1,15 +1,15 @@
 {
   "_comment": "The current targeting snapshot, loaded by `manage.py targeting_import --from-manifest`. Rebuilding this dataset from source costs 30-45 minutes of API calls and can exhaust WorldPop's daily quota for everyone else, so a new environment should restore from here rather than re-fetch. Pin a new drive_file_id whenever the dataset changes materially: export, upload to the folder below (shared with connect-labs-sa), and update the id, created_at and counts in one commit so the file and the record stay together.",
   "drive_folder_id": "1cXbkUDjoE539aG3BOMtIh67r2ROde9sn",
-  "drive_file_id": "1eQ7SgHAL6wzQXzJXREfZADXX0W0D998f",
-  "created_at": "2026-08-29T20:59:59.981373+00:00",
+  "drive_file_id": "1kkhDgt48YMP9ULeZMUsp3nbQpLIlL0Zm",
+  "created_at": "2026-09-01T12:56:00.517158+00:00",
   "counts": {
     "boundaries": 2350,
-    "values": 95790,
+    "values": 102903,
     "indicators": 63
   },
-  "notes": "Restore with: make manage CMD=\"targeting_import --from-manifest\" (needs LABS_SYNTHETIC_GDRIVE_SA_KEY; already in the ECS task definition, and locally readable from Secrets Manager as labs-jj-synthetic-gdrive-sa-key with the labs AWS profile). Values went 54,136 -> 95,790 because four raster sources joined the API ones. MAP's 5 km surfaces give malaria as COUNTS at every level (241.9M P. falciparum cases and 645,961 deaths for Africa, against the WHO World Malaria Report's ~246M and ~569k), which is what lets a treatment programme be sized rather than merely located. WorldPop's 1 km UN-adjusted grid finished the population backfill its own statistics API had refused: ADM1 754 -> 778, ADM2 1,005 -> 1,517 of 1,518. Crossed with MAP's accessibility surface that answers physical reach -- 242.9M people live more than two hours' walk from a health facility -- and with GHS-SMOD it answers DEGURBA rural share, 745.2M rural Africans. cc-by-3.0 is MAP's and permits commercial use with attribution. Research notes are NOT in this snapshot -- they live in git and are written by `manage.py seed_targeting_research`, which should be run after any import.",
-  "filename": "targeting-snapshot-20260829-2100.zip",
+  "notes": "Restore with: make manage CMD=\"targeting_import --from-manifest\" (needs LABS_SYNTHETIC_GDRIVE_SA_KEY; already in the ECS task definition, and locally readable from Secrets Manager as labs-jj-synthetic-gdrive-sa-key with the labs AWS profile). 102,903 values against 54,136 three days ago. Four raster sources joined the API ones: MAP's malaria surfaces (241.9M P. falciparum cases and 645,961 deaths for Africa, against the WHO World Malaria Report's ~246M and ~569k) which give malaria as COUNTS at every level; WorldPop's 1 km UN-adjusted grid, which finished the population backfill its own statistics API had refused, for the total AND the age bands (pop_u1/pop_u5/pop_f_15_49 now 778/778 at ADM1 and ~1,515/1,518 at ADM2, where pop_u1 had been 742); MAP's accessibility surface crossed with that grid (242.9M people beyond two hours' walk from care); and GHS-SMOD for DEGURBA rural share (745.2M rural Africans). The age bands are 2022 and the total is 2020 -- both UN-adjusted, so the two calibrations agree. cc-by-3.0 is MAP's and permits commercial use with attribution. Research notes are NOT in this snapshot -- they live in git and are written by `manage.py seed_targeting_research`, which should be run after any import.",
+  "filename": "targeting-snapshot-20260901-1256.zip",
   "licenses": [
     "cc-by-3.0",
     "cc-by-3.0-igo",
