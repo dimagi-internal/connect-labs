@@ -4828,9 +4828,7 @@ class PipelineDataStreamView(BaseSSEStreamView):
                             # never see it if it stayed nested here alone.
                             result_metadata = getattr(result, "metadata", None) if result else None
                             raw_fetch_anomaly = (
-                                result_metadata.get("raw_fetch_anomaly")
-                                if isinstance(result_metadata, dict)
-                                else None
+                                result_metadata.get("raw_fetch_anomaly") if isinstance(result_metadata, dict) else None
                             )
                             if raw_fetch_anomaly:
                                 per_opp_meta[str(opp_id)]["raw_fetch_anomaly"] = raw_fetch_anomaly
