@@ -43,6 +43,9 @@ def _snapshot(**overrides):
         elb_5xx_total=0,
         elb_5xx_peak_period=0,
         elb_5xx_breaching_periods=0,
+        target_5xx_total=0,
+        target_5xx_peak_period=0,
+        target_5xx_breaching_periods=0,
         web_running_count=2,
         web_desired_count=2,
     )
@@ -258,3 +261,82 @@ def test_window_alignment_keeps_a_pinned_run_intact():
     thresh = perf_triage.WEB_CPU_SATURATED
     assert perf_triage._sustained(aligned, thresh, 300, key="Maximum") == 3
     assert perf_triage._sustained(offset, thresh, 300, key="Maximum") == 0
+
+
+# ── target (app-generated) 5xx ──────────────────────────────────────────
+# Added 2026-09-01. The tool queried only HTTPCode_ELB_5XX_Count, so on
+# 2026-08-31 it reported 44 ELB 5xx over a window in which the application had
+# in fact failed 410 requests -- every one of them /umami/api/send hitting a
+# Prisma P2002 race. Nothing in the output hinted at them, and no alarm existed
+# either, so a two-hour outage read as a mildly busy afternoon. These pin that
+# the app's own errors can reach the verdict.
+
+
+def test_breaching_target_5xx_is_not_healthy():
+    """The 2026-08-31 shape: 410 app 5xx, peak 42, four periods over the line."""
+    verdict = perf_triage.judge(
+        _snapshot(
+            target_5xx_total=410,
+            target_5xx_peak_period=42,
+            target_5xx_breaching_periods=4,
+        )
+    )
+    assert verdict["verdict"] == "target_5xx_elevated"
+    assert any("TARGET (app-generated) 5xx: 410" in f for f in verdict["findings"])
+
+
+def test_target_5xx_under_the_alarm_line_stays_healthy():
+    """Regression guard: a trickle of app 5xx is normal and must not flag.
+
+    08-30 carried 0 and 09-01 carried 1; a rule that flags those teaches the
+    next reviewer to ignore the verdict, which is the failure this whole file
+    exists to prevent.
+    """
+    verdict = perf_triage.judge(_snapshot(target_5xx_total=3, target_5xx_peak_period=2))
+    assert verdict["verdict"] == "healthy"
+
+
+def test_target_5xx_does_not_mask_web_saturation():
+    """web_saturated is more specific and already names the tier -- it wins."""
+    verdict = perf_triage.judge(
+        _snapshot(
+            target_5xx_total=410,
+            target_5xx_peak_period=42,
+            target_5xx_breaching_periods=4,
+            web_cpu_peak_pct=100.0,
+            web_cpu_saturated_periods=4,
+        )
+    )
+    assert verdict["verdict"] == "web_saturated"
+
+
+def test_target_and_elb_5xx_are_reported_separately():
+    """They fail in OPPOSITE directions and lead to different log groups.
+
+    2026-07-29: target 1 / ELB 84. 2026-08-31: target 410 / ELB peak 19. A
+    reviewer who cannot tell which one fired cannot pick the right next step,
+    so collapsing them into one number would be worse than either alone.
+    """
+    verdict = perf_triage.judge(
+        _snapshot(
+            elb_5xx_total=44,
+            elb_5xx_peak_period=19,
+            target_5xx_total=410,
+            target_5xx_peak_period=42,
+            target_5xx_breaching_periods=4,
+        )
+    )
+    joined = " ".join(verdict["findings"])
+    assert "ELB-generated 5xx: 44" in joined
+    assert "TARGET (app-generated) 5xx: 410" in joined
+    # and the next step must send the reader to the ALB access logs, since the
+    # web log group knows nothing about the Umami target group.
+    assert "labs-jj-alb-access-logs" in verdict["next_step"]
+
+
+def test_target_5xx_finding_names_the_alarm_it_agrees_with():
+    """Same contract as the ELB alarm: the tool must not disagree with the pager."""
+    verdict = perf_triage.judge(
+        _snapshot(target_5xx_total=410, target_5xx_peak_period=42, target_5xx_breaching_periods=4)
+    )
+    assert any("labs-jj-alb-target-5xx-high" in f for f in verdict["findings"])
