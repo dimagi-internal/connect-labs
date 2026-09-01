@@ -452,3 +452,136 @@ class TestHttpxInstrumentationIsDefaultOn:
         assert line["outbound_by_host"] == {"connect.dimagi.com": 1}
         assert line["outbound_ms"] >= 50, "the wait must land in outbound_ms"
         assert line["self_ms"] < line["outbound_ms"], "and must NOT be relabelled as our own CPU"
+
+
+class TestBodyDownloadIsNotOurCpu:
+    """#1386: the response hook fires at HEADERS, so the body read fell outside it.
+
+    Same class of error as #1298 one level down — that was about which CALLS are
+    measured, this is about how much of each call. It mattered because the audit
+    image proxy exists to move JPEG bytes: it billed 11,482 s of transfer to
+    ``self_ms`` over 7 days and ranked as the top CPU consumer on the web tier,
+    ahead of ``bulk-data``, for a view that does no image work at all.
+    """
+
+    @staticmethod
+    def _slow_body_transport(delay: float, payload: bytes = b"\xff\xd8" + b"x" * 4096):
+        """A transport whose HEADERS are instant and whose BODY takes ``delay``.
+
+        This is the shape that matters and the one ``MockTransport`` cannot make:
+        it hands back fully-materialised content, so its body read is free and the
+        bug is invisible through it.
+        """
+        import httpx
+
+        class _Stream(httpx.SyncByteStream):
+            def __iter__(self):
+                time.sleep(delay)
+                yield payload
+
+            def close(self) -> None:
+                pass
+
+        class _Transport(httpx.BaseTransport):
+            def handle_request(self, request):
+                return httpx.Response(200, stream=_Stream(), headers={"content-type": "image/jpeg"})
+
+        return _Transport()
+
+    def test_body_transfer_is_billed_to_outbound_not_self(self):
+        import httpx
+
+        request_telemetry.install_httpx_instrumentation()
+        token = request_telemetry._stats.set(RequestStats())
+        try:
+            with httpx.Client(transport=self._slow_body_transport(0.05)) as client:
+                response = client.get("https://connect.dimagi.com/export/opportunity/1/image/")
+            assert response.content  # the body really was read inside send()
+
+            stats = current_stats()
+            # The headers were instant; every measurable millisecond is the body.
+            assert stats.outbound_ms >= 50, "body download must land in outbound_ms"
+            # And it is still ONE call: timing moved, counting did not.
+            assert stats.outbound_calls == 1
+            assert stats.outbound_by_host == {"connect.dimagi.com": 1}
+        finally:
+            request_telemetry._stats.reset(token)
+
+    def test_the_image_proxy_line_no_longer_reads_as_our_cpu(self, request_obj, caplog):
+        """The regression stated as the log line an operator ranks endpoints by."""
+        import httpx
+
+        def view_that_proxies_an_image(_request):
+            with httpx.Client(transport=self._slow_body_transport(0.05)) as client:
+                client.get("https://connect.dimagi.com/export/opportunity/1/image/")
+            return "ok"
+
+        caplog.set_level("WARNING")
+        with patch.object(request_telemetry, "SLOW_REQUEST_MS", 0):
+            _middleware(view_that_proxies_an_image)(request_obj)
+
+        (line,) = _lines(caplog)
+        assert line["outbound_ms"] >= 50, "the transfer must be attributed upstream"
+        assert line["self_ms"] < line["outbound_ms"], "and must NOT be relabelled as our own CPU"
+
+    def test_streaming_calls_are_left_alone(self):
+        """``stream=True`` returns at headers by design — the caller reads the body
+        on its own time, so billing that span here would be the mirror-image error.
+        """
+        import httpx
+
+        request_telemetry.install_httpx_instrumentation()
+        token = request_telemetry._stats.set(RequestStats())
+        try:
+            with httpx.Client(transport=self._slow_body_transport(0.05)) as client:
+                with client.stream("GET", "https://connect.dimagi.com/export/opportunity/1/image/") as response:
+                    stats_before_read = current_stats().outbound_ms
+                    response.read()
+
+            # The body was read by the CALLER, after send() returned, so it is not
+            # billed to this call's outbound time.
+            assert stats_before_read < 50
+            assert current_stats().outbound_calls == 1
+        finally:
+            request_telemetry._stats.reset(token)
+
+    def test_instrumenting_send_is_idempotent(self):
+        """Installed once per worker, but called from a middleware constructor that
+        a test suite builds many times — a second wrap would double-count the body.
+        """
+        import httpx
+
+        request_telemetry.install_httpx_instrumentation()
+        request_telemetry.install_httpx_instrumentation()
+        request_telemetry.install_httpx_instrumentation()
+
+        token = request_telemetry._stats.set(RequestStats())
+        try:
+            with httpx.Client(transport=self._slow_body_transport(0.05)) as client:
+                client.get("https://connect.dimagi.com/export/opportunity/1/image/")
+            # ~50ms of body, billed once. Two wraps would report ~100ms.
+            assert 50 <= current_stats().outbound_ms < 100
+        finally:
+            request_telemetry._stats.reset(token)
+
+    def test_an_unstamped_response_is_billed_to_nobody(self):
+        """No headers timestamp means the span is unknown — bill it to nobody rather
+        than to the wrong bucket.
+
+        Reachable in real life from a client constructed before instrumentation was
+        installed, or from a test double standing in for a response. Asserted against
+        ``_body_ms`` directly: patching ``_on_response`` on the module cannot produce
+        this state, because a client binds the hook function into its own event_hooks
+        list at construction and keeps that reference.
+        """
+
+        class Unstamped:
+            pass
+
+        assert request_telemetry._body_ms(Unstamped()) == 0.0
+
+        # And the same guard on the shape that actually poisons arithmetic: an
+        # attribute that exists but is not a timestamp.
+        bogus = Unstamped()
+        bogus._labs_telemetry_headers_done = "not-a-float"
+        assert request_telemetry._body_ms(bogus) == 0.0
