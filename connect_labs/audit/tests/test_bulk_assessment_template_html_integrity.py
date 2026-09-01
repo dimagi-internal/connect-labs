@@ -12,8 +12,15 @@ each time -- cheap enough to guard permanently instead.
 
 Single quotes inside these comments are always safe; double quotes are not.
 """
+import json
+import re
 from html.parser import HTMLParser
 from pathlib import Path
+
+from django.template.loader import render_to_string
+
+from connect_labs.audit.views import LEGACY_DUPLICATE_FAKE_RESULTS
+from connect_labs.utils.json_safe import safe_json_for_script
 
 TEMPLATE_PATH = Path(__file__).resolve().parents[3] / "connect_labs" / "templates" / "audit" / "bulk_assessment.html"
 
@@ -79,3 +86,56 @@ def test_no_double_quote_inside_a_js_comment_within_the_main_tile_x_data():
         "attribute -- this terminates the HTML attribute early and breaks the whole "
         "component. Use single quotes instead. Offending line(s): " + repr(offending)
     )
+
+
+# --- The inline-script contract with the view -----------------------------------
+#
+# bulk_assessment.html emits several server values straight into an inline
+# <script> as JS literals. Django renders a MISSING context variable as the empty
+# string, so `const x = {{ y }};` becomes `const x = ;` -- a syntax error that
+# kills the whole script block and every Alpine component under it. Nothing else
+# in the suite renders this template, so a view that stops supplying one of these
+# would ship a blank review screen with 5000 tests green.
+
+_LEGACY_LINE = re.compile(r"const legacyDuplicateFakeResults = (.+);")
+
+
+class _StubSession:
+    """Only what the template's {% url %} tags and status checks actually read."""
+
+    pk = 1
+    id = 1
+    status = "in_progress"
+    completed_at = None
+    data: dict = {}
+    notes = ""
+    kpi_notes = ""
+    overall_result = ""
+    pass_threshold = 100
+    workflow_run_id = None
+
+
+def _rendered_legacy_literal(context) -> str:
+    html = render_to_string("audit/bulk_assessment.html", {"session": _StubSession(), **context})
+    match = _LEGACY_LINE.search(html)
+    assert match, "the legacy duplicate/fake list is no longer emitted to the page"
+    return match.group(1).strip()
+
+
+def test_the_legacy_result_list_renders_as_a_js_array():
+    """The values the view actually sends reach the page intact."""
+    literal = _rendered_legacy_literal(
+        {"legacy_duplicate_fake_results": safe_json_for_script(list(LEGACY_DUPLICATE_FAKE_RESULTS))}
+    )
+    assert json.loads(literal) == list(LEGACY_DUPLICATE_FAKE_RESULTS)
+
+
+def test_a_missing_context_value_still_emits_valid_javascript():
+    """The failure this guards is total, not cosmetic.
+
+    Without the |default, an absent context var renders `const x = ;` and every
+    script after it dies -- buttons, filters, image tiles, all of it. Degrading to
+    an empty list costs one highlight on legacy reports and nothing else.
+    """
+    literal = _rendered_legacy_literal({})
+    assert literal == "[]", f"expected a valid empty array, got {literal!r}"

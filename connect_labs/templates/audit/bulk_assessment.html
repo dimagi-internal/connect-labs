@@ -1105,7 +1105,11 @@ const workflowRunId = {{ workflow_run_id|default:"null" }};
 // accept all three: the server counts them in one bucket (tally_assessment) and
 // LEGACY_DUPLICATE_FAKE_RESULTS in views.py is the same list. Without this a
 // completed report renders every image it flagged as unreviewed.
-const legacyDuplicateFakeResults = {{ legacy_duplicate_fake_results|safe }};
+// The |default is load-bearing, not decoration: a missing context var renders as
+// the empty string, which makes this line `const x = ;` -- a SYNTAX error that
+// kills every script after it and takes the whole review screen with it. Failing
+// to an empty list degrades one highlight instead.
+const legacyDuplicateFakeResults = {{ legacy_duplicate_fake_results|default:"[]"|safe }};
 function isDuplicateFake(result) {
   return result === 'duplicate_fake' || legacyDuplicateFakeResults.includes(result);
 }
