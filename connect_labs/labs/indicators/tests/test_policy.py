@@ -183,3 +183,65 @@ class TestWholeCountryRollup:
         selection = select_above(indicator="u5mr", threshold=80.0, method="subnational_survey")
 
         assert selection.totals["births"] == 2000  # not 4000
+
+
+class TestSmallSampleIsCarried:
+    """How much a survey figure is worth, not just whether it exists.
+
+    Found by comparing a generated county table against one a person built by
+    hand. Theirs carried DHS's small-sample flag in its own column; six of
+    Liberia's fifteen counties wore it, and Bomi's 75.5% ORS coverage rests on
+    35 unweighted cases — 21 once weighted. Ours presented all fifteen as
+    equals. The denominators come back from the same API call for free; we
+    simply were not asking for them.
+    """
+
+    def _with_sample(self, boundary, n):
+        v = set_value(boundary, "ors_coverage", 75.5, source=Source.DHS)
+        v.extra = {"sample_unweighted": n}
+        v.save(update_fields=["extra"])
+        return v
+
+    def test_a_thin_estimate_is_flagged(self):
+        b = make_boundary("LBR", 1, "Bomi", "LBR-1-1", x=2)
+        self._with_sample(b, 35)
+        assert resolve("ors_coverage", b).small_sample
+
+    def test_a_solid_estimate_is_not(self):
+        b = make_boundary("LBR", 1, "Montserrado", "LBR-1-2", x=4)
+        self._with_sample(b, 300)
+        assert not resolve("ors_coverage", b).small_sample
+
+    def test_the_boundary_is_dhs_own_convention(self):
+        """49 unweighted is bracketed by DHS; 50 is not. We hold the same line."""
+        from connect_labs.labs.indicators.models import SMALL_SAMPLE_UNWEIGHTED
+
+        assert SMALL_SAMPLE_UNWEIGHTED == 50
+        b1 = make_boundary("LBR", 1, "Edge", "LBR-1-3", x=6)
+        b2 = make_boundary("LBR", 1, "Over", "LBR-1-4", x=8)
+        self._with_sample(b1, 49)
+        self._with_sample(b2, 50)
+        assert resolve("ors_coverage", b1).small_sample
+        assert not resolve("ors_coverage", b2).small_sample
+
+    def test_a_source_that_reports_no_sample_size_is_not_flagged(self):
+        """Absence of a denominator is not evidence of a thin one.
+
+        Only DHS publishes these. A modelled surface has no sample at all, and
+        flagging every MAP value as unreliable would make the field useless.
+        """
+        b = make_boundary("LBR", 1, "Modelled", "LBR-1-5", x=10)
+        set_value(b, "malaria_prevalence", 24.0, source=Source.MAP)
+        assert not resolve("malaria_prevalence", b).small_sample
+
+    def test_a_selection_counts_the_units_resting_on_thin_estimates(self):
+        make_boundary("LBR", 0, "Liberia", "LBR-0", x=0)
+        thin = make_boundary("LBR", 1, "Bomi", "LBR-1-1", x=2)
+        solid = make_boundary("LBR", 1, "Montserrado", "LBR-1-2", x=4)
+        self._with_sample(thin, 35)
+        self._with_sample(solid, 300)
+
+        selection = select_above(indicator="ors_coverage", threshold=80.0, method="subnational_survey")
+
+        assert selection.small_sample_units == 1
+        assert sum(a.units_covered for a in selection.areas) == 2

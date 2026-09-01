@@ -57,6 +57,13 @@ class Source(models.TextChoices):
     DERIVED = "derived", "Derived"
 
 
+#: DHS suppresses an estimate resting on fewer than 25 unweighted cases and
+#: parenthesises one resting on 25 to 49 — its own published convention for
+#: "do not rely on this". We carry the same line rather than inventing one,
+#: because a reader who knows DHS already knows what a bracketed figure means.
+SMALL_SAMPLE_UNWEIGHTED = 50
+
+
 class IndicatorValue(models.Model):
     """A single measured or derived number, for one boundary, in one year."""
 

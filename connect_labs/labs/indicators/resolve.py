@@ -25,7 +25,7 @@ from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators import measures, methods, policy
 from connect_labs.labs.indicators.africa import name_for
-from connect_labs.labs.indicators.models import IndicatorValue
+from connect_labs.labs.indicators.models import SMALL_SAMPLE_UNWEIGHTED, IndicatorValue
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,23 @@ class Resolved:
     @property
     def inherited(self) -> bool:
         return self.measured_at is not None and self.measured_at.pk != self.boundary.pk
+
+    @property
+    def sample_unweighted(self) -> int | None:
+        """Unweighted cases behind a survey estimate, where the source says."""
+        return (self.extra or {}).get("sample_unweighted")
+
+    @property
+    def small_sample(self) -> bool:
+        """True when the source itself would flag this figure as unreliable.
+
+        Bomi's ORS coverage reads 75.5% and rests on 35 unweighted cases —
+        21 once weighted. Presented in a column beside a figure resting on
+        three hundred, it looks like the same kind of number and is not. DHS
+        marks these; carrying the mark costs one field on the request.
+        """
+        n = self.sample_unweighted
+        return n is not None and n < SMALL_SAMPLE_UNWEIGHTED
 
     @property
     def provenance(self) -> str:
@@ -339,6 +356,9 @@ class Area:
     #: its regions away — by the time the row exists, which of them borrowed
     #: their country's figure is no longer recoverable from it.
     inherited_units: int = 0
+    #: Units whose rate the source itself flags as resting on too few cases.
+    #: Same reason for recording it here: a country row averages the flag away.
+    small_sample_units: int = 0
 
     def get(self, indicator: str) -> float | None:
         if indicator in self.counts:
@@ -416,6 +436,23 @@ class Selection:
         rounding.
         """
         return sum(area.inherited_units for area in self.areas)
+
+    @property
+    def small_sample_units(self) -> int:
+        """Units whose rate the source itself flags as resting on too few cases.
+
+        Distinct from ``coverage``, which asks whether a figure exists, and from
+        ``inherited_units``, which asks where it was measured. This asks how much
+        it is worth: DHS suppresses an estimate below 25 unweighted cases and
+        parenthesises one below 50, and a regional table that drops the bracket
+        presents a figure resting on twenty-one children as the equal of one
+        resting on three hundred.
+
+        The gap this closes was found by comparing a generated county table
+        against one a person built by hand: theirs carried DHS's small-sample
+        flag in its own column and six of Liberia's fifteen counties wore it.
+        """
+        return sum(area.small_sample_units for area in self.areas)
 
 
 #: Counts carried on every selection regardless of indicator.
@@ -604,6 +641,7 @@ def select_above(
                     units_covered=max(len(children), 1),
                     values={indicator: r},
                     inherited_units=max(len(children), 1) if r is not None and r.inherited else 0,
+                    small_sample_units=max(len(children), 1) if r is not None and r.small_sample else 0,
                 )
                 for c in carried:
                     got = [v.value for ch in children if (v := bulk.get(c, ch)) is not None]
@@ -624,6 +662,7 @@ def select_above(
                 units_covered=len(above),
                 values={indicator: _rollup_rate(indicator, above, bulk)},
                 inherited_units=sum(1 for _, r in above if r is not None and r.inherited),
+                small_sample_units=sum(1 for _, r in above if r is not None and r.small_sample),
             )
             for c in carried:
                 got = [r.value for b, _ in above if (r := bulk.get(c, b)) is not None]
@@ -644,6 +683,7 @@ def select_above(
                     admin_level=b.admin_level,
                     values={indicator: r},
                     inherited_units=1 if r is not None and r.inherited else 0,
+                    small_sample_units=1 if r is not None and r.small_sample else 0,
                 )
                 for c in carried:
                     got = bulk.get(c, b)

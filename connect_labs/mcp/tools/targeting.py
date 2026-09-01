@@ -159,7 +159,9 @@ def targeting_indicators(user, *, indicator=None):
         "FLOOR, not a measurement); 'inherited_units' says how many carry a figure "
         "measured somewhere coarser -- usually their country -- rather than in their "
         "own right, so a selection that is mostly inherited is a national figure "
-        "repeated across regions; and "
+        "repeated across regions; 'small_sample_units' says how many rest on a "
+        "survey estimate the source itself flags as too thin to rely on (DHS "
+        "suppresses below 25 unweighted cases and brackets below 50); and "
         "'countries_unsupported' lists countries the method cannot answer at all."
     ),
     input_schema={
@@ -222,6 +224,7 @@ def targeting_select(
         },
         "coverage": {k: {"with_value": got, "of": total} for k, (got, total) in selection.coverage.items()},
         "inherited_units": selection.inherited_units,
+        "small_sample_units": selection.small_sample_units,
         "countries_fully_above": selection.countries_fully_above,
         "countries_partly_above": selection.countries_partly_above,
         "countries_unsupported": selection.countries_unsupported,
