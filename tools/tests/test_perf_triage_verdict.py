@@ -17,6 +17,7 @@ would just teach the next reviewer to ignore the verdict.
 """
 
 import importlib.util
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -130,3 +131,130 @@ def test_threshold_scales_with_the_window_period(period_s, total, breaching):
     """
     points = [{"Sum": total}]
     assert bool(perf_triage._breaching_5xx_periods(points, period_s)) is breaching
+
+
+# --- Web CPU is read as Maximum, not Average -------------------------------
+#
+# 2026-09-01: `labs-jj-web-cpu-high` fired at 11:42 UTC and `perf_triage --hours 2`
+# printed "VERDICT: healthy -- No sustained saturation. Web CPU peak 40.8%" over a
+# window containing it. ECS reports CPUUtilization across the service's tasks, so
+# one task pinned at 100% beside an idle one averages ~50%. The alarm reads
+# Maximum; the tool read Average, so the pager and the verdict disagreed on the
+# same metric over the same window -- the module docstring's own reason #2.
+
+
+def _pinned_task_series():
+    """One task pinned, the other idle: high Maximum, unremarkable Average.
+
+    The real 11:15-11:50 UTC datapoints from the incident.
+    """
+    return [
+        {"Timestamp": "2026-09-01T11:20:00Z", "Average": 3.2, "Maximum": 29.4},
+        {"Timestamp": "2026-09-01T11:25:00Z", "Average": 10.3, "Maximum": 99.9},
+        {"Timestamp": "2026-09-01T11:30:00Z", "Average": 41.3, "Maximum": 100.0},
+        {"Timestamp": "2026-09-01T11:35:00Z", "Average": 21.9, "Maximum": 100.0},
+        {"Timestamp": "2026-09-01T11:40:00Z", "Average": 15.2, "Maximum": 60.5},
+    ]
+
+
+def _fake_aws(args, record=None):
+    """Only the ECS CPU series is hot -- every other tier is quiet.
+
+    Returning the pinned series for *every* metric would also trip the DB
+    connection rule, so the test would pass on judge()'s ordering rather than on
+    web saturation. Keep the rest boring so only one thing can explain the verdict.
+    """
+    if args[0] == "cloudwatch" and args[1] == "get-metric-statistics":
+        if "AWS/ECS" in args:
+            return {"Datapoints": _pinned_task_series()}
+        if "HTTPCode_ELB_5XX_Count" in args:
+            return {"Datapoints": [{"Timestamp": "2026-09-01T11:30:00Z", "Sum": 0.0}]}
+        return {
+            "Datapoints": [
+                {
+                    "Timestamp": "2026-09-01T11:30:00Z",
+                    "Average": 5.0,
+                    "Maximum": 6.0,
+                    "ExtendedStatistics": {"p95": 0.3},
+                }
+            ]
+        }
+    if args[0] == "cloudwatch":  # describe-alarms
+        return {"MetricAlarms": []}
+    return {"services": [{"desiredCount": 2, "runningCount": 2, "events": []}]}
+
+
+def test_sustained_sees_a_pinned_task_only_on_maximum():
+    """The mechanism, isolated: the same series is saturated on Max and quiet on Avg."""
+    points = _pinned_task_series()
+    on_max = perf_triage._sustained(points, perf_triage.WEB_CPU_SATURATED, 300, key="Maximum")
+    on_avg = perf_triage._sustained(points, perf_triage.WEB_CPU_SATURATED, 300, key="Average")
+    assert on_max == 3, "three consecutive periods >=90 on Maximum -- what the alarm fires on"
+    assert on_avg == 0, "and invisible on Average, which is why this test exists"
+
+
+def test_collect_asks_cloudwatch_for_maximum_on_web_cpu(monkeypatch):
+    """Pin the request itself: an Average-only query cannot see a pinned task."""
+    seen = []
+
+    def fake_aws(args, timeout=120):
+        seen.append(args)
+        return _fake_aws(args, record=None)
+
+    monkeypatch.setattr(perf_triage, "_aws", fake_aws)
+    data = perf_triage.collect(2)
+
+    web_cpu_calls = [a for a in seen if a[0] == "cloudwatch" and "get-metric-statistics" in a and "AWS/ECS" in a]
+    assert web_cpu_calls, "expected an ECS CPUUtilization query"
+    for call in web_cpu_calls:
+        assert "Maximum" in call, "ECS CPU must be requested with Maximum -- the alarm's statistic"
+
+    assert data["web_cpu_saturated_periods"] == 3
+    assert data["web_cpu_peak_pct"] == 100.0
+    assert data["web_cpu_avg_peak_pct"] == 41.3
+
+
+def test_verdict_is_not_healthy_while_a_task_is_pinned(monkeypatch):
+    """The whole point: the pager is going off, so the verdict may not say healthy."""
+
+    def fake_aws(args, timeout=120):
+        return _fake_aws(args)
+
+    monkeypatch.setattr(perf_triage, "_aws", fake_aws)
+    verdict = perf_triage.judge(perf_triage.collect(2))
+
+    assert verdict["verdict"] == "web_saturated"
+    joined = " ".join(verdict["findings"])
+    assert "ONE TASK PINNED" in joined, "a single pinned task must be named as such, not as a hot tier"
+    assert "100.0%" in joined and "41.3%" in joined, "show both numbers so the shape is checkable"
+
+
+def test_window_is_floored_to_the_period():
+    """An unaligned window shifts every bucket and can split a sustained run.
+
+    CloudWatch buckets from the start time, so the boundaries -- and therefore
+    whether 15 pinned minutes read as one run or two blips -- would otherwise
+    depend on the minute the tool was run.
+    """
+    for period in (300, 900, 3600):
+        start, end = perf_triage._window(2, period)
+        for stamp in (start, end):
+            dt = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            assert dt.timestamp() % period == 0, f"{stamp} is not aligned to a {period}s boundary"
+
+
+def test_window_alignment_keeps_a_pinned_run_intact():
+    """The concrete 2026-09-01 case: aligned buckets see one run, offset ones see two."""
+    aligned = [
+        {"Timestamp": "2026-09-01T11:25:00Z", "Maximum": 99.9},
+        {"Timestamp": "2026-09-01T11:30:00Z", "Maximum": 100.0},
+        {"Timestamp": "2026-09-01T11:35:00Z", "Maximum": 100.0},
+    ]
+    offset = [
+        {"Timestamp": "2026-09-01T11:29:05Z", "Maximum": 100.0},
+        {"Timestamp": "2026-09-01T11:34:05Z", "Maximum": 88.2},
+        {"Timestamp": "2026-09-01T11:39:05Z", "Maximum": 100.0},
+    ]
+    thresh = perf_triage.WEB_CPU_SATURATED
+    assert perf_triage._sustained(aligned, thresh, 300, key="Maximum") == 3
+    assert perf_triage._sustained(offset, thresh, 300, key="Maximum") == 0

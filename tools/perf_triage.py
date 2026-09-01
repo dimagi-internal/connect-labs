@@ -101,9 +101,31 @@ def _aws(args: list[str], timeout: int = 120) -> dict | list:
     return json.loads(proc.stdout or "{}")
 
 
-def _window(hours: int) -> tuple[str, str]:
-    """UTC window with an explicit Z. Never build these from local time."""
-    end = datetime.now(timezone.utc)
+def _window(hours: int, period: int = 300) -> tuple[str, str]:
+    """UTC window with an explicit Z, FLOORED to the period. Never local time.
+
+    The floor is load-bearing, not tidiness. CloudWatch buckets from the start
+    time, so an unaligned window shifts every bucket by the minute you happened
+    to run the tool -- and a sustained run straddling those boundaries is split
+    into shorter ones. A task pinned for 15 consecutive minutes then reports as
+    two 5-minute blips and `_sustained` returns 0, which is the same silent
+    wrong answer the rest of this file exists to prevent.
+
+    Measured 2026-09-01 on the labs-jj-web-cpu-high firing: on the alarm's
+    aligned buckets the run is 99.9 / 100.0 / 100.0 -- three periods, which is
+    what the alarm fired on. Read from a window starting at 09:54:05 the same
+    CPU reads 100.0 / 88.2 / 100.0, a broken run, and the verdict came back
+    healthy through a firing alarm.
+
+    This is the window-level twin of the rule `_period_for` already states: a
+    verdict that shifts with the minute you ran it is not comparable across
+    runs, and here it is not comparable with the pager either.
+    """
+    now = datetime.now(timezone.utc)
+    # timestamp() carries the sub-second part, so one modulo floors whole
+    # seconds and microseconds together -- subtracting .microsecond as well
+    # would take it off twice.
+    end = now - timedelta(seconds=now.timestamp() % period)
     start = end - timedelta(hours=hours)
     fmt = "%Y-%m-%dT%H:%M:%SZ"
     return start.strftime(fmt), end.strftime(fmt)
@@ -209,12 +231,25 @@ def _sustained(points, threshold, period, min_minutes=SUSTAINED_MINUTES, key="Av
 
 
 def collect(hours: int) -> dict:
-    start, end = _window(hours)
     period = _period_for(hours)
+    start, end = _window(hours, period)
     ecs_dims = lambda svc: {"ClusterName": CLUSTER, "ServiceName": svc}  # noqa: E731
 
-    web_cpu = _metric("AWS/ECS", "CPUUtilization", ecs_dims(WEB_SERVICE), start, end, period)
-    worker_cpu = _metric("AWS/ECS", "CPUUtilization", ecs_dims(WORKER_SERVICE), start, end, period)
+    # Maximum, not just Average. ECS reports CPUUtilization across the service's
+    # tasks, so ONE task pinned at 100% while a second idles averages ~50% -- and
+    # that is exactly the incident labs-jj-web-cpu-high exists to catch ("a web
+    # task has been pinned near 100% CPU for 15 minutes ... every user routed to
+    # it is stalled"). The alarm reads Maximum; reading Average here made the
+    # verdict disagree with the pager on the same metric and the same window.
+    # Measured 2026-09-01 11:25-11:35 UTC: Maximum 99.9 / 100.0 / 100.0 while
+    # Average peaked at 41.3, so the tool returned "healthy" through a firing
+    # alarm. This is reason #2 in the module docstring -- averages hide outages.
+    web_cpu = _metric(
+        "AWS/ECS", "CPUUtilization", ecs_dims(WEB_SERVICE), start, end, period, stats=["Average", "Maximum"]
+    )
+    worker_cpu = _metric(
+        "AWS/ECS", "CPUUtilization", ecs_dims(WORKER_SERVICE), start, end, period, stats=["Average", "Maximum"]
+    )
     db_cpu = _metric("AWS/RDS", "CPUUtilization", {"DBInstanceIdentifier": DB_INSTANCE}, start, end, period)
     db_conns = _metric(
         "AWS/RDS",
@@ -270,9 +305,14 @@ def collect(hours: int) -> dict:
     return {
         "window": {"start": start, "end": end, "hours": hours, "period_s": period},
         "empty_metrics": empty,
-        "web_cpu_peak_pct": _peak(web_cpu),
-        "web_cpu_saturated_periods": _sustained(web_cpu, WEB_CPU_SATURATED, period),
-        "worker_cpu_peak_pct": _peak(worker_cpu),
+        # peak/saturation on Maximum so the verdict matches the alarm; the
+        # Average is kept alongside so ONE pinned task stays distinguishable
+        # from a whole tier that is genuinely hot.
+        "web_cpu_peak_pct": _peak(web_cpu, "Maximum"),
+        "web_cpu_avg_peak_pct": _peak(web_cpu),
+        "web_cpu_saturated_periods": _sustained(web_cpu, WEB_CPU_SATURATED, period, key="Maximum"),
+        "worker_cpu_peak_pct": _peak(worker_cpu, "Maximum"),
+        "worker_cpu_avg_peak_pct": _peak(worker_cpu),
         "db_cpu_peak_pct": _peak(db_cpu),
         "db_connections_peak": _peak(db_conns, "Maximum"),
         "alb_p95_peak_s": _peak_ext(alb_p95, "p95"),
@@ -314,9 +354,22 @@ def judge(d: dict) -> dict:
 
     if d["web_cpu_saturated_periods"]:
         mins = d["web_cpu_saturated_periods"] * period_min
+        # Max is per-task; Average is across the service. Max pinned with a much
+        # lower Average means ONE task is stalled and the others are serving --
+        # users hash to tasks, so a slice of them see a dead site while the tier
+        # looks fine. Say which it is, because the remedy differs: a single
+        # pinned task points at one request path, a hot tier points at load.
+        web_avg = d.get("web_cpu_avg_peak_pct") or 0
+        shape = (
+            f"ONE TASK PINNED (max {web:.1f}%, service average {web_avg:.1f}%) -- "
+            "the other task(s) are still serving, so only the users routed to the pinned "
+            "one are stalled."
+            if web_avg and web - web_avg > 25
+            else f"tier-wide (max {web:.1f}%, service average {web_avg:.1f}%)."
+        )
         findings.append(
-            f"WEB TIER SATURATED: >={WEB_CPU_SATURATED}% CPU for >={mins} consecutive minutes "
-            f"(peak {web:.1f}%). Worker peaked at {worker:.1f}% -- "
+            f"WEB TIER SATURATED: >={WEB_CPU_SATURATED}% CPU for >={mins} consecutive minutes. "
+            f"{shape} Worker peaked at {worker:.1f}% -- "
             + (
                 "worker is idle, so this is a REQUEST PATH, not a Celery job."
                 if worker < 50
@@ -420,10 +473,10 @@ def judge(d: dict) -> dict:
         # of periods is an outage. Reporting the bare peak next to "no
         # saturation" reads as a contradiction and invites the wrong conclusion.
         peak_note = (
-            f"Web CPU peaked at {web:.1f}% but never for {SUSTAINED_MINUTES} consecutive minutes "
-            f"(transient -- task start, deploy, or a single heavy request)"
+            f"Web CPU peaked at {web:.1f}% (busiest task) but never for {SUSTAINED_MINUTES} "
+            f"consecutive minutes (transient -- task start, deploy, or a single heavy request)"
             if web >= WEB_CPU_SATURATED
-            else f"Web CPU peak {web:.1f}% (median baseline {BASELINE['web_cpu_median_pct']}%)"
+            else f"Web CPU peak {web:.1f}% (busiest task; median baseline " f"{BASELINE['web_cpu_median_pct']}%)"
         )
         conn_note = (
             f"DB connections peaked at {conns:.0f} of ~{BASELINE['db_connection_slots']} slots "
