@@ -246,6 +246,13 @@ MIDDLEWARE = [
 # AuthenticationMiddleware has run further in.
 MIDDLEWARE.insert(0, "connect_labs.utils.request_telemetry.RequestTelemetryMiddleware")
 
+# The unbiased telemetry sample. Env-settable because the population worth sampling
+# changes with whatever is being investigated, and 0.0 means the pre-existing
+# threshold-gated behaviour exactly. See the request_telemetry module docstring for
+# why a threshold-gated stream cannot be compared across load levels at all.
+TELEMETRY_SAMPLE_RATE = env.float("TELEMETRY_SAMPLE_RATE", default=0.0)
+TELEMETRY_SAMPLE_PATH_PREFIX = env("TELEMETRY_SAMPLE_PATH_PREFIX", default="")
+
 # STATIC
 # ------------------------------------------------------------------------------
 STATIC_ROOT = str(BASE_DIR / "staticfiles")

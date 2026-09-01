@@ -63,6 +63,51 @@ consumer on the web tier. ``send`` is now wrapped so the body read is billed to
 Two gaps remain, deliberately: ``stream=True`` calls return at headers and the
 caller reads the body on its own time, and anything reaching the network by a route
 other than httpx is invisible — prefer httpx.
+
+``self_ms`` is a residual, so it cannot say WHICH
+-------------------------------------------------
+Everything above makes the residual smaller and more honest. None of it makes the
+residual *attributable*: "2.6 s left over" is equally consistent with our Python
+burning 2.6 s of CPU and with the request's thread sitting descheduled for 2.6 s
+while three gunicorn workers share one vCPU. Those two have opposite fixes, and no
+combination of wall-clock buckets distinguishes them.
+
+``cpu_ms`` does, in one number. It is ``time.thread_time()`` across the middleware
+— CPU actually consumed by the thread serving this request, which under ASGI is the
+same thread-sensitive executor thread the sync middleware chain and the view run in.
+Read it against ``self_ms``:
+
+* ``cpu_ms`` ≈ ``self_ms`` — the time really is our Python. Profile the view.
+* ``cpu_ms`` ≪ ``self_ms`` — the thread was **not running**. Either it was waiting
+  on something outside the two measured buckets, or it was ready and descheduled,
+  i.e. CPU contention. Profiling the view will find nothing.
+
+An unbiased sample, and why ``sampled`` is a field and not a ``reason``
+----------------------------------------------------------------------
+Everything else here is threshold-gated: a line exists only because the request
+crossed ``SLOW_REQUEST_MS``. That is right for *finding* an incident and invalid for
+*comparing* anything, because the gate truncates the distribution differently at
+every load level — when the tier is busy, ordinary requests get pushed just over the
+floor and pile up against it, dragging the busy band's mean DOWN. A comparison across
+load levels drawn from this stream reports an artefact with the confidence of real
+data (#1386 produced two opposite wrong conclusions about the same endpoint in one
+day, both this way).
+
+``TELEMETRY_SAMPLE_RATE`` fixes that by logging a fixed fraction *regardless of
+duration*, so the sampled population is a fair draw from all requests. The draw
+happens before the request runs and cannot depend on its outcome.
+
+The trap this design avoids: a sampled request that is ALSO slow gets
+``reason: "slow,sample"``, so a Logs Insights ``filter reason = "sample"`` silently
+drops exactly the slow ones — re-introducing the bias the sample exists to remove,
+in the query rather than the data. So the authoritative filter is the boolean field:
+
+    fields @timestamp, path, duration_ms, cpu_ms, self_ms, db_ms, outbound_ms
+    | filter sampled = 1
+    | stats count(), pct(duration_ms, 50), pct(cpu_ms, 50) by bin(5m)
+
+Never mix the two populations in one statistic; ``sampled = 1`` is unbiased,
+``sampled = 0`` is the ``duration >= 3s`` tail.
 """
 
 from __future__ import annotations
@@ -71,6 +116,7 @@ import contextvars
 import functools
 import json
 import logging
+import random
 import time
 from collections import Counter
 from dataclasses import dataclass, field
@@ -86,6 +132,17 @@ logger = logging.getLogger("connect_labs.telemetry.request")
 SLOW_REQUEST_MS = getattr(settings, "TELEMETRY_SLOW_REQUEST_MS", 3000)
 OUTBOUND_CALL_LIMIT = getattr(settings, "TELEMETRY_OUTBOUND_CALL_LIMIT", 20)
 DB_QUERY_LIMIT = getattr(settings, "TELEMETRY_DB_QUERY_LIMIT", 100)
+
+# The unbiased sample (see the module docstring). OFF at 0.0, which is the
+# pre-existing behaviour exactly: no request is logged for being sampled, and the
+# healthy path still costs two counters and no output. Turning it on is a one-value
+# edit to deploy/task-definitions/web.json, the same shape as WEB_LIMIT_CONCURRENCY.
+#
+# Scope it with the prefix rather than raising the rate globally: the population
+# worth sampling is usually one endpoint under investigation, and an empty prefix
+# means every path, which on this tier is ~28k requests/day.
+SAMPLE_RATE = float(getattr(settings, "TELEMETRY_SAMPLE_RATE", 0.0))
+SAMPLE_PATH_PREFIX = getattr(settings, "TELEMETRY_SAMPLE_PATH_PREFIX", "")
 
 
 @dataclass
@@ -343,6 +400,24 @@ def install_httpx_instrumentation() -> None:
         logger.debug("httpx instrumentation not installed", exc_info=True)
 
 
+def _should_sample(request) -> bool:
+    """Draw for the unbiased sample, independent of anything the request does.
+
+    Runs before the view, on the request path, so it must not be able to raise:
+    a telemetry decision is never allowed to break the request it is measuring.
+    """
+    try:
+        if SAMPLE_RATE <= 0:
+            return False
+        if SAMPLE_PATH_PREFIX and not request.path.startswith(SAMPLE_PATH_PREFIX):
+            return False
+        # >= 1.0 short-circuits to a census rather than 1_000_000 coin flips a day.
+        return SAMPLE_RATE >= 1.0 or random.random() < SAMPLE_RATE
+    except Exception:
+        logger.debug("telemetry sample decision failed", exc_info=True)
+        return False
+
+
 class RequestTelemetryMiddleware:
     """Log a structured line for any request that looks expensive.
 
@@ -360,7 +435,15 @@ class RequestTelemetryMiddleware:
     def __call__(self, request):
         stats = RequestStats()
         token = _stats.set(stats)
+        # Drawn BEFORE the request runs. Whether a line exists must not depend on
+        # anything the request does, or the sample stops being a fair draw — which
+        # is the whole defect it exists to correct.
+        sampled = _should_sample(request)
         started = time.perf_counter()
+        # Per-THREAD CPU, not per-process: with WEB_CONCURRENCY workers each running
+        # an asgiref thread pool, process CPU would include whatever the other
+        # in-flight requests in this worker burned, and attribute it to this one.
+        thread_started = time.thread_time()
 
         def count_queries(execute, sql, params, many, context):
             stats.db_queries += 1
@@ -377,15 +460,23 @@ class RequestTelemetryMiddleware:
                 response = self.get_response(request)
         finally:
             duration_ms = int((time.perf_counter() - started) * 1000)
+            cpu_ms = int((time.thread_time() - thread_started) * 1000)
             try:
-                self._maybe_log(request, stats, duration_ms)
+                self._maybe_log(request, stats, duration_ms, cpu_ms, sampled)
             except Exception:
                 logger.debug("request telemetry failed", exc_info=True)
             _stats.reset(token)
 
         return response
 
-    def _maybe_log(self, request, stats: RequestStats, duration_ms: int) -> None:
+    def _maybe_log(
+        self,
+        request,
+        stats: RequestStats,
+        duration_ms: int,
+        cpu_ms: int = 0,
+        sampled: bool = False,
+    ) -> None:
         reasons = []
         if duration_ms >= SLOW_REQUEST_MS:
             reasons.append("slow")
@@ -393,6 +484,8 @@ class RequestTelemetryMiddleware:
             reasons.append("outbound_fanout")
         if stats.db_queries >= DB_QUERY_LIMIT:
             reasons.append("db_fanout")
+        if sampled:
+            reasons.append("sample")
         if not reasons:
             return
 
@@ -412,6 +505,14 @@ class RequestTelemetryMiddleware:
             # remainder means the time is in our own Python, and neither of the
             # other two numbers will lead you to it.
             "self_ms": max(0, duration_ms - int(stats.outbound_ms) - int(stats.db_ms)),
+            # CPU this request's thread actually burned. self_ms says how much time
+            # is unexplained; cpu_ms says whether that time was us computing or us
+            # not running at all. See the module docstring.
+            "cpu_ms": cpu_ms,
+            # The authoritative filter for the unbiased population. Do NOT select on
+            # reason == "sample": a sampled request that is also slow reads
+            # "slow,sample" and would be dropped, biasing the sample by query.
+            "sampled": sampled,
             "username": getattr(user, "username", None) if user and user.is_authenticated else None,
         }
         # Never log the query string: labs URLs carry opportunity and record ids

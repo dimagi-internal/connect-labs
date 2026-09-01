@@ -71,6 +71,14 @@
           "value": "0"
         },
         {
+          "name": "TELEMETRY_SAMPLE_RATE",
+          "value": "1.0"
+        },
+        {
+          "name": "TELEMETRY_SAMPLE_PATH_PREFIX",
+          "value": "/audit/image/"
+        },
+        {
           "name": "LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID",
           "value": "1e-9rKzJAlyDerGhxCxBBxGLbxnnOllrp"
         },

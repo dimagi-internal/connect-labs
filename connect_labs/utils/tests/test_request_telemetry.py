@@ -585,3 +585,129 @@ class TestBodyDownloadIsNotOurCpu:
         bogus = Unstamped()
         bogus._labs_telemetry_headers_done = "not-a-float"
         assert request_telemetry._body_ms(bogus) == 0.0
+
+
+class TestCpuMsSeparatesBurningFromWaiting:
+    """The discrimination ``self_ms`` alone cannot make.
+
+    ``self_ms`` is what is left after the measured buckets, so "2.6 s unexplained"
+    reads identically whether our Python burned 2.6 s of CPU or the request's thread
+    sat descheduled for 2.6 s while three gunicorn workers shared one vCPU. Those two
+    have opposite fixes, and #1386 stalled precisely here. ``cpu_ms`` is per-thread
+    CPU time, so it answers WHICH.
+    """
+
+    @pytest.fixture
+    def always_log(self, monkeypatch):
+        monkeypatch.setattr(request_telemetry, "SLOW_REQUEST_MS", 0)
+
+    def test_burning_cpu_shows_up_as_cpu_ms(self, request_obj, caplog, always_log):
+        def spin(r):
+            deadline = time.perf_counter() + 0.15
+            total = 0
+            while time.perf_counter() < deadline:
+                total += 1
+            return "ok"
+
+        caplog.set_level("WARNING")
+        _middleware(spin)(request_obj)
+
+        (line,) = _lines(caplog)
+        # Busy-looping for 150ms must be billed as CPU, not merely as elapsed time.
+        assert line["cpu_ms"] >= 50, line
+        assert line["cpu_ms"] <= line["duration_ms"] + 5
+
+    def test_waiting_is_not_billed_as_cpu(self, request_obj, caplog, always_log):
+        """A sleeping request has the SAME self_ms shape as a spinning one.
+
+        This is the whole point: without cpu_ms the two lines are indistinguishable,
+        and the wrong one sends you to profile a view that is not running.
+        """
+
+        def wait(r):
+            time.sleep(0.15)
+            return "ok"
+
+        caplog.set_level("WARNING")
+        _middleware(wait)(request_obj)
+
+        (line,) = _lines(caplog)
+        assert line["duration_ms"] >= 140, line
+        # Unattributed wall-clock ...
+        assert line["self_ms"] >= 140, line
+        # ... but almost no CPU. That gap is the signal.
+        assert line["cpu_ms"] < 50, line
+
+
+class TestUnbiasedSample:
+    """Log a fixed fraction regardless of duration, so bands are comparable.
+
+    The threshold-gated stream truncates the distribution differently at every load
+    level, which makes any cross-band comparison drawn from it an artefact — real,
+    plentiful data, uninterpretable for that question (#1386, twice in one day).
+    """
+
+    def test_sampling_is_off_by_default(self, request_obj, caplog):
+        """The healthy path must stay silent: this runs on every request."""
+        caplog.set_level("WARNING")
+        _middleware(lambda r: "ok")(request_obj)
+        assert _lines(caplog) == []
+
+    def test_a_fast_clean_request_enters_the_sample(self, request_obj, caplog, monkeypatch):
+        """The defining property. A fast request can NEVER appear in the gated
+        stream, so if it cannot appear here either, the sample is not unbiased."""
+        monkeypatch.setattr(request_telemetry, "SAMPLE_RATE", 1.0)
+
+        caplog.set_level("WARNING")
+        _middleware(lambda r: "ok")(request_obj)
+
+        (line,) = _lines(caplog)
+        assert line["sampled"] is True
+        assert line["reason"] == "sample"
+        assert line["duration_ms"] < request_telemetry.SLOW_REQUEST_MS
+
+    def test_sampled_and_slow_is_still_findable_by_the_boolean(self, request_obj, caplog, monkeypatch):
+        """The query-side trap.
+
+        A sampled request that is also slow reads ``reason: "slow,sample"``, so
+        ``filter reason = "sample"`` drops exactly the slow ones and re-introduces
+        the bias in the query. ``sampled`` is the field that cannot be fooled.
+        """
+        monkeypatch.setattr(request_telemetry, "SAMPLE_RATE", 1.0)
+        monkeypatch.setattr(request_telemetry, "SLOW_REQUEST_MS", 0)
+
+        caplog.set_level("WARNING")
+        _middleware(lambda r: "ok")(request_obj)
+
+        (line,) = _lines(caplog)
+        assert line["reason"] == "slow,sample"
+        assert line["sampled"] is True
+
+    def test_prefix_scopes_the_sample_to_one_endpoint(self, caplog, monkeypatch):
+        """A census of the tier would be a request log; the ALB already is one."""
+        monkeypatch.setattr(request_telemetry, "SAMPLE_RATE", 1.0)
+        monkeypatch.setattr(request_telemetry, "SAMPLE_PATH_PREFIX", "/audit/image/")
+
+        def req(path):
+            r = MagicMock()
+            r.method, r.path = "GET", path
+            r.user.is_authenticated = False
+            return r
+
+        caplog.set_level("WARNING")
+        _middleware(lambda r: "ok")(req("/audit/image/1/"))
+        _middleware(lambda r: "ok")(req("/audit/review/"))
+
+        lines = _lines(caplog)
+        assert [line["path"] for line in lines] == ["/audit/image/1/"]
+
+    def test_the_draw_cannot_break_the_request(self, monkeypatch):
+        """It runs before the view, outside the middleware's try/finally."""
+        monkeypatch.setattr(request_telemetry, "SAMPLE_RATE", 1.0)
+        monkeypatch.setattr(request_telemetry, "SAMPLE_PATH_PREFIX", "/audit/")
+
+        broken = MagicMock()
+        broken.method = "GET"
+        type(broken).path = property(lambda self: (_ for _ in ()).throw(RuntimeError("no path")))
+
+        assert _middleware(lambda r: "ok")(broken) == "ok"
