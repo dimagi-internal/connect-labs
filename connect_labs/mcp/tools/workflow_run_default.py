@@ -145,8 +145,24 @@ def workflow_run_default(
         elif cadence:
             run_kwargs["cadence"] = cadence
 
+        # CommCare HQ token is best-effort and OPTIONAL, mirroring
+        # run_scheduled_workflow's exact pattern in tasks.py: most templates
+        # never touch a cchq_cases pipeline and simply ignore it. A missing/
+        # expired CCHQ token must never block a manual run_default call that
+        # doesn't need one -- a template that DOES need it degrades its own
+        # affected fields gracefully (see e.g. flw_daily_summary_report.py /
+        # flw_daily_indicator_report.py's work-area enrichment).
+        from connect_labs.labs.integrations.commcare.cchq_tokens import CCHQTokenError, get_valid_cchq_access_token
+
         try:
-            result = run_default_for_definition(definition, access_token=wda.access_token, request=None, **run_kwargs)
+            cchq_token = get_valid_cchq_access_token(user)
+        except CCHQTokenError:
+            cchq_token = None
+
+        try:
+            result = run_default_for_definition(
+                definition, access_token=wda.access_token, request=None, cchq_access_token=cchq_token, **run_kwargs
+            )
         except ValueError as e:
             # run_default_for_definition raises ValueError when the template
             # doesn't opt into default-run — same code workflow_save_snapshot

@@ -41,6 +41,23 @@ Superset schema/sample-value export of this exact form (not guessed):
                  is not used here.)
     Deworming:   form.case.update.dw_dosage_date_time
                  (set when a dose was actually administered)
+
+Three more fields ride along on each FLW's dict, but are NOT day-specific
+indicators -- current-status info, only ever useful as "latest known value",
+so unlike #1-9 above there's no need to backfill them into older runs:
+  - suspended / suspension_date: Connect's own worker-suspension flag, from
+    WorkflowDataAccess.get_workers() (the /user_data/ export -- no CCHQ
+    token, same access_token as everything else here).
+  - Every FLW on the opportunity's Connect roster gets a row now, active or
+    not (get_workers() again) -- previously only FLWs with hsd/approved
+    activity that day appeared at all.
+  - work_areas_left: count of this FLW's still-open (not closed) work-area
+    cases, from a cchq_cases pull over CommCare's work-area case type,
+    joined via the commcare_userid captured on approved_visits rows (added
+    2026-08-26 for report 13003's grey-out, unused there so far). This is
+    the one piece that DOES need a CommCare HQ token -- see run_default's
+    docstring for how that's threaded through headlessly, mirroring
+    flw_daily_indicator_report.py (Program 176)'s identical pattern.
 """
 from __future__ import annotations
 
@@ -113,6 +130,20 @@ PIPELINE_SCHEMAS = [
                     "description": "Set when a deworming dose was actually administered this visit. "
                     "Indicator #9's actual signal.",
                 },
+                {
+                    "name": "wa_case_id",
+                    "paths": ["form.work_area_info.wa_caseid", "form.wa_case_id"],
+                    "aggregation": "first",
+                    "description": "Which work area this visit happened in. TWO paths on purpose -- "
+                    "the No Children Found form stores it at form.wa_case_id, a single path undercounts.",
+                },
+                {
+                    "name": "commcare_userid",
+                    "path": "form.meta.userID",
+                    "aggregation": "first",
+                    "description": "The CommCare user UUID behind this Connect username -- joins a "
+                    "visit to a work-area case's owner_id. Used to compute work_areas_left.",
+                },
             ],
         },
     },
@@ -142,7 +173,12 @@ SNAPSHOT_SCHEMA = {
     "keys": {
         "state.flw_daily_summary.date": "ISO date (Africa/Lagos calendar day) this run covers",
         "state.flw_daily_summary.generated_at": "ISO timestamp this run was computed",
-        "state.flw_daily_summary.flws": "List of per-FLW daily summary indicator dicts for this opportunity+day",
+        "state.flw_daily_summary.flws": (
+            "List of per-FLW daily summary indicator dicts for this opportunity+day. Every FLW on the "
+            "opportunity's roster appears (not just ones with activity). Also carries name, and where "
+            "available: suspended, suspension_date, work_areas_left -- current-status fields, not "
+            "day-specific indicators, so only present from whenever this was added onward."
+        ),
     },
 }
 
@@ -171,7 +207,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
                     {report.date} · generated {report.generated_at}
                 </p>
             </div>
-            <div className="text-sm text-gray-600">{flws.length} FLW(s) with activity this day</div>
+            <div className="text-sm text-gray-600">{flws.length} FLW(s) on roster</div>
             <div className="overflow-x-auto border rounded-lg">
                 <table className="min-w-full text-sm">
                     <thead className="bg-gray-50">
@@ -186,13 +222,21 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
                             <th className="px-3 py-2 text-right font-semibold">MUAC Measured (Photo)</th>
                             <th className="px-3 py-2 text-right font-semibold">Deworming Eligible</th>
                             <th className="px-3 py-2 text-right font-semibold">Deworming Delivered</th>
+                            <th className="px-3 py-2 text-right font-semibold">WAs Left</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y">
                         {flws.map(function (f, i) {
                             return (
-                                <tr key={f.username || i}>
-                                    <td className="px-3 py-2 font-mono text-xs">{f.username}</td>
+                                <tr key={f.username || i} className={f.suspended ? "bg-red-50" : ""}>
+                                    <td className="px-3 py-2 font-mono text-xs">
+                                        {f.name || f.username}
+                                        {f.suspended && (
+                                            <span className="ml-2 px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-700">
+                                                Suspended
+                                            </span>
+                                        )}
+                                    </td>
                                     <td className="px-3 py-2 text-right">{f.total_households_registered}</td>
                                     <td className="px-3 py-2 text-right">{f.total_children_registered}</td>
                                     <td className="px-3 py-2 text-right">{f.total_health_service_delivery_visits}</td>
@@ -206,6 +250,9 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
                                     <td className="px-3 py-2 text-right">{f.total_children_muac_measured}</td>
                                     <td className="px-3 py-2 text-right">{f.total_children_deworming_eligible}</td>
                                     <td className="px-3 py-2 text-right">{f.total_children_deworming_photo_taken}</td>
+                                    <td className="px-3 py-2 text-right">
+                                        {f.work_areas_left === undefined ? "—" : f.work_areas_left}
+                                    </td>
                                 </tr>
                             );
                         })}
@@ -217,7 +264,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
 }"""
 
 
-def run_default(*, definition, access_token, request=None, window=None, **_):
+def run_default(*, definition, access_token, request=None, window=None, cchq_access_token=None, **_):
     """Compute one WAT calendar day's FLW daily summary for every opportunity
     this (program-owned, multi-opp) definition spans, creating and completing
     one run per opportunity.
@@ -227,17 +274,35 @@ def run_default(*, definition, access_token, request=None, window=None, **_):
     the loop. ``window`` overrides the default "yesterday, Africa/Lagos" day
     for backfills; it is a (window_start, window_end) UTC half-open pair.
 
-    Every indicator here comes from the two connect_csv pipelines above --
-    no CommCare HQ token, no extra fetch. This is deliberately simpler than
-    flw_daily_indicator_report.py (Program 176), which needs a cchq_cases
-    pipeline for building counts.
+    Indicators #1-9 come from the two connect_csv pipelines above -- no
+    CommCare HQ token, no extra fetch. Three more fields (module docstring
+    has the full rationale) ride along on each FLW dict but aren't
+    day-specific: the full opportunity roster (so every FLW gets a row, not
+    just ones with activity today), suspended/suspension_date, and
+    work_areas_left.
+
+    work_areas_left is the one piece needing a CommCare HQ token, fetched the
+    same way flw_daily_indicator_report.py (Program 176) fetches building
+    counts: directly via fetch_cchq_cases_as_visit_dicts, NOT through
+    WorkflowDataAccess.get_pipeline_data (that generic path never threads a
+    cchq_access_token down to the cchq_cases fetcher, so it would raise
+    CCHQHeadlessError every time this runs unattended). cchq_access_token is
+    optional and best-effort -- the scheduler mints one per run via
+    get_valid_cchq_access_token(owner) when available; if it's missing,
+    expired, or the fetch otherwise fails, work_areas_left is just absent
+    from every FLW's dict for that opp/day rather than failing the run.
     """
+    import logging
     from collections import defaultdict
     from datetime import datetime, timedelta, timezone
 
+    from connect_labs.labs.analysis.backends.sql.cchq_cases_fetcher import fetch_cchq_cases_as_visit_dicts
+    from connect_labs.labs.analysis.config import DataSourceConfig
     from connect_labs.workflow.data_access import WorkflowDataAccess
     from connect_labs.workflow.flw_audit_compute import WAT_OFFSET, wat_date
     from connect_labs.workflow.flw_daily_summary_compute import compute_flw_daily_summary
+
+    logger = logging.getLogger(__name__)
 
     if window is not None:
         window_start, window_end = window
@@ -260,6 +325,17 @@ def run_default(*, definition, access_token, request=None, window=None, **_):
         fetch_wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_ids[0])
     try:
         pipeline_data = fetch_wda.get_pipeline_data(definition.id, opportunity_id=opp_ids[0])
+        roster_by_opp = {}
+        for opp_id in opp_ids:
+            try:
+                roster_by_opp[opp_id] = fetch_wda.get_workers(opp_id)
+            except Exception:
+                logger.exception(
+                    "flw_daily_summary_report: failed to fetch worker roster for opp %s "
+                    "(suspended flag and roster-only FLW rows will be unavailable for this opp/day)",
+                    opp_id,
+                )
+                roster_by_opp[opp_id] = []
     finally:
         fetch_wda.close()
 
@@ -275,8 +351,10 @@ def run_default(*, definition, access_token, request=None, window=None, **_):
         dt = _parse(row.get("time_start"))
         return dt is not None and window_start <= dt < window_end
 
-    hsd_rows = [r for r in pipeline_data.get("hsd_visits", {}).get("rows", []) if _in_window(r)]
-    approved_rows = [r for r in pipeline_data.get("approved_visits", {}).get("rows", []) if _in_window(r)]
+    all_hsd_rows = pipeline_data.get("hsd_visits", {}).get("rows", [])
+    all_approved_rows = pipeline_data.get("approved_visits", {}).get("rows", [])
+    hsd_rows = [r for r in all_hsd_rows if _in_window(r)]
+    approved_rows = [r for r in all_approved_rows if _in_window(r)]
 
     hsd_by_opp_flw = defaultdict(lambda: defaultdict(list))
     for r in hsd_rows:
@@ -286,6 +364,42 @@ def run_default(*, definition, access_token, request=None, window=None, **_):
     for r in approved_rows:
         approved_by_opp_flw[r["opportunity_id"]][r["username"]].append(r)
 
+    # username -> CommCare HQ user UUID, from EVERY approved_visits row this
+    # pull returned (not just today's window) -- an FLW with zero activity
+    # today can still have this mapping from an earlier visit.
+    commcare_userid_by_opp_username = {}
+    for r in all_approved_rows:
+        ccuid = r.get("commcare_userid")
+        if not ccuid:
+            continue
+        commcare_userid_by_opp_username.setdefault((r["opportunity_id"], r["username"]), ccuid)
+
+    # Open (not closed) work-area case count per opp, keyed by CommCare
+    # owner_id. An opp missing from this dict means the fetch failed or no
+    # cchq_access_token was available -- work_areas_left is left off every
+    # FLW dict for that opp rather than defaulting to a misleading 0.
+    work_area_data_source = DataSourceConfig(type="cchq_cases", case_type="work-area")
+    open_wa_counts_by_opp = {}
+    for opp_id in opp_ids:
+        try:
+            wa_rows = fetch_cchq_cases_as_visit_dicts(
+                request, work_area_data_source, access_token, opp_id, cchq_access_token=cchq_access_token
+            )
+        except Exception:
+            logger.exception(
+                "flw_daily_summary_report: failed to fetch work-area cases for opp %s "
+                "(work_areas_left will be unavailable for this opp/day)",
+                opp_id,
+            )
+            continue
+        counts = defaultdict(int)
+        for row in wa_rows:
+            case = row.get("form_json", {}).get("case", {})
+            owner_id = case.get("owner_id")
+            if owner_id and not case.get("closed", False):
+                counts[owner_id] += 1
+        open_wa_counts_by_opp[opp_id] = counts
+
     date_iso = wat_date(window_start)
     generated_at = datetime.now(timezone.utc).isoformat()
 
@@ -293,12 +407,27 @@ def run_default(*, definition, access_token, request=None, window=None, **_):
     for opp_id in opp_ids:
         opp_hsd = hsd_by_opp_flw.get(opp_id, {})
         opp_approved = approved_by_opp_flw.get(opp_id, {})
-        usernames = set(opp_hsd.keys()) | set(opp_approved.keys())
+        roster = {w["username"]: w for w in roster_by_opp.get(opp_id, []) if w.get("username")}
+        usernames = set(opp_hsd.keys()) | set(opp_approved.keys()) | set(roster.keys())
+        wa_counts = open_wa_counts_by_opp.get(opp_id)
 
         flws = []
         for username in usernames:
             indicators = compute_flw_daily_summary(opp_hsd.get(username, []), opp_approved.get(username, []))
             indicators["username"] = username
+
+            worker = roster.get(username)
+            if worker is not None:
+                indicators["name"] = worker.get("name")
+                if "suspended" in worker:
+                    indicators["suspended"] = worker["suspended"]
+                if worker.get("suspension_date"):
+                    indicators["suspension_date"] = worker["suspension_date"]
+
+            ccuid = commcare_userid_by_opp_username.get((opp_id, username))
+            if ccuid is not None and wa_counts is not None:
+                indicators["work_areas_left"] = wa_counts.get(ccuid, 0)
+
             flws.append(indicators)
 
         opp_wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_id)

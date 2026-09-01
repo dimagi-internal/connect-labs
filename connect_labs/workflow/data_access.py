@@ -1714,9 +1714,10 @@ class WorkflowDataAccess(BaseDataAccess):
         Get workers for an opportunity from Connect API.
 
         Returns:
-            List of worker dicts with username, name, visit_count, last_active.
-            Note: visit_count is not in the v2 serializer; it will default to 0
-            unless the serializer is extended on the production side.
+            List of worker dicts with username, name, visit_count, last_active,
+            suspended, suspension_date. Note: visit_count is not in the v2
+            serializer; it will default to 0 unless the serializer is
+            extended on the production side.
         """
         from connect_labs.labs.integrations.connect.export_client import ExportAPIError
         from connect_labs.labs.integrations.connect.factory import get_export_client
@@ -1744,8 +1745,19 @@ class WorkflowDataAccess(BaseDataAccess):
                 "visit_count": int(row.get("total_visits") or 0),
                 "last_active": str(row["last_active"]) if row.get("last_active") else None,
             }
-            # Pass through any other fields the v2 serializer happens to include
-            for key in ("phone_number", "approved_visits", "flagged_visits", "rejected_visits", "email"):
+            # Pass through any other fields the v2 serializer happens to include.
+            # suspended/suspension_date power the FLW-suspended badge on the
+            # daily-summary reports (Program 217) -- suspension_reason is NOT
+            # in this export.
+            for key in (
+                "phone_number",
+                "approved_visits",
+                "flagged_visits",
+                "rejected_visits",
+                "email",
+                "suspended",
+                "suspension_date",
+            ):
                 if row.get(key) is not None:
                     worker[key] = row[key]
             workers.append(worker)
