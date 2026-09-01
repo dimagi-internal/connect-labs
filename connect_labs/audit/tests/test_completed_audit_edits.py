@@ -7,9 +7,13 @@ Two properties, from two different failures:
     status, so a stale tab, a replayed POST or a future client change could
     rewrite a completed audit's verdicts and the server would accept it.
 
-  * An edit re-dates the audit. Its conclusions ARE its content, so one whose
-    verdicts changed today was not meaningfully completed on the original date,
-    and completed_at moves with the edit.
+  * A completed audit is dated by the verdicts it carries. Its conclusions ARE
+    its content, so one whose verdicts changed today was not meaningfully
+    completed on the original date. Since #1385 that is upheld by refusing the
+    edit outright rather than by re-dating it: the save endpoint 409s on any
+    completed session, and the only route to a change is Reopen, which clears
+    completed_at and drops the session to in_progress so re-completing stamps a
+    current date.
 
 A separate last_edited_at was tried first and removed. Two timestamps meant the
 live builder ordered verdicts on completed_at while the projection ordered on
@@ -21,6 +25,7 @@ the whole sequence rather than just the first value, so the second field bought
 nothing and cost correctness.
 """
 
+import json
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -92,12 +97,15 @@ class TestVerdictsAreDatedHonestly:
 class TestTheSaveEndpointRefusesCompletedAudits:
     """Enforced on the server, not just in the browser.
 
-    Patched at the predicate rather than driven through a real workflow lookup:
-    _is_muac_picture_audit_session costs an API round trip, and what these pin is
-    the branch, not that lookup.
+    This guard used to carry exactly one exception -- the "Muac Picture Audit"
+    workflow, whose completed reports stayed editable on purpose, resolved by a
+    per-request workflow-run lookup. #1385 withdrew that product decision, so the
+    rule is now unconditional and there is no predicate left to patch. The tests
+    below pin the ABSENCE of a carve-out, which is the property that regressed
+    most cheaply: reintroducing one is a two-line change.
     """
 
-    def _post(self, session, is_muac):
+    def _post(self, session):
         req = RequestFactory().post(f"/audit/api/{session.id}/save/", {"visit_results": "{}"})
         req.user = type("U", (), {"is_authenticated": True, "username": "someone"})()
         with (
@@ -105,43 +113,46 @@ class TestTheSaveEndpointRefusesCompletedAudits:
             patch.object(views.AuditDataAccess, "close", return_value=None),
             patch.object(views.AuditDataAccess, "get_audit_session", return_value=session),
             patch.object(views.AuditDataAccess, "save_audit_session", side_effect=lambda s: s),
-            patch.object(views, "_is_muac_picture_audit_session", return_value=is_muac),
             patch.object(views, "sync_after_save", return_value=None),
             patch("connect_labs.audit.prior_audit_projection.record_session", return_value=0),
         ):
             return views.ExperimentSaveAuditView().post(req, session.id)
 
-    def test_a_completed_non_muac_audit_is_refused(self):
-        resp = self._post(_session("completed", {"111": _vr(b1="pass")}, completed_at=_dt(1)), is_muac=False)
+    def test_a_completed_audit_is_refused(self):
+        resp = self._post(_session("completed", {"111": _vr(b1="pass")}, completed_at=_dt(1)))
         assert resp.status_code == 409
-
-    def test_a_completed_muac_audit_is_still_editable(self):
-        """The deliberate carve-out isReadOnly draws -- it must survive."""
-        resp = self._post(_session("completed", {"111": _vr(b1="pass")}, completed_at=_dt(1)), is_muac=True)
-        assert resp.status_code == 200
 
     def test_an_in_progress_audit_is_unaffected(self):
-        resp = self._post(_session("in_progress", {"111": _vr(b1="pass")}), is_muac=False)
+        resp = self._post(_session("in_progress", {"111": _vr(b1="pass")}))
         assert resp.status_code == 200
 
-    def test_a_lookup_failure_on_a_completed_audit_refuses_rather_than_allows(self):
-        """_is_muac_picture_audit_session fails closed; the guard inherits that.
+    def test_no_workflow_gets_an_exception(self):
+        """The carve-out is gone -- a session from ANY workflow run is refused.
 
-        A transient API blip must not become permission to edit a completed
-        audit. Autosave keeps hasUnsavedChanges set and retries, so refusing
-        loses nothing.
+        The removed predicate keyed off session.workflow_run_id, so a session
+        that carries one is the shape that used to be able to slip through.
         """
-        resp = self._post(_session("completed", {"111": _vr(b1="pass")}, completed_at=_dt(1)), is_muac=False)
-        assert resp.status_code == 409
-
-    def test_editing_a_completed_muac_audit_moves_its_completion_date(self):
-        """The edit path actually stamps it -- not just the model doing so."""
         s = _session("completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
-        before = s.data["completed_at"]
-        self._post(s, is_muac=True)
-        assert s.data["completed_at"] != before
+        s.data["workflow_run_id"] = 7117
+        assert self._post(s).status_code == 409
+
+    def test_a_refused_save_changes_nothing(self):
+        """It refuses BEFORE writing -- verdicts and the completion date both stand.
+
+        The endpoint used to re-date a completed session it was about to edit.
+        Nothing is edited now, so nothing is re-dated, and a replayed POST cannot
+        move a completed audit's date without changing its content.
+        """
+        s = _session("completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
+        before_results = json.dumps(s.data["visit_results"], sort_keys=True)
+        before_completed_at = s.data["completed_at"]
+
+        assert self._post(s).status_code == 409
+
+        assert json.dumps(s.data["visit_results"], sort_keys=True) == before_results
+        assert s.data["completed_at"] == before_completed_at
 
     def test_an_in_progress_save_does_not_invent_a_completion_date(self):
         s = _session("in_progress", {"111": _vr(b1="pass")})
-        self._post(s, is_muac=False)
+        self._post(s)
         assert "completed_at" not in s.data
