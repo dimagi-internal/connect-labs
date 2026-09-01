@@ -26,13 +26,50 @@ def test_workflow_run_default_happy_path_opp_owned(user, monkeypatch):
     monkeypatch.setattr(wrd, "_wda_for_user", lambda u, opportunity_id=None, program_id=None: fake_wda)
     fake_run_default = MagicMock(return_value={"run_id": 5001, "sessions_created": 3, "status": "ready"})
     monkeypatch.setattr("connect_labs.workflow.templates.run_default_for_definition", fake_run_default)
+    monkeypatch.setattr(
+        "connect_labs.labs.integrations.commcare.cchq_tokens.get_valid_cchq_access_token",
+        lambda u: "cchq-tok",
+    )
 
     tool = get_tool("workflow_run_default")
     result = tool.handler(user=user, definition_id=100, opportunity_id=4242, cadence="daily")
 
     assert result == {"run_id": 5001, "sessions_created": 3, "status": "ready"}
-    fake_run_default.assert_called_once_with(fake_definition, access_token="tok", request=None, cadence="daily")
+    fake_run_default.assert_called_once_with(
+        fake_definition, access_token="tok", request=None, cchq_access_token="cchq-tok", cadence="daily"
+    )
     fake_wda.close.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_workflow_run_default_cchq_token_is_optional_and_best_effort(user, monkeypatch):
+    """A template that doesn't need CommCare HQ data must not be blocked by a
+    missing/expired CCHQ token -- mirrors run_scheduled_workflow's own
+    best-effort handling in tasks.py exactly."""
+    from connect_labs.labs.integrations.commcare.cchq_tokens import CCHQTokenError
+    from connect_labs.mcp.tools import workflow_run_default as wrd
+
+    fake_definition = MagicMock()
+    fake_wda = MagicMock()
+    fake_wda.get_definition.return_value = fake_definition
+    fake_wda.access_token = "tok"
+
+    monkeypatch.setattr(wrd, "_wda_for_user", lambda u, opportunity_id=None, program_id=None: fake_wda)
+    fake_run_default = MagicMock(return_value={"run_id": 1, "status": "ready"})
+    monkeypatch.setattr("connect_labs.workflow.templates.run_default_for_definition", fake_run_default)
+
+    def _raise(u):
+        raise CCHQTokenError("no CommCare HQ token stored")
+
+    monkeypatch.setattr("connect_labs.labs.integrations.commcare.cchq_tokens.get_valid_cchq_access_token", _raise)
+
+    tool = get_tool("workflow_run_default")
+    result = tool.handler(user=user, definition_id=100, opportunity_id=4242, cadence="daily")
+
+    assert result == {"run_id": 1, "status": "ready"}
+    fake_run_default.assert_called_once_with(
+        fake_definition, access_token="tok", request=None, cchq_access_token=None, cadence="daily"
+    )
 
 
 @pytest.mark.django_db
@@ -56,13 +93,19 @@ def test_workflow_run_default_happy_path_program_owned(user, monkeypatch):
     monkeypatch.setattr(wrd, "_wda_for_user", _fake_wda_for_user)
     fake_run_default = MagicMock(return_value={"run_id": 9001, "sessions_created": 12, "status": "ready"})
     monkeypatch.setattr("connect_labs.workflow.templates.run_default_for_definition", fake_run_default)
+    monkeypatch.setattr(
+        "connect_labs.labs.integrations.commcare.cchq_tokens.get_valid_cchq_access_token",
+        lambda u: "cchq-tok",
+    )
 
     tool = get_tool("workflow_run_default")
     result = tool.handler(user=user, definition_id=12705, program_id=217, cadence="daily")
 
     assert result == {"run_id": 9001, "sessions_created": 12, "status": "ready"}
     assert captured_scope == {"opportunity_id": None, "program_id": 217}
-    fake_run_default.assert_called_once_with(fake_definition, access_token="tok", request=None, cadence="daily")
+    fake_run_default.assert_called_once_with(
+        fake_definition, access_token="tok", request=None, cchq_access_token="cchq-tok", cadence="daily"
+    )
 
 
 @pytest.mark.django_db
@@ -79,6 +122,10 @@ def test_workflow_run_default_explicit_window_overrides_cadence(user, monkeypatc
     monkeypatch.setattr(wrd, "_wda_for_user", lambda u, opportunity_id=None, program_id=None: fake_wda)
     fake_run_default = MagicMock(return_value={"run_id": 1, "sessions_created": 0, "status": "ready"})
     monkeypatch.setattr("connect_labs.workflow.templates.run_default_for_definition", fake_run_default)
+    monkeypatch.setattr(
+        "connect_labs.labs.integrations.commcare.cchq_tokens.get_valid_cchq_access_token",
+        lambda u: "cchq-tok",
+    )
 
     tool = get_tool("workflow_run_default")
     tool.handler(
@@ -99,6 +146,7 @@ def test_workflow_run_default_explicit_window_overrides_cadence(user, monkeypatc
         fake_definition,
         access_token="tok",
         request=None,
+        cchq_access_token="cchq-tok",
         window=(
             datetime(2026, 8, 10, tzinfo=timezone.utc),
             datetime(2026, 8, 11, tzinfo=timezone.utc),
