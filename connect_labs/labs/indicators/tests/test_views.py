@@ -307,14 +307,19 @@ class TestSourceColumns:
     def test_csv_names_the_method_that_produced_each_row(self, client_in):
         """The CSV is the copy that leaves the building, without the page beside it.
 
-        A row inherited from IGME's national figure must not travel under the
-        heading of the survey method that was merely asked for.
+        A row must never travel under a method heading that did not produce it.
+        This used to be a labelling problem: a region with no survey inherited
+        IGME's national figure and rode out under "Survey as measured", so the
+        column had to be per-row rather than per-download. The eligibility rule
+        made it a stronger guarantee — such a row is not produced at all — and
+        this test now pins both halves.
         """
         country = make_boundary("COD", 0, "DR Congo", "COD-0", x=40)
         measured = make_boundary("COD", 1, "Haut-Katanga", "COD-1-1", x=42)
-        inherits = make_boundary("COD", 1, "North Kivu", "COD-1-2", x=44)
+        ineligible = make_boundary("COD", 1, "North Kivu", "COD-1-2", x=44)
         set_value(measured, "u5mr", 150, source=Source.DHS)
-        # Only the country carries a value for the second region to inherit.
+        # IGME is not an eligible source for a survey method, so North Kivu has
+        # nothing it may inherit and must be absent rather than mislabelled.
         set_value(country, "u5mr", 140, source=Source.IGME)
         # A third region below the threshold, so the country is not rolled up
         # into a single row and the per-row labels stay visible.
@@ -327,8 +332,29 @@ class TestSourceColumns:
         rows = {r["Area"]: r for r in csv.DictReader(io.StringIO(resp.content.decode()))}
 
         assert rows["Haut-Katanga"]["U5MR method"] == "Survey as measured"
-        assert rows["North Kivu"]["U5MR method"] == "National estimate (UN IGME)"
-        assert inherits.name in rows
+        assert ineligible.name not in rows
+
+    def test_a_legitimately_inherited_row_says_where_it_was_measured(self, client_in):
+        """Inheritance is still allowed inside the method, and is still labelled.
+
+        A region taking its country's *survey* figure is a real answer, not a
+        substitution — but the reader has to be able to see that it was measured
+        one level up.
+        """
+        country = make_boundary("TZA", 0, "Tanzania", "TZA-0", x=50)
+        make_boundary("TZA", 1, "Borrowing", "TZA-1-1", x=52)
+        make_boundary("TZA", 1, "Low", "TZA-1-2", x=54)
+        set_value(country, "u5mr", 150, source=Source.DHS)
+        set_value(make_boundary("TZA", 1, "Measured", "TZA-1-3", x=56), "u5mr", 20, source=Source.DHS)
+
+        resp = client_in.get(
+            reverse("targeting:download"),
+            {"threshold": 80, "format": "csv", "method": "subnational_survey"},
+        )
+        rows = {r["Area"]: r for r in csv.DictReader(io.StringIO(resp.content.decode()))}
+
+        assert "Borrowing" in rows
+        assert rows["Borrowing"]["U5MR measured at"] == "Tanzania (ADM0)"
 
     def test_row_values_are_escaped_before_reaching_innerHTML(self, client_in):
         # Source text is server data, but the table builds HTML by hand.

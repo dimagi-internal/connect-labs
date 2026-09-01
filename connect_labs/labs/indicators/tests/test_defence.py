@@ -41,7 +41,9 @@ class TestCrudeBirthRate:
     def _country_with(self, births, pop):
         make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
         region = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=2)
-        set_value(region, "u5mr", 150)
+        # A survey reading, because the selection below asks for the survey
+        # method and an indicator is only answerable from a source it names.
+        set_value(region, "u5mr", 150, source=Source.DHS)
         set_value(region, "births", births)
         set_value(region, "pop_total", pop)
         return select_above(indicator="u5mr", threshold=80.0, method="subnational_survey")

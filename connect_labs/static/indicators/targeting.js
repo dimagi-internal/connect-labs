@@ -457,19 +457,19 @@
       floorEl.innerHTML = '';
     }
 
-    // source_order ranks sources, it does not restrict them: a region with no
-    // value of its own inherits from an ancestor, which may be a source this
-    // method does not list. Each row names what answered it, but the totals
-    // above are a mixture, and only a count says how much of one.
+    // A rate inherits downward: a region with no value of its own takes its
+    // country's. That is legitimate and each row says so, but the totals above
+    // are then a mixture of regions measured in their own right and regions
+    // carrying a national figure — and only a count says how much of each.
     var offEl = document.getElementById('tg-offmethod');
-    if (c.off_method_units && c.units) {
+    if (c.inherited_units && c.units) {
       offEl.innerHTML =
         '<strong>' +
-        c.off_method_units +
+        c.inherited_units +
         ' of ' +
         c.units +
-        ' regions</strong> are answered by a source this method does not use — ' +
-        'inherited from a coarser unit because they have no value of their own. ' +
+        ' regions</strong> carry a figure measured somewhere coarser — usually ' +
+        'their country — because they have no value of their own. ' +
         'The Method column names what produced each row.';
       offEl.classList.remove('hidden');
     } else {

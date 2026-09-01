@@ -23,34 +23,11 @@ from dataclasses import dataclass, field
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators import boundaries as boundary_set
-from connect_labs.labs.indicators import measures, methods
+from connect_labs.labs.indicators import measures, methods, policy
 from connect_labs.labs.indicators.africa import name_for
 from connect_labs.labs.indicators.models import IndicatorValue
 
 logger = logging.getLogger(__name__)
-
-#: When several sources carry the same cell, prefer them in this order.
-#: Subnational survey data beats a national model applied downward.
-DEFAULT_SOURCE_ORDER = (
-    # A purpose-built small-area model beats our own arithmetic wherever it
-    # reaches; see sources/igme_subnational.py.
-    "igme_subnational",
-    # A survey re-levelled to the present beats the raw survey: a third of the
-    # continent's subnational mortality comes from surveys 8+ years old, and
-    # several countries were appearing as high-mortality on 20-year-old numbers.
-    # The raw row is kept alongside so the adjustment stays auditable.
-    "dhs_calibrated",
-    "dhs",
-    "hapi",
-    "worldpop",
-    # After the API, not instead of it: this fills the units WorldPop's stats
-    # service refuses, and where both exist the API figure stays so the
-    # continent does not change under a reader who is mid-argument.
-    "worldpop_raster",
-    "igme",
-    "worldbank",
-    "derived",
-)
 
 
 @dataclass
@@ -141,11 +118,13 @@ def _best_row(
     if not rows:
         return None
 
+    order = policy.order_for(indicator, source_order)
+    rows = [r for r in rows if r.source in order]
+    if not rows:
+        return None
+
     def rank(r: IndicatorValue) -> tuple[int, int, int]:
-        try:
-            src = source_order.index(r.source)
-        except ValueError:
-            src = len(source_order)
+        src = order.index(r.source)
         if year is None:
             return (src, 0, -r.year)
         # Prefer the most recent year at or before the requested one; fall back
@@ -161,7 +140,7 @@ def resolve(
     indicator: str,
     boundary: AdminBoundary,
     year: int | None = None,
-    source_order: tuple[str, ...] = DEFAULT_SOURCE_ORDER,
+    source_order: tuple[str, ...] | None = None,
 ) -> Resolved | None:
     """Resolve one indicator for one boundary, inheriting if the measure allows."""
     measure = measures.get(indicator)
@@ -214,11 +193,19 @@ class BulkResolver:
         self,
         boundaries: list[AdminBoundary],
         year: int | None = None,
-        source_order: tuple[str, ...] = DEFAULT_SOURCE_ORDER,
+        source_order: tuple[str, ...] | None = None,
+        lens_on: str | None = None,
     ):
         self.boundaries = boundaries
         self.year = year
         self.source_order = source_order
+        # A method says how ONE indicator is measured. Narrowing the carried
+        # counts by it too is a category error: births and population are
+        # denominators with their own policy, and a mortality method has no
+        # opinion about where a population figure comes from. Left unbounded,
+        # asking for IGME's small-area model erased every birth count on the
+        # map, because "derived" is not in that method's source list.
+        self.lens_on = lens_on
         self._cache: dict[str, dict[int, Resolved]] = {}
 
         isos = {b.iso_code for b in boundaries}
@@ -232,11 +219,8 @@ class BulkResolver:
         self._by_pk = {b.pk: b for b in boundaries}
         self._by_pk.update({b.pk: b for b in self._adm0.values()})
 
-    def _rank(self, row: IndicatorValue) -> tuple[int, int, int]:
-        try:
-            src = self.source_order.index(row.source)
-        except ValueError:
-            src = len(self.source_order)
+    def _rank(self, row: IndicatorValue, order: tuple[str, ...]) -> tuple[int, int, int]:
+        src = order.index(row.source)
         if self.year is None:
             return (src, 0, -row.year)
         if row.year <= self.year:
@@ -244,11 +228,18 @@ class BulkResolver:
         return (src, 1, row.year - self.year)
 
     def _load(self, indicator: str) -> dict[int, Resolved]:
+        # Eligibility first, and it is a filter rather than a last-place rank:
+        # a source this indicator does not name is not a worse answer, it is
+        # not an answer. See policy.py.
+        lens = self.source_order if self.lens_on in (None, indicator) else None
+        order = policy.order_for(indicator, lens)
         best: dict[int, IndicatorValue] = {}
-        for row in IndicatorValue.objects.filter(indicator=indicator, boundary_id__in=self._all_pks):
-            cur = best.get(row.boundary_id)
-            if cur is None or self._rank(row) < self._rank(cur):
-                best[row.boundary_id] = row
+        if order:
+            rows = IndicatorValue.objects.filter(indicator=indicator, boundary_id__in=self._all_pks, source__in=order)
+            for row in rows:
+                cur = best.get(row.boundary_id)
+                if cur is None or self._rank(row, order) < self._rank(cur, order):
+                    best[row.boundary_id] = row
 
         measure = measures.get(indicator)
         out: dict[int, Resolved] = {}
@@ -343,6 +334,11 @@ class Area:
     #: Per count measure, (units contributing a value, units in this row). Lets
     #: a caller say how much of a rolled-up row is actually covered.
     coverage: dict[str, tuple[int, int]] = field(default_factory=dict)
+    #: Units in this row whose rate was measured somewhere coarser and applied
+    #: here. Recorded at construction because a rolled-up country row averages
+    #: its regions away — by the time the row exists, which of them borrowed
+    #: their country's figure is no longer recoverable from it.
+    inherited_units: int = 0
 
     def get(self, indicator: str) -> float | None:
         if indicator in self.counts:
@@ -399,36 +395,27 @@ class Selection:
         return max(0, total - got)
 
     @property
-    def off_method_units(self) -> int:
-        """Units whose value came from a source this method does not declare.
+    def inherited_units(self) -> int:
+        """Units whose value was measured somewhere coarser and applied here.
 
-        ``source_order`` ranks sources; it does not restrict them. A region with
-        no value of its own inherits from an ancestor, and what it inherits may
-        come from outside the method — most of DR Congo's provinces under
-        "Survey as measured" are IGME's national figure, because the survey did
-        not reach them.
+        This replaced ``off_method_units``, and the rename is the point. That
+        field counted units answered by a source the method did not declare —
+        an internal notion, and one that is now structurally impossible, since
+        an ineligible source is no longer used at all (see ``policy.py``).
 
-        That is defensible and each row says so, but it changes what the
-        selection means: a mixture of measured regional values and one national
-        value repeated. Counting it is the difference between a reader being
-        able to ask "how much of this is really survey data?" and having to take
-        the total on faith.
+        What a reader actually needs to know survived the fix: a rate legitimately
+        inherits downward, so a selection can be a mixture of regions measured in
+        their own right and regions carrying their country's figure. Both are
+        defensible and each row says which it is, but the mixture changes what a
+        total *means* — and the difference between being able to ask "how much of
+        this is really local?" and having to take it on faith is one number.
 
-        A rolled-up row carries the sources of every region beneath it, so it
-        counts as on-method only when all of them are declared.
+        A rolled-up country row contributes the number of its regions that
+        borrowed, not all-or-nothing — a country that measured three of its five
+        regions is two-fifths inherited, and saying so is more use than either
+        rounding.
         """
-        chosen = methods.get(self.method) if self.method else None
-        if chosen is None:
-            return 0
-        off = 0
-        for area in self.areas:
-            r = area.values.get(self.indicator)
-            if r is None:
-                continue
-            sources = r.source.split("+") if "+" in r.source else [r.source]
-            if not all(src in chosen.source_order for src in sources):
-                off += area.units_covered
-        return off
+        return sum(area.inherited_units for area in self.areas)
 
 
 #: Counts carried on every selection regardless of indicator.
@@ -505,7 +492,7 @@ def select_above(
         levels = chosen.resolution.admin_levels
         national_only = chosen.is_national
     else:
-        source_order = source_order or DEFAULT_SOURCE_ORDER
+        source_order = source_order or None
         levels = (0, 1)
         national_only = False
 
@@ -536,8 +523,8 @@ def select_above(
         count_qs = boundary_set.owned().filter(admin_level=1, iso_code__in={b.iso_code for b in boundaries})
         count_units = list(count_qs)
 
-    bulk = BulkResolver(boundaries + count_units, year=year, source_order=DEFAULT_SOURCE_ORDER)
-    rate_bulk = BulkResolver(boundaries, year=year, source_order=source_order)
+    bulk = BulkResolver(boundaries + count_units, year=year, source_order=None)
+    rate_bulk = BulkResolver(boundaries, year=year, source_order=source_order, lens_on=indicator)
 
     by_iso: dict[str, dict[int, list[AdminBoundary]]] = defaultdict(lambda: defaultdict(list))
     for b in boundaries:
@@ -587,7 +574,19 @@ def select_above(
         # A country is only rolled up when it has real regions and all of them
         # qualify — a single-region country would otherwise be relabelled as a
         # whole-country row, which reads as a much stronger claim than it is.
-        rolled_up = bool(subs) and len(above) == len(evaluated) and len(evaluated) > 1
+        # "Every region cleared it" has to mean every region, not every region we
+        # happened to have a reading for. Sudan has nineteen; three carried a
+        # survey; all three were above — and the country was emitted as one
+        # whole-country row carrying all nineteen regions' population. The claim
+        # was much stronger than the evidence, and the row looked like the
+        # strongest kind of finding rather than the thinnest.
+        #
+        # This was always wrong and was always latent. It only became common
+        # when sources stopped being substituted for one another: before that,
+        # nearly every region resolved something, so the two counts agreed by
+        # accident. A country that cannot be evaluated whole is emitted as the
+        # regions that were.
+        rolled_up = bool(subs) and len(above) == len(evaluated) == len(units) and len(evaluated) > 1
 
         # A national-resolution row is one country; its counts come from its
         # regions, the same way a rolled-up country row's do.
@@ -604,6 +603,7 @@ def select_above(
                     is_whole_country=True,
                     units_covered=max(len(children), 1),
                     values={indicator: r},
+                    inherited_units=max(len(children), 1) if r is not None and r.inherited else 0,
                 )
                 for c in carried:
                     got = [v.value for ch in children if (v := bulk.get(c, ch)) is not None]
@@ -623,6 +623,7 @@ def select_above(
                 is_whole_country=True,
                 units_covered=len(above),
                 values={indicator: _rollup_rate(indicator, above, bulk)},
+                inherited_units=sum(1 for _, r in above if r is not None and r.inherited),
             )
             for c in carried:
                 got = [r.value for b, _ in above if (r := bulk.get(c, b)) is not None]
@@ -630,7 +631,10 @@ def select_above(
                 area.coverage[c] = (len(got), len(above))
             areas.append(area)
         else:
-            (partly if len(above) < len(evaluated) else fully).append(cname)
+            # Measured against every region, not every evaluated one — same
+            # reason as the rollup above. A country with three surveyed regions
+            # all above the threshold is partly above, not fully.
+            (fully if len(above) == len(units) else partly).append(cname)
             for b, r in above:
                 area = Area(
                     boundary=b,
@@ -639,6 +643,7 @@ def select_above(
                     name=b.name,
                     admin_level=b.admin_level,
                     values={indicator: r},
+                    inherited_units=1 if r is not None and r.inherited else 0,
                 )
                 for c in carried:
                     got = bulk.get(c, b)
