@@ -50,9 +50,19 @@ does not go missing — it gets relabelled as our own CPU. That is exactly what
 happened in #1298: outbound instrumentation was opt-in, one client had opted in,
 and a 16.5s login that spent 15.0s waiting on production Connect was logged as
 ``outbound_calls: 0`` with 99% ``self_ms``. Instrumentation is now default-on for
-every httpx client (``install_httpx_instrumentation``), so the residual means what
-it says. Anything that reaches the network by another route still would not be —
-prefer httpx.
+every httpx client (``install_httpx_instrumentation``).
+
+That fixed WHICH calls are measured. #1386 was the same error one level down — HOW
+MUCH of each call: the response hook fires at headers, so the body download was
+outside the measured span and landed in the residual. On endpoints returning JSON
+that is noise; on the audit image proxy, which streams whole JPEGs through Python,
+it was the entire cost, and it ranked a view that does no image work as the top CPU
+consumer on the web tier. ``send`` is now wrapped so the body read is billed to
+``outbound_ms`` too (see ``_patch_client_send``).
+
+Two gaps remain, deliberately: ``stream=True`` calls return at headers and the
+caller reads the body on its own time, and anything reaching the network by a route
+other than httpx is invisible — prefer httpx.
 """
 
 from __future__ import annotations
@@ -113,11 +123,29 @@ def record_outbound_call(host: str, elapsed_ms: float = 0.0) -> None:
     stats.outbound_ms += elapsed_ms
 
 
+def add_outbound_ms(elapsed_ms: float) -> None:
+    """Add time to the outbound bucket WITHOUT counting another call.
+
+    The response hook fires at headers and already counted the call; the body
+    download happens after it and is billed here (see ``_patch_client_send``).
+    Separating "count" from "time" is what keeps ``outbound_calls`` meaning
+    number-of-requests while ``outbound_ms`` means time-actually-spent-upstream.
+    """
+    stats = _stats.get()
+    if stats is None:
+        return
+    stats.outbound_ms += elapsed_ms
+
+
 # Where the start time is stashed between the request and response hooks. An
 # attribute on the Request object rather than a ContextVar: with HTTP keep-alive
 # and connection pooling several calls can be in flight, and a single shared
 # "started" value would attribute the wrong span to each of them.
 _STARTED_ATTR = "_labs_telemetry_started"
+
+# When the response hook fired, i.e. when headers were in. Stashed on the RESPONSE
+# so ``send`` can bill the body download that happens after the hook (#1386).
+_HEADERS_ATTR = "_labs_telemetry_headers_done"
 
 
 def _on_request(request) -> None:
@@ -129,12 +157,14 @@ def _on_request(request) -> None:
 
 def _on_response(response) -> None:
     try:
+        now = time.perf_counter()
         started = getattr(response.request, _STARTED_ATTR, None)
         # isinstance, not truthiness: a client whose request hook never ran (or a
         # test double) yields a non-numeric value that would otherwise poison the
         # arithmetic and cost the call its COUNT as well as its timing.
-        elapsed_ms = (time.perf_counter() - started) * 1000 if isinstance(started, float) else 0.0
+        elapsed_ms = (now - started) * 1000 if isinstance(started, float) else 0.0
         record_outbound_call(response.request.url.host, elapsed_ms)
+        setattr(response, _HEADERS_ATTR, now)
     except Exception:  # telemetry must never break the call it is measuring
         pass
 
@@ -147,9 +177,15 @@ def httpx_event_hooks() -> dict[str, list]:
     harmless (the hooks are de-duplicated by identity) and it states the intent at
     the call site.
 
-    Timing is to response HEADERS, not through the body download, because that is
-    where the response hook fires. For the calls that matter here — a slow
-    upstream sitting on a query — that is the number you want anyway.
+    These hooks time to response HEADERS, because that is where the response hook
+    fires. The body download is billed separately by the ``send`` wrapper that
+    ``install_httpx_instrumentation`` also installs, so ``outbound_ms`` covers the
+    whole call — headers AND body — for non-streaming requests.
+
+    This used to say headers-only timing was "the number you want anyway", on the
+    grounds that the calls that matter are a slow upstream sitting on a query. That
+    held until an endpoint whose entire job was moving bytes: the audit image proxy
+    billed every JPEG to ``self_ms`` and looked like our CPU (#1386).
     """
     return {"request": [_on_request], "response": [_on_response]}
 
@@ -215,6 +251,79 @@ def _patch_client_init(client_cls, on_request, on_response) -> None:
     client_cls.__init__ = __init__
 
 
+def _body_ms(response) -> float:
+    """Milliseconds spent reading the body, i.e. everything after the response hook.
+
+    Returns 0.0 rather than guessing when the hook never ran (a test double, or a
+    client constructed before instrumentation was installed) — an unmeasured span
+    is better billed to nobody than to the wrong bucket.
+    """
+    headers_done = getattr(response, _HEADERS_ATTR, None)
+    if not isinstance(headers_done, float):
+        return 0.0
+    return (time.perf_counter() - headers_done) * 1000
+
+
+def _patch_client_send(client_cls) -> None:
+    """Bill the response-body download to ``outbound_ms`` instead of ``self_ms``.
+
+    httpx fires its ``response`` event hook when HEADERS arrive; the body is read
+    afterwards, inside ``send`` itself::
+
+        response = self._send_handling_auth(...)
+        if not stream:
+            response.read()        # <-- the transfer, after the hook has fired
+
+    ``self_ms`` is a residual (``duration - outbound_ms - db_ms``), so anything the
+    hook cannot see is relabelled as our own CPU. For JSON that is noise; for
+    ``ExperimentAuditImageConnectView``, which proxies whole JPEGs, it was the
+    entire cost — 11,482 s of "CPU" over 7 days on a view that does no image work,
+    ranking it the top CPU consumer on the web tier ahead of ``bulk-data`` (#1386).
+    Same class of error as #1298, one level down: that was about WHICH calls are
+    measured, this is about HOW MUCH of each call.
+
+    ``stream=True`` genuinely returns at headers — the caller reads the body later,
+    on its own time — so it is left alone rather than billed a span it did not spend
+    here.
+    """
+    original = client_cls.send
+    if getattr(original, _PATCHED_MARK, False):
+        return
+
+    @functools.wraps(original)
+    def send(self, request, *args, stream: bool = False, **kwargs):
+        response = original(self, request, *args, stream=stream, **kwargs)
+        if not stream:
+            try:
+                add_outbound_ms(_body_ms(response))
+            except Exception:  # telemetry must never break the call it is measuring
+                pass
+        return response
+
+    setattr(send, _PATCHED_MARK, True)
+    client_cls.send = send
+
+
+def _patch_async_client_send(client_cls) -> None:
+    """Async twin of :func:`_patch_client_send` — ``await response.aread()``."""
+    original = client_cls.send
+    if getattr(original, _PATCHED_MARK, False):
+        return
+
+    @functools.wraps(original)
+    async def send(self, request, *args, stream: bool = False, **kwargs):
+        response = await original(self, request, *args, stream=stream, **kwargs)
+        if not stream:
+            try:
+                add_outbound_ms(_body_ms(response))
+            except Exception:  # telemetry must never break the call it is measuring
+                pass
+        return response
+
+    setattr(send, _PATCHED_MARK, True)
+    client_cls.send = send
+
+
 def install_httpx_instrumentation() -> None:
     """Count every httpx call against the in-flight request, not just opted-in ones.
 
@@ -226,6 +335,10 @@ def install_httpx_instrumentation() -> None:
 
         _patch_client_init(httpx.Client, _on_request, _on_response)
         _patch_client_init(httpx.AsyncClient, _on_request_async, _on_response_async)
+        # Separate from the __init__ patch: the body read happens inside ``send``,
+        # which no event hook can observe. See _patch_client_send (#1386).
+        _patch_client_send(httpx.Client)
+        _patch_async_client_send(httpx.AsyncClient)
     except Exception:  # telemetry must never break the calls it is measuring
         logger.debug("httpx instrumentation not installed", exc_info=True)
 
