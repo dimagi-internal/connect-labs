@@ -148,7 +148,7 @@ Use the MCP server's `get_form_json_paths` tool to discover correct field paths 
 Labs deploys to **AWS ECS Fargate** via `.github/workflows/deploy-labs.yml`.
 
 - **Docker image:** Built from `Dockerfile`, pushed to ECR (`labs-jj-commcare-connect`)
-- **Gunicorn config:** `docker/start` — uses gthread workers, count set via `WEB_CONCURRENCY` env var (default 3)
+- **Gunicorn config:** `docker/start` — serves the ASGI app under `config.uvicorn_worker.LabsUvicornWorker` (NOT gthread; the FastMCP server needs ASGI + lifespan), worker count via `WEB_CONCURRENCY` (default 3). Note the shape that shows up in CPU investigations: 3 worker processes against the task's **1 vCPU** (`deploy/task-definitions/web.json`, `cpu: 1024`)
 - **ECS cluster:** `labs-jj-cluster` in `us-east-1`
 - **Services:** `labs-jj-web` (web), `labs-jj-worker` (celery)
 

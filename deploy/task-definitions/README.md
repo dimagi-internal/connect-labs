@@ -44,6 +44,39 @@ valve, **not** a DB-connection governor, and a value tight enough to bound RDS
 connections would 503 real users. Context and the open policy decision are in
 #1152; the incident that motivated it is #1060.
 
+## `TELEMETRY_SAMPLE_RATE` / `TELEMETRY_SAMPLE_PATH_PREFIX` — the unbiased sample
+
+Request telemetry is otherwise threshold-gated: a line exists only because the
+request took ≥ 3 s. That is fine for finding an incident and **invalid for comparing
+anything across load levels**, because the gate truncates the distribution
+differently at every level — busy periods push ordinary requests just over the floor
+and pile them against it. Two opposite wrong conclusions about the same endpoint came
+out of that stream in one day (#1386).
+
+These two settings log a fixed fraction of requests _regardless of duration_, which
+is a fair draw. They ship scoped to the endpoint under investigation:
+
+|                                |                                                                                              |
+| ------------------------------ | -------------------------------------------------------------------------------------------- |
+| `TELEMETRY_SAMPLE_RATE`        | `1.0` — every matching request. `0.0` disables the sample entirely (pre-existing behaviour). |
+| `TELEMETRY_SAMPLE_PATH_PREFIX` | `/audit/image/` — empty means every path.                                                    |
+
+**Volume, before you widen it.** Measured from ALB access logs, 2026-08-30 → 09-01:
+the labs target group serves ~28,000 requests/day, of which `/audit/image/` is ~6,200
+— the highest-count single path on the tier. At `1.0` that is ~6,200 JSON lines/day,
+about 2 MB/day of CloudWatch ingest. A census is affordable _for one path_; an empty
+prefix at `1.0` turns the diagnostic stream into a request log, which is exactly what
+the module docstring says it must not become (the ALB already logs URL, status and
+latency far more cheaply — what it cannot log is the ms split).
+
+Rate `1.0` rather than a fraction because the scarce population is the busy one: a
+15-minute CPU pin contains only ~65 image requests, so at 10% a pinned band yields
+about six samples and settles nothing.
+
+Query the sampled population with `filter sampled = 1` — **never**
+`filter reason = "sample"`, which drops sampled-and-also-slow requests and
+re-introduces the bias in the query.
+
 ## Why version-control them
 
 Drift. The container command used to live only in the AWS console. When
