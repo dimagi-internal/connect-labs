@@ -84,6 +84,14 @@ ALB_P95_SLOW_S = 10.0
 # period/300 so a coarser window compares like for like -- though a long window
 # still averages a spike away, per the caveat at the top of this file.
 ALB_5XX_PER_300S = 25
+# Same shape for the app's OWN 5xx, matching the DEPLOYED labs-jj-alb-target-5xx-high
+# alarm (Sum > 25 per 300s, 1 evaluation period), added 2026-09-01. The two metrics
+# catch OPPOSITE failures and neither substitutes for the other: on 2026-07-29 target
+# 5xx was 1 while ELB 5xx peaked at 84; on 2026-08-31 the inverse ran 410 target 5xx
+# over two hours (all /umami/api/send, a Prisma P2002 race) while ELB 5xx peaked at 19.
+# This tool queried only ELB 5xx until then, so it reported that window as carrying 44
+# 5xx when the app had in fact failed 410 requests -- a wrong answer, not an error.
+TARGET_5XX_PER_300S = 25
 DB_CONNECTIONS_HIGH = 90
 # Worth mentioning in an otherwise-healthy verdict. Deliberately NOT scaled to
 # the bigger instance: like DB_CONNECTIONS_HIGH, what makes it meaningful is the
@@ -151,8 +159,8 @@ def _period_for(hours: int) -> int:
     return PERIOD_LADDER[-1]
 
 
-def _breaching_5xx_periods(points, period):
-    """Count periods whose ELB 5xx rate exceeds what the deployed alarm pages on.
+def _breaching_5xx_periods(points, period, per_300s=ALB_5XX_PER_300S):
+    """Count periods whose 5xx rate exceeds what the deployed alarm pages on.
 
     The alarm's unit is "Sum > 25 per 300s". A longer window uses a coarser
     period, so the raw Sum grows with the period and comparing it to a flat 25
@@ -161,7 +169,7 @@ def _breaching_5xx_periods(points, period):
     it. (A coarser period still averages a short spike away -- that is the
     documented tradeoff at the top of this file, not something scaling fixes.)
     """
-    limit = ALB_5XX_PER_300S * (period / 300)
+    limit = per_300s * (period / 300)
     return len([p for p in points if p.get("Sum", 0) > limit])
 
 
@@ -278,6 +286,15 @@ def collect(hours: int) -> dict:
         period,
         stats=["Sum"],
     )
+    target_5xx = _metric(
+        "AWS/ApplicationELB",
+        "HTTPCode_Target_5XX_Count",
+        {"LoadBalancer": ALB_DIMENSION},
+        start,
+        end,
+        period,
+        stats=["Sum"],
+    )
 
     alarms = [
         {"name": a["AlarmName"], "state": a["StateValue"]}
@@ -322,6 +339,9 @@ def collect(hours: int) -> dict:
         "elb_5xx_total": sum(p.get("Sum", 0) for p in elb_5xx),
         "elb_5xx_peak_period": max((p.get("Sum", 0) for p in elb_5xx), default=0),
         "elb_5xx_breaching_periods": _breaching_5xx_periods(elb_5xx, period),
+        "target_5xx_total": sum(p.get("Sum", 0) for p in target_5xx),
+        "target_5xx_peak_period": max((p.get("Sum", 0) for p in target_5xx), default=0),
+        "target_5xx_breaching_periods": _breaching_5xx_periods(target_5xx, period, TARGET_5XX_PER_300S),
         "alarms_firing": [a["name"] for a in alarms if a["state"] == "ALARM"],
         "alarms_all": alarms,
         "web_desired_count": service.get("desiredCount"),
@@ -462,6 +482,37 @@ def judge(d: dict) -> dict:
                 "--metric-name CPUUtilization --statistics Average Maximum "
                 "--dimensions ClusterName=labs-jj-cluster,ServiceName=labs-jj-web "
                 "--profile labs --region us-east-1. Then §3 for the request itself."
+            )
+
+    if d["target_5xx_total"]:
+        breaching = d["target_5xx_breaching_periods"]
+        findings.append(
+            f"TARGET (app-generated) 5xx: {d['target_5xx_total']:.0f} in window, peak "
+            f"{d['target_5xx_peak_period']:.0f} in one {period_min}-minute period"
+            + (
+                f" -- {breaching} period(s) OVER the {TARGET_5XX_PER_300S}/5min line the "
+                "labs-jj-alb-target-5xx-high alarm pages on."
+                if breaching
+                else " (under the alarm line)."
+            )
+            + " The APP answered with an error (distinct from ELB 5xx, which means the ALB "
+            "could not get a response at all). Note this metric spans EVERY target group "
+            "behind the ALB, so it includes the separately-deployed Umami service, not just "
+            "the web tier -- check the path before assuming it is labs-jj-web."
+        )
+        # Same reasoning as the ELB branch above: a measurement that requests
+        # actually failed outranks an inference from latency. Kept separate
+        # because the two metrics fail in opposite directions and a reviewer
+        # needs to know WHICH one fired -- they lead to different log groups.
+        if breaching and verdict in ("healthy", "slow_no_saturation"):
+            verdict = "target_5xx_elevated"
+            next_step = (
+                "The application is RETURNING errors, not merely running slow. Find which "
+                "path and which target group before touching the web tier: the ALB access "
+                "logs in s3://labs-jj-alb-access-logs carry elb_status_code AND "
+                "target_status_code per request, which the app logs do not. On 2026-08-31 "
+                "every one of 410 target 5xx was /umami/api/send, a service the web-tier "
+                "log group knows nothing about."
             )
 
     if d["web_running_count"] != d["web_desired_count"]:
