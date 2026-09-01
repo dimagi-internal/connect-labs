@@ -46,6 +46,14 @@ RAW_CACHE_SHRINK_THRESHOLD_PCT = 80
 # Total fetch attempts (not retries on top of an initial try) before giving
 # up and keeping the previous cache.
 RAW_CACHE_MAX_ATTEMPTS = 3
+# How long to extend the old cache's TTL, and how long to keep surfacing the
+# anomaly on cache-HIT reads (SQLCacheManager.extend_raw_cache_ttl /
+# set_pending_raw_fetch_anomaly), once the guard falls back to it. These two
+# windows must stay aligned -- if the anomaly flag's TTL were ever shorter
+# than the cache extension's, the banner would silently disappear before the
+# underlying data got a real chance to refresh, reintroducing a milder
+# version of the exact bug this guard exists to prevent.
+RAW_CACHE_ANOMALY_TTL_MINUTES = 10
 
 
 def _with_passthrough_columns(row: dict, computed: dict) -> dict:
@@ -301,7 +309,7 @@ class SQLBackend:
                 f"got {len(visit_dicts)} rows vs {prior_count} previously cached",
                 level="warning",
             )
-            cache_manager.extend_raw_cache_ttl(minutes=10)
+            cache_manager.extend_raw_cache_ttl(minutes=RAW_CACHE_ANOMALY_TTL_MINUTES)
             self.last_raw_fetch_anomaly = {
                 "previous_count": prior_count,
                 "attempted_count": len(visit_dicts),
@@ -312,7 +320,9 @@ class SQLBackend:
             # ordinary valid cache again, and the very next request (a reload,
             # a different tab) would silently drop the flag. See
             # get_pending_raw_fetch_anomaly's docstring.
-            cache_manager.set_pending_raw_fetch_anomaly(self.last_raw_fetch_anomaly, minutes=10)
+            cache_manager.set_pending_raw_fetch_anomaly(
+                self.last_raw_fetch_anomaly, minutes=RAW_CACHE_ANOMALY_TTL_MINUTES
+            )
             low_fetch_dicts = visit_dicts
             visit_dicts = self._load_from_cache(cache_manager, skip_form_json=False, filter_visit_ids=None)
             if not visit_dicts:
@@ -472,7 +482,7 @@ class SQLBackend:
             f"({rows_so_far} rows) vs {prior_count} previously cached after {RAW_CACHE_MAX_ATTEMPTS} attempts",
             level="warning",
         )
-        cache_manager.extend_raw_cache_ttl(minutes=10)
+        cache_manager.extend_raw_cache_ttl(minutes=RAW_CACHE_ANOMALY_TTL_MINUTES)
         self.last_raw_fetch_anomaly = {
             "previous_count": prior_count,
             "attempted_count": rows_so_far,
@@ -481,7 +491,9 @@ class SQLBackend:
         # Keep surfacing this on later cache-HIT reads too -- see
         # get_pending_raw_fetch_anomaly's docstring for why extend_raw_cache_ttl
         # alone isn't enough.
-        cache_manager.set_pending_raw_fetch_anomaly(self.last_raw_fetch_anomaly, minutes=10)
+        cache_manager.set_pending_raw_fetch_anomaly(
+            self.last_raw_fetch_anomaly, minutes=RAW_CACHE_ANOMALY_TTL_MINUTES
+        )
         old_visit_dicts = self._load_from_cache(cache_manager, skip_form_json=True, filter_visit_ids=None)
         if not old_visit_dicts:
             # The old cache we were protecting vanished from under us (e.g. a

@@ -8,6 +8,7 @@ import logging
 import random
 from datetime import date, datetime, timedelta
 
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.db.models.fields.json import KeyTextTransform
 from django.utils import timezone
@@ -195,22 +196,16 @@ class SQLCacheManager:
         early (e.g. an eviction) just means the banner stops a bit sooner --
         never a correctness problem for the actual cached visits.
         """
-        from django.core.cache import cache
-
         return cache.get(self._raw_fetch_anomaly_cache_key())
 
     def set_pending_raw_fetch_anomaly(self, anomaly: dict, minutes: int):
         """Record `anomaly` so get_pending_raw_fetch_anomaly() keeps surfacing
         it on cache-HIT reads until cleared or it times out on its own."""
-        from django.core.cache import cache
-
         cache.set(self._raw_fetch_anomaly_cache_key(), anomaly, timeout=minutes * 60)
 
     def clear_pending_raw_fetch_anomaly(self):
         """Called once a fetch is accepted as good -- the data's confirmed
         fresh again, so any earlier flag no longer applies."""
-        from django.core.cache import cache
-
         cache.delete(self._raw_fetch_anomaly_cache_key())
 
     def extend_raw_cache_ttl(self, minutes: int):
