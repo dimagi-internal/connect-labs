@@ -47,80 +47,18 @@ from connect_labs.labs.context import get_org_data
 from connect_labs.opportunity.models import VisitValidationStatus
 from connect_labs.utils.json_safe import safe_json_for_script
 from connect_labs.utils.tables import get_validated_page_size
-from connect_labs.workflow.data_access import WorkflowDataAccess
 
 logger = logging.getLogger(__name__)
 
-# The "Muac Picture Audit" workflow (definition id 6840, owned by program 176,
-# CHC PRE-RCT Nigeria) gets two review-screen behaviors no other workflow's
-# audit sessions get: a Duplicate/Fake split into two distinct per-image
-# results, and editable pass/fail/duplicate/fake results even after the report
-# is marked completed. Scoped to this one workflow instance by explicit
-# product decision, rather than changing the shared bulk_assessment.html
-# review screen for every audit workflow in the system.
-MUAC_PICTURE_AUDIT_WORKFLOW_DEFINITION_ID = 6840
-MUAC_PICTURE_AUDIT_PROGRAM_ID = 176
-
-
-def _can_reach_muac_program(request) -> bool:
-    """Whether this viewer has program 176 in their Connect membership at all.
-
-    The probe below fetches a run under ``program_id=176``. Upstream,
-    ``_get_program_or_404`` filters programs by the caller's org membership and
-    raises ``NotFound`` on a miss -- so for a viewer who is not in program 176
-    that fetch is a **404 by construction**, on every bulk page load, forever.
-    It cannot ever return the run, because the run being sought is not one they
-    are allowed to see.
-
-    That is not a harmless miss. Every one of those 404s is recorded in the
-    HIPAA audit trail as ``outcome=failure``, and at 83% of loads (341 of 411
-    over one 2026-08-11 window, still ~61 per 36h on 2026-08-25) it is the
-    single loudest failure signature in the audit app. Two telemetry reviews
-    and #1242 were spent chasing it as a correctness bug before the cause --
-    a feature probe answering "no" the only way it can -- was identified.
-
-    So: ask the cheap local question first. Membership is already in the
-    session's org data, and if 176 is not there the remote answer is knowable
-    without asking. Returns False for everyone else, which is the same verdict
-    the probe reached, minus the round-trip and the false failure event.
-
-    An EMPTY programs list counts as "cannot reach", deliberately. That is not
-    the unknown case, it is the common one: external LLO users hold opportunity
-    ACL and no program ACL at all (see docs/superpowers/specs/2026-07-01-pages-
-    scoping-design.md), so they carry no programs -- and they are precisely the
-    auditors generating these 404s. Failing open on an empty list would leave
-    the whole population unfixed. The cost if org data were ever unpopulated for
-    a genuine program-176 member is one degraded review screen, which is the
-    same fail-closed outcome this probe already produces on any API error.
-    """
-    programs = (get_org_data(request) or {}).get("programs", []) or []
-    return any(program.get("id") == MUAC_PICTURE_AUDIT_PROGRAM_ID for program in programs)
-
-
-def _is_muac_picture_audit_session(session, request) -> bool:
-    """Resolve whether `session` was created by workflow 6840, via its
-    workflow_run_id -> WorkflowRunRecord.definition_id. Scoped to program_id
-    (not opportunity_id) since 6840 is program-owned -- mixing in an
-    opportunity_id would AND-filter it out server-side (production API scope
-    params are all-or-nothing). Fails closed (False) on any lookup error so a
-    transient API issue never blocks the normal review screen.
-    """
-    run_id = session.workflow_run_id
-    if not run_id:
-        return False
-    # A viewer outside program 176 can only ever get a 404 here (see above),
-    # so skip the call rather than logging a failure to learn what we know.
-    if not _can_reach_muac_program(request):
-        return False
-    wda = WorkflowDataAccess(request=request, program_id=MUAC_PICTURE_AUDIT_PROGRAM_ID)
-    try:
-        run = wda.get_run(run_id)
-    except Exception:
-        logger.exception("Failed to resolve workflow run %s while scoping muac_picture_audit review UI", run_id)
-        return False
-    finally:
-        wda.close()
-    return bool(run and run.definition_id == MUAC_PICTURE_AUDIT_WORKFLOW_DEFINITION_ID)
+# Historical audit sessions from the retired "Muac Picture Audit" one-off carry
+# per-image ``result`` values of "duplicate" and "fake" -- a split that review
+# screen alone could write, removed in #1385 once the product decision behind it
+# was withdrawn. Nothing rewrites those stored values, so the shared review
+# screen has to READ them: tally_assessment already folds all three of
+# duplicate_fake/duplicate/fake into one bucket (audit/models.py), and
+# bulk_assessment.html matches the same three so a completed report does not
+# render its flagged images as unreviewed. Keep the two in step.
+LEGACY_DUPLICATE_FAKE_RESULTS = ("duplicate", "fake")
 
 
 def _non_duplicate_ai_label(ai_notes: str) -> str:
@@ -398,7 +336,10 @@ class ExperimentBulkAssessmentView(LoginRequiredMixin, DetailView):
                 "connect_url": settings.CONNECT_PRODUCTION_URL,
                 "workflow_run_id": session.workflow_run_id,
                 "pass_threshold": self.request.GET.get("threshold", "80"),
-                "is_muac_picture_audit_workflow": _is_muac_picture_audit_session(session, self.request),
+                # The review screen renders a stored "duplicate" or "fake" as
+                # Duplicate/Fake rather than as unreviewed -- see
+                # LEGACY_DUPLICATE_FAKE_RESULTS above.
+                "legacy_duplicate_fake_results": safe_json_for_script(list(LEGACY_DUPLICATE_FAKE_RESULTS)),
                 # Non-empty only when this session's duplicate detection partially
                 # failed/skipped -- rendered as a banner at the top of the page.
                 "duplicate_detection_note": (session.data.get("duplicate_detection_summary") or {}).get("note", ""),
@@ -457,22 +398,14 @@ class ExperimentSaveAuditView(LoginRequiredMixin, View):
                 # stale tab, a replayed POST or a future client change would be
                 # accepted silently by the server.
                 #
-                # MUAC picture audits are the deliberate exception: that workflow
-                # leaves completed sessions editable on purpose, which is exactly
-                # the distinction isReadOnly draws. The server has the same
-                # predicate the template uses, so it can enforce the same rule
-                # rather than trusting the client to.
-                #
-                # Checked only when the session IS completed. The predicate costs
-                # a workflow-run lookup over the API, and this endpoint is hit by
-                # a debounced autosave -- the overwhelmingly common in-progress
-                # save must not pay for it.
-                #
-                # _is_muac_picture_audit_session fails CLOSED on a lookup error,
-                # so a transient API blip rejects the save rather than allowing an
-                # edit it cannot justify. Autosave keeps hasUnsavedChanges set and
-                # retries, so the auditor's work is not lost.
-                if session.status == "completed" and not _is_muac_picture_audit_session(session, request):
+                # This used to carry ONE exception -- the "Muac Picture Audit"
+                # workflow left completed sessions editable on purpose, so the
+                # server ran the same workflow-run probe the template did and
+                # skipped the 409 for it. #1385 withdrew that product decision,
+                # which makes the rule unconditional: a completed session is
+                # read-only for everyone, with no lookup to pay for and no
+                # fail-closed edge case to reason about.
+                if session.status == "completed":
                     return JsonResponse(
                         {"error": "This audit is completed. Reopen it before making further changes."},
                         status=409,
@@ -484,25 +417,31 @@ class ExperimentSaveAuditView(LoginRequiredMixin, View):
                     try:
                         visit_results = json.loads(visit_results_json)
                         session.data["visit_results"] = visit_results
-                        # Editing a completed audit re-dates it. An audit's
-                        # conclusions ARE its content, so one whose verdicts
-                        # changed today was not meaningfully "completed" on the
-                        # original date -- and the review screen renders this
-                        # field beside those verdicts ("Audited in a prior session
-                        # on <date>").
+                        # This used to re-date a completed session here, because
+                        # an audit's conclusions ARE its content: one whose
+                        # verdicts changed today was not meaningfully "completed"
+                        # on the original date, and the review screen renders that
+                        # date beside those verdicts ("Audited in a prior session
+                        # on <date>"). That stamp is gone with #1385, not because
+                        # the reasoning changed but because the branch became
+                        # unreachable -- the guard above now returns 409 for
+                        # exactly `status == "completed"`, with no carve-out left
+                        # to slip through it.
                         #
-                        # A separate last_edited_at was tried and removed: the
-                        # original completion time is already preserved in the
-                        # HIPAA audit trail (update_record is @_audited(UPDATE)),
-                        # with the whole sequence rather than just the first
-                        # value, and having two timestamps meant the live index
-                        # and the projection ordered verdicts on DIFFERENT ones
-                        # and could pick different winners for the same image.
+                        # The invariant it protected still holds by a different
+                        # route: the only way to change a completed audit is to
+                        # Reopen it, and that clears completed_at to None and
+                        # drops the session back to in_progress, so completing it
+                        # again stamps a current date. A verdict can no longer be
+                        # edited under a stale completion date.
                         #
-                        # Only stamped for a session that is already completed:
-                        # an in-progress save has no completion to re-date.
-                        if session.status == "completed":
-                            session.data["completed_at"] = timezone.now().isoformat()
+                        # Do NOT reintroduce a separate last_edited_at. It was
+                        # tried and removed: the original completion time is
+                        # already preserved in the HIPAA audit trail (update_record
+                        # is @_audited(UPDATE)) with the whole sequence rather than
+                        # just the first value, and two timestamps meant the live
+                        # index and the projection ordered verdicts on DIFFERENT
+                        # ones and could pick different winners for the same image.
                     except json.JSONDecodeError as e:
                         return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
 
