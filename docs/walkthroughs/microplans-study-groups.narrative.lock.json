@@ -9,9 +9,9 @@
     "maya-generates-the-two-arm-plan-in-place",
     "maya-completes-the-study"
   ],
-  "fetched_at": "2026-08-30T01:33:42.703054+00:00",
+  "fetched_at": "2026-09-01T11:43:40.492083+00:00",
   "name": "microplans-study-groups",
-  "narrative": "Maya runs a household-based intervention in Riyom, Plateau State — frontline workers going door to door to deliver vitamin A to children under five. She wants to continuously measure how non-intervention areas compare to her intervention areas over time — matched wards the programme never reached, re-surveyed round after round, so the difference between them means something. Maya starts a brand-new matched two-arm comparison study on her Riyom programme. In the plan editor she turns on the campaign's service-delivery layer and picks which opportunity's data to ground the plan in. She grounds the plan in the campaign's own delivery record for Attakar, and confirms the selection. The blue points are its individual service-delivery locations — rooftops — blanketing the whole ward, everywhere Connect logged delivery. She'll sample by ward. She opens the boundary picker and switches to sampling. She tags Attakar as the intervention arm and runs Compare, and every neighbouring ward is ranked against it — on three columns. Overall match is how much the two wards' building-density distributions overlap: strong is above seventy percent. That says how alike they look, not how good a study you would get. Matched balance says that — the density difference left after a matched draw, once both arms are reweighted to Attakar's own density mix. It is the same figure the comparability check reports later. And common support is how much of the density range the two wards actually share, because matching only draws from that overlap: a fine balance over a narrow shared range is a weaker match than it looks. So a ward that is only a partial match overall can still balance best. Two wards tie at 0.02 — the aggregate standardized imbalance across the matched characteristics, where lower is closer. Zankan was the programme's own ward last cycle, so it is out. Common support separates the rest: Gura shares more of Attakar's density range. As an adjacent ward it carries spillover risk the design flags for Maya to weigh — so she adds Gura as the comparison arm. She sets the sampling methodology and clicks Generate — the engine draws the sample in one pass and records the draw: its random seed, each site's selection probability, and the survey weights, so the sample is reproducible and auditable. The map shows it first; each blue pin is a sampled settlement — a PSU, a primary sampling unit — inside its ward boundary. And within each settlement, the households are drawn at random from the building footprints — rooftops from Overture's global open-buildings dataset, so this works anywhere on Earth. Guardrailed: the first sample that meets the balance criteria wins, and every re-draw is logged. The comparability check then reports the realized balance — the actual post-draw differences, not the predicted 0.02: it gives the numbers and no verdict, deliberately. Settlement density is the axis the match is built on, and the one we cannot fix later; PSU size and building footprint are baseline covariates recorded to adjust for at analysis. The reader judges the match, not a badge. Her own study is waiting on the board — the one she just built, arms and all. She advances it, and approves it. Each area keeps its arm labs-side, but the Connect export carries no arm column, so surveyors stay blind. The full sampling record — seeds, selection probabilities, weights — travels with the study. It is finished, and ready for a survey firm.",
+  "narrative": "Maya runs a household intervention in Riyom, Plateau State — frontline workers delivering vitamin A door to door to children under five. She wants to measure her intervention areas against matched wards the programme never reached, re-surveyed round after round. Maya starts a new matched two-arm comparison study on her Riyom programme. In the plan editor she turns on the campaign's service-delivery layer and picks the opportunity to ground the plan in. She grounds the plan in the campaign's delivery record for Attakar and confirms it. The blue points are service-delivery locations Connect logged, blanketing the whole ward. She'll sample by ward. She opens the boundary picker, switches to sampling, tags Attakar as the intervention arm, and runs Compare. Every neighbouring ward is ranked on three columns. Overall match is how much the two wards' building-density distributions overlap — how alike they look. Matched balance is the density difference left after a matched draw, once both arms are reweighted to Attakar's density mix; it is the figure the comparability check reports later. Common support is how much of the density range the two wards share, because matching only draws from that overlap — a fine balance over a narrow shared range is weaker than it looks. Sopp and Danto balance best at 0.02, but over the narrowest shared range. Zankan was the programme's own ward last cycle, so it is out. Common support is the trade: Atuku shares the most range and balances worst. Gura sits between — 0.03 across ninety-five percent. It is adjacent, so the design flags spillover risk, and she adds it as the comparison arm. The map reframes on both. She sets the sampling methodology and clicks Generate. The engine draws the sample in one pass and records it — the random seed, each site's selection probability, and the survey weights — so the draw is reproducible. Each blue pin is a sampled settlement, a primary sampling unit, inside its ward boundary; within each, households are drawn at random from Overture's building footprints, so this works anywhere. The first sample meeting the balance criteria wins, and every re-draw is logged. The comparability check then reports the realized balance — the actual post-draw differences, not the predicted 0.02 — as numbers, with no verdict. Settlement density is the axis the match is built on and the one we cannot fix later; PSU size and footprint are covariates to adjust for at analysis. Her study is waiting on the board. She advances it, and approves it. Each area keeps its arm labs-side, but the Connect export carries no arm column, so surveyors stay blind. The full sampling record — seeds, probabilities, weights — travels with the study. It is ready for a survey firm.",
   "personas": {
     "maya": {
       "color": "#7C3AED",
@@ -25,7 +25,7 @@
     {
       "features": [],
       "id": "the-goal-measure-the-program-s-real-effect",
-      "narrative": "Maya runs a household-based intervention in Riyom, Plateau State — frontline workers going door to door to deliver vitamin A to children under five. She wants to continuously measure how non-intervention areas compare to her intervention areas over time — matched wards the programme never reached, re-surveyed round after round, so the difference between them means something.",
+      "narrative": "Maya runs a household intervention in Riyom, Plateau State — frontline workers delivering vitamin A door to door to children under five. She wants to measure her intervention areas against matched wards the programme never reached, re-surveyed round after round.",
       "persona": "maya",
       "provenance": "S0",
       "title": "The goal — measure the program's real effect"
@@ -39,7 +39,7 @@
         }
       ],
       "id": "maya-starts-a-study-from-scratch",
-      "narrative": "Maya starts a brand-new matched two-arm comparison study on her Riyom programme.",
+      "narrative": "Maya starts a new matched two-arm comparison study on her Riyom programme.",
       "persona": "maya",
       "provenance": "S12",
       "title": "Maya starts a study from scratch"
@@ -58,7 +58,7 @@
         }
       ],
       "id": "maya-opens-the-plan-editor-on-the-empty-study",
-      "narrative": "In the plan editor she turns on the campaign's service-delivery layer and picks which opportunity's data to ground the plan in.",
+      "narrative": "In the plan editor she turns on the campaign's service-delivery layer and picks the opportunity to ground the plan in.",
       "persona": "maya",
       "provenance": "S13",
       "title": "Maya opens the plan editor on the empty study"
@@ -77,7 +77,7 @@
         }
       ],
       "id": "maya-sees-the-programme-covered-all-of-attakar",
-      "narrative": "She grounds the plan in the campaign's own delivery record for Attakar, and confirms the selection. The blue points are its individual service-delivery locations — rooftops — blanketing the whole ward, everywhere Connect logged delivery. She'll sample by ward.",
+      "narrative": "She grounds the plan in the campaign's delivery record for Attakar and confirms it. The blue points are service-delivery locations Connect logged, blanketing the whole ward. She'll sample by ward.",
       "persona": "maya",
       "provenance": "S13",
       "title": "Maya sees the programme covered all of Attakar"
@@ -91,7 +91,7 @@
         }
       ],
       "id": "maya-compares-the-surrounding-wards-to-find-a-match",
-      "narrative": "She opens the boundary picker and switches to sampling. She tags Attakar as the intervention arm and runs Compare, and every neighbouring ward is ranked against it — on three columns. Overall match is how much the two wards' building-density distributions overlap: strong is above seventy percent. That says how alike they look, not how good a study you would get. Matched balance says that — the density difference left after a matched draw, once both arms are reweighted to Attakar's own density mix. It is the same figure the comparability check reports later. And common support is how much of the density range the two wards actually share, because matching only draws from that overlap: a fine balance over a narrow shared range is a weaker match than it looks. So a ward that is only a partial match overall can still balance best.",
+      "narrative": "She opens the boundary picker, switches to sampling, tags Attakar as the intervention arm, and runs Compare. Every neighbouring ward is ranked on three columns. Overall match is how much the two wards' building-density distributions overlap — how alike they look. Matched balance is the density difference left after a matched draw, once both arms are reweighted to Attakar's density mix; it is the figure the comparability check reports later. Common support is how much of the density range the two wards share, because matching only draws from that overlap — a fine balance over a narrow shared range is weaker than it looks.",
       "persona": "maya",
       "provenance": "S13",
       "title": "Maya compares the surrounding wards to find a match"
@@ -115,7 +115,7 @@
         }
       ],
       "id": "maya-rejects-the-closest-match-and-adds-the-right-match",
-      "narrative": "Two wards tie at 0.02 — the aggregate standardized imbalance across the matched characteristics, where lower is closer. Zankan was the programme's own ward last cycle, so it is out. Common support separates the rest: Gura shares more of Attakar's density range. As an adjacent ward it carries spillover risk the design flags for Maya to weigh — so she adds Gura as the comparison arm.",
+      "narrative": "Sopp and Danto balance best at 0.02, but over the narrowest shared range. Zankan was the programme's own ward last cycle, so it is out. Common support is the trade: Atuku shares the most range and balances worst. Gura sits between — 0.03 across ninety-five percent. It is adjacent, so the design flags spillover risk, and she adds it as the comparison arm. The map reframes on both.",
       "persona": "maya",
       "provenance": "S13",
       "title": "Maya rejects the closest match and adds the right match"
@@ -134,7 +134,7 @@
         }
       ],
       "id": "maya-generates-the-two-arm-plan-in-place",
-      "narrative": "She sets the sampling methodology and clicks Generate — the engine draws the sample in one pass and records the draw: its random seed, each site's selection probability, and the survey weights, so the sample is reproducible and auditable. The map shows it first; each blue pin is a sampled settlement — a PSU, a primary sampling unit — inside its ward boundary. And within each settlement, the households are drawn at random from the building footprints — rooftops from Overture's global open-buildings dataset, so this works anywhere on Earth. Guardrailed: the first sample that meets the balance criteria wins, and every re-draw is logged. The comparability check then reports the realized balance — the actual post-draw differences, not the predicted 0.02: it gives the numbers and no verdict, deliberately. Settlement density is the axis the match is built on, and the one we cannot fix later; PSU size and building footprint are baseline covariates recorded to adjust for at analysis. The reader judges the match, not a badge.",
+      "narrative": "She sets the sampling methodology and clicks Generate. The engine draws the sample in one pass and records it — the random seed, each site's selection probability, and the survey weights — so the draw is reproducible. Each blue pin is a sampled settlement, a primary sampling unit, inside its ward boundary; within each, households are drawn at random from Overture's building footprints, so this works anywhere. The first sample meeting the balance criteria wins, and every re-draw is logged. The comparability check then reports the realized balance — the actual post-draw differences, not the predicted 0.02 — as numbers, with no verdict. Settlement density is the axis the match is built on and the one we cannot fix later; PSU size and footprint are covariates to adjust for at analysis.",
       "persona": "maya",
       "provenance": "S7",
       "title": "Maya generates the two-arm plan in place"
@@ -153,12 +153,12 @@
         }
       ],
       "id": "maya-completes-the-study",
-      "narrative": "Her own study is waiting on the board — the one she just built, arms and all. She advances it, and approves it. Each area keeps its arm labs-side, but the Connect export carries no arm column, so surveyors stay blind. The full sampling record — seeds, selection probabilities, weights — travels with the study. It is finished, and ready for a survey firm.",
+      "narrative": "Her study is waiting on the board. She advances it, and approves it. Each area keeps its arm labs-side, but the Connect export carries no arm column, so surveyors stay blind. The full sampling record — seeds, probabilities, weights — travels with the study. It is ready for a survey firm.",
       "persona": "maya",
       "provenance": "S14",
       "title": "Maya completes the study"
     }
   ],
   "slug": "microplans-study-groups",
-  "version": 23
+  "version": 24
 }
