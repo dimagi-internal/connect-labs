@@ -256,6 +256,34 @@ export interface PipelineRow {
 /**
  * Metadata about a pipeline execution.
  */
+/**
+ * A raw-visit refetch that came back suspiciously smaller than what was
+ * already cached, and got rejected in favor of the previous (larger,
+ * still-good) data rather than silently overwriting it — see
+ * SQLBackend.stream_raw_visits / fetch_raw_visits in
+ * connect_labs/labs/analysis/backends/sql/backend.py. This is the shape the
+ * backend actually attaches at a single opportunity's scope (`execute_pipeline`
+ * in connect_labs/workflow/data_access.py, and each entry of `per_opp` below)
+ * — no `opportunity_id`, since at that nesting level it's implied by context.
+ */
+export interface RawFetchAnomalyDetail {
+  previous_count: number;
+  attempted_count: number;
+  threshold_pct: number;
+}
+
+/**
+ * The flat, alias-level aggregation of RawFetchAnomalyDetail — see
+ * PipelineDataStreamView.stream_data in connect_labs/workflow/views.py, which
+ * is the only place `opportunity_id` gets added (spread onto each per_opp
+ * entry when building `raw_fetch_anomalies`). `opportunity_id` is a string
+ * because it's a JSON object key server-side (per_opp), coerced to string by
+ * serialization.
+ */
+export interface RawFetchAnomaly extends RawFetchAnomalyDetail {
+  opportunity_id: string;
+}
+
 export interface PipelineMetadata {
   /** Number of rows returned */
   row_count: number;
@@ -271,6 +299,53 @@ export interface PipelineMetadata {
 
   /** Error message if execution failed */
   error?: string;
+
+  /**
+   * Set when this pipeline's own fetch (non-multi-opp path — see
+   * PipelineDataAccess.execute_pipeline in connect_labs/workflow/data_access.py)
+   * hit the raw-fetch shrink guard. Multi-opp pipelines surface this via
+   * `raw_fetch_anomalies` / `per_opp` below instead.
+   */
+  raw_fetch_anomaly?: RawFetchAnomalyDetail;
+
+  /**
+   * CommCare HQ auth error, aggregated up from a per-opp failure in a
+   * multi-opp workflow so a single check
+   * (pipelines[alias].metadata.auth_error) catches it regardless of which
+   * opportunity failed — see PipelineDataStreamView.stream_data in
+   * connect_labs/workflow/views.py.
+   */
+  auth_error?: string;
+  auth_error_domain?: string;
+  auth_authorize_url?: string;
+
+  /** Opportunities this pipeline executed against (multi-opp workflows). */
+  opportunity_ids?: number[];
+
+  /**
+   * Per-opportunity execution detail, keyed by opportunity_id (a string —
+   * JSON object keys are always strings). Only present for pipelines
+   * fetched via the multi-opp SSE path.
+   */
+  per_opp?: Record<
+    string,
+    {
+      row_count?: number;
+      from_cache?: boolean;
+      error?: string;
+      auth_error?: string;
+      auth_error_domain?: string;
+      raw_fetch_anomaly?: RawFetchAnomalyDetail;
+    }
+  >;
+
+  /**
+   * Same aggregation as auth_error, above, for the raw-fetch shrink guard —
+   * a flat list so a generic UI check doesn't need to dig into `per_opp`
+   * itself. Empty/absent means no anomaly on any opportunity this pipeline
+   * covers.
+   */
+  raw_fetch_anomalies?: RawFetchAnomaly[];
 }
 
 // =============================================================================

@@ -4816,6 +4816,22 @@ class PipelineDataStreamView(BaseSSEStreamView):
                                 "row_count": row_count,
                                 "from_cache": from_cache,
                             }
+                            # Surfaced when SQLBackend rejected a raw-visit
+                            # refetch that came back suspiciously smaller than
+                            # what was already cached, and served the previous
+                            # (larger, still-good) data instead — see
+                            # AnalysisPipeline.stream_analysis, which attaches
+                            # this onto result.metadata for exactly this read.
+                            # Same "buried under per_opp" risk auth_error had
+                            # (see the alias-level aggregation below): a render
+                            # checking only pipelines[alias].metadata would
+                            # never see it if it stayed nested here alone.
+                            result_metadata = getattr(result, "metadata", None) if result else None
+                            raw_fetch_anomaly = (
+                                result_metadata.get("raw_fetch_anomaly") if isinstance(result_metadata, dict) else None
+                            )
+                            if raw_fetch_anomaly:
+                                per_opp_meta[str(opp_id)]["raw_fetch_anomaly"] = raw_fetch_anomaly
 
                             if result:
                                 yield send_sse_event(f"Processing {alias} data (opp {opp_id})...")
@@ -4914,6 +4930,16 @@ class PipelineDataStreamView(BaseSSEStreamView):
                             None,
                         )
                         alias_metadata["auth_authorize_url"] = "/labs/commcare/initiate/"
+                    # Same aggregation as auth_error above, for the raw-fetch
+                    # shrink guard: a flat list at the alias level so a generic
+                    # frontend check (any workflow, not just one with render
+                    # code that happens to dig into per_opp itself) can see it
+                    # with pipelines[alias].metadata.raw_fetch_anomalies.
+                    anomalous_opps = [oid for oid, m in per_opp_meta.items() if m.get("raw_fetch_anomaly")]
+                    if anomalous_opps:
+                        alias_metadata["raw_fetch_anomalies"] = [
+                            {"opportunity_id": oid, **per_opp_meta[oid]["raw_fetch_anomaly"]} for oid in anomalous_opps
+                        ]
                     pipeline_data[alias] = {
                         "rows": merged_rows,
                         "metadata": alias_metadata,

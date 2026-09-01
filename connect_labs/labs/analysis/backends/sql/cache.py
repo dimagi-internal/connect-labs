@@ -8,6 +8,7 @@ import logging
 import random
 from datetime import date, datetime, timedelta
 
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.db.models.fields.json import KeyTextTransform
 from django.utils import timezone
@@ -160,6 +161,72 @@ class SQLCacheManager:
             visit_count__gt=0,
             expires_at__gt=timezone.now(),
         ).count()
+
+    def get_raw_visit_count_ignoring_ttl(self) -> int:
+        """Count of raw visit rows currently occupying this slot, regardless of
+        whether their TTL has already lapsed (excludes in-progress sentinel rows).
+
+        Used as the "what's about to be replaced" baseline for the shrink guard
+        in backend.py. A naturally TTL-expired cache is exactly the case that
+        guard exists to protect -- by the time a fetch reaches that guard, the
+        cache is a "miss" precisely because it *is* expired, so get_raw_visit_count
+        (which filters on expires_at__gt=now()) would always read 0 there and
+        silently disable the guard for the one scenario it was built for.
+        """
+        return RawVisitCache.objects.filter(
+            **self._raw_filter(),
+            visit_count__gt=0,
+        ).count()
+
+    def _raw_fetch_anomaly_cache_key(self) -> str:
+        return f"raw_fetch_anomaly:{self.opportunity_id}:{self.pipeline_id}"
+
+    def get_pending_raw_fetch_anomaly(self) -> dict | None:
+        """Anomaly the shrink guard (see backend.py) recorded for THIS slot, if
+        the cache is still serving old/fallback data rather than a confirmed-
+        good refresh.
+
+        Without this, the anomaly only ever surfaced on the exact request that
+        exhausted the guard's retries: extend_raw_cache_ttl() makes the old
+        rows look like an ordinary valid cache again, so the very next
+        request -- a page reload, a different tab, a scheduled job -- would
+        take the plain cache-HIT branch and silently drop the flag. Backed by
+        Django's cache framework rather than a DB column: this is a
+        short-lived, best-effort UI signal, not data of record, so losing it
+        early (e.g. an eviction) just means the banner stops a bit sooner --
+        never a correctness problem for the actual cached visits.
+        """
+        return cache.get(self._raw_fetch_anomaly_cache_key())
+
+    def set_pending_raw_fetch_anomaly(self, anomaly: dict, minutes: int):
+        """Record `anomaly` so get_pending_raw_fetch_anomaly() keeps surfacing
+        it on cache-HIT reads until cleared or it times out on its own."""
+        cache.set(self._raw_fetch_anomaly_cache_key(), anomaly, timeout=minutes * 60)
+
+    def clear_pending_raw_fetch_anomaly(self):
+        """Called once a fetch is accepted as good -- the data's confirmed
+        fresh again, so any earlier flag no longer applies."""
+        cache.delete(self._raw_fetch_anomaly_cache_key())
+
+    def extend_raw_cache_ttl(self, minutes: int):
+        """Push out expiry on the CURRENT finalized raw cache rows, without
+        touching their data.
+
+        Used when a fresh fetch came back suspiciously smaller than what's
+        already cached (see RAW_CACHE_SHRINK_THRESHOLD_PCT in backend.py) --
+        we keep serving the old, larger, still-good rows rather than
+        overwrite them, but we don't want to wait out the full TTL before
+        checking again, since whatever caused the undercount (replica lag,
+        a network blip) may already have resolved. Only extends forward
+        (`expires_at__lt`) so this never SHORTENS an already-longer-lived
+        entry.
+        """
+        new_expiry = timezone.now() + timedelta(minutes=minutes)
+        RawVisitCache.objects.filter(
+            **self._raw_filter(),
+            visit_count__gt=0,
+            expires_at__lt=new_expiry,
+        ).update(expires_at=new_expiry)
 
     def store_raw_visits(self, visit_dicts: list[dict], visit_count: int):
         """
