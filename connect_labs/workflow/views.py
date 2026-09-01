@@ -4569,6 +4569,58 @@ def flw_daily_indicator_history_api(request):
 
 
 @login_required
+@require_GET
+def flw_daily_summary_history_api(request):
+    """
+    Return every completed run's flw_daily_summary snapshot for a given
+    source workflow definition (see flw_daily_summary_report's run_default),
+    flattened into one entry per opportunity per day, for the FLW day-by-day
+    report (Program 217) to build its 14-day grid.
+
+    ?definition_id=<id> selects the source workflow (the daily-report
+    generator, not the grid's own definition). Same scoping/fan-out pattern
+    as flw_daily_indicator_history_api above -- this is its Program-217
+    sibling, not a generalization of it (state key differs: flw_daily_summary,
+    not flw_daily_indicators).
+    """
+    definition_id = request.GET.get("definition_id")
+    if not definition_id:
+        return JsonResponse({"error": "definition_id is required"}, status=400)
+    try:
+        definition_id = int(definition_id)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "definition_id must be an integer"}, status=400)
+
+    try:
+        wf_access = WorkflowDataAccess(request=request)
+        runs = wf_access.list_runs(definition_id=definition_id)
+        wf_access.close()
+
+        days = []
+        for run in runs:
+            if not run.is_completed:
+                continue
+            report = ((run.data.get("snapshot") or {}).get("state") or {}).get("flw_daily_summary")
+            if not report:
+                continue
+            days.append(
+                {
+                    "run_id": run.id,
+                    "opportunity_id": run.opportunity_id,
+                    "date": report.get("date"),
+                    "generated_at": report.get("generated_at"),
+                    "flws": report.get("flws") or [],
+                }
+            )
+
+        days.sort(key=lambda d: (d["date"] or "", d["opportunity_id"] or 0))
+        return JsonResponse({"days": days})
+    except Exception:
+        logger.exception("Failed to fetch flw_daily_summary history for definition %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+@login_required
 def open_run_state_api(request):
     """
     Return merged worker_results and audit_statuses across all open (in-progress

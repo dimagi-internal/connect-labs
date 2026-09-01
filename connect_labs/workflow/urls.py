@@ -146,6 +146,11 @@ urlpatterns = [
         views.flw_daily_indicator_history_api,
         name="api_flw_daily_indicator_history",
     ),
+    path(
+        "api/flw-daily-summary-history/",
+        views.flw_daily_summary_history_api,
+        name="api_flw_daily_summary_history",
+    ),
     # Image proxy and visit images API
     path("api/image/<int:opp_id>/<str:blob_id>/", views.WorkflowImageProxyView.as_view(), name="api_image_proxy"),
     path("api/<int:opp_id>/visit-images/", views.visit_images_api, name="api_visit_images"),
