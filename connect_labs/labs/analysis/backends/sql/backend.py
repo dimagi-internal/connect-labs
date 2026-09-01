@@ -259,9 +259,11 @@ class SQLBackend:
                         logger.info(f"[SQL] Cache has no images for opp {opportunity_id}, re-fetching with images")
                     else:
                         logger.info(f"[SQL] Raw cache HIT (with images) for opp {opportunity_id}")
+                        self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
                         return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
                 else:
                     logger.info(f"[SQL] Raw cache HIT for opp {opportunity_id} (tolerance={tolerance_pct}%)")
+                    self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
                     return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
 
         # Cache miss or force refresh - fetch from API
@@ -305,11 +307,25 @@ class SQLBackend:
                 "attempted_count": len(visit_dicts),
                 "threshold_pct": RAW_CACHE_SHRINK_THRESHOLD_PCT,
             }
+            # Keep surfacing this on later cache-HIT reads too -- otherwise the
+            # extend_raw_cache_ttl() call above makes the old rows look like an
+            # ordinary valid cache again, and the very next request (a reload,
+            # a different tab) would silently drop the flag. See
+            # get_pending_raw_fetch_anomaly's docstring.
+            cache_manager.set_pending_raw_fetch_anomaly(self.last_raw_fetch_anomaly, minutes=10)
+            low_fetch_dicts = visit_dicts
             visit_dicts = self._load_from_cache(cache_manager, skip_form_json=False, filter_visit_ids=None)
+            if not visit_dicts:
+                # The old cache we were protecting vanished from under us
+                # (e.g. a concurrent invalidation raced this guard) -- serving
+                # nothing would be worse than serving the low-but-real fetch
+                # we already have. The anomaly flag above still applies.
+                visit_dicts = low_fetch_dicts
         else:
             # Store full data to SQL cache
             visit_count = len(visit_dicts)
             cache_manager.store_raw_visits(visit_dicts, visit_count)
+            cache_manager.clear_pending_raw_fetch_anomaly()
             logger.info(f"[SQL] Stored {visit_count} visits to RawVisitCache")
 
         # Apply filters for return value
@@ -373,6 +389,7 @@ class SQLBackend:
             effective_count = expected_visit_count or 0
             if cache_manager.has_valid_raw_cache(effective_count, tolerance_pct=tolerance_pct):
                 logger.info(f"[SQL] Raw cache HIT for opp {opportunity_id}")
+                self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
                 visit_dicts = self._load_from_cache(cache_manager, skip_form_json=True, filter_visit_ids=None)
                 yield ("cached", visit_dicts)
                 return
@@ -431,6 +448,7 @@ class SQLBackend:
             if prior_count == 0 or accept_low_count or rows_so_far >= threshold:
                 # Atomically finalize cache with the real count
                 cache_manager.store_raw_visits_finalize(rows_so_far)
+                cache_manager.clear_pending_raw_fetch_anomaly()
                 logger.info(f"[SQL] Streamed {rows_so_far} visits to DB, keeping {len(slim_dicts)} slim dicts")
                 yield ("complete", slim_dicts)
                 return
@@ -460,7 +478,17 @@ class SQLBackend:
             "attempted_count": rows_so_far,
             "threshold_pct": RAW_CACHE_SHRINK_THRESHOLD_PCT,
         }
+        # Keep surfacing this on later cache-HIT reads too -- see
+        # get_pending_raw_fetch_anomaly's docstring for why extend_raw_cache_ttl
+        # alone isn't enough.
+        cache_manager.set_pending_raw_fetch_anomaly(self.last_raw_fetch_anomaly, minutes=10)
         old_visit_dicts = self._load_from_cache(cache_manager, skip_form_json=True, filter_visit_ids=None)
+        if not old_visit_dicts:
+            # The old cache we were protecting vanished from under us (e.g. a
+            # concurrent invalidation raced this guard) -- serving nothing
+            # would be worse than serving the low-but-real data we already
+            # streamed. The anomaly flag above still applies.
+            old_visit_dicts = slim_dicts
         yield ("cached", old_visit_dicts)
 
     def has_valid_raw_cache(

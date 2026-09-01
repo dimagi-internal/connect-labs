@@ -177,6 +177,42 @@ class SQLCacheManager:
             visit_count__gt=0,
         ).count()
 
+    def _raw_fetch_anomaly_cache_key(self) -> str:
+        return f"raw_fetch_anomaly:{self.opportunity_id}:{self.pipeline_id}"
+
+    def get_pending_raw_fetch_anomaly(self) -> dict | None:
+        """Anomaly the shrink guard (see backend.py) recorded for THIS slot, if
+        the cache is still serving old/fallback data rather than a confirmed-
+        good refresh.
+
+        Without this, the anomaly only ever surfaced on the exact request that
+        exhausted the guard's retries: extend_raw_cache_ttl() makes the old
+        rows look like an ordinary valid cache again, so the very next
+        request -- a page reload, a different tab, a scheduled job -- would
+        take the plain cache-HIT branch and silently drop the flag. Backed by
+        Django's cache framework rather than a DB column: this is a
+        short-lived, best-effort UI signal, not data of record, so losing it
+        early (e.g. an eviction) just means the banner stops a bit sooner --
+        never a correctness problem for the actual cached visits.
+        """
+        from django.core.cache import cache
+
+        return cache.get(self._raw_fetch_anomaly_cache_key())
+
+    def set_pending_raw_fetch_anomaly(self, anomaly: dict, minutes: int):
+        """Record `anomaly` so get_pending_raw_fetch_anomaly() keeps surfacing
+        it on cache-HIT reads until cleared or it times out on its own."""
+        from django.core.cache import cache
+
+        cache.set(self._raw_fetch_anomaly_cache_key(), anomaly, timeout=minutes * 60)
+
+    def clear_pending_raw_fetch_anomaly(self):
+        """Called once a fetch is accepted as good -- the data's confirmed
+        fresh again, so any earlier flag no longer applies."""
+        from django.core.cache import cache
+
+        cache.delete(self._raw_fetch_anomaly_cache_key())
+
     def extend_raw_cache_ttl(self, minutes: int):
         """Push out expiry on the CURRENT finalized raw cache rows, without
         touching their data.
