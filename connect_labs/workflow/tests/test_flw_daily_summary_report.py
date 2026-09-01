@@ -3,6 +3,8 @@ from unittest import mock
 
 from connect_labs.workflow.templates.flw_daily_summary_report import run_default
 
+FETCH_CCHQ_CASES_PATH = "connect_labs.labs.analysis.backends.sql.cchq_cases_fetcher.fetch_cchq_cases_as_visit_dicts"
+
 
 def _hsd_row(opp_id, username, time_start, form_display_name="Health Service Delivery", **overrides):
     row = {
@@ -28,9 +30,23 @@ def _approved_row(opp_id, username, time_start, form_display_name="Health Servic
         "muac_cm": None,
         "muac_photo": None,
         "dw_dosage_date_time": None,
+        "wa_case_id": None,
+        "commcare_userid": None,
     }
     row.update(overrides)
     return row
+
+
+def _wa_case_row(case_id, owner_id, closed=False):
+    """Shape normalize_cchq_case_to_visit_dict produces -- only the keys
+    run_default actually reads (form_json.case.owner_id / .closed)."""
+    return {"form_json": {"case": {"case_id": case_id, "owner_id": owner_id, "closed": closed, "properties": {}}}}
+
+
+def _worker(username, name=None, **overrides):
+    worker = {"username": username, "name": name or username, "visit_count": 0, "last_active": None}
+    worker.update(overrides)
+    return worker
 
 
 def _make_definition(opportunity_ids, program_id=217):
@@ -56,8 +72,13 @@ def _wda_factory(fetch_instance, opp_instances):
     return _factory
 
 
+def _flw_by_username(flws):
+    return {f["username"]: f for f in flws}
+
+
+@mock.patch(FETCH_CCHQ_CASES_PATH)
 @mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
-def test_run_default_splits_by_opportunity_and_completes_each_run(MockWDA):
+def test_run_default_splits_by_opportunity_and_completes_each_run(MockWDA, mock_fetch_cchq):
     definition = _make_definition([1001, 1002])
 
     in_window = "2026-07-20T08:00:00Z"
@@ -76,6 +97,8 @@ def test_run_default_splits_by_opportunity_and_completes_each_run(MockWDA):
         "hsd_visits": {"rows": hsd_rows},
         "approved_visits": {"rows": approved_rows},
     }
+    fetch_instance.get_workers.return_value = []
+    mock_fetch_cchq.return_value = []
 
     opp_instances = {}
     MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
@@ -114,8 +137,9 @@ def test_run_default_splits_by_opportunity_and_completes_each_run(MockWDA):
     assert flws_1002[0]["username"] == "bob"
 
 
+@mock.patch(FETCH_CCHQ_CASES_PATH)
 @mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
-def test_run_default_excludes_rows_outside_window(MockWDA):
+def test_run_default_excludes_rows_outside_window(MockWDA, mock_fetch_cchq):
     definition = _make_definition([1001])
 
     hsd_rows = [
@@ -126,6 +150,8 @@ def test_run_default_excludes_rows_outside_window(MockWDA):
 
     fetch_instance = mock.Mock()
     fetch_instance.get_pipeline_data.return_value = {"hsd_visits": {"rows": hsd_rows}, "approved_visits": {"rows": []}}
+    fetch_instance.get_workers.return_value = []
+    mock_fetch_cchq.return_value = []
 
     opp_instances = {}
     MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
@@ -142,8 +168,9 @@ def test_run_default_excludes_rows_outside_window(MockWDA):
     assert flws[0]["total_health_service_delivery_visits"] == 1
 
 
+@mock.patch(FETCH_CCHQ_CASES_PATH)
 @mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
-def test_run_default_uses_muac_photo_and_dw_dosage_date_time_fields(MockWDA):
+def test_run_default_uses_muac_photo_and_dw_dosage_date_time_fields(MockWDA, mock_fetch_cchq):
     """Full path: an approved_visits row carrying real muac_photo/dw_dosage_date_time
     values should flip both indicators to 1 for the matching child."""
     definition = _make_definition([1001])
@@ -165,6 +192,8 @@ def test_run_default_uses_muac_photo_and_dw_dosage_date_time_fields(MockWDA):
         "hsd_visits": {"rows": []},
         "approved_visits": {"rows": approved_rows},
     }
+    fetch_instance.get_workers.return_value = []
+    mock_fetch_cchq.return_value = []
 
     opp_instances = {}
     MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
@@ -182,14 +211,17 @@ def test_run_default_uses_muac_photo_and_dw_dosage_date_time_fields(MockWDA):
     assert flws[0]["total_children_deworming_photo_taken"] == 1
 
 
+@mock.patch(FETCH_CCHQ_CASES_PATH)
 @mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
-def test_run_default_defaults_window_to_yesterday_wat(MockWDA):
+def test_run_default_defaults_window_to_yesterday_wat(MockWDA, mock_fetch_cchq):
     """No window kwarg -> resolves to yesterday's Africa/Lagos (UTC+1) calendar day."""
     from datetime import timedelta
 
     definition = _make_definition([1001])
     fetch_instance = mock.Mock()
     fetch_instance.get_pipeline_data.return_value = {"hsd_visits": {"rows": []}, "approved_visits": {"rows": []}}
+    fetch_instance.get_workers.return_value = []
+    mock_fetch_cchq.return_value = []
 
     opp_instances = {}
     MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
@@ -199,3 +231,201 @@ def test_run_default_defaults_window_to_yesterday_wat(MockWDA):
     report_date = datetime.fromisoformat(result["date"]).date()
     today_wat = (datetime.now(timezone.utc) + timedelta(hours=1)).date()
     assert report_date == today_wat - timedelta(days=1)
+
+
+@mock.patch(FETCH_CCHQ_CASES_PATH)
+@mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
+def test_run_default_includes_roster_only_flw_with_zero_activity(MockWDA, mock_fetch_cchq):
+    """An FLW on the roster with no hsd/approved rows this day still gets a
+    row, with the day's indicators all zero and their roster name attached."""
+    definition = _make_definition([1001])
+
+    fetch_instance = mock.Mock()
+    fetch_instance.get_pipeline_data.return_value = {"hsd_visits": {"rows": []}, "approved_visits": {"rows": []}}
+    fetch_instance.get_workers.return_value = [_worker("quiet_carl", name="Carl Quiet")]
+    mock_fetch_cchq.return_value = []
+
+    opp_instances = {}
+    MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
+
+    run_default(
+        definition=definition,
+        access_token="tok",
+        request=None,
+        window=(datetime(2026, 7, 19, 23, tzinfo=timezone.utc), datetime(2026, 7, 20, 23, tzinfo=timezone.utc)),
+    )
+
+    fetch_instance.get_workers.assert_called_once_with(1001)
+    flws = _flw_by_username(opp_instances[1001].complete_run.call_args.args[1]["state"]["flw_daily_summary"]["flws"])
+    assert flws["quiet_carl"]["name"] == "Carl Quiet"
+    assert flws["quiet_carl"]["total_health_service_delivery_visits"] == 0
+    assert flws["quiet_carl"]["total_households_registered"] == 0
+
+
+@mock.patch(FETCH_CCHQ_CASES_PATH)
+@mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
+def test_run_default_attaches_suspended_flag_from_roster(MockWDA, mock_fetch_cchq):
+    definition = _make_definition([1001])
+
+    in_window = "2026-07-20T08:00:00Z"
+    fetch_instance = mock.Mock()
+    fetch_instance.get_pipeline_data.return_value = {
+        "hsd_visits": {"rows": [_hsd_row(1001, "flagged_flo", in_window)]},
+        "approved_visits": {"rows": []},
+    }
+    fetch_instance.get_workers.return_value = [
+        _worker("flagged_flo", suspended=True, suspension_date="2026-07-15T00:00:00Z"),
+        _worker("active_ade", suspended=False),
+    ]
+    mock_fetch_cchq.return_value = []
+
+    opp_instances = {}
+    MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
+
+    run_default(
+        definition=definition,
+        access_token="tok",
+        request=None,
+        window=(datetime(2026, 7, 19, 23, tzinfo=timezone.utc), datetime(2026, 7, 20, 23, tzinfo=timezone.utc)),
+    )
+
+    flws = _flw_by_username(opp_instances[1001].complete_run.call_args.args[1]["state"]["flw_daily_summary"]["flws"])
+    assert flws["flagged_flo"]["suspended"] is True
+    assert flws["flagged_flo"]["suspension_date"] == "2026-07-15T00:00:00Z"
+    # False is a real value, not "missing" -- must round-trip, not get dropped.
+    assert flws["active_ade"]["suspended"] is False
+
+
+@mock.patch(FETCH_CCHQ_CASES_PATH)
+@mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
+def test_run_default_computes_work_areas_left_via_commcare_userid_join(MockWDA, mock_fetch_cchq):
+    """owner_id on an open work-area case joins to a visit's commcare_userid,
+    not directly to the Connect username -- and the mapping is built from
+    EVERY approved_visits row returned, not just today's window, so an FLW
+    quiet today can still resolve via an older visit."""
+    definition = _make_definition([1001])
+
+    approved_rows = [
+        # Historical visit (outside today's window) -- still usable for the mapping.
+        _approved_row(1001, "moji", "2026-07-01T08:00:00Z", commcare_userid="cchq-moji-uuid"),
+    ]
+    fetch_instance = mock.Mock()
+    fetch_instance.get_pipeline_data.return_value = {
+        "hsd_visits": {"rows": []},
+        "approved_visits": {"rows": approved_rows},
+    }
+    fetch_instance.get_workers.return_value = [_worker("moji")]
+    mock_fetch_cchq.return_value = [
+        _wa_case_row("wa-1", "cchq-moji-uuid", closed=False),
+        _wa_case_row("wa-2", "cchq-moji-uuid", closed=False),
+        _wa_case_row("wa-3", "cchq-moji-uuid", closed=True),  # closed -- not "left"
+        _wa_case_row("wa-4", "cchq-someone-else", closed=False),  # different owner
+    ]
+
+    opp_instances = {}
+    MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
+
+    run_default(
+        definition=definition,
+        access_token="tok",
+        request=None,
+        window=(datetime(2026, 7, 19, 23, tzinfo=timezone.utc), datetime(2026, 7, 20, 23, tzinfo=timezone.utc)),
+        cchq_access_token="cchq-tok",
+    )
+
+    mock_fetch_cchq.assert_called_once()
+    assert mock_fetch_cchq.call_args.kwargs["cchq_access_token"] == "cchq-tok"
+
+    flws = _flw_by_username(opp_instances[1001].complete_run.call_args.args[1]["state"]["flw_daily_summary"]["flws"])
+    assert flws["moji"]["work_areas_left"] == 2
+
+
+@mock.patch(FETCH_CCHQ_CASES_PATH)
+@mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
+def test_run_default_omits_work_areas_left_when_commcare_userid_unresolved(MockWDA, mock_fetch_cchq):
+    """A roster FLW who's never appeared in approved_visits (so no
+    commcare_userid mapping exists) gets no work_areas_left key at all --
+    not a misleading 0."""
+    definition = _make_definition([1001])
+
+    fetch_instance = mock.Mock()
+    fetch_instance.get_pipeline_data.return_value = {"hsd_visits": {"rows": []}, "approved_visits": {"rows": []}}
+    fetch_instance.get_workers.return_value = [_worker("never_visited")]
+    mock_fetch_cchq.return_value = [_wa_case_row("wa-1", "some-owner", closed=False)]
+
+    opp_instances = {}
+    MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
+
+    run_default(
+        definition=definition,
+        access_token="tok",
+        request=None,
+        window=(datetime(2026, 7, 19, 23, tzinfo=timezone.utc), datetime(2026, 7, 20, 23, tzinfo=timezone.utc)),
+        cchq_access_token="cchq-tok",
+    )
+
+    flws = _flw_by_username(opp_instances[1001].complete_run.call_args.args[1]["state"]["flw_daily_summary"]["flws"])
+    assert "work_areas_left" not in flws["never_visited"]
+
+
+@mock.patch(FETCH_CCHQ_CASES_PATH)
+@mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
+def test_run_default_degrades_gracefully_when_work_area_fetch_fails(MockWDA, mock_fetch_cchq):
+    """No cchq_access_token (or any other fetch failure) must not fail the
+    run -- work_areas_left is just absent from every FLW dict."""
+    definition = _make_definition([1001])
+
+    approved_rows = [_approved_row(1001, "moji", "2026-07-01T08:00:00Z", commcare_userid="cchq-moji-uuid")]
+    fetch_instance = mock.Mock()
+    fetch_instance.get_pipeline_data.return_value = {
+        "hsd_visits": {"rows": []},
+        "approved_visits": {"rows": approved_rows},
+    }
+    fetch_instance.get_workers.return_value = [_worker("moji")]
+    mock_fetch_cchq.side_effect = Exception("CCHQHeadlessError: no token available")
+
+    opp_instances = {}
+    MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
+
+    result = run_default(
+        definition=definition,
+        access_token="tok",
+        request=None,
+        window=(datetime(2026, 7, 19, 23, tzinfo=timezone.utc), datetime(2026, 7, 20, 23, tzinfo=timezone.utc)),
+    )
+
+    assert result["opportunities"]["1001"]["status"] == "ready"
+    flws = _flw_by_username(opp_instances[1001].complete_run.call_args.args[1]["state"]["flw_daily_summary"]["flws"])
+    assert "work_areas_left" not in flws["moji"]
+
+
+@mock.patch(FETCH_CCHQ_CASES_PATH)
+@mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
+def test_run_default_degrades_gracefully_when_roster_fetch_fails(MockWDA, mock_fetch_cchq):
+    """A roster fetch failure must not fail the run -- it just falls back to
+    only the FLWs found in this day's activity, same as before this feature."""
+    definition = _make_definition([1001])
+
+    in_window = "2026-07-20T08:00:00Z"
+    fetch_instance = mock.Mock()
+    fetch_instance.get_pipeline_data.return_value = {
+        "hsd_visits": {"rows": [_hsd_row(1001, "alice", in_window)]},
+        "approved_visits": {"rows": []},
+    }
+    fetch_instance.get_workers.side_effect = Exception("network error")
+    mock_fetch_cchq.return_value = []
+
+    opp_instances = {}
+    MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
+
+    result = run_default(
+        definition=definition,
+        access_token="tok",
+        request=None,
+        window=(datetime(2026, 7, 19, 23, tzinfo=timezone.utc), datetime(2026, 7, 20, 23, tzinfo=timezone.utc)),
+    )
+
+    assert result["opportunities"]["1001"]["status"] == "ready"
+    flws = opp_instances[1001].complete_run.call_args.args[1]["state"]["flw_daily_summary"]["flws"]
+    assert [f["username"] for f in flws] == ["alice"]
+    assert "suspended" not in flws[0]
