@@ -131,6 +131,17 @@ Parameters:
       5xx (as opposed to target 5xx) mean the ALB could not get a usable response
       — the shape seen during the incident, which peaked at 84.
 
+  Target5xxThreshold:
+    Type: Number
+    Default: 25
+    Description: >-
+      Alarm when the APPLICATION returns this many 5xx in 5 minutes. Mirrors
+      Elb5xxThreshold deliberately: the two metrics catch opposite failures and
+      neither substitutes for the other. Baseline is essentially zero (08-30: 0,
+      09-01: 1 through 14:00Z); the 08-31 Umami outage ran 410 in two hours and
+      peaked at 42 in one 5-minute bucket, so 25 fires within ~5 minutes of a
+      real burst while staying silent on a normal day.
+
 Conditions:
   HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
   HasAgentAlarmEmail: !Not [!Equals [!Ref AgentAlarmEmail, '']]
@@ -369,6 +380,35 @@ Resources:
       Period: 300
       EvaluationPeriods: 1
       Threshold: !Ref Elb5xxThreshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  # ── Application-generated 5xx (the app answered 500) ───────────────
+  # The COMPLEMENT of Elb5xxAlarm, not a replacement for it. On 2026-07-29
+  # target 5xx was 1 while ELB 5xx peaked at 84; on 2026-08-31 the inverse
+  # happened -- 410 target 5xx over two hours (all /umami/api/send, a Prisma
+  # P2002 race) while ELB 5xx peaked at 19, under Elb5xxThreshold. Nothing
+  # paged for two hours. Each metric is blind to the other's failure mode, so
+  # both are alarmed.
+  Target5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-alb-target-5xx-high
+      AlarmDescription: >-
+        A target behind the ALB is answering with 5xx — the application itself
+        returned an error, as opposed to the ALB failing to get a response at
+        all (that is labs-jj-alb-5xx-high). The LoadBalancer dimension spans
+        every target group, so this covers the web tier AND the Umami service.
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref LoadBalancerDimension
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref Target5xxThreshold
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlertTopic]

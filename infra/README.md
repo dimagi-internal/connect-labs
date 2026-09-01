@@ -124,6 +124,7 @@ Thresholds come from the measured 5-day distribution, not from feel:
 | `labs-jj-web-cpu-high`           | **busiest task's** CPU ≥ 90% for 15 min | median **0.8%**                                        |
 | `labs-jj-alb-latency-high`       | ALB **p95** > 10s for 15 min            | median p95 **0.23s**; only 1.7% of buckets exceed 10s  |
 | `labs-jj-alb-5xx-high`           | ALB-generated 5xx > 25 in 5 min         | ~1–5 per 15 min; incident peaked at 84                 |
+| `labs-jj-alb-target-5xx-high`    | **app-generated** 5xx > 25 in 5 min     | ~0/day; 08-31 Umami outage ran 410 in 2h, peak 42      |
 | `labs-jj-web-no-healthy-targets` | healthy hosts < 1 for 3 min             | every task unhealthy at once, so this is a full outage |
 | `labs-jj-rds-connections-high`   | connections > 90 for 10 min             | 5–15; **was 120 and never fired at a 106 peak**        |
 
@@ -139,6 +140,15 @@ beside an idle one reads as ~50% and can never cross a 90% line. Over
 and none had `Average ≥ 90%` (highest Average: 58.1%) — the tier was returning
 502s and this alarm stayed green. **Re-check any per-task statistic here
 whenever `desiredCount` changes.**
+
+The two 5xx alarms are a **pair, and neither substitutes for the other.**
+`HTTPCode_ELB_5XX_Count` means the ALB could not get a usable response;
+`HTTPCode_Target_5XX_Count` means the app answered with an error. On
+2026-07-29 target 5xx was **1** while ELB 5xx peaked at **84**. On 2026-08-31
+the inverse happened: **410** target 5xx over two hours (all `/umami/api/send`,
+a Prisma `P2002` race) while ELB 5xx peaked at **19** — under the ELB
+threshold, so nothing paged for two hours. Watching either metric alone is
+blind to one of these; watch both.
 
 Note these are deliberately **not** paired with a timeout reduction: long-running
 audit work legitimately needs the 600s gunicorn and ALB idle timeouts. The
