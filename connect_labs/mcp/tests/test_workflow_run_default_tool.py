@@ -67,6 +67,8 @@ def test_workflow_run_default_happy_path_program_owned(user, monkeypatch):
 
 @pytest.mark.django_db
 def test_workflow_run_default_explicit_window_overrides_cadence(user, monkeypatch):
+    from datetime import datetime, timezone
+
     from connect_labs.mcp.tools import workflow_run_default as wrd
 
     fake_definition = MagicMock()
@@ -88,8 +90,19 @@ def test_workflow_run_default_explicit_window_overrides_cadence(user, monkeypatc
         window_end="2026-08-10",
     )
 
+    # window_start/window_end are parsed into real datetimes -- every template's
+    # run_default does `window_start <= dt < window_end`, so raw strings would
+    # crash with a TypeError deep in template code (this was a real bug: see
+    # PR fixing flw_daily_summary_report backfill). window_end is inclusive of
+    # the given calendar date, so a same-day start/end covers that whole day.
     fake_run_default.assert_called_once_with(
-        fake_definition, access_token="tok", request=None, window=("2026-08-10", "2026-08-10")
+        fake_definition,
+        access_token="tok",
+        request=None,
+        window=(
+            datetime(2026, 8, 10, tzinfo=timezone.utc),
+            datetime(2026, 8, 11, tzinfo=timezone.utc),
+        ),
     )
 
 
@@ -115,6 +128,30 @@ def test_workflow_run_default_rejects_partial_window(user):
     with pytest.raises(MCPToolError) as exc:
         tool.handler(user=user, definition_id=100, opportunity_id=4242, window_start="2026-08-10")
     assert exc.value.code == "INVALID_SCHEMA"
+
+
+@pytest.mark.django_db
+def test_workflow_run_default_rejects_unparseable_window_date(user, monkeypatch):
+    from connect_labs.mcp.tools import workflow_run_default as wrd
+
+    fake_definition = MagicMock()
+    fake_wda = MagicMock()
+    fake_wda.get_definition.return_value = fake_definition
+    fake_wda.access_token = "tok"
+
+    monkeypatch.setattr(wrd, "_wda_for_user", lambda u, opportunity_id=None, program_id=None: fake_wda)
+
+    tool = get_tool("workflow_run_default")
+    with pytest.raises(MCPToolError) as exc:
+        tool.handler(
+            user=user,
+            definition_id=100,
+            opportunity_id=4242,
+            window_start="not-a-date",
+            window_end="2026-08-10",
+        )
+    assert exc.value.code == "INVALID_SCHEMA"
+    fake_wda.close.assert_called_once()
 
 
 @pytest.mark.django_db
