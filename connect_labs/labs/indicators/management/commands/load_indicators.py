@@ -34,6 +34,7 @@ from connect_labs.labs.indicators.sources import (
     settlement,
     worldbank,
     worldpop,
+    worldpop_agesex,
     worldpop_raster,
 )
 
@@ -46,6 +47,7 @@ STAGES = (
     "child_health",
     "malaria",
     "population_raster",
+    "population_agesex",
     "accessibility",
     "settlement",
 )
@@ -371,6 +373,39 @@ class Command(BaseCommand):
                     pool.submit(worldpop_raster.load_country, iso, levels=levels, missing_only=missing_only): iso
                     for iso in codes
                 }
+                for future in as_completed(futures):
+                    iso = futures[future]
+                    done += 1
+                    try:
+                        rows = future.result()
+                    except Exception as exc:  # noqa: BLE001 — one country must not lose the rest
+                        self.stdout.write(self.style.WARNING(f"  {iso}: {exc}"))
+                        continue
+                    written += base.upsert(rows)
+                    self.stdout.write(f"  [{done}/{len(codes)}] {iso}: {len(rows)} values")
+            ctx["rows"] = written
+            ctx["countries"] = len(codes)
+
+    def _stage_population_agesex(self, codes, opts):
+        """The age bands summed from WorldPop's own grids, per country.
+
+        The sibling of ``population_raster``, and it exists for the same reason:
+        the hosted statistics service refuses geometries rather than queues
+        them, so ``pop_u1``, ``pop_u5`` and ``pop_f_15_49`` stalled at roughly
+        half the ADM2 units and no amount of waiting moves them.
+
+        It costs eleven rasters per country against the total's one, so it runs
+        after that stage rather than as part of it — the total is the figure
+        most of the tool leans on, and it should not wait behind the bands.
+        """
+        levels = tuple(int(x) for x in str(opts.get("levels") or "1,2").split(","))
+        workers = max(1, int(opts.get("workers") or 4))
+
+        with self._run(Source.WORLDPOP_RASTER, "pop_agesex") as ctx:
+            written = 0
+            done = 0
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(worldpop_agesex.load_country, iso, levels=levels): iso for iso in codes}
                 for future in as_completed(futures):
                     iso = futures[future]
                     done += 1

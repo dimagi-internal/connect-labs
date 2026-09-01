@@ -400,3 +400,171 @@ def test_rural_is_the_three_degurba_rural_classes_and_nothing_else():
     # Water is not rural. It is the class most likely to be swept in by a
     # "not urban" test, and it would inflate every coastal district.
     assert not settlement.classify(np.array([10])).any()
+
+
+# --------------------------------------------------------------------------
+# Age-sex bands
+#
+# A measure here is a sum over as many as seven rasters, which is a step
+# ``pop_total`` never had. These pin the two ways it can go wrong without
+# saying so: bands that never get added, and a band that goes missing while
+# the total still looks like a total.
+# --------------------------------------------------------------------------
+
+
+def _bands(monkeypatch, grids):
+    """Stand in for the network: hand ``grid_for`` these rasters, in order."""
+    from connect_labs.labs.indicators.sources import worldpop_agesex
+
+    served = iter(grids)
+
+    def fake_fetch(iso, group, band, year=worldpop_agesex.YEAR):
+        nxt = next(served)
+        if isinstance(nxt, Exception):
+            raise nxt
+        return nxt
+
+    monkeypatch.setattr(worldpop_agesex, "fetch", fake_fetch)
+
+
+def test_bands_are_summed_per_cell_before_any_boundary_is_read(monkeypatch):
+    """One grid comes back, not a band each, and it is the cell-wise sum.
+
+    This is the whole shape of the loader: ``pop_f_15_49`` is seven rasters,
+    and every boundary must be read from the one grid they add up to rather
+    than seven times over.
+    """
+    from connect_labs.labs.indicators.sources import worldpop_agesex
+
+    _bands(monkeypatch, [_grid([[1.0, 2.0], [4.0, 8.0]]), _grid([[10.0, 20.0], [40.0, 80.0]])])
+    grid = worldpop_agesex.grid_for("NGA", "pop_u1")
+
+    np.testing.assert_allclose(grid.masked(), [[11.0, 22.0], [44.0, 88.0]])
+    # And it is still placed where the bands were, or every zonal sum after it
+    # reads the wrong land.
+    assert (grid.origin_x, grid.origin_y, grid.pixel_w, grid.pixel_h) == (0.0, 10.0, 1.0, -1.0)
+
+
+def test_the_zonal_sum_reads_the_summed_grid(monkeypatch):
+    """The bands' people, inside the polygon, counted once."""
+    from connect_labs.labs.indicators.sources import worldpop_agesex, worldpop_raster
+
+    _bands(monkeypatch, [_grid([[100.0, 200.0], [0.0, 0.0]]), _grid([[3.0, 5.0], [0.0, 0.0]])])
+    grid = worldpop_agesex.grid_for("NGA", "pop_u5")
+    # Centres at x=0.5,1.5 and y=9.5; the box takes the whole top row.
+    assert worldpop_raster.zonal_sum(grid, shapely.box(0, 9, 2, 10)) == pytest.approx(308.0)
+
+
+def test_a_cell_no_band_answers_stays_nodata():
+    """Otherwise the country's bounding box fills out to sea with zeroes.
+
+    ``zonal_sum`` falls back to the containing cell for a unit smaller than one,
+    and a nodata cell is its signal to return nothing at all. Turning "nobody
+    estimated here" into a zero turns that into a confident empty district.
+    """
+    from connect_labs.labs.indicators.sources import worldpop_agesex
+
+    a = _grid([[5.0, np.nan], [np.nan, np.nan]])
+    b = _grid([[6.0, np.nan], [np.nan, np.nan]])
+    summed = worldpop_agesex.sum_bands([a, b]).masked()
+    assert summed[0, 0] == pytest.approx(11.0)
+    assert np.isnan(summed[0, 1])
+    assert np.isnan(summed[1]).all()
+
+
+def test_a_cell_only_some_bands_answer_keeps_the_ones_that_did():
+    """A nodata band is "no estimate for this age group here", not "no people".
+
+    Dropping the cell because one of eleven bands is blank would lose the ten
+    that were not.
+    """
+    from connect_labs.labs.indicators.sources import worldpop_agesex
+
+    a = _grid([[np.nan, 2.0], [0.0, 0.0]])
+    b = _grid([[7.0, 3.0], [0.0, 0.0]])
+    np.testing.assert_allclose(worldpop_agesex.sum_bands([a, b]).masked()[0], [7.0, 5.0])
+
+
+def test_a_missing_band_raises_rather_than_returning_a_smaller_total(monkeypatch):
+    """The failure that would otherwise be invisible: ten bands still add up.
+
+    A ``pop_f_15_49`` built from six of its seven bands is a plausible number
+    that is short by a whole age group, and nothing downstream could tell —
+    it is a count, so there is no rate to look wrong. So a band that 404s must
+    take its measure down with it.
+    """
+    from connect_labs.labs.indicators.sources import worldpop_agesex
+
+    _bands(monkeypatch, [_grid([[10.0, 0.0], [0.0, 0.0]]), RuntimeError("404 Not Found")])
+    with pytest.raises(RuntimeError, match="404"):
+        worldpop_agesex.grid_for("NGA", "pop_u1")
+
+
+def test_a_missing_band_costs_its_own_measure_and_no_other(db, monkeypatch):
+    """...and the other two measures still load.
+
+    The other half of the same decision. WorldPop's coverage of this product is
+    not quite uniform, and a country missing one age group is not a reason to
+    leave its other denominators unanswered.
+    """
+    from connect_labs.labs.indicators.sources import worldpop_agesex
+
+    served = {}
+
+    def fake_grid_for(iso, indicator, year=worldpop_agesex.YEAR):
+        if indicator == "pop_u5":
+            raise RuntimeError("404 Not Found")
+        served[indicator] = True
+        return _grid([[1.0, 1.0], [1.0, 1.0]])
+
+    monkeypatch.setattr(worldpop_agesex, "grid_for", fake_grid_for)
+    # No boundaries in the test database, so nothing is written — what is being
+    # pinned is that the loop does not abandon the run on the first refusal.
+    assert worldpop_agesex.load_country("NGA") == []
+
+
+def test_bands_on_different_grids_refuse_to_be_added():
+    """Adding two extents position by position is a number about no land."""
+    from connect_labs.labs.indicators.sources import worldpop_agesex
+
+    here = _grid([[1.0, 1.0], [1.0, 1.0]])
+    shifted = _grid([[1.0, 1.0], [1.0, 1.0]], origin=(50.0, 60.0))
+    with pytest.raises(RuntimeError, match="different grids"):
+        worldpop_agesex.sum_bands([here, shifted])
+
+
+def test_summing_one_band_is_that_band():
+    from connect_labs.labs.indicators.sources import worldpop_agesex
+
+    one = _grid([[1.0, 2.0], [3.0, 4.0]])
+    np.testing.assert_allclose(worldpop_agesex.sum_bands([one]).masked(), [[1.0, 2.0], [3.0, 4.0]])
+
+
+def test_the_measures_name_the_bands_that_define_them():
+    """A wrong band list is a wrong denominator, and nothing else would catch it."""
+    from connect_labs.labs.indicators import measures
+    from connect_labs.labs.indicators.sources import worldpop_agesex
+
+    assert worldpop_agesex.BANDS["pop_u1"] == (("single_age", "f_0"), ("single_age", "m_0"))
+    assert worldpop_agesex.BANDS["pop_u5"] == (
+        ("five_year_age_groups", "f_0_4"),
+        ("five_year_age_groups", "m_0_4"),
+    )
+    # 15-49 is seven five-year bands, female only, contiguous and no wider.
+    childbearing = [band for _, band in worldpop_agesex.BANDS["pop_f_15_49"]]
+    assert childbearing == ["f_15_19", "f_20_24", "f_25_29", "f_30_34", "f_35_39", "f_40_44", "f_45_49"]
+
+    for code in worldpop_agesex.BANDS:
+        measures.get(code)  # raises if a measure this loader writes went away
+
+
+def test_the_band_urls_are_the_files_worldpop_publishes():
+    """Pinned longhand: a wrong path is a 404, and a 404 is a silent gap."""
+    from connect_labs.labs.indicators.sources import worldpop_agesex
+
+    root = "https://data.worldpop.org/GIS/AgeSex_structures/Global_2021_2022_1km_UNadj/unconstrained/2022"
+    assert worldpop_agesex.url_for("NGA", "single_age", "f_0") == f"{root}/single_age/NGA/nga_f_0_2022_1km_UNadj.tif"
+    assert (
+        worldpop_agesex.url_for("nga", "five_year_age_groups", "f_45_49")
+        == f"{root}/five_year_age_groups/NGA/nga_f_45_49_2022_1km_UNadj.tif"
+    )
