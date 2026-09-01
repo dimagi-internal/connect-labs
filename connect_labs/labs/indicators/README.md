@@ -377,12 +377,35 @@ non-commercial source is present.
   the nearest ancestor that has one; the UI and the export both say so per row,
   and name the method that actually produced the value rather than the one that
   was asked for. Nothing here implies sub-regional mortality.
-- **A method's `source_order` ranks sources; it does not restrict them.** So an
-  inherited value may come from outside the selected method — most regions under
-  "Survey as measured" carry IGME's national figure, because the survey never
-  reached them. Every row discloses this, and a selection reports how many of
-  its regions are answered that way. Whether a method should _filter_ its
-  sources instead is open.
+- **Each indicator names the sources that may answer it, and nothing else is
+  used.** The opinion is per indicator and lives in `policy.py` with a reason
+  per source: a model beats a survey for under-five mortality, a survey beats a
+  model for malaria prevalence, and for case counts there is no choice because
+  only one source publishes them. A source not on an indicator's list is
+  ineligible — not ranked last, not used as a fallback. An empty answer is a
+  true answer.
+
+  This replaced a single ranked list applied to all 29 indicators. Ranking is
+  not restricting, so a source that ranked last still answered when nothing
+  better existed: asking for "Survey as measured" returned 370 regions of which
+  285 carried IGME's _national_ figure, repeated across regions the survey never
+  reached. It now returns 146, all of them surveyed.
+
+  A method still exists, and now does one job: it says what _kind_ of evidence
+  is wanted, narrowing an indicator's list without reordering it. The indicator
+  knows which of its own sources is better; a method does not.
+
+- **Inheritance survives, and is counted.** A district with no reading of its
+  own takes its region's rate — that is what makes a rate a rate. What changed
+  is that it may only inherit a value that was itself eligible, and every
+  selection reports `inherited_units`, because "measured here" and "measured in
+  the country above" are different claims.
+- **"Every region cleared it" means every region.** A country is only emitted as
+  one whole-country row when all of its regions were evaluated, not all of the
+  ones that happened to have data. Sudan has nineteen regions, three carried a
+  survey, and all three were above the threshold — it was reported as a
+  whole-country row. That was always wrong and only became common once sources
+  stopped substituting for one another.
 - **Years are not aligned.** Mortality is the latest survey per country, which
   varies; population is WorldPop 2020. Both years are shown.
 - **Some boundary sets are coarse.** geoBoundaries gives Niger 6 ADM1 units with

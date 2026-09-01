@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 from django.utils import timezone
 
@@ -348,77 +346,59 @@ class TestInterventionCosting:
         assert "households" in carried
 
 
-class TestOffMethodUnits:
-    """How much of a selection the chosen method did not actually answer."""
+class TestInheritedUnits:
+    """How much of a total was measured somewhere coarser and applied here.
 
-    def test_units_inherited_from_outside_the_method_are_counted(self):
-        """source_order ranks sources; it does not restrict them.
+    This replaced ``off_method_units``. That field counted units answered by a
+    source the method did not declare — which the eligibility rule in
+    ``policy.py`` has since made impossible, because an ineligible source is no
+    longer used at all rather than merely ranked last.
 
-        Most of DR Congo's provinces under "Survey as measured" carry IGME's
-        national figure, because the survey never reached them. Each row says so,
-        but only a count tells a reader how much of the total is really survey
-        data.
+    What a reader needed survived the rename. A rate inherits downward
+    legitimately, so a selection is often a mixture of regions measured in their
+    own right and regions carrying their country's figure. Both are defensible;
+    the mixture is what changes what a total *means*.
+    """
+
+    def test_a_region_with_no_reading_of_its_own_is_counted_as_inherited(self):
+        country = make_boundary("COD", 0, "DR Congo", "COD-0", x=0)
+        measured = make_boundary("COD", 1, "Measured", "COD-1-1", x=2)
+        make_boundary("COD", 1, "Borrowed", "COD-1-2", x=4)
+        set_value(country, "u5mr", 150, source=Source.DHS)
+        set_value(measured, "u5mr", 150, source=Source.DHS)
+        # 'borrowed' gets nothing of its own and must take the country's.
+
+        selection = select_above(indicator="u5mr", threshold=80.0, method="subnational_survey")
+
+        assert selection.inherited_units == 1
+        assert sum(a.units_covered for a in selection.areas) == 2
+
+    def test_a_region_measured_in_its_own_right_is_not_counted(self):
+        make_boundary("COD", 0, "DR Congo", "COD-0", x=0)
+        region = make_boundary("COD", 1, "Measured", "COD-1-1", x=2)
+        set_value(region, "u5mr", 150, source=Source.DHS)
+
+        selection = select_above(indicator="u5mr", threshold=80.0, method="subnational_survey")
+
+        assert selection.inherited_units == 0
+
+    def test_an_ineligible_source_is_not_borrowed_at_all(self):
+        """The bug the eligibility rule exists for.
+
+        Under the old ranking rule this returned a region, answered by IGME's
+        national figure, under a method labelled "Survey as measured". It now
+        returns nothing, which is the true answer: no survey reached here.
         """
-        from connect_labs.labs.indicators.resolve import Area, Selection
+        country = make_boundary("COD", 0, "DR Congo", "COD-0", x=0)
+        make_boundary("COD", 1, "Unsurveyed", "COD-1-1", x=2)
+        set_value(country, "u5mr", 150, source=Source.IGME)
 
-        def area(source, units):
-            boundary = make_boundary("COD", 1, f"P{source}{units}", f"COD-1-{source}{units}", x=units * 2)
-            resolved = SimpleNamespace(source=source)
-            return Area(
-                boundary=boundary,
-                iso_code="COD",
-                country_name="Democratic Republic of the Congo",
-                name=boundary.name,
-                admin_level=1,
-                units_covered=units,
-                values={"u5mr": resolved},
-            )
+        selection = select_above(indicator="u5mr", threshold=80.0, method="subnational_survey")
 
-        selection = Selection(
-            indicator="u5mr",
-            threshold=80.0,
-            year=None,
-            areas=[area("dhs", 2), area("igme", 5)],
-            totals={},
-            coverage={},
-            countries_fully_above=[],
-            countries_partly_above=[],
-            skipped_no_data=[],
-            method="subnational_survey",
-        )
+        assert selection.areas == []
+        assert selection.inherited_units == 0
 
-        assert selection.off_method_units == 5
-
-    def test_a_rolled_up_row_counts_as_off_method_unless_all_its_sources_qualify(self):
-        from connect_labs.labs.indicators.resolve import Area, Selection
-
-        boundary = make_boundary("CAF", 1, "Ouham", "CAF-1-1", x=2)
-        selection = Selection(
-            indicator="u5mr",
-            threshold=80.0,
-            year=None,
-            areas=[
-                Area(
-                    boundary=boundary,
-                    iso_code="CAF",
-                    country_name="Central African Republic",
-                    name="Central African Republic",
-                    admin_level=0,
-                    units_covered=17,
-                    values={"u5mr": SimpleNamespace(source="dhs+igme")},
-                )
-            ],
-            totals={},
-            coverage={},
-            countries_fully_above=[],
-            countries_partly_above=[],
-            skipped_no_data=[],
-            method="subnational_survey",
-        )
-
-        assert selection.off_method_units == 17
-
-    def test_no_method_means_nothing_to_be_off(self):
+    def test_no_areas_means_nothing_inherited(self):
         from connect_labs.labs.indicators.resolve import Selection
 
         selection = Selection(
@@ -433,7 +413,7 @@ class TestOffMethodUnits:
             skipped_no_data=[],
         )
 
-        assert selection.off_method_units == 0
+        assert selection.inherited_units == 0
 
 
 class TestEveryTargetableIndicatorIsReachable:
@@ -458,7 +438,7 @@ class TestEveryTargetableIndicatorIsReachable:
         # Exempt by kind, not by convenience. Derived values are computed from
         # other rows rather than selected on; the population and fertility
         # sources supply DENOMINATORS, which resolve through
-        # resolve.DEFAULT_SOURCE_ORDER rather than through a method. Nothing
+        # the indicator policy rather than through a method. Nothing
         # here is targetable, so none of it can be silently unreachable.
         exempt = {
             Source.DERIVED,

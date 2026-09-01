@@ -20,9 +20,9 @@ reads off the page:
 
   * ``coverage`` — how many selected units actually carry each count. Where it
     falls short the total is a floor, not a measurement.
-  * ``off_method_units`` — units answered by a source the chosen method does not
-    declare, inherited from a coarser unit. Most "Survey as measured" rows for
-    DR Congo are IGME's national figure applied downward.
+  * ``inherited_units`` — units carrying a figure measured somewhere coarser,
+    usually their country. A rate inherits downward legitimately, but a total
+    built mostly that way is a national figure repeated, not a subnational one.
   * ``countries_unsupported`` — countries the method cannot answer at all,
     listed rather than silently dropped.
 """
@@ -156,8 +156,10 @@ def targeting_indicators(user, *, indicator=None):
         "the top rows with each row's own source, year and method. "
         "Read the honesty fields before quoting any total: 'coverage' says how many "
         "selected units actually carry each count (a shortfall means the total is a "
-        "FLOOR, not a measurement); 'off_method_units' says how many were answered by a "
-        "source this method does not declare, inherited from a coarser unit; and "
+        "FLOOR, not a measurement); 'inherited_units' says how many carry a figure "
+        "measured somewhere coarser -- usually their country -- rather than in their "
+        "own right, so a selection that is mostly inherited is a national figure "
+        "repeated across regions; and "
         "'countries_unsupported' lists countries the method cannot answer at all."
     ),
     input_schema={
@@ -219,7 +221,7 @@ def targeting_select(
             "countries": selection.country_count,
         },
         "coverage": {k: {"with_value": got, "of": total} for k, (got, total) in selection.coverage.items()},
-        "off_method_units": selection.off_method_units,
+        "inherited_units": selection.inherited_units,
         "countries_fully_above": selection.countries_fully_above,
         "countries_partly_above": selection.countries_partly_above,
         "countries_unsupported": selection.countries_unsupported,

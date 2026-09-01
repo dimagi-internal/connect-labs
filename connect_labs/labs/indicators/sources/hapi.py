@@ -11,7 +11,7 @@ absent entirely, and age banding varies by source. WorldPop stays the universal
 backbone; this fills in where it can and gives us something to disagree with.
 
 Because ``(indicator, boundary, year, source)`` is the natural key, HAPI values
-sit alongside WorldPop's rather than overwriting them, and ``DEFAULT_SOURCE_ORDER``
+sit alongside WorldPop's rather than overwriting them, and the population policy
 decides which one a query sees.
 """
 
