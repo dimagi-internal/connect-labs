@@ -135,15 +135,7 @@
             <option value="pending">Pending</option>
             <option value="pass">Passed</option>
             <option value="fail">Failed</option>
-            <template x-if="!isMuacPictureAuditWorkflow">
-              <option value="duplicate_fake">Duplicate/Fake</option>
-            </template>
-            <template x-if="isMuacPictureAuditWorkflow">
-              <option value="duplicate">Duplicate</option>
-            </template>
-            <template x-if="isMuacPictureAuditWorkflow">
-              <option value="fake">Fake</option>
-            </template>
+            <option value="duplicate_fake">Duplicate/Fake</option>
           </select>
         </div>
         <div x-show="flwSummaries.length > 1">
@@ -235,27 +227,11 @@
                 class="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium disabled:opacity-50">
           <i class="fa-solid fa-times mr-1"></i>Fail All Pending
         </button>
-        <template x-if="!isMuacPictureAuditWorkflow">
-          <button @click="markAllDuplicateFake()"
-                  :disabled="isReadOnly || loading || bulkProcessing"
-                  class="px-3 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors text-sm font-medium disabled:opacity-50">
-            <i class="fa-solid fa-exclamation mr-1"></i>Mark All Duplicate/Fake
-          </button>
-        </template>
-        <template x-if="isMuacPictureAuditWorkflow">
-          <button @click="markAllResult('duplicate')"
-                  :disabled="isReadOnly || loading || bulkProcessing"
-                  class="px-3 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors text-sm font-medium disabled:opacity-50">
-            <i class="fa-solid fa-exclamation mr-1"></i>Mark All Duplicate
-          </button>
-        </template>
-        <template x-if="isMuacPictureAuditWorkflow">
-          <button @click="markAllResult('fake')"
-                  :disabled="isReadOnly || loading || bulkProcessing"
-                  class="px-3 py-2 bg-orange-700 text-white rounded-lg hover:bg-orange-800 transition-colors text-sm font-medium disabled:opacity-50">
-            <i class="fa-solid fa-exclamation mr-1"></i>Mark All Fake
-          </button>
-        </template>
+        <button @click="markAllDuplicateFake()"
+                :disabled="isReadOnly || loading || bulkProcessing"
+                class="px-3 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors text-sm font-medium disabled:opacity-50">
+          <i class="fa-solid fa-exclamation mr-1"></i>Mark All Duplicate/Fake
+        </button>
         <button @click="clearAllAssessments()"
                 :disabled="isReadOnly || loading || bulkProcessing"
                 class="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium disabled:opacity-50">
@@ -709,41 +685,21 @@
                 <i class="fa-solid fa-times mr-1"></i>Fail
               </button>
             </div>
-            <template x-if="!isMuacPictureAuditWorkflow">
-              <div class="mb-1.5">
-                <button @click="updateResult(result === 'duplicate_fake' ? '' : 'duplicate_fake')"
-                        :disabled="saving"
-                        :class="{
-                          'bg-orange-500 text-white shadow-sm': result === 'duplicate_fake',
-                          'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-700': result !== 'duplicate_fake'
-                        }"
-                        class="w-full py-1.5 px-2 rounded text-xs font-medium transition-colors disabled:opacity-50">
-                  <i class="fa-solid fa-exclamation mr-1"></i>Duplicate/Fake
-                </button>
-              </div>
-            </template>
-            <template x-if="isMuacPictureAuditWorkflow">
-              <div class="flex gap-1.5 mb-1.5">
-                <button @click="updateResult(result === 'duplicate' ? '' : 'duplicate')"
-                        :disabled="saving"
-                        :class="{
-                          'bg-orange-500 text-white shadow-sm': result === 'duplicate',
-                          'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-700': result !== 'duplicate'
-                        }"
-                        class="flex-1 py-1.5 px-2 rounded text-xs font-medium transition-colors disabled:opacity-50">
-                  <i class="fa-solid fa-clone mr-1"></i>Duplicate
-                </button>
-                <button @click="updateResult(result === 'fake' ? '' : 'fake')"
-                        :disabled="saving"
-                        :class="{
-                          'bg-orange-700 text-white shadow-sm': result === 'fake',
-                          'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-700': result !== 'fake'
-                        }"
-                        class="flex-1 py-1.5 px-2 rounded text-xs font-medium transition-colors disabled:opacity-50">
-                  <i class="fa-solid fa-exclamation mr-1"></i>Fake
-                </button>
-              </div>
-            </template>
+            <div class="mb-1.5">
+              <!-- isDuplicateFake() also matches the legacy "duplicate" / "fake"
+                   values written by the retired Muac Picture Audit review screen,
+                   so a completed report from it still shows its flagged images as
+                   flagged instead of unreviewed. -->
+              <button @click="updateResult(isDuplicateFake(result) ? '' : 'duplicate_fake')"
+                      :disabled="saving"
+                      :class="{
+                        'bg-orange-500 text-white shadow-sm': isDuplicateFake(result),
+                        'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-700': !isDuplicateFake(result)
+                      }"
+                      class="w-full py-1.5 px-2 rounded text-xs font-medium transition-colors disabled:opacity-50">
+                <i class="fa-solid fa-exclamation mr-1"></i>Duplicate/Fake
+              </button>
+            </div>
             <div x-data="{ showNotes: notes ? true : false }">
               <button @click="showNotes = !showNotes"
                       class="text-xs text-gray-500 hover:text-brand-indigo">
@@ -910,7 +866,7 @@
         Complete Image Review
       </h2>
 
-      {% if session.status == 'completed' and not is_muac_picture_audit_workflow %}
+      {% if session.status == 'completed' %}
       <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
         <div class="flex items-center justify-between gap-4">
           <div>
@@ -933,18 +889,6 @@
             Reopen Audit
           </button>
         </div>
-      </div>
-      {% elif session.status == 'completed' and is_muac_picture_audit_workflow %}
-      <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-check-circle text-green-600"></i>
-          <span class="text-sm text-green-700">
-            Completed on {{ session.completed_at|date:"M d, Y \\a\\t H:i" }}
-          </span>
-        </div>
-        <p class="text-xs text-green-600 mt-1 ml-6">
-          You can still change Pass/Fail/Duplicate/Fake on any image below and save — this will update the completed report.
-        </p>
       </div>
       {% endif %}
 
@@ -1155,10 +1099,20 @@ const opportunityId = {{ opportunity_id|default:"null" }};
 const connectUrl = '{{ connect_url|default:"https://connect.dimagi.com" }}';
 const orgSlug = '{{ org_slug|default:"" }}';
 const workflowRunId = {{ workflow_run_id|default:"null" }};
-// Scoped to workflow 6840 ("Muac Picture Audit") only -- see
-// _is_muac_picture_audit_session in views.py. Drives the Duplicate/Fake ->
-// Duplicate + Fake button split and always-editable (even completed) review.
-const isMuacPictureAuditWorkflow = {{ is_muac_picture_audit_workflow|yesno:"true,false" }};
+// The retired "Muac Picture Audit" review screen wrote two per-image results the
+// shared screen never offers -- "duplicate" and "fake" -- and #1385 deliberately
+// left those stored values alone rather than migrating them. So reads have to
+// accept all three: the server counts them in one bucket (tally_assessment) and
+// LEGACY_DUPLICATE_FAKE_RESULTS in views.py is the same list. Without this a
+// completed report renders every image it flagged as unreviewed.
+// The |default is load-bearing, not decoration: a missing context var renders as
+// the empty string, which makes this line `const x = ;` -- a SYNTAX error that
+// kills every script after it and takes the whole review screen with it. Failing
+// to an empty list degrades one highlight instead.
+const legacyDuplicateFakeResults = {{ legacy_duplicate_fake_results|default:"[]"|safe }};
+function isDuplicateFake(result) {
+  return result === 'duplicate_fake' || legacyDuplicateFakeResults.includes(result);
+}
 const passThreshold = parseInt('{{ pass_threshold|default:"80" }}') || 80;
 // Audit-level pass % threshold configured at creation time (75-100, default 100) — determines
 // whether the whole audit is marked pass/fail on completion. Distinct from `passThreshold`
@@ -1283,11 +1237,11 @@ function bulkAssessmentInterface() {
     completionNotes: '{{ session.notes|default:""|escapejs }}',
     kpiNotes: '{{ session.kpi_notes|default:""|escapejs }}',
     submittingCompletion: false,
-    isMuacPictureAuditWorkflow: isMuacPictureAuditWorkflow,
-    // Every other workflow's completed reports stay locked until reopened.
-    // Workflow 6840's own reports never lock -- pass/fail/duplicate/fake stay
-    // editable, and saving updates the completed report in place.
-    isReadOnly: '{{ session.status }}' === 'completed' && !isMuacPictureAuditWorkflow,
+    // Completed reports stay locked until reopened -- for every workflow, with no
+    // exception since #1385. The server enforces the same rule unconditionally
+    // (audit/views.py), so this is the UI half of one guard, not the whole of it.
+    isReadOnly: '{{ session.status }}' === 'completed',
+    isDuplicateFake: isDuplicateFake,
     taskModal: { open: false, flw: null, title: '', description: '', saving: false, error: null },
     // Full-screen image zoom lightbox (indexes into the currently-filtered `assessments`)
     lightbox: { open: false, index: -1, scale: 1, tx: 0, ty: 0, dragging: false, startX: 0, startY: 0 },
@@ -1515,7 +1469,15 @@ function bulkAssessmentInterface() {
       // Filter assessments client-side without making API calls
       this.assessments = this.allAssessments.filter((assessment) => {
         const questionMatch = !this.selectedQuestionId || assessment.question_id === this.selectedQuestionId;
-        const statusMatch = this.selectedStatus === 'all' || assessment.status === this.selectedStatus;
+        // `status` mirrors `result`, so a legacy image reads back as "duplicate"
+        // or "fake" rather than "duplicate_fake" (views.py builds it that way).
+        // The Duplicate/Fake filter has to reach those too, or a completed report
+        // from the retired Muac Picture Audit has flagged images no filter finds.
+        const statusMatch =
+          this.selectedStatus === 'all' ||
+          (this.selectedStatus === 'duplicate_fake'
+            ? isDuplicateFake(assessment.status)
+            : assessment.status === this.selectedStatus);
         const flwMatch = !this.selectedFlw || assessment.username === this.selectedFlw;
         return questionMatch && statusMatch && flwMatch;
       });
@@ -1960,8 +1922,6 @@ function bulkAssessmentInterface() {
     markAllDuplicateFake() {
       this.markAllResult('duplicate_fake');
     },
-    // Shared by "Mark All Duplicate/Fake" (non-scoped workflows) and the
-    // "Mark All Duplicate" / "Mark All Fake" split (workflow 6840 only).
     // Unlike Pass/Fail All Pending, this overrides every currently-visible
     // image regardless of its existing result.
     markAllResult(value) {
