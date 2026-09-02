@@ -224,9 +224,13 @@ class BulkResolver:
     them in memory, and applies the same rules ``resolve()`` does, including
     inheritance from the country level.
 
-    Inheritance here walks only to ADM0 rather than the full parent chain. At the
-    levels this system uses (ADM0 and ADM1) that is the entire chain; if deeper
-    levels are ever added, this needs to grow with them.
+    Inheritance walks the full parent chain, nearest ancestor first, exactly as
+    ``resolve()`` does. It used to jump straight to ADM0 — correct while the
+    system held only ADM0 and ADM1, and quietly wrong from the day ADM2 was
+    loaded, because a district then reached past its own province to the
+    national figure. Liberia is the clean example: ORS coverage is measured for
+    all fifteen counties and for no district, so every one of its 136 districts
+    inherited nothing at all rather than its county's reading.
     """
 
     def __init__(
@@ -253,11 +257,60 @@ class BulkResolver:
         for b in boundary_set.owned().filter(iso_code__in=isos, admin_level=0):
             self._adm0.setdefault(b.iso_code, b)
 
-        # Country boundaries must be resolvable as inheritance targets even when
-        # they are not themselves in the requested set.
-        self._all_pks = {b.pk for b in boundaries} | {b.pk for b in self._adm0.values()}
+        self._chain = self._build_chains(boundaries)
+
+        # Ancestors must be resolvable as inheritance targets even when they are
+        # not themselves in the requested set — a district's province is usually
+        # not in a selection that asked for districts.
+        ancestry = [a for chain in self._chain.values() for a in chain]
+        self._all_pks = {b.pk for b in boundaries} | {a.pk for a in ancestry}
         self._by_pk = {b.pk: b for b in boundaries}
-        self._by_pk.update({b.pk: b for b in self._adm0.values()})
+        self._by_pk.update({a.pk: a for a in ancestry})
+
+    def _build_chains(self, boundaries: list[AdminBoundary]) -> dict[int, list[AdminBoundary]]:
+        """Ancestors of every boundary, nearest first, in a bounded number of queries.
+
+        ``ancestors()`` costs one query per link, which is fine for a single
+        lookup and ruinous for the fifteen hundred districts a continental
+        selection touches. This walks the whole set up one level at a time: at
+        most as many queries as there are admin levels, however many boundaries.
+        """
+        lookup: dict[tuple[str, str], AdminBoundary] = {}
+        frontier = list(boundaries)
+        # Deep enough for ADM0-ADM5 with room to spare.
+        for _ in range(6):
+            wanted = {(b.source, b.parent_boundary_id) for b in frontier if b.parent_boundary_id}
+            wanted -= set(lookup)
+            if not wanted:
+                break
+            found = list(
+                AdminBoundary.objects.filter(source__in={s for s, _ in wanted}, boundary_id__in={k for _, k in wanted})
+            )
+            for parent in found:
+                lookup[(parent.source, parent.boundary_id)] = parent
+            frontier = found
+
+        chains: dict[int, list[AdminBoundary]] = {}
+        for b in boundaries:
+            chain: list[AdminBoundary] = []
+            seen = {b.pk}
+            cur = b
+            while cur.parent_boundary_id:
+                parent = lookup.get((cur.source, cur.parent_boundary_id))
+                # A missing or repeated parent ends the walk rather than looping.
+                if parent is None or parent.pk in seen:
+                    break
+                chain.append(parent)
+                seen.add(parent.pk)
+                cur = parent
+            # Whatever the parent links say, the country is the last resort:
+            # geoBoundaries ships no parent for ADM1, so without this an entire
+            # level would have no ancestor at all.
+            country = self._adm0.get(b.iso_code)
+            if country is not None and country.pk not in seen:
+                chain.append(country)
+            chains[b.pk] = chain
+        return chains
 
     def _rank(self, row: IndicatorValue, order: tuple[str, ...]) -> tuple[int, int, int]:
         src = order.index(row.source)
@@ -289,10 +342,15 @@ class BulkResolver:
             measured_at = b
 
             if row is None and measure.downscale:
-                country = self._adm0.get(b.iso_code)
-                if country is not None:
-                    row = best.get(country.pk)
-                    measured_at = country
+                # Nearest ancestor that has one, not the country. A district
+                # reaching past its own province to the national figure is a
+                # coarser answer presented as the same thing.
+                for anc in self._chain.get(b.pk, ()):
+                    candidate = best.get(anc.pk)
+                    if candidate is not None:
+                        row = candidate
+                        measured_at = anc
+                        break
 
             if row is None:
                 continue
