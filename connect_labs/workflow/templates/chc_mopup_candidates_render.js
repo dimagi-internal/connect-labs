@@ -1035,6 +1035,117 @@ function ThresholdPanel(props) {
 }
 
 // =========================================================================
+// Ward summary table -- one row per ward in scope, totals only (no rates/
+// candidates here, that's the detailed CandidateTable below this).
+// =========================================================================
+
+function WardSummaryTable(props) {
+  var rows = props.rows;
+
+  var summary = React.useMemo(
+    function () {
+      var byWard = {};
+      var order = [];
+      rows.forEach(function (r) {
+        var w = r.ward || '(no ward)';
+        if (!byWard[w]) {
+          byWard[w] = { ward: w, waCount: 0, buildingCount: 0, evcTotal: 0 };
+          order.push(w);
+        }
+        var s = byWard[w];
+        s.waCount += 1;
+        s.buildingCount += numOr(r.building_count, 0);
+        s.evcTotal += numOr(r.expected_visit_count, 0);
+      });
+      return order.map(function (w) {
+        return byWard[w];
+      });
+    },
+    [rows],
+  );
+
+  if (summary.length === 0) return null;
+
+  return ce(
+    'div',
+    {
+      className:
+        'bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto',
+    },
+    ce(
+      'table',
+      { className: 'min-w-full divide-y divide-gray-200 text-sm' },
+      ce(
+        'thead',
+        null,
+        ce(
+          'tr',
+          null,
+          ce(
+            'th',
+            {
+              className:
+                'px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
+            },
+            'Ward',
+          ),
+          ce(
+            'th',
+            {
+              className:
+                'px-3 py-2 text-right text-xs font-semibold uppercase bg-orange-900 text-orange-100',
+            },
+            'Total Work Areas',
+          ),
+          ce(
+            'th',
+            {
+              className:
+                'px-3 py-2 text-right text-xs font-semibold uppercase bg-orange-900 text-orange-100',
+            },
+            'Total Building Count',
+          ),
+          ce(
+            'th',
+            {
+              className:
+                'px-3 py-2 text-right text-xs font-semibold uppercase bg-orange-900 text-orange-100',
+            },
+            'Total EVC',
+          ),
+        ),
+      ),
+      ce(
+        'tbody',
+        { className: 'divide-y divide-gray-100' },
+        summary.map(function (s) {
+          return ce(
+            'tr',
+            { key: s.ward },
+            ce('td', { className: 'px-3 py-1.5' }, s.ward),
+            ce(
+              'td',
+              { className: 'px-3 py-1.5 text-right tabular-nums' },
+              fmtNum(s.waCount),
+            ),
+            ce(
+              'td',
+              { className: 'px-3 py-1.5 text-right tabular-nums' },
+              fmtNum(s.buildingCount),
+            ),
+            ce(
+              'td',
+              { className: 'px-3 py-1.5 text-right tabular-nums' },
+              fmtNum(s.evcTotal),
+            ),
+          );
+        }),
+      ),
+    ),
+  );
+}
+
+// =========================================================================
 // Candidate table (Ward -> WAG -> WA -> FLW)
 // =========================================================================
 
@@ -1690,7 +1801,17 @@ function WorkflowUI(props) {
     [waRows],
   );
 
-  var _wardFilter = React.useState(null); // null = all wards
+  // null = explicit "All wards" (user opted in, accepting the cost of
+  // rendering every work area in scope); [] = nothing picked yet -- the
+  // default, so the table/map/threshold panel start empty instead of
+  // rendering (and re-rendering, on every threshold keystroke) tens of
+  // thousands of rows before the reviewer has even chosen a ward. A
+  // non-empty array is a specific ward selection. This only limits what's
+  // rendered/computed client-side -- the pipeline data itself is still
+  // fetched in full for every opportunity in scope up front (a multi-opp
+  // workflow has no per-ward server-side fetch), so it doesn't speed up the
+  // initial page load, only what happens after.
+  var _wardFilter = React.useState([]);
   var wardFilter = _wardFilter[0],
     setWardFilter = _wardFilter[1];
 
@@ -1729,9 +1850,13 @@ function WorkflowUI(props) {
   var errMsg = _err[0],
     setErrMsg = _err[1];
 
+  var anyWardChosen =
+    wardFilter === null || (!!wardFilter && wardFilter.length > 0);
+
   var scopedRows = React.useMemo(
     function () {
-      if (!wardFilter || wardFilter.length === 0) return waRows;
+      if (wardFilter === null) return waRows; // explicit "All wards"
+      if (!wardFilter || wardFilter.length === 0) return []; // nothing picked yet
       var set = {};
       wardFilter.forEach(function (w) {
         set[w] = true;
@@ -1781,7 +1906,11 @@ function WorkflowUI(props) {
 
   function toggleWard(ward) {
     setWardFilter(function (prev) {
-      var cur = prev && prev.length ? prev.slice() : allWards.slice();
+      // Was in explicit "All wards" mode -- clicking a specific ward exits
+      // that mode and starts a fresh single-ward selection, rather than
+      // trying to "remove" one ward from an implicit full set.
+      if (prev === null) return [ward];
+      var cur = prev.slice();
       var idx = cur.indexOf(ward);
       if (idx >= 0) cur.splice(idx, 1);
       else cur.push(ward);
@@ -2017,9 +2146,11 @@ function WorkflowUI(props) {
               type: 'button',
               className:
                 'px-2 py-1 rounded text-xs border ' +
-                (!wardFilter || wardFilter.length === 0
+                (wardFilter === null
                   ? 'bg-orange-600 text-white border-orange-600'
                   : 'bg-white text-gray-600 border-gray-300'),
+              title:
+                'Loads every work area in scope at once — can be slow with tens of thousands of rows.',
               onClick: function () {
                 setWardFilter(null);
               },
@@ -2078,18 +2209,32 @@ function WorkflowUI(props) {
         ce(
           'div',
           { className: 'lg:col-span-2 space-y-4' },
-          ce(MapPanel, {
-            rows: scopedRows,
-            ruleResults: ruleResults,
-            wardFilter: wardFilter,
-            anchorOppId: oppIds[0],
-          }),
-          ce(CandidateTable, {
-            rows: scopedRows,
-            ruleResults: ruleResults,
-            nameMap: nameMap,
-            oppNames: oppNames,
-          }),
+          !anyWardChosen
+            ? ce(
+                'div',
+                {
+                  className:
+                    'bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center text-sm text-gray-500',
+                },
+                'Select one or more wards above (or "All wards") to load the map and tables.',
+              )
+            : [
+                ce(MapPanel, {
+                  key: 'map',
+                  rows: scopedRows,
+                  ruleResults: ruleResults,
+                  wardFilter: wardFilter,
+                  anchorOppId: oppIds[0],
+                }),
+                ce(WardSummaryTable, { key: 'summary', rows: scopedRows }),
+                ce(CandidateTable, {
+                  key: 'table',
+                  rows: scopedRows,
+                  ruleResults: ruleResults,
+                  nameMap: nameMap,
+                  oppNames: oppNames,
+                }),
+              ],
         ),
       ),
 
