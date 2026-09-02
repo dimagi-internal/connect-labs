@@ -246,7 +246,15 @@ def alternatives(selection, *, run) -> list[dict]:
                 "countries": len(supported),
                 "units": other.unit_count,
                 "areas": other.area_count,
-                "headline": other.totals.get("births") or other.totals.get("pop_total"),
+                # The quantity the question is about, not always births. For a
+                # coverage indicator that is the unreached count; births is the
+                # headline of a mortality question and reports the wrong spread
+                # for any other.
+                "headline": (
+                    other.totals.get(f"{selection.indicator}_gap")
+                    or other.totals.get("births")
+                    or other.totals.get("pop_total")
+                ),
                 "note": method.caveat,
             }
         )
