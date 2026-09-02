@@ -224,3 +224,63 @@ class TestCompareCriteria:
                 criteria=[{"indicator": "ors_coverage"}, {"threshold": 15}],
                 iso_codes=["LBR"],
             )
+
+
+class TestRankingControls:
+    """A universal programme has no threshold to fail.
+
+    Every unit qualifies, so the rollup returns one country row — correct for
+    "the whole country is above the line", and it collapses exactly the ranking
+    the question asked for. Found by running the skill against a real request:
+    rank Liberia's counties for a programme that reaches every child.
+    """
+
+    def _liberia(self):
+        make_boundary("LBR", 0, "Liberia", "LBR-0", x=0)
+        for i, (name, cov) in enumerate([("Bong", 41.0), ("Nimba", 51.3), ("Bomi", 75.5)]):
+            b = make_boundary("LBR", 1, name, f"LBR-1-{i}", x=2 + i * 2)
+            set_value(b, "ors_coverage", cov, source=Source.DHS)
+            set_value(b, "pop_u5", 50_000, source=Source.WORLDPOP_RASTER)
+
+    def test_by_default_a_wholly_qualifying_country_is_one_row(self):
+        self._liberia()
+        got = targeting.targeting_select(
+            None, indicator="ors_coverage", threshold=95, iso_codes=["LBR"], method="subnational_survey"
+        )
+        assert got["counts"]["areas"] == 1
+        assert got["rows"][0]["whole_country"] is True
+
+    def test_rollup_false_returns_the_units_themselves(self):
+        self._liberia()
+        got = targeting.targeting_select(
+            None,
+            indicator="ors_coverage",
+            threshold=95,
+            iso_codes=["LBR"],
+            method="subnational_survey",
+            rollup=False,
+        )
+        assert got["counts"]["areas"] == 3
+        assert {r["area"] for r in got["rows"]} == {"Bong", "Nimba", "Bomi"}
+
+    def test_a_row_says_whether_its_own_estimate_is_thin(self):
+        """The total says how many are thin; a reader scanning needs which."""
+        self._liberia()
+        b = make_boundary("LBR", 1, "Gbarpolu", "LBR-1-9", x=20)
+        v = set_value(b, "ors_coverage", 70.3, source=Source.DHS)
+        v.extra = {"sample_unweighted": 47}
+        v.save(update_fields=["extra"])
+        set_value(b, "pop_u5", 20_000, source=Source.WORLDPOP_RASTER)
+
+        got = targeting.targeting_select(
+            None,
+            indicator="ors_coverage",
+            threshold=95,
+            iso_codes=["LBR"],
+            method="subnational_survey",
+            rollup=False,
+        )
+        rows = {r["area"]: r for r in got["rows"]}
+        assert rows["Gbarpolu"]["small_sample"] is True
+        assert rows["Gbarpolu"]["sample_unweighted"] == 47
+        assert rows["Bong"]["small_sample"] is False

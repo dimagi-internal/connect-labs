@@ -71,7 +71,17 @@ def _resolve_method(availability_mod, methods_mod, indicator: str, resolution: s
     return availability_mod.default_method_for(indicator, res).code
 
 
-def _selection(indicator, threshold, resolution, method, iso_codes, extra_counts=(), target_year=None):
+def _selection(
+    indicator,
+    threshold,
+    resolution,
+    method,
+    iso_codes,
+    extra_counts=(),
+    target_year=None,
+    rollup=True,
+    admin_level=None,
+):
     availability_mod, _, _, measures_mod, methods_mod, ISO_CODES, select_above = _imports()
     if indicator not in measures_mod.MEASURES:
         raise MCPToolError("BAD_REQUEST", f"Unknown indicator {indicator!r}. Call targeting_indicators to list them.")
@@ -86,6 +96,8 @@ def _selection(indicator, threshold, resolution, method, iso_codes, extra_counts
         method=chosen,
         extra_counts=tuple(extra_counts),
         target_year=target_year,
+        rollup=rollup,
+        admin_level=admin_level,
     )
     return selection, measure, chosen
 
@@ -193,10 +205,19 @@ def targeting_select(
     iso_codes=None,
     limit=None,
     target_year=None,
+    rollup=True,
+    admin_level=None,
 ):
     _, _, _, measures_mod, _, _, _ = _imports()
     selection, measure, chosen = _selection(
-        indicator, threshold, resolution, method, iso_codes, target_year=target_year
+        indicator,
+        threshold,
+        resolution,
+        method,
+        iso_codes,
+        target_year=target_year,
+        rollup=rollup,
+        admin_level=admin_level,
     )
     limit = max(1, min(int(limit or DEFAULT_ROW_LIMIT), MAX_ROW_LIMIT))
 
@@ -214,6 +235,10 @@ def targeting_select(
                 "source": resolved.source if resolved else None,
                 "year": resolved.measured_year if resolved else None,
                 "inherited": bool(resolved and resolved.inherited),
+                # Per row as well as in the total: a reader scanning a table
+                # needs to see which line is thin, not just how many are.
+                "small_sample": bool(resolved and resolved.small_sample),
+                "sample_unweighted": resolved.sample_unweighted if resolved else None,
                 **{k: (round(v) if v is not None else None) for k, v in area.counts.items()},
             }
         )
@@ -686,13 +711,24 @@ def targeting_research_write(
                 "type": "string",
                 "description": "Count to compare on. Default pop_u5.",
             },
+            "admin_level": {
+                "type": "integer",
+                "description": "Pin the level compared on: 1 for regions, 2 for districts.",
+            },
         },
         "required": ["criteria"],
         "additionalProperties": False,
     },
 )
 def targeting_compare_criteria(
-    user, *, criteria, iso_codes=None, resolution="subnational", target_year=None, count=None
+    user,
+    *,
+    criteria,
+    iso_codes=None,
+    resolution="subnational",
+    target_year=None,
+    count=None,
+    admin_level=None,
 ):
     _, _, _, measures_mod, _, _, _ = _imports()
 
@@ -721,6 +757,7 @@ def targeting_compare_criteria(
             iso_codes,
             extra_counts=(count,),
             target_year=target_year,
+            admin_level=admin_level,
         )
         # A coverage screen selects below its threshold and a burden screen
         # above it, so the label has to say which or two screens read the same.
