@@ -477,6 +477,59 @@ def workflow_add_pipeline_source(
 
 
 @register(
+    name="workflow_remove_pipeline_source",
+    description=(
+        "Remove a pipeline data source from a workflow definition by alias. "
+        "The pipeline itself is untouched -- only this workflow's reference "
+        "to it is dropped, so other workflows sharing the same pipeline are "
+        "unaffected. Mirrors the web pipeline-sources/remove endpoint. "
+        "Removing an alias that isn't attached is a no-op (returns the "
+        "unchanged pipeline_sources). Returns the full updated pipeline_sources."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workflow_id": {"type": "integer"},
+            "opportunity_id": {
+                "type": "integer",
+                "description": "Scope by owning opportunity. Provide this OR program_id.",
+            },
+            "program_id": {
+                "type": "integer",
+                "description": "Scope by owning program (program-owned workflow). Provide this OR opportunity_id.",
+            },
+            "alias": {"type": "string"},
+        },
+        "required": ["workflow_id", "alias"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_remove_pipeline_source(
+    user, workflow_id: int, alias: str, opportunity_id: int = None, program_id: int = None
+):
+    if not alias:
+        raise MCPToolError("INVALID_SCHEMA", "alias is required and must be non-empty")
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+
+    token = require_connect_token(user)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
+    try:
+        updated = wda.remove_pipeline_source(workflow_id, alias)
+        if updated is None:
+            raise MCPToolError("NOT_FOUND", f"No workflow with id {workflow_id}")
+        return {
+            "workflow_id": workflow_id,
+            "alias": alias,
+            "pipeline_sources": updated.pipeline_sources,
+        }
+    finally:
+        if hasattr(wda, "close"):
+            wda.close()
+
+
+@register(
     name="workflow_update_opportunity_ids",
     description=(
         "Replace the opportunity_ids list on a multi-opportunity workflow "
