@@ -1,20 +1,32 @@
 """CHC Mop-up Candidate Analysis — Program 217 ("CHC - NG - RCT - Aug 2026").
 
-# TODO(phase 2): this file currently only defines the new WA-level
-# `chc_mopup_visit_quality` pipeline (PIPELINE_SCHEMAS below), needed so the
-# pipeline can be created and validated ahead of the dashboard build. The
-# `DEFINITION`/`RENDER_CODE` here are placeholders -- a later phase owns the
-# actual "CHC Mop-up Candidate Analysis" workflow: a multi-opp (all 4 LLOs on
-# program 217) dashboard that lets a reviewer set thresholds across (a) EVC
-# shortfall (delivered/expected visits, from the existing `CHC Work Areas`
-# pipeline, id 12965), (b) NCF/inaccessible rate (also from 12965's closure
-# fields), and (c) the five data-quality cutoffs computed here, then locks a
-# candidate work-area set and hands it to the microplans mop-up endpoint
-# (see connect_labs/microplans/core/mopup.py). That phase should attach the
-# existing pipelines (work_areas=12965, wa_geometry=12971, approved_visits=
-# 12968, audit_entries=13013 as optional FLW-week context) via
-# `workflow_add_pipeline_source` -- they are NOT re-declared in
-# PIPELINE_SCHEMAS here since this template doesn't own their schemas.
+This file defines the new WA-level `chc_mopup_visit_quality` pipeline
+(PIPELINE_SCHEMAS below) plus the real `DEFINITION`/`RENDER_CODE` for the
+"CHC Mop-up Candidate Analysis" workflow: a multi-opp (all 4 LLOs on program
+217) dashboard that lets a reviewer set thresholds across (a) EVC shortfall
+(delivered/expected visits, from the reused `CHC Work Areas` pipeline),
+(b) NCF/inaccessible rate (from this file's own `visit_quality` pipeline,
+NOT `CHC Work Areas`' closure fields -- see the render code's module
+docstring), and (c) the five data-quality cutoffs computed here, then locks a
+candidate work-area set and hands it to the microplans mop-up endpoint (see
+connect_labs/microplans/core/mopup.py).
+
+`DEFINITION.pipeline_sources` is deliberately left empty -- `visit_quality` is
+auto-created from PIPELINE_SCHEMAS at workflow-creation time, and the reused
+`work_areas` / `wa_geometry` / `audit_entries` pipelines must be attached
+afterward via `workflow_add_pipeline_source` (they are NOT re-declared here,
+since this template doesn't own their schemas). **Gotcha hit live on first
+deploy, worth repeating for the next person who touches this**: program 217
+has MORE THAN ONE "CHC Work Areas" / "CHC Work Area Geometry" pipeline —
+one per LLO, created at different times, not kept in sync with each other.
+Picking the wrong one (an older, JHF-owned "CHC Work Areas" that had never
+been exercised by any live dashboard) silently returned zero rows for every
+opportunity with no error anywhere on the page — not a code bug, just the
+wrong pipeline_id. The correct ones to reuse are whichever pipeline an
+already-working dashboard on this program depends on (as of this writing,
+the "Ward Progress Tracker" workflow's `work_areas`/`wa_geo` sources — check
+`workflow_get` on a known-good workflow rather than trusting a same-named
+pipeline found via a single opportunity's `pipeline_list`).
 
 Pipeline: chc_mopup_visit_quality (alias "visit_quality")
 -----------------------------------------------------------
@@ -97,7 +109,7 @@ extension (e.g. an "and" of two paths) rather than a one-line fix.
 NCF / Inaccessible counts -- a Phase 2 design correction, not the original plan
 --------------------------------------------------------------------------------
 The plan (and this file's own earlier revision) sourced the "NCF/inaccessible"
-mop-up criterion from the `CHC Work Areas` (12965) case-level closure fields
+mop-up criterion from `CHC Work Areas`' case-level closure fields
 (`wa_checkout_remark`/`reason_for_inaccessible`/`case_closed`). The user
 overrode this during Phase 2: those WA-case aggregate properties are not
 trustworthy for precise approved/form-type-scoped counting -- the same
@@ -328,11 +340,13 @@ PIPELINE_SCHEMAS = [
 
 # --- Phase 2: the candidate-analysis dashboard ------------------------------
 #
-# `work_areas` (12965), `wa_geometry` (12971), and `audit_entries` (13013) are
-# pre-existing, already-live pipelines this template does NOT own -- they are
-# attached to the workflow definition at creation time via the
-# `workflow_add_pipeline_source` MCP tool (alias -> pipeline_id), the same
-# mechanism the module docstring above already called out. `visit_quality` is
+# `work_areas`, `wa_geometry`, and `audit_entries` are pre-existing,
+# already-live pipelines this template does NOT own -- they are attached to
+# the workflow definition at creation time via the `workflow_add_pipeline_source`
+# MCP tool (alias -> pipeline_id), the same mechanism the module docstring
+# above already called out (including the "more than one same-named pipeline
+# on this program" gotcha -- verify against a known-good workflow's own
+# pipeline_sources, don't just grab the first `pipeline_list` match). `visit_quality` is
 # the only pipeline this template owns (via PIPELINE_SCHEMAS below); it is
 # auto-created when the workflow is created from this template. Per the
 # current build's scope, `approved_visits` (12968) is NOT attached as a
