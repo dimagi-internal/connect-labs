@@ -495,6 +495,8 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             run_meta=None,
         ):
             was = plan_lib.materialize_work_areas(mode, pins, hulls)
+            if area_targets and mode == "coverage":
+                plan_lib.recompute_area_visits(was, area_targets)
             pid = seq["plan"]
             seq["plan"] += 1
             plans[pid] = _FakeProgramPlan(
@@ -724,6 +726,199 @@ def test_program_create_plan(client, django_user_model, monkeypatch):
     # lga/state captured at creation for the Connect import (lga defaults to region)
     assert plans[pid].data["lga"] == "Zaria"
     assert plans[pid].data["state"] == "Kaduna"
+
+
+def _mock_mopup_generation(monkeypatch, *, target_by_ward=None, building_count=100):
+    """Patch the two network-hitting calls the mopup create view makes:
+    generate_coverage_frame (Overture grid gen) and ward_children_per_building
+    (Overture + Connect/CommCare HQ). Returns the calls list each was invoked with.
+
+    fake_generate emits ONE grid-cell feature per candidate area, tagged with
+    THAT area's own area_id/ward/lga/state (mirroring generate_coverage_frame's
+    real per-area tagging in coverage/frame.py:_area_meta) — needed so the
+    view's retained-buildings-per-area_id bookkeeping (see
+    ProgramCreateMopupPlanView.post) has something real to sum."""
+    from connect_labs.microplans.core import mopup as mopup_module
+    from connect_labs.microplans.coverage import frame as coverage_frame_module
+
+    calls = {"generate": [], "targets": []}
+
+    def fake_generate(areas, config):
+        calls["generate"].append((areas, config))
+        features = [
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[[3.0, 6.0], [3.1, 6.0], [3.1, 6.1], [3.0, 6.1], [3.0, 6.0]]],
+                },
+                "properties": {
+                    "arm": "coverage",
+                    "cluster": f"{a['area_id']}-C0",
+                    "area_id": a["area_id"],
+                    "ward": a["ward"],
+                    "lga": a["lga"],
+                    "state": a["state"],
+                    "building_count": building_count,
+                    "expected_visit_count": building_count,
+                },
+            }
+            for a in areas
+        ]
+        return SimpleNamespace(
+            areas_geojson={"type": "FeatureCollection", "features": features},
+            stats=[{"work_areas": len(features)}],
+        )
+
+    def fake_target(ward, lga, state, opportunity_ids, *, pipeline=None, request=None):
+        calls["targets"].append((ward, lga, state, opportunity_ids))
+        return (target_by_ward or {}).get(ward, 1.5)
+
+    monkeypatch.setattr(coverage_frame_module, "generate_coverage_frame", fake_generate)
+    # The view imports generate_coverage_frame via a local
+    # `from connect_labs.microplans.coverage.frame import ... generate_coverage_frame`
+    # inside post() -- patching the module attribute above is what that fresh
+    # import picks up, matching test_coverage.py's fetch-mocking convention.
+    monkeypatch.setattr(mopup_module, "ward_children_per_building", fake_target)
+    return calls
+
+
+def test_program_create_mopup_plan(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    plans, _ = _make_fake_program_da(monkeypatch, {}, {})
+    calls = _mock_mopup_generation(monkeypatch, target_by_ward={"Sabon Gari": 2.0})
+    candidate_work_areas = [
+        {
+            "ward": "Sabon Gari",
+            "lga": "Rano",
+            "state": "Kano",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[3.0, 6.0], [3.1, 6.0], [3.1, 6.1], [3.0, 6.1], [3.0, 6.0]]],
+            },
+        }
+    ]
+    resp = client.post(
+        reverse("microplans:program_create_mopup_plan", kwargs={"program_id": 25}),
+        data=json.dumps(
+            {
+                "candidate_work_areas": candidate_work_areas,
+                "opportunity_ids": [2154, 2155],
+                "name": "CHC Mop-up Batch 1",
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    pid = body["plan_id"]
+    plan = plans[pid]
+    assert plan.mode == "coverage"
+    assert plan.status == "draft"
+    assert len(plan.work_areas) == 1  # one candidate ward -> one mocked grid cell
+    # ward_children_per_building was called once for the one candidate ward,
+    # with the opportunity_ids threaded through.
+    assert calls["targets"] == [("Sabon Gari", "Rano", "Kano", [2154, 2155])]
+    # its area_id (mopup-<slug>) is the key create_plan received as area_targets.
+    area_id = plan.data["input_areas"][0]["area_id"]
+    assert area_id.startswith("mopup-")
+    # per-area population bag carries the resolved RATE (not the absolute target
+    # below) for the review page's source picker (see review.js "Ward children
+    # per building (HSD)").
+    assert plan.data["input_areas"][0]["populations"] == {"hsd_children_per_building": 2.0}
+    # The absolute area_targets value fed into recompute_area_visits must be the
+    # rate SCALED BY this plan's own retained buildings for that area (100, from
+    # the mocked single grid cell) -- not the bare 2.0 rate -- otherwise
+    # recompute_area_visits's own division by retained_buildings double-divides
+    # and silently produces a near-zero EVC. See ProgramCreateMopupPlanView.post.
+    wa = plan.work_areas[0]
+    assert wa["properties"]["area_id"] == area_id
+    assert wa["building_count"] == 100
+    # EVC = ceil(wa_buildings * target / retained_buildings) = ceil(100 * (2.0*100) / 100) = 200
+    assert wa["expected_visit_count"] == 200
+
+
+def test_program_create_mopup_plan_requires_candidates(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_program_da(monkeypatch, {}, {})
+    resp = client.post(
+        reverse("microplans:program_create_mopup_plan", kwargs={"program_id": 25}),
+        data=json.dumps({"candidate_work_areas": [], "opportunity_ids": [2154]}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_program_create_mopup_plan_requires_opportunity_ids(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_program_da(monkeypatch, {}, {})
+    resp = client.post(
+        reverse("microplans:program_create_mopup_plan", kwargs={"program_id": 25}),
+        data=json.dumps(
+            {
+                "candidate_work_areas": [{"ward": "X", "lga": "Y", "state": "Z", "geometry": {"type": "Polygon"}}],
+                "opportunity_ids": [],
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_program_create_mopup_plan_bad_geometry_is_400(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_program_da(monkeypatch, {}, {})
+    _mock_mopup_generation(monkeypatch)
+    resp = client.post(
+        reverse("microplans:program_create_mopup_plan", kwargs={"program_id": 25}),
+        data=json.dumps(
+            {
+                "candidate_work_areas": [
+                    {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "geometry": {"type": "Nonsense"}}
+                ],
+                "opportunity_ids": [2154],
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_ward_children_per_building_view(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from connect_labs.microplans.core import mopup as mopup_module
+
+    def fake_target(ward, lga, state, opportunity_ids, *, pipeline=None, request=None):
+        if ward == "Boom":
+            raise RuntimeError("boundary lookup blew up")
+        return {"Sabon Gari": 2.0}.get(ward, 0.0)
+
+    monkeypatch.setattr(mopup_module, "ward_children_per_building", fake_target)
+    resp = client.post(
+        reverse("microplans:ward_children_per_building", kwargs={"program_id": 25}),
+        data=json.dumps(
+            {
+                "wards": [
+                    {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"},
+                    {"ward": "Boom", "lga": "Rano", "state": "Kano"},
+                ],
+                "opportunity_ids": [2154],
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok", "values": [2.0, None]}
+
+
+def test_ward_children_per_building_view_requires_opportunity_ids(client, django_user_model):
+    _login(client, django_user_model)
+    resp = client.post(
+        reverse("microplans:ward_children_per_building", kwargs={"program_id": 25}),
+        data=json.dumps({"wards": [{"ward": "Sabon Gari"}]}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
 
 
 def test_program_create_sampling_plan_returns_overlay_and_urls(client, django_user_model, monkeypatch):
