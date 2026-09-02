@@ -1552,6 +1552,36 @@ class AuditDataAccess(BaseDataAccess):
         projection.populate(opportunity_id, sessions, built_by=self._requesting_username())
         return projection.prior_verdicts_for(opportunity_id, pairs, exclude_session_id=exclude_session_id)
 
+    def get_duplicate_history_for_flws(self, opportunity_id, usernames, exclude_session_id=None) -> tuple:
+        """Per-FLW duplicate/fake history from the OTHER completed audits of this opportunity.
+
+        Returns ``(history, attributed)``. ``attributed`` is False when the projection
+        holds verdicts that predate FLW attribution, in which case ``history`` is empty
+        for a reason the caller must show rather than render as a clean record.
+
+        Routes through the SAME freshness gate as ``get_prior_audited_images_for``, for
+        the same reason spelled out there: a cold or stale projection answered directly
+        reports "no duplicates ever" for an FLW with a long history, and an auditor
+        reading an empty strip cannot tell that from a genuinely clean one.
+        """
+        from connect_labs.audit import prior_audit_projection as projection
+
+        usernames = [u for u in usernames if u]
+        if not usernames:
+            return {}, True
+
+        if not self._projection_can_serve(opportunity_id):
+            sessions = [s for s in self.get_audit_sessions(status="completed") if s.opportunity_id == opportunity_id]
+            projection.populate(opportunity_id, sessions, built_by=self._requesting_username())
+
+        if not projection.has_flw_attribution(opportunity_id):
+            return {}, False
+
+        history = projection.duplicate_history_for_flws(
+            opportunity_id, usernames, exclude_session_id=exclude_session_id
+        )
+        return history, True
+
     def _projection_can_serve(self, opportunity_id) -> bool:
         """Can the stored projection answer this read, and is it up to date?
 
