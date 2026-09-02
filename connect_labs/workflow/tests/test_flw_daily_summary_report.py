@@ -37,10 +37,13 @@ def _approved_row(opp_id, username, time_start, form_display_name="Health Servic
     return row
 
 
-def _wa_case_row(case_id, owner_id, closed=False):
+def _wa_case_row(case_id, owner_id, closed=False, ward=None):
     """Shape normalize_cchq_case_to_visit_dict produces -- only the keys
-    run_default actually reads (form_json.case.owner_id / .closed)."""
-    return {"form_json": {"case": {"case_id": case_id, "owner_id": owner_id, "closed": closed, "properties": {}}}}
+    run_default actually reads (form_json.case.owner_id / .closed / .properties.ward)."""
+    properties = {"ward": ward} if ward is not None else {}
+    return {
+        "form_json": {"case": {"case_id": case_id, "owner_id": owner_id, "closed": closed, "properties": properties}}
+    }
 
 
 def _worker(username, name=None, **overrides):
@@ -371,6 +374,84 @@ def test_run_default_omits_work_areas_left_when_commcare_userid_unresolved(MockW
 
 @mock.patch(FETCH_CCHQ_CASES_PATH)
 @mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
+def test_run_default_computes_wards_via_wa_case_id_join(MockWDA, mock_fetch_cchq):
+    """wards is the set of wards an FLW has an APPROVED VISIT in, joined via
+    each approved_visits row's wa_case_id -> work-area case's own case_id ->
+    case.properties.ward -- not the wards of every work area they own.
+    Built from EVERY approved_visits row returned (all-time), same as
+    work_areas_left's commcare_userid mapping. Sorted, deduped, and a work
+    area visited twice must not duplicate its ward."""
+    definition = _make_definition([1001])
+
+    approved_rows = [
+        _approved_row(1001, "moji", "2026-07-01T08:00:00Z", wa_case_id="wa-1", child_case_id="c1"),
+        _approved_row(1001, "moji", "2026-07-02T08:00:00Z", wa_case_id="wa-1", child_case_id="c2"),  # dup ward
+        _approved_row(1001, "moji", "2026-07-03T08:00:00Z", wa_case_id="wa-2", child_case_id="c3"),
+        # No wa_case_id at all -- must not blow up, just contributes nothing.
+        _approved_row(1001, "moji", "2026-07-04T08:00:00Z", wa_case_id=None, child_case_id="c4"),
+        # wa_case_id that doesn't match any fetched work-area case.
+        _approved_row(1001, "moji", "2026-07-05T08:00:00Z", wa_case_id="wa-missing", child_case_id="c5"),
+    ]
+    fetch_instance = mock.Mock()
+    fetch_instance.get_pipeline_data.return_value = {
+        "hsd_visits": {"rows": []},
+        "approved_visits": {"rows": approved_rows},
+    }
+    fetch_instance.get_workers.return_value = [_worker("moji")]
+    mock_fetch_cchq.return_value = [
+        _wa_case_row("wa-1", "some-owner", closed=True, ward="Ward Alpha"),
+        _wa_case_row("wa-2", "some-owner", closed=False, ward="Ward Beta"),
+        _wa_case_row("wa-3", "some-owner", closed=False),  # no ward property -- ignored
+    ]
+
+    opp_instances = {}
+    MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
+
+    run_default(
+        definition=definition,
+        access_token="tok",
+        request=None,
+        window=(datetime(2026, 7, 19, 23, tzinfo=timezone.utc), datetime(2026, 7, 20, 23, tzinfo=timezone.utc)),
+        cchq_access_token="cchq-tok",
+    )
+
+    flws = _flw_by_username(opp_instances[1001].complete_run.call_args.args[1]["state"]["flw_daily_summary"]["flws"])
+    assert flws["moji"]["wards"] == ["Ward Alpha", "Ward Beta"]
+
+
+@mock.patch(FETCH_CCHQ_CASES_PATH)
+@mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
+def test_run_default_omits_wards_when_none_resolve(MockWDA, mock_fetch_cchq):
+    """No approved visit resolves to a ward (no wa_case_id anywhere) -- the
+    FLW gets no "wards" key at all, not an empty list."""
+    definition = _make_definition([1001])
+
+    approved_rows = [_approved_row(1001, "moji", "2026-07-01T08:00:00Z", wa_case_id=None)]
+    fetch_instance = mock.Mock()
+    fetch_instance.get_pipeline_data.return_value = {
+        "hsd_visits": {"rows": []},
+        "approved_visits": {"rows": approved_rows},
+    }
+    fetch_instance.get_workers.return_value = [_worker("moji")]
+    mock_fetch_cchq.return_value = [_wa_case_row("wa-1", "some-owner", closed=False, ward="Ward Alpha")]
+
+    opp_instances = {}
+    MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
+
+    run_default(
+        definition=definition,
+        access_token="tok",
+        request=None,
+        window=(datetime(2026, 7, 19, 23, tzinfo=timezone.utc), datetime(2026, 7, 20, 23, tzinfo=timezone.utc)),
+        cchq_access_token="cchq-tok",
+    )
+
+    flws = _flw_by_username(opp_instances[1001].complete_run.call_args.args[1]["state"]["flw_daily_summary"]["flws"])
+    assert "wards" not in flws["moji"]
+
+
+@mock.patch(FETCH_CCHQ_CASES_PATH)
+@mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
 def test_run_default_degrades_gracefully_when_work_area_fetch_fails(MockWDA, mock_fetch_cchq):
     """No cchq_access_token (or any other fetch failure) must not fail the
     run -- work_areas_left is just absent from every FLW dict."""
@@ -402,7 +483,7 @@ def test_run_default_degrades_gracefully_when_work_area_fetch_fails(MockWDA, moc
     # into the schedule's last_error, surfacing the gap on the admin schedules
     # page as an amber note under an otherwise-green "OK" instead of nothing.
     assert len(result["errors"]) == 1
-    assert "work_areas_left unavailable for opp 1001" in result["errors"][0]
+    assert "work_areas_left/wards unavailable for opp 1001" in result["errors"][0]
 
 
 @mock.patch(FETCH_CCHQ_CASES_PATH)
