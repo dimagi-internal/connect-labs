@@ -2,14 +2,23 @@
 // Program 217 (CHC - NG - RCT - Aug 2026), 4 LLOs (JHF 2154 / EHA 2155 / ISODAF 2156 / SOLINA 2157).
 //
 // Data sources (see chc_mopup_candidates.py for the pipeline schemas / join-key
-// rationale): work_areas (12965, cchq_cases) + wa_geometry (12971, connect_export
-// work_areas) + visit_quality (this template's own chc_mopup_visit_quality,
-// entity-stage) join on the work-area case id (work_areas.entity_id ==
-// wa_geometry.wa_case_id == visit_quality.entity_id). audit_entries (13013) is
-// optional FLW-week context only (not used for any inclusion decision).
+// rationale): work_areas (cchq_cases, case_type=work-area — wired at workflow-
+// creation time via workflow_add_pipeline_source; program 217 has more than one
+// "CHC Work Areas" pipeline across its 4 LLOs, use the one an existing live
+// dashboard already depends on, not just any pipeline with a matching name/
+// description — a stale, never-iterated duplicate looks identical on paper but
+// can silently behave differently) + wa_geometry (connect_export work_areas) +
+// visit_quality (this template's own chc_mopup_visit_quality, entity-stage)
+// join on the work-area case id (work_areas.entity_id == wa_geometry.wa_case_id
+// == visit_quality.entity_id). audit_entries is optional FLW-week context only
+// (not used for any inclusion decision).
 //
 // Three criteria groups, computed per work area, combined as UNION/OR:
-//   (a) EVC shortfall     — visit_quality.hsd_visit_count / work_areas.expected_visit_count
+//   (a) EVC shortfall     — visit_quality.hsd_visit_count / work_areas.expected_visit_count.
+//       Excludes WAs Connect still shows as NOT_VISITED / a pending inaccessible request
+//       (isWaDone) unless "Include not-yet-visited work areas" is on (default off) — an
+//       unattempted WA in a still-running campaign isn't "underperforming", it just hasn't
+//       happened yet. This gate applies at both WA and FLW-rollup granularity.
 //   (b) NCF / inaccessible — visit_quality.ncf_visit_count / inaccessible_visit_count (approved,
 //       form-name-filtered visit counts — NOT work_areas' wa_checkout_remark/reason_for_inaccessible/
 //       case_closed/delivered_visit_count case properties. Those WA-case aggregates were the original
@@ -351,11 +360,38 @@ function evcRatio(row) {
   return row.hsd_visit_count / expected;
 }
 
+// Connect's own WA status enum (wa_geometry.status / row.connect_status):
+// NOT_VISITED / VISITED / EXPECTED_VISIT_REACHED / REQUEST_FOR_INACCESSIBLE /
+// INACCESSIBLE. "Done" = the delivery attempt at this WA is concluded one way
+// or another -- used to keep EVC-shortfall from flagging every work area a
+// still-running campaign simply hasn't reached yet (an unattempted WA isn't
+// "underperforming", it's just not due yet). REQUEST_FOR_INACCESSIBLE is
+// deliberately NOT included -- it's a pending request, not a resolved
+// outcome, so it reads the same as NOT_VISITED for this purpose. A missing/
+// unknown status is conservatively treated as not-done (excluded), same as
+// NOT_VISITED, rather than assumed done.
+var WA_DONE_STATUSES = {
+  VISITED: true,
+  EXPECTED_VISIT_REACHED: true,
+  INACCESSIBLE: true,
+};
+
+function isWaDone(row) {
+  return !!WA_DONE_STATUSES[row.connect_status];
+}
+
 // =========================================================================
 // FLW rollups — sum numerators/denominators across a FLW's own work areas,
 // THEN divide. Never average WA-level percentages (misweights a 1-visit WA
 // the same as a 30-visit WA). Scoped per (opportunity_id, owner_id) since a
 // CommCare case owner id is only meaningful within its own domain/opportunity.
+//
+// EVC sums are tracked as TWO pairs (all WAs vs. done-only WAs) so
+// evaluateRules can pick the right pair per the includeNotVisited toggle
+// without needing `config` threaded into this function -- this keeps
+// buildFlwRollups a pure function of waRows only, matching its existing
+// memoization (it's recomputed on ward-filter change, not on every threshold
+// tweak; see the component's useMemo chain).
 // =========================================================================
 
 function flwKeyOf(row) {
@@ -372,8 +408,10 @@ function buildFlwRollups(waRows) {
         opportunity_id: row.opportunity_id,
         owner_id: row.owner_id,
         waCount: 0,
-        evcActualSum: 0,
+        evcActualSum: 0, // all WAs (includeNotVisited=true reading)
         evcExpectedSum: 0,
+        evcActualSumDone: 0, // done-only WAs (includeNotVisited=false reading, the default)
+        evcExpectedSumDone: 0,
         ncfNumSum: 0, // sum of (ncf_visit_count + inaccessible_visit_count)
         ncfDenSum: 0, // sum of total approved visits (hsd + ncf + inaccessible)
         ncfCountModeCount: 0, // # of WAs that individually trip the count/N-buildings mode
@@ -388,6 +426,10 @@ function buildFlwRollups(waRows) {
     if (row.expected_visit_count > 0) {
       flw.evcActualSum += row.hsd_visit_count;
       flw.evcExpectedSum += row.expected_visit_count;
+      if (isWaDone(row)) {
+        flw.evcActualSumDone += row.hsd_visit_count;
+        flw.evcExpectedSumDone += row.expected_visit_count;
+      }
     }
     flw.ncfNumSum += ncfOrInaccessibleVisitCount(row);
     flw.ncfDenSum += totalApprovedVisitCount(row);
@@ -415,7 +457,17 @@ function defaultRuleConfig() {
   });
   return {
     dqMinN: 5,
-    evc: { enabled: true, thresholdPct: 60, flwLevel: false },
+    evc: {
+      enabled: true,
+      thresholdPct: 60,
+      flwLevel: false,
+      // Default false: a WA the campaign simply hasn't reached yet
+      // (connect_status NOT_VISITED / still-pending REQUEST_FOR_INACCESSIBLE)
+      // isn't "underperforming" -- it just hasn't happened yet. Flip on to
+      // mop up areas a still-in-progress ward hasn't fully attempted, e.g.
+      // when running mop-up slightly ahead of full completion on purpose.
+      includeNotVisited: false,
+    },
     ncf: {
       enabled: true,
       // Mode (a): a WA with an approved NCF/Inaccessible visit, 0 HSD visits,
@@ -493,16 +545,33 @@ function evaluateRules(waRows, flwRollups, config) {
     var reasons = [];
 
     // --- EVC shortfall ---
+    // A not-yet-attempted WA (connect_status NOT_VISITED / still-pending
+    // REQUEST_FOR_INACCESSIBLE) never counts as an EVC shortfall unless
+    // includeNotVisited is on -- see isWaDone's docstring. This is a WA-level
+    // eligibility gate; it's separate from evcApplied's WA-vs-FLW toggle below
+    // (both can apply at once: e.g. flwLevel=true still only sums a FLW's
+    // done WAs into the ratio unless includeNotVisited is also on).
+    var evcRowEligible = evc.includeNotVisited || isWaDone(row);
     var evcWaRatio = evcRatio(row);
     var evcWaFails =
-      evcWaRatio != null && evcWaFails_(evcWaRatio, evc.thresholdPct);
-    var evcFlwRatio =
-      flw && flw.evcExpectedSum > 0
-        ? flw.evcActualSum / flw.evcExpectedSum
-        : null;
+      evcRowEligible &&
+      evcWaRatio != null &&
+      evcWaFails_(evcWaRatio, evc.thresholdPct);
+    var evcActualSum = evc.includeNotVisited
+      ? flw && flw.evcActualSum
+      : flw && flw.evcActualSumDone;
+    var evcExpectedSum = evc.includeNotVisited
+      ? flw && flw.evcExpectedSum
+      : flw && flw.evcExpectedSumDone;
+    var evcFlwRatio = evcExpectedSum > 0 ? evcActualSum / evcExpectedSum : null;
     var evcFlwFails =
       evcFlwRatio != null && evcWaFails_(evcFlwRatio, evc.thresholdPct);
-    var evcApplied = evc.flwLevel ? evcFlwFails : evcWaFails;
+    // FLW-level mode still only flags a WA if THAT WA is itself eligible --
+    // an unattempted WA shouldn't get pulled into the mop-up just because its
+    // FLW's other (done) WAs happened to trip the ratio, unless
+    // includeNotVisited is on.
+    var evcApplied =
+      evcRowEligible && (evc.flwLevel ? evcFlwFails : evcWaFails);
     if (evc.enabled && evcApplied) reasons.push('evc');
 
     // --- NCF / inaccessible (visit_quality-sourced, see helpers above) ---
@@ -551,7 +620,16 @@ function evaluateRules(waRows, flwRollups, config) {
     results[row.key] = {
       isCandidate: reasons.length > 0,
       reasons: reasons,
-      evc: { ratio: evcWaRatio, flwRatio: evcFlwRatio, applied: evcApplied },
+      evc: {
+        ratio: evcWaRatio,
+        flwRatio: evcFlwRatio,
+        applied: evcApplied,
+        // True when this row's ratio was computed but excluded from EVC
+        // consideration because the WA hasn't been attempted yet (see
+        // isWaDone) -- lets the table show "not yet visited" instead of a
+        // bare, misleadingly-alarming "0%" for a WA nobody has reached.
+        excludedNotVisited: !evcRowEligible,
+      },
       ncf: {
         rate: ncfWaRate,
         countApplied: ncfCountApplied,
@@ -766,6 +844,23 @@ function ThresholdPanel(props) {
           patch(['evc', 'thresholdPct'], v);
         },
       }),
+      ce(
+        'label',
+        {
+          className: 'flex items-center gap-2 text-xs text-gray-600 mt-2',
+          title:
+            "Off (default): a work area Connect still shows as NOT_VISITED (or a pending inaccessible request) never counts as an EVC shortfall — it just hasn't been attempted yet. On: score it anyway, e.g. to mop up a ward slightly before it fully wraps up.",
+        },
+        ce('input', {
+          type: 'checkbox',
+          checked: config.evc.includeNotVisited,
+          disabled: disabled || !config.evc.enabled,
+          onChange: function (e) {
+            patch(['evc', 'includeNotVisited'], e.target.checked);
+          },
+        }),
+        'Include not-yet-visited work areas',
+      ),
     ),
 
     // --- NCF / inaccessible ---
@@ -1250,8 +1345,15 @@ function CandidateTable(props) {
                       className:
                         'px-3 py-1.5 text-right tabular-nums ' +
                         (res.evc.applied ? 'text-red-700 font-semibold' : ''),
+                      title: res.evc.excludedNotVisited
+                        ? 'Not yet visited — excluded from EVC shortfall unless "Include not-yet-visited" is on'
+                        : undefined,
                     },
-                    res.evc.ratio == null ? '—' : fmtPct(res.evc.ratio * 100),
+                    res.evc.excludedNotVisited
+                      ? 'not visited'
+                      : res.evc.ratio == null
+                      ? '—'
+                      : fmtPct(res.evc.ratio * 100),
                   ),
                   ce(
                     'td',
@@ -1566,6 +1668,24 @@ function WorkflowUI(props) {
         }
       });
       return out.sort();
+    },
+    [waRows],
+  );
+
+  // Advisory only, not a hard gate: a ward can still be picked and mopped up
+  // before every one of its work areas is done (see isWaDone) -- this just
+  // surfaces how far along each ward is so that's a deliberate choice, not an
+  // accident of not noticing some WAs are still NOT_VISITED.
+  var wardReadiness = React.useMemo(
+    function () {
+      var byWard = {};
+      waRows.forEach(function (r) {
+        var w = r.ward || '(no ward)';
+        if (!byWard[w]) byWard[w] = { total: 0, done: 0 };
+        byWard[w].total += 1;
+        if (isWaDone(r)) byWard[w].done += 1;
+      });
+      return byWard;
     },
     [waRows],
   );
@@ -1908,11 +2028,21 @@ function WorkflowUI(props) {
           ),
           allWards.map(function (w) {
             var active = !!(wardFilter && wardFilter.indexOf(w) !== -1);
+            var ready = wardReadiness[w] || { total: 0, done: 0 };
+            var allDone = ready.total > 0 && ready.done === ready.total;
             return ce(
               'button',
               {
                 key: w,
                 type: 'button',
+                title:
+                  ready.done +
+                  ' of ' +
+                  ready.total +
+                  ' work areas visited / expected-visit-reached / inaccessible' +
+                  (allDone
+                    ? ' — ward fully done'
+                    : ' — ward still in progress (not a blocker, just informational)'),
                 className:
                   'px-2 py-1 rounded text-xs border ' +
                   (active
@@ -1922,7 +2052,12 @@ function WorkflowUI(props) {
                   toggleWard(w);
                 },
               },
-              w,
+              w + ' ',
+              ce(
+                'span',
+                { className: active ? 'opacity-80' : 'text-gray-400' },
+                allDone ? '✓' : '(' + ready.done + '/' + ready.total + ')',
+              ),
             );
           }),
         ),
