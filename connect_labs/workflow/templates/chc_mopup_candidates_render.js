@@ -735,7 +735,7 @@ function SortTh(props) {
     'th',
     {
       className:
-        'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider bg-orange-900 text-orange-100 cursor-pointer select-none hover:bg-orange-800 whitespace-nowrap',
+        'sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider bg-orange-900 text-orange-100 cursor-pointer select-none hover:bg-orange-800 whitespace-nowrap',
       onClick: function () {
         props.onSort(props.colKey, nextDir);
       },
@@ -1297,7 +1297,7 @@ function CandidateTable(props) {
               'th',
               {
                 className:
-                  'px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
+                  'sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
               },
               'WAG',
             ),
@@ -1305,7 +1305,7 @@ function CandidateTable(props) {
               'th',
               {
                 className:
-                  'px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
+                  'sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
               },
               'WA',
             ),
@@ -1313,7 +1313,7 @@ function CandidateTable(props) {
               'th',
               {
                 className:
-                  'px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
+                  'sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
               },
               'FLW',
             ),
@@ -1321,7 +1321,7 @@ function CandidateTable(props) {
               'th',
               {
                 className:
-                  'px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
+                  'sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
               },
               'Opp',
             ),
@@ -1350,7 +1350,7 @@ function CandidateTable(props) {
               'th',
               {
                 className:
-                  'px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
+                  'sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
               },
               'NCF/Inaccessible',
             ),
@@ -1367,7 +1367,7 @@ function CandidateTable(props) {
                 {
                   key: m.key,
                   className:
-                    'px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
+                    'sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
                 },
                 m.short,
               );
@@ -1376,7 +1376,7 @@ function CandidateTable(props) {
               'th',
               {
                 className:
-                  'px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
+                  'sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold uppercase bg-orange-900 text-orange-100',
               },
               'Flags',
             ),
