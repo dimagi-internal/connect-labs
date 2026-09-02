@@ -592,6 +592,8 @@ def select_above(
     method: str | None = None,
     extra_counts: tuple[str, ...] = (),
     target_year: int | None = None,
+    rollup: bool = True,
+    admin_level: int | None = None,
 ) -> Selection:
     """Places where ``indicator`` exceeds ``threshold``, at the coarsest honest unit.
 
@@ -688,8 +690,15 @@ def select_above(
             # Deepest level with actual values for this country. Mixing ADM1 and
             # ADM2 inside one country would count a district and the region
             # containing it as two separate places.
+            #
+            # Deepest is not always most informative. Liberia measures ORS
+            # coverage for its fifteen counties and no district, so all 136
+            # districts inherit one of fifteen numbers: a finer grid over the
+            # same information. ``inherited_units`` says so, and pinning
+            # ``admin_level`` is how a caller asks for the level that was
+            # actually measured.
             subs = []
-            for lvl in (2, 1):
+            for lvl in (admin_level,) if admin_level is not None else (2, 1):
                 candidates = by_iso[iso].get(lvl) or []
                 if any(rate_bulk.get(indicator, b) is not None for b in candidates):
                     subs = candidates
@@ -729,7 +738,7 @@ def select_above(
         # nearly every region resolved something, so the two counts agreed by
         # accident. A country that cannot be evaluated whole is emitted as the
         # regions that were.
-        rolled_up = bool(subs) and len(above) == len(evaluated) == len(units) and len(evaluated) > 1
+        rolled_up = rollup and bool(subs) and len(above) == len(evaluated) == len(units) and len(evaluated) > 1
 
         # A national-resolution row is one country; its counts come from its
         # regions, the same way a rolled-up country row's do.
