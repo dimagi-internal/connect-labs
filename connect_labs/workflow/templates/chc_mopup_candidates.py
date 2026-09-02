@@ -94,6 +94,50 @@ question IDs), that field's counts would need the same explicit
 metric-specific equality check to do so, which would need a small filter_op
 extension (e.g. an "and" of two paths) rather than a one-line fix.
 
+NCF / Inaccessible counts -- a Phase 2 design correction, not the original plan
+--------------------------------------------------------------------------------
+The plan (and this file's own earlier revision) sourced the "NCF/inaccessible"
+mop-up criterion from the `CHC Work Areas` (12965) case-level closure fields
+(`wa_checkout_remark`/`reason_for_inaccessible`/`case_closed`). The user
+overrode this during Phase 2: those WA-case aggregate properties are not
+trustworthy for precise approved/form-type-scoped counting -- the same
+problem already solved for the 5 DQ metrics by reading straight from the
+approved, form-filtered Connect visit pipeline instead of trusting a case
+property (see the `delivered_visit_count` open question flagged in
+`ProgramCreateMopupPlanView`'s docstring, which turned out to generalize).
+So `ncf_visit_count` / `inaccessible_visit_count` are computed here the exact
+same way as `hsd_visit_count` -- `filters={"status": ["approved"]}` at the
+schema level plus a `form.@name` equality check per field -- rather than
+touching any work_areas closure property. `work_areas.reason_for_inaccessible`
+remains available to Phase 2's render code as a supplementary free-text
+display detail only (e.g. a tooltip explaining *why* an FLW reported a WA
+inaccessible) -- never as part of any threshold/inclusion computation.
+
+Real, confirmed form names: `"Health Service Delivery"` (existing, see below),
+`"No Children Found"` (confirmed against
+`flw_daily_summary_compute.py:NO_CHILDREN_FOUND_FORM_NAME`), and
+`"Inaccessible WA"` (confirmed against `templates/labs/docs/chc_content.html`'s
+Work Area Management form table, which lists "No Children Found" and
+"Inaccessible WA" as the two sibling deliver-unit forms alongside "Health
+Service Delivery" -- the same document that already gave us `NCF_FORM_NAME`'s
+parallel entry). Validated via `pipeline_preview` schema_override against
+pipeline 12968 (real HSD-only field paths, same pipeline Phase 1 validated
+`hsd_visit_count` against): summing `hsd_visit_count + ncf_visit_count +
+inaccessible_visit_count` reconciles EXACTLY against the entity-stage's own
+`total_visits` counter for every WA/FLW sampled (30 WA-level rows, then 200 of
+227 FLW-aggregated rows spanning all 4 LLOs 2154-2157) -- if either form-name
+string were wrong, some visits would fall through both nets and this sum
+would fall short of `total_visits` for at least one row; it never did.
+`inaccessible_visit_count` itself came back **zero for every single row
+sampled across all 4 opportunities** -- i.e. this RCT's data, as of this
+validation pass, has no APPROVED Inaccessible-WA submissions yet anywhere
+(plausible: it's a rarer FLW action gated on NM/LLO review, and the program is
+only ~3 weeks in). This is a real, load-bearing caveat for the live-deploy
+review: the `inaccessible_visit_count` field and the "Inaccessible WA" string
+it depends on are validated by exact arithmetic reconciliation, not by
+observing a single real matching row -- worth a spot-check once real
+inaccessible activity exists in the data.
+
 Numerator/denominator fields (never bare rates)
 --------------------------------------------------
 Every metric below exposes a numerator AND a denominator count -- not a rate
@@ -102,9 +146,13 @@ Every metric below exposes a numerator AND a denominator count -- not a rate
 minimum-N floor is a Phase 2 UI concern, not computed here). FLW-level
 rollups (Phase 2) must SUM these WA-level numerators/denominators across a
 FLW's work areas and divide once -- never average the WA-level percentages,
-which would misweight a 1-visit WA the same as a 30-visit WA.
+which would misweight a 1-visit WA the same as a 30-visit WA. The same
+sum-then-divide rule applies to `ncf_visit_count`/`inaccessible_visit_count`
+now that they're visit_quality fields like everything else here.
 
     hsd_visit_count          -- denominator base: approved HSD visits at this WA
+    ncf_visit_count          -- approved "No Children Found" visits at this WA
+    inaccessible_visit_count -- approved "Inaccessible WA" visits at this WA
     deworming_given_count    -- numerator: dw_meds_delivery_status == "DW Delivered"
     muac_recorded_count      -- numerator: soliciter_muac_cm is non-null
     vaccination_given_count  -- numerator: received_any_vaccine == "yes"
@@ -139,7 +187,10 @@ not re-derived here):
                               fallback form.case.update.childs_age_in_months
     vaccination:              form.case.update.received_any_vaccine
 """
+
 from __future__ import annotations
+
+from pathlib import Path
 
 VISIT_QUALITY_SCHEMA = {
     "data_source": {"type": "connect_csv"},
@@ -170,6 +221,28 @@ VISIT_QUALITY_SCHEMA = {
             "which would otherwise inflate every rate's denominator with visits that carry no "
             "deworming/MUAC/gender/vaccination data at all. See module docstring for why the other "
             "fields below don't repeat this filter.",
+        },
+        {
+            "name": "ncf_visit_count",
+            "path": "form.@name",
+            "aggregation": "count",
+            "filter_path": "form.@name",
+            "filter_value": "No Children Found",
+            "description": "Approved 'No Children Found' visits at this work area -- part of the "
+            "NCF/inaccessible mop-up criterion (Phase 2 design correction: sourced from this visit "
+            "pipeline, NOT from the work_areas case's wa_checkout_remark/case_closed properties, for the "
+            "same approved/form-type precision reason hsd_visit_count exists). See module docstring.",
+        },
+        {
+            "name": "inaccessible_visit_count",
+            "path": "form.@name",
+            "aggregation": "count",
+            "filter_path": "form.@name",
+            "filter_value": "Inaccessible WA",
+            "description": "Approved 'Inaccessible WA' visits at this work area -- the other half of the "
+            "NCF/inaccessible mop-up criterion (see ncf_visit_count and the module docstring). Validated "
+            "by arithmetic reconciliation against total_visits, not by observing a nonzero real row -- "
+            "came back 0 for every sampled WA/FLW across all 4 opportunities as of this validation pass.",
         },
         {
             "name": "deworming_given_count",
@@ -253,13 +326,26 @@ PIPELINE_SCHEMAS = [
     },
 ]
 
-# --- TODO(phase 2): everything below is a placeholder ----------------------
+# --- Phase 2: the candidate-analysis dashboard ------------------------------
+#
+# `work_areas` (12965), `wa_geometry` (12971), and `audit_entries` (13013) are
+# pre-existing, already-live pipelines this template does NOT own -- they are
+# attached to the workflow definition at creation time via the
+# `workflow_add_pipeline_source` MCP tool (alias -> pipeline_id), the same
+# mechanism the module docstring above already called out. `visit_quality` is
+# the only pipeline this template owns (via PIPELINE_SCHEMAS below); it is
+# auto-created when the workflow is created from this template. Per the
+# current build's scope, `approved_visits` (12968) is NOT attached as a
+# separate source: `visit_quality.hsd_visit_count` already supersedes it for
+# the EVC-shortfall math (validated HSD-only, see module docstring), and
+# `ncf_visit_count`/`inaccessible_visit_count` now cover the NCF/inaccessible
+# criterion the same way -- nothing in the render code needs 12968 directly.
 
 DEFINITION = {
     "name": "CHC Mop-up Candidate Analysis",
-    "description": "Placeholder -- Phase 2 builds the real candidate-analysis dashboard "
-    "(threshold panel, ward/FLW aggregation tables, map, lock-and-handoff to microplans) on top of "
-    "the visit_quality pipeline defined in this file. See module docstring.",
+    "description": "Threshold-tunable candidate-analysis dashboard for a CHC mop-up round: flags "
+    "under-performing work areas on EVC shortfall, NCF/inaccessible rate, and 5 data-quality metrics, "
+    "then hands a locked candidate set to the microplans mop-up endpoint.",
     "version": 1,
     "templateType": "chc_mopup_candidates",
     "statuses": [
@@ -268,16 +354,19 @@ DEFINITION = {
     "config": {
         "auth_requires": ["connect"],
     },
-    "pipeline_sources": [],  # Populated at creation time from PIPELINE_SCHEMAS
+    "pipeline_sources": [],  # Populated at creation time: visit_quality from PIPELINE_SCHEMAS,
+    # work_areas/wa_geometry/audit_entries via workflow_add_pipeline_source (see comment above).
 }
 
-RENDER_CODE = ""  # TODO(phase 2): candidate-analysis dashboard render code
+RENDER_CODE = (Path(__file__).parent / "chc_mopup_candidates_render.js").read_text(encoding="utf-8")
 
 TEMPLATE = {
     "key": "chc_mopup_candidates",
     "name": "CHC Mop-up Candidate Analysis",
-    "description": "Placeholder template -- see module docstring. Currently only registers the "
-    "chc_mopup_visit_quality pipeline for Phase 1 validation.",
+    "description": "Program 217 CHC mop-up candidate analysis: EVC shortfall, NCF/inaccessible, and "
+    "5 data-quality thresholds (deworming/MUAC/gender/age-heaping/vaccination), each with a WA-level-only "
+    "vs. whole-FLW toggle, combined as a union. Locks a candidate work-area set and hands it to the "
+    "microplans mop-up endpoint (connect_labs/microplans/core/mopup.py).",
     "icon": "fa-clipboard-list",
     "color": "orange",
     "multi_opp": True,
