@@ -13,7 +13,7 @@ import pytest
 
 from connect_labs.labs.indicators import measures, methods, policy
 from connect_labs.labs.indicators.models import Source
-from connect_labs.labs.indicators.resolve import resolve, select_above
+from connect_labs.labs.indicators.resolve import BulkResolver, resolve, select_above
 from connect_labs.labs.indicators.tests.test_resolve import make_boundary, set_value
 
 pytestmark = pytest.mark.django_db
@@ -333,3 +333,74 @@ class TestRankingFollowsTheIndicator:
         s = select_above(indicator="ors_coverage", threshold=95.0, method="subnational_survey")
 
         assert [a.name for a in s.areas] == ["ManyUnreached", "ManyBorn"]
+
+
+class TestInheritanceWalksTheChain:
+    """A district must take its province's figure, not its country's.
+
+    ``BulkResolver`` jumped straight to ADM0. That was correct while the system
+    held only ADM0 and ADM1 — its docstring said so, and said it would need to
+    grow when deeper levels arrived. ADM2 arrived and it did not.
+
+    The result was a coarser answer presented as the same thing: 784 districts
+    were reading a national under-5 mortality rate while their own province had
+    one. Where the country had nothing eligible they got nothing at all, which
+    is how it surfaced — Liberia measures ORS coverage for all fifteen counties
+    and no district, so all 136 districts came back empty.
+    """
+
+    def _liberia(self):
+        country = make_boundary("LBR", 0, "Liberia", "LBR-0", x=0)
+        county = make_boundary("LBR", 1, "Grand Kru", "LBR-1-1", x=2)
+        district = make_boundary("LBR", 2, "Barclayville", "LBR-2-1", x=4)
+        district.parent_boundary_id = county.boundary_id
+        district.save(update_fields=["parent_boundary_id"])
+        return country, county, district
+
+    def test_a_district_takes_its_province_over_its_country(self):
+        country, county, district = self._liberia()
+        set_value(country, "ors_coverage", 20, source=Source.DHS)
+        set_value(county, "ors_coverage", 45, source=Source.DHS)
+
+        got = resolve("ors_coverage", district)
+
+        assert got.value == 45
+        assert got.inherited
+        assert got.measured_at.pk == county.pk
+
+    def test_the_bulk_resolver_agrees_with_the_single_one(self):
+        """These are two implementations of one rule, and they had diverged."""
+        country, county, district = self._liberia()
+        set_value(country, "ors_coverage", 20, source=Source.DHS)
+        set_value(county, "ors_coverage", 45, source=Source.DHS)
+
+        bulk = BulkResolver([district])
+        one = resolve("ors_coverage", district)
+        many = bulk.get("ors_coverage", district)
+
+        assert (many.value, many.measured_at.pk) == (one.value, one.measured_at.pk)
+
+    def test_a_district_still_reaches_its_country_when_the_province_has_nothing(self):
+        country, county, district = self._liberia()
+        set_value(country, "ors_coverage", 20, source=Source.DHS)
+
+        got = BulkResolver([district]).get("ors_coverage", district)
+
+        assert got.value == 20
+        assert got.measured_at.pk == country.pk
+
+    def test_a_count_still_refuses_to_inherit_at_any_depth(self):
+        """Walking the chain must not quietly make counts inheritable."""
+        country, county, district = self._liberia()
+        set_value(county, "pop_total", 500_000, source=Source.WORLDPOP)
+
+        assert BulkResolver([district]).get("pop_total", district) is None
+
+    def test_a_missing_parent_link_does_not_break_the_walk(self):
+        """geoBoundaries ships no parent for ADM1, so this is the common case."""
+        country, county, _ = self._liberia()
+        set_value(country, "ors_coverage", 20, source=Source.DHS)
+
+        assert not county.parent_boundary_id
+        got = BulkResolver([county]).get("ors_coverage", county)
+        assert got.value == 20 and got.measured_at.pk == country.pk
