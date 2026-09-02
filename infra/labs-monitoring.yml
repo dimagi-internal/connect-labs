@@ -110,8 +110,9 @@ Parameters:
     Type: Number
     Default: 90
     Description: >-
-      Alarm when the BUSIEST web task stays at/above this for 15 minutes (the
-      alarm uses Maximum, not Average — see WebCpuHighAlarm). Median web CPU
+      Alarm when the BUSIEST web task stays at/above this for 15 of the last 25
+      minutes (the alarm uses Maximum, not Average, and 3-of-5 datapoints rather
+      than 3-of-3 — see WebCpuHighAlarm). Median web CPU
       over the 5 days to 2026-07-29 was 0.8%; above 90% accounts for ~1.1h of
       those 5 days and is almost entirely the incident itself.
 
@@ -292,11 +293,14 @@ Resources:
     Properties:
       AlarmName: labs-jj-web-cpu-high
       AlarmDescription: >-
-        A web task has been pinned near 100% CPU for 15 minutes. Each task has
-        1 vCPU, so a pinned task means its requests are queueing behind CPU-bound
-        Python and every user routed to it is stalled. Usual cause is a request
-        path fanning out remote calls in a loop. Check the web log group for one
-        URL repeating at high volume before reaching for a scale-up.
+        A web task has been pinned near 100% CPU for 15 of the last 25 minutes.
+        Each task has 1 vCPU, so a pinned task means its requests are queueing
+        behind CPU-bound Python and every user routed to it is stalled. Usual
+        cause is a request path fanning out remote calls in a loop. Check the web
+        log group for one URL repeating at high volume before reaching for a
+        scale-up. This alarm holds through brief dips (3-of-5 datapoints), so one
+        sustained pin reports as ONE incident — if you are reading a second
+        notification, treat it as the same incident until proven otherwise.
       Namespace: AWS/ECS
       MetricName: CPUUtilization
       Dimensions:
@@ -326,7 +330,41 @@ Resources:
       # It applies across tasks for exactly the reason it applies across requests.
       Statistic: Maximum
       Period: 300
-      EvaluationPeriods: 3
+      # 3-of-5, NOT 3-of-3. DatapointsToAlarm is omitted by default, which makes
+      # EvaluationPeriods do double duty: 3 breaching periods to fire, and — the
+      # part that bites — a SINGLE sub-threshold datapoint to clear. A tier that
+      # sits at 90-100% and dips briefly therefore does not produce one alarm; it
+      # produces an ALARM/OK pair every few minutes, for as long as the condition
+      # lasts.
+      #
+      # Measured over 2026-08-31 -> 09-02 from the notification bodies (UTC):
+      #   08-31  08:03->08:05, 09:34->09:35, 11:39->11:51
+      #   09-01  10:42->10:45, 11:42->11:45, 12:04->12:17
+      #   09-02  11:04->11:05, 11:08->11:10, 11:15->11:16, 11:20->11:21,
+      #          11:46->11:47, 12:59->13:13
+      # Twelve firings in three days, and NINE of them cleared within 1-3
+      # minutes. That is one CPU condition per morning being reported as six
+      # separate incidents — 24 emails across the three days.
+      #
+      # The cost is not inbox noise. This topic pages an agent mailbox
+      # (AgentAlarmEmail), and each message dispatches a session: on 09-01 a
+      # single alarm's ALARM and OK threads spawned four sessions that produced
+      # zero findings, because each one re-derived the same incident from a
+      # different message. Deduping downstream cannot fix this — by then the
+      # transitions are already distinct events.
+      #
+      # 3-of-5 adds hysteresis without dulling detection: still 3 breaching
+      # datapoints to fire (marginally EARLIER than 3-of-3, since they need not
+      # be consecutive), but clearing now requires 3 of the last 5 to fall back
+      # under threshold — so a one-datapoint dip inside a sustained pin no longer
+      # resolves the incident. Statistic stays Maximum for the reason above; this
+      # changes when we are told, not what we measure.
+      #
+      # Falsifier: if a future genuinely-transient CPU spike (one pinned task,
+      # <10 minutes, self-resolving) stops being reported at all, this is too
+      # blunt and the fix is a separate low-severity alarm, not 3-of-3 again.
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 3
       Threshold: !Ref WebCpuThreshold
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
