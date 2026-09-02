@@ -60,6 +60,13 @@ logger = logging.getLogger(__name__)
 # render its flagged images as unreviewed. Keep the two in step.
 LEGACY_DUPLICATE_FAKE_RESULTS = ("duplicate", "fake")
 
+# Program 217 (CHC - NG - RCT - Aug 2026) runs the daily MUAC AI image audit, where the
+# flagged images are the reason the screen gets opened at all -- so its sessions open on
+# the "AI Flagged" filter rather than "All". Scoped to one program on purpose: this is
+# the shared review screen for EVERY audit workflow, and defaulting globally would open a
+# non-AI audit on a filter that hides every image in it. An explicit ?status= always wins.
+AI_FLAGGED_DEFAULT_PROGRAM_ID = 217
+
 
 def _non_duplicate_ai_label(ai_notes: str) -> str:
     """ai_notes with the duplicate-detector's own label removed, so the
@@ -310,7 +317,10 @@ class ExperimentBulkAssessmentView(LoginRequiredMixin, DetailView):
 
         context = super().get_context_data(**kwargs)
         question_filter = self.request.GET.get("question_id", "").strip()
-        status_filter = self.request.GET.get("status", "all").strip().lower() or "all"
+        # Distinguish "no ?status= in the URL" from an explicit "?status=all": the former
+        # takes the program's default (resolved below), the latter is a reviewer asking for
+        # everything on purpose and must not be overridden.
+        requested_status = self.request.GET.get("status", "").strip().lower()
 
         session = context["session"]
         opportunity_id = session.opportunity_id
@@ -318,18 +328,24 @@ class ExperimentBulkAssessmentView(LoginRequiredMixin, DetailView):
         # Look up org_slug from user's OAuth data (opportunities list)
         # Each opportunity in session org data has an "organization" field with the org slug
         org_slug = ""
+        program_id = None
         if opportunity_id:
             org_data = get_org_data(self.request)
             opportunities = org_data.get("opportunities", [])
             for opp in opportunities:
                 if opp.get("id") == opportunity_id:
                     org_slug = opp.get("organization", "")
+                    program_id = opp.get("program")
                     break
+
+        default_status = "ai_flagged" if program_id == AI_FLAGGED_DEFAULT_PROGRAM_ID else "all"
+        status_filter = requested_status or default_status
 
         context.update(
             {
                 "selected_question_id": question_filter,
                 "selected_status": status_filter,
+                "default_status": default_status,
                 "bulk_data_url": reverse("audit:bulk_assessment_data", kwargs={"session_id": session.pk}),
                 "org_slug": org_slug,
                 "opportunity_id": opportunity_id,
@@ -1043,8 +1059,34 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
             start_date_display = earliest_visit.strftime("%b %d, %Y") if earliest_visit else ""
             end_date_display = latest_visit.strftime("%b %d, %Y") if latest_visit else ""
 
+            # Per-FLW duplicate/fake history from the OTHER completed audits of this
+            # opportunity, for the strip beside the filters. Keyed by username so the
+            # page's client-side FLW filter can switch it without a refetch, and degraded
+            # rather than fatal -- a review screen must still load when its history does
+            # not. `attributed` False means the projection predates FLW attribution and
+            # the page has to say so instead of drawing an empty, reassuring strip.
+            prior_duplicates_by_flw = {}
+            prior_duplicates_attributed = True
+            try:
+                prior_duplicates_by_flw, prior_duplicates_attributed = data_access.get_duplicate_history_for_flws(
+                    opportunity_id,
+                    {a["username"] for a in all_assessments if a.get("username")},
+                    exclude_session_id=session_id,
+                )
+            except Exception:
+                logger.warning("Failed to read prior duplicate history for opp %s", opportunity_id, exc_info=True)
+                prior_duplicates_attributed = False
+
+            # The threshold is sent rather than duplicated in the template: it decides
+            # which days get a column AND appears in the panel's own wording, so a
+            # change in one place must not leave the other describing the old rule.
+            from connect_labs.audit.prior_audit_projection import DUPLICATE_DAY_THRESHOLD
+
             response_data = {
                 "assessments": all_assessments,
+                "prior_duplicates_by_flw": prior_duplicates_by_flw,
+                "prior_duplicates_attributed": prior_duplicates_attributed,
+                "prior_duplicates_threshold": DUPLICATE_DAY_THRESHOLD,
                 "question_ids": sorted(q for q in question_ids if q),
                 "total_assessments": total_assessments,
                 "pending_count": pending_count,
