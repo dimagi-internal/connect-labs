@@ -12,6 +12,7 @@ import pytest
 from connect_labs.labs.indicators import measures
 from connect_labs.labs.indicators.models import Source
 from connect_labs.labs.indicators.resolve import select_above
+from connect_labs.labs.indicators.sources import derive
 from connect_labs.labs.indicators.tests.test_resolve import make_boundary, set_value
 
 pytestmark = pytest.mark.django_db
@@ -206,3 +207,72 @@ class TestUncertainty:
         ).json()["rows"][0]
 
         assert row["straddles_threshold"] is False
+
+
+class TestConditionalCoverageGaps:
+    """A rate measured among those who had an episode applies only to them.
+
+    ORS coverage is measured among children who *had diarrhoea*. The generic
+    unreached count multiplied the whole under-five population by the untreated
+    share, which reads as "children not covered by ORS" and is not a quantity
+    that exists. For Liberia it said 295,899 where the truth is 51,429 — a
+    factor of six, and the number a proposal would have quoted.
+
+    Found by re-running the targeting skill against a hand-built proposal whose
+    own metric was "children with diarrhoea not receiving ORS".
+    """
+
+    def test_a_conditional_gap_is_multiplied_by_prevalence(self, db):
+        b = make_boundary("LBR", 1, "Bong", "LBR-1-1", x=2)
+        set_value(b, "pop_u5", 100_000, source=Source.WORLDPOP_RASTER)
+        set_value(b, "ors_coverage", 40.0, source=Source.DHS)
+        set_value(b, "diarrhoea_prevalence", 20.0, source=Source.DHS)
+
+        rows = {r.indicator: r.value for r in derive.load_coverage_gaps(iso_codes=["LBR"])}
+
+        # 100,000 x 20% had diarrhoea, of whom 60% got no ORS.
+        assert rows["ors_coverage_gap"] == pytest.approx(12_000)
+
+    def test_an_unconditional_gap_is_unchanged(self, db):
+        """Sanitation is not conditional on anything; its gap is the whole population."""
+        b = make_boundary("LBR", 1, "Bong", "LBR-1-1", x=2)
+        set_value(b, "pop_total", 100_000, source=Source.WORLDPOP_RASTER)
+        set_value(b, "improved_sanitation", 40.0, source=Source.DHS)
+
+        rows = {r.indicator: r.value for r in derive.load_coverage_gaps(iso_codes=["LBR"])}
+
+        assert rows["improved_sanitation_gap"] == pytest.approx(60_000)
+
+    def test_no_prevalence_means_no_gap_rather_than_a_wrong_one(self, db):
+        """The number would overstate by the inverse of a prevalence we cannot see."""
+        b = make_boundary("LBR", 1, "Bong", "LBR-1-1", x=2)
+        set_value(b, "pop_u5", 100_000, source=Source.WORLDPOP_RASTER)
+        set_value(b, "ors_coverage", 40.0, source=Source.DHS)
+        # No diarrhoea_prevalence for this boundary.
+
+        rows = {r.indicator for r in derive.load_coverage_gaps(iso_codes=["LBR"])}
+
+        assert "ors_coverage_gap" not in rows
+
+    def test_the_generic_gap_now_agrees_with_the_hand_written_one(self, db):
+        """ors_gap_children was hand-written because the generic one was wrong.
+
+        They are the same quantity and now compute the same number, which is a
+        free cross-check on the derivation rather than a duplication.
+        """
+        b = make_boundary("LBR", 1, "Bong", "LBR-1-1", x=2)
+        set_value(b, "pop_u5", 100_000, source=Source.WORLDPOP_RASTER)
+        set_value(b, "ors_coverage", 40.0, source=Source.DHS)
+        set_value(b, "diarrhoea_prevalence", 20.0, source=Source.DHS)
+
+        generic = {r.indicator: r.value for r in derive.load_coverage_gaps(iso_codes=["LBR"])}
+        hand = {r.indicator: r.value for r in derive.load_ors_gap(iso_codes=["LBR"])}
+
+        assert generic["ors_coverage_gap"] == pytest.approx(hand["ors_gap_children"])
+
+    def test_every_conditional_measure_names_a_registered_prevalence(self):
+        """Enforced at import, pinned here so the reason survives."""
+        for m in measures.MEASURES.values():
+            if m.conditional_on:
+                episode = measures.get(m.conditional_on)
+                assert episode.is_rate, f"{m.code} conditions on a count"

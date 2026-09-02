@@ -292,6 +292,7 @@ class Command(BaseCommand):
             "malaria_treatment",
             "itn_use_children",
             "ari_prevalence",
+            "fever_prevalence",
             "ari_antibiotics",
             "zinc_coverage",
             "skilled_birth_attendance",

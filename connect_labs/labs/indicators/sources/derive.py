@@ -320,7 +320,22 @@ def load_coverage_gaps(iso_codes: list[str] | None = None, year: int | None = No
             denom = resolve(denominator, boundary, year)
             if not (cov and denom):
                 continue
+            # A rate measured only among those who had an episode applies only
+            # to them. ORS coverage is among children who HAD diarrhoea, so the
+            # unreached count is prevalence x population x (1 - coverage), not
+            # population x (1 - coverage) — which is the whole country times the
+            # untreated share, and reads six times too high for Liberia.
+            #
+            # No prevalence, no gap. A number that overstates by the inverse of
+            # a prevalence we cannot see is worse than the absence of one.
+            episode = None
+            if measure.conditional_on:
+                episode = resolve(measure.conditional_on, boundary, year)
+                if episode is None:
+                    continue
             unreached = max(0.0, 1.0 - cov.value / 100.0)
+            if episode is not None:
+                unreached *= episode.value / 100.0
             rows.append(
                 Row(
                     indicator=f"{measure.code}_gap",
@@ -332,7 +347,14 @@ def load_coverage_gaps(iso_codes: list[str] | None = None, year: int | None = No
                     license_code=License.DERIVED,
                     method=(
                         f"Derived: unreached = {denominator} x (1 - {measure.label} "
-                        f"({cov.value:.1f}%)). Inputs: {denominator} "
+                        f"({cov.value:.1f}%))"
+                        + (
+                            f" x {measure.conditional_on} ({episode.value:.1f}%), because the rate is "
+                            "measured only among those who had an episode"
+                            if episode is not None
+                            else ""
+                        )
+                        + f". Inputs: {denominator} "
                         f"{denom.value:,.0f} from {denom.source_ref or denom.source}; "
                         f"coverage from {cov.provenance}."
                     ),

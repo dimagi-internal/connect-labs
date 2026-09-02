@@ -57,6 +57,7 @@ INDICATORS = {
     "itn_use_children": {"value": "ML_NETC_C_ITN", "lo": None, "hi": None},
     # Respiratory infection
     "ari_prevalence": {"value": "CH_ARIS_C_ARI", "lo": None, "hi": None},
+    "fever_prevalence": {"value": "CH_FEVR_C_FEV", "lo": None, "hi": None},
     "ari_antibiotics": {"value": "CH_ARIS_C_ABI", "lo": None, "hi": None},
     "zinc_coverage": {"value": "CH_DIAT_C_ZNC", "lo": None, "hi": None},
     # Maternal care

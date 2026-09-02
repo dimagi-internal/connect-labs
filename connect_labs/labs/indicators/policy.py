@@ -203,6 +203,7 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
     "stunting": _survey("height-for-age"),
     "wasting": _survey("weight-for-height"),
     "ari_prevalence": _survey("respiratory symptoms"),
+    "fever_prevalence": _survey("fever in the last two weeks"),
     "ari_antibiotics": _survey("antibiotic treatment for those symptoms"),
     "exclusive_breastfeeding": _survey("feeding practice"),
     "vitamin_a_coverage": _survey("supplementation"),
