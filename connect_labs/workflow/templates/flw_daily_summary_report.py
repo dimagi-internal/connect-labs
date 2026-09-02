@@ -305,6 +305,26 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
     failure, same treatment) is collected into the returned "errors" list,
     which run_scheduled_workflow (tasks.py) already surfaces as an amber
     note under the schedule's green "OK" on /labs/admin/schedules/.
+
+    The two connect_csv pipelines get the same treatment for a different
+    failure mode: WorkflowDataAccess.get_pipeline_data's per-opp fetch loop
+    never raises (see its own docstring) -- a query failure for one
+    (opp, pipeline) becomes an empty row list plus a metadata.error, not an
+    exception. Left unchecked, that opp/day would silently compute every
+    approved-visit-derived indicator (#4-9, MUAC/deworming eligibility
+    included) as a confident 0 instead of "data missing" -- exactly what
+    happened for opp 2154 on 2026-08-14 and 2026-09-01 (discovered
+    2026-09-02: 0 approved visits reported for the whole opportunity that
+    day despite real HSD activity). Both that error and
+    metadata.raw_fetch_anomaly (the short-read guard in
+    SQLBackend.stream_raw_visits flagging a suspicious refetch it rejected
+    in favor of stale-but-larger cached data) are now collected into the
+    same "errors" list. This does NOT close the underlying gap -- the guard
+    explicitly skips its own check on a cold/expired cache slot, so a
+    genuinely short read with no prior cache to compare against still
+    silently produces a same-shaped low number with no signal anywhere. It
+    only makes the failure modes that DO leave a trace (a hard exception, or
+    a rejected refetch) visible here going forward.
     """
     import logging
     from collections import defaultdict
@@ -349,6 +369,26 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
         fetch_wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_ids[0])
     try:
         pipeline_data = fetch_wda.get_pipeline_data(definition.id, opportunity_id=opp_ids[0])
+        # get_pipeline_data's per-opp fetch loop never raises (see its own
+        # docstring) -- a pipeline exception for one (opp, alias) becomes an
+        # empty row list plus metadata.per_opp[opp_id]["error"], not a hard
+        # failure. Left unchecked, that opp/day silently computes every
+        # approved-visit-derived indicator (MUAC/deworming eligibility
+        # included) as a misleadingly confident 0 instead of "missing data".
+        # raw_fetch_anomaly is the companion signal from the short-read
+        # guard (SQLBackend.stream_raw_visits): it fires when a refetch came
+        # back suspiciously smaller than the last good cache and got
+        # rejected in favor of stale-but-larger data -- worth surfacing even
+        # though the run itself proceeds on that (still real, just older)
+        # data rather than failing.
+        for alias in ("hsd_visits", "approved_visits"):
+            per_opp_meta = pipeline_data.get(alias, {}).get("metadata", {}).get("per_opp", {})
+            for opp_id in opp_ids:
+                meta = per_opp_meta.get(str(opp_id)) or {}
+                if meta.get("error"):
+                    warnings.append(f"{alias} unavailable for opp {opp_id}: {meta['error']}")
+                elif meta.get("raw_fetch_anomaly"):
+                    warnings.append(f"{alias} short-read anomaly for opp {opp_id}: {meta['raw_fetch_anomaly']}")
         roster_by_opp = {}
         for opp_id in opp_ids:
             try:
