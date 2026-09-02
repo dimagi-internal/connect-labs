@@ -122,6 +122,14 @@
   <!-- Filters and Controls -->
   <div class="bg-white rounded-lg shadow-sm p-4 mb-4">
     <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+    <!-- 60 / 40. The controls keep the left; the FLW's prior duplicate/fake history
+         takes the right. `min-w-0` on BOTH columns is load-bearing: a flex item
+         defaults to min-width:auto and refuses to shrink below its content, so without
+         it the history's own overflow-x-auto never engages and a wide strip stretches
+         the whole card sideways instead of scrolling inside its own box. Stacks below
+         lg, where 40% of the width is too narrow to read either half. -->
+    <div class="flex flex-col lg:flex-row lg:items-start gap-4">
+      <div class="w-full lg:w-3/5 min-w-0">
     <div class="flex flex-wrap gap-4 items-center justify-between">
       <div class="flex flex-wrap gap-4 items-center">
         <div>
@@ -136,6 +144,7 @@
             <option value="pass">Passed</option>
             <option value="fail">Failed</option>
             <option value="duplicate_fake">Duplicate/Fake</option>
+            <option value="ai_flagged">AI Flagged</option>
           </select>
         </div>
         <div x-show="flwSummaries.length > 1">
@@ -283,6 +292,95 @@
             </div>
           </template>
         </div>
+      </div>
+    </div>
+      </div>
+
+      <!-- 40%: what earlier audits already concluded about this FLW. -->
+      <div class="w-full lg:w-2/5 min-w-0 lg:border-l lg:border-gray-200 lg:pl-4">
+        <div class="flex items-baseline justify-between gap-2 mb-2">
+          <h3 class="text-sm font-medium text-gray-700">
+            Previously flagged Duplicate/Fake
+            <span class="font-normal text-gray-500">— days with <span x-text="priorDuplicatesThreshold"></span>+</span>
+          </h3>
+          <template x-if="priorDuplicatesAttributed && priorDuplicateHistory && priorDuplicateHistory.total > 0">
+            <span class="text-xs text-gray-500 whitespace-nowrap">
+              <span class="font-semibold text-orange-700" x-text="priorDuplicateHistory.total"></span> in earlier audits
+            </span>
+          </template>
+        </div>
+
+        <!-- An unattributed index must SAY so. Drawing an empty strip here would tell
+             the auditor this FLW has a clean record when the truth is that nobody has
+             asked -- see prior_audit_projection.has_flw_attribution. -->
+        <template x-if="!priorDuplicatesAttributed">
+          <p class="text-xs text-gray-500">
+            History unavailable — the prior-audit index has no FLW attribution yet.
+            Run <code class="px-1 py-0.5 bg-gray-100 rounded text-gray-700">rebuild_prior_audit_index</code> to populate it.
+          </p>
+        </template>
+
+        <!-- Several FLWs on one session: the strip is per FLW, so it needs one chosen. -->
+        <template x-if="priorDuplicatesAttributed && !historyFlwUsername">
+          <p class="text-xs text-gray-500">Pick an FLW above to see their earlier duplicate/fake history.</p>
+        </template>
+
+        <template x-if="priorDuplicatesAttributed && historyFlwUsername">
+          <div>
+            <!-- No columns has two quite different meanings once a threshold applies,
+                 and collapsing them would report an FLW with flagged images every week
+                 as having none at all. -->
+            <template x-if="priorDuplicateHistory && priorDuplicateHistory.days.length === 0 && priorDuplicateHistory.total === 0">
+              <p class="text-xs text-gray-500">No duplicate or fake images in earlier audits.</p>
+            </template>
+            <template x-if="priorDuplicateHistory && priorDuplicateHistory.days.length === 0 && priorDuplicateHistory.total > 0">
+              <p class="text-xs text-gray-500">
+                <span class="font-semibold text-gray-700" x-text="priorDuplicateHistory.total"></span>
+                flagged in earlier audits, but no single day reached
+                <span x-text="priorDuplicatesThreshold"></span>.
+              </p>
+            </template>
+            <template x-if="priorDuplicateHistory && priorDuplicateHistory.days.length > 0">
+              <div>
+                <div class="overflow-x-auto">
+                  <table class="text-xs border-collapse">
+                    <thead>
+                      <tr>
+                        <template x-for="day in priorDuplicateHistory.days" :key="day.iso">
+                          <th class="border border-gray-200 bg-gray-50 px-2 py-1 font-medium text-gray-600 whitespace-nowrap"
+                              :title="day.iso"
+                              x-text="day.label"></th>
+                        </template>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <template x-for="day in priorDuplicateHistory.days" :key="day.iso">
+                          <td class="border border-gray-200 px-2 py-1 text-center font-semibold text-orange-700 whitespace-nowrap"
+                              x-text="day.count"></td>
+                        </template>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <!-- The two buckets no column can show. Both are stated rather than
+                     dropped, so the headline total always equals the columns the reader
+                     can see plus the remainders they are told about. -->
+                <template x-if="priorDuplicateHistory.below_threshold > 0">
+                  <p class="mt-1 text-xs text-gray-500">
+                    +<span x-text="priorDuplicateHistory.below_threshold"></span> on days with fewer than
+                    <span x-text="priorDuplicatesThreshold"></span>
+                  </p>
+                </template>
+                <template x-if="priorDuplicateHistory.undated > 0">
+                  <p class="mt-1 text-xs text-gray-500">
+                    +<span x-text="priorDuplicateHistory.undated"></span> with no readable visit date
+                  </p>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -1113,6 +1211,17 @@ const legacyDuplicateFakeResults = {{ legacy_duplicate_fake_results|default:"[]"
 function isDuplicateFake(result) {
   return result === 'duplicate_fake' || legacyDuplicateFakeResults.includes(result);
 }
+// "AI Flagged" is every image carrying a verdict that is not a pass: fail, duplicate_fake,
+// and the legacy "duplicate"/"fake" above. It reads `status`, which views.py normalises to
+// exactly one of pass/fail/duplicate_fake/duplicate/fake or else "pending" -- so an image
+// nobody has judged can never land in here, and this needs no separate empty-value guard.
+function isAiFlagged(status) {
+  return status !== 'pass' && status !== 'pending';
+}
+// The status the page opens on when the URL names none (views.py picks it per program).
+// updateUrlParams leaves the param off the URL while the selection still matches this, so
+// a reviewer who deliberately picks something else gets a link that survives a reload.
+const defaultStatus = '{{ default_status|default:"all" }}';
 const passThreshold = parseInt('{{ pass_threshold|default:"80" }}') || 80;
 // Audit-level pass % threshold configured at creation time (75-100, default 100) — determines
 // whether the whole audit is marked pass/fail on completion. Distinct from `passThreshold`
@@ -1187,6 +1296,11 @@ function bulkAssessmentInterface() {
     selectedQuestionId: '{{ selected_question_id }}',
     selectedStatus: '{{ selected_status }}',
     selectedFlw: '',
+    // Per-FLW duplicate/fake counts from earlier completed audits, keyed by username so
+    // the client-side FLW filter can switch the strip without refetching.
+    priorDuplicatesByFlw: {},
+    priorDuplicatesAttributed: true,
+    priorDuplicatesThreshold: 3,
     widgetSize: 300,
     passThreshold: passThreshold,
     auditPassThreshold: auditPassThreshold,
@@ -1345,7 +1459,7 @@ function bulkAssessmentInterface() {
       } else {
         url.searchParams.delete('question_id');
       }
-      if (this.selectedStatus && this.selectedStatus !== 'all') {
+      if (this.selectedStatus && this.selectedStatus !== defaultStatus) {
         url.searchParams.set('status', this.selectedStatus);
       } else {
         url.searchParams.delete('status');
@@ -1389,6 +1503,13 @@ function bulkAssessmentInterface() {
         this.questionIds = data.question_ids || [];
         this.visitResults = data.visit_results || {};
         this.allAssessments = data.assessments || [];
+        this.priorDuplicatesByFlw = data.prior_duplicates_by_flw || {};
+        // Absent key reads as "not attributed" rather than "clean": an older server, or
+        // a failed history read, must not render as an empty strip.
+        this.priorDuplicatesAttributed = data.prior_duplicates_attributed === true;
+        if (data.prior_duplicates_threshold) {
+          this.priorDuplicatesThreshold = data.prior_duplicates_threshold;
+        }
         // Temporarily disabled: auto-pre-tagging images in a duplicate
         // grouping as "Duplicate/Fake" pending improvements to the
         // duplicate-grouping feature itself. Re-enable by restoring this
@@ -1475,9 +1596,11 @@ function bulkAssessmentInterface() {
         // from the retired Muac Picture Audit has flagged images no filter finds.
         const statusMatch =
           this.selectedStatus === 'all' ||
-          (this.selectedStatus === 'duplicate_fake'
-            ? isDuplicateFake(assessment.status)
-            : assessment.status === this.selectedStatus);
+          (this.selectedStatus === 'ai_flagged'
+            ? isAiFlagged(assessment.status)
+            : this.selectedStatus === 'duplicate_fake'
+              ? isDuplicateFake(assessment.status)
+              : assessment.status === this.selectedStatus);
         const flwMatch = !this.selectedFlw || assessment.username === this.selectedFlw;
         return questionMatch && statusMatch && flwMatch;
       });
@@ -1616,6 +1739,20 @@ function bulkAssessmentInterface() {
           };
         })
         .sort((a, b) => (a.visit_date_sort || '').localeCompare(b.visit_date_sort || ''));
+    },
+    // Which FLW the history strip is about: the one filtered to, or the only one on the
+    // session. With several FLWs and no filter there is no single answer, and showing
+    // one of them (or a sum) would be a number nobody asked for.
+    get historyFlwUsername() {
+      if (this.selectedFlw) return this.selectedFlw;
+      const summaries = this.flwSummaries;
+      return summaries.length === 1 ? summaries[0].username : '';
+    },
+    get priorDuplicateHistory() {
+      const username = this.historyFlwUsername;
+      if (!username) return null;
+      return this.priorDuplicatesByFlw[username]
+        || { days: [], total: 0, below_threshold: 0, undated: 0, threshold: this.priorDuplicatesThreshold };
     },
     get flwSummaries() {
       const flwMap = {};

@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
+from datetime import timezone as dt_timezone
 
 from django.conf import settings
 from django.core.cache import cache
@@ -39,6 +40,63 @@ def _as_dt(value):
     return parse_datetime(str(value))
 
 
+# The verdicts the review screen counts as "flagged as a duplicate or a fake". Folds
+# the legacy split the same way tally_assessment and the Duplicate/Fake filter do -- see
+# LEGACY_DUPLICATE_FAKE_RESULTS in audit/views.py. Keep the three in step.
+DUPLICATE_VERDICTS = ("duplicate_fake", "duplicate", "fake")
+
+#: A day earns a column only once it reaches this many flagged images. One or two on a
+#: day is ordinary noise across an FLW's whole history; the panel is for spotting the
+#: days that stand out. Images below the line are NOT discarded -- they are reported as
+#: ``below_threshold`` so the headline total still reconciles with the columns shown.
+DUPLICATE_DAY_THRESHOLD = 3
+
+
+def _visit_date_of(raw):
+    """The LOCAL date of a visit timestamp, or None.
+
+    Mirrors the bulk-data view's own conversion (parse -> assume UTC if naive ->
+    localtime) so a history column and the card it sits beside agree on which day a
+    photo belongs to. Doing this in two places with two conventions would put a photo
+    in one day on the card and the next day in the table, off by the UTC offset.
+    """
+    if not raw:
+        return None
+    dt = parse_datetime(str(raw))
+    if dt is None:
+        return None
+    if timezone.is_naive(dt):
+        dt = timezone.make_aware(dt, dt_timezone.utc)
+    return timezone.localtime(dt).date()
+
+
+def _visit_metadata(session) -> dict:
+    """``{(visit_id, blob_id): (username, visit_date)}`` from ``visit_images``.
+
+    The verdicts live under ``visit_results`` and carry neither field, so this is the
+    other half of the join. Both values are properties of the VISIT rather than the
+    image -- the bulk-data view reads them off the visit's first image and applies them
+    to all of it -- so the visit's first image is the fallback for an image that
+    carries neither.
+    """
+    metadata = {}
+    for visit_key, images in ((session.data or {}).get("visit_images") or {}).items():
+        if not images:
+            continue
+        first = images[0] or {}
+        visit_username = first.get("username") or ""
+        visit_date = _visit_date_of(first.get("visit_date"))
+        for image in images:
+            blob_id = (image or {}).get("blob_id")
+            if not blob_id:
+                continue
+            metadata[(str(visit_key), str(blob_id))] = (
+                (image or {}).get("username") or visit_username,
+                _visit_date_of((image or {}).get("visit_date")) or visit_date,
+            )
+    return metadata
+
+
 def rows_for_session(session) -> list[PriorAuditVerdict]:
     """Every verdict one session contributes. Empty unless it is completed.
 
@@ -51,12 +109,17 @@ def rows_for_session(session) -> list[PriorAuditVerdict]:
     completed_at = _as_dt(getattr(session, "completed_at", None))
     title = (session.data or {}).get("title", "") or ""
     opportunity_id = session.opportunity_id
+    metadata = _visit_metadata(session)
     rows = []
     for visit_key, visit_result in ((session.data or {}).get("visit_results") or {}).items():
         for blob_id, assessment in ((visit_result or {}).get("assessments") or {}).items():
             result = (assessment or {}).get("result")
             if result not in AUDIT_VERDICTS:
                 continue
+            # A verdict whose image is absent from visit_images gets no attribution
+            # rather than a guess -- see the username field's note on why blank has to
+            # stay distinguishable from "no FLW".
+            username, visit_date = metadata.get((str(visit_key), str(blob_id)), ("", None))
             rows.append(
                 PriorAuditVerdict(
                     opportunity_id=opportunity_id,
@@ -65,6 +128,8 @@ def rows_for_session(session) -> list[PriorAuditVerdict]:
                     visit_id=str(visit_key)[:64],
                     blob_id=str(blob_id)[:255],
                     result=result,
+                    username=(username or "")[:150],
+                    visit_date=visit_date,
                     completed_at=completed_at,
                 )
             )
@@ -235,6 +300,123 @@ def prior_verdicts_for(opportunity_id: int, pairs, exclude_session_id: int | Non
         qs = qs.exclude(session_id=exclude_session_id)
     qs = qs.order_by(F("completed_at").asc(nulls_first=True), "session_id")
     return _winner_index(qs, wanted)
+
+
+def has_flw_attribution(opportunity_id: int) -> bool:
+    """Whether this opportunity's verdict rows carry FLW attribution at all.
+
+    Rows written before the ``username`` column existed have none, and THE FRESHNESS
+    GATE CANNOT SEE THAT: the projection is "built and current" by its own state row
+    while every verdict in it is unattributable. Reading the resulting empty history as
+    "this FLW has never been flagged" is exactly the silent under-report this module's
+    docstring forbids, so callers are told to render "unavailable" instead of a clean
+    strip. Cleared by ``rebuild_prior_audit_index``, which rewrites every row.
+
+    An opportunity with no rows at all returns True: there is genuinely no history, and
+    an empty strip is an honest answer rather than a missing one.
+    """
+    rows = PriorAuditVerdict.objects.filter(opportunity_id=opportunity_id)
+    if not rows.exists():
+        return True
+    return rows.filter(username__gt="").exists()
+
+
+def duplicate_history_for_flws(opportunity_id: int, usernames, exclude_session_id: int | None = None) -> dict:
+    """Per FLW, how many images earlier audits flagged duplicate/fake, by visit day.
+
+    Returns ``{username: {"days": [{"iso", "label", "count"}...], "total", "undated"}}``
+    with days ascending and only days that actually have a count -- the review screen
+    renders a column per entry, and a zero column is noise.
+
+    THE WINNER RULE IS THE SAME ONE, AND THAT IS WHY THE FLW FILTER IS NOT APPLIED
+    TO THE COUNTING QUERY. An image judged in five sessions must count ONCE, so this
+    collapses to the most recently completed verdict exactly as ``_winner_index``
+    does. But narrowing the scan by ``username`` first would break that: a row whose
+    attribution is blank (written before the column existed, or from a session blob
+    with no ``visit_images`` metadata) would be excluded from the scan, letting an
+    OLDER attributed row win an image the blank row actually won -- an over-count, in
+    the direction that accuses an FLW of duplicates they were not last judged to have.
+
+    So the username filter only picks the VISITS, and the winner scan then runs over
+    every row on those visits, attributing each winner by its own username and falling
+    back to the visit's owner. Same superset-then-narrow shape as ``prior_verdicts_for``,
+    and bounded by the FLW's own visits rather than the opportunity's whole history.
+
+    ``undated`` counts flagged images whose visit timestamp could not be read, so they
+    belong to no column. Surfaced rather than dropped: a total that silently disagrees
+    with the sum of its columns is the failure this module's docstring is about.
+    """
+    usernames = {u for u in usernames if u}
+    if not usernames:
+        return {}
+
+    empty = {
+        u: {
+            "days": [],
+            "total": 0,
+            "below_threshold": 0,
+            "undated": 0,
+            "threshold": DUPLICATE_DAY_THRESHOLD,
+        }
+        for u in usernames
+    }
+
+    owner_rows = PriorAuditVerdict.objects.filter(opportunity_id=opportunity_id, username__in=usernames).values_list(
+        "visit_id", "username"
+    )
+    visit_owner: dict[str, str] = {}
+    for visit_id, username in owner_rows.iterator():
+        visit_owner.setdefault(visit_id, username)
+    if not visit_owner:
+        return empty
+
+    qs = PriorAuditVerdict.objects.filter(opportunity_id=opportunity_id, visit_id__in=visit_owner.keys())
+    if exclude_session_id is not None:
+        qs = qs.exclude(session_id=exclude_session_id)
+    # Ascending, so the latest completed verdict is the last write to land per image --
+    # the same ordering trick _winner_index relies on.
+    qs = qs.order_by(F("completed_at").asc(nulls_first=True), "session_id")
+
+    winners: dict[tuple, PriorAuditVerdict] = {}
+    for row in qs.iterator():
+        winners[(row.visit_id, row.blob_id)] = row
+
+    counts: dict[str, dict] = {u: {} for u in usernames}
+    undated: dict[str, int] = {u: 0 for u in usernames}
+    for row in winners.values():
+        if row.result not in DUPLICATE_VERDICTS:
+            continue
+        owner = row.username or visit_owner.get(row.visit_id, "")
+        if owner not in usernames:
+            continue
+        if row.visit_date is None:
+            undated[owner] += 1
+            continue
+        counts[owner][row.visit_date] = counts[owner].get(row.visit_date, 0) + 1
+
+    history = {}
+    for username in usernames:
+        by_date = counts[username]
+        # Newest first, so the most recent days are the ones visible before anyone
+        # scrolls -- the strip is read left to right and recency is what it is for.
+        days = [
+            {"iso": day.isoformat(), "label": day.strftime("%d/%m"), "count": n}
+            for day, n in sorted(by_date.items(), reverse=True)
+            if n >= DUPLICATE_DAY_THRESHOLD
+        ]
+        below = sum(n for n in by_date.values() if n < DUPLICATE_DAY_THRESHOLD)
+        history[username] = {
+            "days": days,
+            # Every flagged image, including the ones no column shows. The panel states
+            # the two excluded buckets, so this total always equals the sum of what the
+            # reader can see plus what they are told about -- a headline that silently
+            # disagreed with its own columns is the failure this module is about.
+            "total": sum(day["count"] for day in days) + below + undated[username],
+            "below_threshold": below,
+            "undated": undated[username],
+            "threshold": DUPLICATE_DAY_THRESHOLD,
+        }
+    return history
 
 
 def read_index(opportunity_id: int, exclude_session_id: int | None = None) -> dict:

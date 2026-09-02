@@ -83,6 +83,25 @@ class PriorAuditVerdict(models.Model):
 
     result = models.CharField(max_length=32)
 
+    # WHO and WHEN, denormalised from the same session blob the verdicts come from.
+    # The review screen shows an FLW's duplicate/fake history by the day the photo was
+    # taken, and neither field is derivable from a verdict row: ``visit_results`` holds
+    # the verdicts, ``visit_images`` holds the FLW and the visit timestamp, and
+    # rows_for_session joins the two halves of the one session it is already reading.
+    #
+    # Both are blank/null on every row written before this column existed, and on any
+    # row whose session blob lacked the metadata. A blank username is NOT "no FLW" --
+    # it is "not attributed" -- which is why duplicate_history_for_flws reports whether
+    # any such row exists instead of quietly leaving them out of a total it presents as
+    # complete. Backfill with ``rebuild_prior_audit_index``.
+    username = models.CharField(max_length=150, blank=True, default="")
+
+    # The visit's LOCAL date -- the day the photo was taken, which is what the history
+    # columns mean to a supervisor. Deliberately NOT completed_at: a daily audit run on
+    # the 22nd covers the 21st's visits, and completed_at also moves when a completed
+    # audit is edited (#1286), so it tracks reviewer activity rather than FLW behaviour.
+    visit_date = models.DateField(null=True, blank=True)
+
     # Nullable because a session can be marked completed without a timestamp.
     # Such a row loses every comparison in the winner query, which matches
     # build_prior_audit_index: a null completed_at never displaces a dated one.
@@ -102,6 +121,14 @@ class PriorAuditVerdict(models.Model):
             models.Index(
                 fields=["opportunity_id", "visit_id", "blob_id", "-completed_at"],
                 name="idx_prior_audit_lookup",
+            ),
+            # The per-FLW duplicate-history read: one opportunity, one FLW, all time.
+            # Without this that read degrades to a scan of the opportunity's whole
+            # history -- 17,653 rows on opp 2154 -- which is the cost this table exists
+            # to remove.
+            models.Index(
+                fields=["opportunity_id", "username"],
+                name="idx_prior_audit_flw",
             ),
         ]
 
