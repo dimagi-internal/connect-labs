@@ -73,6 +73,13 @@ def plan_to_json(plan) -> dict:
         "input_areas": plan.data.get("input_areas") or [],
         "psu_hulls": plan.data.get("psu_hulls") or {"type": "FeatureCollection", "features": []},
         "sampling_stats": plan.data.get("sampling_stats") or [],
+        # Provenance block (source/opportunity_ids/actor/created_at/…) for plans
+        # created together in a batch or via a non-standard hand-off (e.g. the CHC
+        # mop-up flow — see ProgramCreateMopupPlanView) — {} for a normal plan.
+        # review.js reads run_meta.opportunity_ids to know which opportunities'
+        # visit data the "Ward children per building (HSD)" population source
+        # should query; every other consumer can ignore this key.
+        "run_meta": plan.data.get("run_meta") or {},
     }
 
 

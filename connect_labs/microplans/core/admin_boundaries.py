@@ -223,11 +223,16 @@ def ward_population_candidates():
     return list(AdminBoundary.objects.filter(iso_code="NGA", admin_level=3, source__in=["geopode", "grid3"]))
 
 
-def resolve_population_by_name(state: str, lga: str, ward: str, *, candidates=None) -> dict | None:
-    """Best-effort population lookup for a ward known only by name (e.g. parsed
-    from an uploaded GeoJSON boundary file, which carries no AdminBoundary id —
-    so the geometry/id-based matching in ``LabsAdminBoundarySource`` doesn't
-    apply).
+def _extra_names(b) -> tuple[str, str]:
+    b_state, b_lga = admin_names_from_extra(b.extra)
+    return _norm_name(b_state), _norm_name(b_lga)
+
+
+def find_ward_boundary(state: str, lga: str, ward: str, *, candidates=None):
+    """Best-effort match of a ward known only by name to a single AdminBoundary
+    row (e.g. parsed from an uploaded GeoJSON boundary file, which carries no
+    AdminBoundary id — so the geometry/id-based matching in
+    ``LabsAdminBoundarySource`` doesn't apply).
 
     Tries three tiers, most-specific first, each requiring the match to be
     unambiguous before trusting it:
@@ -240,10 +245,11 @@ def resolve_population_by_name(state: str, lga: str, ward: str, *, candidates=No
          globally unique once normalized (checked against the national fixture);
          a ward name that repeats anywhere in the country never falls through
          to this tier.
-    Returns the matched boundary's ``extra.populations`` bag (plus
-    ``geopode_total`` from its scalar ``population`` field, the same merge
-    ``load_ward_populations`` performs), or ``None`` if nothing matches
-    confidently at any tier — never a guess.
+
+    Returns the matched ``AdminBoundary`` row, or ``None`` if nothing matches
+    confidently at any tier — never a guess. Shared by ``resolve_population_by_name``
+    (population bag) and ``find_ward_boundary_geometry`` (boundary polygon) so both
+    "resolve this ward by name" call sites agree on exactly the same match.
 
     ``candidates`` (optional): a prefetched list from ``ward_population_candidates()``,
     for reuse across a batch. Fetched fresh if omitted (fine for a one-off call,
@@ -255,16 +261,6 @@ def resolve_population_by_name(state: str, lga: str, ward: str, *, candidates=No
 
     rows = candidates if candidates is not None else ward_population_candidates()
     matches = [b for b in rows if _norm_name(b.name) == n_ward]
-
-    def _bag(b) -> dict | None:
-        pops = dict((b.extra or {}).get("populations") or {})
-        if b.source == "geopode" and b.population is not None:
-            pops.setdefault("geopode_total", b.population)
-        return pops or None
-
-    def _extra_names(b) -> tuple[str, str]:
-        b_state, b_lga = admin_names_from_extra(b.extra)
-        return _norm_name(b_state), _norm_name(b_lga)
 
     # NGA wards commonly exist as TWO overlapping AdminBoundary rows for the same
     # real ward — one from geopode, one from grid3 (see LABS_PROVIDER_PREFERENCE
@@ -284,14 +280,38 @@ def resolve_population_by_name(state: str, lga: str, ward: str, *, candidates=No
     if n_state and n_lga:
         exact = [b for b in matches if _extra_names(b) == (n_state, n_lga)]
         if len(exact) == 1:
-            return _bag(exact[0])
+            return exact[0]
     if n_state:
         by_state = [b for b in matches if _extra_names(b)[0] == n_state]
         if len(by_state) == 1:
-            return _bag(by_state[0])
+            return by_state[0]
     if len(matches) == 1:
-        return _bag(matches[0])
+        return matches[0]
     return None
+
+
+def find_ward_boundary_geometry(state: str, lga: str, ward: str, *, candidates=None) -> dict | None:
+    """Like ``find_ward_boundary``, but returns the matched ward's boundary polygon
+    as GeoJSON (or ``None`` if nothing matches confidently) — for callers that need
+    the geometry itself (e.g. a full-ward Overture buildings fetch) rather than its
+    population bag."""
+    b = find_ward_boundary(state, lga, ward, candidates=candidates)
+    return json.loads(b.geometry.geojson) if b is not None and b.geometry is not None else None
+
+
+def resolve_population_by_name(state: str, lga: str, ward: str, *, candidates=None) -> dict | None:
+    """Best-effort population lookup for a ward known only by name. See
+    ``find_ward_boundary`` for the name-matching rules (shared with it) — this
+    just converts the matched row into the population bag ``load_ward_populations``
+    would have produced, or ``None`` if nothing matched confidently.
+    """
+    b = find_ward_boundary(state, lga, ward, candidates=candidates)
+    if b is None:
+        return None
+    pops = dict((b.extra or {}).get("populations") or {})
+    if b.source == "geopode" and b.population is not None:
+        pops.setdefault("geopode_total", b.population)
+    return pops or None
 
 
 def _default_boundary_sources():

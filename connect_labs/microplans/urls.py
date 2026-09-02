@@ -62,6 +62,18 @@ urlpatterns = [
         views.ProgramCreatePlanView.as_view(),
         name="program_create_plan",
     ),
+    # CHC mop-up hand-off: create a Draft coverage plan from a locked candidate
+    # work-area set (see connect_labs/microplans/core/mopup.py).
+    path(
+        "program/<int:program_id>/plan/create_mopup/",
+        views.ProgramCreateMopupPlanView.as_view(),
+        name="program_create_mopup_plan",
+    ),
+    path(
+        "program/<int:program_id>/ward_children_per_building/",
+        views.WardChildrenPerBuildingView.as_view(),
+        name="ward_children_per_building",
+    ),
     # Bulk-create: paste a ward list, resolve against admin_boundaries,
     # preview matched + unresolved rows, confirm, then materialize one plan per ward
     # in one server call.
