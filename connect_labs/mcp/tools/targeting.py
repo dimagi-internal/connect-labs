@@ -71,7 +71,7 @@ def _resolve_method(availability_mod, methods_mod, indicator: str, resolution: s
     return availability_mod.default_method_for(indicator, res).code
 
 
-def _selection(indicator, threshold, resolution, method, iso_codes, extra_counts=()):
+def _selection(indicator, threshold, resolution, method, iso_codes, extra_counts=(), target_year=None):
     availability_mod, _, _, measures_mod, methods_mod, ISO_CODES, select_above = _imports()
     if indicator not in measures_mod.MEASURES:
         raise MCPToolError("BAD_REQUEST", f"Unknown indicator {indicator!r}. Call targeting_indicators to list them.")
@@ -85,6 +85,7 @@ def _selection(indicator, threshold, resolution, method, iso_codes, extra_counts
         iso_codes=[c.upper() for c in iso_codes] if iso_codes else list(ISO_CODES),
         method=chosen,
         extra_counts=tuple(extra_counts),
+        target_year=target_year,
     )
     return selection, measure, chosen
 
@@ -159,7 +160,9 @@ def targeting_indicators(user, *, indicator=None):
         "FLOOR, not a measurement); 'inherited_units' says how many carry a figure "
         "measured somewhere coarser -- usually their country -- rather than in their "
         "own right, so a selection that is mostly inherited is a national figure "
-        "repeated across regions; and "
+        "repeated across regions; 'small_sample_units' says how many rest on a "
+        "survey estimate the source itself flags as too thin to rely on (DHS "
+        "suppresses below 25 unweighted cases and brackets below 50); and "
         "'countries_unsupported' lists countries the method cannot answer at all."
     ),
     input_schema={
@@ -181,10 +184,20 @@ def targeting_indicators(user, *, indicator=None):
     },
 )
 def targeting_select(
-    user, *, indicator, threshold=None, resolution="subnational", method=None, iso_codes=None, limit=None
+    user,
+    *,
+    indicator,
+    threshold=None,
+    resolution="subnational",
+    method=None,
+    iso_codes=None,
+    limit=None,
+    target_year=None,
 ):
     _, _, _, measures_mod, _, _, _ = _imports()
-    selection, measure, chosen = _selection(indicator, threshold, resolution, method, iso_codes)
+    selection, measure, chosen = _selection(
+        indicator, threshold, resolution, method, iso_codes, target_year=target_year
+    )
     limit = max(1, min(int(limit or DEFAULT_ROW_LIMIT), MAX_ROW_LIMIT))
 
     rows = []
@@ -222,6 +235,9 @@ def targeting_select(
         },
         "coverage": {k: {"with_value": got, "of": total} for k, (got, total) in selection.coverage.items()},
         "inherited_units": selection.inherited_units,
+        "small_sample_units": selection.small_sample_units,
+        "projected_to": selection.projected_to,
+        "projected_without_rate": selection.projected_without_rate,
         "countries_fully_above": selection.countries_fully_above,
         "countries_partly_above": selection.countries_partly_above,
         "countries_unsupported": selection.countries_unsupported,
@@ -291,13 +307,36 @@ def targeting_methodology(user, *, indicator, threshold=None, resolution="subnat
             "resolution": {"type": "string", "enum": ["national", "subnational"], "default": "subnational"},
             "method": {"type": "string"},
             "iso_codes": {"type": "array", "items": {"type": "string"}},
+            "reach": {
+                "type": "number",
+                "description": (
+                    "Share of the units present that a campaign actually reaches, 0-1. Default 1.0, "
+                    "which prices a programme nobody has run: independent post-round surveys of "
+                    "door-to-door campaigns measure 70-92%. The response returns both 'units_present' "
+                    "and the reached 'units' the cost is built on, so the assumption stays visible."
+                ),
+            },
+            "target_year": {
+                "type": "integer",
+                "description": "Carry counts to the delivery year before costing. See targeting_select.",
+            },
         },
         "required": ["indicator", "basis", "unit_cost"],
         "additionalProperties": False,
     },
 )
 def targeting_scenario(
-    user, *, indicator, basis, unit_cost, threshold=None, resolution="subnational", method=None, iso_codes=None
+    user,
+    *,
+    indicator,
+    basis,
+    unit_cost,
+    threshold=None,
+    resolution="subnational",
+    method=None,
+    iso_codes=None,
+    reach=1.0,
+    target_year=None,
 ):
     _, _, interventions_mod, _, _, _, _ = _imports()
     try:
@@ -314,10 +353,23 @@ def targeting_scenario(
             "Choose person, household, birth or under_5.",
         )
 
+    if not 0 < reach <= 1:
+        raise MCPToolError("BAD_REQUEST", f"reach must be between 0 and 1, got {reach!r}")
+
     selection, measure, chosen = _selection(
-        indicator, threshold, resolution, method, iso_codes, extra_counts=(cases_measure,)
+        indicator,
+        threshold,
+        resolution,
+        method,
+        iso_codes,
+        extra_counts=(cases_measure,),
+        target_year=target_year,
     )
-    units = selection.totals.get(cases_measure)
+    present = selection.totals.get(cases_measure)
+    # Present and reached are different numbers, and a programme is costed on
+    # the second. Door-to-door campaigns measure 70-92% in post-round surveys;
+    # costing at 100% prices a programme nobody has run.
+    units = None if present is None else present * reach
     got, of = selection.coverage.get(cases_measure, (0, 0))
     return {
         "indicator": indicator,
@@ -325,6 +377,9 @@ def targeting_scenario(
         "method": chosen,
         "basis": basis,
         "counts_measure": cases_measure,
+        "units_present": round(present) if present is not None else None,
+        "reach": reach,
+        "projected_to": selection.projected_to,
         "units": round(units) if units is not None else None,
         "unit_cost": unit_cost,
         "absorbable_usd": round(units * unit_cost) if units is not None else None,
@@ -593,5 +648,134 @@ def targeting_research_write(
             "Stored with no checks — a future reader will be told this note is unverified. Add checks " "when you can."
             if not checks
             else f"Stored with {len(checks)} checks, re-run on every read."
+        ),
+    }
+
+
+@register(
+    name="targeting_compare_criteria",
+    description=(
+        "Run the SAME question through several selection criteria and show where they "
+        "disagree. Targeting is usually presented as one answer, and the honest version is "
+        "that several defensible screens give different answers: a county can be kept by a "
+        "coverage screen, dropped by a prevalence screen and kept again by a mortality one. "
+        "Pass two or more criteria (each an indicator and optional threshold) and this "
+        "returns, per criterion, what it selects and what it costs in units; then per area, "
+        "which criteria keep it — so the contested places are visible rather than hidden "
+        "behind whichever screen was run first. "
+        "Use this before defending a geographic selection, and put the disagreement in the "
+        "write-up: a reviewer who finds it first will not believe the rest."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "criteria": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 6,
+                "description": (
+                    "Screens to compare, each {'indicator': CODE, 'threshold': N (optional), "
+                    "'label': TEXT (optional)}. Threshold defaults to the indicator's own."
+                ),
+                "items": {"type": "object"},
+            },
+            "iso_codes": {"type": "array", "items": {"type": "string"}, "description": "Optional ISO-3 filter."},
+            "resolution": {"type": "string", "enum": ["national", "subnational"], "default": "subnational"},
+            "target_year": {"type": "integer", "description": "Carry counts to this year first."},
+            "count": {
+                "type": "string",
+                "description": "Count to compare on. Default pop_u5.",
+            },
+        },
+        "required": ["criteria"],
+        "additionalProperties": False,
+    },
+)
+def targeting_compare_criteria(
+    user, *, criteria, iso_codes=None, resolution="subnational", target_year=None, count=None
+):
+    _, _, _, measures_mod, _, _, _ = _imports()
+
+    count = count or "pop_u5"
+    if count not in measures_mod.MEASURES:
+        raise MCPToolError("BAD_REQUEST", f"Unknown count {count!r}.")
+    # Enforced here as well as in the schema: one screen has nothing to
+    # disagree with, and returning it as though it were a comparison would say
+    # "no disagreement" about a question that was never asked.
+    if len(criteria) < 2:
+        raise MCPToolError(
+            "BAD_REQUEST",
+            "Comparing criteria needs at least two. For a single screen use targeting_select.",
+        )
+
+    screens = []
+    for i, spec in enumerate(criteria):
+        indicator = spec.get("indicator")
+        if not indicator:
+            raise MCPToolError("BAD_REQUEST", f"criteria[{i}] has no indicator.")
+        selection, measure, chosen = _selection(
+            indicator,
+            spec.get("threshold"),
+            resolution,
+            spec.get("method"),
+            iso_codes,
+            extra_counts=(count,),
+            target_year=target_year,
+        )
+        # A coverage screen selects below its threshold and a burden screen
+        # above it, so the label has to say which or two screens read the same.
+        direction = "below" if indicator in measures_mod.LOWER_IS_WORSE else "above"
+        kept = {a.name: a for a in selection.areas}
+        screens.append(
+            {
+                "label": spec.get("label") or f"{indicator} {direction} {selection.threshold:g}",
+                "indicator": indicator,
+                "threshold": selection.threshold,
+                "method": chosen,
+                "areas": len(selection.areas),
+                "units": sum(a.units_covered for a in selection.areas),
+                count: round(selection.totals.get(count) or 0),
+                "small_sample_units": selection.small_sample_units,
+                "_kept": kept,
+            }
+        )
+
+    everywhere = sorted({name for s in screens for name in s["_kept"]})
+    rows = []
+    for name in everywhere:
+        keeps = [s["label"] for s in screens if name in s["_kept"]]
+        area = next(s["_kept"][name] for s in screens if name in s["_kept"])
+        rows.append(
+            {
+                "area": name,
+                "country": area.country_name,
+                count: round(area.counts.get(count) or 0),
+                "kept_by": keeps,
+                "kept_by_count": len(keeps),
+                "contested": 0 < len(keeps) < len(screens),
+            }
+        )
+    rows.sort(key=lambda r: (-r["kept_by_count"], -r[count]))
+
+    unanimous = [r for r in rows if r["kept_by_count"] == len(screens)]
+    contested = [r for r in rows if r["contested"]]
+    for s in screens:
+        del s["_kept"]
+
+    return {
+        "screens": screens,
+        "count": count,
+        "areas": rows,
+        "unanimous": len(unanimous),
+        "contested": len(contested),
+        "contested_share_of_count": (
+            round(100 * sum(r[count] for r in contested) / max(sum(r[count] for r in rows), 1), 1)
+        ),
+        "advice": (
+            f"{len(unanimous)} areas are selected by every screen and {len(contested)} by some but not all, "
+            f"holding {round(100 * sum(r[count] for r in contested) / max(sum(r[count] for r in rows), 1))}% "
+            f"of the {count.replace('_', ' ')} in play. The unanimous set is what a selection can be defended "
+            "on without argument; the contested set is what a reviewer will ask about, so name it and say "
+            "which screen you chose and why."
         ),
     }
