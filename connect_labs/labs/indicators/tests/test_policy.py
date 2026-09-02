@@ -245,3 +245,91 @@ class TestSmallSampleIsCarried:
 
         assert selection.small_sample_units == 1
         assert sum(a.units_covered for a in selection.areas) == 2
+
+
+class TestProjectionToTheDeliveryYear:
+    """A count belongs to the year it was measured; a programme runs later.
+
+    Comparing against a hand-built proposal, the largest single divergence was
+    this: theirs projected to 2027, the delivery year, and ours reported 2022.
+    Five years of Liberian growth is 11%, and the difference reads as a
+    disagreement about the data when it is a disagreement about the question.
+    """
+
+    def _liberia(self, u5=100_000, year=2022, growth=2.087):
+        country = make_boundary("LBR", 0, "Liberia", "LBR-0", x=0)
+        county = make_boundary("LBR", 1, "Bong", "LBR-1-1", x=2)
+        set_value(county, "ors_coverage", 41.0, source=Source.DHS)
+        set_value(county, "pop_u5", u5, year=year, source=Source.WORLDPOP_RASTER)
+        set_value(country, "pop_growth_rate", growth, source=Source.WORLDBANK)
+        return country, county
+
+    def test_without_a_target_year_nothing_moves(self):
+        self._liberia()
+        s = select_above(indicator="ors_coverage", threshold=95.0, method="subnational_survey")
+        assert s.totals["pop_u5"] == 100_000
+        assert s.projected_to is None
+
+    def test_a_count_is_carried_at_the_countrys_own_rate(self):
+        self._liberia()
+        s = select_above(indicator="ors_coverage", threshold=95.0, method="subnational_survey", target_year=2027)
+        # Five years at 2.087%.
+        assert s.totals["pop_u5"] == pytest.approx(100_000 * 1.02087**5, rel=1e-9)
+        assert s.projected_to == 2027
+
+    def test_a_rate_is_never_projected(self):
+        """Nothing here models how coverage moves, so moving it would be invention."""
+        self._liberia()
+        s = select_above(indicator="ors_coverage", threshold=95.0, method="subnational_survey", target_year=2027)
+        assert s.areas[0].values["ors_coverage"].value == 41.0
+
+    def test_a_country_with_no_growth_series_is_named_not_guessed(self):
+        country = make_boundary("TCD", 0, "Chad", "TCD-0", x=10)
+        county = make_boundary("TCD", 1, "Wadi Fira", "TCD-1-1", x=12)
+        set_value(county, "ors_coverage", 20.0, source=Source.DHS)
+        set_value(county, "pop_u5", 50_000, year=2022, source=Source.WORLDPOP_RASTER)
+        assert country  # no pop_growth_rate for Chad
+
+        s = select_above(indicator="ors_coverage", threshold=95.0, method="subnational_survey", target_year=2027)
+
+        assert s.totals["pop_u5"] == 50_000  # unmoved rather than guessed
+        assert s.projected_without_rate == ["TCD"]
+
+    def test_projecting_backwards_works_too(self):
+        """A target year before the data is a smaller number, not an error."""
+        self._liberia(year=2022)
+        s = select_above(indicator="ors_coverage", threshold=95.0, method="subnational_survey", target_year=2020)
+        assert s.totals["pop_u5"] < 100_000
+
+
+class TestRankingFollowsTheIndicator:
+    def test_a_coverage_question_ranks_on_who_is_unreached(self):
+        """Births is right for a mortality question and wrong for this one.
+
+        Ranked on births, a place is ordered by how many children are born
+        there. Ranked on the gap, it is ordered by how many go without — which
+        is what a programme is sized by and what the threshold was asking about.
+        """
+        make_boundary("LBR", 0, "Liberia", "LBR-0", x=0)
+        many_born = make_boundary("LBR", 1, "ManyBorn", "LBR-1-1", x=2)
+        many_unreached = make_boundary("LBR", 1, "ManyUnreached", "LBR-1-2", x=4)
+
+        set_value(many_born, "ors_coverage", 90.0, source=Source.DHS)
+        set_value(many_born, "births", 90_000, source=Source.DERIVED)
+        set_value(many_born, "pop_u5", 100_000, source=Source.WORLDPOP_RASTER)
+        # The unreached count the derive stage computes: pop_u5 x (1 - coverage).
+        set_value(many_born, "ors_coverage_gap", 10_000, source=Source.DERIVED)
+
+        set_value(many_unreached, "ors_coverage", 10.0, source=Source.DHS)
+        set_value(many_unreached, "births", 10_000, source=Source.DERIVED)
+        set_value(many_unreached, "pop_u5", 100_000, source=Source.WORLDPOP_RASTER)
+        set_value(many_unreached, "ors_coverage_gap", 90_000, source=Source.DERIVED)
+
+        # A third county above the threshold, so the country is not rolled up
+        # into one row and the per-row order stays visible.
+        covered = make_boundary("LBR", 1, "Covered", "LBR-1-3", x=6)
+        set_value(covered, "ors_coverage", 98.0, source=Source.DHS)
+
+        s = select_above(indicator="ors_coverage", threshold=95.0, method="subnational_survey")
+
+        assert [a.name for a in s.areas] == ["ManyUnreached", "ManyBorn"]

@@ -154,6 +154,13 @@ class Command(BaseCommand):
             ctx["rows"] = base.upsert(rows)
             ctx["countries"] = len({r.boundary.iso_code for r in rows})
 
+        # Not a targeting criterion — the series that lets a count measured in
+        # one year be carried to the year a programme actually runs.
+        with self._run(Source.WORLDBANK, "pop_growth_rate") as ctx:
+            rows = worldbank.load("pop_growth_rate", iso_codes=codes)
+            ctx["rows"] = base.upsert(rows)
+            ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
     def _stage_population(self, codes, opts):
         # HAPI first: it returns a whole country per request, where WorldPop
         # needs a task per polygon and queues them server-side. HAPI cannot

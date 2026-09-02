@@ -57,18 +57,23 @@ class Eligible:
 #: four copies to drift.
 _POPULATION = (
     Eligible(
-        Source.WORLDPOP,
-        "WorldPop's hosted statistics service, queried per boundary. First "
-        "because it is what most of the continent was loaded from and moving "
-        "the continent under a reader mid-argument is worse than a 5% "
-        "inconsistency at the margin.",
+        Source.WORLDPOP_RASTER,
+        "WorldPop's 1 km UN-adjusted grids, read on each boundary here. First "
+        "because they are reconciled to UN World Population Prospects, which is "
+        "the series a funder checks a proposal against. Tested on two countries "
+        "and it wins both: for Nigeria the unadjusted product reads 217.0M "
+        "against 206.0M here and a UN figure of 206.1M; for Liberia it reads "
+        "4.33M against 4.81M here and a UN figure nearer 5.06M -- wrong in "
+        "opposite directions, which is what makes 'whichever is loaded' the "
+        "wrong rule. It also answers the boundaries the statistics service "
+        "refuses outright.",
     ),
     Eligible(
-        Source.WORLDPOP_RASTER,
-        "The same product family read from the 1 km UN-adjusted grid here. "
-        "Answers the boundaries the service refuses outright, and reads about "
-        "5% below it because this grid is reconciled to UN World Population "
-        "Prospects and the age-sex product it serves is not.",
+        Source.WORLDPOP,
+        "WorldPop's hosted statistics service, queried per boundary. Second, "
+        "not gone: it is what most of the continent was originally loaded from, "
+        "it covers boundaries the raster misses, and keeping it eligible means "
+        "the two calibrations stay comparable rather than one disappearing.",
     ),
     Eligible(
         Source.HAPI,
@@ -145,6 +150,9 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
     ),
     "expected_deaths": (Eligible(Source.DERIVED, "Births multiplied by the resolved mortality rate."),),
     "households": (Eligible(Source.DERIVED, "Population divided by mean household size."),),
+    "pop_growth_rate": (
+        Eligible(Source.WORLDBANK, "The World Bank's national series. No other source here publishes it."),
+    ),
     "tfr": (
         Eligible(Source.DHS, "Measured directly by the survey."),
         Eligible(Source.WORLDBANK, "The World Bank's national series, for countries with no survey."),

@@ -30,6 +30,29 @@ from connect_labs.labs.indicators.models import SMALL_SAMPLE_UNWEIGHTED, Indicat
 logger = logging.getLogger(__name__)
 
 
+def project_count(resolved: Resolved, to_year: int | None, growth_pct: float | None) -> float:
+    """Carry a count forward to the year a programme actually runs.
+
+    A count is measured in the year it was measured; a programme runs later.
+    Answering a 2027 question with a 2022 population is not conservative, it is
+    a different question, and the difference compounds — Liberia grows at 2.1% a
+    year, so five years is 11%.
+
+    Only counts are projected. A rate has no growth series behind it and
+    inventing one would be worse than leaving it as of its own year, which is
+    what the row already says.
+
+    Without a growth rate, or without a target, the value passes through
+    unchanged. Silence beats a guessed rate.
+    """
+    if to_year is None or growth_pct is None or resolved.year is None:
+        return resolved.value
+    years = to_year - resolved.year
+    if years == 0:
+        return resolved.value
+    return resolved.value * (1.0 + growth_pct / 100.0) ** years
+
+
 @dataclass
 class Resolved:
     """One indicator value, with the provenance needed to explain it."""
@@ -392,6 +415,14 @@ class Selection:
     method: str = ""
     resolution: str = ""
     countries_unsupported: list[str] = field(default_factory=list)
+    #: The year every count was carried to, if one was asked for. A count in
+    #: this selection is then a projection, not a measurement, and the surface
+    #: has to say so — the whole reason for naming it here rather than quietly
+    #: returning a bigger number.
+    projected_to: int | None = None
+    #: Countries with no growth series, whose counts were left at their own
+    #: year. Their totals are therefore on a different basis from the rest.
+    projected_without_rate: list[str] = field(default_factory=list)
 
     @property
     def area_count(self) -> int:
@@ -502,6 +533,7 @@ def select_above(
     source_order: tuple[str, ...] | None = None,
     method: str | None = None,
     extra_counts: tuple[str, ...] = (),
+    target_year: int | None = None,
 ) -> Selection:
     """Places where ``indicator`` exceeds ``threshold``, at the coarsest honest unit.
 
@@ -562,6 +594,22 @@ def select_above(
 
     bulk = BulkResolver(boundaries + count_units, year=year, source_order=None)
     rate_bulk = BulkResolver(boundaries, year=year, source_order=source_order, lens_on=indicator)
+
+    # Counts are carried to the year the programme runs, if one was named. A
+    # 2027 question answered with a 2022 population is not a conservative
+    # answer, it is a different one — and the error compounds at the country's
+    # own growth rate. Rates are left alone: nothing here models how coverage
+    # or mortality moves, and a projected rate would be invention.
+    growth: dict[str, float | None] = {}
+    if target_year is not None:
+        for b in boundaries:
+            if b.iso_code not in growth:
+                g = bulk.get("pop_growth_rate", b)
+                growth[b.iso_code] = g.value if g is not None else None
+    projected_without_rate = sorted({iso for iso, g in growth.items() if g is None})
+
+    def _count(resolved: Resolved) -> float:
+        return project_count(resolved, target_year, growth.get(resolved.boundary.iso_code))
 
     by_iso: dict[str, dict[int, list[AdminBoundary]]] = defaultdict(lambda: defaultdict(list))
     for b in boundaries:
@@ -644,7 +692,7 @@ def select_above(
                     small_sample_units=max(len(children), 1) if r is not None and r.small_sample else 0,
                 )
                 for c in carried:
-                    got = [v.value for ch in children if (v := bulk.get(c, ch)) is not None]
+                    got = [_count(v) for ch in children if (v := bulk.get(c, ch)) is not None]
                     area.counts[c] = sum(got) if got else None
                     area.coverage[c] = (len(got), max(len(children), 1))
                 areas.append(area)
@@ -665,7 +713,7 @@ def select_above(
                 small_sample_units=sum(1 for _, r in above if r is not None and r.small_sample),
             )
             for c in carried:
-                got = [r.value for b, _ in above if (r := bulk.get(c, b)) is not None]
+                got = [_count(r) for b, _ in above if (r := bulk.get(c, b)) is not None]
                 area.counts[c] = sum(got) if got else None
                 area.coverage[c] = (len(got), len(above))
             areas.append(area)
@@ -687,7 +735,7 @@ def select_above(
                 )
                 for c in carried:
                     got = bulk.get(c, b)
-                    area.counts[c] = got.value if got else None
+                    area.counts[c] = _count(got) if got else None
                     area.coverage[c] = (1 if got else 0, 1)
                 areas.append(area)
 
@@ -707,7 +755,13 @@ def select_above(
         [(a.values[indicator].value, a.counts.get(measure.weight_by or "")) for a in areas if a.values.get(indicator)],
     )
 
-    areas.sort(key=lambda a: (-(a.counts.get("births") or 0.0), a.country_name, a.name))
+    # Rank on the quantity a programme is actually sized by. Births is right
+    # for a mortality question and wrong for a coverage one: asking where
+    # sanitation is worst and getting an order driven by births ranks a place
+    # by how many children are born there rather than by how many are
+    # unreached. Where the indicator has an unreached count, that leads.
+    rank_by = f"{indicator}_gap" if f"{indicator}_gap" in measures.MEASURES else "births"
+    areas.sort(key=lambda a: (-(a.counts.get(rank_by) or 0.0), a.country_name, a.name))
 
     return Selection(
         indicator=indicator,
@@ -722,6 +776,8 @@ def select_above(
         method=chosen.code if chosen else "",
         resolution=chosen.resolution.value if chosen else "",
         countries_unsupported=unsupported,
+        projected_to=target_year,
+        projected_without_rate=projected_without_rate,
     )
 
 
