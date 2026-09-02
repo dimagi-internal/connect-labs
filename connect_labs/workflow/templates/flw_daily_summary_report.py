@@ -42,7 +42,7 @@ Superset schema/sample-value export of this exact form (not guessed):
     Deworming:   form.case.update.dw_dosage_date_time
                  (set when a dose was actually administered)
 
-Three more fields ride along on each FLW's dict, but are NOT day-specific
+More fields ride along on each FLW's dict, but are NOT day-specific
 indicators -- current-status info, only ever useful as "latest known value",
 so unlike #1-9 above there's no need to backfill them into older runs:
   - suspended / suspension_date: Connect's own worker-suspension flag, from
@@ -55,9 +55,15 @@ so unlike #1-9 above there's no need to backfill them into older runs:
     cases, from a cchq_cases pull over CommCare's work-area case type,
     joined via the commcare_userid captured on approved_visits rows (added
     2026-08-26 for report 13003's grey-out, unused there so far). This is
-    the one piece that DOES need a CommCare HQ token -- see run_default's
+    one of two pieces that DOES need a CommCare HQ token -- see run_default's
     docstring for how that's threaded through headlessly, mirroring
     flw_daily_indicator_report.py (Program 176)'s identical pattern.
+  - wards: sorted list of ward names (case.properties.ward, same work-area
+    cchq_cases pull) this FLW has an approved visit in, joined via each
+    approved_visits row's wa_case_id -> work-area case -> ward, all-time.
+    "Worked in", not "assigned to" -- a work area sitting open and untouched
+    doesn't contribute a ward. Added 2026-09-02 for report 13003's Ward
+    column and filter. The other piece needing a CommCare HQ token.
 """
 from __future__ import annotations
 
@@ -135,7 +141,8 @@ PIPELINE_SCHEMAS = [
                     "paths": ["form.work_area_info.wa_caseid", "form.wa_case_id"],
                     "aggregation": "first",
                     "description": "Which work area this visit happened in. TWO paths on purpose -- "
-                    "the No Children Found form stores it at form.wa_case_id, a single path undercounts.",
+                    "the No Children Found form stores it at form.wa_case_id, a single path undercounts. "
+                    "Joined against a work-area case's own case_id to compute wards.",
                 },
                 {
                     "name": "commcare_userid",
@@ -176,8 +183,8 @@ SNAPSHOT_SCHEMA = {
         "state.flw_daily_summary.flws": (
             "List of per-FLW daily summary indicator dicts for this opportunity+day. Every FLW on the "
             "opportunity's roster appears (not just ones with activity). Also carries name, and where "
-            "available: suspended, suspension_date, work_areas_left -- current-status fields, not "
-            "day-specific indicators, so only present from whenever this was added onward."
+            "available: suspended, suspension_date, work_areas_left, wards -- current-status fields, not "
+            "day-specific indicators, so only present from whenever each was added onward."
         ),
     },
 }
@@ -275,26 +282,29 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
     for backfills; it is a (window_start, window_end) UTC half-open pair.
 
     Indicators #1-9 come from the two connect_csv pipelines above -- no
-    CommCare HQ token, no extra fetch. Three more fields (module docstring
-    has the full rationale) ride along on each FLW dict but aren't
-    day-specific: the full opportunity roster (so every FLW gets a row, not
-    just ones with activity today), suspended/suspension_date, and
-    work_areas_left.
+    CommCare HQ token, no extra fetch. More fields (module docstring has the
+    full rationale) ride along on each FLW dict but aren't day-specific: the
+    full opportunity roster (so every FLW gets a row, not just ones with
+    activity today), suspended/suspension_date, work_areas_left, and wards.
 
-    work_areas_left is the one piece needing a CommCare HQ token, fetched the
-    same way flw_daily_indicator_report.py (Program 176) fetches building
-    counts: directly via fetch_cchq_cases_as_visit_dicts, NOT through
-    WorkflowDataAccess.get_pipeline_data (that generic path never threads a
-    cchq_access_token down to the cchq_cases fetcher, so it would raise
-    CCHQHeadlessError every time this runs unattended). cchq_access_token is
+    work_areas_left and wards are the pieces needing a CommCare HQ token,
+    fetched the same way flw_daily_indicator_report.py (Program 176) fetches
+    building counts: directly via fetch_cchq_cases_as_visit_dicts, NOT
+    through WorkflowDataAccess.get_pipeline_data (that generic path never
+    threads a cchq_access_token down to the cchq_cases fetcher, so it would
+    raise CCHQHeadlessError every time this runs unattended). wards is the
+    set of wards (case.properties.ward on the work-area case) an FLW has
+    actually delivered an approved visit in -- not every ward assigned to
+    them -- joined via each approved_visits row's wa_case_id, all-time (same
+    treatment as commcare_userid_by_opp_username). cchq_access_token is
     optional and best-effort -- the scheduler mints one per run via
     get_valid_cchq_access_token(owner) when available; if it's missing,
-    expired, or the fetch otherwise fails, work_areas_left is just absent
-    from every FLW's dict for that opp/day rather than failing the run --
-    but it's not silent: the failure (and a roster-fetch failure, same
-    treatment) is collected into the returned "errors" list, which
-    run_scheduled_workflow (tasks.py) already surfaces as an amber note
-    under the schedule's green "OK" on /labs/admin/schedules/.
+    expired, or the fetch otherwise fails, work_areas_left and wards are
+    just absent from every FLW's dict for that opp/day rather than failing
+    the run -- but it's not silent: the failure (and a roster-fetch
+    failure, same treatment) is collected into the returned "errors" list,
+    which run_scheduled_workflow (tasks.py) already surfaces as an amber
+    note under the schedule's green "OK" on /labs/admin/schedules/.
     """
     import logging
     from collections import defaultdict
@@ -390,11 +400,15 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
         commcare_userid_by_opp_username.setdefault((r["opportunity_id"], r["username"]), ccuid)
 
     # Open (not closed) work-area case count per opp, keyed by CommCare
-    # owner_id. An opp missing from this dict means the fetch failed or no
+    # owner_id, plus a ward lookup by case_id (both closed and open cases --
+    # ward is a property of the case itself, not tied to open/closed status).
+    # An opp missing from open_wa_counts_by_opp means the fetch failed or no
     # cchq_access_token was available -- work_areas_left is left off every
-    # FLW dict for that opp rather than defaulting to a misleading 0.
+    # FLW dict for that opp rather than defaulting to a misleading 0; same
+    # for wards, via ward_by_case_id_by_opp.
     work_area_data_source = DataSourceConfig(type="cchq_cases", case_type="work-area")
     open_wa_counts_by_opp = {}
+    ward_by_case_id_by_opp = {}
     for opp_id in opp_ids:
         try:
             wa_rows = fetch_cchq_cases_as_visit_dicts(
@@ -403,18 +417,39 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
         except Exception as exc:
             logger.exception(
                 "flw_daily_summary_report: failed to fetch work-area cases for opp %s "
-                "(work_areas_left will be unavailable for this opp/day)",
+                "(work_areas_left and wards will be unavailable for this opp/day)",
                 opp_id,
             )
-            warnings.append(f"work_areas_left unavailable for opp {opp_id}: {exc}")
+            warnings.append(f"work_areas_left/wards unavailable for opp {opp_id}: {exc}")
             continue
         counts = defaultdict(int)
+        wards_by_case_id = {}
         for row in wa_rows:
             case = row.get("form_json", {}).get("case", {})
             owner_id = case.get("owner_id")
             if owner_id and not case.get("closed", False):
                 counts[owner_id] += 1
+            case_id = case.get("case_id")
+            ward = case.get("properties", {}).get("ward")
+            if case_id and ward:
+                wards_by_case_id[case_id] = ward
         open_wa_counts_by_opp[opp_id] = counts
+        ward_by_case_id_by_opp[opp_id] = wards_by_case_id
+
+    # Ward(s) each FLW has actually delivered approved service in, derived
+    # from EVERY approved_visits row this pull returned (not just today's
+    # window, same all-time treatment as commcare_userid_by_opp_username
+    # above) joined via wa_case_id -> work-area case -> ward. An FLW who is
+    # only assigned a work area but hasn't yet delivered a visit there won't
+    # show that ward -- this is "worked in", not "assigned to".
+    wards_by_opp_username = defaultdict(set)
+    for r in all_approved_rows:
+        wa_case_id = r.get("wa_case_id")
+        if not wa_case_id:
+            continue
+        ward = ward_by_case_id_by_opp.get(r["opportunity_id"], {}).get(wa_case_id)
+        if ward:
+            wards_by_opp_username[(r["opportunity_id"], r["username"])].add(ward)
 
     date_iso = wat_date(window_start)
     generated_at = datetime.now(timezone.utc).isoformat()
@@ -443,6 +478,10 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
             ccuid = commcare_userid_by_opp_username.get((opp_id, username))
             if ccuid is not None and wa_counts is not None:
                 indicators["work_areas_left"] = wa_counts.get(ccuid, 0)
+
+            wards = wards_by_opp_username.get((opp_id, username))
+            if wards:
+                indicators["wards"] = sorted(wards)
 
             flws.append(indicators)
 
