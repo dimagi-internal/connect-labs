@@ -1382,6 +1382,56 @@ def _linking_paths_to_coalesce_sql(paths: list[str]) -> str:
     return f"COALESCE({', '.join(parts)})"
 
 
+def _entity_stage_filters_where(config: AnalysisPipelineConfig) -> list[str]:
+    """Extra WHERE predicates for entity-stage aggregation, sourced from `config.filters`.
+
+    `build_entity_aggregation_query` previously scoped its read of
+    `labs_raw_visit_cache` to just `_pipeline_scope_where` (opportunity + pipeline
+    slot) and ignored `config.filters` entirely. FLW-stage aggregation exposes
+    status as unconditional standard counters (total/approved/pending/rejected/
+    flagged visits), so a status restriction there is just "read the right
+    counter column" -- but entity-stage groups by an arbitrary `linking_field`
+    and has no equivalent breakout, so a pipeline needing e.g. "approved visits
+    only" had no way to restrict the row set before GROUP BY.
+
+    Per-field `filter_path`/`filter_value` (see `_aggregation_to_sql`) cannot
+    fill this gap either: it always resolves through `_jsonb_path_to_sql`
+    against `form_json`, which does not special-case `RAW_VISIT_BASE_COLUMNS`
+    the way value-extraction (`_paths_to_coalesce_sql`) does -- so
+    `filter_path="status"` silently looks up a nonexistent `form_json->>'status'`
+    instead of the real `status` column, and would zero out every row rather
+    than filter them.
+
+    This mirrors the status/flagged/date_from/date_to handling already proven
+    correct in `build_visit_extraction_query` (same filter keys, same SQL
+    shape) so entity-stage pipelines can rely on the identical `filters` dict
+    convention. Only fires when a schema's `filters` sets one of these keys --
+    every entity-stage template as of this change leaves `filters={}`, so the
+    emitted query is byte-identical to before for all of them.
+    """
+    predicates: list[str] = []
+
+    if "status" in config.filters:
+        statuses = config.filters["status"]
+        if not isinstance(statuses, list):
+            statuses = [statuses]
+        status_list = ", ".join(f"'{_sql_str(s)}'" for s in statuses)
+        predicates.append(f"status IN ({status_list})")
+
+    if "flagged" in config.filters:
+        flagged = config.filters["flagged"]
+        flagged_sql = "true" if flagged in (True, 1, "true", "True", "1") else "false"
+        predicates.append(f"flagged = {flagged_sql}")
+
+    if "date_from" in config.filters:
+        predicates.append(f"visit_date >= '{_sql_str(config.filters['date_from'])}'")
+
+    if "date_to" in config.filters:
+        predicates.append(f"visit_date <= '{_sql_str(config.filters['date_to'])}'")
+
+    return predicates
+
+
 def build_entity_aggregation_query(
     config: AnalysisPipelineConfig,
     opportunity_id: int,
@@ -1466,7 +1516,9 @@ def build_entity_aggregation_query(
             select_parts.append(f"{field_sql} as {_sql_ident(field_name)}")
 
     select_clause = ",\n    ".join(select_parts)
-    where_clause = _pipeline_scope_where(opportunity_id, pipeline_id)
+    where_clause = " AND ".join(
+        [_pipeline_scope_where(opportunity_id, pipeline_id)] + _entity_stage_filters_where(config)
+    )
 
     visit_source = _visit_source_sql(config, opportunity_id)
     # Entity-stage doesn't currently use pre_aggregate_by/attribute_to, so the

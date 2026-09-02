@@ -151,13 +151,14 @@ class TestResolveLinkingField:
 
 
 class TestBuildEntityAggregationQuery:
-    def _config(self, linking_field="entity_id", fields=None, histograms=None):
+    def _config(self, linking_field="entity_id", fields=None, histograms=None, filters=None):
         return AnalysisPipelineConfig(
             grouping_key="username",
             fields=fields or [],
             histograms=histograms or [],
             terminal_stage=CacheStage.ENTITY,
             linking_field=linking_field,
+            filters=filters or {},
         )
 
     def test_groups_by_linking_field_and_opportunity_id(self):
@@ -188,6 +189,35 @@ class TestBuildEntityAggregationQuery:
         query = build_entity_aggregation_query(self._config(), opportunity_id=1)
         # The first(username) subquery should appear as the username column
         assert "as username" in query
+
+    def test_no_filters_leaves_where_clause_unchanged(self):
+        """A schema with filters={} (every entity-stage template as of this
+        change) must emit the exact same WHERE clause as before — no
+        behavior change for existing pipelines that never opted in."""
+        query = build_entity_aggregation_query(self._config(), opportunity_id=999)
+        assert "WHERE opportunity_id = 999 AND pipeline_id IS NULL\n" in query
+
+    def test_status_filter_restricts_row_set(self):
+        """Entity-stage aggregation previously ignored config.filters entirely,
+        so a WA-level (or any entity-grouped) pipeline had no way to restrict
+        to approved-only visits before GROUP BY — see _entity_stage_filters_where."""
+        query = build_entity_aggregation_query(self._config(filters={"status": ["approved"]}), opportunity_id=1)
+        assert "status IN ('approved')" in query
+
+    def test_status_filter_accepts_multiple_values(self):
+        query = build_entity_aggregation_query(
+            self._config(filters={"status": ["approved", "pending"]}), opportunity_id=1
+        )
+        assert "status IN ('approved', 'pending')" in query
+
+    def test_flagged_and_date_filters_supported(self):
+        query = build_entity_aggregation_query(
+            self._config(filters={"flagged": True, "date_from": "2026-01-01", "date_to": "2026-02-01"}),
+            opportunity_id=1,
+        )
+        assert "flagged = true" in query
+        assert "visit_date >= '2026-01-01'" in query
+        assert "visit_date <= '2026-02-01'" in query
 
 
 class TestFirstLastShape:
@@ -301,6 +331,55 @@ class TestEntityStageIntegration:
         # Date range
         assert rows[0].first_visit_date == date(2026, 4, 1)
         assert rows[0].last_visit_date == date(2026, 4, 5)
+
+    def test_status_filter_excludes_non_matching_visits(self, raw_visits_factory):
+        """filters={"status": ["approved"]} must restrict entity-stage aggregation
+        to approved visits only — regression test for the gap fixed by
+        _entity_stage_filters_where (previously config.filters was ignored
+        entirely at entity stage, so a rejected/pending visit would be counted
+        the same as an approved one)."""
+        opp_id = 9010
+        raw_visits_factory(
+            opp_id,
+            [
+                {
+                    "visit_id": 1,
+                    "username": "alice",
+                    "entity_id": "wa-1",
+                    "visit_date": date(2026, 4, 1),
+                    "status": "approved",
+                },
+                {
+                    "visit_id": 2,
+                    "username": "alice",
+                    "entity_id": "wa-1",
+                    "visit_date": date(2026, 4, 2),
+                    "status": "rejected",
+                },
+                {
+                    "visit_id": 3,
+                    "username": "alice",
+                    "entity_id": "wa-1",
+                    "visit_date": date(2026, 4, 3),
+                    "status": "pending",
+                },
+            ],
+        )
+
+        config = AnalysisPipelineConfig(
+            grouping_key="username",
+            terminal_stage=CacheStage.ENTITY,
+            linking_field="entity_id",
+            filters={"status": ["approved"]},
+        )
+        backend = SQLBackend()
+        result = backend._process_entity_level(
+            config, opp_id, visit_count=3, cache_manager=SQLCacheManager(opp_id, config)
+        )
+
+        assert len(result.rows) == 1
+        assert result.rows[0].entity_id == "wa-1"
+        assert result.rows[0].total_visits == 1
 
     def test_first_last_uses_visit_id_tiebreaker(self, raw_visits_factory):
         """When two visits share visit_date, ties must resolve by visit_id (ASC for first, DESC for last).
