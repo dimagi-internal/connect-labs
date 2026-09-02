@@ -1553,3 +1553,57 @@ def test_workflow_delete_not_found(mock_wda_cls, client, auth_user):
     )
     err = data["result"]["structuredContent"]["error"]
     assert err["code"] == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_remove_pipeline_source_returns_updated_sources(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.remove_pipeline_source.return_value = MagicMock(
+        pipeline_sources=[{"pipeline_id": 12897, "alias": "approved_visits"}]
+    )
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_remove_pipeline_source",
+        {"workflow_id": 13003, "program_id": 217, "alias": "hsd_visits"},
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["alias"] == "hsd_visits"
+    assert content["pipeline_sources"] == [{"pipeline_id": 12897, "alias": "approved_visits"}]
+    mock_wda_cls.return_value.remove_pipeline_source.assert_called_once_with(13003, "hsd_visits")
+
+
+@pytest.mark.django_db
+def test_workflow_remove_pipeline_source_rejects_missing_scope(client, auth_user):
+    _, raw = auth_user
+    data = _call_tool(client, raw, "workflow_remove_pipeline_source", {"workflow_id": 42, "alias": "hsd_visits"})
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_SCHEMA"
+
+
+@pytest.mark.django_db
+def test_workflow_remove_pipeline_source_rejects_both_scopes(client, auth_user):
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_remove_pipeline_source",
+        {"workflow_id": 42, "opportunity_id": 1, "program_id": 2, "alias": "hsd_visits"},
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_SCHEMA"
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_remove_pipeline_source_not_found(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.remove_pipeline_source.return_value = None
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_remove_pipeline_source",
+        {"workflow_id": 999, "opportunity_id": 100, "alias": "hsd_visits"},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "NOT_FOUND"
