@@ -112,6 +112,7 @@ def test_run_default_splits_by_opportunity_and_completes_each_run(MockWDA, mock_
 
     assert set(result["opportunities"].keys()) == {"1001", "1002"}
     assert result["date"] == "2026-07-20"
+    assert result["errors"] == []
 
     opp_instances[1001].create_run.assert_called_once()
     call_kwargs = opp_instances[1001].create_run.call_args.kwargs
@@ -397,6 +398,11 @@ def test_run_default_degrades_gracefully_when_work_area_fetch_fails(MockWDA, moc
     assert result["opportunities"]["1001"]["status"] == "ready"
     flws = _flw_by_username(opp_instances[1001].complete_run.call_args.args[1]["state"]["flw_daily_summary"]["flws"])
     assert "work_areas_left" not in flws["moji"]
+    # Not silent: this is exactly what run_scheduled_workflow (tasks.py) reads
+    # into the schedule's last_error, surfacing the gap on the admin schedules
+    # page as an amber note under an otherwise-green "OK" instead of nothing.
+    assert len(result["errors"]) == 1
+    assert "work_areas_left unavailable for opp 1001" in result["errors"][0]
 
 
 @mock.patch(FETCH_CCHQ_CASES_PATH)
@@ -429,3 +435,5 @@ def test_run_default_degrades_gracefully_when_roster_fetch_fails(MockWDA, mock_f
     flws = opp_instances[1001].complete_run.call_args.args[1]["state"]["flw_daily_summary"]["flws"]
     assert [f["username"] for f in flws] == ["alice"]
     assert "suspended" not in flws[0]
+    assert len(result["errors"]) == 1
+    assert "worker roster unavailable for opp 1001" in result["errors"][0]
