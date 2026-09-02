@@ -33,6 +33,12 @@ INDICATOR_PAGE = "https://data.worldbank.org/indicator/{code}?locations={iso2}"
 #: our measure code → World Bank indicator code
 INDICATORS = {
     "tfr": "SP.DYN.TFRT.IN",
+    # Total population growth, used to carry a count to the year a programme
+    # runs. The 0-4 cohort does not grow at exactly the national rate, but the
+    # World Bank publishes no subnational or cohort-specific series and the
+    # alternative — projecting nothing — means answering a 2027 question with a
+    # 2022 number and saying nothing about it.
+    "pop_growth_rate": "SP.POP.GROW",
 }
 
 METHOD = (

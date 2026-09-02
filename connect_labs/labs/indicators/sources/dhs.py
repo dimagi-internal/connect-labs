@@ -146,7 +146,12 @@ def _fetch(indicator_ids: list[str], breakdown: str) -> list[dict]:
                 "page": str(page),
                 "returnFields": (
                     "DHS_CountryCode,CountryName,SurveyYear,SurveyId,"
-                    "IndicatorId,CharacteristicLabel,CharacteristicCategory,Value"
+                    "IndicatorId,CharacteristicLabel,CharacteristicCategory,Value,"
+                    # How many children the estimate actually rests on. DHS
+                    # publishes these and they cost nothing extra to ask for;
+                    # without them every regional figure arrives looking equally
+                    # solid, and some of them rest on twenty-one cases.
+                    "DenominatorUnweighted,DenominatorWeighted"
                 ),
             },
         )
@@ -240,6 +245,8 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
                     method=METHOD.format(survey=survey_id),
                     extra={
                         "dhs_label": label,
+                        "sample_unweighted": _int(rec.get("DenominatorUnweighted")),
+                        "sample_weighted": _int(rec.get("DenominatorWeighted")),
                         "category": rec.get("CharacteristicCategory"),
                         "survey_id": survey_id,
                         "fieldwork": f"{meta.get('FieldworkStart', '')} to {meta.get('FieldworkEnd', '')}".strip(
@@ -270,6 +277,14 @@ def _readable(meta: dict, survey_id: str, rec: dict) -> str:
 
 def _only(records: list[dict], indicator_id: str) -> list[dict]:
     return [r for r in records if r.get("IndicatorId") == indicator_id]
+
+
+def _int(v) -> int | None:
+    """A sample size, or None. DHS returns these as strings, and sometimes blank."""
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return None
 
 
 def _val(rec: dict | None) -> float | None:

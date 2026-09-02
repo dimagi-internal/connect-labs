@@ -822,6 +822,28 @@ register(
 )
 
 
+register(
+    Measure(
+        code="pop_growth_rate",
+        label="Population growth",
+        kind=Kind.RATE,
+        unit="% per year",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_total",
+        downscale=True,
+        description=(
+            "Annual population growth, national. Not a targeting criterion — it "
+            "exists so a count measured in one year can be carried to the year a "
+            "programme actually runs, which is usually several years later and "
+            "never the year the data was collected."
+        ),
+        threshold_min=0,
+        threshold_max=6,
+        threshold_default=2,
+    )
+)
+
+
 # Every coverage measure gets a matching unreached count, registered here so the
 # rollup treats it as the summable quantity it is. This runs last, after every
 # coverage measure exists — a gap registered before its denominator would be a

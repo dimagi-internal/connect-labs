@@ -305,6 +305,7 @@ class SelectionView(OpenLocallyMixin, View):
                     # has. Reported so a reader can ask how much of the
                     # selection is really this method's own measurement.
                     "inherited_units": selection.inherited_units,
+                    "small_sample_units": selection.small_sample_units,
                 },
                 # How much of the selection actually carries each count. Where
                 # these fall short the total is a floor, and the UI says so

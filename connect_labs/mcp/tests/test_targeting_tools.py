@@ -161,3 +161,66 @@ class TestAdminLevels:
         got = targeting.targeting_admin_levels(None, iso_codes=["ZZZ"])
 
         assert got["loaded"] == {"ZZZ": {}}
+
+
+class TestCompareCriteria:
+    """Several defensible screens give different answers, and that is the finding.
+
+    Taken from a hand-built proposal that made the point in prose: one county's
+    ORS coverage is fourth lowest so a coverage screen keeps it, its diarrhoea
+    prevalence is the lowest by half so a prevalence screen drops it. Three
+    defensible screens, three answers for the same place. The tool used to
+    return whichever screen was asked for and say nothing about the others.
+    """
+
+    def _two_counties(self):
+        make_boundary("LBR", 0, "Liberia", "LBR-0", x=0)
+        low_ors = make_boundary("LBR", 1, "LowORS", "LBR-1-1", x=2)
+        high_dia = make_boundary("LBR", 1, "HighDiarrhoea", "LBR-1-2", x=4)
+        # Contested: each county is kept by exactly one of the two screens.
+        set_value(low_ors, "ors_coverage", 30.0, source=Source.DHS)
+        set_value(low_ors, "diarrhoea_prevalence", 5.0, source=Source.DHS)
+        set_value(low_ors, "pop_u5", 100_000, source=Source.WORLDPOP_RASTER)
+        set_value(high_dia, "ors_coverage", 90.0, source=Source.DHS)
+        set_value(high_dia, "diarrhoea_prevalence", 25.0, source=Source.DHS)
+        set_value(high_dia, "pop_u5", 50_000, source=Source.WORLDPOP_RASTER)
+
+    def test_it_reports_which_screen_keeps_each_area(self):
+        self._two_counties()
+        got = targeting.targeting_compare_criteria(
+            None,
+            criteria=[
+                {"indicator": "ors_coverage", "threshold": 70, "label": "coverage"},
+                {"indicator": "diarrhoea_prevalence", "threshold": 15, "label": "prevalence"},
+            ],
+            iso_codes=["LBR"],
+        )
+        kept = {r["area"]: r["kept_by"] for r in got["areas"]}
+        assert kept["LowORS"] == ["coverage"]
+        assert kept["HighDiarrhoea"] == ["prevalence"]
+
+    def test_it_says_how_much_of_the_answer_is_contested(self):
+        self._two_counties()
+        got = targeting.targeting_compare_criteria(
+            None,
+            criteria=[
+                {"indicator": "ors_coverage", "threshold": 70},
+                {"indicator": "diarrhoea_prevalence", "threshold": 15},
+            ],
+            iso_codes=["LBR"],
+        )
+        assert got["unanimous"] == 0
+        assert got["contested"] == 2
+        assert got["contested_share_of_count"] == 100.0
+
+    def test_one_criterion_is_refused_because_there_is_nothing_to_compare(self):
+        with pytest.raises(Exception):
+            targeting.targeting_compare_criteria(None, criteria=[{"indicator": "ors_coverage"}], iso_codes=["LBR"])
+
+    def test_a_criterion_without_an_indicator_says_which_one(self):
+        with pytest.raises(MCPToolError, match=r"criteria\[1\]"):
+            targeting.targeting_compare_criteria(
+                None,
+                criteria=[{"indicator": "ors_coverage"}, {"threshold": 15}],
+                iso_codes=["LBR"],
+            )
