@@ -143,6 +143,80 @@ def test_run_default_splits_by_opportunity_and_completes_each_run(MockWDA, mock_
 
 @mock.patch(FETCH_CCHQ_CASES_PATH)
 @mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
+def test_run_default_surfaces_per_opp_pipeline_fetch_error(MockWDA, mock_fetch_cchq):
+    """get_pipeline_data's per-opp loop never raises -- a query failure for
+    one (opp, alias) becomes an empty row list plus metadata.per_opp[opp]
+    ["error"], not an exception. That must not be silently treated as "0
+    real rows"; it has to show up in result["errors"] the same as a
+    roster/work-area fetch failure, or a genuine data gap (e.g. opp 2154's
+    approved_visits on 2026-09-01) reports a confident, wrong 0% instead of
+    a visible failure."""
+    definition = _make_definition([1001, 1002])
+
+    in_window = "2026-07-20T08:00:00Z"
+    fetch_instance = mock.Mock()
+    fetch_instance.get_pipeline_data.return_value = {
+        "hsd_visits": {
+            "rows": [_hsd_row(1002, "bob", in_window)],
+            "metadata": {"per_opp": {"1001": {"error": "connection reset"}, "1002": {"row_count": 1}}},
+        },
+        "approved_visits": {"rows": []},
+    }
+    fetch_instance.get_workers.return_value = []
+    mock_fetch_cchq.return_value = []
+
+    opp_instances = {}
+    MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
+
+    result = run_default(
+        definition=definition,
+        access_token="tok",
+        request=None,
+        window=(datetime(2026, 7, 19, 23, tzinfo=timezone.utc), datetime(2026, 7, 20, 23, tzinfo=timezone.utc)),
+    )
+
+    # The run still completes for both opps -- this is a visibility fix, not
+    # a hard failure -- but opp 1001's error is now in errors, not silent.
+    assert set(result["opportunities"].keys()) == {"1001", "1002"}
+    assert len(result["errors"]) == 1
+    assert "hsd_visits unavailable for opp 1001: connection reset" in result["errors"][0]
+
+
+@mock.patch(FETCH_CCHQ_CASES_PATH)
+@mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
+def test_run_default_surfaces_raw_fetch_anomaly(MockWDA, mock_fetch_cchq):
+    """A short-read the guard caught and rejected (kept stale-but-larger
+    cached data instead) doesn't fail the fetch -- metadata.error is absent
+    -- but it's still worth a visible warning, not silence."""
+    definition = _make_definition([1001])
+
+    fetch_instance = mock.Mock()
+    fetch_instance.get_pipeline_data.return_value = {
+        "hsd_visits": {
+            "rows": [],
+            "metadata": {"per_opp": {"1001": {"raw_fetch_anomaly": {"prior_count": 500, "new_count": 12}}}},
+        },
+        "approved_visits": {"rows": []},
+    }
+    fetch_instance.get_workers.return_value = []
+    mock_fetch_cchq.return_value = []
+
+    opp_instances = {}
+    MockWDA.side_effect = _wda_factory(fetch_instance, opp_instances)
+
+    result = run_default(
+        definition=definition,
+        access_token="tok",
+        request=None,
+        window=(datetime(2026, 7, 19, 23, tzinfo=timezone.utc), datetime(2026, 7, 20, 23, tzinfo=timezone.utc)),
+    )
+
+    assert len(result["errors"]) == 1
+    assert "hsd_visits short-read anomaly for opp 1001" in result["errors"][0]
+
+
+@mock.patch(FETCH_CCHQ_CASES_PATH)
+@mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess")
 def test_run_default_excludes_rows_outside_window(MockWDA, mock_fetch_cchq):
     definition = _make_definition([1001])
 
