@@ -61,6 +61,14 @@ class Measure:
     #: population be derived generically — ``denominator x (1 - coverage)`` —
     #: instead of hand-writing a gap per indicator.
     coverage_of: str | None = None
+    #: For a coverage rate measured only among those who had an episode — ORS
+    #: among children who *had diarrhoea* — the prevalence measure that says how
+    #: many of them there are. Without it the unreached count multiplies the
+    #: whole population by the untreated share and overstates by the inverse of
+    #: prevalence: Liberia's ORS gap read 295,899 where the truth is 47,035, a
+    #: factor of six. Where the rate is unconditional (sanitation, vaccination)
+    #: this stays None and the generic derivation is already right.
+    conditional_on: str | None = None
 
     @property
     def is_rate(self) -> bool:
@@ -98,8 +106,24 @@ def get(code: str) -> Measure:
 
 
 def validate_registry() -> None:
-    """Every rate's weight must exist and be a count. Called by tests and checks."""
+    """Structural checks over the whole registry. Called by tests and at import.
+
+    Whole-registry rather than per-registration because these are references
+    between measures, and a measure may legitimately name one that is declared
+    further down the file.
+    """
     for m in MEASURES.values():
+        if m.conditional_on:
+            episode = MEASURES.get(m.conditional_on)
+            if episode is None:
+                raise ValueError(
+                    f"{m.code}: conditional_on={m.conditional_on!r} is not a registered measure. "
+                    "A rate measured only among those who had an episode needs the prevalence "
+                    "that says how many they are, or its unreached count multiplies the whole "
+                    "population by the untreated share."
+                )
+            if not episode.is_rate:
+                raise ValueError(f"{m.code}: conditional_on={m.conditional_on!r} must be a prevalence, not a count")
         if not m.is_rate:
             continue
         w = MEASURES.get(m.weight_by)
@@ -285,6 +309,7 @@ register(
 register(
     Measure(
         code="ors_coverage",
+        conditional_on="diarrhoea_prevalence",
         coverage_of="pop_u5",
         threshold_min=10,
         threshold_max=90,
@@ -375,7 +400,7 @@ register(
 # --------------------------------------------------------------------------
 
 
-def _coverage(code, label, weight, denominator, unit, desc, lo=10, hi=95, default=50):
+def _coverage(code, label, weight, denominator, unit, desc, lo=10, hi=95, default=50, conditional_on=None):
     return register(
         Measure(
             code=code,
@@ -387,6 +412,7 @@ def _coverage(code, label, weight, denominator, unit, desc, lo=10, hi=95, defaul
             downscale=True,
             description=desc,
             coverage_of=denominator,
+            conditional_on=conditional_on,
             threshold_min=lo,
             threshold_max=hi,
             threshold_default=default,
@@ -485,6 +511,7 @@ _coverage(
     lo=1,
     hi=80,
     default=30,
+    conditional_on="diarrhoea_prevalence",
 )
 
 _coverage(
@@ -494,6 +521,7 @@ _coverage(
     "pop_u5",
     "% of under-5s with ARI symptoms",
     "Children with acute respiratory symptoms who received antibiotics.",
+    conditional_on="ari_prevalence",
 )
 
 _coverage(
@@ -521,6 +549,7 @@ _coverage(
     "pop_u5",
     "% of under-5s with fever",
     "Children with fever who took an antimalarial drug.",
+    conditional_on="fever_prevalence",
 )
 
 register(
@@ -593,6 +622,21 @@ _prevalence(
     hi=30,
     default=10,
 )
+
+_prevalence(
+    "fever_prevalence",
+    "Fever, under-5s",
+    "pop_u5",
+    "% of children under 5",
+    "Children with a fever in the last two weeks. Not a targeting criterion in "
+    "its own right — it is the denominator that makes the antimalarial "
+    "treatment gap mean children who could have been treated rather than every "
+    "child in the country.",
+    lo=1,
+    hi=60,
+    default=20,
+)
+
 
 _prevalence(
     "ari_prevalence",
