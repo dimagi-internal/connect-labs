@@ -290,7 +290,11 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
     optional and best-effort -- the scheduler mints one per run via
     get_valid_cchq_access_token(owner) when available; if it's missing,
     expired, or the fetch otherwise fails, work_areas_left is just absent
-    from every FLW's dict for that opp/day rather than failing the run.
+    from every FLW's dict for that opp/day rather than failing the run --
+    but it's not silent: the failure (and a roster-fetch failure, same
+    treatment) is collected into the returned "errors" list, which
+    run_scheduled_workflow (tasks.py) already surfaces as an amber note
+    under the schedule's green "OK" on /labs/admin/schedules/.
     """
     import logging
     from collections import defaultdict
@@ -319,6 +323,16 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
     if not opp_ids:
         raise ValueError("flw_daily_summary_report requires at least one opportunity on the definition")
 
+    # Collected across both best-effort fetches below and returned as
+    # result["errors"] -- run_scheduled_workflow (tasks.py) already reads
+    # that key on ANY template's return value and writes it into the
+    # schedule's last_error even when the run overall succeeds (last_status
+    # stays "ok"), which is exactly what shows a run as green "OK" with an
+    # amber note on the admin schedules page instead of a silent gap. A
+    # roster/work-area fetch failing here doesn't fail the run -- these
+    # warnings are how that degradation stops being invisible.
+    warnings: list[str] = []
+
     if definition.program_id:
         fetch_wda = WorkflowDataAccess(access_token=access_token, program_id=definition.program_id)
     else:
@@ -329,13 +343,14 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
         for opp_id in opp_ids:
             try:
                 roster_by_opp[opp_id] = fetch_wda.get_workers(opp_id)
-            except Exception:
+            except Exception as exc:
                 logger.exception(
                     "flw_daily_summary_report: failed to fetch worker roster for opp %s "
                     "(suspended flag and roster-only FLW rows will be unavailable for this opp/day)",
                     opp_id,
                 )
                 roster_by_opp[opp_id] = []
+                warnings.append(f"worker roster unavailable for opp {opp_id}: {exc}")
     finally:
         fetch_wda.close()
 
@@ -385,12 +400,13 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
             wa_rows = fetch_cchq_cases_as_visit_dicts(
                 request, work_area_data_source, access_token, opp_id, cchq_access_token=cchq_access_token
             )
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "flw_daily_summary_report: failed to fetch work-area cases for opp %s "
                 "(work_areas_left will be unavailable for this opp/day)",
                 opp_id,
             )
+            warnings.append(f"work_areas_left unavailable for opp {opp_id}: {exc}")
             continue
         counts = defaultdict(int)
         for row in wa_rows:
@@ -455,7 +471,7 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
         finally:
             opp_wda.close()
 
-    return {"opportunities": opp_results, "date": date_iso}
+    return {"opportunities": opp_results, "date": date_iso, "errors": warnings}
 
 
 TEMPLATE = {
