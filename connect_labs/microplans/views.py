@@ -689,6 +689,231 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
         return JsonResponse(resp)
 
 
+class ProgramCreateMopupPlanView(LoginRequiredMixin, View):
+    """Create a Draft coverage plan from a locked CHC mop-up candidate set.
+
+    Hand-off target for the (Phase 2) "CHC Mop-up Candidate Analysis" workflow's
+    "Create mop-up microplan" button: POST body is the locked candidate work-area
+    dicts (ward/lga/state + a GeoJSON boundary each, already loaded client-side
+    from pipeline 12971 "CHC Work Area Geometry") plus the opportunity ids to
+    total each ward's children-per-building rate across (the program's 4 LLOs).
+
+    A separate view from ``ProgramCreatePlanView`` rather than a branch on it:
+    that view's input is an ALREADY-GENERATED frame (``hulls``/``pins``, produced
+    by an earlier ``preview_coverage`` call the client polls) — a mop-up hand-off
+    starts one step earlier, from raw candidate geometries, so it has nothing in
+    common with that view's request shape until the final ``create_plan()`` call
+    both converge on.
+
+    Synchronous by design (matching the approved plan's spec for
+    ``ward_children_per_building`` as a plain function, not a Celery task) —
+    unlike the normal setup flow's ``PreviewCoverageView``/``generate_coverage_task``,
+    which offloads its Overture fetch to Celery specifically because a cold fetch
+    blocks a web-tier gthread worker (see ``microplans/tasks.py``'s module
+    docstring). This view does TWO rounds of potentially-cold Overture fetches
+    (grid generation, then one whole-ward boundary fetch per ward for
+    ``ward_children_per_building``) inside one request. Fine for the expected
+    mop-up batch sizes (a handful of wards, occasional/ops-triggered, not a
+    hot user-facing path) — flagged here as a real scaling risk worth revisiting
+    (e.g. moving this behind a Celery task + poll, matching the normal flow) once
+    real mop-up batch sizes are known; not changed here to avoid speculative
+    infrastructure the plan didn't ask for.
+    """
+
+    def post(self, request, program_id):
+        from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+        from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
+        from connect_labs.microplans.core.mopup import build_mopup_areas, ward_children_per_building
+
+        try:
+            payload = json.loads(request.body)
+            candidate_work_areas = payload.get("candidate_work_areas") or []
+            if not isinstance(candidate_work_areas, list) or not candidate_work_areas:
+                raise ValueError("no candidate_work_areas")
+            opportunity_ids = [int(o) for o in (payload.get("opportunity_ids") or [])]
+            if not opportunity_ids:
+                raise ValueError("no opportunity_ids")
+            name = str(payload.get("name", "") or "CHC Mop-up").strip()[:255]
+            grouping = payload.get("grouping") or {}
+            if not isinstance(grouping, dict):
+                grouping = {}
+            config_payload = payload.get("config") or {}
+            group_id = payload.get("group_id")
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        try:
+            areas = build_mopup_areas(candidate_work_areas)
+        except ValueError as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid candidate work areas: {e}"}, status=400)
+
+        from connect_labs.microplans.coverage.frame import CoverageConfig, generate_coverage_frame
+
+        try:
+            config = CoverageConfig.from_payload(config_payload)
+        except (TypeError, ValueError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid config: {e}"}, status=400)
+
+        try:
+            # Calling generate_coverage_frame directly (the function
+            # generate_coverage_task's Celery wrapper itself delegates to), not
+            # the task — see class docstring for why this endpoint stays
+            # synchronous rather than routing through Celery like the normal
+            # preview flow. Reuses the exact same grid-generation logic either way.
+            frame_result = generate_coverage_frame(areas, config)
+        except ValueError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans mopup create_plan: grid generation failed (program=%s)", program_id)
+            return JsonResponse({"status": "error", "detail": "Grid generation failed."}, status=502)
+
+        # Buildings actually gridded per area_id IN THIS PLAN (the mop-up grid
+        # only covers the candidate footprint, a SUBSET of the ward — not the
+        # ward's full building count).
+        retained_buildings_by_area: dict[str, int] = {}
+        for feat in frame_result.areas_geojson.get("features", []):
+            props = feat.get("properties", {}) or {}
+            aid = props.get("area_id")
+            if aid:
+                retained_buildings_by_area[aid] = retained_buildings_by_area.get(aid, 0) + int(
+                    props.get("building_count") or 0
+                )
+
+        pipeline = AnalysisPipeline(request=request)
+        area_targets: dict[str, float] = {}
+        for a in areas:
+            try:
+                rate = ward_children_per_building(a["ward"], a["lga"], a["state"], opportunity_ids, pipeline=pipeline)
+            except Exception:  # noqa: BLE001
+                # Best-effort per ward: one ward's building-fetch/lookup failure
+                # shouldn't sink the whole batch — that ward just gets no target
+                # (EVC falls back to 1-visit-per-building, same as an unset target
+                # anywhere else in this app) and the reviewer can fill it manually
+                # on the review page, same as any other missing population source.
+                logger.exception(
+                    "microplans mopup create_plan: ward_children_per_building failed (program=%s ward=%s)",
+                    program_id,
+                    a["ward"],
+                )
+                continue
+            # `recompute_area_visits` (called inside create_plan, via
+            # materialize_work_areas -> area_targets) divides area_targets[area_id]
+            # by THIS area's own retained_buildings to get a per-building rate —
+            # so area_targets must be an absolute count (ward_children_per_building
+            # ratio x this plan's own retained buildings for that area), not the
+            # ratio itself. Feeding the ratio straight through would silently
+            # double-divide by the building count and produce a near-zero EVC for
+            # every mop-up work area. See core/mopup.py's module docstring and
+            # core/plan.py:recompute_area_visits's own formula.
+            retained = retained_buildings_by_area.get(a["area_id"], 0)
+            area_targets[a["area_id"]] = rate * retained
+            # Store the raw per-building RATE (not the absolute target above) on
+            # the area's populations bag, so it survives into the plan's stored
+            # area_populations and the review page's per-ward source picker can
+            # offer it later without a second live fetch (see review.js's "Ward
+            # children per building (HSD)" source option, which does its own
+            # rate x this-plan's-ward-buildings multiplication at apply time).
+            a["populations"] = {"hsd_children_per_building": rate}
+
+        states = {a["state"] for a in areas if a.get("state")}
+        region = name
+        lga = ", ".join(sorted({a["lga"] for a in areas if a.get("lga")})) or region
+        state = next(iter(states)) if len(states) == 1 else ""
+
+        empty_fc = {"type": "FeatureCollection", "features": []}
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            plan = da.create_plan(
+                region=region,
+                name=name,
+                mode="coverage",
+                pins=empty_fc,
+                hulls=frame_result.areas_geojson,
+                input_areas=areas,
+                grouping=grouping,
+                lga=lga,
+                state=state,
+                area_targets=area_targets,
+                coverage_config=config.__dict__,
+                coverage_stats=frame_result.stats,
+                run_meta={"source": "chc_mopup", "opportunity_ids": opportunity_ids},
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.exception("microplans mopup create_plan failed (program=%s)", program_id)
+            return JsonResponse({"status": "error", "detail": f"Could not create the plan: {e}"}, status=502)
+
+        group_warning = None
+        if group_id is not None:
+            try:
+                da.add_plan_to_group(int(group_id), plan.id)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "microplans mopup create_plan: add to group failed (program=%s group=%s plan=%s)",
+                    program_id,
+                    group_id,
+                    plan.id,
+                )
+                group_warning = "added plan but not to group"
+
+        resp = serialization.plan_to_json(plan)
+        resp["plan_id"] = plan.id
+        resp["urls"] = _plan_scoped_urls(program_id, plan.id)
+        if group_warning:
+            resp["group_warning"] = group_warning
+        return JsonResponse(resp)
+
+
+class WardChildrenPerBuildingView(LoginRequiredMixin, View):
+    """Read-only ``ward_children_per_building`` lookup for wards known by name.
+
+    Mirrors ``PopulationByNameView``'s request/response shape exactly, so the
+    review-page per-ward visit-target table (``review.js``) can offer "Ward
+    children per building (HSD)" as a population-source option the same way it
+    already offers WorldPop/Meta/GRID3/GeoPoDe: POST body
+    ``{"wards": [{"ward","lga","state"}, ...], "opportunity_ids": [...]}``.
+    Response mirrors the input order: ``{"values": [float|null, ...]}`` — ``null``
+    where the computation failed for that ward (never a guess; see
+    ``ward_children_per_building``'s own docstring for why a resolvable-but-
+    building-less or unmatched ward returns 0.0 rather than null — a genuine
+    zero rate is a valid computed answer, distinct from "couldn't compute this
+    at all").
+
+    Unlike the population-by-name lookup (a cheap in-DB name match),
+    this does live Overture + Connect/CommCare HQ fetches per ward — expect this
+    to be noticeably slower for a fresh (uncached) ward, matching every other
+    footprint-fetching endpoint in this app.
+    """
+
+    def post(self, request, program_id):
+        from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+        from connect_labs.microplans.core.mopup import ward_children_per_building
+
+        try:
+            body = json.loads(request.body)
+            wards = body["wards"]
+            opportunity_ids = [int(o) for o in (body.get("opportunity_ids") or [])]
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+        if not opportunity_ids:
+            return JsonResponse({"status": "error", "detail": "opportunity_ids is required"}, status=400)
+
+        pipeline = AnalysisPipeline(request=request)
+        values = []
+        for w in wards:
+            try:
+                values.append(
+                    ward_children_per_building(
+                        w.get("ward", ""), w.get("lga", ""), w.get("state", ""), opportunity_ids, pipeline=pipeline
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "microplans ward_children_per_building lookup failed (program=%s ward=%r)", program_id, w
+                )
+                values.append(None)
+        return JsonResponse({"status": "ok", "values": values})
+
+
 class ProgramGroupBulkCreateFromBoundariesView(LoginRequiredMixin, View):
     """Create one boundary-only ward-plan per selected admin boundary, filed into a
     study (group), from the map "Add wards from map" surface.
@@ -1335,6 +1560,7 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
         context["population_by_name_url"] = reverse("microplans:population_by_name", args=[123])
+        context["ward_children_per_building_url"] = reverse("microplans:ward_children_per_building", args=[program_id])
         context["countries_url"] = reverse("microplans:countries")
         context["boundary_viewport_url"] = reverse("microplans:boundary_viewport")
         context["regenerate_url"] = reverse("microplans:program_plan_regenerate", args=[program_id, plan_id])
@@ -1711,6 +1937,7 @@ class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
         context["population_by_name_url"] = reverse("microplans:population_by_name", args=[123])
+        context["ward_children_per_building_url"] = reverse("microplans:ward_children_per_building", args=[program_id])
         context["countries_url"] = reverse("microplans:countries")
         context["boundary_viewport_url"] = reverse("microplans:boundary_viewport")
         # Review-only URLs that don't apply pre-create. JS will skip the

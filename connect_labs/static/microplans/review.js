@@ -40,6 +40,7 @@
   const ADMIN_AREAS_URL = CFG.admin_areas_url;
   const ADMIN_AREA_GEOMETRY_URL = CFG.admin_area_geometry_url;
   const POPULATION_BY_NAME_URL = CFG.population_by_name_url;
+  const WARD_CHILDREN_PER_BUILDING_URL = CFG.ward_children_per_building_url;
   const CREATE_PLAN_URL = CFG.create_plan_url;
   // When the editor is opened from a group page (?group=<id>), the created plan
   // files into that group — see ProgramCreatePlanView's group_id handling.
@@ -796,6 +797,7 @@
     renderKpis(data.kpis || {});
     renderTable();
     renderVisitsTable();
+    fetchWardChildrenPerBuilding(); // best-effort, async — re-renders the visits table on success
     renderSetupTable(); // keep the planning table filled after create/regenerate
     refreshMap(opts); // opts.fit re-centers the map — only pass it when the
     // geometry itself may have moved (e.g. Regenerate); everyday edits omit it
@@ -2526,8 +2528,14 @@
     meta_total: 'Meta',
     grid3_v3_total: 'GRID3 v3',
     geopode_total: 'GeoPoDe',
+    // Live-computed (not a static boundary population figure): ward-wide HSD-
+    // registered children ÷ ward-wide Overture building count. Only ever
+    // available on a plan created from the CHC mop-up hand-off (see
+    // WARD_CHILDREN_PER_BUILDING below) — a normal coverage/sampling plan has
+    // no opportunity_ids to query visit data from.
+    hsd_children_per_building: 'Ward children per building (HSD)',
   };
-  // Grouped into Under-5 vs Total for the dropdown.
+  // Grouped into Under-5 / Total / CHC mop-up for the dropdown.
   const POP_SOURCE_GROUPS = [
     {
       label: 'Under-5',
@@ -2537,8 +2545,20 @@
       label: 'Total population',
       keys: ['worldpop_total', 'meta_total', 'grid3_v3_total', 'geopode_total'],
     },
+    {
+      label: 'CHC mop-up',
+      keys: ['hsd_children_per_building'],
+    },
   ];
   const POP_SOURCE_ORDER = POP_SOURCE_GROUPS.flatMap((g) => g.keys);
+  // Ward-name-keyed cache for the one live-computed source above — kept
+  // SEPARATE from AREA_POPS (which is area_id-keyed, from the plan's stored
+  // area_populations) rather than merged into it, since the visits table below
+  // looks values up by ward name; folding a differently-keyed source into
+  // AREA_POPS would only work by coincidence (an area_id that happens to equal
+  // its ward name). See renderVisitsTable/autofillVisitsFromSource.
+  let WARD_CHILDREN_PER_BUILDING = {}; // {ward: number}
+  let wardChildrenFetchKey = ''; // wards+opportunity_ids this was last fetched for
 
   function recordWardPopulation(boundaryId, feature) {
     const f = feature || {};
@@ -2631,6 +2651,22 @@
     });
     return [...seen.values()];
   }
+  // Total building_count across this ward's non-excluded work areas IN THIS
+  // PLAN — the same "retained buildings" this app's own EVC formula divides by
+  // (see core/plan.py:recompute_area_visits). Needed to turn a per-building
+  // RATE (like hsd_children_per_building) into the absolute
+  // "total_expected_visits" figure applyVisitTargets()/set_area_targets expects
+  // — that endpoint re-divides by retained buildings itself, so posting a bare
+  // rate would silently double-divide and floor to ~0. Every OTHER population
+  // source already stores an absolute ward total, so this conversion is
+  // specific to this one rate-shaped source.
+  function wardBuildingTotal(ward) {
+    return (WAS || [])
+      .filter(
+        (w) => w.status !== 'EXCLUDED' && (w.properties || {}).ward === ward,
+      )
+      .reduce((sum, w) => sum + (Number(w.building_count) || 0), 0);
+  }
   function renderVisitsTable() {
     const tb = $('visits-tbody');
     if (!tb) return;
@@ -2641,6 +2677,8 @@
     wards.forEach((w) =>
       Object.keys(AREA_POPS[w.ward] || {}).forEach((k) => avail.add(k)),
     );
+    if (wards.some((w) => WARD_CHILDREN_PER_BUILDING[w.ward] != null))
+      avail.add('hsd_children_per_building');
     if (sel) {
       const prev = sel.value;
       const groups = POP_SOURCE_GROUPS.map((g) => {
@@ -2669,10 +2707,54 @@
       })
       .join('');
   }
+  // Fetches the live "Ward children per building (HSD)" rate for every ward
+  // currently in the plan, when the plan carries the opportunity_ids that
+  // source needs to query (set only by the CHC mop-up hand-off — see
+  // run_meta in serialization.plan_to_json / ProgramCreateMopupPlanView).
+  // A normal coverage/sampling plan has no run_meta.opportunity_ids, so this
+  // is a no-op for it — the source option never appears (see renderVisitsTable's
+  // `avail` check), matching "hidden when not applicable" rather than showing a
+  // dead/always-empty dropdown entry.
+  async function fetchWardChildrenPerBuilding() {
+    const oppIds =
+      (lastPlanData &&
+        lastPlanData.run_meta &&
+        lastPlanData.run_meta.opportunity_ids) ||
+      null;
+    if (!WARD_CHILDREN_PER_BUILDING_URL || !oppIds || !oppIds.length) return;
+    const wards = planWards();
+    if (!wards.length) return;
+    const fetchKey = JSON.stringify([wards.map((w) => w.ward), oppIds]);
+    if (fetchKey === wardChildrenFetchKey) return; // already fetched for this exact ward/opp set
+    wardChildrenFetchKey = fetchKey;
+    try {
+      const resp = await post(WARD_CHILDREN_PER_BUILDING_URL, {
+        wards: wards.map((w) => ({ ward: w.ward, lga: w.lga, state: w.state })),
+        opportunity_ids: oppIds,
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== 'ok') return;
+      const values = data.values || [];
+      if (values.length !== wards.length) return; // stale response — set changed mid-flight
+      wards.forEach((w, i) => {
+        if (values[i] != null) WARD_CHILDREN_PER_BUILDING[w.ward] = values[i];
+      });
+      renderVisitsTable();
+    } catch (_) {
+      // best-effort — the source option simply won't appear if this fails
+    }
+  }
   function autofillVisitsFromSource(src) {
     if (!src) return;
     document.querySelectorAll('#visits-tbody .visits-target').forEach((inp) => {
-      const v = (AREA_POPS[inp.dataset.ward] || {})[src];
+      const ward = inp.dataset.ward;
+      let v;
+      if (src === 'hsd_children_per_building') {
+        const rate = WARD_CHILDREN_PER_BUILDING[ward];
+        v = rate != null ? rate * wardBuildingTotal(ward) : null;
+      } else {
+        v = (AREA_POPS[ward] || {})[src];
+      }
       if (v != null) inp.value = Math.round(v);
     });
   }
