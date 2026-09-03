@@ -6,20 +6,28 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Connect by Dimagi</title>
-<meta name="description" content="Connect is a pay-for-results service delivery platform. Pick a program, country, and budget. Verified Frontline Workers deliver and get paid the moment each service is confirmed.">
-<link rel="canonical" href="https://connect.dimagi.com/">
-<meta property="og:type" content="website">
+{# Head metadata is per-route and rendered SERVER-SIDE from prelogin/route_meta.py. #}
+{# Every marketing URL renders this one template, and link unfurlers (LinkedIn, #}
+{# Slack, X, iMessage) never run app.js, so a hardcoded head here meant every #}
+{# shared page previewed as the home page. Do not hardcode these back. #}
+<title>{{ page_meta.title }}</title>
+<meta name="description" content="{{ page_meta.description }}">
+<link rel="canonical" href="{{ page_meta.canonical }}">
+<meta property="og:type" content="{{ page_meta.og_type }}">
 <meta property="og:site_name" content="Connect by Dimagi">
-<meta property="og:url" content="https://connect.dimagi.com/">
-<meta property="og:title" content="Connect by Dimagi">
-<meta property="og:description" content="Connect is a pay-for-results service delivery platform. Pick a program, country, and budget. Verified Frontline Workers deliver and get paid the moment each service is confirmed.">
-<meta property="og:image" content="https://connect.dimagi.com/images/field-photos/join-hero.jpg">
-<meta property="og:image:alt" content="A Connect Frontline Worker delivering community health services">
+<meta property="og:url" content="{{ page_meta.canonical }}">
+<meta property="og:title" content="{{ page_meta.title }}">
+<meta property="og:description" content="{{ page_meta.description }}">
+<meta property="og:image" content="{{ page_meta.image }}">
+<meta property="og:image:alt" content="{{ page_meta.image_alt }}">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Connect by Dimagi">
-<meta name="twitter:description" content="Connect is a pay-for-results service delivery platform. Pick a program, country, and budget. Verified Frontline Workers deliver and get paid the moment each service is confirmed.">
-<meta name="twitter:image" content="https://connect.dimagi.com/images/field-photos/join-hero.jpg">
+<meta name="twitter:title" content="{{ page_meta.title }}">
+<meta name="twitter:description" content="{{ page_meta.description }}">
+<meta name="twitter:image" content="{{ page_meta.image }}">
+{# app.js reads this for in-page route changes, so the client and the server #}
+{# share one table instead of each keeping their own copy. json_script escapes #}
+{# the payload, so no page title can break out of the script element. #}
+{{ route_meta|json_script:"route-meta" }}
 
 <script type="application/ld+json">
 {
@@ -61,7 +69,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'prelogin/styles.css' %}?v=7">
+<link rel="stylesheet" href="{% static 'prelogin/styles.css' %}?v=8">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to main content</a>
@@ -4357,7 +4365,7 @@
   </div>
 </footer>
 
-<script src="{% static 'prelogin/app.js' %}?v=7"></script>
+<script src="{% static 'prelogin/app.js' %}?v=8"></script>
 
 </body>
 </html>
