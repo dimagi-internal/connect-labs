@@ -6,10 +6,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-{# Head metadata is per-route and rendered SERVER-SIDE from prelogin/route_meta.py. #}
-{# Every marketing URL renders this one template, and link unfurlers (LinkedIn, #}
-{# Slack, X, iMessage) never run app.js, so a hardcoded head here meant every #}
-{# shared page previewed as the home page. Do not hardcode these back. #}
+{# Per-route, from prelogin/route_meta.py. Every URL renders this one template #}
+{# and unfurlers never run app.js, so hardcoding these makes every shared page #}
+{# preview as the home page. #}
 <title>{{ page_meta.title }}</title>
 <meta name="description" content="{{ page_meta.description }}">
 <link rel="canonical" href="{{ page_meta.canonical }}">
@@ -24,9 +23,7 @@
 <meta name="twitter:title" content="{{ page_meta.title }}">
 <meta name="twitter:description" content="{{ page_meta.description }}">
 <meta name="twitter:image" content="{{ page_meta.image }}">
-{# app.js reads this for in-page route changes, so the client and the server #}
-{# share one table instead of each keeping their own copy. json_script escapes #}
-{# the payload, so no page title can break out of the script element. #}
+{# The same table for app.js, so client and server cannot drift. #}
 {{ route_meta|json_script:"route-meta" }}
 
 <script type="application/ld+json">
