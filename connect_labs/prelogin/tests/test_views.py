@@ -1,4 +1,5 @@
 import pathlib
+import re
 
 import pytest
 from django.contrib.staticfiles import finders
@@ -91,8 +92,11 @@ class TestRouteMeta:
 
     def test_blog_post_carries_its_own_social_image(self, client):
         resp = client.get("/blog/connect-2023-year-in-review")
-        assert b"images/blog/connect-2023-year-in-review.jpg" in resp.content
-        assert b"field-photos/join-hero.jpg" not in resp.content
+        # Scoped to the og:image tag: the default image legitimately still
+        # appears further down, inside the route table app.js reads.
+        og_image = re.search(rb'<meta property="og:image" content="([^"]*)"', resp.content)
+        assert og_image, "no og:image rendered"
+        assert b"images/blog/connect-2023-year-in-review.jpg" in og_image.group(1)
 
     def test_social_image_is_a_real_static_file(self, client):
         """The old hardcoded og:image was missing the /static/ prefix and 404d,
