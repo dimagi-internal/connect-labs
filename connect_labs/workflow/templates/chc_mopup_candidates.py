@@ -11,22 +11,45 @@ docstring), and (c) the five data-quality cutoffs computed here, then locks a
 candidate work-area set and hands it to the microplans mop-up endpoint (see
 connect_labs/microplans/core/mopup.py).
 
-`DEFINITION.pipeline_sources` is deliberately left empty -- `visit_quality` is
-auto-created from PIPELINE_SCHEMAS at workflow-creation time, and the reused
-`work_areas` / `wa_geometry` / `audit_entries` pipelines must be attached
-afterward via `workflow_add_pipeline_source` (they are NOT re-declared here,
-since this template doesn't own their schemas). **Gotcha hit live on first
-deploy, worth repeating for the next person who touches this**: program 217
-has MORE THAN ONE "CHC Work Areas" / "CHC Work Area Geometry" pipeline —
-one per LLO, created at different times, not kept in sync with each other.
-Picking the wrong one (an older, JHF-owned "CHC Work Areas" that had never
-been exercised by any live dashboard) silently returned zero rows for every
-opportunity with no error anywhere on the page — not a code bug, just the
-wrong pipeline_id. The correct ones to reuse are whichever pipeline an
-already-working dashboard on this program depends on (as of this writing,
-the "Ward Progress Tracker" workflow's `work_areas`/`wa_geo` sources — check
-`workflow_get` on a known-good workflow rather than trusting a same-named
-pipeline found via a single opportunity's `pipeline_list`).
+`DEFINITION.pipeline_sources` is deliberately left empty -- all four pipelines
+this template needs (`visit_quality`, `work_areas`, `wa_geometry`,
+`audit_entries`) are auto-created from PIPELINE_SCHEMAS at workflow-creation
+time, exactly like `visit_quality` always was.
+
+**This is a deliberate correction, not the original design.** The first two
+live deploys of this template reused `work_areas` / `wa_geometry` /
+`audit_entries` -- already-live pipelines owned by opportunity 2156 (ISODAF),
+borrowed from an unrelated "Ward Progress Tracker" dashboard purely because
+they happened to exist -- and attached them post-creation via the
+`workflow_add_pipeline_source` MCP tool. That only worked because every
+instance of this template was scoped to all 4 opportunities on program 217 at
+once: `_resolve_pipeline_definition`'s cross-opp retry (see
+WORKFLOW_REFERENCE.md §8, "the workflow shows 0 rows and no error anywhere")
+only searches opportunities already in the *running instance's*
+`opportunity_ids` -- a pipeline owned by opp 2156 is invisible (silent 404,
+same symptom as that section describes) to an instance scoped to some *other*
+single opportunity, which is exactly what a "pick your opportunity first"
+setup workflow (`chc_mopup_setup.py`) needs to create. Making these three
+genuinely template-owned means a single-opportunity instance gets its own
+fresh pipelines under whichever opportunity is primary for it, the same way
+`visit_quality` always did -- no cross-opp lookup involved at all.
+
+**Gotcha hit live on the first deploy, worth repeating for the next person who
+touches this file**: program 217 has MORE THAN ONE "CHC Work Areas" / "CHC
+Work Area Geometry" pipeline -- one per LLO, created at different times, not
+kept in sync with each other. Picking the wrong one (an older, JHF-owned "CHC
+Work Areas" that had never been exercised by any live dashboard) silently
+returned zero rows for every opportunity with no error anywhere on the page
+-- not a code bug, just the wrong pipeline_id. `WORK_AREAS_SCHEMA` /
+`WA_GEOMETRY_SCHEMA` / `AUDIT_ENTRIES_SCHEMA` below were not re-derived from
+scratch to avoid repeating that mistake a second time in the opposite
+direction: they were fetched verbatim, via the `pipeline_get` MCP tool
+against opportunity_id=2154, from the same known-good, already-proven-live
+pipelines the "Ward Progress Tracker" dashboard depends on -- not just any
+same-named pipeline turned up by a single opportunity's `pipeline_list`. If
+this template's pipelines ever need re-deriving again (a future schema
+change), the same rule applies: check `workflow_get` on a known-good workflow
+first, don't trust a name match alone.
 
 Pipeline: chc_mopup_visit_quality (alias "visit_quality")
 -----------------------------------------------------------
@@ -328,6 +351,121 @@ VISIT_QUALITY_SCHEMA = {
     ],
 }
 
+# --- work_areas / wa_geometry / audit_entries -------------------------------
+#
+# Now template-owned (see module docstring for why this replaced the original
+# reused-pipeline design). Schemas below are copied verbatim from the live,
+# already-proven pipelines 12965 / 12971 / 13013 (fetched via `pipeline_get`
+# against opportunity_id=2154) -- not re-derived, per the module docstring's
+# gotcha about program 217 having more than one same-named pipeline per LLO.
+
+WORK_AREAS_SCHEMA = {
+    "data_source": {"type": "cchq_cases", "case_type": "work-area"},
+    "grouping_key": "entity_id",
+    "terminal_stage": "visit_level",
+    "filters": {},
+    "fields": [
+        {"name": "ward", "path": "case.properties.ward", "aggregation": "first"},
+        {"name": "lga", "path": "case.properties.lga", "aggregation": "first"},
+        {"name": "state", "path": "case.properties.state", "aggregation": "first"},
+        {"name": "work_area_group", "path": "case.properties.work_area_group", "aggregation": "first"},
+        {
+            "name": "expected_visit_count",
+            "path": "case.properties.expected_visit_count",
+            "transform": "float",
+            "aggregation": "first",
+        },
+        {
+            "name": "building_count",
+            "path": "case.properties.building_count",
+            "transform": "float",
+            "aggregation": "first",
+        },
+        {
+            "name": "household_count",
+            "path": "case.properties.household_count",
+            "transform": "float",
+            "aggregation": "first",
+        },
+        {
+            "name": "delivered_visit_count",
+            "path": "case.properties.delivered_visit_count",
+            "transform": "float",
+            "aggregation": "first",
+        },
+        {"name": "hq_status_wa", "path": "case.properties.hq_status_wa", "aggregation": "first"},
+        {"name": "wa_status", "path": "case.properties.wa_status", "aggregation": "first"},
+        {"name": "child_count", "path": "case.properties.child_count", "transform": "float", "aggregation": "first"},
+        {"name": "owner_id", "path": "case.owner_id", "aggregation": "first"},
+        {"name": "external_id", "path": "case.properties.external_id", "aggregation": "first"},
+        {
+            "name": "wa_checkout_remark",
+            "path": "case.properties.wa_checkout_remark",
+            "aggregation": "first",
+            "description": "Closure reason, e.g. 'Completed - no_children_under_5' or 'Completed - "
+            "access_denied'. Display-only in this template -- never used for threshold/inclusion math, "
+            "see chc_mopup_candidates_render.js's module docstring.",
+        },
+        {
+            "name": "reason_for_inaccessible",
+            "path": "case.properties.reason_for_inaccessible",
+            "aggregation": "first",
+            "description": "Free-text reason recorded when a work area is marked inaccessible. Display-only.",
+        },
+        {"name": "case_closed", "path": "case.closed", "aggregation": "first"},
+        {
+            "name": "last_modified_date",
+            "path": "case.last_modified",
+            "aggregation": "first",
+            "description": "CommCare Case API v2 field 'last_modified' (NOT 'date_modified', which does not "
+            "exist in the real API response -- confirmed the hard way in a sibling dashboard). Not currently "
+            "read by this template's render code but kept for parity/future use.",
+        },
+    ],
+    "histograms": [],
+}
+
+WA_GEOMETRY_SCHEMA = {
+    "data_source": {"type": "connect_export", "endpoint": "work_areas"},
+    "grouping_key": "entity_id",
+    "terminal_stage": "visit_level",
+    "filters": {},
+    "fields": [
+        {
+            "name": "wa_case_id",
+            "path": "work_area.case_id",
+            "aggregation": "first",
+            "description": "CommCare case UUID -- join key to the work_areas pipeline's entity_id",
+        },
+        {"name": "slug", "path": "work_area.slug", "aggregation": "first"},
+        {
+            "name": "status",
+            "path": "work_area.status",
+            "aggregation": "first",
+            "description": "NOT_VISITED / VISITED / EXPECTED_VISIT_REACHED / REQUEST_FOR_INACCESSIBLE / INACCESSIBLE",
+        },
+        {"name": "boundary", "path": "work_area.boundary", "aggregation": "first"},
+        {"name": "centroid", "path": "work_area.centroid", "aggregation": "first"},
+        {"name": "ward", "path": "work_area.ward", "aggregation": "first"},
+    ],
+    "histograms": [],
+}
+
+AUDIT_ENTRIES_SCHEMA = {
+    "data_source": {"type": "connect_export", "endpoint": "audit_report_entries"},
+    "grouping_key": "audit_entry.id",
+    "terminal_stage": "visit_level",
+    "filters": {},
+    "fields": [
+        {"name": "report_id", "path": "audit_entry.audit_report", "aggregation": "first"},
+        {"name": "username", "path": "audit_entry.username", "aggregation": "first"},
+        {"name": "results", "path": "audit_entry.results", "aggregation": "first"},
+        {"name": "is_flagged", "path": "audit_entry.flagged", "aggregation": "first"},
+        {"name": "date_created", "path": "audit_entry.date_created", "aggregation": "first"},
+    ],
+    "histograms": [],
+}
+
 PIPELINE_SCHEMAS = [
     {
         "alias": "visit_quality",
@@ -336,24 +474,43 @@ PIPELINE_SCHEMAS = [
         "data-quality numerator/denominator pairs for deworming, MUAC, gender, age, and vaccination.",
         "schema": VISIT_QUALITY_SCHEMA,
     },
+    {
+        "alias": "work_areas",
+        "name": "CHC Work Areas",
+        "description": "One row per work-area case: ward/lga/state, expected visit count, building/household "
+        "counts, owner, and case-closure fields. Template-owned copy of the schema live on pipeline 12965 "
+        "(see module docstring).",
+        "schema": WORK_AREAS_SCHEMA,
+    },
+    {
+        "alias": "wa_geometry",
+        "name": "CHC Work Area Geometry",
+        "description": "One row per work area: slug, Connect status, boundary/centroid geometry. Template-owned "
+        "copy of the schema live on pipeline 12971 (see module docstring).",
+        "schema": WA_GEOMETRY_SCHEMA,
+    },
+    {
+        "alias": "audit_entries",
+        "name": "CHC Audit Report Entries",
+        "description": "FLW-week audit report entries -- optional display-only context, not used in any "
+        "inclusion/threshold decision. Template-owned copy of the schema live on pipeline 13013 (see module "
+        "docstring).",
+        "schema": AUDIT_ENTRIES_SCHEMA,
+    },
 ]
 
 # --- Phase 2: the candidate-analysis dashboard ------------------------------
 #
-# `work_areas`, `wa_geometry`, and `audit_entries` are pre-existing,
-# already-live pipelines this template does NOT own -- they are attached to
-# the workflow definition at creation time via the `workflow_add_pipeline_source`
-# MCP tool (alias -> pipeline_id), the same mechanism the module docstring
-# above already called out (including the "more than one same-named pipeline
-# on this program" gotcha -- verify against a known-good workflow's own
-# pipeline_sources, don't just grab the first `pipeline_list` match). `visit_quality` is
-# the only pipeline this template owns (via PIPELINE_SCHEMAS below); it is
-# auto-created when the workflow is created from this template. Per the
-# current build's scope, `approved_visits` (12968) is NOT attached as a
-# separate source: `visit_quality.hsd_visit_count` already supersedes it for
-# the EVC-shortfall math (validated HSD-only, see module docstring), and
-# `ncf_visit_count`/`inaccessible_visit_count` now cover the NCF/inaccessible
-# criterion the same way -- nothing in the render code needs 12968 directly.
+# All four pipelines above (visit_quality, work_areas, wa_geometry,
+# audit_entries) are template-owned and auto-created fresh, under whichever
+# opportunity is primary for a given instance, at workflow-creation time --
+# see the module docstring for why this replaced the original
+# reused-pipeline design. Per the current build's scope, `approved_visits`
+# (12968) is still NOT attached as a separate source: `visit_quality.
+# hsd_visit_count` already supersedes it for the EVC-shortfall math
+# (validated HSD-only, see module docstring), and `ncf_visit_count`/
+# `inaccessible_visit_count` cover the NCF/inaccessible criterion the same
+# way -- nothing in the render code needs 12968 directly.
 
 DEFINITION = {
     "name": "CHC Mop-up Candidate Analysis",
@@ -368,8 +525,10 @@ DEFINITION = {
     "config": {
         "auth_requires": ["connect"],
     },
-    "pipeline_sources": [],  # Populated at creation time: visit_quality from PIPELINE_SCHEMAS,
-    # work_areas/wa_geometry/audit_entries via workflow_add_pipeline_source (see comment above).
+    # Populated at creation time from PIPELINE_SCHEMAS -- all four aliases
+    # (visit_quality, work_areas, wa_geometry, audit_entries) are
+    # template-owned, none are attached post-creation any more.
+    "pipeline_sources": [],
 }
 
 RENDER_CODE = (Path(__file__).parent / "chc_mopup_candidates_render.js").read_text(encoding="utf-8")

@@ -12,9 +12,27 @@ histogram shape the client-side age-heaping (Whipple index) calculation
 depends on. These assert the invariants rather than byte-equality with a live
 pipeline, so they run in CI with no network -- same convention as
 `test_kmc_programme_metrics_schema.py`.
+
+`WORK_AREAS_SCHEMA` / `WA_GEOMETRY_SCHEMA` / `AUDIT_ENTRIES_SCHEMA` became
+template-owned (previously reused, already-live pipelines attached via
+`workflow_add_pipeline_source` -- see the module docstring for why). Their
+tests assert the alias wiring the render code depends on
+(`srcPipelines.work_areas` / `.wa_geometry` / `.audit_entries`) and the join
+keys `buildWaRows` reads (`entity_id`, `work_area.case_id`), plus a
+structural sanity check against the exact live schema transcribed from
+`pipeline_get` (opportunity_id=2154) -- not a `pipeline_preview` network
+round-trip, since `work_areas` is a `cchq_cases` source that (per the module
+docstring) can't be previewed headlessly.
 """
 
-from connect_labs.workflow.templates.chc_mopup_candidates import PIPELINE_SCHEMAS, TEMPLATE, VISIT_QUALITY_SCHEMA
+from connect_labs.workflow.templates.chc_mopup_candidates import (
+    AUDIT_ENTRIES_SCHEMA,
+    PIPELINE_SCHEMAS,
+    TEMPLATE,
+    VISIT_QUALITY_SCHEMA,
+    WA_GEOMETRY_SCHEMA,
+    WORK_AREAS_SCHEMA,
+)
 
 
 def _field_names(schema):
@@ -101,14 +119,82 @@ def test_template_registers_visit_quality_under_the_alias_the_render_reads():
     assert TEMPLATE["pipeline_schemas"] is PIPELINE_SCHEMAS
 
 
-def test_template_is_multi_opp_and_does_not_declare_pipeline_sources_it_does_not_own():
-    """work_areas (12965) / wa_geometry (12971) / audit_entries (13013) are
-    pre-existing, already-live pipelines attached via workflow_add_pipeline_source
-    at creation time -- this template must not redeclare their schemas."""
+def test_template_is_multi_opp_and_owns_all_four_pipelines():
+    """work_areas / wa_geometry / audit_entries used to be pre-existing,
+    already-live pipelines attached via workflow_add_pipeline_source at
+    creation time -- they are now template-owned, exactly like visit_quality,
+    so a single-opportunity instance of this template (created by the sibling
+    chc_mopup_setup.py workflow) can create its own copies rather than
+    depending on a pipeline owned by a specific, possibly out-of-scope,
+    opportunity. See the module docstring for the full rationale."""
     assert TEMPLATE["multi_opp"] is True
     aliases = {p["alias"] for p in PIPELINE_SCHEMAS}
-    assert aliases == {"visit_quality"}
+    assert aliases == {"visit_quality", "work_areas", "wa_geometry", "audit_entries"}
     assert TEMPLATE["definition"]["pipeline_sources"] == []
+
+
+def test_work_areas_schema_is_cchq_cases_work_area_with_entity_id_join_key():
+    """entity_id is the join key buildWaRows() uses against wa_geometry.wa_case_id
+    and visit_quality.entity_id -- not declared explicitly in the schema (it's an
+    engine-provided column for this data_source/terminal_stage), so this only
+    asserts the parts that are declared and load-bearing."""
+    assert WORK_AREAS_SCHEMA["data_source"] == {"type": "cchq_cases", "case_type": "work-area"}
+    assert WORK_AREAS_SCHEMA["grouping_key"] == "entity_id"
+    assert WORK_AREAS_SCHEMA["terminal_stage"] == "visit_level"
+    names = _field_names(WORK_AREAS_SCHEMA)
+    for expected in (
+        "ward",
+        "lga",
+        "state",
+        "work_area_group",
+        "expected_visit_count",
+        "building_count",
+        "household_count",
+        "delivered_visit_count",
+        "hq_status_wa",
+        "wa_status",
+        "owner_id",
+        "wa_checkout_remark",
+        "reason_for_inaccessible",
+        "case_closed",
+    ):
+        assert expected in names, f"missing field {expected!r}"
+
+
+def test_wa_geometry_schema_has_wa_case_id_join_key_and_status_field():
+    """wa_case_id is what buildWaRows() joins against work_areas.entity_id;
+    status feeds isWaDone()'s WA_DONE_STATUSES check."""
+    assert WA_GEOMETRY_SCHEMA["data_source"] == {"type": "connect_export", "endpoint": "work_areas"}
+    names = _field_names(WA_GEOMETRY_SCHEMA)
+    for expected in ("wa_case_id", "slug", "status", "boundary", "centroid", "ward"):
+        assert expected in names, f"missing field {expected!r}"
+    assert _field(WA_GEOMETRY_SCHEMA, "wa_case_id")["path"] == "work_area.case_id"
+
+
+def test_audit_entries_schema_is_display_only_context():
+    """audit_entries is loaded but never used in threshold/inclusion math (see
+    chc_mopup_candidates_render.js's trailing note) -- just assert the shape
+    the render code's `auditEntryRows.length` check needs to exist at all."""
+    assert AUDIT_ENTRIES_SCHEMA["data_source"] == {"type": "connect_export", "endpoint": "audit_report_entries"}
+    names = _field_names(AUDIT_ENTRIES_SCHEMA)
+    for expected in ("report_id", "username", "results", "is_flagged", "date_created"):
+        assert expected in names, f"missing field {expected!r}"
+
+
+def test_pipeline_schemas_alias_names_match_what_the_render_code_reads():
+    """These alias strings are load-bearing: chc_mopup_candidates_render.js
+    reads srcPipelines.work_areas / .wa_geometry / .audit_entries / .visit_quality
+    verbatim -- a rename here silently breaks the render with no error."""
+    import re
+    from pathlib import Path
+
+    render_path = Path(__file__).resolve().parents[2] / "templates" / "chc_mopup_candidates_render.js"
+    render_src = render_path.read_text(encoding="utf-8")
+    aliases = {p["alias"] for p in PIPELINE_SCHEMAS}
+    for alias in aliases:
+        assert re.search(
+            r"srcPipelines\." + re.escape(alias) + r"\b", render_src
+        ), f"render code no longer reads srcPipelines.{alias}"
 
 
 def test_render_code_is_loaded_from_the_sidecar_js_file():
