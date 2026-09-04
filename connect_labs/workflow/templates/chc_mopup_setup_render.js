@@ -3,47 +3,46 @@
 // A zero-pipeline, action-shaped "pick your opportunity first" front door for
 // the CHC Mop-up Candidate Analysis dashboard (chc_mopup_candidates.py). See
 // that file's module docstring for why this exists: the dashboard is
-// multi-opp and, before Part 1 of this change, its render code was never
-// even mounted until every pipeline source finished fetching for every
+// multi-opp-capable and, without this front door, its render code is never
+// even mounted until every pipeline source finishes fetching for every
 // opportunity in scope (confirmed directly in workflow-runner.tsx --
 // `pipelineLoadingStatus ? <spinner> : <DynamicWorkflow ... />`). A mop-up
 // round is always run for ONE LLO at a time, so this page exists purely to
-// let a reviewer narrow the dashboard's opportunity scope down to one opp
-// BEFORE creating a run against it -- no pipelines to wait for here at all,
-// so it loads instantly regardless of how much data the dashboard itself
-// would otherwise have to fetch.
+// jump a reviewer straight into a dashboard instance dedicated to just one
+// opportunity -- no pipelines to wait for here at all, so it loads instantly
+// regardless of how much data the dashboard itself would otherwise fetch.
 //
-// Clicking a button does two things against the DASHBOARD workflow's own
-// definition_id (read from definition.config.dashboard_definition_id --
-// NEVER hardcoded, since the dashboard's definition_id can change if it's
-// ever recreated; it already has once this project):
-//   1. POST /labs/workflow/api/<dashboard_definition_id>/opportunity-ids/
-//      (UpdateOpportunityIdsView, connect_labs/workflow/views.py) with a
-//      single-element opportunity_ids list -- narrows the dashboard's own
-//      scope to just the chosen opp. JSON body.
-//   2. POST /labs/workflow/api/<dashboard_definition_id>/run/start/
-//      (start_run_api, same file) with program_id -- creates a fresh run
-//      against the now-narrowed dashboard. FORM-ENCODED body: start_run_api
-//      reads request.POST.get(...), which Django only populates from a
-//      x-www-form-urlencoded (or multipart) body, not a JSON one -- this is
-//      why postForm() below is a distinct helper from apiPost(), not just a
-//      second call to it.
-// Then navigates to the new run. See postForm()'s own comment for exactly
-// what start_run_api returns and why its own `redirect` field is used
-// instead of hand-building the URL from scratch.
+// One dashboard PER opportunity, not one shared dashboard narrowed per click
+// --------------------------------------------------------------------------
+// An earlier version of this page POSTed to UpdateOpportunityIdsView to
+// narrow a single SHARED dashboard instance's opportunity_ids down to the
+// chosen one before starting a run. That broke live: a workflow's
+// pipeline_sources point at pipeline_ids created once, owned by whichever
+// opportunity was primary at the dashboard's ORIGINAL creation time, and
+// narrowing opportunity_ids afterward to a DIFFERENT single opportunity
+// excludes that owner from scope -- so the dashboard's pipelines all 404
+// silently and it renders "0 work areas" for every opportunity except the
+// one that happened to be primary when it was created. See
+// chc_mopup_setup.py's module docstring for the full story.
 //
-// Deliberately NOT using window.WORKFLOW_API_ENDPOINTS.updateOpportunityIds:
-// that global is populated from *this* setup workflow's own apiEndpoints
-// (see workflow-runner.tsx), i.e. it always points at THIS definition_id,
-// never the dashboard's -- using it here would silently narrow the wrong
-// workflow's opportunity scope. Both URLs below are built directly from
-// dashboardDefinitionId instead.
+// So this page instead reads definition.config.dashboard_definition_ids --
+// a {opportunity_id: dedicated dashboard definition_id} map, one dashboard
+// instance per opportunity, each created with THAT opportunity as its only
+// one from the start (so its auto-created pipelines are always correctly
+// owned, no cross-opp resolution involved at all). Clicking a button does
+// exactly one thing against the dashboard dedicated to that opportunity:
+// POSTs to /labs/workflow/api/<that dashboard's definition_id>/run/start/
+// (start_run_api, connect_labs/workflow/views.py) with program_id --
+// FORM-ENCODED body, since start_run_api reads request.POST.get(...), which
+// Django only populates from an x-www-form-urlencoded (or multipart) body,
+// not a JSON one. Then navigates to the new run, preferring the response's
+// own `redirect` field (built server-side from the scope it actually
+// resolved) over hand-building the URL.
 //
 // No shared cross-template fetch primitive exists for this (checked
 // WORKFLOW_REFERENCE.md §4b -- window.LabsAudit is a UI panel, not a network
-// helper), so apiPost/csrfToken are duplicated here in the same ~15-line
-// shape as chc_mopup_candidates_render.js's copy, matching how self-contained
-// every render_code file in this codebase already is.
+// helper), so csrfToken/postForm are duplicated here in the same
+// self-contained-per-file shape as chc_mopup_candidates_render.js's copy.
 
 var ce = React.createElement;
 
@@ -53,31 +52,6 @@ function csrfToken() {
     return root.dataset.csrfToken;
   var el = document.querySelector('[name=csrfmiddlewaretoken]');
   return el ? el.value : '';
-}
-
-// JSON POST helper (same shape as chc_mopup_candidates_render.js's apiPost)
-// -- used for the opportunity-ids narrowing call, which is UpdateOpportunityIdsView
-// and reads a JSON body.
-function apiPost(url, body) {
-  return fetch(url, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'X-CSRFToken': csrfToken(),
-    },
-    body: JSON.stringify(body || {}),
-  }).then(function (r) {
-    return r.json().then(
-      function (data) {
-        return { ok: r.ok, status: r.status, data: data };
-      },
-      function () {
-        return { ok: r.ok, status: r.status, data: null };
-      },
-    );
-  });
 }
 
 // Form-encoded POST helper -- used for start_run_api, which reads
@@ -151,14 +125,18 @@ function WorkflowUI(props) {
     return m;
   }, []);
 
-  // Config value only -- set manually after this workflow instance is
-  // created (its real value depends on the dashboard workflow's
-  // definition_id, which can change if that workflow is ever recreated).
-  // NOT read from window.WORKFLOW_API_ENDPOINTS -- see module comment above.
-  var dashboardDefinitionId =
-    definition &&
-    definition.config &&
-    definition.config.dashboard_definition_id;
+  // {opportunity_id (string key, JSON object keys always are) : dedicated
+  // dashboard definition_id}. Set manually after this workflow instance AND
+  // one dashboard instance per opportunity are created -- see
+  // chc_mopup_setup.py's module docstring. NOT read from
+  // window.WORKFLOW_API_ENDPOINTS, which only ever carries endpoints for
+  // whichever workflow definition is currently on screen (this setup
+  // workflow's own), not any dashboard's.
+  var dashboardDefinitionIds =
+    (definition &&
+      definition.config &&
+      definition.config.dashboard_definition_ids) ||
+    {};
 
   var programId = instance && instance.program_id;
 
@@ -170,34 +148,16 @@ function WorkflowUI(props) {
     setErrMsg = _err[1];
 
   function handlePick(oppId) {
+    var dashboardDefinitionId = dashboardDefinitionIds[String(oppId)];
     if (busyOppId != null || !dashboardDefinitionId) return;
     setBusyOppId(oppId);
     setErrMsg('');
 
     var oppLabel = oppNames[oppId] || 'Opportunity #' + oppId;
 
-    apiPost(
-      '/labs/workflow/api/' + dashboardDefinitionId + '/opportunity-ids/',
-      {
-        opportunity_ids: [oppId],
-      },
-    )
-      .then(function (res) {
-        if (!res.ok || !res.data || res.data.success !== true) {
-          throw new Error(
-            "Couldn't narrow the opportunity scope to " +
-              oppLabel +
-              ': ' +
-              errorDetail(res, 'the request failed'),
-          );
-        }
-        return postForm(
-          '/labs/workflow/api/' + dashboardDefinitionId + '/run/start/',
-          {
-            program_id: programId,
-          },
-        );
-      })
+    postForm('/labs/workflow/api/' + dashboardDefinitionId + '/run/start/', {
+      program_id: programId,
+    })
       .then(function (res) {
         if (
           !res.ok ||
@@ -265,20 +225,48 @@ function WorkflowUI(props) {
         ce(
           'p',
           { className: 'text-sm text-gray-600' },
-          'A mop-up round is run for one LLO at a time. Pick the opportunity below to scope the ' +
-            '"CHC Mop-up Candidate Analysis" dashboard to just that opportunity and jump straight into ' +
-            'a new run of it -- this skips waiting for every opportunity’s data to load up front.',
+          'A mop-up round is run for one LLO at a time. Pick the opportunity below to jump straight into ' +
+            'a "CHC Mop-up Candidate Analysis" dashboard dedicated to just that opportunity -- this skips ' +
+            'waiting for every opportunity’s data to load up front.',
         ),
-        !dashboardDefinitionId
-          ? ce(
+        ce(
+          'div',
+          { className: 'flex flex-wrap gap-3 pt-1' },
+          oppIds.map(function (oppId) {
+            var isBusy = busyOppId === oppId;
+            var configured = !!dashboardDefinitionIds[String(oppId)];
+            var disabled = !configured || busyOppId != null;
+            return ce(
               'div',
-              {
-                className:
-                  'bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded p-3',
-              },
-              "Setup workflow isn't configured with a target dashboard yet.",
-            )
-          : null,
+              { key: oppId, className: 'flex flex-col items-start gap-1' },
+              ce(
+                'button',
+                {
+                  type: 'button',
+                  disabled: disabled,
+                  onClick: function () {
+                    handlePick(oppId);
+                  },
+                  className:
+                    'px-4 py-3 rounded-lg text-sm font-medium border transition-colors ' +
+                    (disabled && !isBusy
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-orange-700 text-white border-orange-700 hover:bg-orange-800'),
+                },
+                isBusy
+                  ? 'Starting…'
+                  : oppNames[oppId] || 'Opportunity #' + oppId,
+              ),
+              !configured
+                ? ce(
+                    'span',
+                    { className: 'text-xs text-amber-700' },
+                    'No dashboard configured for this opportunity yet',
+                  )
+                : null,
+            );
+          }),
+        ),
         errMsg
           ? ce(
               'div',
@@ -289,31 +277,6 @@ function WorkflowUI(props) {
               errMsg,
             )
           : null,
-        ce(
-          'div',
-          { className: 'flex flex-wrap gap-3 pt-1' },
-          oppIds.map(function (oppId) {
-            var isBusy = busyOppId === oppId;
-            var disabled = !dashboardDefinitionId || busyOppId != null;
-            return ce(
-              'button',
-              {
-                key: oppId,
-                type: 'button',
-                disabled: disabled,
-                onClick: function () {
-                  handlePick(oppId);
-                },
-                className:
-                  'px-4 py-3 rounded-lg text-sm font-medium border transition-colors ' +
-                  (disabled && !isBusy
-                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                    : 'bg-orange-700 text-white border-orange-700 hover:bg-orange-800'),
-              },
-              isBusy ? 'Starting…' : oppNames[oppId] || 'Opportunity #' + oppId,
-            );
-          }),
-        ),
       ),
     ),
   );
