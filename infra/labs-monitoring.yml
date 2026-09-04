@@ -221,7 +221,18 @@ Resources:
           Value: !Ref DbInstanceIdentifier
       Statistic: Maximum
       Period: 300
-      EvaluationPeriods: 2
+      # 2-of-4, NOT 2-of-2 — same reasoning as the web-CPU alarm below, applied
+      # to the rest of the file. Omitting DatapointsToAlarm makes
+      # EvaluationPeriods do double duty: 2 breaching periods to fire, and a
+      # SINGLE sub-threshold datapoint to clear. A connection count oscillating
+      # around the threshold then emits an ALARM/OK pair every few minutes
+      # instead of one incident.
+      #
+      # Fires on the same 2 breaching datapoints as before (marginally earlier,
+      # since they need not be consecutive); it simply refuses to resolve on one
+      # dip. A leak climbing toward exhaustion does not dip its way to healthy.
+      EvaluationPeriods: 4
+      DatapointsToAlarm: 2
       Threshold: !Ref DbConnectionsThreshold
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
@@ -391,7 +402,16 @@ Resources:
           Value: !Ref LoadBalancerDimension
       ExtendedStatistic: p95
       Period: 300
-      EvaluationPeriods: 3
+      # 3-of-5, NOT 3-of-3 — see the web-CPU alarm below for the full reasoning
+      # and the measurement behind it. p95 latency is the classic oscillator:
+      # it crosses a fixed threshold repeatedly while the underlying slowness is
+      # continuous, so 3-of-3 reports one slow stretch as a stream of ALARM/OK
+      # pairs rather than as one incident.
+      #
+      # Same 3 breaching datapoints to fire; it just will not clear on a single
+      # fast period.
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 3
       Threshold: !Ref LatencyP95Threshold
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
@@ -519,7 +539,10 @@ Resources:
         question. Look in /ecs/labs-jj-web for a "[SQL] Loaded N visits" line near
         the kills, and for the request that triggered it. NOTE the memory graph will
         probably look fine: the spike is shorter than a metric sample, which is why
-        this alarm counts restarts instead.
+        this alarm counts restarts instead. This alarm holds through brief dips
+        (2-of-4 datapoints), so one crash loop reports as ONE incident — if you are
+        reading a second notification, treat it as the same incident until proven
+        otherwise. An OK here means 3 of the last 4 periods were clean, not one.
       Namespace: Labs/Web
       MetricName: WorkerKilled
       Statistic: Sum
@@ -528,7 +551,30 @@ Resources:
       # 5 min) so it fires on that, while a stray one-off kill -- which happens on
       # ordinary days and is not actionable -- does not.
       Period: 300
-      EvaluationPeriods: 2
+      # 2-of-4, NOT 2-of-2. This alarm reported OK while workers were still
+      # dying, which is worse than the noise problem it shares with the others.
+      #
+      # 2026-09-03: fired at 10:34:34 UTC on 7 kills at 10:24 and 5 at 10:29,
+      # then cleared at 10:35:34 — sixty seconds later — because ONE datapoint
+      # came in under the threshold. That datapoint was 3.0. Three workers were
+      # killed in that period, a rate of ~36/hour, against a post-#1293 baseline
+      # of NINE PER DAY (measured 2026-08-27 on #1290). The condition had not
+      # gone away; the alarm resolved anyway, because omitting DatapointsToAlarm
+      # means a single sub-threshold datapoint clears it.
+      #
+      # The dangerous half is not the spurious OK notification, it is what
+      # follows: returning to ALARM needs 2 CONSECUTIVE breaching datapoints, so
+      # a loop that settles at 3-4 kills per period stays invisible indefinitely
+      # while killing workers around the clock.
+      #
+      # 2-of-4 fires on the same 2 breaching datapoints (marginally earlier —
+      # they need not be consecutive) and needs 3 of the last 4 to be clean
+      # before it resolves. Checked against the known normal-day pattern so this
+      # does not turn noisy: #1290 measured 9 kills/day as two ~1-minute bursts
+      # at 09:51 and 13:34, 3.7 hours apart — far outside a 4-period (20 min)
+      # window, so they will not join up to fire this.
+      EvaluationPeriods: 4
+      DatapointsToAlarm: 2
       Threshold: 5
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
