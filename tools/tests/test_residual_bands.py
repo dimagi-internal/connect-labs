@@ -79,12 +79,46 @@ def test_query_computes_every_band_statistic_in_one_stats_pass():
     assert stats_line.rstrip().endswith("by band")
 
 
+def test_no_aggregate_is_aliased_to_its_own_source_field_name():
+    """Logs Insights DROPS the column when an aggregate is aliased to its source
+    field -- `avg(duration_ms) as duration_ms` returns no duration_ms at all.
+
+    No error is raised; `count()` still comes back, so the row looks healthy and
+    every metric is simply absent. Measured against /ecs/labs-jj-web 2026-09-04:
+    distinct aliases returned avg_dur 917.1303, colliding aliases returned
+    {"n": "307"} and nothing else. This is why the aliases are prefixed.
+    """
+    q = residual_bands.build_query((1500, 3000), "", allow_biased=False)
+    stats_line = next(line for line in q.splitlines() if line.startswith("| stats "))
+    for field in residual_bands._METRIC_FIELDS:
+        assert f"as {field}," not in stats_line and not stats_line.endswith(f"as {field}")
+        assert f"avg({field}) as avg_{field}" in stats_line
+
+
+def test_a_missing_metric_column_raises_rather_than_reading_as_zero():
+    """The failure that hid the alias collision: a band with no metrics printed a
+    full table of 0.0 ms and the verdict logic scored it as a measurement."""
+    rows = [[{"field": "band", "value": "0"}, {"field": "n", "value": "307"}]]
+    with pytest.raises(RuntimeError, match="no duration_ms"):
+        residual_bands._rows_to_bands(rows, (1500, 3000))
+
+
 def test_path_prefix_is_a_true_prefix_not_a_substring():
     """`like` is a substring match in Logs Insights, so scoping with it would pull
     in any path that merely CONTAINS the prefix -- which defeats the point of
-    scoping to one endpoint."""
+    scoping to one endpoint.
+
+    substr is used rather than the more readable startsWith() because the deployed
+    Logs Insights grammar REJECTS startsWith (and strcontains) with
+    MalformedQueryException, despite both appearing in the AWS function reference --
+    verified against /ecs/labs-jj-web on 2026-09-04. This test pins the construct
+    that actually compiles, so a future "cleanup" to startsWith fails here rather
+    than at the first live run.
+    """
     q = residual_bands.build_query((1500,), "/audit/image/", allow_biased=False)
-    assert 'startsWith(path, "/audit/image/") = 1' in q
+    assert 'substr(path, 0, 13) = "/audit/image/"' in q
+    assert "startsWith" not in q
+    assert "strcontains" not in q
     assert "like" not in q
 
 
@@ -204,20 +238,20 @@ def test_rows_to_bands_labels_and_orders_bands_from_insights_shape():
         [
             {"field": "band", "value": "2"},
             {"field": "n", "value": "90"},
-            {"field": "duration_ms", "value": "3750.4"},
-            {"field": "cpu_ms", "value": "217.0"},
-            {"field": "self_ms", "value": "2689.0"},
-            {"field": "outbound_ms", "value": "963.1"},
-            {"field": "db_ms", "value": "98.1"},
+            {"field": "avg_duration_ms", "value": "3750.4"},
+            {"field": "avg_cpu_ms", "value": "217.0"},
+            {"field": "avg_self_ms", "value": "2689.0"},
+            {"field": "avg_outbound_ms", "value": "963.1"},
+            {"field": "avg_db_ms", "value": "98.1"},
         ],
         [
             {"field": "band", "value": "0"},
             {"field": "n", "value": "3845"},
-            {"field": "duration_ms", "value": "876.2"},
-            {"field": "cpu_ms", "value": "141.7"},
-            {"field": "self_ms", "value": "265.9"},
-            {"field": "outbound_ms", "value": "597.0"},
-            {"field": "db_ms", "value": "13.5"},
+            {"field": "avg_duration_ms", "value": "876.2"},
+            {"field": "avg_cpu_ms", "value": "141.7"},
+            {"field": "avg_self_ms", "value": "265.9"},
+            {"field": "avg_outbound_ms", "value": "597.0"},
+            {"field": "avg_db_ms", "value": "13.5"},
         ],
     ]
     bands = residual_bands._rows_to_bands(rows, (1500, 3000))
@@ -232,6 +266,8 @@ def test_rows_to_bands_drops_rows_whose_band_is_not_a_real_index():
         [{"field": "band", "value": ""}, {"field": "n", "value": "10"}],
         [{"field": "band", "value": "9"}, {"field": "n", "value": "10"}],
     ]
+    # Neither row has a usable band index, so both are dropped BEFORE the
+    # missing-metric check -- an unparseable grouping key is not a shape error.
     assert residual_bands._rows_to_bands(rows, (1500, 3000)) == []
 
 
