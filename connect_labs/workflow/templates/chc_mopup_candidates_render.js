@@ -2,16 +2,18 @@
 // Program 217 (CHC - NG - RCT - Aug 2026), 4 LLOs (JHF 2154 / EHA 2155 / ISODAF 2156 / SOLINA 2157).
 //
 // Data sources (see chc_mopup_candidates.py for the pipeline schemas / join-key
-// rationale): work_areas (cchq_cases, case_type=work-area — wired at workflow-
-// creation time via workflow_add_pipeline_source; program 217 has more than one
-// "CHC Work Areas" pipeline across its 4 LLOs, use the one an existing live
-// dashboard already depends on, not just any pipeline with a matching name/
-// description — a stale, never-iterated duplicate looks identical on paper but
-// can silently behave differently) + wa_geometry (connect_export work_areas) +
-// visit_quality (this template's own chc_mopup_visit_quality, entity-stage)
-// join on the work-area case id (work_areas.entity_id == wa_geometry.wa_case_id
-// == visit_quality.entity_id). audit_entries is optional FLW-week context only
-// (not used for any inclusion decision).
+// rationale): work_areas (cchq_cases, case_type=work-area) + wa_geometry
+// (connect_export work_areas) + visit_quality (this template's own
+// chc_mopup_visit_quality, entity-stage) join on the work-area case id
+// (work_areas.entity_id == wa_geometry.wa_case_id == visit_quality.entity_id).
+// audit_entries is optional FLW-week context only (not used for any inclusion
+// decision). All four pipelines are template-owned and auto-created fresh
+// per workflow instance (see chc_mopup_candidates.py's module docstring for
+// why this replaced an earlier design that reused pipelines owned by a
+// specific opportunity — program 217 has more than one "CHC Work Areas"
+// pipeline across its 4 LLOs, so a schema change here should still be
+// validated against the known-good pipeline an existing live dashboard
+// depends on, not just any pipeline with a matching name/description).
 //
 // Three criteria groups, computed per work area, combined as UNION/OR:
 //   (a) EVC shortfall     — visit_quality.hsd_visit_count / work_areas.expected_visit_count.
