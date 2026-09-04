@@ -9,6 +9,7 @@ from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
 from .blog_manifest import extract_posts
+from .route_meta import meta_for, routes_for_client
 
 # dimagi.com fetches the blog manifest cross-origin from this exact host.
 DIMAGI_ORIGIN = "https://dimagi.com"
@@ -20,6 +21,12 @@ class HomeView(TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["app_login_url"] = getattr(settings, "PRELOGIN_APP_LOGIN_URL", "/accounts/login/")
+        # Every marketing URL renders this same template, so the head has to be
+        # built per request. Link unfurlers and non-rendering crawlers never run
+        # app.js, and until this was here they all saw the home page's title,
+        # description, and image no matter which page was shared.
+        ctx["page_meta"] = meta_for(self.request.path, static)
+        ctx["route_meta"] = routes_for_client(static)
         return ctx
 
 
