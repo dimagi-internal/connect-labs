@@ -12193,19 +12193,13 @@ a.explore-card:hover {
 .cia-memo{margin:22px 0 0;padding:22px 0 0 0;border-top:1px solid var(--line);display:grid;gap:13px}
 .cia-memo li{list-style:none;display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:baseline;font-size:14.5px;color:var(--ink-3);line-height:1.45}
 .cia-memo li span{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--c-conn);padding-top:2px}
-/* Where the money actually went, as a bar rather than a sentence. */
-.cia-allot{margin:26px 0 0;padding-left:clamp(0px,2vw,26px);max-width:420px}
-.cia-allot-track{display:flex;height:12px;border-radius:999px;overflow:hidden;background:var(--indigo-soft)}
-.cia-allot-track i{display:block;width:0;transition:width 1.3s cubic-bezier(.2,.7,.2,1)}
-.cia-allot-a{background:linear-gradient(90deg,var(--c-fund),#18b3a6)}
-.cia-allot-b{background:var(--rule)}
-.cia-allot.cia-in .cia-allot-a{width:80%}
-.cia-allot.cia-in .cia-allot-b{width:20%}
-.cia-allot-keys{display:flex;gap:26px;margin:14px 0 0}
-.cia-allot-keys div{display:flex;align-items:baseline;gap:8px}
-.cia-allot-keys dt{font-size:16px;font-weight:600;color:var(--c-fund);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-.cia-allot-keys div:last-child dt{color:var(--muted)}
-.cia-allot-keys dd{margin:0;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+/* Where the money went. Two quiet lines under the figure, sized to match the
+   group labels in the outcomes card. */
+.cia-allot{margin:22px 0 0;padding-left:clamp(0px,2vw,26px);display:grid;gap:6px}
+.cia-allot div{display:flex;align-items:baseline;gap:9px}
+.cia-allot dt{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--c-fund);font-variant-numeric:tabular-nums;min-width:3.4ch}
+.cia-allot div:last-child dt{color:var(--muted)}
+.cia-allot dd{margin:0;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);line-height:1.5}
 .cia-chips{display:grid;gap:10px;margin:24px 0 0;padding:0}
 .cia-chips li{
   list-style:none;display:grid;grid-template-columns:auto 1fr;align-items:center;gap:12px;
@@ -12328,7 +12322,6 @@ a.explore-card:hover {
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
   .js .cia-rv{opacity:1;transform:none}
-  .cia-allot-a{width:80%!important}.cia-allot-b{width:20%!important}
   .js .cia-hero-inner > .cia-wrap > *{animation:none}
   .cia-hero-media{animation:none}
   .js .cia-locator .cia-ng-outline,.js .cia-locator .cia-ng-borno{stroke-dashoffset:0}
@@ -12646,13 +12639,10 @@ a.explore-card:hover {
                 <span class="cia-beat-role">Funders</span>
                 <p class="cia-when">31 July 2026</p>
                 <h3>What $20,000 delivered</h3>
-              <div class="cia-allot cia-rv">
-                <div class="cia-allot-track" aria-hidden="true"><i class="cia-allot-a"></i><i class="cia-allot-b"></i></div>
-                <dl class="cia-allot-keys">
-                  <div><dt>80%</dt><dd>Services delivered</dd></div>
-                  <div><dt>20%</dt><dd>Connect platform fee</dd></div>
+              <dl class="cia-allot cia-rv">
+                  <div><dt>80%</dt><dd>given to the frontline organization</dd></div>
+                  <div><dt>20%</dt><dd>for the Connect platform</dd></div>
                 </dl>
-              </div>
                 <ul class="cia-outcome">
                   <li class="cia-grp"><span class="cia-gl">Overall reach</span></li>
                   <li><span class="cia-n" data-to="5187">5,187</span><span class="cia-lb">Households reached</span></li>
