@@ -533,16 +533,18 @@ Resources:
     Properties:
       AlarmName: labs-jj-web-worker-crash-loop
       AlarmDescription: >-
-        gunicorn workers are being killed repeatedly on the web tier. Almost always
-        a single request allocating far too much at once -- the 2026-08-24 case was
-        requests materialising a whole opportunity's visits to answer a one-row
-        question. Look in /ecs/labs-jj-web for a "[SQL] Loaded N visits" line near
-        the kills, and for the request that triggered it. NOTE the memory graph will
-        probably look fine: the spike is shorter than a metric sample, which is why
-        this alarm counts restarts instead. This alarm holds through brief dips
-        (2-of-4 datapoints), so one crash loop reports as ONE incident — if you are
-        reading a second notification, treat it as the same incident until proven
-        otherwise. An OK here means 3 of the last 4 periods were clean, not one.
+        gunicorn workers killed repeatedly on the web tier. Two causes seen, each
+        needing a different search in /ecs/labs-jj-web. (1) ONE request allocating too much:
+        2026-08-24 materialised 61,917 visits for a one-row question; tell is a large
+        "[SQL] Loaded N visits" near the kills. (2) MANY requests rebuilding the same cache at
+        once: 2026-09-03; tell is a burst of user_visits/?page_size=2500 whose last_id cursors
+        REPEAT across log streams -- 83 fetches over just 12 distinct cursors, i.e. ~7 workers
+        each walking the same 12-page (~30k visit) rebuild at once. A RawVisitCache stampede;
+        peak memory N x per-request. See #1361. A SMALL "[SQL] Loaded N" does NOT rule out (2):
+        it logs the cache read AFTER the rebuild, so it is 8-35 and lands after the kills; the
+        memory goes upstream in the repagination, logged only as httpx GETs. The memory graph
+        looks fine either way, which is why this counts restarts. Holds through dips (2-of-4):
+        a second notification is the same incident until proven otherwise.
       Namespace: Labs/Web
       MetricName: WorkerKilled
       Statistic: Sum
