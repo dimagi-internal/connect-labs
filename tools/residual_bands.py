@@ -70,6 +70,10 @@ DEFAULT_EDGES = (1500, 3000)
 # after a Logs Insights round trip.
 MAX_EDGES = 9
 
+# The per-band metrics, in display order. Queried as `avg_<name>` and mapped back
+# here, so the alias prefix lives in exactly one place.
+_METRIC_FIELDS = ("duration_ms", "cpu_ms", "self_ms", "outbound_ms", "db_ms")
+
 # Below this many rows in a band, the band's means are noise and get reported as
 # such. Not a hard failure -- a thin top band is the normal shape of this data
 # (90 rows in the >=3s band of the 4,177-request #1386 sample) -- but a band of
@@ -133,10 +137,16 @@ def build_query(edges: tuple[int, ...], path_prefix: str, allow_biased: bool) ->
         # The load-bearing line. Everything else in this file is presentation.
         lines.append("| filter sampled = 1")
     if path_prefix:
-        # startsWith, not `like`: `like "/audit/image/"` is a SUBSTRING match, so it
-        # would also match a path that merely contains the prefix. Both are documented
-        # Logs Insights string functions; the difference is the whole point of scoping.
-        lines.append(f'| filter startsWith(path, "{path_prefix}") = 1')
+        # A TRUE prefix test. `like "/audit/image/"` is a SUBSTRING match and would
+        # also match a path that merely contains the prefix, which defeats scoping.
+        #
+        # NOT startsWith(): it is in the AWS function reference and this endpoint
+        # REJECTS it -- `MalformedQueryException: Query cannot be compiled`, verified
+        # against /ecs/labs-jj-web on 2026-09-04. `strcontains` is rejected too. The
+        # documented list is not the same as the deployed grammar, so this is the
+        # construct that was actually executed, not the one that reads best.
+        # substr is 0-indexed (`substr("xyZfooxyZ", 3, 3)` -> "foo").
+        lines.append(f'| filter substr(path, 0, {len(path_prefix)}) = "{path_prefix}"')
 
     # A single computed band field, so the grouping key and the statistics are
     # evaluated over the same row. `case` is a documented Logs Insights general
@@ -148,9 +158,17 @@ def build_query(edges: tuple[int, ...], path_prefix: str, allow_biased: bool) ->
         cases.append(f"duration_ms < {edge}, {i}")
     band_expr = ", ".join(cases)
     lines.append(f"| fields (case({band_expr}, {len(edges)})) as band")
+    # Aliases are PREFIXED, and that is load-bearing rather than style: aliasing an
+    # aggregate to the name of its own source field -- `avg(duration_ms) as
+    # duration_ms` -- makes Logs Insights drop the column from the result set
+    # ENTIRELY. No error, no warning; `count()` still comes back, so the row looks
+    # healthy and every metric is simply absent. Measured against /ecs/labs-jj-web on
+    # 2026-09-04: the same query with distinct aliases returned avg_dur 917.1303,
+    # with colliding aliases returned {"n": "307"} and nothing else.
     lines.append(
-        "| stats count() as n, avg(duration_ms) as duration_ms, avg(cpu_ms) as cpu_ms, "
-        "avg(self_ms) as self_ms, avg(outbound_ms) as outbound_ms, avg(db_ms) as db_ms by band"
+        "| stats count() as n, avg(duration_ms) as avg_duration_ms, avg(cpu_ms) as avg_cpu_ms, "
+        "avg(self_ms) as avg_self_ms, avg(outbound_ms) as avg_outbound_ms, "
+        "avg(db_ms) as avg_db_ms by band"
     )
     lines.append("| sort band asc")
     return "\n".join(lines)
@@ -209,18 +227,22 @@ def _rows_to_bands(rows: list[list[dict]], edges: tuple[int, ...]) -> list[dict]
             continue
         if not 0 <= idx < len(labels):
             continue
-        bands.append(
-            {
-                "band": labels[idx],
-                "index": idx,
-                "n": int(float(rec.get("n", 0))),
-                "duration_ms": round(float(rec.get("duration_ms", 0)), 1),
-                "cpu_ms": round(float(rec.get("cpu_ms", 0)), 1),
-                "self_ms": round(float(rec.get("self_ms", 0)), 1),
-                "outbound_ms": round(float(rec.get("outbound_ms", 0)), 1),
-                "db_ms": round(float(rec.get("db_ms", 0)), 1),
-            }
-        )
+        # A MISSING metric is an error, never a zero. Defaulting it to 0.0 is how the
+        # alias collision above stayed invisible: the bands printed a full table of
+        # 0.0 ms and the verdict logic read them as real measurements. An absent
+        # column means the query changed shape, which is exactly when the numbers
+        # must not be trusted.
+        missing = [f for f in _METRIC_FIELDS if f"avg_{f}" not in rec]
+        if missing:
+            raise RuntimeError(
+                f"band {labels[idx]}: query returned no {', '.join(missing)} column(s). "
+                "The result shape changed -- check the stats aliases (an aggregate aliased "
+                "to its own source field name is dropped silently)."
+            )
+        band = {"band": labels[idx], "index": idx, "n": int(float(rec.get("n", 0)))}
+        for f in _METRIC_FIELDS:
+            band[f] = round(float(rec[f"avg_{f}"]), 1)
+        bands.append(band)
     bands.sort(key=lambda b: b["index"])
     return bands
 
