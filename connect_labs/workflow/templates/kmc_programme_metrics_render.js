@@ -1267,6 +1267,108 @@ function WorkflowUI({
   // FLW rollup. Keyed by opp+username: FLW usernames are only unique within an
   // opportunity (the synthetic cohort reuses flw_001.. across opps), so keying on
   // username alone silently merges different people into one row.
+  // ══ Drill-to-action ═══════════════════════════════════════════════════════
+  // The drill ended here: a worker reading red, and nothing to do about it but
+  // carry the name by hand into a separate workflow. This opens an audit on that
+  // ONE worker, in place, with the scale reviewer their LLO's hardware needs.
+  var cfgAudit = (definition && definition.config) || {};
+  var AUDIT_ENABLED = cfgAudit.audit_enabled !== false;
+  var AGENT_BY_LLO = cfgAudit.scale_agent_by_llo || {};
+  var UNVERIFIED_SCALE = cfgAudit.scale_unverified_llos || [];
+  var WEIGHT_IMAGE_PATH =
+    cfgAudit.weight_image_path || 'anthropometric/upload_weight_image';
+  var WEIGHT_VALUE_PATH =
+    cfgAudit.weight_value_path || 'anthropometric/child_weight_visit';
+
+  var sAudit = React.useState({});
+  var auditState = sAudit[0],
+    setAuditState = sAudit[1];
+
+  // Written in the same ES5 dialect as the rest of this file: no arrow
+  // functions, no destructuring, no computed property keys. That is not a style
+  // preference here -- the other 3,100 lines contain zero of all three.
+  function setAuditFor(key, value) {
+    setAuditState(function (prev) {
+      var next = Object.assign({}, prev);
+      next[key] = value;
+      return next;
+    });
+  }
+
+  // The audit window is the worker's OWN data range, not a fixed lookback: a
+  // frozen run is a snapshot of a past period, and a trailing-30-days window
+  // would silently audit nothing on one.
+  function flwDateRange(f) {
+    var ds = (f.rows || [])
+      .map(function (r) {
+        return r.first_visit || r.last_visit;
+      })
+      .filter(Boolean)
+      .sort();
+    return ds.length
+      ? {
+          start: String(ds[0]).slice(0, 10),
+          end: String(ds[ds.length - 1]).slice(0, 10),
+        }
+      : null;
+  }
+
+  function auditWorker(f) {
+    var range = flwDateRange(f);
+    if (!range) {
+      setAuditFor(f.key, {
+        status: 'error',
+        message: 'No dated visits for this worker to audit.',
+      });
+      return;
+    }
+    var agent = AGENT_BY_LLO[f.llo];
+    setAuditFor(f.key, { status: 'running' });
+    actions
+      .createAudit({
+        opportunities: [{ id: f.opp, name: oppLabel(f.opp) }],
+        criteria: {
+          audit_type: 'date_range',
+          granularity: 'per_flw',
+          title: 'KMC review — ' + f.flw + ' (' + f.llo + ')',
+          start_date: range.start,
+          end_date: range.end,
+          count_per_flw: cfgAudit.audit_count_per_flw || 25,
+          // Scoped to the weight photo and the value entered beside it, which is
+          // what the scale reviewers compare. Harmless when the opp carries no
+          // photos: the audit is then a plain per-worker visit review.
+          related_fields: [
+            {
+              image_path: WEIGHT_IMAGE_PATH,
+              field_path: WEIGHT_VALUE_PATH,
+              label: 'Weight entered',
+              filter_by_image: false,
+              filter_by_field: false,
+            },
+          ],
+          selected_flw_user_ids: [f.flw],
+        },
+        workflow_run_id: instance && instance.id,
+        ai_agent_id: agent || undefined,
+      })
+      .then(function (result) {
+        if (!result || !result.success) {
+          throw new Error((result && result.error) || 'audit creation failed');
+        }
+        setAuditFor(f.key, {
+          status: 'created',
+          taskId: result.task_id,
+          agent: agent,
+        });
+      })
+      .catch(function (err) {
+        setAuditFor(f.key, {
+          status: 'error',
+          message: String((err && err.message) || err),
+        });
+      });
+  }
+
   var byFLW = React.useMemo(
     function () {
       if (frozen) return frozen.byFLW || [];
@@ -2853,6 +2955,69 @@ function WorkflowUI({
                               }
                             />
                           </div>
+                          {AUDIT_ENABLED &&
+                            (function () {
+                              var f = byFLW.filter(function (x) {
+                                return x.key === selFLW;
+                              })[0];
+                              var st = auditState[f.key] || {};
+                              var agent = AGENT_BY_LLO[f.llo];
+                              var unverified =
+                                UNVERIFIED_SCALE.indexOf(f.llo) !== -1;
+                              return (
+                                <div className="mt-3 pt-3 border-t border-gray-100">
+                                  <div className="flex items-center gap-3 flex-wrap">
+                                    <button
+                                      type="button"
+                                      disabled={st.status === 'running'}
+                                      onClick={function () {
+                                        auditWorker(f);
+                                      }}
+                                      className={
+                                        'px-3 py-1.5 rounded text-sm font-medium ' +
+                                        (st.status === 'running'
+                                          ? 'bg-gray-200 text-gray-500'
+                                          : 'bg-indigo-600 text-white hover:bg-indigo-700')
+                                      }
+                                    >
+                                      {st.status === 'running'
+                                        ? 'Opening audit…'
+                                        : 'Review this worker'}
+                                    </button>
+                                    <span className="text-xs text-gray-500">
+                                      {f.reds
+                                        ? f.reds +
+                                          ' indicator' +
+                                          (f.reds === 1 ? '' : 's') +
+                                          ' reading red'
+                                        : 'no red indicators'}
+                                      {agent
+                                        ? ' · ' +
+                                          (agent === 'scale_dial_read'
+                                            ? 'dial'
+                                            : 'digital') +
+                                          ' scale reader'
+                                        : ' · no scale reader for this LLO'}
+                                      {unverified
+                                        ? ' (hardware unconfirmed)'
+                                        : ''}
+                                    </span>
+                                  </div>
+                                  {st.status === 'created' && (
+                                    <div className="mt-2 text-xs text-green-700">
+                                      Audit queued for {f.flw}. It appears under
+                                      Audits for {oppLabel(f.opp)} once the
+                                      sessions finish building.
+                                    </div>
+                                  )}
+                                  {st.status === 'error' && (
+                                    <div className="mt-2 text-xs text-red-700">
+                                      Could not open the audit: {st.message}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                         </div>
                       )}
                   </div>
