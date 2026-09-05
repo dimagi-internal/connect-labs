@@ -85,9 +85,6 @@ Parameters:
       Upstream umami-software/umami release tag to build (e.g. v3.3.1).
       Bumping this is a DELIBERATE upgrade: see infra/README.md § Upgrading
       Umami — releases carry Prisma migrations that apply on container start.
-  UmamiImageUri:
-    Type: String
-    Default: 858923557655.dkr.ecr.us-east-1.amazonaws.com/labs-jj-umami:latest
   UmamiDatabaseUrlSecretArn:
     Type: String
     Default: >-
@@ -191,7 +188,19 @@ Resources:
       ExecutionRoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ExecutionRoleName}'
       ContainerDefinitions:
         - Name: umami
-          Image: !Ref UmamiImageUri
+          # DERIVED from UmamiVersion, never a free-form parameter. This is the
+          # structural half of the version pin: a `UmamiImageUri` that could be
+          # set independently is exactly how the task definition came to
+          # advertise v3.3.1 while running a 2026-07-24 image (#1439). One knob
+          # now moves both the image and the label, so drift is not a thing to
+          # remember -- it is unrepresentable.
+          #
+          # Emergency rollback to the PRE-PIN image (the unversioned 2026-07-24
+          # build, kept addressable as :pre-pin-2026-07-24) is deliberately NOT
+          # expressible here -- it has no release tag and never should. Do it
+          # out-of-band with a one-off register-task-definition; ordinary
+          # rollback is UmamiVersion -> an earlier release tag.
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/labs-jj-umami:${UmamiVersion}'
           Essential: true
           PortMappings:
             - ContainerPort: 3000
@@ -202,6 +211,12 @@ Resources:
               Value: postgresql
             - Name: DISABLE_TELEMETRY
               Value: '1'
+            # Safe ONLY because the Image above is derived from this same
+            # parameter. Shipped in #1438 while the image was still `:latest`,
+            # it read v3.3.1 over a 2026-07-24 container and was reverted the
+            # same hour (#1439). It is back because the two are now one knob.
+            - Name: UMAMI_BUILD_VERSION
+              Value: !Ref UmamiVersion
             # Purely so `aws ecs describe-task-definition` can answer "what
             # version is running". Umami's own package.json cannot: at the
             # 2026-07-24 build it read "3.2.0" while the source was a month of
