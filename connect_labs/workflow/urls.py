@@ -64,6 +64,11 @@ urlpatterns = [
     # API endpoints - Pipeline data
     path("api/<int:definition_id>/pipeline-data/", views.get_pipeline_data_api, name="api_pipeline_data"),
     path(
+        "api/<int:definition_id>/semantic/",
+        views.semantic_indicators_api,
+        name="api_semantic_indicators",
+    ),
+    path(
         "api/<int:definition_id>/pipeline-data/stream/",
         views.PipelineDataStreamView.as_view(),
         name="api_pipeline_data_stream",
