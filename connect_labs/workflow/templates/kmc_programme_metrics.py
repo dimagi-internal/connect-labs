@@ -394,6 +394,43 @@ SNAPSHOT_SCHEMA = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# Drill-to-action config, derived from kmc_image_audit's hardware map.
+#
+# The map is keyed by SOURCE opportunity id there; this dashboard runs on the
+# synthetic clones, which have different ids. LLO is what both carry, so the
+# routing is collapsed onto it here rather than restated -- if OPP_META gains an
+# opportunity or a scale type is corrected, this follows automatically.
+# ---------------------------------------------------------------------------
+WEIGHT_IMAGE_PATH = "anthropometric/upload_weight_image"
+WEIGHT_VALUE_PATH = "anthropometric/child_weight_visit"
+
+
+def _scale_agent_by_llo() -> tuple[dict[str, str], set[str]]:
+    from connect_labs.workflow.templates.kmc_image_audit import AGENT_FOR_SCALE, OPP_META
+
+    by_llo: dict[str, str] = {}
+    conflicting: set[str] = set()
+    for meta in OPP_META.values():
+        llo, agent = meta.get("llo"), AGENT_FOR_SCALE.get(meta.get("scale"))
+        if not llo or not agent:
+            continue
+        if by_llo.setdefault(llo, agent) != agent:
+            # An LLO running both hardware types cannot be routed by LLO alone.
+            # Recording it is the point: silently picking one would attach the
+            # wrong reader to half its photos.
+            conflicting.add(llo)
+    return by_llo, conflicting
+
+
+SCALE_AGENT_BY_LLO, _CONFLICTING_SCALE_LLOS = _scale_agent_by_llo()
+
+# GHI-KE and Kikapu are provisionally treated as digital in OPP_META and flagged
+# there as UNCONFIRMED; carry that through so the UI can say so rather than let a
+# green verdict read as settled. An LLO with mixed hardware is unverified too.
+UNVERIFIED_SCALE_LLOS = {"GHI", "Kikapu"} | _CONFLICTING_SCALE_LLOS
+
+
 DEFINITION = {
     "name": "KMC Programme Metrics (Layer 2 + rollups)",
     "description": (
@@ -413,6 +450,22 @@ DEFINITION = {
         "showFilters": False,
         "showSummaryCards": True,
         "templateType": "kmc_programme_metrics",
+        # --- drill-to-action -------------------------------------------------
+        # The dashboard already drills programme -> LLO -> opportunity -> FLW ->
+        # case. What it could not do was ACT on what the drill found: a worker
+        # reading red had to be carried by hand into a separate workflow. These
+        # let the FLW panel open an audit on that one worker directly.
+        "audit_enabled": True,
+        "weight_image_path": WEIGHT_IMAGE_PATH,
+        "weight_value_path": WEIGHT_VALUE_PATH,
+        # Which scale reviewer to attach, keyed by LLO rather than by source opp
+        # id: this dashboard runs on the SYNTHETIC clones, whose ids are not the
+        # source ids OPP_META is keyed by, and the LLO is carried on every row.
+        # Derived from kmc_image_audit's OPP_META so the hardware map has one
+        # home -- PIPN digital, NAMA/EHA/BERI dial, GHI/Kikapu unconfirmed.
+        "scale_agent_by_llo": SCALE_AGENT_BY_LLO,
+        "scale_unverified_llos": sorted(UNVERIFIED_SCALE_LLOS),
+        "audit_count_per_flw": 25,
     },
     "pipeline_sources": [],
     "snapshot_inputs": SNAPSHOT_INPUTS,
