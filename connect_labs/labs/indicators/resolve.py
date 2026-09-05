@@ -481,6 +481,11 @@ class Selection:
     #: Countries with no growth series, whose counts were left at their own
     #: year. Their totals are therefore on a different basis from the rest.
     projected_without_rate: list[str] = field(default_factory=list)
+    #: The shape this selection was asked for, carried so that anything
+    #: re-running it — the method-spread table above all — asks the same
+    #: question rather than a differently-shaped one.
+    rolled_up: bool = True
+    pinned_level: int | None = None
 
     @property
     def area_count(self) -> int:
@@ -845,6 +850,8 @@ def select_above(
         countries_unsupported=unsupported,
         projected_to=target_year,
         projected_without_rate=projected_without_rate,
+        rolled_up=rollup,
+        pinned_level=admin_level,
     )
 
 

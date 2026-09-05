@@ -291,14 +291,47 @@ def targeting_select(
             "resolution": {"type": "string", "enum": ["national", "subnational"], "default": "subnational"},
             "method": {"type": "string"},
             "iso_codes": {"type": "array", "items": {"type": "string"}},
+            "rollup": {
+                "type": "boolean",
+                "description": (
+                    "Default true. Set false so the cross-checks run over the individual units — a "
+                    "rolled-up country is one row, and a median computed across one area is not a check."
+                ),
+            },
+            "admin_level": {"type": "integer", "description": "Pin the level: 1 regions, 2 districts."},
+            "target_year": {"type": "integer", "description": "Carry counts to this year first."},
         },
         "required": ["indicator"],
         "additionalProperties": False,
     },
 )
-def targeting_methodology(user, *, indicator, threshold=None, resolution="subnational", method=None, iso_codes=None):
+def targeting_methodology(
+    user,
+    *,
+    indicator,
+    threshold=None,
+    resolution="subnational",
+    method=None,
+    iso_codes=None,
+    rollup=True,
+    admin_level=None,
+    target_year=None,
+):
     _, export_mod, _, _, _, _, _ = _imports()
-    selection, _, chosen = _selection(indicator, threshold, resolution, method, iso_codes)
+    # The same controls the selection takes, because the cross-checks are
+    # computed over the selection's rows. A rolled-up country is one row, and
+    # "the two derivations differ by a median 39% across 1 areas" is not a
+    # check — it is a coin toss reported as a finding.
+    selection, _, chosen = _selection(
+        indicator,
+        threshold,
+        resolution,
+        method,
+        iso_codes,
+        rollup=rollup,
+        admin_level=admin_level,
+        target_year=target_year,
+    )
     return {
         "indicator": indicator,
         "threshold": selection.threshold,
