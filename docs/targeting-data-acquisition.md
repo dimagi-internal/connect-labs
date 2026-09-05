@@ -98,7 +98,7 @@ fewer places than "what share own one".
 
 ---
 
-## Tier 2 — UNICEF subnational SDMX
+## Tier 2 — UNICEF subnational SDMX  ✅ LANDED 2026-09-05
 
 **Cost:** one new loader against a public SDMX API. No authentication.
 **Endpoint:** `https://sdmx.data.unicef.org/ws/public/sdmxapi/rest/`
@@ -110,6 +110,54 @@ here, and one of them is **the reachable form of MICS**.
 |---|---|---:|---|---|
 | 21 | `CME_SUBNATIONAL` | 25 | **ADM1 and ADM2** | Under-five *and* **neonatal** mortality. Our `nmr` reaches only 30.7% of ADM1 units and is the thinnest headline measure we carry; this is the direct fix, from the IGME family we already trust for `u5mr`. |
 | 22 | `WASH_HOUSEHOLD_SUBNAT` | **44** | ADM1 | JMP-harmonised water, sanitation and hygiene, 22 indicators. `DATA_SOURCE_MAIN` includes **MICS**, EDSMICS and MIS alongside DHS — so it reaches countries DHS never surveyed. 44 African countries against the 38 our own WASH measures currently cover. |
+
+### Outcome — and a correction to the estimate above
+
+**The "8 new countries" figure was wrong, and the way it was wrong is worth
+recording.** It counted country-name overlap between the dataflow and our
+holdings. It did not check whether the *geography joins*, and for two of the
+biggest it does not:
+
+* **Egypt** publishes to survey analysis regions — "Lower Egypt", "Upper
+  Egypt", "Frontier Governorates". We hold the 27 **governorates**. "Lower
+  Egypt" spans many of them, so attaching it to each would be inheritance
+  dressed as measurement. The boundary matcher refused, correctly.
+* **Algeria** publishes to 7 programme zones ("Ept 1 : Nord-Centre") against
+  our 48 wilayas. Same refusal.
+
+**Actual gain: 5 countries** — Somalia, Sudan, Comoros, Guinea-Bissau, Tunisia
+— of which **3 are DHS-less**. Plus Zambia for neonatal mortality.
+
+| measure | before | after |
+|---|---|---|
+| WASH family | 38 countries, 56% of ADM1 | **43 countries, 65.8%** |
+| `nmr` | 23 countries, 30.7% ADM1, 40% ADM2 | **24 countries, 43.3% ADM1, 71.3% ADM2** |
+
+### The bug this found
+
+The first load of Tunisia reported **14.5% open defecation**. The true national
+figure is near zero.
+
+Every stored value was correct. The fault was that UNICEF **mixes tessellations
+within one country**: Tunisia carries seven economic regions from MICS 2018
+*and* a handful of individual governorates from MICS 2012. Taking the latest
+observation per *area* kept both, and our boundary names matched only the
+governorates — Kairouan, Kasserine, Sidi Bouzid, Tunis. Three of those four are
+the poorest interior governorates. The country then rolled up to the mean of
+its worst regions, wearing a national label.
+
+This is the failure mode partial matching always has: **it does not leave a
+gap, it produces a biased number that looks complete.** The fix holds one
+series per country, so an area either belongs to the survey being read or is
+not read at all — the same rule the DHS loader already applied, whose docstring
+warns about exactly this and which I reasoned past on the theory that the JMP
+pools vintages deliberately. It does; but it pools them across *different
+geographies*.
+
+The rollup guard would have caught the national claim independently — a country
+whose units are not all evaluated is never emitted as a whole-country row — but
+it would not have caught a hand-computed weighted mean, which is what surfaced
+it.
 
 ### On MICS proper
 
