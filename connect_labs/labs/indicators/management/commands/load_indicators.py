@@ -316,11 +316,15 @@ class Command(BaseCommand):
             ctx["rows"] = base.upsert(rows)
             ctx["countries"] = len({r.boundary.iso_code for r in rows})
 
-        # One row per coverage measure, driven by the registry.
+        # One row per coverage measure, driven by the registry, and a sweep --
+        # a derived row is a function of other rows, so one the derivation no
+        # longer produces is the previous version of the arithmetic rather than
+        # data worth keeping. See derive.sweep_derived.
         with self._run(Source.DERIVED, "coverage_gaps") as ctx:
             rows = derive.load_coverage_gaps(iso_codes=codes)
             ctx["rows"] = base.upsert(rows)
             ctx["countries"] = len({r.boundary.iso_code for r in rows})
+            ctx["swept"] = derive.sweep_derived(rows, derive.gap_indicators(), iso_codes=codes)
 
     def _stage_malaria(self, codes, opts):
         """MAP's modelled surfaces, aggregated onto our own boundaries.
