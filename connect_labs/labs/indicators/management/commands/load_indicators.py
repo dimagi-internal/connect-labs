@@ -32,6 +32,7 @@ from connect_labs.labs.indicators.sources import (
     igme_subnational,
     malaria_atlas,
     settlement,
+    unicef_sdmx,
     worldbank,
     worldpop,
     worldpop_agesex,
@@ -50,6 +51,7 @@ STAGES = (
     "population_agesex",
     "accessibility",
     "settlement",
+    "unicef",
 )
 
 
@@ -346,6 +348,45 @@ class Command(BaseCommand):
             ctx["rows"] = base.upsert(rows)
             ctx["countries"] = len({r.boundary.iso_code for r in rows})
             ctx["swept"] = derive.sweep_derived(rows, derive.gap_indicators(), iso_codes=codes)
+
+    def _stage_unicef(self, codes, opts):
+        """UNICEF's subnational SDMX warehouse.
+
+        Here to reach the places DHS never surveyed. See sources/unicef_sdmx.py
+        for why MICS proper is not reachable and this is the closest thing.
+        """
+        wash = [
+            ("improved_water", "Proportion of population using improved drinking water sources"),
+            ("improved_sanitation", "Proportion of population using improved sanitation facilities"),
+            (
+                "water_on_premises",
+                "Proportion of population using improved drinking water sources located on premises",
+            ),
+            ("open_defecation", "Proportion of population practising open defecation"),
+        ]
+        payload = unicef_sdmx.fetch("WASH_HOUSEHOLD_SUBNAT")
+        for measure, indicator in wash:
+            with self._run(Source.UNICEF_SDMX, measure) as ctx:
+                rows = unicef_sdmx.load("WASH_HOUSEHOLD_SUBNAT", indicator, measure, iso_codes=codes, payload=payload)
+                ctx["rows"] = base.upsert(rows)
+                ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
+        # Neonatal mortality, at both levels. ADM2 is where this earns its
+        # place: nothing else here publishes neonatal mortality below the
+        # region.
+        payload = unicef_sdmx.fetch("CME_SUBNATIONAL")
+        for level in (1, 2):
+            with self._run(Source.UNICEF_SDMX, f"nmr_adm{level}") as ctx:
+                rows = unicef_sdmx.load(
+                    "CME_SUBNATIONAL",
+                    "Neonatal mortality rate",
+                    "nmr",
+                    admin_level=level,
+                    iso_codes=codes,
+                    payload=payload,
+                )
+                ctx["rows"] = base.upsert(rows)
+                ctx["countries"] = len({r.boundary.iso_code for r in rows})
 
     def _stage_malaria(self, codes, opts):
         """MAP's modelled surfaces, aggregated onto our own boundaries.

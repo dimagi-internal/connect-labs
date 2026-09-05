@@ -54,6 +54,11 @@ class Source(models.TextChoices):
     MAP = "map", "Malaria Atlas Project"
     MAP_WORLDPOP = "map_worldpop", "MAP accessibility x WorldPop"
     GHSL = "ghsl", "GHS-SMOD (DEGURBA) x WorldPop"
+    # UNICEF's subnational SDMX warehouse. Distinct from IGME above, which is
+    # also served over UNICEF SDMX: this is the JMP's harmonised pooling of
+    # DHS, MICS, MIS and national surveys, and it is the only route to the
+    # countries DHS has never surveyed. See sources/unicef_sdmx.py.
+    UNICEF_SDMX = "unicef_sdmx", "UNICEF (subnational SDMX)"
     DERIVED = "derived", "Derived"
 
 
