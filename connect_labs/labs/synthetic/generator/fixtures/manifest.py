@@ -402,6 +402,52 @@ class ImageConfig(BaseModel):
     default_bad_rate: float = Field(ge=0, le=1, default=0.0)
     flw_bad_rates: dict[str, float] = Field(default_factory=dict)
 
+    # ---- corpus selection -------------------------------------------------
+    # Which stock corpus to draw from. Drives BOTH the blob id the image server
+    # resolves (``synth-<corpus>-good-007``) and the stock filename it maps to
+    # (``<corpus>_good_007.jpg``). Defaults to "muac" so every existing manifest
+    # keeps its exact prior behaviour.
+    corpus: str = Field(default="muac", pattern=r"^[a-z0-9]+$")
+    # Substring identifying the LEAF field whose presence makes a visit eligible
+    # for a photo — a visit with no measurement has nothing to photograph.
+    # Defaults to the corpus name, which is right for both "muac" and "scale"
+    # (KMC weight fields are named child_weight_*), and is overridable when a
+    # corpus and its field disagree.
+    measurement_field_match: str | None = None
+
+    # ---- ground truth, required for any AGREEMENT reviewer -----------------
+    # blob_id -> the value actually visible in that photo, e.g.
+    # {"synth-scale-good-001": 1535}.
+    #
+    # A MUAC corpus never needed this: its bad pool is categorised by IMAGE
+    # DEFECT (framing, tape_usage, equipment) and the overzoom agent judges the
+    # picture alone. The scale agents do something different — they post the
+    # photo together with the reading entered on the form and return match /
+    # no-match — so a photo whose true value is unknown makes every verdict an
+    # accident of which image happened to land on which visit. It would look
+    # like a working AI review and mean nothing.
+    #
+    # With readings set, a GOOD-pool visit has ``reading_path`` written to the
+    # photo's own value (they agree, the reviewer passes it) and a BAD-pool
+    # visit is written a deliberately different value (they disagree, and the
+    # reviewer has something real to catch).
+    readings: dict[str, float] = Field(default_factory=dict)
+    # Form path receiving that value. Required whenever ``readings`` is set.
+    reading_path: str | None = None
+    # How far a bad-pool visit's entered value is pushed off the photo's true
+    # value. Multiplicative, so it scales across birthweights.
+    bad_reading_factor: float = Field(gt=0, default=1.35)
+
+    @model_validator(mode="after")
+    def _check_readings(self):
+        if self.readings and not self.reading_path:
+            raise ValueError("image_config.readings requires reading_path (where to write the value)")
+        return self
+
+    @property
+    def field_match(self) -> str:
+        return (self.measurement_field_match or self.corpus).lower()
+
 
 # ---------- Timeline ----------
 
