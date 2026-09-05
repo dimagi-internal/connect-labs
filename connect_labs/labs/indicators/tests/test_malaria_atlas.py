@@ -568,3 +568,62 @@ def test_the_band_urls_are_the_files_worldpop_publishes():
         worldpop_agesex.url_for("nga", "five_year_age_groups", "f_45_49")
         == f"{root}/five_year_age_groups/NGA/nga_f_45_49_2022_1km_UNadj.tif"
     )
+
+
+class TestBothAccessSurfaces:
+    """Walking and motorized answer different questions.
+
+    (The module is imported per-test here, matching the file's existing
+    convention of importing accessibility inside the test body.)
+
+    Walking is community reach — can a household get itself to a clinic.
+    Motorized is referral — can a woman in obstructed labour reach a facility
+    that can operate. A place can be fine on one and hopeless on the other,
+    which is why one cannot stand in for the other.
+    """
+
+    def test_the_two_surfaces_write_different_measures(self):
+        from connect_labs.labs.indicators.sources import accessibility
+
+        walking = accessibility.SURFACES["walking"]["measures"]
+        motorized = accessibility.SURFACES["motorized"]["measures"]
+        assert set(walking.values()).isdisjoint(motorized.values())
+
+    def test_the_coverage_ids_differ_in_case_and_are_not_copies(self):
+        from connect_labs.labs.indicators.sources import accessibility
+
+        """MAP writes '..._Travel_Time_To_Healthcare' for walking and
+        '..._Travel_Time_to_Healthcare' for motorized. A constant copied with
+        the wrong case returns an XML error page rather than a raster."""
+        walking = accessibility.SURFACES["walking"]["coverage"]
+        motorized = accessibility.SURFACES["motorized"]["coverage"]
+        assert walking != motorized
+        assert "Walking_Only" in walking
+        assert "Motorized" in motorized
+        assert walking.endswith("_To_Healthcare")
+        assert motorized.endswith("_to_Healthcare")
+
+    def test_stats_labels_follow_the_surface_asked_for(self):
+        from connect_labs.labs.indicators.sources import accessibility
+
+        people = np.array([[100.0, 100.0]])
+        minutes = np.array([[10.0, 500.0]])
+        mask = np.ones((1, 2), dtype=bool)
+
+        motorized = accessibility._stats(people, minutes, mask, accessibility.SURFACES["motorized"]["measures"])
+
+        assert set(motorized) == {
+            "travel_time_motorized",
+            "pop_beyond_2h_motorized",
+            "share_beyond_2h_motorized",
+        }
+
+    def test_it_still_defaults_to_walking(self):
+        """The signature stayed backwards compatible: this function existed
+        before there was a second surface, and its callers assumed walking."""
+        from connect_labs.labs.indicators.sources import accessibility
+
+        people = np.array([[100.0]])
+        minutes = np.array([[10.0]])
+        stats = accessibility._stats(people, minutes, np.ones((1, 1), dtype=bool))
+        assert "travel_time_healthcare" in stats
