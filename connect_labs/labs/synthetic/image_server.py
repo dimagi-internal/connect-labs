@@ -1,7 +1,7 @@
 """Serve stock images for synthetic opportunities.
 
-Maps synthetic blob_ids (e.g. synth-muac-003) to stock image files in a
-GDrive folder. Images are cached in-process since the stock set is immutable.
+Maps synthetic blob_ids (e.g. synth-muac-003, synth-scale-good-007) to stock image
+files in a GDrive folder. Images are cached in-process since the stock set is immutable.
 """
 
 from __future__ import annotations
@@ -15,12 +15,17 @@ from connect_labs.labs.synthetic.gdrive import DriveClient
 
 logger = logging.getLogger(__name__)
 
-# Legacy form: ``synth-muac-NNN`` → ``muac_NNN.jpg`` (uncategorized pool).
-# Pooled form: ``synth-muac-good-NNN`` / ``synth-muac-bad-NNN`` → the
-# corresponding ``muac_good_NNN.jpg`` / ``muac_bad_NNN.jpg`` in the same
+# Legacy form: ``synth-<corpus>-NNN`` → ``<corpus>_NNN.jpg`` (uncategorized pool).
+# Pooled form: ``synth-<corpus>-good-NNN`` / ``synth-<corpus>-bad-NNN`` → the
+# corresponding ``<corpus>_good_NNN.jpg`` / ``<corpus>_bad_NNN.jpg`` in the same
 # folder. Both share the cache; the pool prefix is part of the cache key
 # via the blob_id itself.
-_SYNTH_PATTERN = re.compile(r"^synth-muac-(?:(good|bad)-)?(\d+)$")
+#
+# The corpus segment was hardcoded to ``muac`` until 2026-09-05. Nothing else could
+# reach a synthetic visit — so KMC's scale-photo reviewers (scale_validation and
+# scale_dial_read, both shipped and both written FOR KMC) had no synthetic data to
+# run against, and get_image simply returned None with no error anywhere.
+_SYNTH_PATTERN = re.compile(r"^synth-([a-z0-9]+)-(?:(good|bad)-)?(\d+)$")
 
 _instance: SyntheticImageServer | None = None
 
@@ -44,11 +49,12 @@ class SyntheticImageServer:
         m = _SYNTH_PATTERN.match(blob_id)
         if not m:
             return None
-        pool = m.group(1)  # 'good', 'bad', or None
-        n = int(m.group(2))
+        corpus = m.group(1)
+        pool = m.group(2)  # 'good', 'bad', or None
+        n = int(m.group(3))
         if pool is None:
-            return f"muac_{n:03d}.jpg"
-        return f"muac_{pool}_{n:03d}.jpg"
+            return f"{corpus}_{n:03d}.jpg"
+        return f"{corpus}_{pool}_{n:03d}.jpg"
 
     @staticmethod
     def is_synthetic_blob(blob_id: str) -> bool:

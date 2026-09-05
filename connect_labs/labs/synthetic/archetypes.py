@@ -130,17 +130,21 @@ _AUDIT_RECIPE_VERSION = 2
 
 
 def blob_id_for_filename(filename: str) -> str:
-    """Convert a MUAC stock filename to the blob_id pattern the image server uses.
+    """Convert a pooled stock filename to the blob_id pattern the image server uses.
 
-    ``muac_good_003.jpg`` → ``synth-muac-good-003``
-    ``muac_bad_017.jpg`` → ``synth-muac-bad-017``
+    ``muac_good_003.jpg``  → ``synth-muac-good-003``
+    ``muac_bad_017.jpg``   → ``synth-muac-bad-017``
+    ``scale_good_001.jpg`` → ``synth-scale-good-001``
+
+    The corpus segment is read from the filename rather than assumed: KMC's
+    scale-photo reviewers need a ``scale`` corpus alongside the MUAC one.
     """
     stem = filename.removesuffix(".jpg")
-    # stem looks like "muac_good_003" or "muac_bad_017"
+    # stem looks like "<corpus>_<pool>_<NNN>"
     parts = stem.split("_")
-    if len(parts) != 3 or parts[0] != "muac":
-        raise ValueError(f"Unexpected MUAC filename: {filename!r}")
-    return f"synth-muac-{parts[1]}-{parts[2]}"
+    if len(parts) != 3 or parts[1] not in {"good", "bad"}:
+        raise ValueError(f"Unexpected pooled stock filename: {filename!r}")
+    return f"synth-{parts[0]}-{parts[1]}-{parts[2]}"
 
 
 # -----------------------------------------------------------------------------
