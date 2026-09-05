@@ -58,6 +58,55 @@
 
     <aside class="w-full lg:w-[350px] lg:shrink-0 space-y-4">
 
+      <!-- Where the question is being asked. This came first because it is
+           asked first: "should we do ORS in Liberia" is a country question, and
+           a surface whose only scope was the whole continent could not be asked
+           it. Level sits with it because scope and level are one decision — the
+           country row and the rows beneath it are the same query at two
+           depths. -->
+      <div class="bg-white rounded-lg border border-stone-200 p-4 tg-pop-wrap">
+        <div class="flex items-center gap-1.5 mb-1.5">
+          <label for="tg-country" class="text-xs font-semibold tracking-wide uppercase text-stone-500">
+            Where
+          </label>
+          <button type="button" class="tg-info" data-pop="pop-where" aria-expanded="false"
+                  aria-label="About scope and level">i</button>
+          <span id="tg-depth-chip" class="ml-auto text-[11px] tg-num text-stone-500"></span>
+        </div>
+        <select id="tg-country"
+                class="w-full text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
+
+        <div class="tg-pop hidden" id="pop-where">
+          <p>Scoping to one country turns a continental scan into a country
+             argument: the map, the table, the costing and the workings all
+             narrow together.</p>
+          <p><b>Level</b> is a separate fact from boundary depth, and the
+             difference is the trap. Liberia has 136 districts on file and an
+             ORS reading for none of them — every district would inherit one of
+             fifteen county figures and rank in fifteen flat ties, which looks
+             like more detail and is the same information on a finer grid. The
+             level buttons say how many units at each depth carry a reading of
+             their own; prefer the deepest level that is <b>measured</b>.</p>
+          <p><b>Rank the parts</b> stops a wholly-selected country collapsing
+             into a single row. You cannot rank fifteen counties against each
+             other if they have been added together first.</p>
+        </div>
+
+        <div id="tg-level-wrap" class="hidden mt-3">
+          <div class="text-xs font-medium text-stone-600 mb-1">Level</div>
+          <div class="flex gap-1 p-0.5 bg-stone-100 rounded-lg" id="tg-level"></div>
+          <p id="tg-level-note" class="text-[11px] text-stone-500 mt-1.5"></p>
+        </div>
+
+        <label class="flex items-start gap-2 mt-3 cursor-pointer">
+          <input id="tg-rank" type="checkbox" class="mt-0.5">
+          <span class="text-xs text-stone-600 leading-snug">
+            <b>Rank the parts</b> — list the regions separately instead of
+            rolling a wholly-selected country into one row
+          </span>
+        </label>
+      </div>
+
       <div class="bg-white rounded-lg border border-stone-200 p-4 tg-pop-wrap">
         <div class="flex items-center gap-1.5 mb-1.5">
           <label for="tg-indicator" class="text-xs font-semibold tracking-wide uppercase text-stone-500">
@@ -133,7 +182,18 @@
           <p>Where an indicator implies no case count, the per-case basis is declined
              rather than approximated.</p>
         </div>
-        <label for="tg-preset" class="block text-xs font-medium text-stone-600 mt-2">Preset</label>
+        <!-- The year the programme runs. Counts are carried to it at each
+             country's own growth rate; rates are not, because nothing here
+             models how coverage moves and a projected rate would be invention.
+             It sits in the costing panel because that is where it bites: a 2027
+             programme budgeted on a 2022 population is short by five years of
+             children. -->
+        <label for="tg-year" class="block text-xs font-medium text-stone-600 mt-2">Delivering in</label>
+        <select id="tg-year"
+                class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
+        <p id="tg-year-note" class="text-[11px] text-stone-500 mt-1"></p>
+
+        <label for="tg-preset" class="block text-xs font-medium text-stone-600 mt-3">Preset</label>
         <select id="tg-preset"
                 class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
         <div class="grid grid-cols-2 gap-3 mt-3">
@@ -192,6 +252,11 @@
         <div class="bg-white rounded-lg border border-teal-300 p-3">
           <div id="tg-burden-label" class="text-[11px] text-teal-800 leading-tight">Expected under-5 deaths / year</div>
           <div id="tg-deaths" class="text-2xl font-semibold text-teal-900 tg-num mt-0.5 tracking-tight">—</div>
+          <!-- A survey measures a fortnight. Where the annual sibling exists it
+               is stated here rather than left to be assumed: quoting a
+               recall-window count as a year's is a twentyfold error, and this
+               page has made it in print. -->
+          <div id="tg-burden-annual" class="hidden text-[11px] text-teal-800 tg-num mt-1"></div>
         </div>
       </div>
 
@@ -209,6 +274,7 @@
 
       <div class="bg-white rounded-lg border border-stone-200 p-4">
         <div id="tg-scope" class="text-sm text-stone-600">—</div>
+        <div id="tg-projected" class="hidden mt-3 pt-3 border-t border-stone-200 text-sm text-stone-600"></div>
         <div id="tg-floor" class="hidden mt-3 pt-3 border-t border-stone-200 text-sm text-amber-700"></div>
         <div id="tg-offmethod" class="hidden mt-3 pt-3 border-t border-stone-200 text-sm text-stone-600"></div>
       </div>
@@ -298,6 +364,7 @@
         methodology: "{% url 'targeting:methodology' %}",
         interventions: "{% url 'targeting:interventions' %}",
         scenario: "{% url 'targeting:scenario' %}",
+        scope: "{% url 'targeting:scope' %}",
         selection: "{% url 'targeting:selection' %}",
         download: "{% url 'targeting:download' %}"
       }

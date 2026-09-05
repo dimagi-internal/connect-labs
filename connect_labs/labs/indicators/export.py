@@ -35,6 +35,12 @@ COLUMNS = [
     ("u5mr_measured_at", "U5MR measured at"),
     ("expected_deaths", "Est. annual under-5 deaths"),
     ("ors_gap_children", "Children with untreated diarrhoea"),
+    # The fortnight figure beside it, over a year. Both travel, because the
+    # .zip is the copy a funder reads without the page beside it, and quoting a
+    # two-week recall count as an annual one is a twentyfold error made in
+    # print. A blank here means the indicator declares no recall window and no
+    # episode duration, so no honest conversion exists.
+    ("gap_annual", "Unreached per year (annualised)"),
     ("births", "Est. annual births"),
     ("pop_u5", "Population under 5"),
     ("pop_total", "Total population"),
@@ -115,6 +121,7 @@ def _rows(selection: Selection):
             ),
             "expected_deaths": _cell(a.counts.get("expected_deaths")),
             "ors_gap_children": _cell(a.counts.get("ors_gap_children")),
+            "gap_annual": _cell(a.counts.get(f"{selection.indicator}_gap_annual")),
             "births": _cell(a.counts.get("births")),
             "pop_u5": _cell(a.counts.get("pop_u5")),
             "pop_total": _cell(a.counts.get("pop_total")),

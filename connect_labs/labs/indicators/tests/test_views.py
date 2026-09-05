@@ -516,3 +516,201 @@ class TestTemplateRenders:
         resp = client_in.get(reverse("targeting:index"))
 
         assert b"{#" not in resp.content
+
+
+class TestScopeAndLevel:
+    """The controls that turn a continental scan into a country argument.
+
+    The surface had none of these. Every question it could be asked was
+    continental, at whichever level happened to carry a value, with counts
+    frozen at the year they were measured — so the analysis a funder actually
+    wants ("ORS in Liberia, by county, delivered in 2027") could be produced
+    through the MCP tools and not through the page. These test the four things
+    that were missing, because each of them changes the answer rather than the
+    presentation.
+    """
+
+    def test_scoping_to_a_country_drops_the_others(self, client_in, africa):
+        both = client_in.get(reverse("targeting:selection"), {"threshold": 50}).json()
+        one = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER"}).json()
+
+        assert {r["iso"] for r in both["rows"]} == {"NER", "NGA"}
+        assert {r["iso"] for r in one["rows"]} == {"NER"}
+        assert one["scope"]["iso_codes"] == ["NER"]
+        assert one["scope"]["whole_continent"] is False
+
+    def test_an_unknown_iso_falls_back_to_the_continent(self, client_in, africa):
+        """Rather than returning an empty selection.
+
+        An empty answer reads as "nowhere qualifies", which is a finding. A
+        misspelled country code is not a finding.
+        """
+        r = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "XXX"}).json()
+        assert r["scope"]["whole_continent"] is True
+
+    def test_ranking_the_parts_unrolls_a_wholly_selected_country(self, client_in, africa):
+        rolled = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER"}).json()
+        ranked = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER", "rollup": "0"}).json()
+
+        assert len(rolled["rows"]) == 1 and rolled["rows"][0]["whole_country"]
+        # Ranked, not alphabetised: the point of unrolling is to see which
+        # part is biggest, so the rows come back ordered by the quantity a
+        # programme would be sized on.
+        assert [r["name"] for r in ranked["rows"]] == ["South", "North"]
+        assert ranked["rolled_up"] is False
+
+    def test_the_costing_narrows_with_the_table(self, client_in, africa):
+        """A cost computed continent-wide beside a one-country table is not a
+        caveat, it is a second answer in the same panel."""
+        both = client_in.get(
+            reverse("targeting:scenario"), {"threshold": 50, "basis": "birth", "unit_cost": 10}
+        ).json()
+        one = client_in.get(
+            reverse("targeting:scenario"), {"threshold": 50, "basis": "birth", "unit_cost": 10, "iso": "NER"}
+        ).json()
+        assert one["units"] < both["units"]
+
+    def test_the_map_follows_the_pinned_level(self, client_in, africa):
+        r = client_in.get(reverse("targeting:map_data"), {"iso": "NER", "admin_level": 0}).json()
+        assert {f["properties"]["level"] for f in r["features"]} == {0}
+
+    def test_districts_are_not_drawn_across_the_continent(self, client_in, africa):
+        """The limit is the map's, not the analysis's: 47,000 polygons is a
+        download, not a map. The table will still rank them."""
+        r = client_in.get(reverse("targeting:map_data"), {"admin_level": 2}).json()
+        assert all(f["properties"]["level"] == 1 for f in r["features"])
+
+    def test_scope_reports_which_levels_are_measured(self, client_in, africa):
+        """Boundary depth and measurement depth are different facts, and the
+        difference is the whole trap: a level where nothing is measured is the
+        same information on a finer grid, and every unit ties."""
+        r = client_in.get(reverse("targeting:scope"), {"iso": "NER"}).json()
+        assert [c["iso"] for c in r["countries"] if c["iso"] == "NER"] == ["NER"]
+        assert r["depth"]["1"]["measured"] == 2
+        assert r["depth"]["1"]["inherited"] == 0
+
+
+class TestDeliveryYear:
+    def test_counts_are_carried_and_rates_are_not(self, client_in, africa):
+        for b in africa.values():
+            set_value(b, "pop_growth_rate", 3.0, source=Source.WORLDBANK)
+
+        now = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER"}).json()
+        later = client_in.get(
+            reverse("targeting:selection"), {"threshold": 50, "iso": "NER", "target_year": 2030}
+        ).json()
+
+        assert later["projected_to"] == 2030
+        assert later["totals"]["births"] > now["totals"]["births"]
+        # The rate is left exactly as measured: nothing here models how
+        # mortality moves, and a projected rate would be invention.
+        assert later["totals"]["u5mr"] == now["totals"]["u5mr"]
+
+    def test_a_country_with_no_growth_series_is_named(self, client_in, africa):
+        r = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER", "target_year": 2030}).json()
+        assert "NER" in r["projected_without_rate"]
+
+    def test_an_implausible_year_is_ignored_rather_than_obeyed(self, client_in, africa):
+        r = client_in.get(reverse("targeting:selection"), {"threshold": 50, "target_year": "9999"}).json()
+        assert r["projected_to"] is None
+
+
+class TestAnnualBasis:
+    """A survey measures a fortnight. Quoting that as a year is a twentyfold
+    error, and this page has made it in print."""
+
+    def test_the_annual_basis_resolves_to_a_different_measure(self):
+        from connect_labs.labs.indicators import interventions
+
+        fortnight = interventions.measure_for(interventions.UnitBasis.DISEASE_CASE, "ors_coverage")
+        annual = interventions.measure_for(interventions.UnitBasis.CASE_YEAR, "ors_coverage")
+        assert fortnight != annual
+        assert annual == "ors_coverage_gap_annual"
+
+    def test_the_annual_basis_is_declined_where_it_cannot_be_derived(self):
+        """No recall window and episode duration means no honest conversion.
+        Multiplying by an assumed 26 would be an invention in the same units as
+        a measurement."""
+        from connect_labs.labs.indicators import interventions
+
+        assert interventions.measure_for(interventions.UnitBasis.CASE_YEAR, "u5mr") is None
+
+    def test_an_annual_basis_is_offered_for_an_ors_question(self, client_in):
+        r = client_in.get(reverse("targeting:interventions"), {"indicator": "ors_coverage"}).json()
+        by_code = {b["code"]: b for b in r["bases"]}
+        assert by_code["case_year"]["available_for_indicator"] is True
+        assert by_code["case_year"]["measure"] == "ors_coverage_gap_annual"
+
+    def test_a_mortality_question_is_offered_no_annual_basis(self, client_in):
+        r = client_in.get(reverse("targeting:interventions"), {"indicator": "u5mr"}).json()
+        by_code = {b["code"]: b for b in r["bases"]}
+        assert by_code["case_year"]["available_for_indicator"] is False
+
+
+class TestTheDownloadIsTheQuestionOnScreen:
+    """A .zip that answers a different question from the page it came from is
+    the failure this whole surface exists to prevent — and it is invisible,
+    because both halves look right on their own."""
+
+    def test_the_download_carries_scope_level_year_and_rollup(self, client_in, africa):
+        for b in africa.values():
+            set_value(b, "pop_growth_rate", 3.0, source=Source.WORLDBANK)
+
+        page = client_in.get(
+            reverse("targeting:selection"),
+            {"threshold": 50, "iso": "NER", "admin_level": 1, "rollup": "0", "target_year": 2030},
+        ).json()
+        csv_text = client_in.get(
+            reverse("targeting:download"),
+            {
+                "threshold": 50,
+                "iso": "NER",
+                "admin_level": 1,
+                "rollup": "0",
+                "target_year": 2030,
+                "format": "csv",
+            },
+        ).content.decode()
+        rows = list(csv.DictReader(io.StringIO(csv_text)))
+
+        assert len(rows) == len(page["rows"]) == 2
+        assert {r["name"] for r in page["rows"]} == {c["Area"] for c in rows}
+
+    def test_the_methodology_is_produced_for_the_same_selection(self, client_in, africa):
+        """It used to be built continent-wide whatever the page showed."""
+        scoped = client_in.get(
+            reverse("targeting:methodology"), {"threshold": 50, "iso": "NER", "rollup": "0"}
+        ).json()["markdown"]
+        whole = client_in.get(reverse("targeting:methodology"), {"threshold": 50, "rollup": "0"}).json()["markdown"]
+        assert "across **1 countries**" in scoped
+        assert "across **2 countries**" in whole
+
+    def test_the_csv_carries_the_annual_figure_beside_the_fortnight_one(self, client_in):
+        """The .zip is the copy read without the page beside it."""
+        make_boundary("LBR", 0, "Liberia", "LBR-0")
+        b = make_boundary("LBR", 1, "Bong", "LBR-1")
+        set_value(b, "ors_coverage", 41.0, source=Source.DHS)
+        set_value(b, "pop_u5", 60_000, source=Source.WORLDPOP)
+        # What the derivation writes: the fortnight count and its annualised
+        # sibling, x19.9 apart.
+        set_value(b, "ors_coverage_gap", 5_000, source=Source.DERIVED)
+        set_value(b, "ors_coverage_gap_annual", 99_700, source=Source.DERIVED)
+
+        text = client_in.get(
+            reverse("targeting:download"),
+            {
+                "indicator": "ors_coverage",
+                "threshold": 80,
+                "iso": "LBR",
+                "method": "subnational_survey",
+                "format": "csv",
+            },
+        ).content.decode()
+        rows = list(csv.DictReader(io.StringIO(text)))
+
+        assert [r["Area"] for r in rows] == ["Bong"]
+        fortnight = float(rows[0]["Children with untreated diarrhoea"] or 0)
+        annual = float(rows[0]["Unreached per year (annualised)"])
+        assert annual == 99_700
+        # A different question in the same units, not a rounding difference.
+        assert fortnight != annual
