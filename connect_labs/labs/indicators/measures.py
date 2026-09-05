@@ -935,6 +935,62 @@ def annualisation_factor(prevalence_code: str) -> float | None:
     return 365.0 / (m.recall_days + m.episode_days)
 
 
+# Tier 3 of docs/targeting-data-acquisition.md: the motorized companion to the
+# walking travel-time surface already loaded.
+#
+# Walking answers *community reach* — whether a household can get itself to a
+# clinic. Motorized answers *referral* — whether a woman in obstructed labour
+# can reach a facility that can operate. A place can be fine on one and
+# hopeless on the other, which is precisely why one cannot stand in for the
+# other, and why the system could not previously be asked the second question
+# at all.
+_prevalence(
+    "travel_time_motorized",
+    "Travel time to healthcare, motorized",
+    "pop_total",
+    "minutes",
+    (
+        "Minutes to the nearest health facility by motor vehicle, averaged over "
+        "people rather than over land — averaging over land lets uninhabited "
+        "area vote, and a district that is nine-tenths desert then reads as "
+        "remote when almost everyone in it is close to a clinic."
+    ),
+    lo=5,
+    hi=480,
+    default=60,
+)
+
+_prevalence(
+    "share_beyond_2h_motorized",
+    "Population beyond 2h of care, motorized",
+    "pop_total",
+    "% of population",
+    (
+        "The share more than two hours from a health facility by vehicle. Two "
+        "hours is the threshold emergency obstetric care is judged against, so "
+        "this is the referral question rather than the community-reach one."
+    ),
+    lo=0,
+    hi=80,
+    default=10,
+)
+
+register(
+    Measure(
+        code="pop_beyond_2h_motorized",
+        label="People beyond 2h of care, motorized",
+        kind=Kind.COUNT,
+        unit="people",
+        agg=Agg.SUM,
+        description=(
+            "How many people are more than two hours from a health facility by "
+            "vehicle. A count, so it carries a per-person cost and sums up the "
+            "hierarchy exactly."
+        ),
+    )
+)
+
+
 # --- Tier 1 of docs/targeting-data-acquisition.md --------------------------
 #
 # Twenty measures DHS has always published subnationally and this system never
@@ -1342,6 +1398,9 @@ TARGETABLE = (
     "water_on_premises",
     "open_defecation",
     "birth_certificate",
+    # Tier 3: referral access, as against the community reach already carried.
+    "travel_time_motorized",
+    "share_beyond_2h_motorized",
 )
 
 

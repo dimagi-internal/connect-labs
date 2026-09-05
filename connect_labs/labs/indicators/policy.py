@@ -272,6 +272,19 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
     # "vaccination from cards and recall" is a different kind of evidence from
     # "haemoglobin measured in the field", and a reader weighing a number
     # needs to know which they are holding.
+    # Referral access. Same two rasters as the walking surface, different mode.
+    "travel_time_motorized": (
+        Eligible(
+            Source.MAP_WORLDPOP,
+            "Weiss et al.'s motorized travel-time surface crossed with WorldPop's grid. "
+            "The only global facility-access surface, and useless without a population "
+            "grid to weight it by — an average over land lets empty desert vote.",
+        ),
+    ),
+    "share_beyond_2h_motorized": (
+        Eligible(Source.MAP_WORLDPOP, "The same crossing, expressed as a share of people."),
+    ),
+    "pop_beyond_2h_motorized": (Eligible(Source.MAP_WORLDPOP, "The same crossing, expressed as a count of people."),),
     "zero_dose": _survey("vaccination history from cards and recall, counting children with no doses at all"),
     "fp_unmet_need": _survey("fertility intentions against current contraceptive use"),
     "fp_modern_method": _survey("current contraceptive method"),
