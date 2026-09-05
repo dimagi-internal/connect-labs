@@ -1456,6 +1456,77 @@ function WorkflowUI({
   var s3 = React.useState(null);
   var selInd = s3[0],
     setSelInd = s3[1];
+  // ══ N-series (Neal's demo compute spec), served by the semantic layer ══════
+  // Everything else on this screen is computed in the browser from pipeline rows.
+  // These come from SQL: the registry compiles to one GROUPING SETS query and runs
+  // server-side, which is the only version where the scopes below cost one pass
+  // instead of three. Fetched ON DEMAND rather than with the page -- it is a real
+  // query against the visit cache, and the other tabs must not pay for it.
+  var sN = React.useState({ status: 'idle', rows: [] });
+  var nSeries = sN[0],
+    setNSeries = sN[1];
+
+  function loadNSeries() {
+    if (!definition || !definition.id) {
+      setNSeries({ status: 'error', rows: [], error: 'no workflow id' });
+      return;
+    }
+    setNSeries({ status: 'loading', rows: [] });
+    fetch(
+      '/labs/workflow/api/' +
+        definition.id +
+        '/semantic/?series=N&scopes=programme,opportunity,flw',
+    )
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (data) {
+        if (data.error) {
+          // The message names the missing column or relation -- show it rather
+          // than a generic failure, which is the whole reason it is a 400.
+          setNSeries({ status: 'error', rows: [], error: data.error });
+          return;
+        }
+        setNSeries({ status: 'ready', rows: data.rows || [] });
+      })
+      .catch(function (err) {
+        setNSeries({
+          status: 'error',
+          rows: [],
+          error: String((err && err.message) || err),
+        });
+      });
+  }
+
+  // The 14 measures the spec defines, in its own order. N05 (median gestational
+  // age) is absent because Layer 1 has never extracted gestational age; declaring
+  // it before the column exists compiles and then fails at execution.
+  var N_SERIES = [
+    ['n01', 'Total cases', 'n'],
+    ['n02', 'Registered', 'n'],
+    ['n03', 'Started', 'n'],
+    ['n04', 'Cumulative SVNs', 'n'],
+    ['n06', 'Median birthweight', 'g'],
+    ['n07', 'Mean visits per case', 'n'],
+    ['n08', '% first visit <=3d of discharge', '%'],
+    ['n09', '% slow growth', '%'],
+    ['n10', '% healthy growth', '%'],
+    ['n11', '% fast growth', '%'],
+    ['n12', '% incomplete growth data', '%'],
+    ['n13', 'Mortality', '%'],
+    ['n14', 'Weight rounding rate', '%'],
+    ['n15', '% impossible weight changes', '%'],
+  ];
+
+  function nFmt(value, unit) {
+    if (value === null || value === undefined) return 'n/a';
+    var num = Number(value);
+    if (isNaN(num)) return String(value);
+    if (unit === '%') return num.toFixed(1) + '%';
+    if (unit === 'g') return Math.round(num) + ' g';
+    return Math.round(num * 10) / 10;
+  }
+
   var s5 = React.useState('indicators');
   var tab = s5[0],
     setTab = s5[1];
@@ -2435,6 +2506,7 @@ function WorkflowUI({
         {[
           ['indicators', 'Indicators'],
           ['trends', 'Monthly trend'],
+          ['nseries', 'Demo metrics (SQL)'],
         ].map(function (t) {
           var on = tab === t[0];
           return (
@@ -2457,6 +2529,97 @@ function WorkflowUI({
       </div>
 
       {tab === 'trends' && <TrendView />}
+
+      {tab === 'nseries' && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <div className="font-medium text-gray-900">
+              Demo metrics — computed in SQL
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              The indicator registry evaluated server-side rather than in this
+              browser. Maturity gates are 28/42/90 and the growth bands are
+              birth-weight-band specific, so these deliberately differ from the
+              Indicators tab where the spec differs.
+            </div>
+            <button
+              type="button"
+              onClick={loadNSeries}
+              disabled={nSeries.status === 'loading'}
+              className={
+                'mt-2 px-3 py-1.5 rounded text-sm font-medium ' +
+                (nSeries.status === 'loading'
+                  ? 'bg-gray-200 text-gray-500'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700')
+              }
+            >
+              {nSeries.status === 'loading'
+                ? 'Running the query…'
+                : nSeries.status === 'ready'
+                ? 'Re-run'
+                : 'Run'}
+            </button>
+          </div>
+
+          {nSeries.status === 'error' && (
+            <div className="px-4 py-3 text-sm text-red-700">
+              {nSeries.error}
+            </div>
+          )}
+
+          {nSeries.status === 'ready' && nSeries.rows.length === 0 && (
+            <div className="px-4 py-3 text-sm text-gray-500">
+              The query returned no rows.
+            </div>
+          )}
+
+          {nSeries.status === 'ready' && nSeries.rows.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Scope</th>
+                    <th className="px-3 py-2 text-left">Metric</th>
+                    <th className="px-3 py-2 text-right">Value</th>
+                    <th className="px-3 py-2 text-right">n</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nSeries.rows
+                    .filter(function (r) {
+                      return r.scope === 'programme' || !r.scope;
+                    })
+                    .map(function (r, ri) {
+                      return N_SERIES.map(function (m) {
+                        return (
+                          <tr
+                            key={ri + '-' + m[0]}
+                            className="border-t border-gray-100"
+                          >
+                            <td className="px-3 py-2 text-gray-500">
+                              {r.scope || 'programme'}
+                            </td>
+                            <td className="px-3 py-2">{m[1]}</td>
+                            <td className="px-3 py-2 text-right font-medium">
+                              {nFmt(r[m[0]], m[2])}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-400">
+                              {/* the denominator, never a bare number */}
+                              {r[m[0] + '_denominator'] === null ||
+                              r[m[0] + '_denominator'] === undefined
+                                ? '\u2014'
+                                : r[m[0] + '_denominator']}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {tab === 'indicators' && (
         <>

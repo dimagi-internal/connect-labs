@@ -105,3 +105,48 @@ def test_an_llo_running_both_hardware_types_is_marked_unverified():
     assert isinstance(real_conflicts, set)
     # No conflict today; the guard is that one would be caught, not silently lost.
     assert real_conflicts <= UNVERIFIED_SCALE_LLOS
+
+
+# ── the N-series tab: the semantic layer finally on screen ───────────────────
+
+
+def test_the_render_can_load_the_N_series_from_the_semantic_endpoint():
+    """Everything else on this dashboard is computed in the browser from pipeline
+    rows. These come from SQL, through the endpoint the semantic runtime exposes —
+    which is the first time that layer reaches a screen at all."""
+    src = RENDER.read_text()
+    flat = re.sub(r"\s+", "", src)
+    assert "/semantic/?series=N" in flat, "the render must ask for the N series specifically"
+    assert "scopes=programme,opportunity,flw" in flat
+
+
+def test_the_N_series_is_fetched_on_demand_not_with_the_page():
+    """It is a real query against the visit cache. Firing it on mount would make
+    every other tab pay for a tab the reader may never open."""
+    src = RENDER.read_text()
+    assert "function loadNSeries" in src
+    # no effect hook drives it
+    assert "React.useEffect" not in src, "loading must stay user-triggered"
+
+
+def test_the_endpoints_error_message_is_shown_rather_than_a_generic_failure():
+    """The message names the missing column or relation — that IS the diagnostic,
+    and it is why the endpoint answers 400 with it instead of a 500."""
+    src = RENDER.read_text()
+    assert "nSeries.error" in src
+
+
+def test_N05_is_absent_from_the_rendered_list():
+    """Median gestational age needs a Layer 1 field the pipeline has never
+    extracted. Listing it would render a permanent n/a that looks like missing data
+    rather than a deferred metric."""
+    src = RENDER.read_text()
+    assert "'n05'" not in src
+    for ind in ("n01", "n09", "n13", "n15"):
+        assert f"'{ind}'" in src, ind
+
+
+def test_every_rendered_value_shows_its_denominator():
+    """The registry's no-bare-numbers rule, carried through to the screen."""
+    src = RENDER.read_text()
+    assert "_denominator" in src
