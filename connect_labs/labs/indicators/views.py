@@ -528,12 +528,20 @@ class MethodsView(OpenLocallyMixin, View):
             {
                 "resolutions": availability.resolutions(),
                 "default": DEFAULT_METHOD,
+                # Order matters and belongs to the registry: the menu reads
+                # groups in this order rather than sorting them alphabetically,
+                # because "Child survival" leads for a reason.
+                "groups": list(measures.GROUPS),
                 "indicators": [
                     {
                         "code": m.code,
                         "label": m.label,
                         "unit": m.unit,
                         "description": m.description,
+                        # The menu group, from the registry rather than the
+                        # template — so the grouping is one fact with one home
+                        # and the MCP tools can report it too.
+                        "group": measures.group_of(m.code),
                         "lower_is_worse": m.code in measures.LOWER_IS_WORSE,
                         "per_1000": "1,000" in m.unit,
                         "threshold_min": m.threshold_min,
