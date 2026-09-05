@@ -714,3 +714,43 @@ class TestTheDownloadIsTheQuestionOnScreen:
         assert annual == 99_700
         # A different question in the same units, not a rounding difference.
         assert fortnight != annual
+
+
+class TestTheUrlCarriesTheQuestion:
+    """A selection you cannot send to someone has to be described in prose,
+    and every figure here ends up in an argument somebody else must check.
+
+    These assert the server half of the contract: the parameters the page
+    writes into its address bar are the ones the API reads back. The browser
+    half — parsing them on load — is exercised by driving the page.
+    """
+
+    def test_a_link_reproduces_the_selection_it_was_copied_from(self, client_in, africa):
+        for b in africa.values():
+            set_value(b, "pop_growth_rate", 3.0, source=Source.WORLDBANK)
+
+        link = {
+            "indicator": "u5mr",
+            "method": "subnational_igme",
+            "iso": "NER",
+            "admin_level": 1,
+            "target_year": 2030,
+            "rollup": "0",
+            "threshold": 50,
+        }
+        first = client_in.get(reverse("targeting:selection"), link).json()
+        again = client_in.get(reverse("targeting:selection"), link).json()
+
+        assert [r["name"] for r in first["rows"]] == [r["name"] for r in again["rows"]]
+        assert first["totals"] == again["totals"]
+        assert first["pinned_level"] == 1
+        assert first["projected_to"] == 2030
+        assert first["rolled_up"] is False
+        assert first["scope"]["iso_codes"] == ["NER"]
+
+    def test_a_link_that_omits_everything_is_still_a_valid_question(self, client_in, africa):
+        """The bare page and a stripped link have to mean the same thing."""
+        bare = client_in.get(reverse("targeting:selection")).json()
+        assert bare["scope"]["whole_continent"] is True
+        assert bare["projected_to"] is None
+        assert bare["pinned_level"] is None

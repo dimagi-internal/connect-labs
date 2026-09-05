@@ -657,6 +657,75 @@
     document.getElementById('tg-gaps').innerHTML = gaps.join('<br>');
   }
 
+  // --- the address bar is the state ----------------------------------------
+  //
+  // A selection you cannot send to someone is a selection you have to describe
+  // in prose, and every figure this page produces ends up in an argument
+  // somebody else has to be able to check. The URL carries the whole question,
+  // so a link lands on the same numbers rather than on the defaults.
+
+  var URL_STATE = {
+    indicator: 'currentIndicator',
+    method: 'currentMethod',
+    iso: 'currentIso',
+    admin_level: 'currentLevel',
+    target_year: 'currentYear',
+  };
+
+  function readUrlState() {
+    var q = new URLSearchParams(window.location.search);
+    var wanted = {};
+    Object.keys(URL_STATE).forEach(function (k) {
+      if (q.has(k)) wanted[k] = q.get(k);
+    });
+    if (q.get('rollup') === '0') wanted.rank = true;
+    if (q.has('threshold')) wanted.threshold = parseFloat(q.get('threshold'));
+    return wanted;
+  }
+
+  // Applied AFTER applyThresholdScale, which resets the slider to the
+  // indicator's own default — reading the URL first and letting the scale
+  // overwrite it would silently drop the one number the link was sent for.
+  function applyUrlState(wanted) {
+    if (wanted.indicator && indicatorMeta[wanted.indicator]) {
+      currentIndicator = wanted.indicator;
+      document.getElementById('tg-indicator').value = currentIndicator;
+      applyThresholdScale();
+    }
+    if (wanted.method && methodInfo.methods[wanted.method]) {
+      currentMethod = wanted.method;
+    }
+    if (wanted.iso) currentIso = wanted.iso;
+    if (wanted.admin_level !== undefined) {
+      currentLevel = parseInt(wanted.admin_level, 10);
+    }
+    if (wanted.target_year) {
+      currentYear = parseInt(wanted.target_year, 10);
+      document.getElementById('tg-year').value = String(currentYear);
+    }
+    if (wanted.rank) document.getElementById('tg-rank').checked = true;
+    if (!isNaN(wanted.threshold)) {
+      var el = document.getElementById('tg-threshold');
+      // Clamped rather than rejected: a threshold outside this indicator's
+      // range is a link built for a different indicator, and landing at the
+      // nearest end of the scale is more useful than landing at the default.
+      el.value = Math.min(
+        parseFloat(el.max),
+        Math.max(parseFloat(el.min), wanted.threshold),
+      );
+      updateThresholdLabels();
+    }
+  }
+
+  function syncUrl() {
+    if (!window.history || !window.history.replaceState) return;
+    window.history.replaceState(
+      null,
+      '',
+      window.location.pathname + query(['threshold=' + threshold()]),
+    );
+  }
+
   // --- where: country, level, delivery year --------------------------------
 
   var LEVEL_NAMES = { 0: 'Country', 1: 'Regions', 2: 'Districts' };
@@ -1233,6 +1302,7 @@
   // exists to prevent, reintroduced by an update path that skipped it. So it
   // hangs off the fetch that every control goes through instead.
   function syncDownloadLinks() {
+    syncUrl();
     var href = TG.urls.download + query(['threshold=' + threshold()]);
     document.getElementById('tg-download-md').href = href;
     document.getElementById('tg-download').href = href;
@@ -1314,14 +1384,25 @@
   }
 
   document.addEventListener('DOMContentLoaded', function () {
+    // FIRST, before anything can rewrite the address bar. updateThresholdLabels
+    // syncs the URL, so reading it any later reads the defaults this load just
+    // wrote over the link that was actually followed.
+    var wanted = readUrlState();
+
     initPopovers();
     legend();
     updateThresholdLabels();
     document.getElementById('tg-threshold').addEventListener('input', onSlide);
 
     // Methods first: the picker decides which sources answer and at what
-    // level, so the map and table must not load before it is known.
-    fetch(TG.urls.methods + '?indicator=' + TG.indicator)
+    // level, so the map and table must not load before it is known. A link
+    // naming an indicator asks that indicator's availability question, not
+    // the default's.
+    fetch(
+      TG.urls.methods +
+        '?indicator=' +
+        encodeURIComponent(wanted.indicator || TG.indicator),
+    )
       .then(function (r) {
         return r.json();
       })
@@ -1331,8 +1412,9 @@
         currentIndicator = TG.indicator;
         renderIndicatorSelect();
         applyThresholdScale();
-        renderPicker();
         renderYearSelect();
+        applyUrlState(wanted);
+        renderPicker();
         document
           .getElementById('tg-rank')
           .addEventListener('change', function () {
