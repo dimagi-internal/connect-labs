@@ -51,6 +51,15 @@ class UnitBasis(str, Enum):
     depends on context — a "case" means untreated diarrhoea when targeting
     diarrhoea and an unvaccinated child when targeting measles — so it resolves
     against the indicator in play.
+
+    DISEASE_CASE and CASE_YEAR are the same cases counted over different spans,
+    and the difference is not a rounding. A survey asks about the last two
+    weeks, so a prevalence-derived case count is **a fortnight's worth**;
+    Liberia's 51,429 untreated diarrhoea episodes become 1,210,108 over a year.
+    Costing a year of supply against the fortnight figure under-prices it
+    twentyfold. Both are offered because both are legitimate questions — how
+    many are sick now, and how many treatments a year needs — but the basis has
+    to say which, and neither can be the silent default for the other.
     """
 
     BIRTH = "birth"
@@ -58,6 +67,7 @@ class UnitBasis(str, Enum):
     PERSON = "person"
     HOUSEHOLD = "household"
     DISEASE_CASE = "case"
+    CASE_YEAR = "case_year"
 
     @property
     def label(self) -> str:
@@ -66,7 +76,8 @@ class UnitBasis(str, Enum):
             "under_5": "per child under 5",
             "person": "per person",
             "household": "per household",
-            "case": "per case",
+            "case": "per case (survey recall window)",
+            "case_year": "per case (a year of cases)",
         }[self.value]
 
     @property
@@ -77,6 +88,7 @@ class UnitBasis(str, Enum):
             "person": "person",
             "household": "household",
             "case": "case",
+            "case_year": "annual case",
         }[self.value]
 
 
@@ -98,6 +110,19 @@ def measure_for(basis: UnitBasis, indicator: str = "u5mr") -> str | None:
     """
     if basis in _FIXED:
         return _FIXED[basis]
+
+    if basis is UnitBasis.CASE_YEAR:
+        # No annualisation is possible without a recall window and an episode
+        # duration on the underlying prevalence. Declining is the right answer:
+        # multiplying by an assumed 26 would be an invention wearing the same
+        # units as a measurement.
+        # Same aliasing as the fortnight case below: the ORS question is
+        # asked on either the prevalence or the coverage measure, and both
+        # mean the same untreated episodes.
+        if indicator in ("diarrhoea_prevalence", "ors_coverage"):
+            indicator = "ors_coverage"
+        annual = f"{indicator}_gap_annual"
+        return annual if annual in measures.MEASURES else None
 
     # DISEASE_CASE. Prefer a measured untreated count, then the unreached
     # population for a coverage indicator, then expected deaths for mortality.
@@ -193,6 +218,36 @@ register(
             "A point-prevalence count on a two-week recall: children sick at any "
             "given moment, not an annual episode total. Annual demand is several "
             "times higher."
+        ),
+    )
+)
+
+register(
+    Intervention(
+        slug="ors_annual",
+        label="Oral rehydration salts (a year of episodes)",
+        basis=UnitBasis.CASE_YEAR,
+        unit_cost_usd=2.50,
+        # Targets coverage, not prevalence, unlike its fortnight sibling. The
+        # annual figure answers "how much ORS does a year of untreated episodes
+        # need", which is a coverage question -- and a preset that agrees with
+        # the indicator already on screen does not throw away the threshold the
+        # reader set to get there.
+        targets="ors_coverage",
+        description=(
+            "ORS for every untreated under-5 diarrhoea episode across a year, "
+            "rather than the two-week snapshot a survey measures. This is the "
+            "basis a year of supply is procured against."
+        ),
+        caveat=(
+            "Annualised as 365 / (recall window + mean episode duration), which "
+            "for diarrhoea is 365 / (14 + 4.3) = 19.9 fortnights a year. That "
+            "conversion turns Liberia's 15.7% two-week prevalence into 3.13 "
+            "episodes per child-year, inside the 2.7-3.3 range Fischer Walker "
+            "et al. report for sub-Saharan Africa -- which is the check on it. "
+            "It assumes the survey window is representative of the whole year; "
+            "diarrhoea is seasonal, so the annual total is sound while any "
+            "single month is not."
         ),
     )
 )

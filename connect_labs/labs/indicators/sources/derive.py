@@ -27,6 +27,7 @@ number would throw away the only cross-check available.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators import boundaries as boundary_set
@@ -334,8 +335,10 @@ def load_coverage_gaps(iso_codes: list[str] | None = None, year: int | None = No
                 if episode is None:
                     continue
             unreached = max(0.0, 1.0 - cov.value / 100.0)
+            factor = None
             if episode is not None:
                 unreached *= episode.value / 100.0
+                factor = _measures.annualisation_factor(measure.conditional_on)
             rows.append(
                 Row(
                     indicator=f"{measure.code}_gap",
@@ -366,6 +369,18 @@ def load_coverage_gaps(iso_codes: list[str] | None = None, year: int | None = No
                     },
                 )
             )
+            if factor is not None and f"{measure.code}_gap_annual" in _measures.MEASURES:
+                annual_row = replace(
+                    rows[-1],
+                    indicator=f"{measure.code}_gap_annual",
+                    value=rows[-1].value * factor,
+                    method=(
+                        rows[-1].method + f" Carried to a year at x{factor:.1f}: 365 days over a "
+                        f"{_measures.get(measure.conditional_on).recall_days}-day recall window plus a "
+                        f"{_measures.get(measure.conditional_on).episode_days}-day episode."
+                    ),
+                )
+                rows.append(annual_row)
             made += 1
         if made:
             logger.info("derive: %d %s_gap rows", made, measure.code)

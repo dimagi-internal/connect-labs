@@ -61,6 +61,14 @@ class Measure:
     #: population be derived generically — ``denominator x (1 - coverage)`` —
     #: instead of hand-writing a gap per indicator.
     coverage_of: str | None = None
+    #: For a prevalence measured over a survey recall window: the length of that
+    #: window in days, and the mean duration of an episode. Together they convert
+    #: a point-in-time prevalence into an annual incidence, which is the quantity
+    #: a programme is actually sized on. DHS asks about the last two weeks; a
+    #: figure derived from that answer is a fortnight's worth of illness and
+    #: reads, to anyone who does not check, like a year's.
+    recall_days: int | None = None
+    episode_days: float | None = None
     #: For a coverage rate measured only among those who had an episode — ORS
     #: among children who *had diarrhoea* — the prevalence measure that says how
     #: many of them there are. Without it the unreached count multiplies the
@@ -289,6 +297,8 @@ register(
 register(
     Measure(
         code="diarrhoea_prevalence",
+        recall_days=14,  # DHS asks about the last two weeks
+        episode_days=4.3,  # Fischer Walker et al. 2012, systematic review of episode duration in LMICs
         threshold_min=2,
         threshold_max=40,
         threshold_default=15,
@@ -420,7 +430,7 @@ def _coverage(code, label, weight, denominator, unit, desc, lo=10, hi=95, defaul
     )
 
 
-def _prevalence(code, label, weight, unit, desc, lo=1, hi=60, default=20):
+def _prevalence(code, label, weight, unit, desc, lo=1, hi=60, default=20, recall_days=None, episode_days=None):
     return register(
         Measure(
             code=code,
@@ -431,6 +441,8 @@ def _prevalence(code, label, weight, unit, desc, lo=1, hi=60, default=20):
             weight_by=weight,
             downscale=True,
             description=desc,
+            recall_days=recall_days,
+            episode_days=episode_days,
             threshold_min=lo,
             threshold_max=hi,
             threshold_default=default,
@@ -635,6 +647,8 @@ _prevalence(
     lo=1,
     hi=60,
     default=20,
+    recall_days=14,  # DHS asks about the last two weeks
+    episode_days=4.0,  # typical febrile episode; less well characterised than diarrhoea
 )
 
 
@@ -647,6 +661,8 @@ _prevalence(
     lo=1,
     hi=30,
     default=8,
+    recall_days=14,  # DHS asks about the last two weeks
+    episode_days=7.0,  # typical acute respiratory episode; less well characterised than diarrhoea
 )
 
 #: Rates a user can sensibly threshold on to pick places. Counts are outcomes
@@ -886,6 +902,66 @@ register(
         threshold_default=2,
     )
 )
+
+
+def annualisation_factor(prevalence_code: str) -> float | None:
+    """Turn a recall-window prevalence into an annual incidence multiplier.
+
+    A survey asks whether a child had diarrhoea in the last two weeks. The share
+    that says yes is a fortnight's worth of illness, and a count derived from it
+    is a fortnight's worth of cases -- which reads, to anyone who does not check,
+    like a year's. Liberia's untreated-episode figure is 60,671 on that basis
+    and 1.2 million a year.
+
+    The standard conversion is that a prevalence observed over a recall window
+    reflects incidence times the period in which an episode would be caught: the
+    window itself plus the episode's own duration, since an episode beginning
+    shortly before the window is still reported inside it.
+
+        annual incidence = prevalence x 365 / (recall_days + episode_days)
+
+    For diarrhoea on DHS's fortnight and a 4.3-day episode that is x19.9.
+    Applied to Liberia's own 15.7% it gives 3.13 episodes per child-year, which
+    sits between the sub-Saharan African average of 3.3 and the global
+    low-and-middle-income figure of 2.7 -- a check on the conversion rather than
+    an assumption inside it.
+
+    Returns None where a measure does not declare a window, because the
+    conversion would then be a guess.
+    """
+    m = MEASURES.get(prevalence_code)
+    if m is None or m.recall_days is None or m.episode_days is None:
+        return None
+    return 365.0 / (m.recall_days + m.episode_days)
+
+
+# A conditional coverage measure also gets an ANNUAL unreached count, because
+# the fortnight figure is not what a programme is sized on and is the one most
+# likely to be quoted as though it were. Both are kept: the fortnight figure is
+# what the survey directly supports, the annual one is what a commodity order
+# is built from, and having them side by side makes the difference impossible
+# to miss.
+for _m in [m for m in list(MEASURES.values()) if m.coverage_of and m.conditional_on]:
+    _episode = MEASURES[_m.conditional_on]
+    _factor = annualisation_factor(_m.conditional_on)
+    if _factor is None:
+        continue
+    register(
+        Measure(
+            code=f"{_m.code}_gap_annual",
+            label=f"Unreached per year: {_m.label.lower()}",
+            kind=Kind.COUNT,
+            unit="episodes per year",
+            agg=Agg.SUM,
+            description=(
+                f"Episodes a year that go without {_m.label.lower()}. The fortnight figure "
+                f"({_m.code}_gap) carried to a year at x{_factor:.1f} -- 365 days over a "
+                f"{_episode.recall_days}-day recall window plus a {_episode.episode_days}-day "
+                "episode. This is the quantity a commodity order is built from; the fortnight "
+                "figure is what the survey directly supports."
+            ),
+        )
+    )
 
 
 # Every coverage measure gets a matching unreached count, registered here so the

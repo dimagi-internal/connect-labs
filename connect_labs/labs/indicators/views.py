@@ -31,6 +31,11 @@ DEFAULT_METHOD = methods.default_for(methods.Resolution.SUBNATIONAL).code
 #: payload is an order of magnitude smaller.
 MAP_SIMPLIFY = 0.02
 
+#: How many countries may be drawn at district level at once. The limit is the
+#: map's, not the analysis's: the table and the download will happily rank every
+#: district in a dozen countries, but drawing 47,000 polygons is not a map.
+MAX_COUNTRIES_AT_DISTRICT = 3
+
 
 class OpenLocallyMixin(LoginRequiredMixin):
     """Login-gated when deployed, open when running locally.
@@ -164,6 +169,80 @@ def _float(request, key, default):
         return default
 
 
+def _iso_codes(request) -> list[str]:
+    """The countries in scope, defaulting to the whole continent.
+
+    Scoping is what turns this from a continental scan into a country
+    proposal. Unknown codes are dropped rather than passed through: a
+    misspelled ISO would otherwise silently return an empty selection, which
+    reads as "nowhere qualifies" rather than "that is not a country".
+    """
+    raw = request.GET.get("iso", "")
+    wanted = [c.strip().upper() for c in raw.replace(" ", ",").split(",") if c.strip()]
+    kept = [c for c in wanted if c in ISO_CODES]
+    return kept or list(ISO_CODES)
+
+
+def _admin_level(request) -> int | None:
+    """The level to evaluate at, or None to take the deepest carrying values.
+
+    Deepest is not always most informative. Liberia measures ORS coverage for
+    its fifteen counties and no district, so all 136 districts inherit one of
+    fifteen numbers -- a finer grid over the same information. Pinning the
+    level is how a reader asks for the units that were actually measured.
+    """
+    v = request.GET.get("admin_level")
+    if v and v.isdigit() and int(v) in boundary_set.LEVELS:
+        return int(v)
+    return None
+
+
+def _rollup(request) -> bool:
+    """Whether a wholly-selected country collapses into one row.
+
+    On, a country every one of whose regions clears the threshold is stated as
+    the country -- truer and shorter. Off, the regions are listed, which is
+    what a ranking question wants: you cannot rank fifteen counties against
+    each other if they have been added together first.
+    """
+    return request.GET.get("rollup", "1").lower() not in ("0", "false", "no", "off")
+
+
+def _target_year(request) -> int | None:
+    """The year the programme runs, if one was named.
+
+    Counts are carried to it at each country's own growth rate; rates are left
+    alone, because nothing here models how coverage or mortality moves and a
+    projected rate would be invention.
+    """
+    v = request.GET.get("target_year")
+    if v and v.isdigit() and 2000 <= int(v) <= 2050:
+        return int(v)
+    return None
+
+
+def _selection_for(request):
+    """The one selection every view on this page answers from.
+
+    Built here rather than in each view because the map, the table, the
+    download and the methodology have to be asking the same question -- four
+    hand-assembled parameter lists is how they come to disagree, and how
+    ``target_year`` came to reach the download but not the workings.
+    """
+    indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
+    measure = measures.get(indicator)
+    return select_above(
+        indicator=indicator,
+        threshold=_float(request, "threshold", measure.threshold_default),
+        year=int(y) if (y := request.GET.get("year")) and y.isdigit() else None,
+        iso_codes=_iso_codes(request),
+        method=_method(request, indicator),
+        target_year=_target_year(request),
+        rollup=_rollup(request),
+        admin_level=_admin_level(request),
+    )
+
+
 class TargetingView(OpenLocallyMixin, TemplateView):
     """The map page."""
 
@@ -209,12 +288,22 @@ class MapDataView(OpenLocallyMixin, View):
         simplify = _float(request, "simplify", MAP_SIMPLIFY)
 
         method = methods.get(_method(request, indicator))
-        supported = set(availability.countries_supporting(method, indicator))
+        scope = _iso_codes(request)
+        supported = set(availability.countries_supporting(method, indicator)) & set(scope)
 
         # A national method paints one shape per country. Painting a national
         # figure onto regions would look like subnational detail that does not
         # exist. Countries the method cannot answer for are simply absent.
-        level = 0 if method.is_national else 1
+        #
+        # Below that, the map follows the level the table is pinned to, so the
+        # shapes on screen are the rows in the table. Districts are only drawn
+        # for a scoped selection: ADM2 across Africa is some 47,000 polygons,
+        # which is not a map, it is a download.
+        # `or 1` here would swallow a deliberate ADM0 pin, zero being falsy.
+        pinned = _admin_level(request)
+        level = 0 if method.is_national else (1 if pinned is None else pinned)
+        if level == 2 and len(scope) > MAX_COUNTRIES_AT_DISTRICT:
+            level = 1
         units = list(boundary_set.owned().filter(iso_code__in=supported, admin_level=level))
 
         bulk = BulkResolver(units, year=year, source_order=method.source_order, lens_on=indicator)
@@ -259,22 +348,17 @@ class SelectionView(OpenLocallyMixin, View):
 
     def get(self, request):
         indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
-        threshold = _float(request, "threshold", DEFAULT_THRESHOLD)
-        year = request.GET.get("year")
-        year = int(year) if year and year.isdigit() else None
-
-        # Scoped to Africa exactly as the map is: a table listing places the
-        # map cannot show would be a quiet contradiction.
-        # Scoped to Africa exactly as the map is, and produced with the
-        # requested method so the table and the map always agree.
-        selection = select_above(
-            indicator=indicator,
-            threshold=threshold,
-            year=year,
-            iso_codes=ISO_CODES,
-            method=_method(request, indicator),
-        )
         measure = measures.get(indicator)
+        threshold = _float(request, "threshold", measure.threshold_default)
+        scope = _iso_codes(request)
+        # Resolved through the intervention layer rather than by name, so the
+        # aliasing that makes an ORS question answerable from either the
+        # prevalence or the coverage measure is stated once.
+        annual_gap = interventions.measure_for(interventions.UnitBasis.CASE_YEAR, indicator)
+
+        # Scoped, levelled and projected exactly as the map is, and produced
+        # with the requested method, so the table and the map always agree.
+        selection = _selection_for(request)
 
         return JsonResponse(
             {
@@ -285,12 +369,19 @@ class SelectionView(OpenLocallyMixin, View):
                 "gap_label": (
                     measures.get(f"{indicator}_gap").label if f"{indicator}_gap" in measures.MEASURES else None
                 ),
+                # A survey measures a fortnight. The gap it implies is therefore
+                # a fortnight's worth of cases, and quoting it as a year's is a
+                # twentyfold error -- one this page made in print. Where the
+                # annual sibling exists it is offered alongside, labelled, so
+                # the reader picks a basis rather than assuming one.
+                "gap_annual_label": (measures.get(annual_gap).label if annual_gap else None),
                 "threshold": threshold,
                 "threshold_pct": measures.percent_equivalent(indicator, threshold),
                 "totals": {
                     "expected_deaths": selection.totals.get("expected_deaths"),
                     "ors_gap_children": selection.totals.get("ors_gap_children"),
                     "gap": selection.totals.get(f"{indicator}_gap"),
+                    "gap_annual": selection.totals.get(annual_gap) if annual_gap else None,
                     "births": selection.totals.get("births"),
                     "pop_u5": selection.totals.get("pop_u5"),
                     "pop_total": selection.totals.get("pop_total"),
@@ -313,6 +404,18 @@ class SelectionView(OpenLocallyMixin, View):
                 "coverage": {c: {"with_value": got, "of": total} for c, (got, total) in selection.coverage.items()},
                 "method": selection.method,
                 "resolution": selection.resolution,
+                # The shape the question was asked in, echoed back. A reader
+                # who cannot see that a total is a 2027 projection over
+                # fifteen unrolled counties cannot check it.
+                "scope": {
+                    "iso_codes": scope,
+                    "countries": [name_for(c) for c in scope],
+                    "whole_continent": len(scope) == len(ISO_CODES),
+                },
+                "projected_to": selection.projected_to,
+                "projected_without_rate": selection.projected_without_rate,
+                "rolled_up": selection.rolled_up,
+                "pinned_level": selection.pinned_level,
                 "countries_unsupported": selection.countries_unsupported,
                 "countries_fully_above": selection.countries_fully_above,
                 "countries_partly_above": selection.countries_partly_above,
@@ -360,6 +463,9 @@ class SelectionView(OpenLocallyMixin, View):
                         "expected_deaths": _round_or_none(a.counts.get("expected_deaths")),
                         "ors_gap_children": _round_or_none(a.counts.get("ors_gap_children")),
                         "gap": _round_or_none(a.counts.get(f"{indicator}_gap")),
+                        "gap_annual": _round_or_none(a.counts.get(annual_gap)) if annual_gap else None,
+                        "small_sample": bool(r and r.small_sample),
+                        "sample": (r.extra.get("sample_unweighted") if r else None),
                         "births": _round_or_none(a.counts.get("births")),
                         "pop_u5": _round_or_none(a.counts.get("pop_u5")),
                         "pop_total": _round_or_none(a.counts.get("pop_total")),
@@ -375,19 +481,8 @@ class SelectionDownloadView(OpenLocallyMixin, View):
     """The table and its methodology, zipped together."""
 
     def get(self, request):
-        indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
-        threshold = _float(request, "threshold", DEFAULT_THRESHOLD)
-        year = request.GET.get("year")
-        year = int(year) if year and year.isdigit() else None
         fmt = request.GET.get("format", "zip")
-
-        selection = select_above(
-            indicator=indicator,
-            threshold=threshold,
-            year=year,
-            iso_codes=ISO_CODES,
-            method=_method(request, indicator),
-        )
+        selection = _selection_for(request)
         stem = export.filename_stem(selection)
 
         if fmt == "csv":
@@ -411,14 +506,7 @@ class MethodologyView(OpenLocallyMixin, View):
     """
 
     def get(self, request):
-        indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
-        selection = select_above(
-            indicator=indicator,
-            threshold=_float(request, "threshold", measures.get(indicator).threshold_default),
-            year=int(y) if (y := request.GET.get("year")) and y.isdigit() else None,
-            iso_codes=ISO_CODES,
-            method=_method(request, indicator),
-        )
+        selection = _selection_for(request)
         source = export.to_methodology(selection)
         return JsonResponse(
             {
@@ -454,6 +542,77 @@ class MethodsView(OpenLocallyMixin, View):
                 **availability.matrix(indicator),
             }
         )
+
+
+class ScopeView(OpenLocallyMixin, View):
+    """Where you can ask the question, and at what level it is worth asking.
+
+    Two things a reader cannot see from the map and has to be told:
+
+    *Which countries there are.* Obvious, but the surface had no country
+    control at all, so every question was continental whether or not that was
+    the question.
+
+    *Which levels are actually measured.* Boundary depth and measurement depth
+    are different facts and the difference is the whole trap. Liberia has 136
+    geoBoundaries districts and ORS coverage for none of them -- all 136 would
+    inherit one of fifteen county figures and rank in fifteen flat ties, a
+    finer grid over the same information presented as more detail. So each
+    level reports how many of its units carry a reading **of their own**, and
+    the control can say "15 measured" against "0 measured, 136 inherited"
+    rather than leaving a reader to discover it in the caveat line.
+    """
+
+    def get(self, request):
+        indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
+        method = methods.get(_method(request, indicator))
+        supported = set(availability.countries_supporting(method, indicator))
+
+        counts = (
+            boundary_set.owned()
+            .filter(iso_code__in=ISO_CODES)
+            .values("iso_code", "admin_level")
+            .annotate(n=Count("id"))
+        )
+        by_iso: dict[str, dict[int, int]] = {}
+        for row in counts:
+            by_iso.setdefault(row["iso_code"], {})[row["admin_level"]] = row["n"]
+
+        payload = {
+            "countries": [
+                {
+                    "iso": iso,
+                    "name": name_for(iso),
+                    "levels": {str(k): v for k, v in sorted(by_iso.get(iso, {}).items())},
+                    "supported": iso in supported,
+                }
+                for iso in ISO_CODES
+                if by_iso.get(iso)
+            ],
+            "max_countries_at_district": MAX_COUNTRIES_AT_DISTRICT,
+        }
+
+        # Measurement depth is per country and per indicator, so it is only
+        # computed when a country was named -- resolving every district in
+        # Africa to answer a control's label would be a minute of work for a
+        # tooltip.
+        scope = _iso_codes(request)
+        if len(scope) <= MAX_COUNTRIES_AT_DISTRICT:
+            units = list(boundary_set.owned().filter(iso_code__in=scope))
+            bulk = BulkResolver(units, source_order=method.source_order, lens_on=indicator)
+            depth: dict[int, dict[str, int]] = {}
+            for b in units:
+                d = depth.setdefault(b.admin_level, {"units": 0, "measured": 0, "inherited": 0})
+                d["units"] += 1
+                r = bulk.get(indicator, b)
+                if r is None:
+                    continue
+                d["inherited" if r.inherited else "measured"] += 1
+            payload["depth"] = {str(k): v for k, v in sorted(depth.items())}
+            payload["depth_indicator"] = indicator
+            payload["depth_scope"] = scope
+
+        return JsonResponse(payload)
 
 
 class ScenarioView(OpenLocallyMixin, View):
@@ -512,12 +671,18 @@ class ScenarioView(OpenLocallyMixin, View):
                 status=400,
             )
 
+        # Same scope, level and delivery year as the table above it. A cost
+        # computed over the whole continent while the table shows one country
+        # is not a caveat, it is a different answer in the same panel.
         selection = select_above(
             indicator=indicator,
             threshold=threshold,
-            iso_codes=ISO_CODES,
+            iso_codes=_iso_codes(request),
             method=_method(request, indicator),
             extra_counts=(cases_measure,),
+            target_year=_target_year(request),
+            rollup=_rollup(request),
+            admin_level=_admin_level(request),
         )
 
         cases = selection.totals.get(cases_measure)

@@ -217,7 +217,9 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
     "mean_household_size": _survey("household roster size"),
 }
 
-#: Every ``*_gap`` count is arithmetic on a coverage rate and a denominator.
+#: Every ``*_gap`` count is arithmetic on a coverage rate and a denominator, and
+#: every ``*_gap_annual`` is that carried to a year at the survey's own recall
+#: window. Both are derived by definition, so neither needs a hand-written entry.
 _DERIVED_GAP = (Eligible(Source.DERIVED, "Denominator multiplied by the uncovered share."),)
 
 
@@ -225,7 +227,7 @@ def for_indicator(indicator: str) -> tuple[Eligible, ...]:
     """The sources this indicator may be answered from, best first."""
     if indicator in POLICY:
         return POLICY[indicator]
-    if indicator.endswith("_gap"):
+    if indicator.endswith("_gap") or indicator.endswith("_gap_annual"):
         return _DERIVED_GAP
     raise KeyError(
         f"no source policy for {indicator!r}. Every indicator states which sources may answer it "

@@ -570,6 +570,12 @@ def carried_for(indicator: str, extra: tuple[str, ...] = ()) -> tuple[str, ...]:
     gap = f"{indicator}_gap"
     if gap in measures.MEASURES:
         wanted.append(gap)
+    # Both, where the indicator has both. The fortnight figure is what the
+    # survey supports; the annual one is what a commodity order is built from,
+    # and a caller shown only the first will quote it as the second.
+    annual = f"{indicator}_gap_annual"
+    if annual in measures.MEASURES:
+        wanted.append(annual)
     if indicator in ("diarrhoea_prevalence", "ors_coverage"):
         wanted.append("ors_gap_children")
     return CARRIED_COUNTS + tuple(dict.fromkeys(wanted))
