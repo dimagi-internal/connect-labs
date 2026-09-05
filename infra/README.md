@@ -246,10 +246,52 @@ until the three DKIM CNAMEs in the stack Outputs are published in the
 Route 53 hosted zones here), and the account must leave the SES sandbox via an
 AWS Support request. Full runbook: **[docs/OUTBOUND_EMAIL.md](../docs/OUTBOUND_EMAIL.md)**.
 
-To upgrade Umami: `aws codebuild start-build --project-name labs-jj-umami-build`
-(rebuilds `latest` from upstream with `BASE_PATH=/umami` baked in), then
-`aws ecs update-service --cluster labs-jj-cluster --service labs-jj-umami
---force-new-deployment`.
+### Upgrading Umami
+
+**The version is a pinned tag (`UmamiVersion`, currently `v3.3.1`), not `main`.**
+It was an unpinned `git clone --depth 1` of the default branch until 2026-09-05,
+which meant nothing recorded what was running. That is not a tidiness point — the
+one image ever built (2026-07-24, from `b70eda56`) reported `"version": "3.2.0"`
+while actually being a month of unreleased post-v3.2.0 `main`, and it missed the
+upstream fix for the `/umami/api/send` P2002 race (`7c030e4c`, 2026-07-30) by
+seven days. See connect-labs #1396.
+
+An upgrade is therefore a deliberate two-part change:
+
+1. **Bump `UmamiVersion`** to a real upstream release tag and deploy the stack.
+   The build fails loudly if the tag does not resolve exactly.
+2. **Build and roll:**
+   ```bash
+   aws codebuild start-build --project-name labs-jj-umami-build --profile labs
+   aws ecs update-service --cluster labs-jj-cluster --service labs-jj-umami \
+     --force-new-deployment --profile labs
+   ```
+
+⚠️ **Umami releases carry Prisma migrations, and they apply to the `umami`
+database on container start** — the upgrade is a schema change, not just a new
+image. Read `prisma/migrations/` between the two tags before rolling:
+
+```bash
+git diff --name-only <current-tag> <target-tag> -- 'prisma/migrations/*'
+```
+
+v3.3.1 adds three against the 2026-07-24 build (`22_add_2fa`,
+`23_update_session_data`, `24_lowercase_username`). This is why the pin matters:
+without it, an unrelated rebuild would have applied them unannounced.
+
+**Rollback:** images are now tagged `:<version>` as well as `:latest`, so a prior
+version can be redeployed by pointing `UmamiImageUri` at the version tag. The
+schema migrations are **not** reversed by that — Prisma migrations are
+forward-only, so verify a migration is acceptable before it applies, not after.
+
+**Which version is running:** `UMAMI_BUILD_VERSION` on the task definition —
+
+```bash
+aws ecs describe-task-definition --task-definition labs-jj-umami --profile labs \
+  --query 'taskDefinition.containerDefinitions[0].environment'
+```
+
+Do not read Umami's own `package.json` for this; that is the value that lied.
 
 ## Referenced resources created out-of-band (2026-07-24)
 
