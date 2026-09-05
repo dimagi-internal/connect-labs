@@ -170,6 +170,21 @@ CASE_PROPERTIES_SCHEMA = {
             "description": "Actual discharge date (Design A/B registration form)",
         },
         {
+            "name": "gestational_age_wks",
+            "paths": [
+                "form.case.update.gestational_age_at_birth_lmp",
+                "form.mothers_details.gestational_age_at_birth_lmp",
+                "form.subcase_0.case.update.gestational_age_at_birth_lmp",
+            ],
+            "transform": "float",
+            "aggregation": "first",
+            "description": (
+                "Gestational age at birth in weeks. Layer 1 never carried it, so the "
+                "median-gestational-age metric had no input at all. Paths per the demo "
+                "compute spec section 1 (Design A and B)."
+            ),
+        },
+        {
             "name": "days_discharge_to_reg",
             "paths": [
                 "form.child_details.child_age_at_reg_discharge_date",

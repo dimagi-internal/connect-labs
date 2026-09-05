@@ -545,6 +545,317 @@ measures:
     type: sum
     sql: '{CUBE}.n_weight_readings'
 
+  # ═════════════════════════════════════════════════════════════════════════
+  # N-SERIES — Neal Lesh's demo compute spec, 2026-09-05
+  # ("Connect KMC — demo metrics: compute spec & replication check").
+  #
+  # A REDUCTION of the C-series above, not a replacement: 15 metrics chosen for
+  # the demo dashboards, dropping the peak-month family and adding weight data
+  # quality. Kept as its own series so the C-series retains the parity guarantee
+  # in PARITY.md (5,698 checks, 0 mismatches) while these follow the spec where
+  # it differs.
+  #
+  # THE TWO RULES THAT GOVERN EVERY NUMBER HERE (spec section 0):
+  #   1. Valid data = status IN ('approved','over_limit'). over_limit is
+  #      legitimate paid work mislabelled by a platform glitch; excluding it
+  #      undercounts visits, started cases and weight series by 40-130%. That is
+  #      enforced upstream in the generator and profiler, not here.
+  #   2. Every metric carries value + numerator_n + denominator_n, and one below
+  #      its minimum denominator (20) reads "insufficient volume" rather than a
+  #      number. The numerator/denominator/value triple IS that rule, structural.
+  #
+  # Two differences from the C-series are real and deliberate: maturity is
+  # 28/42/90 rather than a single 28, and the growth bands are birth-weight-band
+  # specific rather than the flat 10-20 the C-series still carries (marked
+  # PROVISIONAL there, because this table did not exist when it was written).
+  # ═════════════════════════════════════════════════════════════════════════
+
+  - name: n01
+    title: Total cases
+    type: number
+    sql: '{n01_numerator}'
+    meta:
+      {
+        indicator: N01,
+        category: Scale,
+        prominence: Top,
+        unit: n,
+        direction: none,
+        note: 'Every case carrying any registration or visit.',
+      }
+  - name: n01_numerator
+    type: count
+  - name: n01_denominator
+    type: count
+  - name: n02
+    title: Registered
+    type: number
+    sql: '{n02_numerator}'
+    meta:
+      {
+        indicator: N02,
+        category: Scale,
+        prominence: Top,
+        unit: n,
+        direction: none,
+      }
+  - name: n02_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.registered' }]
+  - name: n02_denominator
+    type: count
+  - name: n03
+    title: Started
+    type: number
+    sql: '{n03_numerator}'
+    meta:
+      {
+        indicator: N03,
+        category: Scale,
+        prominence: Top,
+        unit: n,
+        direction: none,
+      }
+  - name: n03_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.started' }]
+  - name: n03_denominator
+    type: count
+  - name: n04
+    title: Cumulative SVNs reached
+    type: number
+    sql: '{n04_numerator}'
+    meta:
+      {
+        indicator: N04,
+        category: Scale,
+        prominence: Top,
+        unit: n,
+        direction: none,
+        note: 'Snapshot value equals total started; the trend is its running total by registration month.',
+      }
+  - name: n04_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.started' }]
+  - name: n04_denominator
+    type: count
+  # N05 (median gestational age) is DEFERRED, not dropped. It needs a Layer 1 field
+  # the pipeline has never carried — gestational_age_at_birth_lmp — which is added to
+  # the pipeline template in this change but only reaches the data on the next
+  # extraction. Declaring the measure before its column exists compiles cleanly and
+  # then fails at execution, which is exactly the class test_every_declared_scope
+  # _actually_executes exists to catch. It lands with the pipeline migration.
+  - name: n06
+    title: Median birthweight (g)
+    type: number
+    sql: '{n06_numerator}'
+    meta:
+      {
+        indicator: N06,
+        category: Case mix,
+        prominence: Top,
+        unit: g,
+        direction: none,
+        min_denominator: 20,
+      }
+  - name: n06_numerator
+    type: number
+    sql: 'PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {CUBE}.birth_weight_g)'
+  - name: n06_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.birth_weight_g IS NOT NULL' }]
+  - name: n07
+    title: Mean visits per case
+    type: number
+    sql: '{n07_numerator} / NULLIF({n07_denominator}, 0)'
+    meta:
+      {
+        indicator: N07,
+        category: Performance,
+        prominence: Top,
+        unit: n,
+        direction: higher,
+        min_denominator: 20,
+        flw_applicable: true,
+        note: 'Over eligible_42d cases. The C-series C24 uses the 28-day gate.',
+      }
+  - name: n07_numerator
+    type: sum
+    sql: 'CASE WHEN {CUBE}.eligible_42d THEN {CUBE}.num_visits ELSE 0 END'
+  - name: n07_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.eligible_42d' }]
+  - name: n08
+    title: '% first visit within 3 days of discharge'
+    type: number
+    sql: '100.0 * {n08_numerator} / NULLIF({n08_denominator}, 0)'
+    meta:
+      {
+        indicator: N08,
+        category: Performance,
+        prominence: Top,
+        unit: '%',
+        direction: higher,
+        min_denominator: 20,
+        flw_applicable: true,
+        note: 'Footnote any LLO where under 45% of cases carry a discharge date - thin, biased denominator.',
+      }
+  - name: n08_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.enrolled_within_3d' }]
+  - name: n08_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.started AND {CUBE}.has_discharge_date' }]
+  - name: n09
+    title: '% slow growth'
+    type: number
+    sql: '100.0 * {n09_numerator} / NULLIF({n09_denominator}, 0)'
+    meta:
+      {
+        indicator: N09,
+        category: Growth quality,
+        prominence: Top,
+        unit: '%',
+        direction: none,
+        min_denominator: 20,
+        flw_applicable: false,
+        note: 'Share of QUALIFYING SVNs (eligible_42d AND banded). N09-N12 share one denominator and sum to 100%.',
+      }
+  - name: n09_numerator
+    type: count
+    filters: [{ sql: "{CUBE}.growth_class_banded = 'slow'" }]
+  - name: n09_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.qualifying_svn' }]
+  - name: n10
+    title: '% healthy growth'
+    type: number
+    sql: '100.0 * {n10_numerator} / NULLIF({n10_denominator}, 0)'
+    meta:
+      {
+        indicator: N10,
+        category: Growth quality,
+        prominence: Top,
+        unit: '%',
+        direction: none,
+        min_denominator: 20,
+        flw_applicable: false,
+        note: 'Share of QUALIFYING SVNs (eligible_42d AND banded). N09-N12 share one denominator and sum to 100%.',
+      }
+  - name: n10_numerator
+    type: count
+    filters: [{ sql: "{CUBE}.growth_class_banded = 'plausible'" }]
+  - name: n10_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.qualifying_svn' }]
+  - name: n11
+    title: '% fast growth'
+    type: number
+    sql: '100.0 * {n11_numerator} / NULLIF({n11_denominator}, 0)'
+    meta:
+      {
+        indicator: N11,
+        category: Growth quality,
+        prominence: Top,
+        unit: '%',
+        direction: none,
+        min_denominator: 20,
+        flw_applicable: false,
+        note: 'Share of QUALIFYING SVNs (eligible_42d AND banded). N09-N12 share one denominator and sum to 100%.',
+      }
+  - name: n11_numerator
+    type: count
+    filters: [{ sql: "{CUBE}.growth_class_banded = 'fast'" }]
+  - name: n11_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.qualifying_svn' }]
+  - name: n12
+    title: '% incomplete growth data'
+    type: number
+    sql: '100.0 * {n12_numerator} / NULLIF({n12_denominator}, 0)'
+    meta:
+      {
+        indicator: N12,
+        category: Growth quality,
+        prominence: Top,
+        unit: '%',
+        direction: lower,
+        min_denominator: 20,
+        flw_applicable: false,
+        note: 'Everything not slow/healthy/fast - unreliable or not computable. A DIFFERENT denominator from C10; do not mix them.',
+      }
+  - name: n12_numerator
+    type: count
+    filters:
+      [{ sql: '{CUBE}.qualifying_svn AND {CUBE}.growth_class_banded IS NULL' }]
+  - name: n12_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.qualifying_svn' }]
+  - name: n13
+    title: Mortality
+    type: number
+    sql: '100.0 * {n13_numerator} / NULLIF({n13_denominator}, 0)'
+    meta:
+      {
+        indicator: N13,
+        category: Outcome,
+        prominence: Top,
+        unit: '%',
+        direction: lower,
+        min_denominator: 20,
+        flw_applicable: false,
+        note: 'Two-sided: implausibly LOW (under ~2%) usually means under-recording, not survival. Shown only where death recording is credible.',
+      }
+  - name: n13_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.died' }]
+  - name: n13_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.eligible_28d AND {CUBE}.outcome_known' }]
+  - name: n14
+    title: Weight rounding rate
+    type: number
+    sql: '100.0 * {n14_numerator} / NULLIF({n14_denominator}, 0)'
+    meta:
+      {
+        indicator: N14,
+        category: Data quality,
+        prominence: Top,
+        unit: '%',
+        direction: lower,
+        min_denominator: 100,
+        flw_applicable: true,
+        note: 'Sum-over-sum over weight READINGS, not cases - min_denominator is 100 readings. High means coarse or estimated values rather than a real scale read.',
+      }
+  - name: n14_numerator
+    type: sum
+    sql: '{CUBE}.n_weights_round_100_raw'
+  - name: n14_denominator
+    type: sum
+    sql: '{CUBE}.n_weight_readings'
+  - name: n15
+    title: '% impossible weight changes'
+    type: number
+    sql: '100.0 * {n15_numerator} / NULLIF({n15_denominator}, 0)'
+    meta:
+      {
+        indicator: N15,
+        category: Data quality,
+        prominence: Top,
+        unit: '%',
+        direction: lower,
+        min_denominator: 20,
+        flw_applicable: true,
+        note: 'Over cases whose growth is computable at all.',
+      }
+  - name: n15_numerator
+    type: count
+    filters:
+      [{ sql: '{CUBE}.weight_computable AND NOT {CUBE}.weight_consistent' }]
+  - name: n15_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.weight_computable' }]
+
   # ── Input-availability gates ─────────────────────────────────────────────
   # Not indicators (no `meta`), so they are emitted as columns but never treated
   # as one. They reproduce the render's inputState(): an indicator whose input the
