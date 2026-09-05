@@ -296,7 +296,7 @@ scenes:
     seconds: 2
     note: let the add land and the map's fitBounds animation settle
   - kind: scroll_to
-    say: reframes
+    say: side
     target: css:#map-pane
     must_succeed: false
     note: bring the map back into frame. The panel row flips to "added", but the ARM
