@@ -63,6 +63,24 @@ def _classify_archetype(approval_rate: float, flag_rate: float) -> str:
 # a story per FLW. Floors stay modest so most visits remain approved.
 _ARCHETYPE_FLAG_FLOOR = {"rockstar": 0.03, "steady": 0.08, "struggling": 0.16, "new_hire": 0.27}
 
+# Connect's metrics spec: valid data is `status IN ('approved','over_limit')`.
+VALID_STATUSES = frozenset({"approved", "over_limit"})
+
+
+def profile_over_limit_rate(all_visits: list[dict]) -> float:
+    """The observed share of visits a source opportunity carries as `over_limit`.
+
+    Measured rather than assumed: whether a programme hits its budget cap at all is a
+    property of that programme, and many never do — so this legitimately returns 0.0 and
+    the clone then contains no over_limit visits, which is the correct reproduction.
+    Rounded to 3dp and clamped to the manifest's ceiling so a pathological source cannot
+    emit a manifest that fails validation.
+    """
+    if not all_visits:
+        return 0.0
+    n = sum(1 for v in all_visits if v.get("status") == "over_limit")
+    return min(0.5, round(n / len(all_visits), 3))
+
 
 def _profile_flw_personas(
     visits_by_flw: dict[str, list[dict]],
@@ -73,7 +91,13 @@ def _profile_flw_personas(
     personas = []
     for i, (username, visits) in enumerate(sorted(visits_by_flw.items(), key=lambda kv: -len(kv[1]))):
         total = len(visits)
-        approved = sum(1 for v in visits if v.get("status") == "approved")
+        # VALID, not "approved": over_limit is legitimate paid work that a budget-cap
+        # accounting glitch mislabels. Counting only status == "approved" pushed every
+        # real over_limit visit into the not-approved mass, depressing approval_rate,
+        # which then drives archetype classification and the whole generated mix — so a
+        # clone faithfully reproduced a distribution that was mismeasured at the source,
+        # and looked healthy doing it because it matched the profile it was given.
+        approved = sum(1 for v in visits if v.get("status") in VALID_STATUSES)
         flagged = sum(1 for v in visits if v.get("flagged"))
 
         approval_rate = _safe_rate(approved, total)
@@ -1041,6 +1065,10 @@ def profile(
         "coaching_arcs": [],
         "temporal": temporal,
         "flag_reason_distribution": flag_reasons,
+        # Reproduce the source's own budget-cap glitch rate. Carried explicitly (rather
+        # than left to default) so a clone of an opp that never hit its cap records 0.0
+        # as a measurement, not as an absence.
+        "over_limit_rate": profile_over_limit_rate(user_visits),
     }
 
     manifest_yaml = yaml.dump(manifest_dict, default_flow_style=False, sort_keys=False)

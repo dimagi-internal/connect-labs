@@ -231,6 +231,7 @@ def _build_mirror_visits(
             has_anomaly=bool(outlier_paths),
             rng=rng,
             flag_reason_distribution=manifest.flag_reason_distribution,
+            over_limit_rate=manifest.over_limit_rate,
         )
         base_hour = _sample_hour(rng, manifest.temporal)
         created_dt = dt.datetime.combine(pv.visit_date, dt.time(base_hour, 0))
@@ -407,6 +408,7 @@ def generate(
             has_anomaly=any(a.type == "field_outlier" for a in anomalies),
             rng=rng,
             flag_reason_distribution=manifest.flag_reason_distribution,
+            over_limit_rate=manifest.over_limit_rate,
         )
         # One beneficiary index per visit, reused for the display name AND the
         # household GPS so repeat visits to the same beneficiary share a location.

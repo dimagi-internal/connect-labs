@@ -851,3 +851,74 @@ def test_a_field_recorded_once_per_case_is_still_discovered():
     assert "form.child_weight_birth" in found
     # the per-visit field must still be discovered
     assert "form.child_weight_visit" in found
+
+
+# --------------------------------------------------------------------------------------
+# over_limit in the PROFILER — the quiet half.
+#
+# Finding 1 (no over_limit in the Status vocabulary) is visible to anyone who greps.
+# This one is not: counting only `status == "approved"` pushed every real over_limit
+# visit into the not-approved mass, depressing approval_rate, which drives archetype
+# classification and the generated mix. The clone then reproduced a distribution that
+# was mismeasured at the source — and looked healthy, because it matched its profile.
+# --------------------------------------------------------------------------------------
+
+
+def _visits(username, statuses):
+    return [
+        {"username": username, "status": s, "flagged": False, "visit_date": "2026-02-05", "entity_id": f"e{i}"}
+        for i, s in enumerate(statuses)
+    ]
+
+
+def test_over_limit_counts_toward_the_valid_rate_not_against_it():
+    """60% approved + 30% over_limit is a 90% valid worker, not a 60% one. Under the old
+    count this FLW read as 'struggling' purely because of a billing label."""
+    from connect_labs.labs.synthetic.generator.fixtures.profiler import _profile_flw_personas
+
+    statuses = ["approved"] * 60 + ["over_limit"] * 30 + ["rejected"] * 10
+    personas = _profile_flw_personas({"asha": _visits("asha", statuses)})
+    assert personas[0]["accuracy_distribution"]["mean"] == 0.9
+
+
+def test_profile_over_limit_rate_measures_the_sources_own_glitch_rate():
+    from connect_labs.labs.synthetic.generator.fixtures.profiler import profile_over_limit_rate
+
+    visits = _visits("asha", ["approved"] * 92 + ["over_limit"] * 8)
+    assert profile_over_limit_rate(visits) == 0.08
+
+
+def test_an_opp_that_never_hit_its_cap_profiles_to_zero():
+    """0.0 is a measurement, not an absence — many programmes never hit the cap, and a
+    clone of one must carry no over_limit visits at all."""
+    from connect_labs.labs.synthetic.generator.fixtures.profiler import profile_over_limit_rate
+
+    assert profile_over_limit_rate(_visits("asha", ["approved"] * 50)) == 0.0
+    assert profile_over_limit_rate([]) == 0.0
+
+
+def test_profiled_rate_round_trips_through_profile_into_a_valid_manifest():
+    """The rate must survive into the manifest the generator actually reads. profile()
+    validates its own output, so this also proves the ceiling accepts anything the
+    profiler can emit."""
+    import yaml
+
+    visits = _make_visits()
+    for v in visits[:2]:
+        v["status"] = "over_limit"
+    manifest_yaml = profile(
+        opportunity_id=999,
+        user_visits=visits,
+        user_data=[],
+        opportunity_detail={"name": "Test Opp"},
+    )
+    manifest = yaml.safe_load(manifest_yaml)
+    assert manifest["over_limit_rate"] == round(2 / len(visits), 3)
+
+
+def test_profiler_clamps_a_pathological_source_to_the_manifest_ceiling():
+    """A source that is entirely over_limit must not emit a manifest that fails its own
+    validation — the profiler's job is to produce something loadable."""
+    from connect_labs.labs.synthetic.generator.fixtures.profiler import profile_over_limit_rate
+
+    assert profile_over_limit_rate(_visits("asha", ["over_limit"] * 100)) == 0.5
