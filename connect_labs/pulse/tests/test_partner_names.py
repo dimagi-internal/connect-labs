@@ -81,17 +81,15 @@ class TestRefusesToGuess:
     """A wrong parent name is worse than a visible slug."""
 
     def test_a_near_miss_is_returned_for_review_not_displayed(self):
-        """The master list has a typo — "AREWA HEALTH TRUST INIATIVE". The close
-        match is offered to a human and must not surface as the partner."""
-        got = resolve("arewa-health-trust-initiative")
+        """A one-letter difference the matcher cannot safely close on its own.
+        `arewa-health-trust-initiative` used to land here too, against the
+        master list's "INIATIVE" typo; it is now an alias, so this asserts the
+        rule on a slug nobody has confirmed."""
+        got = resolve("janna-health-fundation")
         assert got["parent"] == ""
+        assert got["tier"] == "fuzzy"
         assert got["review"] is not None
-        assert "AREWA" in got["review"]["candidate"]
-
-    def test_an_unknown_slug_yields_nothing(self):
-        got = resolve("ehealth-africa-connect-interviews")
-        assert got["parent"] == ""
-        assert got["tier"] in {"none", "subset", "fuzzy"}
+        assert "Janna" in got["review"]["candidate"]
 
     def test_never_deslugifies_into_a_title_cased_guess(self):
         """Mechanical title-casing reads plausibly and is wrong exactly where it
@@ -108,6 +106,58 @@ class TestRefusesToGuess:
 
     def test_a_blank_slug_is_handled(self):
         assert resolve("")["parent"] == ""
+
+
+class TestCuratedAliases:
+    """Four slugs no string rule reaches. Recorded as data a human checked,
+    rather than by loosening the matcher for everyone."""
+
+    def test_a_second_workspace_under_an_unrelated_slug(self):
+        """EHA runs two Connect workspaces. `eha-clinics-reach` matches the
+        master list on its own; `ehealth-africa-connect-interviews` shares no
+        stem with it, and carried 2,943 services as a bare slug."""
+        got = resolve("ehealth-africa-connect-interviews")
+        assert got["parent"] == "EHA Clinics (REACH Program)"
+        assert got["tier"] in HIGH_CONFIDENCE
+        assert resolve("eha-clinics-reach")["parent"] == got["parent"]
+
+    def test_an_alias_covers_the_partners_next_workspace_too(self):
+        """Keys match as a `key-` prefix, so the next EHA opportunity resolves
+        without another edit."""
+        assert resolve("ehealth-africa-some-future-opp")["parent"] == "EHA Clinics (REACH Program)"
+
+    def test_a_typo_in_the_master_list_no_longer_costs_the_partner(self):
+        """ "INIATIVE" for "INITIATIVE" — one transposed letter that held 28,174
+        services at review-only confidence."""
+        got = resolve("arewa-health-trust-initiative")
+        assert got["parent"] == "AREWA HEALTH TRUST INIATIVE"
+        assert got["tier"] in HIGH_CONFIDENCE
+        assert got["review"] is None
+
+    def test_an_abbreviation_the_slug_does_not_spell_out(self):
+        """ "D-8" is how the Developing-8 programme writes itself."""
+        assert resolve("d-8healthandsocialprotection")["parent"] == (
+            "Developing-8 Health And Social Protection Programme"
+        )
+
+    def test_a_short_name_one_letter_off(self):
+        """Master short name is "GlobCom"; the slug says `globecom`, so the
+        suffix rule misses by a character."""
+        assert resolve("globecom-wellme-connect")["parent"] == "Global Communications Institute"
+
+    def test_every_alias_target_exists_in_the_master_snapshot(self):
+        """The guard against drift: refreshing the snapshot must not leave an
+        alias pointing at a name that is no longer there."""
+        from connect_labs.pulse.partner_names import ALIASES, _candidates
+
+        names = {c["name"] for c in _candidates()}
+        missing = {k: v for k, v in ALIASES.items() if v not in names}
+        assert not missing, f"alias targets absent from partner_master.json: {missing}"
+
+    def test_an_alias_does_not_loosen_anything_else(self):
+        """The table is four entries, not a rule. An unrelated slug is still
+        refused."""
+        assert resolve("ehealth-uganda-clinics")["parent"] == ""
 
 
 class TestCoverage:
