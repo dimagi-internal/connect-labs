@@ -15,7 +15,16 @@ from typing import Literal
 
 from .manifest import FlwPersona
 
-Status = Literal["approved", "pending", "rejected"]
+# `over_limit` is APPROVED-EQUIVALENT work, not a rejection state: legitimate paid
+# visits that a platform accounting glitch mislabels once an opportunity's budget cap
+# is hit. Connect's own metrics spec therefore defines valid data as
+# `status IN ('approved','over_limit')` and excluding it undercounts visits, started
+# cases and weight series by 40-130% depending on the programme. It has to exist in the
+# synthetic vocabulary or a clone cannot express that rule at all — every generated
+# visit collapses to `approved` and a demo can neither show the rule nor what it fixes.
+Status = Literal["approved", "pending", "rejected", "over_limit"]
+# NOT a review outcome — a reviewer never sees "over_limit". The work reviewed clean;
+# only the payment ledger disagreed, so review_status stays "approved".
 ReviewStatus = Literal["approved", "pending", "rejected"]
 
 
@@ -51,7 +60,17 @@ def decide_visit_status(
     has_anomaly: bool,
     rng: random.Random,
     flag_reason_distribution: dict[str, float] | None = None,
+    over_limit_rate: float = 0.0,
 ) -> VisitStatus:
+    """Draw a visit's status.
+
+    `over_limit_rate` relabels a share of the visits that would otherwise be `approved`.
+    It is deliberately applied to the APPROVED branch only, and leaves `flagged` False
+    and `review_status` "approved": over_limit is good work with a billing-side label,
+    not a quality signal, so a flag-driven archetype must not shift when it rises. Many
+    opportunities never hit their cap, so 0.0 (no over_limit at all) is the default and
+    a legitimate steady state.
+    """
     if has_anomaly:
         return VisitStatus(
             status="pending",
@@ -67,8 +86,9 @@ def decide_visit_status(
             flag_reason=_pick_reason(rng, flag_reason_distribution),
             review_status="rejected" if rejected else "pending",
         )
+    over_limit = over_limit_rate > 0 and rng.random() < over_limit_rate
     return VisitStatus(
-        status="approved",
+        status="over_limit" if over_limit else "approved",
         flagged=False,
         flag_reason="",
         review_status="approved",

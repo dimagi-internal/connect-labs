@@ -490,6 +490,12 @@ class Manifest(BaseModel):
     geography: Geography | None = None
     temporal: TemporalProfile | None = None
     flag_reason_distribution: dict[str, float] = Field(default_factory=dict)
+    # Share of otherwise-approved visits relabelled `over_limit` (budget-cap accounting
+    # glitch — legitimate paid work). Per-opportunity, because whether a programme hits
+    # its cap at all is a property of that programme: many never do, hence a 0.0 default.
+    # Capped at 0.5 rather than 1.0: over_limit is an edge condition, and a manifest
+    # asking for a majority of visits to be over-cap is a typo, not a scenario.
+    over_limit_rate: float = Field(ge=0, le=0.5, default=0.0)
 
     @classmethod
     def from_yaml(cls, source: str | bytes) -> Manifest:

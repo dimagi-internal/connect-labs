@@ -26,3 +26,17 @@ def test_build_works_returns_lists():
     works, modules = build_works_and_modules([], [])
     assert works == []
     assert modules == []
+
+
+def test_over_limit_visits_are_payable_like_approved():
+    """over_limit is legitimate PAID work — a budget-cap label, not a rejection. Skipping
+    it understated payment totals alongside the visit counts."""
+    visits = [
+        {"id": "v1", "username": "asha", "status": "approved", "deliver_unit_id": 1, "visit_date": "2026-02-05"},
+        {"id": "v2", "username": "asha", "status": "over_limit", "deliver_unit_id": 1, "visit_date": "2026-02-06"},
+        {"id": "v3", "username": "asha", "status": "rejected", "deliver_unit_id": 1, "visit_date": "2026-02-07"},
+        {"id": "v4", "username": "asha", "status": "pending", "deliver_unit_id": 1, "visit_date": "2026-02-08"},
+    ]
+    pus = [{"id": 10, "name": "PU1", "deliver_units": [1]}]
+    works, _ = build_works_and_modules(visits, pus)
+    assert {w["id"] for w in works} == {"v1-cw", "v2-cw"}
