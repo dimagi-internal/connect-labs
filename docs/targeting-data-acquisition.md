@@ -1,7 +1,14 @@
 # Targeting data acquisition register
 
-**Status:** live plan of record. Updated as items land.
-**Opened:** 2026-09-05.
+**Status:** tiers 1-3 complete. One item closed as not actionable, one deferred
+by design, one awaiting a decision (item 27).
+**Opened:** 2026-09-05. **Closed:** 2026-09-05.
+
+| | start of day | now |
+|---|---:|---:|
+| values | 122,885 | **174,449** |
+| indicators | 69 | **110** |
+| targetable questions | 29 | **52** |
 
 What this system can target is bounded by what it holds. This register lists
 everything worth acquiring next, in the order it is worth acquiring, with the
@@ -254,6 +261,21 @@ task.
 2. **Tier 2** (items 21–22) — new loader; `CME_SUBNATIONAL` first, since `nmr`
    is the thinnest headline measure we carry.
 3. **Tier 3** (items 23–27) — individually, each against a real question.
+
+### What is left
+
+**Item 26 (GRID3 Nigeria wards) stays deferred**, and deliberately. GRID3 calls
+its own layer "operational rather than authoritative" — 4% Authorized, 37%
+Placeholder — so it is worth loading against a concrete ADM3 question and not
+worth loading speculatively.
+
+**Item 27 (the Nigeria poverty source rescan) needs a decision, not a
+keystroke.** The `nigeria-household-poverty-targeting` note has never had a
+full alternative-source scan. Its checks all still pass, but checks only
+confirm what was already found; only a scan says whether something better has
+been published since. The research tool's own advice is to *ask* before running
+one, because a full scan is a research exercise rather than a fetch — so it is
+recorded here rather than done unilaterally.
 
 After each tier: re-derive, sweep, export a snapshot, and import to production
 **with `--prune`** — a restore without it is additive, and would leave superseded
