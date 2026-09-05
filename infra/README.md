@@ -269,15 +269,43 @@ An upgrade is therefore a deliberate two-part change:
 
 ⚠️ **Umami releases carry Prisma migrations, and they apply to the `umami`
 database on container start** — the upgrade is a schema change, not just a new
-image. Read `prisma/migrations/` between the two tags before rolling:
+image.
+
+**Do NOT predict the set with `git diff` between the two tags.** That answers
+"which migration FILES changed", and what actually runs is
+_(migrations present in the target image)_ minus _(rows already in
+`_prisma_migrations`)_ — and the database can be behind its own running image.
+
+Ours was. On 2026-09-05 a `git diff` between the build point and `v3.3.1`
+reported **three** pending migrations, the upgrade log applied **four**, and the
+extra one (`21_add_session_link`, upstream 2026-07-15) had been sitting
+unapplied in the previously-running image. Undercounting a forward-only schema
+change is exactly the kind of confident wrong answer this runbook exists to
+prevent, so read the applied set from the DATABASE, not from git:
 
 ```bash
-git diff --name-only <current-tag> <target-tag> -- 'prisma/migrations/*'
+# what the database has actually applied (source of truth)
+psql "$UMAMI_DATABASE_URL" -c \
+  'SELECT migration_name, finished_at FROM _prisma_migrations ORDER BY migration_name;'
+# what the target image carries
+git ls-tree -r --name-only <target-tag> -- prisma/migrations/ | grep migration.sql
 ```
 
-v3.3.1 adds three against the 2026-07-24 build (`22_add_2fa`,
-`23_update_session_data`, `24_lowercase_username`). This is why the pin matters:
-without it, an unrelated rebuild would have applied them unannounced.
+The difference between those two lists is what will run. Read every one of them;
+`23_update_session_data` in the v3.3.1 set **deletes rows** (duplicate
+`session_data`, keeping the newest per `session_id,data_key`) before adding its
+unique index.
+
+The upgrade log is the after-the-fact record — it names each migration as it
+applies, so keep it:
+
+```bash
+aws logs get-log-events --log-group-name /ecs/labs-jj-umami \
+  --log-stream-name "$(aws logs describe-log-streams --log-group-name /ecs/labs-jj-umami \
+      --profile labs --order-by LastEventTime --descending \
+      --query 'logStreams[0].logStreamName' --output text)" \
+  --profile labs --start-from-head --limit 60 --query 'events[].message' --output text
+```
 
 **Rollback:** set `UmamiVersion` to an earlier release tag and deploy. The task
 image is **derived** from `UmamiVersion` (there is no separate image parameter —
