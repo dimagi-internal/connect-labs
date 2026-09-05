@@ -1410,66 +1410,103 @@ for _m in [m for m in list(MEASURES.values()) if m.coverage_of]:
     )
 
 
-TARGETABLE = (
-    "u5mr",
-    "nmr",
-    "diarrhoea_prevalence",
-    "ors_coverage",
-    "malaria_prevalence",
-    "malaria_treatment",
-    "malaria_incidence",
-    "travel_time_healthcare",
-    "share_beyond_2h",
-    "share_rural",
-    "itn_use",
-    "itn_access",
-    "irs_coverage",
-    "antimalarial_effective",
-    "stunting",
-    "wasting",
-    "ari_prevalence",
-    "exclusive_breastfeeding",
-    "vitamin_a_coverage",
-    "itn_use_children",
-    "measles_vaccination",
-    "dpt3_vaccination",
-    "full_immunisation",
-    "skilled_birth_attendance",
-    "anc4",
-    "zinc_coverage",
-    "ari_antibiotics",
-    "improved_water",
-    "improved_sanitation",
-    # Tier 1 of docs/targeting-data-acquisition.md. Ordered by the question
-    # each one lets someone ask, not alphabetically, because the point of the
-    # list is that it is a menu.
-    "zero_dose",
-    "fp_unmet_need",
-    "fp_modern_method",
-    "fp_demand_satisfied",
-    "itn_household",
-    "itn_pregnant",
-    "iptp3",
-    "careseeking_diarrhoea",
-    "careseeking_fever",
-    "underweight",
-    "severe_wasting",
-    "child_anaemia",
-    "women_anaemia",
-    "iron_pregnancy",
-    "min_meal_frequency",
-    "postnatal_2days",
-    "handwashing",
-    "water_on_premises",
-    "open_defecation",
-    "birth_certificate",
-    # Tier 3: referral access, as against the community reach already carried.
-    "travel_time_motorized",
-    "share_beyond_2h_motorized",
-    # Concentration is a threshold question; the peak month is not, so it is
-    # absent here on purpose. See its description.
-    "rain_wettest_quarter",
-)
+#: The indicator menu, grouped by the DECISION each group belongs to rather than
+#: by the source it came from or the family it aggregates as.
+#:
+#: Grouping is registry data, not markup. The UI renders it, the MCP tools can
+#: report it, and a measure added without a home fails a test rather than
+#: quietly landing at the bottom of a list of fifty-two.
+#:
+#: The order within a group is the order a programme reasons in: the burden
+#: first, then what reaches it. Diarrhoea before ORS before zinc before whether
+#: care was sought at all — because that is the sequence of questions, not
+#: because of how the numbers were made.
+GROUPS: dict[str, tuple[str, ...]] = {
+    "Child survival": (
+        "u5mr",
+        "nmr",
+    ),
+    "Diarrhoea": (
+        "diarrhoea_prevalence",
+        "ors_coverage",
+        "zinc_coverage",
+        "careseeking_diarrhoea",
+    ),
+    "Pneumonia & fever": (
+        "ari_prevalence",
+        "ari_antibiotics",
+        "careseeking_fever",
+    ),
+    "Malaria": (
+        "malaria_prevalence",
+        "malaria_incidence",
+        "malaria_treatment",
+        "antimalarial_effective",
+        "itn_use",
+        "itn_access",
+        "itn_use_children",
+        "itn_household",
+        "itn_pregnant",
+        "irs_coverage",
+        "iptp3",
+    ),
+    "Immunisation": (
+        "zero_dose",
+        "dpt3_vaccination",
+        "measles_vaccination",
+        "full_immunisation",
+    ),
+    "Nutrition": (
+        "stunting",
+        "wasting",
+        "severe_wasting",
+        "underweight",
+        "child_anaemia",
+        "women_anaemia",
+        "vitamin_a_coverage",
+        "exclusive_breastfeeding",
+        "min_meal_frequency",
+    ),
+    "Maternal & newborn": (
+        "anc4",
+        "skilled_birth_attendance",
+        "postnatal_2days",
+        "iron_pregnancy",
+    ),
+    "Family planning": (
+        "fp_unmet_need",
+        "fp_modern_method",
+        "fp_demand_satisfied",
+    ),
+    "Water & sanitation": (
+        "improved_water",
+        "water_on_premises",
+        "improved_sanitation",
+        "open_defecation",
+        "handwashing",
+    ),
+    "Access & terrain": (
+        "travel_time_healthcare",
+        "share_beyond_2h",
+        "travel_time_motorized",
+        "share_beyond_2h_motorized",
+        "share_rural",
+    ),
+    "Seasonality": ("rain_wettest_quarter",),
+    "Civil registration": ("birth_certificate",),
+}
+
+#: Derived, never hand-maintained. The two lists drifting apart is exactly the
+#: failure this ordering prevents.
+TARGETABLE = tuple(code for codes in GROUPS.values() for code in codes)
+
+
+def group_of(code: str) -> str | None:
+    """Which menu group an indicator belongs to."""
+    for group, codes in GROUPS.items():
+        if code in codes:
+            return group
+    return None
 
 
 def targetable() -> list[Measure]:
