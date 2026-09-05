@@ -300,6 +300,27 @@ class Command(BaseCommand):
             "mean_household_size",
             "improved_water",
             "improved_sanitation",
+            # Tier 1 of docs/targeting-data-acquisition.md.
+            "zero_dose",
+            "fp_unmet_need",
+            "fp_modern_method",
+            "fp_demand_satisfied",
+            "itn_household",
+            "itn_pregnant",
+            "iptp3",
+            "careseeking_diarrhoea",
+            "careseeking_fever",
+            "underweight",
+            "severe_wasting",
+            "child_anaemia",
+            "women_anaemia",
+            "iron_pregnancy",
+            "min_meal_frequency",
+            "postnatal_2days",
+            "handwashing",
+            "water_on_premises",
+            "open_defecation",
+            "birth_certificate",
         ):
             with self._run(Source.DHS, measure) as ctx:
                 rows = dhs.load(measure, iso_codes=codes)
