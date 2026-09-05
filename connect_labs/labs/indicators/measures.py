@@ -935,6 +935,365 @@ def annualisation_factor(prevalence_code: str) -> float | None:
     return 365.0 / (m.recall_days + m.episode_days)
 
 
+# Tier 3 of docs/targeting-data-acquisition.md: the motorized companion to the
+# walking travel-time surface already loaded.
+#
+# Walking answers *community reach* — whether a household can get itself to a
+# clinic. Motorized answers *referral* — whether a woman in obstructed labour
+# can reach a facility that can operate. A place can be fine on one and
+# hopeless on the other, which is precisely why one cannot stand in for the
+# other, and why the system could not previously be asked the second question
+# at all.
+_prevalence(
+    "travel_time_motorized",
+    "Travel time to healthcare, motorized",
+    "pop_total",
+    "minutes",
+    (
+        "Minutes to the nearest health facility by motor vehicle, averaged over "
+        "people rather than over land — averaging over land lets uninhabited "
+        "area vote, and a district that is nine-tenths desert then reads as "
+        "remote when almost everyone in it is close to a clinic."
+    ),
+    lo=5,
+    hi=480,
+    default=60,
+)
+
+_prevalence(
+    "share_beyond_2h_motorized",
+    "Population beyond 2h of care, motorized",
+    "pop_total",
+    "% of population",
+    (
+        "The share more than two hours from a health facility by vehicle. Two "
+        "hours is the threshold emergency obstetric care is judged against, so "
+        "this is the referral question rather than the community-reach one."
+    ),
+    lo=0,
+    hi=80,
+    default=10,
+)
+
+register(
+    Measure(
+        code="pop_beyond_2h_motorized",
+        label="People beyond 2h of care, motorized",
+        kind=Kind.COUNT,
+        unit="people",
+        agg=Agg.SUM,
+        description=(
+            "How many people are more than two hours from a health facility by "
+            "vehicle. A count, so it carries a per-person cost and sums up the "
+            "hierarchy exactly."
+        ),
+    )
+)
+
+
+# --- Tier 1 of docs/targeting-data-acquisition.md --------------------------
+#
+# Twenty measures DHS has always published subnationally and this system never
+# asked for. They are grouped by the question they let someone ask, because
+# that is what was missing: not more coverage of what we could already target,
+# but whole intervention categories -- family planning, immunisation equity,
+# anaemia -- that had no measure at all.
+#
+# Where a measure's true denominator is not one we hold, the closest one is
+# used and the description says so, following KMC's precedent: count all
+# births and admit it, rather than silently apply a global ratio and call the
+# result measured.
+
+# Immunisation equity. A BURDEN, not a coverage measure: zero-dose is already
+# the share who received nothing, so its complement is the vaccinated and a
+# "gap" would point the wrong way. Selected above a threshold, like stunting.
+_prevalence(
+    "zero_dose",
+    "Zero-dose children",
+    "pop_u5",
+    "% of children 12-23 months",
+    (
+        "Children who have received no vaccinations at all. The quantity "
+        "immunisation funding is allocated against, and not implied by DPT3 or "
+        "full-immunisation coverage -- a child can be far behind schedule "
+        "without being zero-dose. Measured among children 12-23 months; "
+        "weighted by under-five population, which is the closest denominator "
+        "this system holds."
+    ),
+    lo=1,
+    hi=60,
+    default=10,
+)
+
+# Family planning. Unmet need is a burden; use and demand-satisfied are
+# coverage. All three sit on pop_f_15_49, which is complete at ADM1.
+_prevalence(
+    "fp_unmet_need",
+    "Unmet need for family planning",
+    "pop_f_15_49",
+    "% of married women 15-49",
+    (
+        "Married women who want to delay or stop childbearing but are using no "
+        "contraception. The classic targeting quantity for family planning, "
+        "which this system previously could not target at all."
+    ),
+    lo=5,
+    hi=60,
+    default=20,
+)
+
+_coverage(
+    "fp_modern_method",
+    "Modern contraceptive use",
+    "pop_f_15_49",
+    "pop_f_15_49",
+    "% of married women 15-49",
+    (
+        "Married women currently using a modern method (mCPR). The unreached "
+        "count is women not using one, which includes those with no unmet need "
+        "-- read it alongside fp_unmet_need rather than instead of it."
+    ),
+)
+
+_coverage(
+    "fp_demand_satisfied",
+    "FP demand satisfied by modern methods",
+    "pop_f_15_49",
+    "pop_f_15_49",
+    "% of women with demand for family planning",
+    (
+        "SDG indicator 3.7.1, and what a family-planning programme is actually "
+        "judged on: of the women who want contraception, the share getting a "
+        "modern method. Its denominator is demand rather than all women, so "
+        "the unreached count computed against pop_f_15_49 is an upper bound."
+    ),
+)
+
+# Malaria prevention, by the unit each is delivered in. A net campaign is
+# procured per household and this is the measure the ITN intervention's own
+# caveat has been pointing at with nothing to point to.
+_coverage(
+    "itn_household",
+    "Household ITN ownership",
+    "pop_total",
+    "households",
+    "% of households",
+    (
+        "Households owning at least one insecticide-treated net. Priced and "
+        "distributed per household, which is the unit a net campaign is "
+        "actually costed in -- unlike itn_use_children, which counts children."
+    ),
+)
+
+_coverage(
+    "itn_pregnant",
+    "ITN use, pregnant women",
+    "pop_f_15_49",
+    "births",
+    "% of pregnant women",
+    (
+        "Pregnant women who slept under an ITN last night. The second priority "
+        "group after under-fives. Counted against annual births, the closest "
+        "available proxy for women pregnant in a year."
+    ),
+)
+
+_coverage(
+    "iptp3",
+    "IPTp, 3+ doses",
+    "pop_f_15_49",
+    "births",
+    "% of pregnant women",
+    (
+        "Three or more doses of intermittent preventive treatment in pregnancy. "
+        "A distinct commodity from nets with its own delivery channel -- "
+        "antenatal care -- so a place can be well covered for one and not the "
+        "other. Counted against annual births."
+    ),
+)
+
+# Care-seeking. The distinction between a family that never reached care and
+# one that reached it and was sent away untreated. Those need opposite
+# interventions -- demand generation against commodity supply -- and without
+# these two the system cannot tell them apart in any answer it gives.
+_coverage(
+    "careseeking_diarrhoea",
+    "Care sought for diarrhoea",
+    "pop_u5",
+    "pop_u5",
+    "% of under-5s with diarrhoea",
+    (
+        "Children with diarrhoea for whom advice or treatment was sought. Read "
+        "against ors_coverage this separates a supply problem from a demand "
+        "one: where care-seeking is high and ORS is low, the commodity is "
+        "missing at the point of contact."
+    ),
+    conditional_on="diarrhoea_prevalence",
+)
+
+_coverage(
+    "careseeking_fever",
+    "Care sought for fever",
+    "pop_u5",
+    "pop_u5",
+    "% of under-5s with fever",
+    (
+        "Children with fever for whom advice or treatment was sought -- the "
+        "malaria pathway equivalent, and the ceiling on what any "
+        "facility-delivered antimalarial can reach."
+    ),
+    conditional_on="fever_prevalence",
+)
+
+# Nutrition. Underweight completes the standard triad with stunting and
+# wasting; severe wasting is the SAM denominator, for which plain wasting
+# overstates the caseload a therapeutic-feeding programme would face.
+_prevalence(
+    "underweight",
+    "Underweight, under-5s",
+    "pop_u5",
+    "% of children under 5",
+    "Children more than two standard deviations below median weight-for-age.",
+    lo=2,
+    hi=50,
+    default=20,
+)
+
+_prevalence(
+    "severe_wasting",
+    "Severe wasting, under-5s",
+    "pop_u5",
+    "% of children under 5",
+    (
+        "Children more than three standard deviations below median "
+        "weight-for-height. The denominator a severe-acute-malnutrition "
+        "programme is sized on; plain wasting overstates it several times over."
+    ),
+    lo=0,
+    hi=15,
+    default=3,
+)
+
+_prevalence(
+    "child_anaemia",
+    "Anaemia, under-5s",
+    "pop_u5",
+    "% of children 6-59 months",
+    (
+        "Children with any anaemia, measured by haemoglobin rather than "
+        "reported. The target of iron and micronutrient supplementation."
+    ),
+    lo=10,
+    hi=90,
+    default=50,
+)
+
+_prevalence(
+    "women_anaemia",
+    "Anaemia, women 15-49",
+    "pop_f_15_49",
+    "% of women 15-49",
+    "Women with any anaemia. The maternal half of the supplementation case.",
+    lo=5,
+    hi=70,
+    default=35,
+)
+
+_coverage(
+    "iron_pregnancy",
+    "Iron supplementation in pregnancy",
+    "pop_f_15_49",
+    "births",
+    "% of pregnant women",
+    (
+        "Women who took iron supplements for 90 or more days during pregnancy "
+        "-- the coverage measure matching the anaemia burden above."
+    ),
+)
+
+_coverage(
+    "min_meal_frequency",
+    "Minimum meal frequency, 6-23 months",
+    "pop_u5",
+    "pop_u5",
+    "% of children 6-23 months",
+    (
+        "Infant and young-child feeding: children fed the minimum number of "
+        "times for their age. The behavioural target behind stunting. Measured "
+        "among 6-23 month olds, roughly a third of the under-five population, "
+        "so an unreached count against pop_u5 is an upper bound."
+    ),
+)
+
+# Newborn survival -- the coverage companion to the KMC intervention already
+# registered against mortality.
+_coverage(
+    "postnatal_2days",
+    "Postnatal check within two days",
+    "pop_f_15_49",
+    "births",
+    "% of live births",
+    (
+        "Mothers whose first postnatal checkup came within two days of birth. "
+        "Most newborn deaths fall inside that window, so this is when a visit "
+        "can still change the outcome."
+    ),
+)
+
+# WASH, at the resolution a programme acts on.
+_coverage(
+    "handwashing",
+    "Handwashing station observed",
+    "pop_total",
+    "households",
+    "% of households",
+    (
+        "Households with a fixed handwashing place observed by the "
+        "interviewer -- observed rather than reported, which is why it reads "
+        "far lower than self-reported hygiene."
+    ),
+)
+
+_coverage(
+    "water_on_premises",
+    "Improved water on the premises",
+    "pop_total",
+    "pop_total",
+    "% of population",
+    (
+        "An improved source located on the premises. 'Improved' alone hides "
+        "the distance problem, and distance is what a household connection "
+        "changes."
+    ),
+)
+
+_prevalence(
+    "open_defecation",
+    "Open defecation",
+    "pop_total",
+    "% of population",
+    (
+        "Population with no sanitation facility of any kind. A burden measure, "
+        "so it selects the worst places directly rather than through the "
+        "complement of a coverage rate."
+    ),
+    lo=1,
+    hi=80,
+    default=20,
+)
+
+# Civil registration -- the gateway to every other entitlement, and a
+# plausible delivery use case in its own right.
+_coverage(
+    "birth_certificate",
+    "Birth certificate held",
+    "pop_u5",
+    "pop_u5",
+    "% of children under 5",
+    "Children under five who have a birth certificate.",
+)
+
+
 # A conditional coverage measure also gets an ANNUAL unreached count, because
 # the fortnight figure is not what a programme is sized on and is the one most
 # likely to be quoted as though it were. Both are kept: the fortnight figure is
@@ -1016,6 +1375,32 @@ TARGETABLE = (
     "ari_antibiotics",
     "improved_water",
     "improved_sanitation",
+    # Tier 1 of docs/targeting-data-acquisition.md. Ordered by the question
+    # each one lets someone ask, not alphabetically, because the point of the
+    # list is that it is a menu.
+    "zero_dose",
+    "fp_unmet_need",
+    "fp_modern_method",
+    "fp_demand_satisfied",
+    "itn_household",
+    "itn_pregnant",
+    "iptp3",
+    "careseeking_diarrhoea",
+    "careseeking_fever",
+    "underweight",
+    "severe_wasting",
+    "child_anaemia",
+    "women_anaemia",
+    "iron_pregnancy",
+    "min_meal_frequency",
+    "postnatal_2days",
+    "handwashing",
+    "water_on_premises",
+    "open_defecation",
+    "birth_certificate",
+    # Tier 3: referral access, as against the community reach already carried.
+    "travel_time_motorized",
+    "share_beyond_2h_motorized",
 )
 
 

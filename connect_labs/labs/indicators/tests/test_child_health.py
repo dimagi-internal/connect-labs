@@ -447,3 +447,88 @@ class TestDerivedRowsAreSwept:
         """They are derived by the same pass, so they are swept by it."""
         assert "ors_coverage_gap_annual" in derive.gap_indicators()
         assert "ors_coverage_gap" in derive.gap_indicators()
+
+
+class TestTier1Measures:
+    """The twenty measures of docs/targeting-data-acquisition.md tier 1.
+
+    They were not missing because the data is thin -- every one has African
+    subnational coverage at or near the measures we already rely on. They were
+    missing because nobody asked the API for them, and the gaps fell along
+    whole intervention categories rather than along geography.
+    """
+
+    TIER1 = (
+        "zero_dose",
+        "fp_unmet_need",
+        "fp_modern_method",
+        "fp_demand_satisfied",
+        "itn_household",
+        "itn_pregnant",
+        "iptp3",
+        "careseeking_diarrhoea",
+        "careseeking_fever",
+        "underweight",
+        "severe_wasting",
+        "child_anaemia",
+        "women_anaemia",
+        "iron_pregnancy",
+        "min_meal_frequency",
+        "postnatal_2days",
+        "handwashing",
+        "water_on_premises",
+        "open_defecation",
+        "birth_certificate",
+    )
+
+    def test_every_one_is_registered_targetable_and_fetchable(self):
+        from connect_labs.labs.indicators import policy
+        from connect_labs.labs.indicators.sources import dhs
+
+        for code in self.TIER1:
+            assert code in measures.MEASURES, f"{code} is not registered"
+            assert code in measures.TARGETABLE, f"{code} cannot be selected on"
+            assert code in dhs.INDICATORS, f"{code} has no DHS indicator id"
+            # A measure with no source policy would silently accept any source.
+            assert policy.for_indicator(code), f"{code} has no source policy"
+
+    def test_family_planning_is_denominated_in_women_not_children(self):
+        """The commonest way to get one of these wrong is to leave the
+        under-five denominator in place from the measure it was copied from."""
+        for code in ("fp_unmet_need", "fp_modern_method", "fp_demand_satisfied", "women_anaemia"):
+            assert measures.get(code).weight_by == "pop_f_15_49", code
+
+    def test_pregnancy_coverage_is_counted_against_births(self):
+        for code in ("itn_pregnant", "iptp3", "iron_pregnancy", "postnatal_2days"):
+            assert measures.get(code).coverage_of == "births", code
+
+    def test_household_delivered_things_are_counted_in_households(self):
+        """A net campaign is procured per household. The ITN intervention's
+        caveat has said so all along with no household measure to point at."""
+        for code in ("itn_household", "handwashing"):
+            assert measures.get(code).coverage_of == "households", code
+
+    def test_zero_dose_is_a_burden_not_a_coverage_measure(self):
+        """It is already the share who received nothing, so its complement is
+        the vaccinated -- a gap on it would point the wrong way."""
+        m = measures.get("zero_dose")
+        assert m.coverage_of is None
+        assert "zero_dose_gap" not in measures.MEASURES
+        assert "zero_dose" not in measures.LOWER_IS_WORSE
+
+    def test_care_seeking_is_conditional_on_being_ill(self):
+        """Like ORS: the rate is measured only among children who had the
+        illness, so an unreached count against the whole under-five population
+        overstates by the inverse of the prevalence."""
+        assert measures.get("careseeking_diarrhoea").conditional_on == "diarrhoea_prevalence"
+        assert measures.get("careseeking_fever").conditional_on == "fever_prevalence"
+        # And therefore both carry an annual sibling.
+        assert "careseeking_diarrhoea_gap_annual" in measures.MEASURES
+        assert "careseeking_fever_gap_annual" in measures.MEASURES
+
+    def test_only_the_conditional_ones_get_an_annual_sibling(self):
+        """A state is not an episode. Sanitation coverage has no recall window
+        and no episode duration, so annualising it would be an invention."""
+        for code in ("water_on_premises", "itn_household", "fp_modern_method"):
+            assert f"{code}_gap_annual" not in measures.MEASURES, code
+            assert f"{code}_gap" in measures.MEASURES, code

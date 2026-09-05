@@ -69,6 +69,55 @@ INDICATORS = {
     # Household environment — the background risk for diarrhoeal disease
     "improved_water": {"value": "WS_SRCE_P_IMP", "lo": None, "hi": None},
     "improved_sanitation": {"value": "WS_TLET_P_IMP", "lo": None, "hi": None},
+    # --- Tier 1 of docs/targeting-data-acquisition.md -----------------------
+    #
+    # These were not missing because the data is thin. Every one of them has
+    # African subnational coverage at or near `ors_coverage` (41 countries,
+    # 769 regions), most of it more recent. They were missing because nobody
+    # asked the API for them: we load 25 of DHS's 4,655 indicators, and the
+    # gaps fall along whole intervention categories rather than along geography.
+    #
+    # Immunisation equity. Zero-dose is the quantity immunisation funding is
+    # actually allocated against, and DPT3 and full-immunisation coverage do
+    # not imply it — a child can be behind schedule without being zero-dose.
+    "zero_dose": {"value": "CH_VACC_C_NON", "lo": None, "hi": None},
+    # Family planning. An entire intervention category the system could not
+    # target at all. The denominator, pop_f_15_49, is already at 100% of ADM1.
+    "fp_unmet_need": {"value": "FP_NADM_W_UNT", "lo": None, "hi": None},
+    "fp_modern_method": {"value": "FP_CUSM_W_MOD", "lo": None, "hi": None},
+    "fp_demand_satisfied": {"value": "FP_NADM_W_PDM", "lo": None, "hi": None},
+    # Malaria prevention, by delivery unit. A net campaign is costed per
+    # household, and the ITN intervention's own caveat says so — while there
+    # was no household net measure for it to point at.
+    "itn_household": {"value": "ML_NETP_H_ITN", "lo": None, "hi": None},
+    "itn_pregnant": {"value": "ML_NETW_W_ITN", "lo": None, "hi": None},
+    "iptp3": {"value": "ML_IPTP_W_3SP", "lo": None, "hi": None},
+    # Care-seeking. This is the distinction between a family that never
+    # reached care and one that reached it and was sent away without
+    # treatment. Those need opposite interventions, and without these the
+    # two are indistinguishable in every answer this system gives.
+    "careseeking_diarrhoea": {"value": "CH_DIAT_C_ADV", "lo": None, "hi": None},
+    "careseeking_fever": {"value": "ML_FEVT_C_ADV", "lo": None, "hi": None},
+    # Nutrition. Underweight completes the standard triad with stunting and
+    # wasting; severe wasting is the SAM/RUTF denominator, for which plain
+    # wasting overstates the caseload.
+    "underweight": {"value": "CN_NUTS_C_WA2", "lo": None, "hi": None},
+    "severe_wasting": {"value": "CN_NUTS_C_WH3", "lo": None, "hi": None},
+    "child_anaemia": {"value": "CN_ANMC_C_ANY", "lo": None, "hi": None},
+    "women_anaemia": {"value": "AN_ANEM_W_ANY", "lo": None, "hi": None},
+    "iron_pregnancy": {"value": "RH_ICSP_W_B99", "lo": None, "hi": None},
+    "min_meal_frequency": {"value": "CN_IYCF_C_MNA", "lo": None, "hi": None},
+    # Newborn survival — the companion coverage measure to the KMC
+    # intervention already registered against mortality.
+    "postnatal_2days": {"value": "RH_PCMT_W_DY2", "lo": None, "hi": None},
+    # WASH, at the resolution a programme acts on. "Improved" hides the
+    # distance problem, which is what a household connection changes; open
+    # defecation is a burden measure and selects directly.
+    "handwashing": {"value": "WS_HNDW_H_FXD", "lo": None, "hi": None},
+    "water_on_premises": {"value": "WS_SRCE_H_IOP", "lo": None, "hi": None},
+    "open_defecation": {"value": "WS_TLET_H_NFC", "lo": None, "hi": None},
+    # Civil registration — the gateway to every other entitlement.
+    "birth_certificate": {"value": "CP_BREG_C_CRT", "lo": None, "hi": None},
 }
 
 METHOD = (
