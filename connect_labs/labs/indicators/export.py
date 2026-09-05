@@ -151,15 +151,26 @@ def _threshold_phrase(value: float, unit: str) -> str:
 
 
 def _rerun(selection: Selection, method_code: str) -> Selection:
-    """The same question under a different method, for the comparison table."""
+    """The same question under a different method, for the comparison table.
+
+    *The same* question — same shape, not merely the same indicator and
+    threshold. An alternative re-run with the default rollup and level compares
+    fifteen counties against one rolled-up country and calls the difference a
+    method spread, when most of it is the shape. The projection year matters for
+    the same reason: a count carried to 2027 against one left at 2022 differs by
+    growth, not by method.
+    """
     from connect_labs.labs.indicators.resolve import select_above
 
     return select_above(
         indicator=selection.indicator,
         threshold=selection.threshold,
         year=selection.year,
-        iso_codes=[a.iso_code for a in selection.areas] or None,
+        iso_codes=sorted({a.iso_code for a in selection.areas}) or None,
         method=method_code,
+        target_year=selection.projected_to,
+        rollup=selection.rolled_up,
+        admin_level=selection.pinned_level,
     )
 
 
