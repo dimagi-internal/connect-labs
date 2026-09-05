@@ -60,6 +60,31 @@ Parameters:
   ListenerRulePriority:
     Type: Number
     Default: 40
+  # The upstream release to build. MUST be a real git tag, never a branch.
+  #
+  # This was `git clone --depth 1` off the default branch with no ref at all,
+  # which is not "we track latest" — it is "the running version is whatever main
+  # happened to be at build time, and nothing records which." Measured
+  # 2026-09-05: the one and only image was built 2026-07-24 from b70eda56, a
+  # commit a month PAST the v3.2.0 tag and 18 days BEFORE v3.3.0. Its
+  # package.json still said "3.2.0", so the version string the container reports
+  # was actively wrong — an unreleased intermediate state wearing the previous
+  # release's number. That is the failure mode an unpinned build produces: not a
+  # missing answer, a confident wrong one.
+  #
+  # It also cost a real bug. Umami fixed the concurrent-beacon P2002 race on
+  # SessionData in 7c030e4c (2026-07-30, "fix unique constraint on relational
+  # session data", upstream #4183) — seven days after our build. connect-labs
+  # #1396 chased it as an open question for four days because the repo could not
+  # say what version was running.
+  UmamiVersion:
+    Type: String
+    Default: v3.3.1
+    AllowedPattern: '^v[0-9]+\.[0-9]+\.[0-9]+$'
+    Description: >-
+      Upstream umami-software/umami release tag to build (e.g. v3.3.1).
+      Bumping this is a DELIBERATE upgrade: see infra/README.md § Upgrading
+      Umami — releases carry Prisma migrations that apply on container start.
   UmamiImageUri:
     Type: String
     Default: 858923557655.dkr.ecr.us-east-1.amazonaws.com/labs-jj-umami:latest
@@ -177,6 +202,14 @@ Resources:
               Value: postgresql
             - Name: DISABLE_TELEMETRY
               Value: '1'
+            # Purely so `aws ecs describe-task-definition` can answer "what
+            # version is running". Umami's own package.json cannot: at the
+            # 2026-07-24 build it read "3.2.0" while the source was a month of
+            # unreleased post-v3.2.0 main. Reading the version from INSIDE the
+            # app is therefore not a fallback for this -- it is the thing that
+            # was wrong. This value is what the image was actually built from.
+            - Name: UMAMI_BUILD_VERSION
+              Value: !Ref UmamiVersion
           Secrets:
             - Name: DATABASE_URL
               ValueFrom: !Ref UmamiDatabaseUrlSecretArn
@@ -268,13 +301,22 @@ Resources:
             pre_build:
               commands:
                 - aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
-                - git clone --depth 1 https://github.com/umami-software/umami.git /tmp/umami
+                # --branch takes a TAG as well as a branch. Pinned, so a rebuild
+                # reproduces the same image instead of silently advancing main.
+                - git clone --depth 1 --branch ${UmamiVersion} https://github.com/umami-software/umami.git /tmp/umami
+                # Fail loudly if the tag ever moved: a rebuild that silently
+                # builds different source is the whole problem being fixed here.
+                - cd /tmp/umami && git describe --exact-match --tags HEAD
             build:
               commands:
                 - cd /tmp/umami
-                - docker build --build-arg BASE_PATH=/umami -t ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/labs-jj-umami:latest .
+                # Tag with the VERSION as well as :latest. Previously only
+                # :latest existed, so there was exactly one image in ECR and no
+                # rollback target -- an upgrade was a one-way door.
+                - docker build --build-arg BASE_PATH=/umami -t ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/labs-jj-umami:${UmamiVersion} -t ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/labs-jj-umami:latest .
             post_build:
               commands:
+                - docker push ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/labs-jj-umami:${UmamiVersion}
                 - docker push ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/labs-jj-umami:latest
 
 Outputs:
