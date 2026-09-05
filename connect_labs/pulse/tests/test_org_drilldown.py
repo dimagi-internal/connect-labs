@@ -284,21 +284,23 @@ class TestPartnersConnectWillNotName:
         reason to show an identifier, not a reason to drop
         the partner.
 
-        `tnyirenda` is the real residue as of 2026-09-05 — 13,212 works, named
-        "ECD, IVC and MBW Experiments" by Connect and absent from the master
-        list. This case used to use `ehealth-africa-connect-interviews`, which
-        is now a curated alias for EHA Clinics."""
+        `stewari` is the real residue as of 2026-09-05: unnamed by Connect and
+        absent from the master list, so neither source reaches it. This case
+        used to use `ehealth-africa-connect-interviews`, which is now a curated
+        alias for EHA Clinics. `tnyirenda` would be the wrong replacement — it
+        is in one source, since Connect names it "ECD, IVC and MBW
+        Experiments"."""
         PulseOpportunity.objects.create(
             opportunity_id=52,
             name="Unknown partner work",
-            org_slug="tnyirenda",
+            org_slug="stewari",
             program_id=10,
-            lifetime_visit_count=13_212,
+            lifetime_visit_count=31,
         )
-        row = next(o for o in summary(viewer)["orgs"] if o["slug"] == "tnyirenda")
+        row = next(o for o in summary(viewer)["orgs"] if o["slug"] == "stewari")
         assert row["partner"] == ""
         assert row["named"] is False
-        assert row["name"] == "tnyirenda"
+        assert row["name"] == "stewari"
 
     def test_the_slug_is_never_prettified_into_a_guess(self, viewer, portfolio):
         """Title-casing reads plausibly and is wrong where it matters: the real
