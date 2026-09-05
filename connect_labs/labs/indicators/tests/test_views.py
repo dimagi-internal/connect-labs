@@ -608,7 +608,7 @@ class TestDeliveryYear:
 
     def test_a_country_with_no_growth_series_is_named(self, client_in, africa):
         r = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER", "target_year": 2030}).json()
-        assert "NER" in r["projected_without_rate"]
+        assert "Niger" in r["projected_without_rate"]
 
     def test_an_implausible_year_is_ignored_rather_than_obeyed(self, client_in, africa):
         r = client_in.get(reverse("targeting:selection"), {"threshold": 50, "target_year": "9999"}).json()
@@ -754,3 +754,8 @@ class TestTheUrlCarriesTheQuestion:
         assert bare["scope"]["whole_continent"] is True
         assert bare["projected_to"] is None
         assert bare["pinned_level"] is None
+
+    def test_a_country_without_growth_is_named_not_coded(self, client_in, africa):
+        """Every sibling caveat on this page lists country names."""
+        r = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER", "target_year": 2030}).json()
+        assert r["projected_without_rate"] == ["Niger"]
