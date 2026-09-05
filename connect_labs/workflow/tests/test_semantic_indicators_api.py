@@ -1,0 +1,119 @@
+"""The door onto the semantic layer.
+
+`connect_labs.semantic` was proven and unreachable — nothing in the application
+imported it, so the workflow named "SQL semantic layer" served numbers frozen into
+a saved run rather than numbers that code produced. runtime.evaluate made it
+executable; this endpoint is what lets a dashboard ask.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+
+import pytest
+from django.urls import reverse
+
+pytestmark = pytest.mark.django_db
+
+
+def _url(definition_id: int) -> str:
+    return reverse("labs:workflow:api_semantic_indicators", args=[definition_id])
+
+
+def test_the_route_exists_and_is_named():
+    assert _url(7).endswith("/api/7/semantic/")
+
+
+def test_it_passes_the_series_and_scopes_straight_through(client, django_user_model):
+    """The two params that decide what comes back. `scopes` matters especially:
+    several scopes come from ONE pass via GROUPING SETS, and asking per-scope
+    re-runs the entire Layer 1 extraction each time."""
+    user = django_user_model.objects.create_user(username="u", password="p")
+    client.force_login(user)
+
+    class _Def:
+        pipeline_sources = [{"alias": "children", "pipeline_id": 5108}]
+        opportunity_ids = [10042]
+
+    class _Pipe:
+        schema = {"fields": [], "data_source": {"type": "connect_csv"}}
+
+    with (
+        patch("connect_labs.workflow.views.WorkflowDataAccess") as wda,
+        patch("connect_labs.workflow.data_access.PipelineDataAccess") as pda,
+        patch("connect_labs.semantic.runtime.evaluate") as ev,
+    ):
+        wda.return_value.get_definition.return_value = _Def()
+        pda.return_value.get_definition.return_value = _Pipe()
+        ev.return_value = [{"scope": "programme", "n_cases": 2, "n03": 2}]
+
+        resp = client.get(_url(1), {"series": "N", "scopes": "programme,flw"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["series"] == "N"
+    assert body["scopes"] == ["programme", "flw"]
+    assert body["row_count"] == 1
+
+    kwargs = ev.call_args.kwargs
+    assert kwargs["series"] == "N"
+    assert kwargs["scopes"] == ["programme", "flw"]
+
+
+def test_a_workflow_with_no_entity_pipeline_is_refused_with_the_reason(client, django_user_model):
+    """Layer 1 is generated from the ENTITY pipeline's own schema, because that is
+    where the fallback path lists live — the expensive part, and the thing a
+    hand-written extraction has repeatedly dropped."""
+    user = django_user_model.objects.create_user(username="u2", password="p")
+    client.force_login(user)
+
+    class _Def:
+        pipeline_sources = [{"alias": "visits", "pipeline_id": 5109}]
+        opportunity_ids = [10042]
+
+    with patch("connect_labs.workflow.views.WorkflowDataAccess") as wda:
+        wda.return_value.get_definition.return_value = _Def()
+        resp = client.get(_url(1))
+
+    assert resp.status_code == 400
+    assert "entity pipeline" in resp.json()["error"]
+
+
+def test_a_registry_or_sql_failure_is_reported_rather_than_swallowed(client, django_user_model):
+    """The message names the missing column or relation, which IS the diagnostic. A
+    generic 500 here sends people to the logs for something the response could have
+    told them."""
+    from connect_labs.semantic.runtime import SemanticRuntimeError
+
+    user = django_user_model.objects.create_user(username="u3", password="p")
+    client.force_login(user)
+
+    class _Def:
+        pipeline_sources = [{"alias": "children", "pipeline_id": 5108}]
+        opportunity_ids = [10042]
+
+    class _Pipe:
+        schema = {"fields": []}
+
+    with (
+        patch("connect_labs.workflow.views.WorkflowDataAccess") as wda,
+        patch("connect_labs.workflow.data_access.PipelineDataAccess") as pda,
+        patch("connect_labs.semantic.runtime.evaluate") as ev,
+    ):
+        wda.return_value.get_definition.return_value = _Def()
+        pda.return_value.get_definition.return_value = _Pipe()
+        ev.side_effect = SemanticRuntimeError('semantic query failed: column "x" does not exist')
+
+        resp = client.get(_url(1), {"series": "N"})
+
+    assert resp.status_code == 400
+    assert 'column "x" does not exist' in resp.json()["error"]
+
+
+def test_a_missing_workflow_is_a_404_not_a_500(client, django_user_model):
+    user = django_user_model.objects.create_user(username="u4", password="p")
+    client.force_login(user)
+    with patch("connect_labs.workflow.views.WorkflowDataAccess") as wda:
+        wda.return_value.get_definition.return_value = None
+        resp = client.get(_url(999))
+    assert resp.status_code == 404

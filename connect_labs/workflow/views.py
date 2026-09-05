@@ -2842,6 +2842,96 @@ def get_pipeline_data_api(request, definition_id):
 
 @login_required
 @require_GET
+def semantic_indicators_api(request, definition_id):
+    """Evaluate the semantic registry for a workflow and return indicator rows.
+
+    The registry, compiler and gates were proven long before anything could reach
+    them: nothing in the application imported ``connect_labs.semantic``, so the
+    workflow named "SQL semantic layer" served numbers frozen into a saved run
+    rather than numbers that code produced. ``semantic.runtime.evaluate`` made it
+    executable; this is the door.
+
+    Query params:
+      series  one indicator family -- "N" (the demo compute spec) or "C" (the
+              workbook's). Omitted returns the registry as written, which is both.
+      scopes  comma-separated. Several scopes come back from ONE pass via
+              GROUPING SETS, which is the only version where pushing this into SQL
+              is an improvement: per-scope calls re-run the whole Layer 1
+              extraction each time (28.2s + 31.2s + 27.3s for three, measured).
+      as_of   SQL date literal; defaults to CURRENT_DATE.
+    """
+    from connect_labs.semantic.runtime import SemanticRuntimeError, evaluate
+
+    series = (request.GET.get("series") or "").strip() or None
+    scopes = [s for s in (request.GET.get("scopes") or "").split(",") if s.strip()]
+    as_of = (request.GET.get("as_of") or "").strip() or "CURRENT_DATE"
+
+    data_access = WorkflowDataAccess(request=request)
+    try:
+        definition = data_access.get_definition(definition_id)
+        if not definition:
+            return JsonResponse({"error": "Workflow not found"}, status=404)
+
+        sources = definition.pipeline_sources or []
+        # The ENTITY pipeline is the one Layer 1 is generated from -- it carries the
+        # fallback path lists, which are the expensive part and the thing a
+        # hand-written extraction has repeatedly lost.
+        entity_source = next((s for s in sources if s.get("alias") == "children"), None)
+        if not entity_source:
+            return JsonResponse({"error": "workflow has no entity pipeline source (alias 'children')"}, status=400)
+
+        from connect_labs.workflow.data_access import PipelineDataAccess
+
+        pipeline_access = PipelineDataAccess(request=request)
+        try:
+            pipeline_def = pipeline_access.get_definition(entity_source["pipeline_id"])
+        finally:
+            pipeline_access.close()
+
+        if not pipeline_def or not pipeline_def.schema:
+            return JsonResponse({"error": "entity pipeline has no schema"}, status=400)
+
+        opportunity_ids = definition.opportunity_ids or []
+        if not opportunity_ids:
+            opp = _coerce_int(
+                getattr(request, "labs_context", {}).get("opportunity_id") or request.GET.get("opportunity_id")
+            )
+            if not opp:
+                return JsonResponse({"error": "opportunity_id required"}, status=400)
+            opportunity_ids = [opp]
+
+        rows = evaluate(
+            pipeline_def.schema,
+            [int(o) for o in opportunity_ids],
+            series=series,
+            scopes=scopes or None,
+            scope=(scopes[0] if scopes else "programme"),
+            as_of=as_of,
+        )
+        return JsonResponse(
+            {
+                "rows": rows,
+                "series": series or "all",
+                "scopes": scopes or ["programme"],
+                "opportunity_ids": [int(o) for o in opportunity_ids],
+                "row_count": len(rows),
+            }
+        )
+    except SemanticRuntimeError as exc:
+        # A registry or SQL problem is the caller's to see -- it names the missing
+        # column or relation, which is the whole diagnostic. Generic 500s here sent
+        # people to the logs for something the response could have told them.
+        logger.warning("Semantic evaluation failed for workflow %s: %s", definition_id, exc)
+        return JsonResponse({"error": str(exc)}, status=400)
+    except Exception:
+        logger.exception("Failed to evaluate semantic indicators for workflow %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+    finally:
+        data_access.close()
+
+
+@login_required
+@require_GET
 def list_available_pipelines_api(request):
     """
     API endpoint to list pipelines available to add as sources.
