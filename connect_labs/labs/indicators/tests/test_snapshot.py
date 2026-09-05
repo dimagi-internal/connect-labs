@@ -404,3 +404,93 @@ class TestGeometryReadPath:
         got = _geometry_at(wkb + b"trailing bytes that must not be read", 0, len(wkb))
 
         assert got.extent == (0.0, 0.0, 2.0, 2.0)
+
+
+class TestPruneMakesTheSnapshotAuthoritative:
+    """Without pruning a restore can only ADD.
+
+    So a value the exporting database has deleted survives on the importing
+    one, and the two environments quietly disagree while both report a
+    successful import. That is how 13,054 rows of superseded arithmetic would
+    have reached production after being swept from the source.
+    """
+
+    def _stray(self, turkana, indicator="u5mr", year=1999):
+        return IndicatorValue.objects.create(
+            indicator=indicator,
+            boundary=turkana,
+            iso_code="KEN",
+            admin_level=1,
+            year=year,
+            value=999.0,
+            source=Source.DERIVED,
+            license_code=License.DERIVED,
+            retrieved_at=timezone.now(),
+        )
+
+    def test_a_row_the_snapshot_lacks_is_removed(self):
+        _wipe()
+        _ken, turkana = _seed()
+        blob = snapshot.export(include_geometry=False)
+        stray = self._stray(turkana)
+
+        result = snapshot.import_snapshot(blob, prune=True)
+
+        assert result["values_pruned"] == 1
+        assert not IndicatorValue.objects.filter(pk=stray.pk).exists()
+        # And the real rows are untouched.
+        assert IndicatorValue.objects.filter(indicator="u5mr", year=2022).exists()
+
+    def test_without_prune_it_survives(self):
+        """The default stays additive, because a restore that silently deletes
+        is not something a caller should get without asking."""
+        _wipe()
+        _ken, turkana = _seed()
+        blob = snapshot.export(include_geometry=False)
+        stray = self._stray(turkana)
+
+        result = snapshot.import_snapshot(blob)
+
+        assert result["values_pruned"] == 0
+        assert IndicatorValue.objects.filter(pk=stray.pk).exists()
+
+    def test_an_indicator_the_snapshot_never_mentions_is_left_alone(self):
+        """Omission is not deletion. A partial export must not empty a measure
+        it simply does not carry."""
+        _wipe()
+        _ken, turkana = _seed()
+        blob = snapshot.export(include_geometry=False)
+        untouched = self._stray(turkana, indicator="stunting", year=2019)
+
+        snapshot.import_snapshot(blob, prune=True)
+
+        assert IndicatorValue.objects.filter(pk=untouched.pk).exists()
+
+    def test_a_country_the_snapshot_does_not_cover_is_left_alone(self):
+        """A Liberia-only export must not empty the continent."""
+        _wipe()
+        _ken, turkana = _seed()
+        other = AdminBoundary.objects.create(
+            iso_code="NGA",
+            admin_level=1,
+            name="Kano",
+            boundary_id="NGA-ADM1-kano",
+            geometry=_square(6, 0),
+            source=AdminBoundary.Source.GEOBOUNDARIES,
+        )
+        elsewhere = IndicatorValue.objects.create(
+            indicator="u5mr",
+            boundary=other,
+            iso_code="NGA",
+            admin_level=1,
+            year=2022,
+            value=110.0,
+            source=Source.DHS,
+            license_code=License.OPEN_API,
+            retrieved_at=timezone.now(),
+        )
+        blob = snapshot.export(iso_codes=["KEN"], include_geometry=False)
+
+        snapshot.import_snapshot(blob, prune=True)
+
+        assert IndicatorValue.objects.filter(pk=elsewhere.pk).exists()

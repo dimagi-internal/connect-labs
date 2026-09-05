@@ -32,6 +32,16 @@ class Command(BaseCommand):
             action="store_true",
             help="Use the Drive id pinned in fixtures/snapshot.json",
         )
+        parser.add_argument(
+            "--prune",
+            action="store_true",
+            help=(
+                "Make the snapshot authoritative: delete values it does not carry, "
+                "within the (indicator, country) pairs it covers. Without this a "
+                "restore can only add, so a row deleted in the source database "
+                "survives here and the two environments quietly disagree."
+            ),
+        )
 
     def handle(self, *args, **opts):
         if opts["path"]:
@@ -63,7 +73,7 @@ class Command(BaseCommand):
             self.stdout.write(f"Downloaded {len(blob) / 1e6:.1f} MB from Drive")
 
         try:
-            result = snapshot.import_snapshot(blob, on_progress=self.stdout.write)
+            result = snapshot.import_snapshot(blob, on_progress=self.stdout.write, prune=opts["prune"])
         except ValueError as e:
             raise CommandError(str(e)) from e
 
@@ -71,6 +81,13 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(f"\nImported {result['boundaries']:,} boundaries and {result['values']:,} values")
         )
+        if result.get("values_pruned"):
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  {result['values_pruned']:,} values removed — this snapshot does not carry "
+                    "them, and --prune makes it authoritative for what it covers."
+                )
+            )
         if result["values_skipped"]:
             self.stdout.write(
                 self.style.WARNING(

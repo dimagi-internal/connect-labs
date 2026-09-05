@@ -287,8 +287,24 @@ def _read_manifest(z: zipfile.ZipFile) -> dict:
     return manifest
 
 
-def import_snapshot(blob: bytes, on_progress=None) -> dict:
-    """Load a snapshot. Idempotent: everything upserts on its natural key."""
+def import_snapshot(blob: bytes, on_progress=None, prune: bool = False) -> dict:
+    """Load a snapshot. Idempotent: everything upserts on its natural key.
+
+    ``prune`` makes the snapshot authoritative rather than merely additive.
+    Without it a restore can only ever ADD, so a value the exporting database
+    has deleted survives on the importing one — and the two environments quietly
+    disagree while both report a successful import.
+
+    That is not a hypothetical either. 13,054 derived rows carrying a previous
+    version of the arithmetic (see ``derive.sweep_derived``) were removed from
+    the source database; an un-pruned restore would have left every one of them
+    on the target, where they are indistinguishable from the corrected values.
+
+    Pruning is scoped to what the snapshot actually covers — the
+    ``(indicator, iso_code)`` pairs it contains — so a Liberia-only export
+    cannot empty the continent, and an export that omits an indicator entirely
+    leaves that indicator alone rather than deleting it for lack of mention.
+    """
 
     def say(msg):
         if on_progress:
@@ -298,7 +314,10 @@ def import_snapshot(blob: bytes, on_progress=None) -> dict:
     manifest = _read_manifest(z)
     say(f"snapshot built {manifest['created_at']}, schema {manifest['schema_version']}")
 
-    written = {"boundaries": 0, "values": 0, "values_skipped": 0}
+    written = {"boundaries": 0, "values": 0, "values_skipped": 0, "values_pruned": 0}
+    # What this snapshot claims to speak for, and every key it carries.
+    covered: set[tuple[str, str]] = set()
+    keys: set[tuple[str, int, int, str]] = set()
 
     if "boundaries.csv" in z.namelist():
         geometry = z.read("geometry.bin")
@@ -353,7 +372,40 @@ def import_snapshot(blob: bytes, on_progress=None) -> dict:
             },
         )
         written["values"] += 1
+        covered.add((row["indicator"], row["iso_code"]))
+        keys.add((row["indicator"], pk, int(row["year"]), row["source"]))
         if i % 5000 == 0:
             say(f"  values {i}")
 
+    if prune:
+        written["values_pruned"] = _prune(covered, keys, say)
+
     return {"manifest": manifest, **written}
+
+
+def _prune(covered: set[tuple[str, str]], keys: set[tuple[str, int, int, str]], say) -> int:
+    """Delete rows the snapshot does not carry, within what it covers."""
+    from collections import defaultdict
+
+    isos_by_indicator: dict[str, set[str]] = defaultdict(set)
+    for indicator, iso in covered:
+        isos_by_indicator[indicator].add(iso)
+
+    doomed: list[int] = []
+    for indicator, isos in isos_by_indicator.items():
+        rows = IndicatorValue.objects.filter(indicator=indicator, iso_code__in=isos).only(
+            "id", "indicator", "boundary_id", "year", "source"
+        )
+        doomed.extend(v.pk for v in rows if (v.indicator, v.boundary_id, v.year, str(v.source)) not in keys)
+
+    if not doomed:
+        say("  prune: nothing to remove; the target already matches the snapshot")
+        return 0
+
+    say(f"  prune: removing {len(doomed)} values the snapshot does not carry")
+    # In batches: a single IN clause with tens of thousands of ids is a query
+    # some backends refuse and all of them dislike.
+    removed = 0
+    for start in range(0, len(doomed), 5000):
+        removed += IndicatorValue.objects.filter(pk__in=doomed[start : start + 5000]).delete()[0]
+    return removed
