@@ -279,10 +279,22 @@ v3.3.1 adds three against the 2026-07-24 build (`22_add_2fa`,
 `23_update_session_data`, `24_lowercase_username`). This is why the pin matters:
 without it, an unrelated rebuild would have applied them unannounced.
 
-**Rollback:** images are now tagged `:<version>` as well as `:latest`, so a prior
-version can be redeployed by pointing `UmamiImageUri` at the version tag. The
-schema migrations are **not** reversed by that — Prisma migrations are
-forward-only, so verify a migration is acceptable before it applies, not after.
+**Rollback:** set `UmamiVersion` to an earlier release tag and deploy. The task
+image is **derived** from `UmamiVersion` (there is no separate image parameter —
+one that could be set independently is how the task definition briefly
+advertised v3.3.1 while running a 2026-07-24 image, #1439), so a rollback moves
+the image and its label together.
+
+The schema migrations are **not** reversed by that — Prisma migrations are
+forward-only. Verify a migration is acceptable before it applies, not after; the
+restore path for a bad one is RDS point-in-time recovery on `labs-jj-postgres`
+(7-day retention), which restores the **whole instance**, not just the `umami`
+database.
+
+The pre-pin 2026-07-24 image is kept addressable as `:pre-pin-2026-07-24`
+because the first pinned build overwrote the `:latest` that was its only tag. It
+has no release tag and is deliberately **not** reachable via `UmamiVersion`;
+deploying it is an out-of-band `register-task-definition`, not a stack parameter.
 
 **Which version is running:** `UMAMI_BUILD_VERSION` on the task definition —
 
