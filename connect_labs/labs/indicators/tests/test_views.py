@@ -759,3 +759,52 @@ class TestTheUrlCarriesTheQuestion:
         """Every sibling caveat on this page lists country names."""
         r = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER", "target_year": 2030}).json()
         assert r["projected_without_rate"] == ["Niger"]
+
+
+class TestIndicatorGrouping:
+    """The menu's grouping is registry data, not markup.
+
+    Fifty-two indicators in a flat list is a scroll bar with a catalogue
+    hidden inside it. The grouping is what makes the catalogue visible — so it
+    lives where the measures live, can be reported by the MCP tools, and
+    cannot drift from the list of things you are allowed to target.
+    """
+
+    def test_every_targetable_measure_has_exactly_one_group(self):
+        seen: dict[str, str] = {}
+        for group, codes in measures.GROUPS.items():
+            for code in codes:
+                assert code not in seen, f"{code} is in both {seen.get(code)!r} and {group!r}"
+                seen[code] = group
+
+        assert set(seen) == set(measures.TARGETABLE)
+
+    def test_targetable_is_derived_from_the_groups(self):
+        """Not hand-maintained beside them. A measure added to one list and
+        forgotten in the other is the drift this ordering prevents."""
+        assert measures.TARGETABLE == tuple(c for codes in measures.GROUPS.values() for c in codes)
+
+    def test_every_grouped_code_is_a_real_measure(self):
+        for code in measures.TARGETABLE:
+            assert code in measures.MEASURES, f"{code} is grouped but not registered"
+
+    def test_group_of_answers_and_declines(self):
+        assert measures.group_of("u5mr") == "Child survival"
+        assert measures.group_of("iptp3") == "Malaria"
+        # Registered but deliberately not targetable, so it has no menu home.
+        assert measures.group_of("rain_peak_month") is None
+        assert measures.group_of("not_a_measure") is None
+
+    def test_the_api_carries_the_group_on_every_indicator(self, client_in):
+        r = client_in.get(reverse("targeting:methods"), {"indicator": "u5mr"}).json()
+
+        assert r["groups"] == list(measures.GROUPS)
+        ungrouped = [i["code"] for i in r["indicators"] if not i.get("group")]
+        assert ungrouped == [], f"the menu would file these under 'Other': {ungrouped}"
+
+    def test_group_order_is_the_registry_order_not_alphabetical(self):
+        """The menu reads groups in this order because 'Child survival' leads
+        for a reason, not because C sorts early."""
+        groups = list(measures.GROUPS)
+        assert groups[0] == "Child survival"
+        assert groups != sorted(groups)

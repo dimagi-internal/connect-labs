@@ -30,6 +30,65 @@
     .tg-pop .warn { color: #b45309; }
     /* A right-hand control's popover would overflow the panel. */
     .tg-pop.right { left: auto; right: 0; }
+
+    /* The indicator menu. Fifty-two indicators in a <select> is a scroll bar
+       with a catalogue hidden inside it; the whole point of this panel is that
+       you can SEE the catalogue — every group, at once, in columns — and so
+       discover that the system can answer a question you had not thought to
+       ask. It is deliberately wider than the 350px control column it hangs
+       from, because the sidebar's width is a layout fact and has nothing to do
+       with how much menu a reader can take in. */
+    .tg-menu { position: absolute; z-index: 50; top: calc(100% + 6px); left: 0;
+               width: min(880px, calc(100vw - 2rem)); background: #fff;
+               border: 1px solid #e7e5e4; border-radius: 10px;
+               box-shadow: 0 16px 42px rgba(28,25,23,.18); overflow: hidden; }
+    .tg-menu-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+                    border-bottom: 1px solid #f5f5f4; background: #fafaf9; }
+    .tg-menu-search { flex: 1 1 auto; min-width: 0; font-size: 13px; padding: 5px 9px;
+                      border: 1px solid #d6d3d1; border-radius: 6px; background: #fff;
+                      color: #1c1917; }
+    .tg-menu-search:focus { outline: 2px solid #99f6e4; outline-offset: 0; border-color: #0f766e; }
+    .tg-menu-legend { display: flex; align-items: center; gap: 5px; flex: 0 0 auto;
+                      font-size: 11px; color: #78716c; white-space: nowrap; }
+    .tg-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+    .tg-dot + .tg-dot { margin-left: 8px; }
+    .tg-dot-burden { background: #b45309; }
+    .tg-dot-coverage { background: #0f766e; }
+
+    /* Explicit flex columns, balanced in JS — NOT CSS multicol.
+       `columns: 4` with a constrained height silently fragments the overflow
+       into a fifth column outside the box: the menu rendered ten of its twelve
+       groups and looked complete, which is the worst way for a catalogue
+       control to fail. Flex columns cannot do that. The count lives here as a
+       custom property so the breakpoints stay in CSS and the balancing stays
+       in JS. */
+    .tg-menu-cols { --tg-cols: 4; display: flex; gap: 18px; align-items: flex-start;
+                    padding: 12px 14px 14px; max-height: min(78vh, 680px);
+                    overflow-y: auto; }
+    .tg-menu-col { flex: 1 1 0; min-width: 0; }
+    @media (max-width: 1080px) { .tg-menu-cols { --tg-cols: 3; } }
+    @media (max-width: 820px)  { .tg-menu-cols { --tg-cols: 2; } }
+    @media (max-width: 560px)  { .tg-menu-cols { --tg-cols: 1; } }
+    /* Below the layout's own lg breakpoint the sidebar goes full width, so the
+       menu takes the card's width instead of a fixed one. Anchored left to a
+       card that is already inset, a 880px panel hangs off the right edge of a
+       760px screen — the overflow is invisible until someone opens it on a
+       laptop in a meeting. */
+    @media (max-width: 1023px) { .tg-menu { width: 100%; } }
+    /* A group is never split across columns: half of "Malaria" at the foot of
+       one and half at the head of the next reads as two different groups. */
+    .tg-group { margin: 0 0 12px; }
+    .tg-group-name { font-size: 10px; font-weight: 700; letter-spacing: .06em;
+                     text-transform: uppercase; color: #a8a29e; margin: 0 0 4px; }
+    .tg-opt { display: flex; align-items: baseline; gap: 6px; width: 100%; text-align: left;
+              padding: 3px 6px; border: 0; background: none; border-radius: 5px;
+              font-size: 12.5px; line-height: 1.35; color: #292524; cursor: pointer; }
+    .tg-opt:hover, .tg-opt:focus-visible { background: #f5f5f4; outline: none; }
+    .tg-opt[aria-selected="true"] { background: #0f766e; color: #fff; }
+    .tg-opt-mark { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 6px;
+                   margin-top: .38em; }
+    .tg-opt-name { flex: 1 1 auto; min-width: 0; }
+    .tg-menu-empty { padding: 18px 14px; margin: 0; font-size: 12.5px; color: #78716c; }
     /* The rendered methodology: readable prose inside a data surface, so it
        gets real vertical rhythm rather than inheriting the table's density. */
     .tg-prose h1 { font-size: 1.05rem; font-weight: 600; color: #1c1917; margin: 0 0 .5rem; }
@@ -116,8 +175,35 @@
                   aria-label="About indicator families">i</button>
           <span id="tg-family-chip" class="ml-auto text-[11px] text-stone-500"></span>
         </div>
-        <select id="tg-indicator"
-                class="w-full text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
+        <!-- A <select> with fifty-two options is a scroll, not a menu. This is
+             a real menu: grouped by the decision each group belongs to, laid
+             out in columns so the whole catalogue is visible at once, and
+             filterable because at this size finding beats browsing. The
+             groups come from the registry, not from here. -->
+        <button type="button" id="tg-indicator"
+                class="w-full flex items-center gap-2 text-sm border border-stone-300 rounded-md
+                       px-2 py-1.5 bg-white hover:border-stone-400 text-left"
+                aria-haspopup="dialog" aria-expanded="false">
+          <span id="tg-indicator-group" class="text-[11px] text-stone-500 shrink-0"></span>
+          <span id="tg-indicator-label" class="font-medium text-stone-900 truncate">—</span>
+          <svg class="ml-auto w-3.5 h-3.5 shrink-0 text-stone-400" viewBox="0 0 12 12" fill="none"
+               aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+
+        <div id="tg-indicator-menu" class="tg-menu hidden" role="dialog" aria-label="Choose an indicator">
+          <div class="tg-menu-head">
+            <input id="tg-indicator-search" type="search" autocomplete="off" spellcheck="false"
+                   class="tg-menu-search" placeholder="Filter 52 indicators…"
+                   aria-label="Filter indicators">
+            <span class="tg-menu-legend">
+              <span class="tg-dot tg-dot-burden"></span>worse when high
+              <span class="tg-dot tg-dot-coverage"></span>worse when low
+            </span>
+          </div>
+          <div id="tg-indicator-cols" class="tg-menu-cols"></div>
+          <p id="tg-indicator-empty" class="tg-menu-empty hidden">Nothing matches that.</p>
+        </div>
         <div class="tg-pop hidden" id="pop-indicator">
           <p id="tg-family"></p>
           <p>Indicators come in two kinds, and they ask opposite questions. A
