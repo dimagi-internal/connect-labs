@@ -120,6 +120,29 @@ def _survey(what: str) -> tuple[Eligible, ...]:
     )
 
 
+def _wash(what: str) -> tuple[Eligible, ...]:
+    """A WASH measure, where the JMP's harmonised pooling is a real second source.
+
+    Order is an opinion, and this one is: the direct measurement first, the
+    pooling second. Both answer the same question to the same JMP definition --
+    which is why they can share an indicator at all, and why handwashing does
+    NOT (DHS observes whether a station exists; the JMP asks whether it has soap
+    and water, and those are different facts wearing the same word).
+    """
+    return (
+        Eligible(
+            Source.DHS,
+            f"DHS measures {what} directly in the field, on the JMP's own service ladder.",
+        ),
+        Eligible(
+            Source.UNICEF_SDMX,
+            "The JMP's subnational pooling of DHS, MICS, MIS and national surveys onto "
+            "one definition. Second because it may rest on a survey we cannot name, and "
+            "present because it is the only route to countries DHS has never surveyed.",
+        ),
+    )
+
+
 def _map(what: str, note: str = "") -> tuple[Eligible, ...]:
     """A Malaria Atlas Project surface."""
     return (
@@ -136,7 +159,22 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
     # -- Mortality -------------------------------------------------------
     "u5mr": _MORTALITY,
     "imr": _MORTALITY,
-    "nmr": (_MORTALITY[0],),
+    # Neonatal mortality was the thinnest headline measure here -- 30.7% of
+    # ADM1 units -- and UNICEF's subnational child-mortality warehouse is the
+    # only second source for it. It sits behind IGME's small-area model for
+    # the same reason IGME leads u5mr: the model reconciles every survey a
+    # country has run, where this is one estimate per area from one of them.
+    # It earns its place at ADM2, where it added 1,096 district estimates
+    # across 17 countries and took district coverage from 40% to 71%.
+    "nmr": (
+        _MORTALITY[0],
+        Eligible(
+            Source.UNICEF_SDMX,
+            "UNICEF's subnational child-mortality warehouse, at district level where "
+            "the underlying surveys support it. The only second source for neonatal "
+            "mortality, which no other source here publishes below the region.",
+        ),
+    ),
     # -- Population and its derivations -----------------------------------
     "pop_total": _POPULATION,
     "pop_u1": _POPULATION,
@@ -212,9 +250,61 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
     "full_immunisation": _survey("the full schedule from cards and recall"),
     "skilled_birth_attendance": _survey("who attended the birth"),
     "anc4": _survey("antenatal visits"),
-    "improved_water": _survey("the household's water source"),
-    "improved_sanitation": _survey("the household's sanitation facility"),
+    # WASH is the one family with a second source worth having. The JMP pools
+    # DHS, MICS, MIS and national surveys onto one definition, which is how it
+    # reaches Somalia, Sudan, Comoros, Guinea-Bissau and Tunisia -- countries
+    # DHS has never surveyed, where these questions previously returned
+    # nothing at all.
+    #
+    # DHS still leads. It is a direct measurement whose field question we can
+    # name; the JMP figure is a harmonised pooling that may rest on a survey
+    # we cannot see. Preferring the pooling where the survey exists would
+    # trade a known instrument for an unknown one for no gain. Preferring it
+    # where the survey does NOT exist is the whole reason it is here.
+    "improved_water": _wash("the household's water source"),
+    "improved_sanitation": _wash("the household's sanitation facility"),
     "mean_household_size": _survey("household roster size"),
+    # --- Tier 1 of docs/targeting-data-acquisition.md ----------------------
+    #
+    # All twenty are household-survey measures, so DHS alone answers them
+    # subnationally and each entry says which question in the field produced
+    # it. Naming the field question rather than the indicator is the point:
+    # "vaccination from cards and recall" is a different kind of evidence from
+    # "haemoglobin measured in the field", and a reader weighing a number
+    # needs to know which they are holding.
+    # Referral access. Same two rasters as the walking surface, different mode.
+    "travel_time_motorized": (
+        Eligible(
+            Source.MAP_WORLDPOP,
+            "Weiss et al.'s motorized travel-time surface crossed with WorldPop's grid. "
+            "The only global facility-access surface, and useless without a population "
+            "grid to weight it by — an average over land lets empty desert vote.",
+        ),
+    ),
+    "share_beyond_2h_motorized": (
+        Eligible(Source.MAP_WORLDPOP, "The same crossing, expressed as a share of people."),
+    ),
+    "pop_beyond_2h_motorized": (Eligible(Source.MAP_WORLDPOP, "The same crossing, expressed as a count of people."),),
+    "zero_dose": _survey("vaccination history from cards and recall, counting children with no doses at all"),
+    "fp_unmet_need": _survey("fertility intentions against current contraceptive use"),
+    "fp_modern_method": _survey("current contraceptive method"),
+    "fp_demand_satisfied": _survey("contraceptive demand and how it is met"),
+    "itn_household": _survey("nets present in the household, observed on the roster"),
+    "itn_pregnant": _survey("where pregnant women slept the previous night"),
+    "iptp3": _survey("doses of SP/Fansidar taken during pregnancy"),
+    "careseeking_diarrhoea": _survey("whether advice or treatment was sought for a child's diarrhoea"),
+    "careseeking_fever": _survey("whether advice or treatment was sought for a child's fever"),
+    "underweight": _survey("weight-for-age"),
+    "severe_wasting": _survey("weight-for-height, at the three-SD cut"),
+    "child_anaemia": _survey("haemoglobin measured in the field, not reported"),
+    "women_anaemia": _survey("haemoglobin measured in the field, not reported"),
+    "iron_pregnancy": _survey("days of iron supplementation during pregnancy"),
+    "min_meal_frequency": _survey("what and how often a child was fed in the last day"),
+    "postnatal_2days": _survey("timing of the mother's first postnatal check"),
+    "handwashing": _survey("a handwashing place observed by the interviewer"),
+    "water_on_premises": _wash("the household's water source and where it is"),
+    "open_defecation": _wash("the household's sanitation facility, or absence of one"),
+    "birth_certificate": _survey("whether the child has a birth certificate"),
 }
 
 #: Every ``*_gap`` count is arithmetic on a coverage rate and a denominator, and

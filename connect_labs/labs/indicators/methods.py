@@ -178,7 +178,13 @@ register(
         # Falls through to the raw survey where no factor could be formed —
         # both are the same measurement, one adjusted, so this is not the
         # cross-method fallback the module docstring rules out.
-        source_order=("dhs_calibrated", "dhs"),
+        # unicef_sdmx last: the JMP's harmonised pooling is a survey figure
+        # too, and excluding it here would make the countries it alone reaches
+        # -- Somalia, Sudan, Comoros -- return nothing under the default
+        # method while their data sat in the table. Order still prefers the
+        # named instrument; the policy decides eligibility per indicator, so
+        # this widens nothing that policy has not already allowed.
+        source_order=("dhs_calibrated", "dhs", "unicef_sdmx"),
         description=(
             "The survey's regional pattern scaled to the present by the national "
             "trend, so an old survey still says which regions are worse without "
@@ -196,7 +202,7 @@ register(
         code="subnational_survey",
         label="Survey as measured",
         resolution=Resolution.SUBNATIONAL,
-        source_order=("dhs",),
+        source_order=("dhs", "unicef_sdmx"),
         description=(
             "The survey's own regional figures, unadjusted. What the fieldwork "
             "actually found, at the time it was carried out."
