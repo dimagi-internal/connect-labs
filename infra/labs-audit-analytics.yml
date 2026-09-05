@@ -202,14 +202,24 @@ Resources:
               Value: postgresql
             - Name: DISABLE_TELEMETRY
               Value: '1'
-            # Purely so `aws ecs describe-task-definition` can answer "what
-            # version is running". Umami's own package.json cannot: at the
-            # 2026-07-24 build it read "3.2.0" while the source was a month of
-            # unreleased post-v3.2.0 main. Reading the version from INSIDE the
-            # app is therefore not a fallback for this -- it is the thing that
-            # was wrong. This value is what the image was actually built from.
-            - Name: UMAMI_BUILD_VERSION
-              Value: !Ref UmamiVersion
+            # Deliberately ABSENT until the image tag and the version are
+            # structurally coupled. See infra/README.md § Upgrading Umami.
+            #
+            # A UMAMI_BUILD_VERSION env var derived from `UmamiVersion` shipped
+            # here for ~90 seconds on 2026-09-05 and was reverted immediately:
+            # `UmamiImageUri` is still `:latest`, so the label announced the
+            # version the pipeline WOULD BUILD, not the one running. It read
+            # `v3.3.1` above a container built 2026-07-24 from unreleased main —
+            # a live claim that the P2002 fix was deployed when it was not.
+            #
+            # That is strictly worse than no label: the previous state offered
+            # no answer, this one offered a confident wrong answer, which is the
+            # exact failure this whole change set exists to remove. A version
+            # label that can disagree with its image is not a version label.
+            #
+            # Reinstate it together with `UmamiImageUri: ...:${UmamiVersion}`,
+            # so deploying a label and deploying its image are the same act and
+            # the two cannot drift. That lands with the first pinned build.
           Secrets:
             - Name: DATABASE_URL
               ValueFrom: !Ref UmamiDatabaseUrlSecretArn
