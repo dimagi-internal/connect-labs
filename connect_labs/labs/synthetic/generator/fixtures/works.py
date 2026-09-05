@@ -5,6 +5,9 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
+# Statuses that represent completed, payable work (Connect: valid = approved + over_limit).
+PAYABLE_STATUSES = frozenset({"approved", "over_limit"})
+
 
 def _payment_unit_for_deliver(deliver_unit_id: int, payment_units: list[dict]) -> int | None:
     for pu in payment_units:
@@ -23,7 +26,9 @@ def build_works_and_modules(
     counts: dict[tuple[str, int], int] = defaultdict(int)
 
     for v in visits:
-        if v.get("status") != "approved":
+        # over_limit is legitimate PAID work — it bills exactly like approved. Skipping
+        # it here would understate payment totals alongside the visit counts.
+        if v.get("status") not in PAYABLE_STATUSES:
             continue
         deliver_unit_id = v.get("deliver_unit_id")
         if deliver_unit_id is None:
