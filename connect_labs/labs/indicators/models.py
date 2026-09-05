@@ -33,6 +33,10 @@ class License(models.TextChoices):
     CC_BY_3 = "cc-by-3.0", "CC BY 3.0 Unported"
     CC_BY_NC_SA_3_IGO = "cc-by-nc-sa-3.0-igo", "CC BY-NC-SA 3.0 IGO"
     OPEN_API = "open-api", "Open API, no explicit licence"
+    # CHIRPS is released without restriction by UCSB's Climate Hazards Center.
+    # Distinct from CC BY: there is no attribution *requirement*, though the
+    # method string names the source anyway because provenance is the point.
+    PUBLIC_DOMAIN = "public-domain", "Public domain"
     DERIVED = "derived", "Derived (inherits from inputs)"
 
 
@@ -59,6 +63,7 @@ class Source(models.TextChoices):
     # DHS, MICS, MIS and national surveys, and it is the only route to the
     # countries DHS has never surveyed. See sources/unicef_sdmx.py.
     UNICEF_SDMX = "unicef_sdmx", "UNICEF (subnational SDMX)"
+    CHIRPS = "chirps", "CHIRPS x WorldPop"
     DERIVED = "derived", "Derived"
 
 

@@ -272,6 +272,17 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
     # "vaccination from cards and recall" is a different kind of evidence from
     # "haemoglobin measured in the field", and a reader weighing a number
     # needs to know which they are holding.
+    # Rainfall seasonality. One source, and it is the only one that is both
+    # openly licensed and station-blended at this resolution.
+    "rain_annual_mm": (
+        Eligible(
+            Source.CHIRPS,
+            "CHIRPS 0.05 degree monthly precipitation crossed with WorldPop's grid, so the "
+            "average describes when it rains where people are rather than over empty land.",
+        ),
+    ),
+    "rain_peak_month": (Eligible(Source.CHIRPS, "The same climatology, read for its maximum."),),
+    "rain_wettest_quarter": (Eligible(Source.CHIRPS, "The same climatology, read for its concentration."),),
     # Referral access. Same two rasters as the walking surface, different mode.
     "travel_time_motorized": (
         Eligible(

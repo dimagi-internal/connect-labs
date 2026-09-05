@@ -31,6 +31,7 @@ from connect_labs.labs.indicators.sources import (
     igme,
     igme_subnational,
     malaria_atlas,
+    rainfall,
     settlement,
     unicef_sdmx,
     worldbank,
@@ -52,6 +53,7 @@ STAGES = (
     "accessibility",
     "settlement",
     "unicef",
+    "rainfall",
 )
 
 
@@ -348,6 +350,20 @@ class Command(BaseCommand):
             ctx["rows"] = base.upsert(rows)
             ctx["countries"] = len({r.boundary.iso_code for r in rows})
             ctx["swept"] = derive.sweep_derived(rows, derive.gap_indicators(), iso_codes=codes)
+
+    def _stage_rainfall(self, codes, opts):
+        """Rainfall seasonality, so a schedule can be defended rather than asserted.
+
+        Last, and separate from the other rasters, because it fetches 120 files
+        to build one climatology and a failure here should not cost the stages
+        that already succeeded.
+        """
+        months = rainfall.climatology()
+        for iso in codes or sorted(boundary_set.owned().filter(admin_level=0).values_list("iso_code", flat=True)):
+            with self._run(Source.CHIRPS, f"rainfall_{iso}") as ctx:
+                rows = rainfall.load_country(iso, months)
+                ctx["rows"] = base.upsert(rows)
+                ctx["countries"] = 1
 
     def _stage_unicef(self, codes, opts):
         """UNICEF's subnational SDMX warehouse.
