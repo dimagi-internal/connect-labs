@@ -180,9 +180,9 @@ fraction of the cost.
 
 | # | Item | Source | Why it is here |
 |---|---|---|---|
-| 23 | Motorized travel time | MAP / Weiss et al., CC BY 3.0 | Already a recorded `candidate`. We loaded the walking-only surface, which answers community reach; this answers **referral** access, a different question we currently cannot ask. Same loader, different raster. |
-| 24 | Monthly rainfall climatology | CHIRPS (UCSB/USGS), public domain | **The system has diagnosed its own gap here.** The ORS seasonality work concluded: *"nothing in this dataset is monthly. It can size a campaign and cannot time one."* West Africa has two diarrhoea seasons — bacterial in the rains, rotavirus in the dry — so timing is not a detail. This is what would let a distribution schedule be defended rather than asserted. |
-| 25 | Western Sahara boundaries | geoBoundaries | 55 ISO codes, 54 ADM0 polygons. The one country in scope with no geometry at all, so it can never appear in any answer. Small, and currently a silent absence. |
+| 23 ✅ | Motorized travel time | MAP / Weiss et al., CC BY 3.0 | Already a recorded `candidate`. We loaded the walking-only surface, which answers community reach; this answers **referral** access, a different question we currently cannot ask. Same loader, different raster. |
+| 24 ✅ | Monthly rainfall climatology | CHIRPS (UCSB/USGS), public domain | **The system has diagnosed its own gap here.** The ORS seasonality work concluded: *"nothing in this dataset is monthly. It can size a campaign and cannot time one."* West Africa has two diarrhoea seasons — bacterial in the rains, rotavirus in the dry — so timing is not a detail. This is what would let a distribution schedule be defended rather than asserted. |
+| 25 ❌ | Western Sahara boundaries | geoBoundaries | 55 ISO codes, 54 ADM0 polygons. The one country in scope with no geometry at all, so it can never appear in any answer. Small, and currently a silent absence. |
 | 26 | GRID3 Nigeria operational wards | GRID3, CC BY 4.0 | Recorded `candidate`. The only national ward layer and openly licensed, but GRID3 calls it "operational rather than authoritative" — 4% Authorized, 37% Placeholder. Worth loading only against a concrete ADM3 question, and worth **not** loading speculatively. |
 | 27 | Nigeria poverty source rescan | — | The `nigeria-household-poverty-targeting` note has **never had a full alternative-source scan**. Its checks confirm what we found; only a scan says whether something better has since been published. |
 
@@ -200,6 +200,52 @@ Licence, not quality. Recorded here so the question is not reopened by accident.
 | FAO/World Bank Nigeria poverty map | Quality, for once: 2010–13 survey base, a different poverty line, and in 585 of 775 rows the count and rate × population disagree by more than 2%. |
 
 ---
+
+## Tier 3 outcomes
+
+### 23 — motorized travel time ✅
+
+54 of 54 countries in 118 seconds, zero failures. Liberia: **71.2 minutes and
+17.8% beyond two hours on foot, against 29.1 minutes and 5.8% by vehicle.**
+Motorized is faster everywhere, which is the check that the two surfaces are
+what they claim.
+
+### 24 — rainfall seasonality ✅
+
+10-year climatology (2016–2025), 120 CHIRPS rasters, all 54 countries, zero
+failures. Every seasonal *shape* validates against the known climate:
+
+| | mm/yr (over people) | peak | wettest quarter | profile |
+|---|---:|---|---:|---|
+| Niger | 524 | Aug | **81.6%** | one sharp Sahel peak |
+| Liberia | 2,873 | Jun | 44.2% | long wet season, May–Oct |
+| DR Congo | 1,451 | Dec | 36.2% | bimodal, equatorial |
+| South Africa | 708 | Jan | 43.4% | summer rain, dry mid-year |
+| Morocco | 345 | Dec | 41.5% | winter rain, dry summer |
+| Egypt | 52 | Dec | 61.0% | desert |
+
+**The totals will not match the national average anyone looks up, and that is
+correct.** They are weighted by people, not by land. Checked directly:
+
+| | areal | over people | published (areal) |
+|---|---:|---:|---|
+| Niger | **184** | 524 | ~150–250 ✔ |
+| South Africa | **460** | 694 | ~450 ✔ |
+| Liberia | **2,302** | 2,669 | ~2,400–2,600 ✔ |
+
+The areal means land on the published figures; population-weighting raises them
+because people live where it rains — Niger's population is in the southern
+Sahel, not the Sahara. Nearly 3× for Niger, and it is the right number for
+"when does it rain on the people we are shipping to". The measure description
+carries the Niger comparison so nobody rediscovers it as a bug.
+
+### 25 — Western Sahara ❌ closed, not actionable
+
+geoBoundaries publishes 230 ADM0 countries and **ESH is not among them** — a
+disputed territory gbOpen does not issue separately. Sourcing it elsewhere
+would mean mixing tessellations, which this system never does. **54 of 55 ISO
+codes is the ceiling**, and that is now a documented fact rather than an open
+task.
 
 ## Order of work
 
