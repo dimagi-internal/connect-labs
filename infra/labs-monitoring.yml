@@ -303,15 +303,29 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: labs-jj-web-cpu-high
+      # The description is the ONLY context a responder gets — it is pasted into
+      # every notification email, and on labs those page an agent mailbox, so it
+      # is read cold by a session with no prior. It therefore has to name the
+      # LIKELIEST cause first. It used to lead with "a request path fanning out
+      # remote calls in a loop", and four sessions across 08-31→09-02 dutifully
+      # went looking for that endpoint and recorded zero findings. Measured on
+      # 09-05 (issue #1461): 9 of the last 15 firings, and every firing since
+      # 09-02, coincided with a deploy rollout rather than with load.
       AlarmDescription: >-
         A web task has been pinned near 100% CPU for 15 of the last 25 minutes.
         Each task has 1 vCPU, so a pinned task means its requests are queueing
-        behind CPU-bound Python and every user routed to it is stalled. Usual
-        cause is a request path fanning out remote calls in a loop. Check the web
-        log group for one URL repeating at high volume before reaching for a
-        scale-up. This alarm holds through brief dips (3-of-5 datapoints), so one
-        sustained pin reports as ONE incident — if you are reading a second
-        notification, treat it as the same incident until proven otherwise.
+        behind CPU-bound Python and every user routed to it is stalled.
+        CHECK THE DEPLOY LOG FIRST (see issue #1461): a rolling replacement pins
+        the booting task, and this alarm reads Maximum across tasks, so one
+        starting task holds 100% for the whole rollout. Overlapping deploys — a
+        run superseded by cancel-in-progress keeps rolling after its waiter is
+        killed — run long enough to fire this. Audited web traffic DROPS during
+        such a pin, so low request volume is not evidence against it. Only if no
+        deploy was rolling, look for a request path fanning out remote calls in a
+        loop: check the web log group for one URL repeating at high volume before
+        reaching for a scale-up. Holds through brief dips (3-of-5 datapoints), so
+        one sustained pin is ONE incident — treat a repeat notification as the
+        same incident until proven otherwise.
       Namespace: AWS/ECS
       MetricName: CPUUtilization
       Dimensions:
