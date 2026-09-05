@@ -276,3 +276,70 @@ class TestConditionalCoverageGaps:
             if m.conditional_on:
                 episode = measures.get(m.conditional_on)
                 assert episode.is_rate, f"{m.code} conditions on a count"
+
+
+class TestAnnualEpisodes:
+    """A fortnight's worth of illness is not a year's.
+
+    DHS asks whether a child had diarrhoea in the last two weeks. Every count
+    derived from that answer is a fortnight's worth of cases, and it reads —
+    to anyone who does not check — like a year's. It was read that way: a
+    document written from this system called Liberia's 60,671 "episodes a year"
+    when the annual figure is 1.2 million.
+    """
+
+    def test_the_factor_comes_from_the_window_and_the_episode(self):
+        # 365 days over a 14-day recall window plus a 4.3-day episode.
+        assert measures.annualisation_factor("diarrhoea_prevalence") == pytest.approx(365 / 18.3)
+
+    def test_a_measure_with_no_declared_window_gets_no_factor(self):
+        """Better no conversion than a guessed one."""
+        assert measures.annualisation_factor("stunting") is None
+        assert measures.annualisation_factor("not_a_measure") is None
+
+    def test_the_conversion_reproduces_liberias_own_incidence(self):
+        """The check that the arithmetic is the right arithmetic.
+
+        Liberia's measured 15.7% two-week prevalence implies 3.13 episodes per
+        child-year, between the sub-Saharan average of 3.3 and the global
+        low-and-middle-income figure of 2.7. A conversion that landed outside
+        that range would be wrong whatever its algebra looked like.
+        """
+        implied = 0.157 * measures.annualisation_factor("diarrhoea_prevalence")
+        assert 2.7 <= implied <= 3.3
+
+    def test_a_conditional_gap_gets_an_annual_sibling(self, db):
+        b = make_boundary("LBR", 1, "Bong", "LBR-1-1", x=2)
+        set_value(b, "pop_u5", 100_000, source=Source.WORLDPOP_RASTER)
+        set_value(b, "ors_coverage", 40.0, source=Source.DHS)
+        set_value(b, "diarrhoea_prevalence", 20.0, source=Source.DHS)
+
+        rows = {r.indicator: r.value for r in derive.load_coverage_gaps(iso_codes=["LBR"])}
+
+        assert rows["ors_coverage_gap"] == pytest.approx(12_000)
+        assert rows["ors_coverage_gap_annual"] == pytest.approx(12_000 * 365 / 18.3)
+
+    def test_an_unconditional_gap_gets_no_annual_sibling(self, db):
+        """Sanitation is a state, not an episode; there is nothing to annualise."""
+        b = make_boundary("LBR", 1, "Bong", "LBR-1-1", x=2)
+        set_value(b, "pop_total", 100_000, source=Source.WORLDPOP_RASTER)
+        set_value(b, "improved_sanitation", 40.0, source=Source.DHS)
+
+        rows = {r.indicator for r in derive.load_coverage_gaps(iso_codes=["LBR"])}
+
+        assert "improved_sanitation_gap" in rows
+        assert "improved_sanitation_gap_annual" not in rows
+
+    def test_the_annual_row_says_how_it_was_carried(self, db):
+        """A reader must be able to see the conversion, not just its result."""
+        b = make_boundary("LBR", 1, "Bong", "LBR-1-1", x=2)
+        set_value(b, "pop_u5", 100_000, source=Source.WORLDPOP_RASTER)
+        set_value(b, "ors_coverage", 40.0, source=Source.DHS)
+        set_value(b, "diarrhoea_prevalence", 20.0, source=Source.DHS)
+
+        annual = next(
+            r for r in derive.load_coverage_gaps(iso_codes=["LBR"]) if r.indicator == "ors_coverage_gap_annual"
+        )
+
+        assert "Carried to a year" in annual.method
+        assert "14-day recall window" in annual.method

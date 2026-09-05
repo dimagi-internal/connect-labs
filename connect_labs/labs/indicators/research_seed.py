@@ -313,6 +313,120 @@ See [[village-level-geography]].
         "scanned_now": True,
     },
     {
+        "indicator": "diarrhoea_prevalence",
+        "topic": "seasonality-and-episode-frequency",
+        "summary": (
+            "DHS measures a fortnight, not a year: the conversion is x19.9 and it was being "
+            "skipped. West Africa has TWO diarrhoea seasons, not one, and Liberia's survey "
+            "was fielded in only one of them."
+        ),
+        "body": """
+Two questions a sizing exercise has to answer and this system could not: how
+many episodes a child has in a year, and when in the year they happen.
+
+**A fortnight is not a year.** DHS asks whether a child had diarrhoea in the
+last two weeks. Every count derived from that answer is a fortnight's worth of
+cases and reads, to anyone who does not check, like a year's. It was read that
+way: a document generated from this system called Liberia's 60,671 "episodes a
+year" when the annual figure is 1.21 million.
+
+The conversion is the recall window plus the episode's own duration, because an
+episode starting shortly before the window is still reported inside it:
+
+    annual incidence = prevalence x 365 / (recall_days + episode_days)
+
+For diarrhoea on DHS's fortnight and a 4.3-day mean episode that is **x19.9**.
+Applied to Liberia's own 15.7% it gives **3.13 episodes per child-year**, which
+sits between the sub-Saharan African average of 3.3 and the global
+low-and-middle-income figure of 2.7. That is a check on the conversion rather
+than an assumption inside it -- a factor landing outside that range would be
+wrong whatever its algebra looked like.
+
+Note this is 57% above **GiveWell's own assumption of 2 episodes a year** for
+low-SDI countries, which their ORS/zinc intervention report states plainly. A
+proposal to GiveWell should probably size on their figure and show ours, rather
+than the reverse.
+
+**West Africa has two diarrhoea seasons, and they have different causes.** This
+is the part most likely to be got wrong, because "the rainy season" is the
+intuitive answer and it is half of one. Bacterial and parasitic pathogens --
+EAEC, ETEC, Campylobacter, Cryptosporidium -- peak in the rains. Rotavirus and
+the other enteric viruses peak in the **dry** season. A systematic review across
+African countries found rotavirus diarrhoea usually peaks in the dry period.
+
+So diarrhoea does not go away between rounds; the pathogen mix changes. That is
+an argument for distributing more than once a year, and an argument against
+timing both rounds around the rains.
+
+**Liberia specifically.** Rains run May to October, building to a peak in
+July-September, and Monrovia has a near-annual cholera surge in September as
+the rains end. The dry season is November to April.
+
+**Liberia's DHS was fielded October 2019 to February 2020** -- the tail of the
+rains and then the dry season. It therefore measured the rotavirus half of the
+year and largely missed the bacterial peak. That the implied annual incidence
+still lands at 3.13, close to the regional average, suggests the bias is modest
+rather than absent; it does not establish that it is zero, and a county figure
+from a single fieldwork window carries it too.
+
+**What this implies for a two-round campaign.** Rounds six months apart put
+stock in homes twice; the question is when. Timing them so supply arrives
+*before* each peak -- roughly April/May ahead of the rains, and October/November
+ahead of the dry-season rotavirus season -- covers both causes. Two rounds timed
+to the rains alone would leave the viral season unsupplied.
+
+**What we still cannot answer.** No Liberian measurement of diarrhoea treatment
+coverage exists since February 2020, so the seasonal pattern here is regional
+evidence applied to Liberia rather than Liberian evidence. And nothing in this
+dataset is monthly: every figure is an annual or survey-window average, so the
+system can size a campaign but cannot time one. Timing needs surveillance data
+we do not hold.
+""".strip(),
+        "checks": [
+            {
+                "kind": "measure",
+                "code": "ors_coverage_gap_annual",
+                "expected": {"kind": "count", "family": "burden"},
+            },
+            {"kind": "measure", "code": "diarrhoea_prevalence", "expected": {"kind": "rate"}},
+            {"kind": "source", "indicator": "diarrhoea_prevalence", "source": "dhs", "expected": True},
+        ],
+        "alternatives": [
+            {
+                "name": "Fischer Walker et al., episode incidence and duration in LMICs",
+                "url": "https://www.ncbi.nlm.nih.gov/books/NBK361905/",
+                "licence": "published literature",
+                "verdict": "adopted",
+                "why": (
+                    "The source of both numbers the conversion needs: 3.3 episodes per child-year "
+                    "in sub-Saharan Africa, 2.7 globally (UR 2.1-3.2), and a 4.3-day mean episode."
+                ),
+            },
+            {
+                "name": "GiveWell ORS and zinc intervention report",
+                "url": "https://www.givewell.org/international/technical/programs/oral-rehydration-solution-zinc",
+                "licence": "public",
+                "verdict": "candidate",
+                "why": (
+                    "Assumes 2 episodes a year for low-SDI countries -- conservative against the "
+                    "literature. Does not discuss seasonality at all. Worth sizing to when the "
+                    "reader is GiveWell."
+                ),
+            },
+            {
+                "name": "Monthly surveillance / health-facility diarrhoea counts",
+                "url": "",
+                "licence": "varies",
+                "verdict": "candidate",
+                "why": (
+                    "What would let the system TIME a campaign rather than only size one. Nothing "
+                    "in this dataset is monthly."
+                ),
+            },
+        ],
+        "scanned_now": True,
+    },
+    {
         "indicator": "",
         "topic": "licensing",
         "summary": (
