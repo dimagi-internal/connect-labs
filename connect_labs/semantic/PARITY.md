@@ -1,5 +1,16 @@
 # KMC semantic layer — parity with the existing dashboard
 
+> **Two series live in this registry.** The **C-series** (C01–C31) is the workbook's,
+> and the parity result below is its guarantee. The **N-series** (N01–N15, minus the
+> deferred N05) is Neal Lesh's demo compute spec of 2026-09-05, added as a SEPARATE
+> series so it can follow that spec where it differs without moving a single C-series
+> number. The two differences are deliberate: maturity is 28/42/90 rather than a single
+> 28, and the growth bands are birth-weight-band specific rather than the flat 10–20 the
+> C-series still carries marked PROVISIONAL — that table did not exist when the C-series
+> was written, and the spec supplies it. `test_the_N_series_is_nreal_lesh_demo_spec_exactly`
+> and `test_all_22_live_indicators_present` pin the two sets independently, so neither
+> can silently absorb the other.
+
 ## The result
 
 Against the existing `kmc_programme_metrics` dashboard's own frozen run (5218),

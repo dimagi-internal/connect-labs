@@ -25,6 +25,17 @@ entity: baby
 
 constants:
   ELIG_DAYS: 28 # eligibility gate, days from FIRST VISIT
+  # Neal's demo compute spec (2026-09-05, "Connect KMC - demo metrics") sets THREE
+  # maturity gates rather than one, all measured from the first VISIT:
+  #   outcome 28 . growth/visits 42 . completion 90
+  # ELIG_DAYS above stays 28 and keeps every C0x/C1x indicator exactly where it was
+  # (PARITY.md's 5,698 checks depend on it). These are additive, and only the N-series
+  # measures below use them.
+  MATURITY_OUTCOME_DAYS: 28
+  MATURITY_GROWTH_DAYS: 42
+  MATURITY_COMPLETION_DAYS: 90
+  GA_MIN: 20 # gestational age plausible range, weeks (spec section 2)
+  GA_MAX: 45
   SWING: 0.3 # max fractional change between consecutive weights (render js: SWING = 0.3)
   GROWTH_LO_DAY: 21 # early-growth window, lower bound (days from first visit)
   GROWTH_HI_DAY: 35 # early-growth window, upper bound
@@ -192,6 +203,76 @@ properties:
            WHEN early_g_per_kg_day > :PLAUSIBLE_HI THEN 'fast'
            ELSE 'plausible' END
     notes: "PROVISIONAL. The workbook's bands are birth-weight-band-specific and that table does not exist yet; the UI labels this provisional."
+
+  # -------------------------------------------------------------------------
+  # Neal's demo spec, additive. The C-series above is unchanged and keeps its
+  # parity guarantee; everything from here down is read only by the N-series
+  # measures in indicators.yml.
+  # -------------------------------------------------------------------------
+
+  - name: has_discharge_date
+    type: bool
+    sql: 'days_discharge_to_reg IS NOT NULL'
+    notes: 'The denominator condition for the within-3-days metric. days_discharge_to_reg is what Layer 1 carries to entity stage; the raw discharge date is not aggregated there.'
+
+  - name: birthweight_band
+    type: categorical
+    sql: >-
+      CASE WHEN birth_weight_g IS NULL THEN NULL
+           WHEN birth_weight_g < :WMIN OR birth_weight_g > :WMAX THEN NULL
+           WHEN birth_weight_g < 1000 THEN '<1000'
+           WHEN birth_weight_g < 1500 THEN '1000-1499'
+           WHEN birth_weight_g < 2000 THEN '1500-1999'
+           WHEN birth_weight_g < 2500 THEN '2000-2499'
+           ELSE '2500+' END
+    notes: "Null when birth weight is missing or implausible. A missing birthweight EXCLUDES a case from the growth-quality denominator; it does not make it 'incomplete'."
+
+  # The plausible early-growth range is BIRTH-WEIGHT-BAND SPECIFIC. growth_class
+  # above uses a flat 10-20 marked PROVISIONAL precisely because this table did
+  # not exist; it does now. A flat band is wrong at both ends - it calls a healthy
+  # 2,500g baby fast (real ceiling 18) and a struggling sub-1,000g baby plausible
+  # (real floor 9).
+  - name: growth_plausible_lo
+    type: number
+    sql: >-
+      CASE birthweight_band
+           WHEN '<1000' THEN 9 WHEN '1000-1499' THEN 6 WHEN '1500-1999' THEN 6
+           WHEN '2000-2499' THEN 5 WHEN '2500+' THEN 0 ELSE NULL END
+
+  - name: growth_plausible_hi
+    type: number
+    sql: >-
+      CASE birthweight_band
+           WHEN '<1000' THEN 30 WHEN '1000-1499' THEN 28 WHEN '1500-1999' THEN 24
+           WHEN '2000-2499' THEN 20 WHEN '2500+' THEN 18 ELSE NULL END
+
+  - name: growth_class_banded
+    type: categorical
+    sql: >-
+      CASE WHEN NOT weight_gain_data_sufficient THEN NULL
+           WHEN birthweight_band IS NULL THEN NULL
+           WHEN early_g_per_kg_day < growth_plausible_lo THEN 'slow'
+           WHEN early_g_per_kg_day > growth_plausible_hi THEN 'fast'
+           ELSE 'plausible' END
+    notes: 'The banded counterpart of growth_class. Computed only when the case is sufficient AND banded, so slow/plausible/fast plus not-sufficient partition the qualifying set exactly.'
+
+  - name: eligible_28d
+    type: bool
+    sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_OUTCOME_DAYS'
+
+  - name: eligible_42d
+    type: bool
+    sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_GROWTH_DAYS'
+    notes: 'Growth and visits-per-case maturity. A case registered 40 days ago but first visited 20 days ago is NOT eligible - maturity anchors on the first VISIT.'
+
+  - name: eligible_90d
+    type: bool
+    sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_COMPLETION_DAYS'
+
+  - name: qualifying_svn
+    type: bool
+    sql: 'eligible_42d AND birthweight_band IS NOT NULL'
+    notes: 'The single shared denominator for the four growth-quality shares, which sum to 100% over it.'
 
   - name: ever_danger_sign
     type: bool

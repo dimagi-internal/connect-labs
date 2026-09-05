@@ -44,7 +44,14 @@ def test_every_measure_type_is_real_cube(registry):
 
 
 def test_all_22_live_indicators_present(registry):
-    ids = {m["meta"]["indicator"] for m in registry["measures"] if m.get("meta")}
+    """The C-series, pinned. Scoped to C-prefixed ids because the registry now also
+    carries the N-series (Neal's demo spec) as a SEPARATE series — the two are pinned
+    by their own tests so neither can silently absorb the other."""
+    ids = {
+        m["meta"]["indicator"]
+        for m in registry["measures"]
+        if m.get("meta") and str(m["meta"]["indicator"]).startswith("C")
+    }
     expected = {
         "C01",
         "C02",
@@ -165,3 +172,69 @@ def test_no_suppression_columns_when_no_settings(props_doc, registry):
 def test_unknown_scope_is_loud(props_doc, registry):
     with pytest.raises(RegistryError, match="unknown scope"):
         compile_indicator_sql(props_doc, registry, "SELECT 1", scope="galaxy")
+
+
+def test_the_N_series_is_nreal_lesh_demo_spec_exactly(registry):
+    """Neal's demo compute spec (2026-09-05), pinned as its own set.
+
+    N05 (median gestational age) is deliberately ABSENT: it needs a Layer 1 field the
+    pipeline has never extracted (gestational_age_at_birth_lmp), which is added to the
+    pipeline template in the same change but only reaches the data on the next
+    extraction. Declaring a measure over a column that does not exist compiles cleanly
+    and fails at execution — the exact class test_every_declared_scope_actually_executes
+    exists to catch — so it lands with the pipeline migration rather than before it.
+    """
+    ids = {
+        m["meta"]["indicator"]
+        for m in registry["measures"]
+        if m.get("meta") and str(m["meta"]["indicator"]).startswith("N")
+    }
+    assert ids == {
+        "N01",
+        "N02",
+        "N03",
+        "N04",
+        "N06",
+        "N07",
+        "N08",
+        "N09",
+        "N10",
+        "N11",
+        "N12",
+        "N13",
+        "N14",
+        "N15",
+    }
+    assert "N05" not in ids
+
+
+def test_the_growth_quality_shares_share_one_denominator(registry):
+    """N09-N12 are shares OF QUALIFYING SVNs and sum to 100% over that set. If any one
+    of them drifted onto its own denominator they would stop summing and nobody reading
+    the dashboard would be able to tell."""
+    by_name = {m["name"]: m for m in registry["measures"]}
+    dens = {by_name[f"n{i:02d}_denominator"]["filters"][0]["sql"] for i in (9, 10, 11, 12)}
+    assert len(dens) == 1, f"growth-quality shares disagree on their denominator: {dens}"
+    assert "qualifying_svn" in dens.pop()
+
+
+def test_the_banded_growth_table_is_neals_not_a_flat_guess(registry):
+    """The C-series still carries a flat PLAUSIBLE_LO/HI 10-20 marked PROVISIONAL. The
+    N-series must use the per-birthweight-band table, because a flat band is wrong at
+    both ends: it calls a healthy 2,500g baby fast (real ceiling 18) and a struggling
+    sub-1,000g baby plausible (real floor 9)."""
+    import yaml as _yaml
+
+    props = _yaml.safe_load((REGISTRY / "properties.yml").read_text())["properties"]
+    by_name = {p["name"]: p for p in props}
+    lo, hi = by_name["growth_plausible_lo"]["sql"], by_name["growth_plausible_hi"]["sql"]
+    for band, l, h in [
+        ("<1000", "9", "30"),
+        ("1000-1499", "6", "28"),
+        ("1500-1999", "6", "24"),
+        ("2000-2499", "5", "20"),
+        ("2500+", "0", "18"),
+    ]:
+        assert f"'{band}' THEN {l}" in lo, f"{band} floor"
+        assert f"'{band}' THEN {h}" in hi, f"{band} ceiling"
+    assert "PLAUSIBLE_LO" not in by_name["growth_class_banded"]["sql"]
