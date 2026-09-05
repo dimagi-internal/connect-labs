@@ -215,6 +215,34 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
     "improved_water": _survey("the household's water source"),
     "improved_sanitation": _survey("the household's sanitation facility"),
     "mean_household_size": _survey("household roster size"),
+    # --- Tier 1 of docs/targeting-data-acquisition.md ----------------------
+    #
+    # All twenty are household-survey measures, so DHS alone answers them
+    # subnationally and each entry says which question in the field produced
+    # it. Naming the field question rather than the indicator is the point:
+    # "vaccination from cards and recall" is a different kind of evidence from
+    # "haemoglobin measured in the field", and a reader weighing a number
+    # needs to know which they are holding.
+    "zero_dose": _survey("vaccination history from cards and recall, counting children with no doses at all"),
+    "fp_unmet_need": _survey("fertility intentions against current contraceptive use"),
+    "fp_modern_method": _survey("current contraceptive method"),
+    "fp_demand_satisfied": _survey("contraceptive demand and how it is met"),
+    "itn_household": _survey("nets present in the household, observed on the roster"),
+    "itn_pregnant": _survey("where pregnant women slept the previous night"),
+    "iptp3": _survey("doses of SP/Fansidar taken during pregnancy"),
+    "careseeking_diarrhoea": _survey("whether advice or treatment was sought for a child's diarrhoea"),
+    "careseeking_fever": _survey("whether advice or treatment was sought for a child's fever"),
+    "underweight": _survey("weight-for-age"),
+    "severe_wasting": _survey("weight-for-height, at the three-SD cut"),
+    "child_anaemia": _survey("haemoglobin measured in the field, not reported"),
+    "women_anaemia": _survey("haemoglobin measured in the field, not reported"),
+    "iron_pregnancy": _survey("days of iron supplementation during pregnancy"),
+    "min_meal_frequency": _survey("what and how often a child was fed in the last day"),
+    "postnatal_2days": _survey("timing of the mother's first postnatal check"),
+    "handwashing": _survey("a handwashing place observed by the interviewer"),
+    "water_on_premises": _survey("the household's water source and where it is"),
+    "open_defecation": _survey("the household's sanitation facility, or absence of one"),
+    "birth_certificate": _survey("whether the child has a birth certificate"),
 }
 
 #: Every ``*_gap`` count is arithmetic on a coverage rate and a denominator, and
