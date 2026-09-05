@@ -127,7 +127,7 @@ register(
         code="national_surface",
         label="National estimate from gridded surfaces",
         resolution=Resolution.NATIONAL,
-        source_order=("map", "map_worldpop", "ghsl"),
+        source_order=("map", "map_worldpop", "ghsl", "chirps"),
         description=(
             "Gridded surfaces summed or averaged to the whole country — MAP's "
             "malaria layers, the Weiss et al. travel-time surface crossed with "
@@ -220,14 +220,15 @@ register(
         code="subnational_surface",
         label="Modelled surface, read on this unit",
         resolution=Resolution.SUBNATIONAL,
-        source_order=("map", "map_worldpop", "ghsl"),
+        source_order=("map", "map_worldpop", "ghsl", "chirps"),
         description=(
             "A continuous grid read on each unit's own geometry, so every "
             "boundary at every level gets a value computed for it rather than "
             "inherited from its parent. Counts are summed over the cells; rates "
             "are averaged weighted by the population in each cell, never by "
             "area. Covers malaria (MAP, annual to 2024), physical access to "
-            "care (Weiss et al. 2020 x WorldPop) and rural share (DEGURBA)."
+            "care on foot and by vehicle (Weiss et al. 2020 x WorldPop), rural "
+            "share (DEGURBA) and rainfall seasonality (CHIRPS climatology)."
         ),
         caveat=(
             "Modelled rather than measured: where the underlying observations "

@@ -935,6 +935,71 @@ def annualisation_factor(prevalence_code: str) -> float | None:
     return 365.0 / (m.recall_days + m.episode_days)
 
 
+# Tier 3, item 24: rainfall seasonality. Loaded because the system diagnosed
+# the gap itself -- the ORS seasonality note concluded "nothing in this dataset
+# is monthly. It can size a campaign and cannot time one."
+register(
+    Measure(
+        code="rain_annual_mm",
+        label="Annual rainfall",
+        kind=Kind.RATE,
+        unit="mm per year",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_total",
+        downscale=True,
+        description=(
+            "Total precipitation in a typical year, averaged over PEOPLE rather "
+            "than over land -- which is why it will not match the national "
+            "average anyone looks up. Niger reads 524 mm here against 184 mm "
+            "areal and a published ~150-250 mm, because Nigeriens live in the "
+            "southern Sahel strip and not in the Sahara that makes up most of "
+            "the country's area. Both numbers are right; this one answers 'how "
+            "much rain falls on the population', which is the question a "
+            "distribution schedule turns on. Context for a seasonality "
+            "question, not a targeting criterion on its own."
+        ),
+    )
+)
+
+register(
+    Measure(
+        code="rain_peak_month",
+        label="Wettest month",
+        kind=Kind.RATE,
+        unit="month (1-12)",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_total",
+        downscale=True,
+        description=(
+            "The wettest calendar month in a typical year. Deliberately NOT "
+            "targetable: 'where is the peak in July' is not a threshold, and a "
+            "slider over it would invite a comparison the number cannot "
+            "support -- month 12 is not eleven more than month 1. Read it off a "
+            "place already selected, with the twelve monthly means that travel "
+            "beside it in `extra`."
+        ),
+    )
+)
+
+_prevalence(
+    "rain_wettest_quarter",
+    "Rain in the wettest quarter",
+    "pop_total",
+    "% of annual rainfall",
+    (
+        "The share of a typical year's rain falling in its wettest three "
+        "consecutive months. A real logistics constraint independent of the "
+        "totals: a place taking 80% of its rain in one quarter needs stock "
+        "positioned before the roads close, where an evenly-watered place does "
+        "not. Consecutive and wrapping December into January, because a season "
+        "straddling the new year is still one season."
+    ),
+    lo=25,
+    hi=100,
+    default=60,
+)
+
+
 # Tier 3 of docs/targeting-data-acquisition.md: the motorized companion to the
 # walking travel-time surface already loaded.
 #
@@ -1401,6 +1466,9 @@ TARGETABLE = (
     # Tier 3: referral access, as against the community reach already carried.
     "travel_time_motorized",
     "share_beyond_2h_motorized",
+    # Concentration is a threshold question; the peak month is not, so it is
+    # absent here on purpose. See its description.
+    "rain_wettest_quarter",
 )
 
 
