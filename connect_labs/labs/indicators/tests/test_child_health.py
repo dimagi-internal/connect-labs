@@ -8,11 +8,13 @@ the places already doing well.
 from __future__ import annotations
 
 import pytest
+from django.utils import timezone
 
 from connect_labs.labs.indicators import measures
-from connect_labs.labs.indicators.models import Source
+from connect_labs.labs.indicators.models import IndicatorValue, Source
 from connect_labs.labs.indicators.resolve import select_above
 from connect_labs.labs.indicators.sources import derive
+from connect_labs.labs.indicators.sources.base import Row
 from connect_labs.labs.indicators.tests.test_resolve import make_boundary, set_value
 
 pytestmark = pytest.mark.django_db
@@ -343,3 +345,105 @@ class TestAnnualEpisodes:
 
         assert "Carried to a year" in annual.method
         assert "14-day recall window" in annual.method
+
+
+class TestDerivedRowsAreSwept:
+    """A derived row is nothing but a function of other rows.
+
+    ``upsert`` refreshes what a loader emits and leaves the rest alone, which
+    is right for a source and wrong for a derivation: when the arithmetic
+    changes, the rows the new version cannot produce are not stale data, they
+    are the OLD ARITHMETIC, and they look identical to fresh ones.
+
+    This is not hypothetical. ``malaria_treatment_gap`` kept 1,700 rows of the
+    pre-``conditional_on`` shape -- the whole under-five population times the
+    untreated share, the exact error that had just been fixed for ORS -- because
+    its ``fever_prevalence`` had never been loaded, so the fixed derivation
+    correctly produced nothing and the wrong rows simply stayed.
+    """
+
+    def test_a_row_the_derivation_no_longer_produces_is_removed(self):
+        b = make_boundary("LBR", 1, "Bong", "LBR-1")
+        stale = IndicatorValue.objects.create(
+            indicator="ors_coverage_gap",
+            boundary=b,
+            iso_code="LBR",
+            admin_level=1,
+            year=2019,
+            source=Source.DERIVED,
+            value=329_230.0,
+            retrieved_at=timezone.now(),
+        )
+
+        removed = derive.sweep_derived([], derive.gap_indicators(), iso_codes=["LBR"])
+
+        assert removed == 1
+        assert not IndicatorValue.objects.filter(pk=stale.pk).exists()
+
+    def test_a_row_the_derivation_still_produces_survives(self):
+        b = make_boundary("LBR", 1, "Bong", "LBR-1")
+        kept = IndicatorValue.objects.create(
+            indicator="ors_coverage_gap",
+            boundary=b,
+            iso_code="LBR",
+            admin_level=1,
+            year=2019,
+            source=Source.DERIVED,
+            value=51_429.0,
+            retrieved_at=timezone.now(),
+        )
+        produced = [
+            Row(
+                indicator="ors_coverage_gap",
+                boundary=b,
+                year=2019,
+                value=51_429.0,
+                source=Source.DERIVED,
+            )
+        ]
+
+        assert derive.sweep_derived(produced, derive.gap_indicators(), iso_codes=["LBR"]) == 0
+        assert IndicatorValue.objects.filter(pk=kept.pk).exists()
+
+    def test_it_never_touches_a_measured_source(self):
+        """Only derived rows. A survey not returning a region this year does
+        not make last year's survey void."""
+        b = make_boundary("LBR", 1, "Bong", "LBR-1")
+        survey = IndicatorValue.objects.create(
+            indicator="ors_coverage_gap",
+            boundary=b,
+            iso_code="LBR",
+            admin_level=1,
+            year=2019,
+            source=Source.DHS,
+            value=1.0,
+            retrieved_at=timezone.now(),
+        )
+
+        derive.sweep_derived([], derive.gap_indicators(), iso_codes=["LBR"])
+
+        assert IndicatorValue.objects.filter(pk=survey.pk).exists()
+
+    def test_it_stays_inside_the_scope_it_was_given(self):
+        """Deriving one country must not delete another's rows."""
+        lbr = make_boundary("LBR", 1, "Bong", "LBR-1")
+        nga = make_boundary("NGA", 1, "Kano", "NGA-1", x=6)
+        for b, iso in ((lbr, "LBR"), (nga, "NGA")):
+            IndicatorValue.objects.create(
+                indicator="ors_coverage_gap",
+                boundary=b,
+                iso_code=iso,
+                admin_level=1,
+                year=2019,
+                source=Source.DERIVED,
+                value=1.0,
+                retrieved_at=timezone.now(),
+            )
+
+        assert derive.sweep_derived([], derive.gap_indicators(), iso_codes=["LBR"]) == 1
+        assert IndicatorValue.objects.filter(iso_code="NGA", indicator="ors_coverage_gap").exists()
+
+    def test_the_annual_siblings_are_in_scope(self):
+        """They are derived by the same pass, so they are swept by it."""
+        assert "ors_coverage_gap_annual" in derive.gap_indicators()
+        assert "ors_coverage_gap" in derive.gap_indicators()

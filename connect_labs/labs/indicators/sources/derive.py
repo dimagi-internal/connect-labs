@@ -295,6 +295,63 @@ def load_households(iso_codes: list[str] | None = None, year: int | None = None)
     return rows
 
 
+def gap_indicators() -> list[str]:
+    """Every indicator ``load_coverage_gaps`` is responsible for.
+
+    Derived from the registry rather than listed, so a measure added later is
+    swept without anyone remembering to add it here — which is the failure this
+    whole mechanism exists to catch.
+    """
+    from connect_labs.labs.indicators import measures as _measures
+
+    out: list[str] = []
+    for m in _measures.coverage_measures():
+        out.append(f"{m.code}_gap")
+        if f"{m.code}_gap_annual" in _measures.MEASURES:
+            out.append(f"{m.code}_gap_annual")
+    return out
+
+
+def sweep_derived(produced: list[Row], indicators: list[str], iso_codes: list[str] | None = None) -> int:
+    """Delete derived rows this run no longer produces.
+
+    ``upsert`` refreshes the rows a loader emits and leaves everything else
+    alone, which is right for a source: DHS not returning a region this year
+    does not mean last year's survey is void. It is wrong for a derivation,
+    where a row is nothing but a function of other rows — if the function no
+    longer produces it, the old value is not stale data, it is *the previous
+    version of the arithmetic*, and it looks identical to a fresh one.
+
+    That is not hypothetical. ``ors_coverage_gap`` was six times too high
+    until a rate measured only among those who had an episode stopped being
+    applied to everyone. The same fix made ``malaria_treatment_gap``
+    underivable — its ``fever_prevalence`` had never been loaded — so the
+    derivation correctly produced nothing, and 1,700 rows of the old,
+    six-times-too-high shape simply stayed, indistinguishable from the fixed
+    ones and one snapshot away from production.
+
+    So a derivation sweeps its own scope: within these indicators, and within
+    these countries, the rows it just wrote are the only rows there are.
+    """
+    from connect_labs.labs.indicators.models import IndicatorValue
+
+    keep = {(r.indicator, r.boundary.pk, r.year, str(r.source)) for r in produced}
+    qs = IndicatorValue.objects.filter(indicator__in=indicators, source=Source.DERIVED)
+    if iso_codes:
+        qs = qs.filter(iso_code__in=[c.upper() for c in iso_codes])
+
+    doomed = [
+        v.pk
+        for v in qs.only("id", "indicator", "boundary_id", "year", "source")
+        if (v.indicator, v.boundary_id, v.year, str(v.source)) not in keep
+    ]
+    if not doomed:
+        return 0
+    IndicatorValue.objects.filter(pk__in=doomed).delete()
+    logger.info("sweep: removed %d derived rows no longer produced", len(doomed))
+    return len(doomed)
+
+
 def load_coverage_gaps(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
     """Unreached population for every coverage measure, generically.
 

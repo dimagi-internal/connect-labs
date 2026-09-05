@@ -413,7 +413,10 @@ class SelectionView(OpenLocallyMixin, View):
                     "whole_continent": len(scope) == len(ISO_CODES),
                 },
                 "projected_to": selection.projected_to,
-                "projected_without_rate": selection.projected_without_rate,
+                # Named, not coded. Every sibling list here is country names,
+                # and "No growth series for LBR" reads like a system fault
+                # where "for Liberia" reads like the fact it is.
+                "projected_without_rate": [name_for(c) for c in selection.projected_without_rate],
                 "rolled_up": selection.rolled_up,
                 "pinned_level": selection.pinned_level,
                 "countries_unsupported": selection.countries_unsupported,
