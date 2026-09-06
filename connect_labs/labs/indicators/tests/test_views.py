@@ -818,3 +818,41 @@ class TestIndicatorGrouping:
         groups = list(measures.GROUPS)
         assert groups[0] == "Child survival"
         assert groups != sorted(groups)
+
+
+class TestDownloadFilenameNamesTheQuestion:
+    def test_a_coverage_selection_is_lt_not_gt(self, client_in):
+        """An ORS selection of the counties UNDER 90% arrived as
+        `targeting_ors_coverage_gt90.zip` — the opposite of its contents."""
+        from connect_labs.labs.indicators import export
+        from connect_labs.labs.indicators.resolve import Selection
+
+        sel = Selection(
+            indicator="ors_coverage",
+            threshold=90,
+            year=None,
+            areas=[],
+            totals={},
+            coverage={},
+            countries_fully_above=[],
+            countries_partly_above=[],
+            skipped_no_data=[],
+        )
+        assert export.filename_stem(sel) == "targeting_ors_coverage_lt90"
+
+    def test_a_burden_selection_is_still_gt(self):
+        from connect_labs.labs.indicators import export
+        from connect_labs.labs.indicators.resolve import Selection
+
+        sel = Selection(
+            indicator="u5mr",
+            threshold=80,
+            year=None,
+            areas=[],
+            totals={},
+            coverage={},
+            countries_fully_above=[],
+            countries_partly_above=[],
+            skipped_no_data=[],
+        )
+        assert export.filename_stem(sel) == "targeting_u5mr_gt80"

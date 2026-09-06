@@ -709,11 +709,28 @@ def select_above(
             # ``admin_level`` is how a caller asks for the level that was
             # actually measured.
             subs = []
-            for lvl in (admin_level,) if admin_level is not None else (2, 1):
-                candidates = by_iso[iso].get(lvl) or []
-                if any(rate_bulk.get(indicator, b) is not None for b in candidates):
-                    subs = candidates
-                    break
+            if admin_level is not None:
+                subs = by_iso[iso].get(admin_level) or []
+            else:
+                # Deepest is not the same as most informative, and defaulting to
+                # deepest answered the wrong question. Liberia measures ORS for
+                # fifteen counties and no district, so the deepest level with
+                # ANY value is 136 districts carrying fifteen numbers between
+                # them: a table that looks like a ranking and is 54 rows with
+                # four distinct values. Prefer the deepest level that is
+                # actually MEASURED here, and fall back to inherited only when
+                # nothing is measured at any depth.
+                measured, inherited = [], []
+                for lvl in (2, 1):
+                    candidates = by_iso[iso].get(lvl) or []
+                    if not candidates:
+                        continue
+                    rows = [rate_bulk.get(indicator, b) for b in candidates]
+                    if any(r is not None and not r.inherited for r in rows):
+                        measured.append(candidates)
+                    elif any(r is not None for r in rows):
+                        inherited.append(candidates)
+                subs = (measured or inherited or [[]])[0]
 
         units = subs or ([adm0] if adm0 is not None else [])
         if not units:
