@@ -739,3 +739,45 @@ class TestForeignBoundarySources:
         rows = list(csv.DictReader(io.StringIO(z.read("boundaries.csv").decode())))
 
         assert {r["name"] for r in rows} == {"Nigeria", "Kano"}
+
+
+class TestPinnedLevelReportsWhatWasUsed:
+    """Not what was asked for.
+
+    A national method works at ADM0 and ignores ``admin_level``. Echoing the
+    request back made the surface report "0 areas selected in Liberia at ADM1"
+    for an answer that was neither zero nor at ADM1 — the one line a reader
+    uses to know what they are looking at, describing something else.
+    """
+
+    def test_a_national_method_reports_adm0(self):
+        make_boundary("NER", 0, "Niger", "NER-0")
+        b = make_boundary("NER", 1, "North", "NER-1", x=2)
+        set_value(b, "u5mr", 120, source=Source.IGME_SUBNATIONAL)
+        country = AdminBoundary.objects.get(boundary_id="NER-0")
+        set_value(country, "u5mr", 120, source=Source.IGME)
+
+        sel = select_above(
+            indicator="u5mr",
+            threshold=50,
+            iso_codes=["NER"],
+            method="national_igme",
+            admin_level=1,
+        )
+
+        assert sel.pinned_level == 0
+
+    def test_a_subnational_method_reports_the_pin(self):
+        make_boundary("NER", 0, "Niger", "NER-0")
+        b = make_boundary("NER", 1, "North", "NER-1", x=2)
+        set_value(b, "u5mr", 120, source=Source.IGME_SUBNATIONAL)
+
+        sel = select_above(
+            indicator="u5mr",
+            threshold=50,
+            iso_codes=["NER"],
+            method="subnational_igme",
+            admin_level=1,
+        )
+
+        assert sel.pinned_level == 1

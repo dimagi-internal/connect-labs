@@ -457,5 +457,22 @@
     };
   </script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
-  <script src="{% static 'indicators/targeting.js' %}"></script>
+  {% comment %}
+    Loaded in dependency order. Plain scripts on one namespace rather than ES
+    modules: static files go through CompressedManifestStaticFilesStorage, which
+    hashes filenames and does NOT rewrite import specifiers, so `import
+    './state.js'` would resolve to a file that does not exist in production.
+  {% endcomment %}
+  <script src="{% static 'indicators/targeting/util.js' %}"></script>
+  <script src="{% static 'indicators/targeting/state.js' %}"></script>
+  <script src="{% static 'indicators/targeting/api.js' %}"></script>
+  <script src="{% static 'indicators/targeting/scale.js' %}"></script>
+  <script src="{% static 'indicators/targeting/popovers.js' %}"></script>
+  <script src="{% static 'indicators/targeting/map.js' %}"></script>
+  <script src="{% static 'indicators/targeting/menu.js' %}"></script>
+  <script src="{% static 'indicators/targeting/controls.js' %}"></script>
+  <script src="{% static 'indicators/targeting/table.js' %}"></script>
+  <script src="{% static 'indicators/targeting/costing.js' %}"></script>
+  <script src="{% static 'indicators/targeting/methodology.js' %}"></script>
+  <script src="{% static 'indicators/targeting/main.js' %}"></script>
 {% endblock %}

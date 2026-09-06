@@ -357,11 +357,21 @@ class TestSourceColumns:
         assert rows["Borrowing"]["U5MR measured at"] == "Tanzania (ADM0)"
 
     def test_row_values_are_escaped_before_reaching_innerHTML(self, client_in):
-        # Source text is server data, but the table builds HTML by hand.
-        js = open("connect_labs/static/indicators/targeting.js", encoding="utf-8").read()
+        """Source text is server data, but the table builds HTML by hand.
+
+        Scanning the whole directory rather than one named file, so a module
+        added later is covered without anyone remembering to widen this.
+        """
+        from pathlib import Path
+
+        root = Path("connect_labs/static/indicators/targeting")
+        js = "\n".join(p.read_text(encoding="utf-8") for p in sorted(root.glob("*.js")))
+
         assert "function esc(" in js
-        assert "esc(r.source_name" in js
-        assert "esc(r.source_url)" in js
+        assert "util.esc(r.source_name" in js
+        assert "util.esc(r.source_url)" in js
+        # The map tooltip also builds HTML from server strings.
+        assert "util.esc(p.name)" in js
 
 
 class TestRowMethodLabel:

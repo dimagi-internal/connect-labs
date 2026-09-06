@@ -857,7 +857,11 @@ def select_above(
         projected_to=target_year,
         projected_without_rate=projected_without_rate,
         rolled_up=rollup,
-        pinned_level=admin_level,
+        # The level the answer is actually AT, not the one that was asked for.
+        # A national method works at ADM0 and ignores admin_level entirely, so
+        # echoing the request made the surface say "0 areas selected in Liberia
+        # at ADM1" for an answer that was neither zero nor at ADM1.
+        pinned_level=0 if national_only else admin_level,
     )
 
 
