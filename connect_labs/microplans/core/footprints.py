@@ -207,6 +207,13 @@ def _query_overture(area: BaseGeometry, min_confidence: float | None) -> pd.Data
     the read source and speed differ. The caller (``fetch_buildings``) still
     persists whatever this returns to the per-area Postgres cache.
     """
+    # Say it out loud when an extract exists but is pinned to a release we no
+    # longer read. The router degrades correctly, so nothing fails — it just
+    # silently costs ~350s instead of ~5s per uncached ward, which is how a
+    # walkthrough that worked in September stalled in October with no error
+    # anywhere. verify_release() existed for exactly this and nothing called it.
+    overture.verify_release_quietly()
+
     region = overture.covering_region(area.bounds)
     if region is not None:
         try:

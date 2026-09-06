@@ -60,3 +60,42 @@ def test_verify_release_does_not_guess_when_the_bucket_cannot_be_listed(monkeypa
     monkeypatch.setattr(overture, "available_releases", lambda con=None: [])
 
     overture.verify_release()  # must not raise
+
+
+def test_a_stale_extract_warns_on_the_fetch_path_not_only_in_a_cli(caplog, monkeypatch):
+    """The warning that never ran.
+
+    ``verify_release()`` has always been able to say "your extract is stale, you
+    are paying the slow read" — but nothing outside the tests ever called it, so
+    a Nigeria extract left on a pruned release cost ~350s per uncached ward for
+    weeks with no signal anywhere. The cheap half now runs on every fetch.
+    """
+    monkeypatch.setitem(
+        overture.EXTRACT_REGIONS, "nigeria", {"release": "1999-01-01.0", "bbox": (2.6, 4.2, 14.7, 13.9)}
+    )
+    with caplog.at_level("WARNING"):
+        overture.verify_release_quietly()
+    assert any("nigeria" in r.getMessage() for r in caplog.records), caplog.text
+    assert "microplans_build_extract" in caplog.text, "the warning must name the command that fixes it"
+
+
+def test_no_warning_when_every_extract_matches_the_pin(caplog, monkeypatch):
+    monkeypatch.setitem(
+        overture.EXTRACT_REGIONS,
+        "nigeria",
+        {"release": overture.OVERTURE_RELEASE, "bbox": (2.6, 4.2, 14.7, 13.9)},
+    )
+    with caplog.at_level("WARNING"):
+        overture.verify_release_quietly()
+    assert "microplans_build_extract" not in caplog.text
+
+
+def test_verify_release_quietly_does_not_touch_the_network(monkeypatch):
+    """It runs on the hot fetch path; a bucket listing there would be a regression."""
+
+    def boom(*a, **k):  # pragma: no cover - must never run
+        raise AssertionError("verify_release_quietly must not open a connection")
+
+    monkeypatch.setattr(overture, "connect", boom)
+    monkeypatch.setattr(overture, "available_releases", boom)
+    overture.verify_release_quietly()
