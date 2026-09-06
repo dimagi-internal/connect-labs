@@ -61,7 +61,7 @@ _EXTRACT_BASE = f"s3://{EXTRACT_BUCKET}/overture"
 # is currently NOT being used; re-extract it onto the current release to restore
 # the fast path (see the module docstring in the extract runbook).
 EXTRACT_REGIONS: dict[str, dict] = {
-    "nigeria": {"release": "2026-05-20.0", "bbox": (2.6, 4.2, 14.7, 13.9)},
+    "nigeria": {"release": "2026-08-19.0", "bbox": (2.6, 4.2, 14.7, 13.9)},
 }
 
 
