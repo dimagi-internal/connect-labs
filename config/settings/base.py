@@ -711,6 +711,13 @@ CELERY_BEAT_SCHEDULE = {
     # Rates, derived country and the delivery-type resync. Hourly, not every
     # five minutes: their inputs move in hours, and each costs one query per
     # opportunity against a million-row table whether or not anything differs.
+    # Partner identity is owned by the team that edits the LLO Directory, not
+    # by whoever last deployed. Daily, early, so a correction made during the
+    # working day is on the board the next morning.
+    "pulse-partner-directory": {
+        "task": "connect_labs.pulse.tasks.import_partner_directory",
+        "schedule": crontab(hour=4, minute=20),
+    },
     "pulse-slow-maintenance": {
         "task": "connect_labs.pulse.tasks.poll_slow_maintenance",
         "schedule": crontab(minute=7),

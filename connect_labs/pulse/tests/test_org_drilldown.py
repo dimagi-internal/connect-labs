@@ -243,10 +243,19 @@ class TestPartnersConnectWillNotName:
     @pytest.fixture
     def unnamed_partner(self, portfolio):
         # Delivers real work; has no PulseOrganization row, exactly like the 64.
+        # The directory does carry it, which is the whole point of this class:
+        # the name Connect withholds comes from there. Partner invented — the
+        # behaviour is what matters, and real names belong in the directory
+        # rather than in a fixture.
+        from connect_labs.pulse.models import PulsePartner
+        from connect_labs.pulse.partner_names import invalidate
+
+        PulsePartner.objects.create(name="Foreland Rural Health Trust", short="FRHT")
+        invalidate()
         PulseOpportunity.objects.create(
             opportunity_id=50,
             name="Big delivery",
-            org_slug="janna-health-foundation",
+            org_slug="foreland-rural-health-trust",
             program_id=10,
             country="NG",
             lifetime_visit_count=65_777,
@@ -256,7 +265,7 @@ class TestPartnersConnectWillNotName:
             work_key="b" * 64,
             opportunity_id=50,
             program_id=10,
-            org_slug="janna-health-foundation",
+            org_slug="foreland-rural-health-trust",
             status="approved",
             created_ts=timezone.now(),
             service_slug="chc",
@@ -264,19 +273,19 @@ class TestPartnersConnectWillNotName:
             usd_to_worker="4.00",
             usd_to_org="2.00",
         )
-        return "janna-health-foundation"
+        return "foreland-rural-health-trust"
 
     def test_an_unnamed_partner_is_still_offered(self, viewer, unnamed_partner):
         row = next(o for o in summary(viewer)["orgs"] if o["slug"] == unnamed_partner)
         assert row["visits"] == 65_777
 
     def test_the_master_list_supplies_the_name_connect_withholds(self, viewer, unnamed_partner):
-        """Connect never names this partner, but the master Organizations list
-        does — so the display shows the partner, with the Connect workspace it
-        came from still carried alongside."""
+        """Connect never names this partner, but the LLO Directory does — so the
+        display shows the partner, with the Connect workspace it came from still
+        carried alongside."""
         row = next(o for o in summary(viewer)["orgs"] if o["slug"] == unnamed_partner)
-        assert row["name"] == "janna-health-foundation"  # the Connect workspace
-        assert row["partner"] == "Janna Health Foundation"  # the real partner
+        assert row["name"] == "foreland-rural-health-trust"  # the Connect workspace
+        assert row["partner"] == "Foreland Rural Health Trust"  # the real partner
         assert row["named"] is True
 
     def test_a_partner_in_neither_source_still_shows_its_slug_flagged(self, viewer, portfolio):

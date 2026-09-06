@@ -1,91 +1,64 @@
 """Resolve a Connect org slug to the delivery partner behind it.
 
 Connect publishes partner **names** only for the orgs the polling account is a
-member of — 10 of the 74 that actually deliver. The other 64 arrive as a slug
-and carry 92% of all services, and no export endpoint will give up their names
-(``OpportunitySerializer`` also emits ``organization`` as a slug).
+member of — a small minority of those that actually deliver. The rest arrive as
+a slug and carry most of the delivery, and no export endpoint will give up their
+names (``OpportunitySerializer`` also emits ``organization`` as a slug).
 
-So the names come from the team's master Organizations list, snapshotted into
-``data/partner_master.json``, and are matched to slugs here.
+So the names come from the team's LLO Directory, loaded into ``PulsePartner`` by
+``pulse_partner_import`` and matched to slugs here. The sheet is the source of
+truth; this is a cache of it. Nothing about partner identity is written down in
+this repository, because the people who own that identity do not review pull
+requests — and a name that lives in code drifts from the directory with nothing
+to detect the drift.
 
 **Several Connect orgs can be the same real partner.** Connect models this
 properly — ``organization.LLOEntity`` with ``Organization.llo_entity`` pointing
 at it — but ``OrganizationDataExportSerializer`` does not expose the FK, so the
-grouping cannot be read from the API. Matching to the master list reconstructs
-it: Solina Health runs both ``solina`` (382,942 services) and
-``connect-nigeria`` (20,813, named "Solina ECD Nigeria"), which the display
-otherwise showed as two unrelated partners.
+grouping cannot be read from the API. Matching to the directory reconstructs it:
+a partner running two workspaces otherwise shows up as two unrelated partners.
 
-Two rules keep this honest:
+Three rules keep this honest:
 
 **Connect's own name wins.** It is a real name rather than an inference, and it
-also matches the master list far better than a slug does — matching on it is
-what links ``connect-nigeria`` to Solina at all.
+also matches the directory far better than a slug does.
 
 **Only high-confidence tiers are applied.** A wrong parent name is worse than a
 visible slug, so ``subset`` and ``fuzzy`` results are returned for a human to
 confirm and never displayed as fact. Slugs are never de-slugified into a guess:
-title-casing turns the real "C-WINS DGw" into "C Wins Dgw" and "EHA Clinics
-REACH" into "Eha Clinics Reach".
+mechanical title-casing reads plausibly and is wrong exactly where a partner's
+real name is stylised, hyphenated or capitalised unusually.
 
-A fourth rule sits above all of them: a short curated alias table for the slugs
-no string rule can reach. It is deliberately data, not logic — it lives in the
-snapshot beside the names, the matcher stays as strict as it was, and each entry
-carries the evidence that a human checked.
+**What no rule can reach becomes an alias, not a looser rule.** A handful of
+real partners are unreachable by any string comparison — a second workspace
+sharing no stem with the first, an abbreviation the slug never spells out, a
+typo in the directory itself. Loosening the matcher would buy those few at the
+cost of guessing everywhere else, so they are confirmed by a human on the
+directory's mapping tab and carried in ``PulsePartnerAlias``.
 
-Measured against labs prod: 97.0% of non-internal works resolved to a parent at
-high confidence on 2026-07-31, and 99.2% on 2026-09-05 once the four aliases
-were added — they recover 33,888 works that had been showing as bare slugs.
+An empty table is safe rather than wrong: every partner renders as its slug,
+exactly as an unmatched slug always has, and no name is ever guessed.
 """
 
 from __future__ import annotations
 
 import difflib
-import json
 import re
+import time
 import unicodedata
-from functools import lru_cache
-from pathlib import Path
-
-DATA = Path(__file__).parent / "data" / "partner_master.json"
 
 # Tiers safe to display. Everything else is advisory only.
+
 HIGH_CONFIDENCE = frozenset({"exact", "truncated", "suffixed", "same-tokens", "alias"})
 REVIEW = frozenset({"subset", "fuzzy"})
-
-# Slugs no string rule can reach, resolved by a human and recorded as DATA
-# rather than by loosening the matcher. Loosening buys these few at the cost of
-# guessing everywhere else; an alias buys exactly them and nothing more.
-#
-# The entries live in ``partner_master.json`` beside the master names, not here,
-# so that no partner name is hand-written in source. Their source of truth is
-# the directory sheet's "Connect Org Mapping" tab, where a human confirms each
-# one before it is snapshotted -- the same path the org names themselves take.
-# A key matches a slug exactly or as a ``key-`` prefix, so a partner's next
-# workspace resolves without another edit.
-
-
-@lru_cache(maxsize=1)
-def _aliases() -> tuple:
-    raw = json.loads(DATA.read_text())
-    return tuple((a["slug_prefix"], a["name"]) for a in raw.get("aliases") or [] if a.get("slug_prefix"))
-
-
-def _alias(slug: str) -> str:
-    """The curated parent for a slug, or "" — exact key or ``key-`` prefix."""
-    for key, name in _aliases():
-        if slug == key or slug.startswith(key + "-"):
-            return name
-    return ""
-
 
 # French/NGO prefixes Connect carries that the master list does not.
 _LEAD = re.compile(r"^(ong|ongd|ngo|asbl)-")
 
 # Applied ONLY to slugs that matched nothing. Never as a pre-filter: an earlier
-# version keyed "looks like a person" off a loose pattern and filed `solina` —
-# 382,942 services — as a personal workspace, and `connect-nigeria` reads
-# internal but is really Solina ECD Nigeria.
+# version keyed "looks like a person" off a loose pattern and filed the single
+# largest delivery partner as a personal workspace. Real partners also run
+# workspaces whose slugs read internal, so this cannot run before matching.
 _INTERNAL = re.compile(
     r"^(dimagi|ai-demo-space|auto-connect|march-demo|ccc-)|(^|-)(test|sandbox)(-|_|$)|_test|test_",
     re.I,
@@ -124,37 +97,69 @@ def _stems(value: str) -> set:
     return {t[:-1] if len(t) > 3 and t.endswith("s") else t for t in _norm(value).split() if t not in _STOPWORDS}
 
 
-@lru_cache(maxsize=1)
+# The directory changes when someone edits it, not when we deploy, so a process
+# must pick up an import without being restarted — but resolve() is called once
+# per partner per request and cannot afford a query each time. A short TTL is
+# the whole of the compromise: at most this many seconds of staleness, and one
+# query per process per window.
+_CACHE_TTL_SECONDS = 60
+_cache: dict = {"loaded_at": 0.0, "candidates": [], "aliases": ()}
+
+
+def invalidate() -> None:
+    """Drop the cache. Called after an import, and by tests that seed partners."""
+    _cache["loaded_at"] = 0.0
+
+
+def _build(name: str, short: str, index: int) -> dict:
+    keys, shorts = set(), set()
+    bare = re.sub(r"\([^)]*\)", " ", name)
+    for drop in (False, True):
+        keys.add(_slugify(name, drop))
+        keys.add(_slugify(bare, drop))
+        if short:
+            shorts.add(_slugify(short, drop))
+    # "Centre for … (ACRONYM)" — the parenthetical is how people refer to it.
+    for paren in re.findall(r"\(([^)]+)\)", name):
+        shorts.add(_slugify(paren))
+    return {
+        "index": index,
+        "name": name,
+        "short": short,
+        "keys": {k for k in keys if k},
+        "shorts": {s for s in shorts if s},
+        "stems": _stems(name),
+        "nameslug": _slugify(bare) or _slugify(name),
+    }
+
+
+def _load() -> None:
+    if _cache["loaded_at"] and (time.monotonic() - _cache["loaded_at"]) < _CACHE_TTL_SECONDS:
+        return
+    from connect_labs.pulse.models import PulsePartner, PulsePartnerAlias
+
+    rows = list(PulsePartner.objects.values_list("name", "short"))
+    _cache["candidates"] = [_build(name, short or "", i) for i, (name, short) in enumerate(rows) if name]
+    _cache["aliases"] = tuple(PulsePartnerAlias.objects.select_related("partner").values_list("slug", "partner__name"))
+    _cache["loaded_at"] = time.monotonic()
+
+
 def _candidates() -> list:
-    raw = json.loads(DATA.read_text())
-    out = []
-    for index, org in enumerate(raw.get("organizations") or []):
-        name = org.get("name") or ""
-        short = org.get("short") or ""
-        if not name:
-            continue
-        keys, shorts = set(), set()
-        bare = re.sub(r"\([^)]*\)", " ", name)
-        for drop in (False, True):
-            keys.add(_slugify(name, drop))
-            keys.add(_slugify(bare, drop))
-            if short:
-                shorts.add(_slugify(short, drop))
-        # "Centre for … (C-WINS)" — the parenthetical is how people refer to it.
-        for paren in re.findall(r"\(([^)]+)\)", name):
-            shorts.add(_slugify(paren))
-        out.append(
-            {
-                "index": index,
-                "name": name,
-                "short": short,
-                "keys": {k for k in keys if k},
-                "shorts": {s for s in shorts if s},
-                "stems": _stems(name),
-                "nameslug": _slugify(bare) or _slugify(name),
-            }
-        )
-    return out
+    _load()
+    return _cache["candidates"]
+
+
+def _aliases() -> tuple:
+    _load()
+    return _cache["aliases"]
+
+
+def _alias(slug: str) -> str:
+    """The curated parent for a slug, or "" — exact key or ``key-`` prefix."""
+    for key, name in _aliases():
+        if slug == key or slug.startswith(key + "-"):
+            return name
+    return ""
 
 
 def _variants(slug: str) -> set:
@@ -233,7 +238,7 @@ def resolve(slug: str, connect_name: str = "") -> dict:
             "parent": alias,
             "short": cand["short"] if cand else "",
             "tier": "alias",
-            "why": "confirmed by hand — see the aliases block in partner_master.json",
+            "why": "confirmed by hand on the directory's Connect Org Mapping tab",
             "review": None,
         }
 
