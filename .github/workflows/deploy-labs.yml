@@ -409,7 +409,23 @@ jobs:
 
       # Must run BEFORE the rollout, not after — the CPU spike starts the moment
       # ECS begins booting replacement tasks.
+      #
+      # continue-on-error, and it is NOT belt-and-braces. This step exists to stop
+      # a NOTIFICATION, so the worst case if it fails is an alarm email that would
+      # have been sent anyway before this feature existed. Letting it gate the
+      # rollout trades a real deploy for a cosmetic one, which is strictly the
+      # wrong way round.
+      #
+      # Learned the hard way on the very first live run (34037994076, 2026-09-06):
+      # the deploy role had no cloudwatch:PutMetricData, this step exited 254, and
+      # the ENTIRE deploy was skipped — "Deploy services" and "Wait for steady
+      # state" both `skipped`. Nothing shipped, and the cause was a monitoring
+      # nicety. The IAM grant that fixes that lives in infra/labs-monitoring.yml
+      # (DeployRolePutDeployMetricPolicy); this line is what makes the class of
+      # failure survivable regardless — the next AWS-API-touching step added here
+      # should be written the same way unless the deploy genuinely depends on it.
       - name: Open the CPU-alarm suppression window
+        continue-on-error: true
         run: |
           # A rolling replacement drives one web task to 100% CPU while it boots
           # Django. labs-jj-web-cpu-high reads Statistic=Maximum across tasks, so

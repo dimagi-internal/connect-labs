@@ -175,6 +175,31 @@ Resources:
               - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${WebLogGroupName}:*'
               - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${WorkerLogGroupName}:*'
 
+  # Lets deploy-labs.yml open the CPU-alarm suppression window (the
+  # DeployInProgress datapoints DeployInProgressAlarm watches). PutMetricData
+  # takes no resource ARN — it is scoped by namespace condition instead, so this
+  # grant is confined to the LabsDeploy namespace and cannot be used to forge or
+  # overwrite AWS/ECS, AWS/RDS or any other metric the alarms here depend on.
+  #
+  # Added 2026-09-06 after the first real run of that step failed with
+  # "not authorized to perform: cloudwatch:PutMetricData". Worth stating plainly:
+  # the deploy role's permissions are NOT inferable from the workflow file, and a
+  # step that calls a new AWS API is a new permission until proven otherwise.
+  DeployRolePutDeployMetricPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: labs-deploy-put-deploy-metric
+      Roles: [!Ref DeployRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: 'cloudwatch:PutMetricData'
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'cloudwatch:namespace': 'LabsDeploy'
+
   # ── Alert topic ────────────────────────────────────────────────────
   AlertTopic:
     Type: AWS::SNS::Topic
