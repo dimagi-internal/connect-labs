@@ -4,8 +4,32 @@
     "columns": "A=Organization Name, B=Short Name, C=Has Used Connect",
     "captured": "2026-07-31",
     "refresh": "manage.py pulse_partner_map --refresh (needs Sheets read access)",
-    "why": "Connect publishes partner NAMES only for orgs the polling account is a member of (10 of 74). This snapshot supplies the rest. It is checked in rather than fetched at runtime because labs has no Sheets credentials, and because a funder-facing name should change only through a reviewed commit."
+    "why": "Connect publishes partner NAMES only for orgs the polling account is a member of (10 of 74). This snapshot supplies the rest. It is checked in rather than fetched at runtime because labs has no Sheets credentials, and because a funder-facing name should change only through a reviewed commit.",
+    "aliases_source": "Same sheet, tab 'Connect Org Mapping' — the 'Corrected Partner (overrides)' column, for slugs no string rule reaches. Confirmed there by a human before they land here.",
+    "why_aliases": "They live in this snapshot rather than in partner_names.py so that no partner name is hand-written in source. The sheet is the source of truth; this file is its snapshot."
   },
+  "aliases": [
+    {
+      "slug_prefix": "ehealth-africa",
+      "name": "EHA Clinics (REACH Program)",
+      "why": "Second Connect workspace of a partner whose other workspace matches directly; this slug shares no stem with the master name. Contact domain on the directory's Contacts tab corroborates. Confirmed 2026-09-05."
+    },
+    {
+      "slug_prefix": "arewa-health-trust-initiative",
+      "name": "AREWA HEALTH TRUST INIATIVE",
+      "why": "The master list spells it INIATIVE. One transposed letter held 28,174 services at review-only confidence. Correct the spelling in the sheet and this entry can go."
+    },
+    {
+      "slug_prefix": "d-8healthandsocialprotection",
+      "name": "Developing-8 Health And Social Protection Programme",
+      "why": "The slug uses the programme's own abbreviation and runs the rest together; no stem is shared with the master name."
+    },
+    {
+      "slug_prefix": "globecom",
+      "name": "Global Communications Institute",
+      "why": "Master short name is one letter from the slug, so the suffix rule misses by a character."
+    }
+  ],
   "organizations": [
     {
       "name": "ABIREDED ONGD",

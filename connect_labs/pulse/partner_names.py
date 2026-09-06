@@ -28,10 +28,10 @@ confirm and never displayed as fact. Slugs are never de-slugified into a guess:
 title-casing turns the real "C-WINS DGw" into "C Wins Dgw" and "EHA Clinics
 REACH" into "Eha Clinics Reach".
 
-A fourth rule sits above all of them: ``ALIASES``, a short curated table for
-the slugs no string rule can reach. It is deliberately data, not logic — the
-matcher stays as strict as it was, and each entry carries the evidence that a
-human checked.
+A fourth rule sits above all of them: a short curated alias table for the slugs
+no string rule can reach. It is deliberately data, not logic — it lives in the
+snapshot beside the names, the matcher stays as strict as it was, and each entry
+carries the evidence that a human checked.
 
 Measured against labs prod: 97.0% of non-internal works resolved to a parent at
 high confidence on 2026-07-31, and 99.2% on 2026-09-05 once the four aliases
@@ -53,36 +53,27 @@ DATA = Path(__file__).parent / "data" / "partner_master.json"
 HIGH_CONFIDENCE = frozenset({"exact", "truncated", "suffixed", "same-tokens", "alias"})
 REVIEW = frozenset({"subset", "fuzzy"})
 
-# Slugs no string rule can reach, resolved by a human and recorded here rather
-# than by loosening the matcher. Loosening buys these four at the cost of
-# guessing everywhere else; an alias buys exactly these four and nothing more.
-# Each states its evidence, because a wrong parent name is worse than a visible
-# slug. A key matches a slug exactly or as a ``key-`` prefix, so a partner's
-# next workspace resolves without another edit here.
-ALIASES = {
-    # EHA's Connect Interviews workspace. Its other workspace,
-    # `eha-clinics-reach`, matches the master list directly; nothing in this
-    # slug does. The LLO Directory's Contacts tab gives EHA Clinics an @eha.ng
-    # address, which is eHealth Africa's own domain. Confirmed by JJ,
-    # 2026-09-05. 2,943 services were showing as an unattributed slug.
-    "ehealth-africa": "EHA Clinics (REACH Program)",
-    # The master list spells it "INIATIVE". One transposed letter held 28,174
-    # services at review-only confidence — the largest single loss in the map.
-    # Correct the spelling in the source sheet and this entry can go.
-    "arewa-health-trust-initiative": "AREWA HEALTH TRUST INIATIVE",
-    # "D-8" is how the Developing-8 programme writes itself, and the slug runs
-    # the rest of the name together. No stem is shared with the master name.
-    "d-8healthandsocialprotection": "Developing-8 Health And Social Protection Programme",
-    # Master short name is "GlobCom", the slug says "globecom" — one letter
-    # apart, so the suffix rule misses by a character. `wellme` corroborates:
-    # it is the EOI the master list records against this partner.
-    "globecom": "Global Communications Institute",
-}
+# Slugs no string rule can reach, resolved by a human and recorded as DATA
+# rather than by loosening the matcher. Loosening buys these few at the cost of
+# guessing everywhere else; an alias buys exactly them and nothing more.
+#
+# The entries live in ``partner_master.json`` beside the master names, not here,
+# so that no partner name is hand-written in source. Their source of truth is
+# the directory sheet's "Connect Org Mapping" tab, where a human confirms each
+# one before it is snapshotted -- the same path the org names themselves take.
+# A key matches a slug exactly or as a ``key-`` prefix, so a partner's next
+# workspace resolves without another edit.
+
+
+@lru_cache(maxsize=1)
+def _aliases() -> tuple:
+    raw = json.loads(DATA.read_text())
+    return tuple((a["slug_prefix"], a["name"]) for a in raw.get("aliases") or [] if a.get("slug_prefix"))
 
 
 def _alias(slug: str) -> str:
     """The curated parent for a slug, or "" — exact key or ``key-`` prefix."""
-    for key, name in ALIASES.items():
+    for key, name in _aliases():
         if slug == key or slug.startswith(key + "-"):
             return name
     return ""
@@ -242,7 +233,7 @@ def resolve(slug: str, connect_name: str = "") -> dict:
             "parent": alias,
             "short": cand["short"] if cand else "",
             "tier": "alias",
-            "why": "confirmed by hand — see ALIASES in partner_names.py",
+            "why": "confirmed by hand — see the aliases block in partner_master.json",
             "review": None,
         }
 

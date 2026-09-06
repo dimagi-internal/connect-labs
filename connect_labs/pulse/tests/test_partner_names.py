@@ -70,9 +70,11 @@ class TestConnectNameWins:
         assert resolve("connect-nigeria", connect_name="Solina ECD Nigeria")["parent"] == "Solina Health"
 
     def test_a_person_looking_slug_is_a_real_partner_when_connect_names_it(self):
-        """`edallariva` is Pachi Malawi. Guessing from the slug alone would have
-        filed a real partner as somebody's personal workspace."""
-        assert resolve("edallariva", connect_name="Pachi Malawi")["parent"] == (
+        """A real partner can run a workspace whose slug is somebody's username.
+        Guessing from the slug alone would file that partner's delivery as a
+        personal sandbox. The handle here is synthetic — the real ones are
+        colleagues' usernames, and the behaviour is what the test is for."""
+        assert resolve("aworkspacehandle", connect_name="Pachi Malawi")["parent"] == (
             "Parent and Child Health Initiative (PACHI)"
         )
 
@@ -109,55 +111,64 @@ class TestRefusesToGuess:
 
 
 class TestCuratedAliases:
-    """Four slugs no string rule reaches. Recorded as data a human checked,
-    rather than by loosening the matcher for everyone."""
+    """Slugs no string rule reaches, resolved by a human and carried as data.
 
-    def test_a_second_workspace_under_an_unrelated_slug(self):
-        """EHA runs two Connect workspaces. `eha-clinics-reach` matches the
-        master list on its own; `ehealth-africa-connect-interviews` shares no
-        stem with it, and carried 2,943 services as a bare slug."""
-        got = resolve("ehealth-africa-connect-interviews")
-        assert got["parent"] == "EHA Clinics (REACH Program)"
-        assert got["tier"] in HIGH_CONFIDENCE
-        assert resolve("eha-clinics-reach")["parent"] == got["parent"]
+    Deliberately written without partner names in the assertions. The names are
+    reviewed in the directory sheet and snapshotted into partner_master.json;
+    what these tests own is the MECHANISM — precedence, prefix matching, and
+    that the table cannot silently rot — not the contents.
+    """
+
+    def test_every_alias_resolves_at_high_confidence(self):
+        from connect_labs.pulse.partner_names import _aliases
+
+        assert _aliases(), "the snapshot carries no aliases"
+        for prefix, name in _aliases():
+            got = resolve(prefix)
+            assert got["parent"] == name
+            assert got["tier"] in HIGH_CONFIDENCE
+            assert got["review"] is None
 
     def test_an_alias_covers_the_partners_next_workspace_too(self):
-        """Keys match as a `key-` prefix, so the next EHA opportunity resolves
-        without another edit."""
-        assert resolve("ehealth-africa-some-future-opp")["parent"] == "EHA Clinics (REACH Program)"
+        """Keys match as a `key-` prefix, so a partner's next opportunity
+        resolves without another edit to the table."""
+        from connect_labs.pulse.partner_names import _aliases
 
-    def test_a_typo_in_the_master_list_no_longer_costs_the_partner(self):
-        """ "INIATIVE" for "INITIATIVE" — one transposed letter that held 28,174
-        services at review-only confidence."""
-        got = resolve("arewa-health-trust-initiative")
-        assert got["parent"] == "AREWA HEALTH TRUST INIATIVE"
-        assert got["tier"] in HIGH_CONFIDENCE
-        assert got["review"] is None
+        prefix, name = _aliases()[0]
+        assert resolve(f"{prefix}-some-future-opportunity")["parent"] == name
 
-    def test_an_abbreviation_the_slug_does_not_spell_out(self):
-        """ "D-8" is how the Developing-8 programme writes itself."""
-        assert resolve("d-8healthandsocialprotection")["parent"] == (
-            "Developing-8 Health And Social Protection Programme"
-        )
+    def test_an_alias_outranks_connect_s_own_name(self):
+        """A human decision beats an inference, including Connect's name."""
+        from connect_labs.pulse.partner_names import _aliases
 
-    def test_a_short_name_one_letter_off(self):
-        """Master short name is "GlobCom"; the slug says `globecom`, so the
-        suffix rule misses by a character."""
-        assert resolve("globecom-wellme-connect")["parent"] == "Global Communications Institute"
+        prefix, name = _aliases()[0]
+        assert resolve(prefix, connect_name="Something Else Entirely")["parent"] == name
 
     def test_every_alias_target_exists_in_the_master_snapshot(self):
         """The guard against drift: refreshing the snapshot must not leave an
-        alias pointing at a name that is no longer there."""
-        from connect_labs.pulse.partner_names import ALIASES, _candidates
+        alias pointing at a name that is no longer in the master list."""
+        from connect_labs.pulse.partner_names import _aliases, _candidates
 
         names = {c["name"] for c in _candidates()}
-        missing = {k: v for k, v in ALIASES.items() if v not in names}
-        assert not missing, f"alias targets absent from partner_master.json: {missing}"
+        missing = [prefix for prefix, name in _aliases() if name not in names]
+        assert not missing, f"alias slugs whose target is absent from the master list: {missing}"
+
+    def test_every_alias_states_its_evidence(self):
+        """An entry without a reason is a guess someone will later trust."""
+        import json
+
+        from connect_labs.pulse.partner_names import DATA
+
+        for entry in json.loads(DATA.read_text())["aliases"]:
+            assert entry.get("why", "").strip(), entry["slug_prefix"]
 
     def test_an_alias_does_not_loosen_anything_else(self):
-        """The table is four entries, not a rule. An unrelated slug is still
-        refused."""
-        assert resolve("ehealth-uganda-clinics")["parent"] == ""
+        """The table is a handful of entries, not a rule. A slug that merely
+        looks similar to one is still refused."""
+        from connect_labs.pulse.partner_names import _aliases
+
+        prefix, _ = _aliases()[0]
+        assert resolve(f"not-{prefix}-at-all")["parent"] == ""
 
 
 class TestCoverage:
