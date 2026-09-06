@@ -2920,9 +2920,24 @@ def semantic_indicators_api(request, definition_id):
         # same conversion get_pipeline_data runs before executing a pipeline, so the
         # extraction the semantic layer compiles over is the extraction the dashboard's
         # own pipeline runs — the entire reason Layer 1 is generated, not hand-written.
+        # The per-visit WEIGHT is not in the entity pipeline. That one carries the
+        # registration fields and the visit markers; the weight series is its own
+        # pipeline, and properties.yml is written against a `weight_g` column. Without
+        # it the compiled SQL fails with `column "weight_g" does not exist`, hinting at
+        # the entity pipeline's list-valued `weights`, which is a different thing.
+        visit_source = next((s for s in sources if s.get("alias") == "visits"), None)
+
         pipeline_access = PipelineDataAccess(request=request)
         try:
             pipeline_config = pipeline_access._schema_to_config(pipeline_def.schema, entity_source["pipeline_id"])
+            extra_fields = None
+            if visit_source:
+                visit_def = pipeline_access.get_definition(visit_source["pipeline_id"])
+                if visit_def and visit_def.schema:
+                    visit_config = pipeline_access._schema_to_config(visit_def.schema, visit_source["pipeline_id"])
+                    # Keyed by the column properties.yml expects, which is also the
+                    # field's own name in that pipeline.
+                    extra_fields = {"weight_g": visit_config}
         except Exception as exc:
             logger.warning(
                 "Semantic: could not build a pipeline config for %s",
@@ -2948,6 +2963,7 @@ def semantic_indicators_api(request, definition_id):
         rows = evaluate(
             pipeline_config,
             [int(o) for o in opportunity_ids],
+            extra_fields=extra_fields,
             series=series,
             scopes=scopes or None,
             scope=(scopes[0] if scopes else "programme"),
