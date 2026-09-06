@@ -407,6 +407,64 @@ jobs:
             exit 1
           fi
 
+      # Must run BEFORE the rollout, not after — the CPU spike starts the moment
+      # ECS begins booting replacement tasks.
+      - name: Open the CPU-alarm suppression window
+        run: |
+          # A rolling replacement drives one web task to 100% CPU while it boots
+          # Django. labs-jj-web-cpu-high reads Statistic=Maximum across tasks, so
+          # that one booting task holds the metric at 100%, and Maximum over a
+          # 300s period records the PEAK INSTANT rather than a duration -- so a
+          # ~2-minute boot spike fills its entire 5-minute bucket. Three of those
+          # in a row are indistinguishable from a 15-minute sustained pin, which
+          # is how one 12-minute deploy paged three times on 2026-09-05 and
+          # dispatched two agent turns (connect-labs#1461).
+          #
+          # This publishes a BOUNDED, FORWARD-DATED window of 1-minute datapoints
+          # in a single call. labs-jj-deploy-in-progress goes ALARM for the
+          # window and suppresses labs-jj-web-cpu-high-actionable; when the
+          # datapoints run out it returns to OK by itself.
+          #
+          # Bounded-and-forward-dated is the whole design. The obvious
+          # alternative -- `aws cloudwatch disable-alarm-actions` here and
+          # `enable-alarm-actions` at the end -- is silently unsafe in EXACTLY
+          # the scenario this addresses: `cancel-in-progress` kills a superseded
+          # run mid-rollout, the re-enable never executes, and the CPU alarm is
+          # muted forever with nothing to indicate it. A window that expires on
+          # its own cannot fail that way. Do not "simplify" this into a
+          # disable/enable pair, and do not make it a background loop that has to
+          # survive to keep publishing.
+          #
+          # 14 minutes covers the p100 rollout observed to date (~8 min) with
+          # margin for the boot tail. It is deliberately NOT open-ended: an
+          # over-long window is a muted alarm by another name.
+          # python3, not a shell loop: building JSON by hand needs `date -u -d @`
+          # (GNU-only) and a comma-separator dance whose `[ ... ] && echo` form
+          # interacts badly with the `bash -e` these steps run under.
+          python3 - <<'PY' > /tmp/deploy-window.json
+          import datetime as dt, json
+          WINDOW_MIN = 14
+          now = dt.datetime.now(dt.timezone.utc).replace(second=0, microsecond=0)
+          print(json.dumps([
+              {
+                  "MetricName": "DeployInProgress",
+                  "Value": 1,
+                  "Unit": "Count",
+                  "Timestamp": (now + dt.timedelta(minutes=i)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                  "Dimensions": [{"Name": "ServiceName", "Value": "${{ env.ECS_WEB_SERVICE }}"}],
+              }
+              # from one minute BEHIND, so a spike that begins between this step
+              # and the rollout call is inside the window too
+              for i in range(-1, WINDOW_MIN + 1)
+          ]))
+          PY
+
+          aws cloudwatch put-metric-data \
+            --namespace LabsDeploy \
+            --metric-data "file:///tmp/deploy-window.json"
+
+          echo "CPU-alarm suppression open for 14 min (expires on its own)."
+
       - name: Deploy services (rolling, zero downtime)
         run: |
           # ROLLING, NOT A CUTOVER.

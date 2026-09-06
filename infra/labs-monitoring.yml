@@ -393,6 +393,94 @@ Resources:
       Threshold: !Ref WebCpuThreshold
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
+      # NO AlarmActions/OKActions — deliberately. This alarm is now the raw CPU
+      # SIGNAL, and WebCpuHighActionableAlarm below is what pages: this one
+      # cannot tell a deploy from an outage, so notifying on it directly is what
+      # produced 15 firings and zero true findings. See that resource for the
+      # measurement. Re-adding actions here re-creates the noise.
+
+  # ── Deploy-awareness for the CPU alarm ─────────────────────────────
+  #
+  # WHY THIS EXISTS. The web-CPU alarm cannot distinguish a task pinned SERVING
+  # TRAFFIC from a task pinned BOOTING during a rolling replacement, and at
+  # 1-minute resolution the two are not merely similar, they are indistinguishable:
+  #
+  #   window                                     1-min datapoints >=90%   longest run
+  #   2026-08-24 05:00-10:00Z (real 502 incident)      31 / 300  (10%)        5 min
+  #   2026-09-02 10:40-13:20Z (deploy churn)           27 / 160  (17%)        7 min
+  #
+  # Deploy churn is DENSER than the incident the alarm was written for. So no
+  # threshold, period or M-of-N retune can separate them — the shape carries no
+  # signal. That is why this is suppression and not another tuning pass.
+  #
+  # The mechanism the metric hides: Statistic=Maximum over a 300s period records
+  # the PEAK INSTANT in that bucket, not a duration. A ~2-minute boot spike
+  # therefore fills its whole 5-minute bucket at 100%, and three boot spikes
+  # spaced 5 minutes apart — exactly what a rolling replacement produces — are
+  # byte-identical to a 15-minute sustained pin. Measured 2026-09-05: the tier
+  # was >=90% for FIVE minutes out of ninety, longest consecutive run 2 minutes,
+  # and the alarm reported a sustained 15-of-25-minute pin and paged three times.
+  #
+  # Deploys are frequent here and land from several agents at once; that is the
+  # intended workflow, not an abuse of it. Suppressing the CPU alarm for a
+  # bounded window around each rollout is therefore the correct trade, and the
+  # tier keeps its USER-FACING guards throughout — labs-jj-alb-latency-high and
+  # labs-jj-alb-target-5xx-high are never suppressed, and both are structurally
+  # immune to this failure anyway, because a booting task is not in the ALB
+  # target group until it passes its health check.
+  DeployInProgressAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-deploy-in-progress
+      AlarmDescription: >-
+        Not a fault signal. It is ALARM only while deploy-labs.yml is rolling
+        new tasks onto the web service, and its sole job is to suppress
+        labs-jj-web-cpu-high-actionable for that window. Never give this alarm
+        notification actions.
+      Namespace: LabsDeploy
+      MetricName: DeployInProgress
+      Dimensions:
+        - Name: ServiceName
+          Value: !Ref WebServiceName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      # THE FAIL-SAFE, and the reason this is a metric rather than
+      # `disable-alarm-actions`. The deploy publishes a BOUNDED window of
+      # datapoints (a fixed number of forward-dated minutes) in one call before
+      # it issues the rollout. If the job is then cancelled, times out, or the
+      # runner dies, no further datapoints arrive, the window simply runs out and
+      # notBreaching returns this to OK on its own. There is no code path that
+      # leaves the CPU alarm muted indefinitely, which is exactly the failure a
+      # disable/enable pair around the rollout would have — its re-enable step is
+      # skipped by the same cancellation this whole issue is about.
+      TreatMissingData: notBreaching
+
+  WebCpuHighActionableAlarm:
+    Type: AWS::CloudWatch::CompositeAlarm
+    Properties:
+      AlarmName: labs-jj-web-cpu-high-actionable
+      # This alarm's description is the ONLY briefing a responder gets: it is
+      # pasted into the notification email, and that email pages an agent
+      # mailbox, so it is read cold by a session with no prior context.
+      AlarmDescription: >-
+        A web task is at/over 90% CPU in 3 of the last 5 five-minute periods AND
+        no deploy is rolling. Deploy rollouts are already excluded, so unlike the
+        raw labs-jj-web-cpu-high signal this one should NOT be explained away as
+        deploy churn — check `labs-jj-deploy-in-progress` to confirm, then treat
+        it as real. Each task has 1 vCPU, so a pinned task means requests queue
+        behind CPU-bound Python and every user routed to it stalls. Likeliest
+        cause is a request path fanning out remote calls in a loop: query the
+        /ecs/labs-jj-web log group for one URL repeating at high volume, and read
+        the outbound_ms / db_ms / self_ms split before reaching for a scale-up.
+        Caveat when you read the metric: Statistic is Maximum over 300s, which
+        records the peak INSTANT in each bucket, not a duration — so confirm the
+        pin is sustained by re-reading CPUUtilization at Period 60 before
+        concluding the tier was saturated for 15 minutes. See connect-labs#1461.
+      AlarmRule: !Sub 'ALARM("${WebCpuHighAlarm}") AND NOT ALARM("${DeployInProgressAlarm}")'
       AlarmActions: [!Ref AlertTopic]
       OKActions: [!Ref AlertTopic]
 
