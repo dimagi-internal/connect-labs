@@ -380,8 +380,9 @@ class _UnnamedOrg:
 
     The slug is shown verbatim and flagged ``named: False``. It is deliberately
     **not** de-slugified: mechanical title-casing reads plausibly and is wrong
-    exactly where it matters, turning the real "C-WINS DGw" into "C Wins Dgw"
-    and "EHA Clinics REACH" into "Eha Clinics Reach". A visible identifier
+    exactly where it matters: real partner names carry internal capitals,
+    hyphens and stylised acronyms that title-casing flattens. A visible
+    identifier
     cannot be mistaken for a considered name; a mangled name can.
 
     Hiding them instead was the worse option: a Partner menu of ten small
@@ -550,7 +551,7 @@ def _org_menu(request):
         org = named_of.get(slug) or _UnnamedOrg(slug)
         # Connect names 10 of these; the master Organizations list supplies the
         # rest and, more importantly, says which Connect orgs are the SAME real
-        # partner -- Solina Health runs both `solina` and `connect-nigeria`.
+        # partner -- the largest delivery partner runs two Connect workspaces.
         partner = resolve_partner(org.slug, org.display_name if org.named else "")
         country = country_of.get(org.slug, "")
         m = money_of.get(org.slug) or {}

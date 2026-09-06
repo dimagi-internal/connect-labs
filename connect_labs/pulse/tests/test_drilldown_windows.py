@@ -37,12 +37,12 @@ def partner(db, settings, django_user_model):
     django_user_model.objects.create(username="poller-account")
     PulseScalar.objects.create(key="scope", value={"opportunities": 501, "lifetime_visits": 1_650_000})
 
-    PulseOrganization.objects.create(slug="janna-health", name="Janna Health", funder_slug="givewell")
-    PulseProgram.objects.create(program_id=10, name="CHC", delivery_type="chc", org_slug="janna-health")
+    PulseOrganization.objects.create(slug="riverbend-health", name="Riverbend Health", funder_slug="givewell")
+    PulseProgram.objects.create(program_id=10, name="CHC", delivery_type="chc", org_slug="riverbend-health")
     PulseOpportunity.objects.create(
         opportunity_id=1,
         name="CHC NG",
-        org_slug="janna-health",
+        org_slug="riverbend-health",
         program_id=10,
         country="NG",
         # Ingest always sets a service_slug (Connect's delivery_type, falling
@@ -61,7 +61,7 @@ def partner(db, settings, django_user_model):
                 work_key=f"{h[:8]}{k:0>56}",
                 opportunity_id=1,
                 program_id=10,
-                org_slug="janna-health",
+                org_slug="riverbend-health",
                 worker_hash=h,
                 status="approved" if k < n_approved else "rejected",
                 created_ts=now - timedelta(days=k),
@@ -74,7 +74,7 @@ def partner(db, settings, django_user_model):
             connect_visit_id=100 + i,
             opportunity_id=1,
             program_id=10,
-            org_slug="janna-health",
+            org_slug="riverbend-health",
             worker_hash=h,
             field_ts=now - timedelta(hours=i + 1),
             sync_ts=now,
@@ -86,7 +86,7 @@ def partner(db, settings, django_user_model):
             flag_type="duration" if i == 0 else "",
             service_slug="chc",
         )
-    return "janna-health"
+    return "riverbend-health"
 
 
 @pytest.fixture
@@ -99,7 +99,7 @@ def viewer(client, django_user_model):
 class TestPartnerWindow:
     def test_returns_the_partner_and_its_worker_roster(self, viewer, partner):
         data = viewer.get(reverse("pulse:api_partner"), {"org": partner}).json()
-        assert data["partner"]["slug"] == "janna-health"
+        assert data["partner"]["slug"] == "riverbend-health"
         assert data["worker_count"] == 2
         assert {w["worker"] for w in data["workers"]} == {"aaaa11", "bbbb22"}
 
@@ -156,7 +156,7 @@ class TestWorkerWindow:
                 connect_visit_id=900 + i,
                 opportunity_id=1,
                 program_id=10,
-                org_slug="janna-health",
+                org_slug="riverbend-health",
                 worker_hash="shared0" + suffix,
                 field_ts=timezone.now(),
                 sync_ts=timezone.now(),
@@ -221,7 +221,7 @@ class TestOpportunityBreakdown:
         PulseOpportunity.objects.create(
             opportunity_id=2,
             name="KMC UG - P2",
-            org_slug="janna-health",
+            org_slug="riverbend-health",
             program_id=10,
             country="UG",
             service_slug="kmc",
@@ -232,7 +232,7 @@ class TestOpportunityBreakdown:
             work_key="c" * 64,
             opportunity_id=2,
             program_id=10,
-            org_slug="janna-health",
+            org_slug="riverbend-health",
             worker_hash="cccc3333" + "0" * 8,
             status="approved",
             created_ts=now,
@@ -300,7 +300,7 @@ class TestSelectingAnOpportunityIsNotAOneWayDoor:
         PulseOpportunity.objects.create(
             opportunity_id=2,
             name="KMC UG - P2",
-            org_slug="janna-health",
+            org_slug="riverbend-health",
             program_id=10,
             country="UG",
             service_slug="kmc",
@@ -310,7 +310,7 @@ class TestSelectingAnOpportunityIsNotAOneWayDoor:
             work_key="d" * 64,
             opportunity_id=2,
             program_id=10,
-            org_slug="janna-health",
+            org_slug="riverbend-health",
             worker_hash="dddd4444" + "0" * 8,
             status="approved",
             created_ts=timezone.now(),
