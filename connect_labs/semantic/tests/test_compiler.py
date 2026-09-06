@@ -238,3 +238,29 @@ def test_the_banded_growth_table_is_neals_not_a_flat_guess(registry):
         assert f"'{band}' THEN {l}" in lo, f"{band} floor"
         assert f"'{band}' THEN {h}" in hi, f"{band} ceiling"
     assert "PLAUSIBLE_LO" not in by_name["growth_class_banded"]["sql"]
+
+
+def test_no_compiled_sql_contains_a_bare_percent_operator():
+    """psycopg2 treats % as a parameter placeholder, so a literal modulo in the SQL
+    makes `cursor.execute(sql)` raise `tuple index out of range` before the query
+    reaches Postgres at all.
+
+    This escaped every existing test because the parity suite uses RAW psycopg2,
+    which only interpolates when params are passed. The endpoint goes through
+    Django's cursor, which is the path that trips — so the failure appeared only on
+    the first live call, as an opaque 500.
+
+    Use MOD(x, y). It is standard SQL and carries no placeholder ambiguity.
+    """
+    import yaml as _yaml
+
+    from connect_labs.semantic.compiler import compile_rollup_sql
+
+    props = _yaml.safe_load((REGISTRY / "properties.yml").read_text())
+    registry = _yaml.safe_load((REGISTRY / "indicators.yml").read_text())
+    sql = compile_rollup_sql(props, registry, "SELECT * FROM v", scopes=["programme"])
+
+    offenders = [ln.strip() for ln in sql.split("\n") if "%" in ln]
+    assert not offenders, (
+        "compiled SQL contains a bare % (psycopg2 reads it as a placeholder); " f"use MOD() instead: {offenders[:3]}"
+    )
