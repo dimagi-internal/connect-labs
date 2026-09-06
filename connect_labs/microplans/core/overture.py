@@ -92,6 +92,26 @@ def stale_extracts() -> list[str]:
     return [name for name, meta in EXTRACT_REGIONS.items() if meta["release"] != OVERTURE_RELEASE]
 
 
+def verify_release_quietly() -> None:
+    """The stale-extract half of :func:`verify_release`, with no bucket listing.
+
+    ``verify_release`` also probes the public bucket to name what is available,
+    which is a network round-trip and can raise. That is right for a CLI and
+    wrong for a hot fetch path, so the cheap local check lives here and gets
+    called on every fetch — a warning that never runs is not a warning.
+    """
+    stale = stale_extracts()
+    if stale:
+        logger.warning(
+            "Overture extracts %s are cut from an older release than the pinned %s, so they are "
+            "bypassed for the slow live read (~350s vs ~5s per uncached area). "
+            "Re-cut them: manage.py microplans_build_extract %s",
+            ", ".join(stale),
+            OVERTURE_RELEASE,
+            " ".join(stale),
+        )
+
+
 def verify_release(con=None) -> None:
     """Raise if the pinned release is no longer published.
 
