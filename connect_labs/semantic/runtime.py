@@ -171,6 +171,7 @@ def evaluate(
     opportunity_ids: list[int],
     *,
     visit_sql: str | None = None,
+    extra_fields: dict[str, Any] | None = None,
     registry_name: str = "kmc",
     series: str | None = None,
     scope: str = "programme",
@@ -190,6 +191,13 @@ def evaluate(
 
     ``series`` restricts the result to one indicator family. Omit it and you get
     the registry as written, which is both.
+
+    ``extra_fields`` adds per-visit columns drawn from ANOTHER pipeline, keyed by the
+    column name. KMC needs it: the entity pipeline carries the registration fields and
+    the visit markers, but the per-visit WEIGHT lives in a separate weight-series
+    pipeline, and properties.yml is written against a `weight_g` column. Without it
+    the compiled SQL fails with `column "weight_g" does not exist`, hinting at the
+    entity pipeline's list-valued `weights` — a different thing entirely.
     """
     if visit_sql is None and not opportunity_ids:
         raise SemanticRuntimeError("evaluate() needs at least one opportunity id")
@@ -222,7 +230,7 @@ def evaluate(
                 "explicit visit_sql"
             )
         try:
-            visit_sql = build_visit_sql(pipeline_schema, opportunity_ids)
+            visit_sql = build_visit_sql(pipeline_schema, opportunity_ids, extra_fields=extra_fields)
         except SemanticRuntimeError:
             raise
         except Exception as exc:
