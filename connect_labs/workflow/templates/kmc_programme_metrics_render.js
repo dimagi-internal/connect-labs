@@ -1280,6 +1280,10 @@ function WorkflowUI({
   var WEIGHT_VALUE_PATH =
     cfgAudit.weight_value_path || 'anthropometric/child_weight_visit';
 
+  var sNScope = React.useState('programme');
+  var nScope = sNScope[0],
+    setNScope = sNScope[1];
+
   var sAudit = React.useState({});
   var auditState = sAudit[0],
     setAuditState = sAudit[1];
@@ -1462,7 +1466,7 @@ function WorkflowUI({
   // server-side, which is the only version where the scopes below cost one pass
   // instead of three. Fetched ON DEMAND rather than with the page -- it is a real
   // query against the visit cache, and the other tabs must not pay for it.
-  var sN = React.useState({ status: 'idle', rows: [] });
+  var sN = React.useState({ status: 'idle', rows: [], measures: [] });
   var nSeries = sN[0],
     setNSeries = sN[1];
 
@@ -1471,7 +1475,7 @@ function WorkflowUI({
       setNSeries({ status: 'error', rows: [], error: 'no workflow id' });
       return;
     }
-    setNSeries({ status: 'loading', rows: [] });
+    setNSeries({ status: 'loading', rows: [], measures: [] });
     fetch(
       '/labs/workflow/api/' +
         definition.id +
@@ -1484,39 +1488,62 @@ function WorkflowUI({
         if (data.error) {
           // The message names the missing column or relation -- show it rather
           // than a generic failure, which is the whole reason it is a 400.
-          setNSeries({ status: 'error', rows: [], error: data.error });
+          setNSeries({
+            status: 'error',
+            rows: [],
+            measures: [],
+            error: data.error,
+          });
           return;
         }
-        setNSeries({ status: 'ready', rows: data.rows || [] });
+        setNSeries({
+          status: 'ready',
+          rows: data.rows || [],
+          measures: data.measures || [],
+        });
       })
       .catch(function (err) {
         setNSeries({
           status: 'error',
           rows: [],
+          measures: [],
           error: String((err && err.message) || err),
         });
       });
   }
 
-  // The 14 measures the spec defines, in its own order. N05 (median gestational
-  // age) is absent because Layer 1 has never extracted gestational age; declaring
-  // it before the column exists compiles and then fails at execution.
-  var N_SERIES = [
-    ['n01', 'Total cases', 'n'],
-    ['n02', 'Registered', 'n'],
-    ['n03', 'Started', 'n'],
-    ['n04', 'Cumulative SVNs', 'n'],
-    ['n06', 'Median birthweight', 'g'],
-    ['n07', 'Mean visits per case', 'n'],
-    ['n08', '% first visit <=3d of discharge', '%'],
-    ['n09', '% slow growth', '%'],
-    ['n10', '% healthy growth', '%'],
-    ['n11', '% fast growth', '%'],
-    ['n12', '% incomplete growth data', '%'],
-    ['n13', 'Mortality', '%'],
-    ['n14', 'Weight rounding rate', '%'],
-    ['n15', '% impossible weight changes', '%'],
-  ];
+  // The measure catalog now arrives WITH the rows, from the same YAML that produced
+  // the numbers — so a band cannot drift from the measure it grades. The C-series
+  // above keeps a hand-maintained copy of its own registry in this file; that
+  // duplication is the thing the semantic layer exists to end, and repeating it here
+  // would have been the same mistake with a newer date on it.
+  function nBandOf(m, value) {
+    if (value === null || value === undefined || isNaN(Number(value)))
+      return 'nodata';
+    if (!m.bands) return 'unbanded';
+    var x = Number(value),
+      b = m.bands;
+    if (m.direction === 'higher')
+      return x >= b[0] ? 'green' : x >= b[1] ? 'yellow' : 'red';
+    if (m.direction === 'lower')
+      return x <= b[0] ? 'green' : x <= b[1] ? 'yellow' : 'red';
+    if (m.direction === 'mid2')
+      return x >= b[0][0] && x <= b[0][1]
+        ? 'green'
+        : x >= b[1][0] && x <= b[1][1]
+        ? 'yellow'
+        : 'red';
+    return 'unbanded';
+  }
+
+  var N_BAND_CLASS = {
+    green: 'bg-green-100 text-green-800',
+    yellow: 'bg-amber-100 text-amber-800',
+    red: 'bg-red-100 text-red-800',
+    unbanded: 'bg-gray-100 text-gray-500',
+    nodata: 'bg-gray-50 text-gray-400',
+    insufficient: 'bg-gray-100 text-gray-500',
+  };
 
   function nFmt(value, unit) {
     if (value === null || value === undefined) return 'n/a';
@@ -1525,6 +1552,157 @@ function WorkflowUI({
     if (unit === '%') return num.toFixed(1) + '%';
     if (unit === 'g') return Math.round(num) + ' g';
     return Math.round(num * 10) / 10;
+  }
+
+  // A value below its minimum denominator reads "insufficient volume", never a
+  // number — the spec's rule 0.2, and the reason every measure ships a denominator.
+  function nCell(m, row) {
+    var v = row[m.id],
+      den = row[m.id + '_denominator'];
+    var minDen = m.min_denominator || 0;
+    if (den !== null && den !== undefined && minDen && Number(den) < minDen) {
+      return { text: 'n<' + minDen, band: 'insufficient', den: den };
+    }
+    return { text: nFmt(v, m.unit), band: nBandOf(m, v), den: den };
+  }
+
+  var byFLW = React.useMemo(
+    function () {
+      if (frozen) return frozen.byFLW || [];
+      var g = {};
+      derived.forEach(function (r) {
+        var k = r.opp + FLW_SEP + (r.flw || '(unassigned)');
+        (g[k] = g[k] || []).push(r);
+      });
+      return Object.keys(g)
+        .map(function (k) {
+          var parts = k.split(FLW_SEP),
+            opp = Number(parts[0]);
+          var rows = g[k],
+            llo = lloOf(opp);
+          var ind = evalAll(rows, llo, [opp]);
+          var reds = Object.keys(ind).filter(function (x) {
+            return ind[x].band === 'red';
+          }).length;
+          var yellows = Object.keys(ind).filter(function (x) {
+            return ind[x].band === 'yellow';
+          }).length;
+          return {
+            key: k,
+            opp: opp,
+            flw: parts[1],
+            llo: llo,
+            rows: rows,
+            ind: ind,
+            reds: reds,
+            yellows: yellows,
+          };
+        })
+        .sort(function (a, b) {
+          return b.rows.length - a.rows.length;
+        });
+    },
+    [derived, frozen],
+  );
+
+  var programInd = React.useMemo(
+    function () {
+      if (frozen) return frozen.programInd || {};
+      return evalAll(derived);
+    },
+    [derived, frozen],
+  );
+
+  // Programme mortality, restricted to the LLOs the workbook accepts as credible
+  // recorders of death. The card pooled every LLO while the table below it showed
+  // "recording not credible" for four of six — so the headline number was built on
+  // exactly the data the same dashboard declined to show, and it read LOWER than
+  // reality because non-recorders contribute denominator without deaths.
+  var mortalityCredible = React.useMemo(
+    function () {
+      var rows = derived.filter(function (r) {
+        return MORTALITY_CREDIBLE[r.llo];
+      });
+      var llos = Object.keys(MORTALITY_CREDIBLE).filter(function (l) {
+        return byLLO.some(function (x) {
+          return x.llo === l;
+        });
+      });
+      return {
+        ind: rows.length
+          ? evaluate(
+              IND.filter(function (i) {
+                return i.id === 'C14';
+              })[0],
+              rows,
+            )
+          : null,
+        llos: llos,
+        of: byLLO.length,
+      };
+    },
+    [derived, byLLO],
+  );
+  // ── UI ───────────────────────────────────────────────────────────────────
+  var s1 = React.useState(null);
+  var selLLO = s1[0],
+    setSelLLO = s1[1];
+  var s2 = React.useState(null);
+  var selOpp = s2[0],
+    setSelOpp = s2[1];
+  var s3 = React.useState(null);
+  var selInd = s3[0],
+    setSelInd = s3[1];
+  // ══ N-series (Neal's demo compute spec), served by the semantic layer ══════
+  // Everything else on this screen is computed in the browser from pipeline rows.
+  // These come from SQL: the registry compiles to one GROUPING SETS query and runs
+  // server-side, which is the only version where the scopes below cost one pass
+  // instead of three. Fetched ON DEMAND rather than with the page -- it is a real
+  // query against the visit cache, and the other tabs must not pay for it.
+  var sN = React.useState({ status: 'idle', rows: [], measures: [] });
+  var nSeries = sN[0],
+    setNSeries = sN[1];
+
+  function loadNSeries() {
+    if (!definition || !definition.id) {
+      setNSeries({ status: 'error', rows: [], error: 'no workflow id' });
+      return;
+    }
+    setNSeries({ status: 'loading', rows: [], measures: [] });
+    fetch(
+      '/labs/workflow/api/' +
+        definition.id +
+        '/semantic/?series=N&scopes=programme,opportunity,flw',
+    )
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (data) {
+        if (data.error) {
+          // The message names the missing column or relation -- show it rather
+          // than a generic failure, which is the whole reason it is a 400.
+          setNSeries({
+            status: 'error',
+            rows: [],
+            measures: [],
+            error: data.error,
+          });
+          return;
+        }
+        setNSeries({
+          status: 'ready',
+          rows: data.rows || [],
+          measures: data.measures || [],
+        });
+      })
+      .catch(function (err) {
+        setNSeries({
+          status: 'error',
+          rows: [],
+          measures: [],
+          error: String((err && err.message) || err),
+        });
+      });
   }
 
   var s5 = React.useState('indicators');
@@ -2542,23 +2720,50 @@ function WorkflowUI({
               birth-weight-band specific, so these deliberately differ from the
               Indicators tab where the spec differs.
             </div>
-            <button
-              type="button"
-              onClick={loadNSeries}
-              disabled={nSeries.status === 'loading'}
-              className={
-                'mt-2 px-3 py-1.5 rounded text-sm font-medium ' +
-                (nSeries.status === 'loading'
-                  ? 'bg-gray-200 text-gray-500'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-700')
-              }
-            >
-              {nSeries.status === 'loading'
-                ? 'Running the query…'
-                : nSeries.status === 'ready'
-                ? 'Re-run'
-                : 'Run'}
-            </button>
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={loadNSeries}
+                disabled={nSeries.status === 'loading'}
+                className={
+                  'px-3 py-1.5 rounded text-sm font-medium ' +
+                  (nSeries.status === 'loading'
+                    ? 'bg-gray-200 text-gray-500'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700')
+                }
+              >
+                {nSeries.status === 'loading'
+                  ? 'Running the query…'
+                  : nSeries.status === 'ready'
+                  ? 'Re-run'
+                  : 'Run'}
+              </button>
+              {nSeries.status === 'ready' &&
+                [
+                  ['programme', 'Programme'],
+                  ['opportunity', 'By opportunity'],
+                  ['flw', 'By worker'],
+                ].map(function (sc) {
+                  var on = nScope === sc[0];
+                  return (
+                    <button
+                      key={sc[0]}
+                      type="button"
+                      onClick={function () {
+                        setNScope(sc[0]);
+                      }}
+                      className={
+                        'px-2.5 py-1 rounded text-xs ' +
+                        (on
+                          ? 'bg-indigo-100 text-indigo-800 font-medium'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
+                      }
+                    >
+                      {sc[1]}
+                    </button>
+                  );
+                })}
+            </div>
           </div>
 
           {nSeries.status === 'error' && (
@@ -2567,57 +2772,116 @@ function WorkflowUI({
             </div>
           )}
 
-          {nSeries.status === 'ready' && nSeries.rows.length === 0 && (
-            <div className="px-4 py-3 text-sm text-gray-500">
-              The query returned no rows.
-            </div>
-          )}
-
-          {nSeries.status === 'ready' && nSeries.rows.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 text-gray-500">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Scope</th>
-                    <th className="px-3 py-2 text-left">Metric</th>
-                    <th className="px-3 py-2 text-right">Value</th>
-                    <th className="px-3 py-2 text-right">n</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {nSeries.rows
-                    .filter(function (r) {
-                      return r.scope === 'programme' || !r.scope;
-                    })
-                    .map(function (r, ri) {
-                      return N_SERIES.map(function (m) {
+          {nSeries.status === 'ready' &&
+            (function () {
+              var measures = nSeries.measures.filter(function (m) {
+                return m.id && m.id.charAt(0) === 'n';
+              });
+              var rows = nSeries.rows.filter(function (r) {
+                return (r.scope || 'programme') === nScope;
+              });
+              if (!rows.length) {
+                return (
+                  <div className="px-4 py-3 text-sm text-gray-500">
+                    No rows at this scope.
+                  </div>
+                );
+              }
+              // One column per metric, one row per entity in the scope. At
+              // programme scope that is a single row, which reads as the topline.
+              var labelFor = function (r) {
+                if (nScope === 'opportunity') return oppLabel(r.opportunity_id);
+                if (nScope === 'flw') return r.username || '(unassigned)';
+                return 'All opportunities';
+              };
+              return (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-gray-50 text-gray-500">
+                      <tr>
+                        <th className="px-3 py-2 text-left sticky left-0 bg-gray-50">
+                          {nScope === 'flw'
+                            ? 'Worker'
+                            : nScope === 'opportunity'
+                            ? 'Opportunity'
+                            : 'Scope'}
+                        </th>
+                        <th className="px-2 py-2 text-right">Cases</th>
+                        {measures.map(function (m) {
+                          return (
+                            <th
+                              key={m.id}
+                              className="px-2 py-2 text-right whitespace-nowrap"
+                              title={
+                                (m.bands_source || 'no band defined') +
+                                (m.min_denominator
+                                  ? ' · min n ' + m.min_denominator
+                                  : '')
+                              }
+                            >
+                              {m.title}
+                              {m.bands_source &&
+                              m.bands_source.indexOf('PROVISIONAL') !== -1 ? (
+                                <span
+                                  className="text-amber-600"
+                                  title="band is derived, not stated by the spec"
+                                >
+                                  {' *'}
+                                </span>
+                              ) : (
+                                ''
+                              )}
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(function (r, ri) {
                         return (
-                          <tr
-                            key={ri + '-' + m[0]}
-                            className="border-t border-gray-100"
-                          >
-                            <td className="px-3 py-2 text-gray-500">
-                              {r.scope || 'programme'}
+                          <tr key={ri} className="border-t border-gray-100">
+                            <td className="px-3 py-2 font-medium text-gray-900 sticky left-0 bg-white">
+                              {labelFor(r)}
                             </td>
-                            <td className="px-3 py-2">{m[1]}</td>
-                            <td className="px-3 py-2 text-right font-medium">
-                              {nFmt(r[m[0]], m[2])}
+                            <td className="px-2 py-2 text-right text-gray-500">
+                              {r.n_cases}
                             </td>
-                            <td className="px-3 py-2 text-right text-gray-400">
-                              {/* the denominator, never a bare number */}
-                              {r[m[0] + '_denominator'] === null ||
-                              r[m[0] + '_denominator'] === undefined
-                                ? '\u2014'
-                                : r[m[0] + '_denominator']}
-                            </td>
+                            {measures.map(function (m) {
+                              var c = nCell(m, r);
+                              return (
+                                <td key={m.id} className="px-2 py-2 text-right">
+                                  <span
+                                    className={
+                                      'inline-block px-1.5 py-0.5 rounded ' +
+                                      (N_BAND_CLASS[c.band] ||
+                                        N_BAND_CLASS.unbanded)
+                                    }
+                                    title={
+                                      c.den === null || c.den === undefined
+                                        ? 'no denominator'
+                                        : 'n = ' + c.den
+                                    }
+                                  >
+                                    {c.text}
+                                  </span>
+                                </td>
+                              );
+                            })}
                           </tr>
                         );
-                      });
-                    })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                      })}
+                    </tbody>
+                  </table>
+                  <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
+                    Hover a value for its denominator, or a column for where its
+                    band came from. <span className="text-amber-600">*</span>{' '}
+                    marks a band DERIVED from the workbook or from the spec's
+                    own expected-answers table rather than stated by the spec —
+                    those are the ones worth replacing with real ranges.
+                  </div>
+                </div>
+              );
+            })()}
         </div>
       )}
 

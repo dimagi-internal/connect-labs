@@ -136,14 +136,38 @@ def test_the_endpoints_error_message_is_shown_rather_than_a_generic_failure():
     assert "nSeries.error" in src
 
 
-def test_N05_is_absent_from_the_rendered_list():
-    """Median gestational age needs a Layer 1 field the pipeline has never
-    extracted. Listing it would render a permanent n/a that looks like missing data
-    rather than a deferred metric."""
+def test_the_render_does_not_keep_its_own_copy_of_the_registry():
+    """The C-series keeps a hand-maintained copy of its registry in this file, and
+    that duplication is exactly what the semantic layer exists to end. The N-series
+    columns, their bands and their units come from the endpoint's measure catalog —
+    the same YAML that produced the numbers — so a threshold cannot drift from the
+    measure it grades."""
     src = RENDER.read_text()
-    assert "'n05'" not in src
-    for ind in ("n01", "n09", "n13", "n15"):
-        assert f"'{ind}'" in src, ind
+    assert "nSeries.measures" in src, "the catalog must drive the columns"
+    assert "N_SERIES = [" not in src, "a hardcoded N-series list is the duplication"
+
+
+def test_bands_are_applied_with_the_same_three_directions_the_C_series_uses():
+    src = RENDER.read_text()
+    for d in ("'higher'", "'lower'", "'mid2'"):
+        assert d in src, d
+    assert "function nBandOf" in src
+
+
+def test_a_value_under_its_minimum_denominator_reads_insufficient_not_a_number():
+    """The spec's rule 0.2, and the reason every measure ships a denominator."""
+    src = RENDER.read_text()
+    assert "min_denominator" in src
+    assert "'n<'" in src
+
+
+def test_a_derived_band_is_marked_as_such_on_screen():
+    """Several N-series ranges are derived from the workbook's counterpart or from
+    the spec's own expected-answers table rather than stated by it. A threshold whose
+    provenance is invisible is one nobody can correct."""
+    src = RENDER.read_text()
+    assert "bands_source" in src
+    assert "PROVISIONAL" in src
 
 
 def test_every_rendered_value_shows_its_denominator():

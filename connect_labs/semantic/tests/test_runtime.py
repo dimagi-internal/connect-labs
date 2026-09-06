@@ -197,3 +197,45 @@ def test_an_indicator_keeps_its_denominator_even_when_its_value_never_references
     names = {m["name"] for m in filter_to_series(inds, "N")["measures"]}
     for ind in ("n01", "n02", "n03", "n04"):
         assert f"{ind}_denominator" in names, f"{ind} lost its denominator"
+
+
+def test_the_measure_catalog_carries_what_a_renderer_needs_to_band_a_value():
+    """Bands, direction and unit travel WITH the rows, from the same YAML that
+    produced the numbers — otherwise a renderer keeps its own copy and the threshold
+    drifts from the measure it grades, which is the duplication this layer exists to
+    end."""
+    from connect_labs.semantic.runtime import measure_catalog
+
+    _, inds = load_registry("kmc")
+    cat = {c["indicator"]: c for c in measure_catalog(filter_to_series(inds, "N"))}
+    assert len(cat) == 14
+
+    banded = [c for c in cat.values() if c["bands"]]
+    assert len(banded) == 9, "9 of the 14 carry a band; the counts and medians do not"
+    for c in banded:
+        assert c["direction"] in {"higher", "lower", "mid2"}, c["indicator"]
+        assert c["bands_source"], f"{c['indicator']} has a band with no provenance"
+
+
+def test_mortality_is_two_sided_because_implausibly_low_means_under_recording():
+    """The spec is explicit that under ~2% mortality means deaths are not being
+    recorded, not that babies are surviving. A one-sided lower-is-better band would
+    paint exactly that failure green."""
+    from connect_labs.semantic.runtime import measure_catalog
+
+    _, inds = load_registry("kmc")
+    n13 = [c for c in measure_catalog(filter_to_series(inds, "N")) if c["indicator"] == "N13"][0]
+    assert n13["direction"] == "mid2"
+    assert n13["bands"][0][0] == 4 and n13["bands"][1][0] == 2
+
+
+def test_percent_bands_are_on_the_percent_scale_the_measures_return():
+    """The N-series measures return 100.0 * num/den. The C-series stores the same
+    thresholds as FRACTIONS, so copying them across without rescaling would be wrong
+    by 100x and would band everything green."""
+    from connect_labs.semantic.runtime import measure_catalog
+
+    _, inds = load_registry("kmc")
+    for c in measure_catalog(filter_to_series(inds, "N")):
+        if c["unit"] == "%" and c["bands"] and c["direction"] != "mid2":
+            assert max(c["bands"]) > 1, f"{c['indicator']} bands look like fractions"

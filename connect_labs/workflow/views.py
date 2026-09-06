@@ -2860,7 +2860,13 @@ def semantic_indicators_api(request, definition_id):
               extraction each time (28.2s + 31.2s + 27.3s for three, measured).
       as_of   SQL date literal; defaults to CURRENT_DATE.
     """
-    from connect_labs.semantic.runtime import SemanticRuntimeError, evaluate
+    from connect_labs.semantic.runtime import (
+        SemanticRuntimeError,
+        evaluate,
+        filter_to_series,
+        load_registry,
+        measure_catalog,
+    )
 
     series = (request.GET.get("series") or "").strip() or None
     scopes = [s for s in (request.GET.get("scopes") or "").split(",") if s.strip()]
@@ -2908,9 +2914,17 @@ def semantic_indicators_api(request, definition_id):
             scope=(scopes[0] if scopes else "programme"),
             as_of=as_of,
         )
+        # The display contract travels WITH the rows: bands, direction and unit come
+        # from the same YAML that produced the numbers, so a threshold cannot drift
+        # from the measure it grades.
+        _, reg = load_registry()
+        if series:
+            reg = filter_to_series(reg, series)
+
         return JsonResponse(
             {
                 "rows": rows,
+                "measures": measure_catalog(reg),
                 "series": series or "all",
                 "scopes": scopes or ["programme"],
                 "opportunity_ids": [int(o) for o in opportunity_ids],

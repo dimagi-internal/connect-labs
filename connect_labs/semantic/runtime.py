@@ -126,6 +126,41 @@ def filter_to_series(registry: dict[str, Any], series: str) -> dict[str, Any]:
     return out
 
 
+def measure_catalog(registry: dict[str, Any]) -> list[dict[str, Any]]:
+    """The display contract for a series: one entry per INDICATOR, in registry order.
+
+    The render needs `bands`, `direction` and `unit` to colour a value, and until now
+    it had no way to get them — the C-series carries a hand-kept copy of its own
+    registry in the JavaScript, which is exactly the duplication the semantic layer
+    exists to end. Serving them alongside the rows keeps the YAML authoritative.
+
+    `bands_source` rides along deliberately: several N-series ranges are DERIVED (from
+    the workbook's counterpart, or from the spec's own expected-answers table) rather
+    than stated by the spec, and a threshold whose provenance is invisible is one
+    nobody can correct.
+    """
+    out = []
+    for m in registry.get("measures", []):
+        meta = m.get("meta")
+        if not meta:
+            continue
+        out.append(
+            {
+                "id": m["name"],
+                "indicator": meta.get("indicator"),
+                "title": m.get("title"),
+                "category": meta.get("category"),
+                "unit": meta.get("unit"),
+                "direction": meta.get("direction"),
+                "bands": meta.get("bands"),
+                "bands_source": meta.get("bands_source"),
+                "min_denominator": meta.get("min_denominator"),
+                "flw_applicable": meta.get("flw_applicable", False),
+            }
+        )
+    return out
+
+
 def _rows_from_cursor(cursor) -> list[dict[str, Any]]:
     columns = [c[0] for c in cursor.description]
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
