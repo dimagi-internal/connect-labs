@@ -454,6 +454,19 @@ jobs:
           # 14 minutes covers the p100 rollout observed to date (~8 min) with
           # margin for the boot tail. It is deliberately NOT open-ended: an
           # over-long window is a muted alarm by another name.
+          #
+          # BUT the window is not the suppression DURATION, and if you are tuning
+          # this, tune against the measured number rather than this constant.
+          # CloudWatch does not return an alarm to OK the instant the datapoints
+          # stop; it has to evaluate a period that has none. Measured end-to-end
+          # on 2026-09-06: last datapoint 14:30:00Z, labs-jj-deploy-in-progress
+          # back to OK at 14:38:16Z — about 8 minutes of evaluation lag, so a
+          # 14-minute window suppresses for roughly 22. That is still bounded and
+          # still self-clearing, which is the safety property; it just means the
+          # real cost per deploy is ~22 minutes of CPU-alarm suppression, and
+          # shortening WINDOW_MIN moves that number one-for-one while the lag
+          # stays put. Do not shrink it below the rollout duration to claw the lag
+          # back — that reopens the window mid-rollout, which is the bug.
           # python3, not a shell loop: building JSON by hand needs `date -u -d @`
           # (GNU-only) and a comma-separator dance whose `[ ... ] && echo` form
           # interacts badly with the `bash -e` these steps run under.
