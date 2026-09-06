@@ -151,3 +151,48 @@ def test_the_schema_is_converted_to_a_pipeline_config_before_evaluation(client, 
     assert resp.status_code == 200
     pda.return_value._schema_to_config.assert_called_once()
     assert ev.call_args.args[0] is sentinel, "the CONFIG must reach evaluate, not the dict"
+
+
+def test_the_weight_series_pipeline_is_supplied_as_an_extra_field(client, django_user_model):
+    """The per-visit WEIGHT is not in the entity pipeline.
+
+    That one carries the registration fields and the visit markers; the weight series
+    is a separate pipeline, and properties.yml is written against a `weight_g` column.
+    Supplying only the entity pipeline produced, on the live call:
+
+        column "weight_g" does not exist
+        HINT: Perhaps you meant to reference the column "visits.weights".
+
+    which is the entity pipeline's LIST-valued weights — a different thing entirely.
+    """
+    user = django_user_model.objects.create_user(username="u6", password="p")
+    client.force_login(user)
+
+    class _Def:
+        pipeline_sources = [
+            {"alias": "children", "pipeline_id": 5108},
+            {"alias": "visits", "pipeline_id": 5109},
+        ]
+        opportunity_ids = [10042]
+
+    class _Pipe:
+        schema = {"fields": [{"name": "weight_g"}], "terminal_stage": "visit_level"}
+
+    entity_cfg, visit_cfg = object(), object()
+    with (
+        patch("connect_labs.workflow.views.WorkflowDataAccess") as wda,
+        patch("connect_labs.workflow.data_access.PipelineDataAccess") as pda,
+        patch("connect_labs.semantic.runtime.evaluate") as ev,
+    ):
+        wda.return_value.get_definition.return_value = _Def()
+        pda.return_value.get_definition.return_value = _Pipe()
+        pda.return_value._schema_to_config.side_effect = [entity_cfg, visit_cfg]
+        ev.return_value = []
+        resp = client.get(_url(1), {"series": "N"})
+
+    assert resp.status_code == 200
+    kwargs = ev.call_args.kwargs
+    assert kwargs["extra_fields"] == {
+        "weight_g": visit_cfg
+    }, "the weight-series config must reach layer 1 as the weight_g column"
+    assert ev.call_args.args[0] is entity_cfg
