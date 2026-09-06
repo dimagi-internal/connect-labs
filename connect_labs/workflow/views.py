@@ -2888,9 +2888,27 @@ def semantic_indicators_api(request, definition_id):
 
         from connect_labs.workflow.data_access import PipelineDataAccess
 
+        # Cross-opp pipeline scoping can 404 or raise; that is a reportable condition
+        # rather than an internal error, and saying WHICH pipeline could not be read
+        # is the difference between a fix and a guess.
         pipeline_access = PipelineDataAccess(request=request)
         try:
             pipeline_def = pipeline_access.get_definition(entity_source["pipeline_id"])
+        except Exception as exc:
+            logger.warning(
+                "Semantic: entity pipeline %s unreadable for workflow %s",
+                entity_source["pipeline_id"],
+                definition_id,
+                exc_info=True,
+            )
+            return JsonResponse(
+                {
+                    "error": (
+                        f"entity pipeline {entity_source['pipeline_id']} could not be read " f"({type(exc).__name__})"
+                    )
+                },
+                status=400,
+            )
         finally:
             pipeline_access.close()
 
@@ -2937,9 +2955,16 @@ def semantic_indicators_api(request, definition_id):
         # people to the logs for something the response could have told them.
         logger.warning("Semantic evaluation failed for workflow %s: %s", definition_id, exc)
         return JsonResponse({"error": str(exc)}, status=400)
-    except Exception:
+    except Exception as exc:
+        # The class name is diagnostic and leaks nothing about the data. A bare
+        # "An internal error occurred" on a five-stage chain (definition -> pipeline
+        # -> layer 1 -> compile -> execute) tells the caller only that one of five
+        # things broke, which is what made the first live 500 here unactionable.
         logger.exception("Failed to evaluate semantic indicators for workflow %s", definition_id)
-        return JsonResponse({"error": "An internal error occurred"}, status=500)
+        return JsonResponse(
+            {"error": f"unexpected failure in the semantic pipeline ({type(exc).__name__})"},
+            status=500,
+        )
     finally:
         data_access.close()
 
