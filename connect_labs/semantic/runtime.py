@@ -126,6 +126,41 @@ def filter_to_series(registry: dict[str, Any], series: str) -> dict[str, Any]:
     return out
 
 
+def measure_catalog(registry: dict[str, Any]) -> list[dict[str, Any]]:
+    """The display contract for a series: one entry per INDICATOR, in registry order.
+
+    The render needs `bands`, `direction` and `unit` to colour a value, and until now
+    it had no way to get them — the C-series carries a hand-kept copy of its own
+    registry in the JavaScript, which is exactly the duplication the semantic layer
+    exists to end. Serving them alongside the rows keeps the YAML authoritative.
+
+    `bands_source` rides along deliberately: several N-series ranges are DERIVED (from
+    the workbook's counterpart, or from the spec's own expected-answers table) rather
+    than stated by the spec, and a threshold whose provenance is invisible is one
+    nobody can correct.
+    """
+    out = []
+    for m in registry.get("measures", []):
+        meta = m.get("meta")
+        if not meta:
+            continue
+        out.append(
+            {
+                "id": m["name"],
+                "indicator": meta.get("indicator"),
+                "title": m.get("title"),
+                "category": meta.get("category"),
+                "unit": meta.get("unit"),
+                "direction": meta.get("direction"),
+                "bands": meta.get("bands"),
+                "bands_source": meta.get("bands_source"),
+                "min_denominator": meta.get("min_denominator"),
+                "flw_applicable": meta.get("flw_applicable", False),
+            }
+        )
+    return out
+
+
 def _rows_from_cursor(cursor) -> list[dict[str, Any]]:
     columns = [c[0] for c in cursor.description]
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
@@ -171,16 +206,32 @@ def evaluate(
     if visit_sql is None:
         if pipeline_schema is None:
             raise SemanticRuntimeError("evaluate() needs a pipeline_schema, or an explicit visit_sql")
-        visit_sql = build_visit_sql(pipeline_schema, opportunity_ids)
+        # Layer 1 generation reaches into the pipeline engine's own query builder, so
+        # it can fail for reasons that have nothing to do with this module. Naming the
+        # stage is the whole diagnostic: an opaque 500 from the endpoint says only
+        # that something in a five-stage chain broke.
+        try:
+            visit_sql = build_visit_sql(pipeline_schema, opportunity_ids)
+        except SemanticRuntimeError:
+            raise
+        except Exception as exc:
+            raise SemanticRuntimeError(f"layer 1 generation failed ({type(exc).__name__}): {exc}") from exc
 
-    if scopes:
-        sql = compile_rollup_sql(
-            props_doc, registry, visit_sql, scopes=scopes, as_of=as_of, llo_map=llo_map, settings=settings
-        )
-    else:
-        sql = compile_indicator_sql(
-            props_doc, registry, visit_sql, scope=scope, as_of=as_of, llo_map=llo_map, settings=settings
-        )
+    # Compilation is the second stage that can fail on its own terms — an unknown
+    # scope, a measure referencing a column the properties do not define.
+    try:
+        if scopes:
+            sql = compile_rollup_sql(
+                props_doc, registry, visit_sql, scopes=scopes, as_of=as_of, llo_map=llo_map, settings=settings
+            )
+        else:
+            sql = compile_indicator_sql(
+                props_doc, registry, visit_sql, scope=scope, as_of=as_of, llo_map=llo_map, settings=settings
+            )
+    except SemanticRuntimeError:
+        raise
+    except Exception as exc:
+        raise SemanticRuntimeError(f"compilation failed ({type(exc).__name__}): {exc}") from exc
 
     if connection is None:
         from django.db import connection as django_connection
