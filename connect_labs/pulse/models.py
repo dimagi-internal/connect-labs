@@ -695,3 +695,65 @@ class PulsePublicToken(models.Model):
     @property
     def is_usable(self) -> bool:
         return not self.revoked
+
+
+class PulsePartner(models.Model):
+    """A delivery partner, as the LLO Directory names it.
+
+    Connect publishes partner *names* only for the orgs the polling account
+    belongs to — a small minority of those that actually deliver. The rest
+    arrive as a slug, so the names have to come from the team's directory.
+
+    This used to be a JSON file checked into the repo, on the stated grounds
+    that labs had no Google credentials at runtime. That has not been true for
+    some time: ``LABS_SYNTHETIC_GDRIVE_SA_KEY`` is on both task definitions and
+    the same service account already reads the directory. Keeping it as a file
+    meant partner identity was reviewed in a pull request by people who do not
+    own it, and drifted from the sheet with nothing to detect the drift.
+
+    So the sheet is the source of truth and this table is its cache, loaded by
+    ``pulse_partner_import``. An empty table is safe rather than wrong: every
+    partner renders as its slug, which is the same thing an unmatched slug has
+    always done, and no name is ever guessed.
+    """
+
+    name = models.CharField(max_length=300, unique=True)
+    short = models.CharField(max_length=120, blank=True)
+    imported_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.short or self.name
+
+
+class PulsePartnerAlias(models.Model):
+    """A slug the matcher cannot reach, pointed at its partner by a human.
+
+    The matcher is deliberately strict — a wrong parent name is worse than a
+    visible slug — so a handful of real partners fall through it: a second
+    workspace sharing no stem with the first, an abbreviation the slug never
+    spells out, a typo in the directory itself. Loosening the rules would buy
+    those few at the cost of guessing everywhere else.
+
+    Recorded instead on the directory's "Connect Org Mapping" tab, where the
+    people who own partner identity can see and correct them, and carried here
+    by the same import. ``why`` is not decoration: an alias without a stated
+    reason is a guess someone will later trust.
+
+    ``slug`` matches a Connect org slug exactly or as a ``slug-`` prefix, so a
+    partner's next workspace resolves without another edit.
+    """
+
+    slug = models.CharField(max_length=120, unique=True)
+    partner = models.ForeignKey(PulsePartner, on_delete=models.CASCADE, related_name="aliases")
+    why = models.TextField()
+    imported_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["slug"]
+        verbose_name_plural = "pulse partner aliases"
+
+    def __str__(self) -> str:
+        return f"{self.slug} → {self.partner.name}"

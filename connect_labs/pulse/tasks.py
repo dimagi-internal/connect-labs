@@ -481,3 +481,21 @@ def warm_summary_cache() -> int:
         SummaryView().get(_Req(user), refresh=True)
         warmed += 1
     return warmed
+
+
+@celery_app.task(name="connect_labs.pulse.tasks.import_partner_directory")
+def import_partner_directory():
+    """Pull partner identity from the LLO Directory into the database.
+
+    On beat rather than left to a human because the directory is edited by the
+    team that owns partner relationships, not by whoever last deployed. A daily
+    pull means their correction reaches the board the next morning instead of
+    waiting for someone to remember a management command.
+
+    It also removes the bootstrap problem: a fresh environment names nobody
+    until this has run once, which is safe — partners render as slugs — but
+    looks broken. On beat, it heals itself.
+    """
+    from django.core.management import call_command
+
+    call_command("pulse_partner_import")
