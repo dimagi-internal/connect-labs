@@ -380,4 +380,12 @@ def to_zip(selection: Selection) -> bytes:
 
 
 def filename_stem(selection: Selection) -> str:
-    return f"targeting_{selection.indicator}_gt{selection.threshold:g}"
+    """Name the file after the question it answers.
+
+    A coverage measure selects the places BELOW its threshold, so calling every
+    export ``gt`` asserted the opposite of the contents for half the catalogue:
+    an ORS selection of the fifteen counties under 90% arrived as
+    ``targeting_ors_coverage_gt90.zip``.
+    """
+    direction = "lt" if selection.indicator in measures.LOWER_IS_WORSE else "gt"
+    return f"targeting_{selection.indicator}_{direction}{selection.threshold:g}"

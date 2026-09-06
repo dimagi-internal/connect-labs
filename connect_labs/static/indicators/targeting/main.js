@@ -80,6 +80,27 @@
         S.thresholdFor = S.indicator;
       }
       T.controls.renderPicker();
+
+      // Which bases a costing can use is a property of the INDICATOR — a
+      // per-case basis needs that indicator's case count. Fetched once at boot
+      // and never again, the panel kept under-5 mortality's answer: looking at
+      // ORS coverage, "per case (a year of cases)" was greyed out as "not
+      // available for this indicator" when it is exactly the basis that
+      // indicator is for.
+      return api.interventions(S.indicator).then(function (info) {
+        S.costInfo = info;
+        var basis = info.bases.filter(function (b) {
+          return b.code === S.basis;
+        })[0];
+        if (!basis || !basis.available_for_indicator) {
+          var usable = info.bases.filter(function (b) {
+            return b.available_for_indicator;
+          });
+          if (usable.length) S.basis = usable[usable.length - 1].code;
+          S.preset = null;
+        }
+        T.costing.renderControls();
+      });
     });
   });
 
