@@ -4,7 +4,7 @@
   "devDependencies": {
     "@babel/core": "^7.16.5",
     "@babel/preset-env": "^7.16.5",
-    "@babel/preset-react": "^7.16.5",
+    "@babel/preset-react": "^8.0.1",
     "@babel/preset-typescript": "^7.16.5",
     "@fortawesome/fontawesome-free": "^7.0.0",
     "@mapbox/mapbox-gl-draw": "^1.5.1",
