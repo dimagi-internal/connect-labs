@@ -210,6 +210,17 @@ def evaluate(
         # it can fail for reasons that have nothing to do with this module. Naming the
         # stage is the whole diagnostic: an opaque 500 from the endpoint says only
         # that something in a five-stage chain broke.
+        # build_visit_sql delegates to the pipeline engine's query builder, which
+        # wants an AnalysisPipelineConfig OBJECT — not the raw schema dict stored on
+        # the definition. Passing the dict fails five frames down as
+        # `'dict' object has no attribute 'terminal_stage'`, naming neither the
+        # argument nor the caller. Caught here, where the fix is obvious.
+        if isinstance(pipeline_schema, dict):
+            raise SemanticRuntimeError(
+                "evaluate() needs an AnalysisPipelineConfig, not the raw schema dict — "
+                "convert it first (PipelineDataAccess._schema_to_config), or pass an "
+                "explicit visit_sql"
+            )
         try:
             visit_sql = build_visit_sql(pipeline_schema, opportunity_ids)
         except SemanticRuntimeError:
