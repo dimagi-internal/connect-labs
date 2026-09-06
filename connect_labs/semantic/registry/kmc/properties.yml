@@ -93,7 +93,13 @@ aggregates:
   - name: n_weight_readings
     sql: 'COUNT(*) FILTER (WHERE weight_g IS NOT NULL)'
   - name: n_weights_round_100_raw
-    sql: 'COUNT(*) FILTER (WHERE weight_g IS NOT NULL AND weight_g::numeric % 100 = 0)'
+    # MOD(), not the % operator. psycopg2 reads % as a parameter placeholder, so a
+    # literal modulo makes cursor.execute raise 'tuple index out of range' before the
+    # query ever reaches Postgres. The parity tests never saw it because they use RAW
+    # psycopg2, which only interpolates when params are passed; the endpoint goes
+    # through Django's cursor, which is the path that trips. MOD is standard SQL and
+    # has no such ambiguity — connect-labs#1470 follow-up.
+    sql: 'COUNT(*) FILTER (WHERE weight_g IS NOT NULL AND MOD(weight_g::numeric, 100) = 0)'
 
 # ---------------------------------------------------------------------------
 # Weight-series properties. These are the two the browser does with a loop; in
