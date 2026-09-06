@@ -284,23 +284,22 @@ class TestPartnersConnectWillNotName:
         reason to show an identifier, not a reason to drop
         the partner.
 
-        `stewari` is the real residue as of 2026-09-05: unnamed by Connect and
-        absent from the master list, so neither source reaches it. This case
-        used to use `ehealth-africa-connect-interviews`, which is now a curated
-        alias for EHA Clinics. `tnyirenda` would be the wrong replacement — it
-        is in one source, since Connect names it "ECD, IVC and MBW
-        Experiments"."""
+        The slug here is synthetic on purpose. Real unmatched slugs are almost
+        all personal Connect handles — a colleague's username — and there is no
+        reason to carry someone's name in a fixture to prove that an unnamed
+        workspace still renders its identifier. The fixture controls both
+        sources anyway, so realism buys the assertion nothing."""
         PulseOpportunity.objects.create(
             opportunity_id=52,
             name="Unknown partner work",
-            org_slug="stewari",
+            org_slug="workspace-in-neither-source",
             program_id=10,
             lifetime_visit_count=31,
         )
-        row = next(o for o in summary(viewer)["orgs"] if o["slug"] == "stewari")
+        row = next(o for o in summary(viewer)["orgs"] if o["slug"] == "workspace-in-neither-source")
         assert row["partner"] == ""
         assert row["named"] is False
-        assert row["name"] == "stewari"
+        assert row["name"] == "workspace-in-neither-source"
 
     def test_the_slug_is_never_prettified_into_a_guess(self, viewer, portfolio):
         """Title-casing reads plausibly and is wrong where it matters: the real
