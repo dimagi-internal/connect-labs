@@ -239,3 +239,16 @@ def test_percent_bands_are_on_the_percent_scale_the_measures_return():
     for c in measure_catalog(filter_to_series(inds, "N")):
         if c["unit"] == "%" and c["bands"] and c["direction"] != "mid2":
             assert max(c["bands"]) > 1, f"{c['indicator']} bands look like fractions"
+
+
+def test_evaluate_refuses_the_raw_schema_dict_by_name():
+    """The bug that made the endpoint's first live call a 500.
+
+    build_visit_sql delegates to the pipeline engine's query builder, which wants an
+    AnalysisPipelineConfig. Handed the stored schema DICT instead, it failed five
+    frames down as `'dict' object has no attribute 'terminal_stage'` — naming neither
+    the offending argument nor the caller — and reached the caller as a bare
+    "An internal error occurred".
+    """
+    with pytest.raises(SemanticRuntimeError, match="AnalysisPipelineConfig"):
+        evaluate({"fields": [], "terminal_stage": "entity"}, [10042], series="N")
