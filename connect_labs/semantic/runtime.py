@@ -206,16 +206,32 @@ def evaluate(
     if visit_sql is None:
         if pipeline_schema is None:
             raise SemanticRuntimeError("evaluate() needs a pipeline_schema, or an explicit visit_sql")
-        visit_sql = build_visit_sql(pipeline_schema, opportunity_ids)
+        # Layer 1 generation reaches into the pipeline engine's own query builder, so
+        # it can fail for reasons that have nothing to do with this module. Naming the
+        # stage is the whole diagnostic: an opaque 500 from the endpoint says only
+        # that something in a five-stage chain broke.
+        try:
+            visit_sql = build_visit_sql(pipeline_schema, opportunity_ids)
+        except SemanticRuntimeError:
+            raise
+        except Exception as exc:
+            raise SemanticRuntimeError(f"layer 1 generation failed ({type(exc).__name__}): {exc}") from exc
 
-    if scopes:
-        sql = compile_rollup_sql(
-            props_doc, registry, visit_sql, scopes=scopes, as_of=as_of, llo_map=llo_map, settings=settings
-        )
-    else:
-        sql = compile_indicator_sql(
-            props_doc, registry, visit_sql, scope=scope, as_of=as_of, llo_map=llo_map, settings=settings
-        )
+    # Compilation is the second stage that can fail on its own terms — an unknown
+    # scope, a measure referencing a column the properties do not define.
+    try:
+        if scopes:
+            sql = compile_rollup_sql(
+                props_doc, registry, visit_sql, scopes=scopes, as_of=as_of, llo_map=llo_map, settings=settings
+            )
+        else:
+            sql = compile_indicator_sql(
+                props_doc, registry, visit_sql, scope=scope, as_of=as_of, llo_map=llo_map, settings=settings
+            )
+    except SemanticRuntimeError:
+        raise
+    except Exception as exc:
+        raise SemanticRuntimeError(f"compilation failed ({type(exc).__name__}): {exc}") from exc
 
     if connection is None:
         from django.db import connection as django_connection
