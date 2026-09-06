@@ -278,12 +278,14 @@
     var lower = meta.lower_is_worse;
 
     if (label) {
+      // The measure's own label, with its own casing. Lower-casing it turned
+      // "ORS treatment coverage" into "ors treatment coverage" — and "people"
+      // was wrong for anything not denominated in people, which the unit
+      // already states precisely.
+      var name = util.esc(meta.label || '');
       label.innerHTML = lower
-        ? 'Show me where <b>fewer than</b> this share of people have ' +
-          util.esc((meta.label || '').toLowerCase())
-        : 'Show me where <b>' +
-          util.esc((meta.label || '').toLowerCase()) +
-          '</b> is worse than';
+        ? 'Show me where <b>' + name + '</b> is <b>below</b>'
+        : 'Show me where <b>' + name + '</b> is <b>above</b>';
     }
     if (unit) unit.textContent = meta.unit || '';
     if (chip)

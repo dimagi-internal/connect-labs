@@ -781,3 +781,75 @@ class TestPinnedLevelReportsWhatWasUsed:
         )
 
         assert sel.pinned_level == 1
+
+
+class TestDefaultLevelPrefersMeasured:
+    """Deepest is not the same as most informative.
+
+    Liberia measures ORS coverage for its fifteen counties and no district, so
+    the deepest level carrying ANY value is 136 districts holding fifteen
+    numbers between them. Unpinned, the surface used to select those — a table
+    that looks like a ranking and is 54 rows with four distinct values. A user
+    asking which counties to target was answered with ties.
+    """
+
+    def _liberia(self):
+        make_boundary("LBR", 0, "Liberia", "LBR-0")
+        county = make_boundary("LBR", 1, "Bong", "LBR-1", x=2)
+        # Districts exist, carry nothing of their own, and are linked to the
+        # county so they can inherit — which is what makes them look like data.
+        for name, bid, x in (("Jorquelleh", "LBR-2-a", 2), ("Kokoyah", "LBR-2-b", 4)):
+            d = make_boundary("LBR", 2, name, bid, x=x)
+            d.parent_boundary_id = county.boundary_id
+            d.save(update_fields=["parent_boundary_id"])
+        return county
+
+    def test_it_picks_the_measured_level_over_a_deeper_inherited_one(self):
+        county = self._liberia()
+        set_value(county, "ors_coverage", 41.0, source=Source.DHS)
+
+        sel = select_above(
+            indicator="ors_coverage",
+            threshold=90,
+            iso_codes=["LBR"],
+            method="subnational_survey",
+            rollup=False,
+        )
+
+        assert [a.name for a in sel.areas] == ["Bong"]
+        assert all(a.admin_level == 1 for a in sel.areas)
+
+    def test_it_still_uses_the_deeper_level_when_that_is_where_the_data_is(self):
+        make_boundary("LBR", 0, "Liberia", "LBR-0")
+        make_boundary("LBR", 1, "Bong", "LBR-1", x=2)
+        d1 = make_boundary("LBR", 2, "Jorquelleh", "LBR-2-a", x=2)
+        d2 = make_boundary("LBR", 2, "Kokoyah", "LBR-2-b", x=4)
+        set_value(d1, "ors_coverage", 41.0, source=Source.DHS)
+        set_value(d2, "ors_coverage", 55.0, source=Source.DHS)
+
+        sel = select_above(
+            indicator="ors_coverage",
+            threshold=90,
+            iso_codes=["LBR"],
+            method="subnational_survey",
+            rollup=False,
+        )
+
+        assert sorted(a.name for a in sel.areas) == ["Jorquelleh", "Kokoyah"]
+
+    def test_an_explicit_pin_still_wins(self):
+        """Asking for districts gets districts, inherited or not — the warning
+        beside the level buttons is what says so."""
+        county = self._liberia()
+        set_value(county, "ors_coverage", 41.0, source=Source.DHS)
+
+        sel = select_above(
+            indicator="ors_coverage",
+            threshold=90,
+            iso_codes=["LBR"],
+            method="subnational_survey",
+            rollup=False,
+            admin_level=2,
+        )
+
+        assert sorted(a.name for a in sel.areas) == ["Jorquelleh", "Kokoyah"]
