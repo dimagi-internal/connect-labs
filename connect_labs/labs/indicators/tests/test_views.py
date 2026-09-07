@@ -995,3 +995,63 @@ class TestTheExportNamesTheMeasureItCarries:
 
         assert "under-5 mortality rate covers" not in caveats
         assert "ORS treatment coverage" in caveats
+
+
+class TestTheMethodologyPointsAtColumnsThatExist:
+    """It told readers to look at columns that had been renamed.
+
+    Renaming the provenance headings left the prose behind: the re-levelling
+    section still sent people to `U5MR survey year` and `U5MR adjustment`,
+    neither of which is in the file any more. A document that cites its own
+    table wrongly is worse than one that does not cite it.
+
+    The first version of this test passed with the bug deliberately
+    reintroduced, because the re-levelling section only renders when a row was
+    actually re-levelled and the fixture had none. It seeds one now, and the
+    assertion below confirms the section is present before checking it.
+    """
+
+    def _relevelled_selection(self, indicator="u5mr"):
+        from django.utils import timezone
+
+        from connect_labs.labs.indicators.models import IndicatorValue, License
+        from connect_labs.labs.indicators.resolve import select_above
+
+        b = make_boundary("NER", 1, "Agadez", "NER-R1", x=2)
+        make_boundary("NER", 0, "Niger", "NER-R0")
+        IndicatorValue.objects.create(
+            indicator=indicator,
+            boundary=b,
+            iso_code="NER",
+            admin_level=1,
+            year=2024,
+            value=120.0,
+            source=Source.DHS_CALIBRATED,
+            license_code=License.OPEN_API,
+            retrieved_at=timezone.now(),
+            # What makes a row count as re-levelled.
+            extra={"factor": 0.62, "raw_year": 2006, "raw_value": 194.0},
+        )
+        return select_above(indicator=indicator, threshold=50, iso_codes=["NER"], method="subnational_relevelled")
+
+    def test_the_relevelling_section_is_actually_rendered(self):
+        """Without this the test below cannot fail, which is how the first
+        version of it passed against the bug it was written for."""
+        from connect_labs.labs.indicators import export
+
+        md = export.to_methodology(self._relevelled_selection())
+        assert "re-levelled to the present" in md
+
+    def test_every_backticked_column_name_is_a_real_column(self):
+        import re
+
+        from connect_labs.labs.indicators import export
+
+        sel = self._relevelled_selection()
+        headings = {label for _, label in export.columns_for(sel)}
+        md = export.to_methodology(sel)
+
+        cited = {t for t in re.findall(r"`([A-Z][A-Za-z0-9 ,\-()/]+)`", md) if " " in t and "=" not in t}
+        assert cited, "no column references found, so this proves nothing"
+        unknown = cited - headings
+        assert not unknown, f"methodology cites missing columns {unknown}"

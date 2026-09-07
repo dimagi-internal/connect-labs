@@ -302,7 +302,7 @@ def to_methodology(selection: Selection, *, alternatives: bool = True) -> str:
             "trend and carries no difference of method between IGME and the survey. "
             "**This assumes relative differences between regions persisted while the "
             "level changed** — an assumption that weakens the older the survey. The "
-            "`U5MR survey year` and `U5MR adjustment` columns show what was done to "
+            "`Survey year` and `Adjustment` columns show what was done to "
             "each row, and the unadjusted survey value is kept in the database "
             "alongside.\n"
         )
