@@ -92,3 +92,53 @@ class TestAppAsks:
 
         with_gap = [o for o, m in APP_ASKS.items() if any(v is False for v in m.values())]
         assert len(with_gap) == 14, f"expected 14 opportunities with a gap, got {len(with_gap)}"
+
+
+def test_credibility_has_exactly_one_source():
+    """The tables must come from deployment.yml, not a literal in this module.
+
+    They lived in three places at once: `var MORTALITY_CREDIBLE` in the render,
+    literals in gates.py, and `settings:` in registry/kmc/deployment.yml — which
+    the compiler cannot do without, since an llo-scoped suppression rule will not
+    compile without them. Three copies of one human judgement, and when they
+    disagree every engine still confidently returns a number.
+    """
+    import connect_labs.semantic.gates as g
+
+    assert not hasattr(g, "MORTALITY_CREDIBLE"), "credibility must be read, not redeclared here"
+    assert not hasattr(g, "COMPLETION_CREDIBLE"), "credibility must be read, not redeclared here"
+
+
+def test_the_two_readings_of_the_table_agree():
+    """gates.py asks 'is X NOT false'; the compiler asks 'is X true'.
+
+    Those are a deny-list and an allow-list, and they agree ONLY when every LLO is
+    listed explicitly. deployment.yml does that deliberately — an LLO omitted from
+    `completion_recording_credible` would read credible here and suppressed there,
+    which is the exact shape of bug a shared table is supposed to prevent.
+    """
+    from connect_labs.semantic.gates import credible_for
+    from connect_labs.semantic.runtime import load_deployment
+
+    llo_map, settings = load_deployment()
+    every_llo = sorted(set(llo_map.values()))
+
+    for setting, indicator in (
+        ("mortality_recording_credible", "C14"),
+        ("completion_recording_credible", "C18"),
+    ):
+        table = settings[setting]
+        missing = [llo for llo in every_llo if llo not in table]
+        assert not missing, f"{setting} does not state a verdict for {missing}"
+
+        allow_list = {llo for llo, ok in table.items() if ok}
+        deny_list = {llo for llo in every_llo if credible_for(indicator, llo)}
+        assert allow_list == deny_list, f"{setting}: compiler sees {allow_list}, gates sees {deny_list}"
+
+
+def test_programme_scope_is_never_credibility_gated():
+    """Pooling every LLO is the one place the gate must not fire."""
+    from connect_labs.semantic.gates import credible_for
+
+    assert credible_for("C14", None) is True
+    assert credible_for("C18", None) is True
