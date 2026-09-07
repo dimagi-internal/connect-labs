@@ -1,0 +1,175 @@
+"""The two inputs the compiler needs and SQL cannot produce: `llo_map` and `settings`.
+
+Both existed only inside kmc_programme_metrics_render.js. The compiler had supported
+them since it was written and the tests exercised them with hand-built literals, so
+every guard passed while the ONE caller that matters -- `semantic_indicators_api` --
+passed neither. That combination is why this file exists: it asserts against the
+shipped `deployment.yml`, not against a fixture written to agree with it.
+
+Two distinct failures were live, and only one of them was loud:
+
+  * `scopes=...,llo` raised RegistryError -> HTTP 400. Visible immediately.
+  * `_suppression_columns` returns "" on falsy settings, so every C-series response
+    carried NO suppression columns. C14 published a mortality figure for LLOs the
+    workbook says do not record deaths credibly, and it looked exactly like a real
+    red band.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+import yaml
+
+from connect_labs.semantic.compiler import RegistryError, compile_rollup_sql
+from connect_labs.semantic.runtime import load_deployment
+
+REGISTRY = Path(__file__).resolve().parents[1] / "registry" / "kmc"
+
+ALL_SCOPES = ["programme", "opportunity", "llo", "flw", "month"]
+
+
+@pytest.fixture(scope="module")
+def props_doc():
+    return yaml.safe_load((REGISTRY / "properties.yml").read_text())
+
+
+@pytest.fixture(scope="module")
+def registry():
+    return yaml.safe_load((REGISTRY / "indicators.yml").read_text())
+
+
+@pytest.fixture(scope="module")
+def deployment():
+    return load_deployment()
+
+
+def test_deployment_facts_load(deployment):
+    llo_map, settings = deployment
+    assert llo_map, "deployment.yml must supply an llo_map; without it `llo` cannot compile"
+    assert set(settings) == {
+        "mortality_recording_credible",
+        "completion_recording_credible",
+    }, "every suppression rule in indicators.yml names one of these settings"
+
+
+def test_the_registry_computes_exactly_the_indicators_the_render_did(registry):
+    """22, the same 22. The swap is 1:1, so deleting the JS engine loses nothing.
+
+    The other eleven (C03, C04, C18, C22, C25-C27, C29, C30, C32, C33) are declared
+    by the workbook and computed by NEITHER engine; the render lists them under
+    NOT_COMPUTABLE and this registry simply has no measure for them.
+    """
+    computed = {
+        m["meta"]["indicator"]
+        for m in registry["measures"]
+        if m.get("meta") and str(m["meta"].get("indicator", "")).startswith("C")
+    }
+    assert computed == {
+        "C01",
+        "C02",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "C09",
+        "C10",
+        "C11",
+        "C12",
+        "C13",
+        "C14",
+        "C15",
+        "C16",
+        "C17",
+        "C19",
+        "C20",
+        "C21",
+        "C23",
+        "C24",
+        "C28",
+        "C31",
+    }
+
+
+def test_every_suppression_rule_has_a_setting_table(registry, deployment):
+    """A rule whose table is missing is skipped SILENTLY -- the gate simply never fires."""
+    _, settings = deployment
+    declared = {r["setting"] for r in registry.get("suppression") or []}
+    assert declared <= set(settings), f"suppression rules with no table in deployment.yml: {declared - set(settings)}"
+
+
+def test_llo_map_covers_every_opportunity_the_registry_is_run_over(deployment):
+    """An opportunity missing from the map lands in no LLO and vanishes from the drill."""
+    llo_map, _ = deployment
+    # The eleven live opportunities of the KMC programme, from the render's own
+    # OPP_LABEL. A twelfth id added to the dashboard without a row here would drop
+    # out of the `llo` scope without any error.
+    for opp in (10021, 10019, 10015, 10022, 10018, 10014, 10020, 10017, 10016, 10013, 10042):
+        assert opp in llo_map, f"opportunity {opp} has no LLO"
+
+
+def test_the_c_series_compiles_at_every_scope_with_the_shipped_facts(props_doc, registry, deployment):
+    """The regression: this raised RegistryError, so `series=C` could not be served."""
+    llo_map, settings = deployment
+    sql = compile_rollup_sql(
+        props_doc,
+        registry,
+        "SELECT 1",
+        scopes=ALL_SCOPES,
+        llo_map=llo_map,
+        settings=settings,
+    )
+    assert "AS llo" in sql
+    assert "cohort_month" in sql
+
+
+def test_without_the_facts_the_c_series_does_not_compile(props_doc, registry):
+    """Pinning the failure the wiring fixes, so a regression is loud rather than quiet."""
+    with pytest.raises(RegistryError):
+        compile_rollup_sql(props_doc, registry, "SELECT 1", scopes=ALL_SCOPES)
+
+
+def test_suppression_columns_are_actually_emitted(props_doc, registry, deployment):
+    """The silent half. No settings -> no columns -> an ungated mortality figure."""
+    llo_map, settings = deployment
+    sql = compile_rollup_sql(props_doc, registry, "SELECT 1", scopes=ALL_SCOPES, llo_map=llo_map, settings=settings)
+    assert "c14_suppressed" in sql, "the gate the workbook exists to enforce"
+    assert "'PIPN'" in sql and "'EHA'" in sql, "the credible pair drives the NOT IN"
+
+    # C18 declares a rule but the registry does not COMPUTE C18 -- it is one of the
+    # eleven the workbook declares and neither engine derives -- so the compiler
+    # skips it by design. Asserting its column would pin a bug, not a behaviour.
+    assert "c18_suppressed" not in sql
+
+    without = compile_rollup_sql(props_doc, registry, "SELECT 1", scopes=["programme"], settings=None)
+    assert "c14_suppressed" not in without, "the unwired endpoint emitted exactly this"
+
+
+def test_completion_credibility_is_an_allow_list_not_a_deny_list(deployment):
+    """The render's table meant the opposite of what the compiler reads.
+
+    `COMPLETION_CREDIBLE = {GHI: false}` is a DENY-list: the render tests
+    `COMPLETION_CREDIBLE[llo] !== false`, so every LLO except GHI is credible. The
+    compiler builds `credible = [k for k, v in table.items() if v]` and suppresses
+    everything outside it -- so that dict ported verbatim yields an EMPTY credible
+    set and `TRUE AS c18_suppressed`, withholding C18 from all six LLOs instead of
+    one. Nothing on screen distinguishes the two.
+    """
+    _, settings = deployment
+    completion = settings["completion_recording_credible"]
+    credible = {k for k, v in completion.items() if v}
+    assert "GHI" not in credible, "GHI is the one LLO the workbook excludes"
+    assert credible == {
+        "PIPN",
+        "NAMA",
+        "EHA",
+        "Kikapu",
+        "BERI",
+    }, "every other LLO must be listed true explicitly; an absent LLO is suppressed"
+
+
+def test_mortality_credibility_stays_the_workbook_pair(deployment):
+    _, settings = deployment
+    credible = {k for k, v in settings["mortality_recording_credible"].items() if v}
+    assert credible == {"PIPN", "EHA"}, "the source doc: only PIPN and EHA record deaths credibly"

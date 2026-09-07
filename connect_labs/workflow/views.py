@@ -2885,6 +2885,7 @@ def semantic_indicators_api(request, definition_id):
         SemanticRuntimeError,
         evaluate,
         filter_to_series,
+        load_deployment,
         load_registry,
         measure_catalog,
     )
@@ -2981,6 +2982,17 @@ def semantic_indicators_api(request, definition_id):
                 return JsonResponse({"error": "opportunity_id required"}, status=400)
             opportunity_ids = [opp]
 
+        # The two inputs the compiler needs and SQL cannot produce. Without them this
+        # endpoint could not serve the `llo` scope at ALL (RegistryError -> 400,
+        # because `llo` is materialised by a CASE over opportunity_id), and -- the
+        # quiet half -- `_suppression_columns` returns early on falsy settings, so
+        # every C-series response was emitted with NO suppression columns. C14 would
+        # have published a mortality figure for an LLO the workbook says does not
+        # record deaths credibly: a real-looking red band where the right answer is
+        # an absent measurement. Both facts previously existed only inside the
+        # browser render, which is why nothing here could pass them.
+        llo_map, reg_settings = load_deployment()
+
         rows = evaluate(
             pipeline_config,
             [int(o) for o in opportunity_ids],
@@ -2989,6 +3001,8 @@ def semantic_indicators_api(request, definition_id):
             scopes=scopes or None,
             scope=(scopes[0] if scopes else "programme"),
             as_of=as_of,
+            llo_map=llo_map or None,
+            settings=reg_settings or None,
         )
         # The display contract travels WITH the rows: bands, direction and unit come
         # from the same YAML that produced the numbers, so a threshold cannot drift

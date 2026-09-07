@@ -358,3 +358,56 @@ def test_an_expired_cache_entry_does_not_count_as_present(client, django_user_mo
     body = resp.json()
     assert body["cold_cache"] is True
     assert body["opportunities_with_data"] == []
+
+
+def test_it_supplies_the_deployment_facts_the_compiler_cannot_derive(client, django_user_model):
+    """The endpoint must pass `llo_map` AND `settings`, or the C-series is unusable.
+
+    This is the gap that hid the longest, because every OTHER test built these by
+    hand. compiler tests passed `llo_map={10042: "PIPN"}` literals, the parity
+    harness passed its own, and the one caller that ships passed neither -- so:
+
+      * `scopes=...,llo` raised RegistryError -> HTTP 400. The LLO drill could not
+        be served at all.
+      * `_suppression_columns` returns "" on falsy settings, so NO suppression
+        column was emitted for any scope. C14 would have published a mortality
+        figure for LLOs the workbook says do not record deaths credibly -- and it
+        renders as an ordinary red band, not as an absence.
+
+    Asserting on the call kwargs rather than the SQL is deliberate: the compiler
+    already has its own coverage, and what was broken here was the wiring.
+    """
+    user = django_user_model.objects.create_user(username="u2", password="p")
+    client.force_login(user)
+
+    class _Def:
+        pipeline_sources = [{"alias": "children", "pipeline_id": 5108}]
+        opportunity_ids = [10042]
+
+    class _Pipe:
+        schema = {"fields": [], "data_source": {"type": "connect_csv"}}
+
+    with (
+        patch("connect_labs.workflow.views.WorkflowDataAccess") as wda,
+        patch("connect_labs.workflow.data_access.PipelineDataAccess") as pda,
+        patch("connect_labs.semantic.runtime.evaluate") as ev,
+    ):
+        wda.return_value.get_definition.return_value = _Def()
+        pda.return_value.get_definition.return_value = _Pipe()
+        pda.return_value._schema_to_config.return_value = object()
+        ev.return_value = []
+
+        resp = client.get(_url(1), {"series": "C", "scopes": "programme,opportunity,llo,flw,month"})
+
+    assert resp.status_code == 200
+    kwargs = ev.call_args.kwargs
+
+    llo_map = kwargs["llo_map"]
+    assert llo_map, "without an llo_map the `llo` scope cannot compile"
+    assert llo_map[10042] == "BERI"
+    assert llo_map[1487] == "PIPN"
+
+    settings = kwargs["settings"]
+    assert settings, "without settings every suppression gate is silently skipped"
+    credible = {k for k, v in settings["mortality_recording_credible"].items() if v}
+    assert credible == {"PIPN", "EHA"}, "the workbook's credible pair, not a subset or the whole set"
