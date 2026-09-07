@@ -719,6 +719,31 @@ class PulsePartner(models.Model):
 
     name = models.CharField(max_length=300, unique=True)
     short = models.CharField(max_length=120, blank=True)
+
+    # Where the partner is, resolved from the directory at import time by
+    # ``hq_location``. Precision travels with the point because the three
+    # sources behind it are not equivalent: a town matched in an address is a
+    # pin, a country is a whole country. A map that hides that difference draws
+    # a rooftop from the word "Nigeria", so the view renders each tier
+    # differently and the legend says so.
+    country_iso3 = models.CharField(max_length=3, blank=True, db_index=True)
+    lat = models.FloatField(null=True, blank=True)
+    lon = models.FloatField(null=True, blank=True)
+    location_precision = models.CharField(
+        max_length=8,
+        blank=True,
+        choices=[("city", "city"), ("region", "region"), ("country", "country")],
+    )
+    location_label = models.CharField(max_length=160, blank=True)
+
+    # When the partner entered the network. Held by the directory rather than
+    # derivable here: it is the date they answered an EOI, which Connect never
+    # sees. Some are an exact submission timestamp and some are the EOI's
+    # publication date shared by everyone in that cohort, so the basis travels
+    # with the date and the view is careful not to imply precision it lacks.
+    joined_at = models.DateField(null=True, blank=True, db_index=True)
+    joined_basis = models.CharField(max_length=200, blank=True)
+
     imported_at = models.DateTimeField(auto_now=True)
 
     class Meta:

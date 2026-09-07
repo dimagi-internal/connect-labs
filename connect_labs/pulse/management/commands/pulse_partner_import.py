@@ -9,7 +9,12 @@ identity cannot review it and where it drifts silently from the sheet.
 
 Reads two tabs:
 
-  Organizations         column A the name, column B the short name.
+  Organizations         column A the name, column B the short name, and the
+                        three location columns — G countries, H regions of
+                        operation, K office address — which ``hq_location``
+                        resolves to a point and a precision.
+  AI Enrichment …       column A the name, column B the date the partner joined
+                        the network, column C the basis for it.
   Connect Org Mapping   column A a Connect org slug, column I the partner to
                         attribute it to, for the slugs no string rule reaches.
                         Column F carries the reason, which is required — an
@@ -27,16 +32,21 @@ should not silently delete a partner mid-run.
 
 from __future__ import annotations
 
+import collections
+import re
 from urllib.parse import quote
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from connect_labs.pulse.hq_location import resolve as resolve_hq
 from connect_labs.pulse.models import PulsePartner, PulsePartnerAlias
+from connect_labs.pulse.partner_names import invalidate as invalidate_partner_cache
 
 DIRECTORY_ID = "19sqU7xpSb_0VX6H_QZK2dcRz0RvXiQ1En9kvSZkEiY8"
 ORGANIZATIONS_TAB = "Organizations"
 MAPPING_TAB = "Connect Org Mapping"
+DATES_TAB = "AI Enrichment - Connect Dates"
 
 
 def _read_tab(spreadsheet_id: str, tab: str) -> list[list[str]]:
@@ -84,6 +94,7 @@ class Command(BaseCommand):
         try:
             org_rows = _read_tab(sid, ORGANIZATIONS_TAB)
             map_rows = _read_tab(sid, MAPPING_TAB)
+            date_rows = _read_tab(sid, DATES_TAB)
         except Exception as exc:  # noqa: BLE001 — surfaced verbatim, the causes are many
             raise CommandError(
                 f"Could not read the directory: {exc}\n"
@@ -91,13 +102,30 @@ class Command(BaseCommand):
                 "has been shared the sheet."
             ) from exc
 
-        partners: dict[str, str] = {}
+        partners: dict[str, dict] = {}
         for row in org_rows[1:]:
             name = _cell(row, 0)
-            if name and name not in partners:
-                partners[name] = _cell(row, 1)
+            if not name or name in partners:
+                continue
+            fields = {"short": _cell(row, 1)}
+            located = resolve_hq(_cell(row, 6), _cell(row, 7), _cell(row, 10))
+            if located:
+                fields.update(
+                    country_iso3=located.iso3,
+                    lat=located.lat,
+                    lon=located.lon,
+                    location_precision=located.precision,
+                    location_label=located.label,
+                )
+            partners[name] = fields
         if not partners:
             raise CommandError(f"'{ORGANIZATIONS_TAB}' yielded no names — refusing to treat that as an empty roster.")
+
+        for row in date_rows[1:]:
+            name, joined, basis = _cell(row, 0), _cell(row, 1), _cell(row, 2)
+            if name in partners and re.fullmatch(r"\d{4}-\d{2}-\d{2}", joined):
+                partners[name]["joined_at"] = joined
+                partners[name]["joined_basis"] = basis[:200]
 
         aliases: dict[str, tuple[str, str]] = {}
         skipped: list[str] = []
@@ -113,7 +141,13 @@ class Command(BaseCommand):
                 continue
             aliases[slug] = (target, why)
 
-        self.stdout.write(f"{len(partners)} partners, {len(aliases)} aliases in the sheet")
+        placed = sum(1 for f in partners.values() if f.get("lat") is not None)
+        tiers = collections.Counter(f.get("location_precision") for f in partners.values() if f.get("lat") is not None)
+        self.stdout.write(
+            f"{len(partners)} partners, {len(aliases)} aliases in the sheet; "
+            f"{placed} located ({', '.join(f'{n} {t}' for t, n in tiers.most_common())}), "
+            f"{sum(1 for f in partners.values() if f.get('joined_at'))} with a join date"
+        )
         for line in skipped:
             self.stdout.write(self.style.WARNING(f"  skipped {line}"))
 
@@ -125,8 +159,8 @@ class Command(BaseCommand):
             return
 
         with transaction.atomic():
-            for name, short in partners.items():
-                PulsePartner.objects.update_or_create(name=name, defaults={"short": short})
+            for name, fields in partners.items():
+                PulsePartner.objects.update_or_create(name=name, defaults=fields)
             by_name = {p.name: p for p in PulsePartner.objects.all()}
             for slug, (target, why) in aliases.items():
                 PulsePartnerAlias.objects.update_or_create(
@@ -137,4 +171,7 @@ class Command(BaseCommand):
                 stale = PulsePartnerAlias.objects.exclude(slug__in=aliases).delete()[0]
                 self.stdout.write(self.style.WARNING(f"pruned {gone} partners, {stale} aliases"))
 
+        # The resolver caches the directory for a minute; this process has just
+        # changed it underneath itself.
+        invalidate_partner_cache()
         self.stdout.write(self.style.SUCCESS(f"imported {len(partners)} partners, {len(aliases)} aliases"))

@@ -2535,3 +2535,249 @@
   align-items: flex-end;
   gap: 8px;
 }
+
+/* ── The partner network ────────────────────────────────────────────────────
+ * Growth over time, and where the partners are. Same night-map register as the
+ * wall display: sky is the whole network, marigold is the light that means work
+ * is actually happening. The map has no basemap on purpose — a third of the
+ * points are country centroids, and a coastline under them would lend a
+ * precision the data does not have.
+ */
+/* Not .pulse-shell: that is the wall display's fixed three-column, 100vh grid,
+   and a page that scrolls needs a column, not a cell. Only the bar is shared. */
+.net-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--ground);
+}
+.net-shell .pulse-bar {
+  border-bottom: 1px solid var(--rule-soft);
+  flex: 0 0 auto;
+}
+.net-sub {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.net-back {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  text-decoration: none;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 5px 10px;
+}
+.net-back:hover,
+.net-back:focus-visible {
+  color: var(--ink);
+  border-color: var(--brand-cornflower);
+}
+.net-main {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1180px;
+  margin: 0 auto;
+  width: 100%;
+}
+.net-loading {
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.net-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.net-kpi {
+  padding: 16px 18px;
+  border-right: 1px solid var(--rule-soft);
+}
+.net-kpi:last-child {
+  border-right: 0;
+}
+.net-kpi-n {
+  font-size: 30px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.net-kpi-l {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-top: 3px;
+}
+.net-panel {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.net-panel-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--rule-soft);
+  background: var(--panel-2);
+  flex-wrap: wrap;
+}
+.net-panel-bar h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.net-legend {
+  margin-left: auto;
+  display: flex;
+  gap: 16px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.net-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+.sw-all {
+  background: var(--brand-sky);
+}
+.sw-live {
+  background: var(--brand-marigold);
+}
+.sw-city {
+  background: var(--ink-2);
+}
+.sw-region {
+  background: var(--ink-2);
+  opacity: 0.55;
+}
+.sw-country {
+  background: transparent;
+  border: 1px solid var(--ink-3);
+}
+.net-chartbox {
+  padding: 16px 10px 6px;
+  overflow-x: auto;
+}
+.net-chartbox svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-width: 620px;
+}
+.net-note {
+  margin: 0;
+  padding: 0 18px 16px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  max-width: 92ch;
+}
+.net-grid {
+  stroke: var(--rule-soft);
+  stroke-width: 1;
+}
+.net-ax {
+  fill: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.net-mid {
+  text-anchor: middle;
+}
+.net-end {
+  text-anchor: end;
+}
+.net-area-all {
+  fill: var(--brand-sky);
+  opacity: 0.15;
+}
+.net-line-all {
+  fill: none;
+  stroke: var(--brand-sky);
+  stroke-width: 2;
+}
+.net-area-live {
+  fill: var(--brand-marigold);
+  opacity: 0.2;
+}
+.net-line-live {
+  fill: none;
+  stroke: var(--brand-marigold);
+  stroke-width: 2.2;
+}
+.net-endlab {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-anchor: start;
+  font-weight: 600;
+}
+.net-all {
+  fill: var(--brand-sky);
+}
+.net-live {
+  fill: var(--brand-marigold);
+}
+.net-mlab {
+  fill: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--ground);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.net-grat {
+  stroke: var(--rule-soft);
+  stroke-width: 1;
+  opacity: 0.45;
+}
+/* Precision is drawn, not just written down: a town is a point, a country is a
+   ring with nothing in the middle, because the middle is what we do not know. */
+.net-dot {
+  fill: var(--ink-2);
+  fill-opacity: 0.75;
+  stroke: none;
+}
+.net-dot-region {
+  fill-opacity: 0.42;
+}
+.net-dot-country {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1.2;
+}
+.net-dot-live {
+  fill: var(--brand-marigold);
+  fill-opacity: 0.85;
+}
+.net-dot-live.net-dot-country {
+  fill: none;
+  stroke: var(--brand-marigold);
+  stroke-width: 1.6;
+}
+@media (max-width: 720px) {
+  .net-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .net-kpi:nth-child(2) {
+    border-right: 0;
+  }
+}
