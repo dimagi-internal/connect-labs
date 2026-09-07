@@ -54,6 +54,11 @@ def _imports():
     return availability, export, interventions, measures, methods, ISO_CODES, select_above
 
 
+#: Mirrors ResearchNote.summary's max_length. A note's summary is the line a
+#: reader sees before deciding whether to open it, so it is deliberately short.
+_SUMMARY_MAX = 300
+
+
 def _family(measures_mod, code: str) -> str:
     """Burden or coverage — the thing that decides which way the threshold reads."""
     return "coverage" if code in measures_mod.LOWER_IS_WORSE else "burden"
@@ -690,6 +695,17 @@ def targeting_research_write(
     # fails on the way in is a mistake in the note, not drift.
     results = [research.run_check(c) for c in checks]
     failing = [r for r in results if not r.holds]
+
+    # The column is varchar(300). Without this the overflow surfaces as a raw
+    # psycopg2 StringDataRightTruncation traceback that names neither the field
+    # nor the limit, so the caller's only recourse is to guess which of the
+    # several strings they just supplied was the long one.
+    if len(summary) > _SUMMARY_MAX:
+        raise MCPToolError(
+            "BAD_REQUEST",
+            f"summary is {len(summary)} characters; the limit is {_SUMMARY_MAX}. "
+            "It is meant to be the conclusion in one line — the reasoning belongs in body.",
+        )
 
     defaults = {
         "summary": summary,

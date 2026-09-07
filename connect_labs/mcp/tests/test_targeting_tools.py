@@ -314,3 +314,40 @@ class TestRankingControls:
         assert rows["Gbarpolu"]["small_sample"] is True
         assert rows["Gbarpolu"]["sample_unweighted"] == 47
         assert rows["Bong"]["small_sample"] is False
+
+
+class TestResearchWriteRefusesWhatTheColumnCannotHold:
+    """An overlong summary used to surface as a psycopg2 traceback.
+
+    `ResearchNote.summary` is varchar(300). Exceeding it raised
+    StringDataRightTruncation, which names neither the field nor the limit — so
+    a caller who had just supplied a summary, a body, and ten alternatives had
+    no way to tell which string was too long, and the note silently failed to
+    save after the checks had already run.
+    """
+
+    def test_it_names_the_field_and_the_limit(self):
+        from connect_labs.mcp.tools import targeting
+
+        with pytest.raises(MCPToolError) as excinfo:
+            targeting.targeting_research_write(
+                None,
+                topic="a-topic",
+                summary="x" * 301,
+                body="the reasoning",
+            )
+
+        message = str(excinfo.value)
+        assert "summary" in message
+        assert "301" in message and "300" in message
+
+    def test_a_summary_at_the_limit_is_accepted(self):
+        from connect_labs.mcp.tools import targeting
+
+        got = targeting.targeting_research_write(
+            None,
+            topic="a-topic",
+            summary="x" * 300,
+            body="the reasoning",
+        )
+        assert got["saved"] is True
