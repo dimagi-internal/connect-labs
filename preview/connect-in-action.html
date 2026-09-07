@@ -12193,13 +12193,18 @@ a.explore-card:hover {
 .cia-memo{margin:22px 0 0;padding:22px 0 0 0;border-top:1px solid var(--line);display:grid;gap:13px}
 .cia-memo li{list-style:none;display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:baseline;font-size:14.5px;color:var(--ink-3);line-height:1.45}
 .cia-memo li span{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--c-conn);padding-top:2px}
-/* Where the money went. Two quiet lines under the figure, sized to match the
+/* Where the money went: one quiet line under the figure, sized to match the
    group labels in the outcomes card. */
-.cia-allot{margin:22px 0 0;padding-left:clamp(0px,2vw,26px);display:grid;gap:6px}
-.cia-allot div{display:flex;align-items:baseline;gap:9px}
-.cia-allot dt{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--c-fund);font-variant-numeric:tabular-nums;min-width:3.4ch}
-.cia-allot div:last-child dt{color:var(--muted)}
-.cia-allot dd{margin:0;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);line-height:1.5}
+/* Where the money went: one quiet line under the figure. Set in the sans face
+   rather than the mono of the group labels below, because mono is fixed-width
+   and this string will not fit on a single line at the card's width. */
+/* .cia-beat p is (0,1,1) and would win over a bare .cia-allot class, which is the
+   trap that kept this line at body size. */
+.cia-beat p.cia-allot{
+  margin:18px 0 0;font-size:13px;color:var(--muted);line-height:1.5;
+}
+.cia-allot b{font-weight:600;color:var(--c-fund);font-variant-numeric:tabular-nums}
+.cia-allot span{color:var(--rule);margin:0 .45em}
 .cia-chips{display:grid;gap:10px;margin:24px 0 0;padding:0}
 .cia-chips li{
   list-style:none;display:grid;grid-template-columns:auto 1fr;align-items:center;gap:12px;
@@ -12639,10 +12644,7 @@ a.explore-card:hover {
                 <span class="cia-beat-role">Funders</span>
                 <p class="cia-when">31 July 2026</p>
                 <h3>What $20,000 delivered</h3>
-              <dl class="cia-allot cia-rv">
-                  <div><dt>80%</dt><dd>given to the frontline organization</dd></div>
-                  <div><dt>20%</dt><dd>for the Connect platform</dd></div>
-                </dl>
+              <p class="cia-allot cia-rv"><b>80%</b> to the frontline organization <span>/</span> <b>20%</b> Connect platform fee</p>
                 <ul class="cia-outcome">
                   <li class="cia-grp"><span class="cia-gl">Overall reach</span></li>
                   <li><span class="cia-n" data-to="5187">5,187</span><span class="cia-lb">Households reached</span></li>
