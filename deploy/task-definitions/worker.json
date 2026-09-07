@@ -105,6 +105,10 @@
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ocs-oauth-client-secret-xDfhky"
         },
         {
+          "name": "OCS_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ocs-api-key-z8G6VE"
+        },
+        {
           "name": "CONNECT_OAUTH_CLIENT_ID",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-connect-oauth-client-id-9obT8Q"
         },
