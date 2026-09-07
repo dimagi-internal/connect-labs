@@ -63,6 +63,17 @@ RAW_CACHE_ANOMALY_TTL_MINUTES = 10
 # anomaly banner, because nothing is wrong: the data is one rebuild behind, the
 # rebuild is happening right now, and the next reader gets the fresh copy.
 RAW_CACHE_PEER_REBUILD_TTL_MINUTES = 5
+# Above this many missing visits, top up the cache incrementally instead of
+# repaginating the whole export (#1361). Below it the delta's own overhead --
+# an extra count query and a second finalize -- is not worth avoiding a small
+# walk, and a full rebuild is the better-tested path.
+#
+# The ceiling is the important half. A huge gap means the cache is not really
+# "a bit behind", it is wrong or ancient, and a top-up would paper over that
+# with a long append nobody checked. It also bounds the memory this path can
+# use, which is the whole reason the guard above exists.
+RAW_CACHE_DELTA_MIN_ROWS = 1
+RAW_CACHE_DELTA_MAX_ROWS = 5000
 
 
 def _with_passthrough_columns(row: dict, computed: dict) -> dict:
@@ -300,7 +311,18 @@ class SQLBackend:
                         self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
                         return lent
                 # Still inside the `with`: the leader must hold the lock for the whole
-                # walk, or the guard buys nothing.
+                # walk, or the guard buys nothing. A top-up is a rebuild too, so it
+                # runs under the same lock.
+                if self._try_delta_refresh(
+                    cache_manager,
+                    opportunity_id,
+                    access_token,
+                    expected_visit_count=expected_visit_count,
+                    pipeline_id=pipeline_id,
+                    user=user,
+                ):
+                    self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                    return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
                 return self._fetch_raw_visits_uncached(
                     opportunity_id,
                     access_token,
@@ -477,6 +499,18 @@ class SQLBackend:
                         self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
                         yield ("cached", lent)
                         return
+                # A top-up is a rebuild too, so it runs under the same lock.
+                if self._try_delta_refresh(
+                    cache_manager,
+                    opportunity_id,
+                    access_token,
+                    expected_visit_count=expected_visit_count,
+                    pipeline_id=pipeline_id,
+                    user=user,
+                ):
+                    self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                    yield ("cached", self._load_from_cache(cache_manager, skip_form_json=True, filter_visit_ids=None))
+                    return
                 yield from self._stream_raw_visits_uncached(
                     opportunity_id,
                     access_token,
@@ -620,6 +654,127 @@ class SQLBackend:
         """Check if valid raw cache exists in SQL."""
         cache_manager = SQLCacheManager(opportunity_id, pipeline_id=pipeline_id)
         return cache_manager.has_valid_raw_cache(expected_visit_count, tolerance_pct=tolerance_pct)
+
+    def _try_delta_refresh(
+        self,
+        cache_manager,
+        opportunity_id: int,
+        access_token: str,
+        *,
+        expected_visit_count: int | None,
+        pipeline_id: int | None,
+        user=None,
+    ) -> bool:
+        """Top the cache up with only the visits it is missing. True if it is now current.
+
+        This is the other half of #1361, and the half that removes the work rather
+        than serialising it. Cache validity is ``count >= expected AND not expired``,
+        so a miss has two causes and they deserve different answers:
+
+        - **expired** — the periodic refresh, and the ONLY thing that re-reads
+          existing visits. It must stay a full rebuild: a visit's ``status`` changes
+          when it is reviewed, and that never moves the count, so nothing else would
+          ever pick it up. This path deliberately declines to handle it.
+        - **count short, still unexpired** — new visits arrived. Those are strictly
+          NEW rows with higher ids, which is exactly what a cursor fetch returns.
+
+        Only the second is handled here, which is why this costs nothing in
+        freshness: status changes do not trigger it today either, and the TTL floor
+        is untouched (see ``store_raw_visits_append_start`` for the expiry rule that
+        keeps it that way).
+
+        Returns False for anything it is not sure about — a missing anchor,
+        non-numeric ids, a gap outside the configured band, an id ordering that
+        contradicts the cursor assumption, or a concurrent finalize. The caller then
+        does the ordinary full rebuild, so the worst case of every guard here is
+        today's behaviour.
+        """
+        from connect_labs.labs.analysis.backends.visit_record import record_to_visit_dict
+        from connect_labs.labs.integrations.connect.export_client import ExportAPIError
+        from connect_labs.labs.integrations.connect.factory import get_export_client
+
+        if not expected_visit_count:
+            return False
+
+        anchor = cache_manager.get_raw_delta_anchor()
+        if anchor is None:
+            return False
+        prior_count, max_visit_id, expires_at = anchor
+
+        gap = expected_visit_count - prior_count
+        if gap < RAW_CACHE_DELTA_MIN_ROWS or gap > RAW_CACHE_DELTA_MAX_ROWS:
+            return False
+
+        logger.info(
+            "[SQL] Raw cache SHORT for opp %s pipeline %s (%s cached, %s expected) — "
+            "topping up from visit id %s instead of repaginating",
+            opportunity_id,
+            pipeline_id,
+            prior_count,
+            expected_visit_count,
+            max_visit_id,
+        )
+
+        endpoint = f"/export/opportunity/{opportunity_id}/user_visits/"
+        params = {"cursor_order": "forward", "last_id": max_visit_id}
+        new_dicts: list[dict] = []
+        try:
+            with get_export_client(
+                opportunity_id=opportunity_id,
+                access_token=access_token,
+                timeout=180.0,
+                user=user,
+            ) as client:
+                for page in client.paginate(endpoint, params=params):
+                    for record in page:
+                        visit = record_to_visit_dict(record, opportunity_id)
+                        # The cursor is only trustworthy if it really is returning
+                        # ids ABOVE the mark. If it is not, the append would leave
+                        # duplicates and a wrong count, so bail to a full rebuild.
+                        raw_id = str(visit.get("id", ""))
+                        if not raw_id.lstrip("-").isdigit() or int(raw_id) <= max_visit_id:
+                            logger.warning(
+                                "[SQL] delta for opp %s returned id %r at or below the "
+                                "anchor %s — falling back to a full rebuild",
+                                opportunity_id,
+                                raw_id,
+                                max_visit_id,
+                            )
+                            return False
+                        new_dicts.append(visit)
+                    if len(new_dicts) > RAW_CACHE_DELTA_MAX_ROWS:
+                        logger.info(
+                            "[SQL] delta for opp %s exceeded %s rows — full rebuild instead",
+                            opportunity_id,
+                            RAW_CACHE_DELTA_MAX_ROWS,
+                        )
+                        return False
+        except ExportAPIError as e:
+            logger.error("[SQL] delta fetch failed for opp %s: %s", opportunity_id, e)
+            return False
+
+        if not new_dicts:
+            return False
+
+        # RawVisitCache has UNIQUE(opportunity_id, pipeline_id, visit_count, visit_id),
+        # so one id repeated across two pages of the cursor would abort the whole
+        # append on a duplicate key. Overlap with rows we ALREADY hold is impossible
+        # (every id here is above the anchor, and every cached id is at or below it);
+        # overlap within the delta itself is not, so collapse it.
+        deduped = {str(v.get("id")): v for v in new_dicts}
+        if len(deduped) != len(new_dicts):
+            logger.info(
+                "[SQL] delta for opp %s returned %s rows over %s distinct ids — de-duplicated",
+                opportunity_id,
+                len(new_dicts),
+                len(deduped),
+            )
+        new_dicts = list(deduped.values())
+
+        cache_manager.store_raw_visits_append_start(expires_at)
+        cache_manager.store_raw_visits_batch(new_dicts)
+        visible = cache_manager.store_raw_visits_append_finalize(prior_count, prior_count + len(new_dicts))
+        return bool(visible)
 
     def _lend_cache_during_peer_rebuild(self, cache_manager, opportunity_id, pipeline_id, *, skip_form_json):
         """Serve the existing rows because another connection is already rebuilding.
