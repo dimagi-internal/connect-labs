@@ -13,12 +13,6 @@
   var root = document.getElementById('net');
   if (!root) return;
 
-  var PRECISION_COPY = {
-    city: 'town matched in the office address',
-    region: 'region of operation',
-    country: 'country only',
-  };
-
   function el(tag, attrs, kids) {
     var node = document.createElementNS('http://www.w3.org/2000/svg', tag);
     Object.keys(attrs || {}).forEach(function (k) {
@@ -280,8 +274,7 @@
           py += Math.sin(angle) * ring;
         }
         var cls =
-          'net-dot net-dot-' +
-          p.precision +
+          'net-dot' +
           (p.delivering ? ' net-dot-live' : '') +
           (offView ? ' net-dot-off' : '');
         var dot = el('circle', {
@@ -296,9 +289,6 @@
           (p.short || p.name) +
           ' — ' +
           (p.place || 'location unknown') +
-          ' (' +
-          (PRECISION_COPY[p.precision] || p.precision) +
-          ')' +
           (p.delivering
             ? ' · delivering since ' + p.since
             : ' · not yet delivering');
@@ -402,7 +392,6 @@
       var LIGHT = '#feaf31';
       var QUIET = '#a9b3e8';
       var colour = ['case', ['get', 'delivering'], LIGHT, QUIET];
-      var isCountry = ['==', ['get', 'precision'], 'country'];
 
       map.addLayer({
         id: 'partners-glow',
@@ -426,22 +415,16 @@
             ['linear'],
             ['zoom'],
             1,
-            3.4,
+            3.6,
             4,
             6,
             8,
             11,
           ],
           'circle-color': colour,
-          // Hollow for country-only: the ring says "somewhere in here".
-          'circle-opacity': [
-            'case',
-            isCountry,
-            0,
-            ['case', ['==', ['get', 'precision'], 'region'], 0.5, 0.85],
-          ],
+          'circle-opacity': 0.85,
           'circle-stroke-color': colour,
-          'circle-stroke-width': ['case', isCountry, 1.4, 0.8],
+          'circle-stroke-width': 0.8,
           'circle-stroke-opacity': 0.9,
         },
       });
@@ -462,9 +445,7 @@
               '</b><br>' +
               f.place +
               (f.country ? ', ' + f.country : '') +
-              ' <span class="net-pop-tier">(' +
-              (PRECISION_COPY[f.precision] || f.precision) +
-              ')</span><br>' +
+              '<br>' +
               (f.delivering === true || f.delivering === 'true'
                 ? 'delivering since ' + f.since
                 : 'not yet delivering') +
@@ -543,11 +524,9 @@
     growth.appendChild(gnote);
     root.appendChild(growth);
 
-    var pr = data.precision || {};
     var geo = panel(
       'Where the partners are',
-      '<span><i class="sw-city"></i>town</span><span><i class="sw-region"></i>region</span>' +
-        '<span><i class="sw-country"></i>country only</span><span><i class="sw-live"></i>delivering</span>',
+      '<span><i class="sw-all"></i>in network</span><span><i class="sw-live"></i>delivering</span>',
     );
     var mbox = document.createElement('div');
     var canUseGlobe =
@@ -563,15 +542,10 @@
     var note = document.createElement('p');
     note.className = 'net-note';
     note.textContent =
-      'Located as precisely as each record allows: ' +
-      (pr.city || 0) +
-      ' to a town named in the office address, ' +
-      (pr.region || 0) +
-      ' to a region of operation, ' +
-      (pr.country || 0) +
-      ' to the country only — drawn as a loose ring, not a pin, because that is all we know. ' +
-      (t.partners - t.located) +
-      ' could not be placed.';
+      t.located +
+      ' of ' +
+      t.partners +
+      ' partner organisations placed. The rest appear as we collect their coordinates.';
     geo.appendChild(note);
     root.appendChild(geo);
     // After the panel is in the document: Mapbox measures its container.
