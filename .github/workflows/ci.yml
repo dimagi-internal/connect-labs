@@ -86,10 +86,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      # Just the parser, not the project's dependency tree. `npm ci` cannot run
+      # here: package-lock.json is already out of sync with package.json on main
+      # ("Missing: jiti@2.7.0 from lock file"), which predates this job and is not
+      # this job's to fix. Installing the one package the check imports keeps the
+      # check honest and independent of that.
+      - name: Install the JSX parser
+        run: npm install --no-save --no-audit --no-fund @babel/core@^7 @babel/preset-react@^7
 
       - name: Check the workflow render templates
         run: node --test connect_labs/workflow/templates/__tests__/kmc_render.test.mjs
