@@ -45,6 +45,12 @@ function WorkflowUI({
       ? view.state.frozen
       : null;
 
+  // The (opportunity, worker) key separator. Declared UP HERE, above every scope
+  // memo that builds one: `var` hoists as undefined, so a memo evaluated earlier in
+  // the render than the old declaration site produced keys like "10042undefined"
+  // -- silently, since that is a perfectly good object key.
+  var FLW_SEP = '::';
+
   var LLO_OF = {
     524: 'PIPN',
     874: 'PIPN',
@@ -449,52 +455,16 @@ function WorkflowUI({
   }
   // "Recorded" is computed from the rows in scope rather than baked in, so it stays
   // true as the data changes.
-  function anyRecorded(field, rows) {
-    var present = false;
-    for (var i = 0; i < rows.length; i++) {
-      var v = rows[i][field];
-      if (v === undefined) continue;
-      present = true;
-      if (ZERO_IS_ABSENT[field]) {
-        if (v) return true;
-      } else if (v !== null && v !== '' && !(Array.isArray(v) && !v.length)) {
-        return true;
-      }
-    }
-    // Fail OPEN when the field is absent from every row: that means the gate is
-    // misconfigured (a renamed property), not that the programme collected nothing.
-    // Blanking a real indicator on our own wiring error is the worse failure.
-    return !present;
-  }
-  // 'ok' | 'notinapp' | 'unrecorded'
-  function inputState(indId, rows, opps) {
-    var need = IND_INPUTS[indId];
-    if (!need) return 'ok';
-    for (var i = 0; i < need.length; i++) {
-      if (!anyAsks(need[i], opps)) return 'notinapp';
-      if (!anyRecorded(need[i], rows)) return 'unrecorded';
-    }
-    return 'ok';
-  }
-
   // ── Targets & settings tab (the workbook's typed human inputs) ────────────
-  // These are GATES, not decoration. "Mortality recording credible" is TRUE for
-  // PIPN and EHA only, and the LLO-indicator sheet says mortality is shown only
-  // where recording is credible — so publishing a red mortality band for an LLO
-  // that does not credibly record deaths is a false alarm, which is precisely
-  // what the flag exists to prevent (the source doc: "only PIPN and EHA record
-  // deaths credibly"; GHI 675 records zero discharges at all).
-  var MORTALITY_CREDIBLE = { PIPN: true, EHA: true };
-  var COMPLETION_CREDIBLE = { GHI: false };
-  var MONTHLY_TARGET = { PIPN: 600 }; // per LLO per month
-  var TOTAL_STARTED_TARGET = { PIPN: 50000, ALL: 25000 }; // ALL = 25,000 by 2027-Q1
-  var SCALE_TIER_CASES_PER_MONTH = 1000;
-  function credibleFor(indId, llo) {
-    if (indId === 'C14') return llo === null || !!MORTALITY_CREDIBLE[llo];
-    if (indId === 'C18' || indId === 'C22')
-      return llo === null || COMPLETION_CREDIBLE[llo] !== false;
-    return true;
-  }
+  // The credibility gates that used to live here -- MORTALITY_CREDIBLE,
+  // COMPLETION_CREDIBLE and credibleFor -- are gone. They are declared once, in
+  // connect_labs/semantic/registry/kmc/deployment.yml, compiled into the query as
+  // the registry's `suppression:` rules, and arrive on each row as
+  // `<measure>_suppressed`. Three copies of one human judgement about which LLOs
+  // record deaths credibly is how they drift; there is now one.
+  //
+  // MONTHLY_TARGET, TOTAL_STARTED_TARGET and SCALE_TIER_CASES_PER_MONTH went with
+  // them: they were declared here and read nowhere, in this file or any other.
 
   // ── Derive the weight series (the one thing SQL cannot express) ───────────
   var derived = React.useMemo(
@@ -691,369 +661,343 @@ function WorkflowUI({
     [cases, wrows],
   );
 
-  // ── The registry (Case-indicators tab, verbatim definitions) ──────────────
-  // num/den are predicates over a derived case row. `value` returns a ratio or a
-  // mean. bands: [green, yellow] as thresholds with a direction, or null = unbanded.
-  var IND = [
-    {
-      id: 'C01',
-      cat: 'Scale',
-      name: 'Registered cases',
-      prom: 'Top',
-      unit: 'n',
-      den: function () {
-        return true;
-      },
-      num: function (r) {
-        return r.registered;
-      },
-      kind: 'count',
-    },
-    {
-      id: 'C02',
-      cat: 'Scale',
-      name: 'Started cases',
-      prom: 'Top',
-      unit: 'n',
-      den: function () {
-        return true;
-      },
-      num: function (r) {
-        return r.started;
-      },
-      kind: 'count',
-    },
-    {
-      id: 'C05',
-      cat: 'Scale',
-      name: 'Cumulative SVNs reached',
-      prom: 'Top',
-      unit: 'n',
-      den: function () {
-        return true;
-      },
-      // Reached = any contact at all, which is every case in this table. Distinct from
-      // C01 (a registration form exists) and C02 (a follow-up happened); it was a copy
-      // of C02, so two of the three scale numbers said the same thing.
-      num: function () {
-        return true;
-      },
-      kind: 'count',
-    },
-    {
-      id: 'C06',
-      cat: 'Scale',
-      name: 'Mean visits per case',
-      prom: 'Lower',
-      unit: 'n',
-      den: function (r) {
-        return r.started;
-      },
-      mean: function (r) {
-        return r.num_visits;
-      },
-      kind: 'mean',
-    },
+  // ══ The C-series, served by the semantic layer ════════════════════════════
+  // This was `var IND` -- ~360 lines of closures restating the workbook -- run by
+  // `evaluate`/`evalAll`. The same 22 indicators now compile to SQL from
+  // connect_labs/semantic/registry/kmc/indicators.yml and are evaluated in ONE
+  // GROUPING SETS pass across all five scopes. Parity with the engine this
+  // replaces is pinned in connect_labs/semantic/PARITY.md -- 5,698 checks, 0
+  // mismatches at programme, opportunity, llo and flw -- and `month` was closed
+  // separately (#1523). That the registry computes exactly the same 22 indicators
+  // is pinned by test_the_registry_computes_exactly_the_indicators_the_render_did.
+  //
+  // UNITS -- the one conversion in this file, and it is deliberate. The registry
+  // scales percentages in its own sql (100.0 * num / den), so a row carries 0-100.
+  // This render has always carried FRACTIONS internally and multiplied by 100 in
+  // `fmt` -- and, the part that actually forces the decision, every frozen run
+  // ever saved stores fractions. Converting once here rather than at fifteen
+  // display sites keeps every saved snapshot rendering correctly and untouched.
+  // Bands are graded BEFORE the conversion, against the registry's own percent
+  // thresholds, so no threshold is ever compared across units.
+  var C_SCOPES =
+    'programme,opportunity,llo,flw,month,llo_month,opportunity_month,flw_month';
 
-    {
-      id: 'C07',
-      cat: 'Program quality',
-      name: '% weight_gain_data_computable',
-      prom: 'Lower',
-      unit: '%',
-      den: function (r) {
-        return r.eligible && !r.early_exit;
-      },
-      num: function (r) {
-        return r.weight_computable;
-      },
-      dir: 'higher',
-      bands: [0.75, 0.55],
-    },
-    {
-      id: 'C08',
-      cat: 'Program quality',
-      name: '% weight_gain_data_consistent',
-      prom: 'Lower',
-      unit: '%',
-      den: function (r) {
-        return r.weight_computable;
-      },
-      num: function (r) {
-        return r.weight_consistent;
-      },
-      dir: 'higher',
-      bands: [0.8, 0.6],
-    },
-    {
-      id: 'C09',
-      cat: 'Program quality',
-      name: '% weight_gain_data_sufficient',
-      prom: 'Top',
-      unit: '%',
-      den: function (r) {
-        return r.eligible && !r.early_exit;
-      },
-      num: function (r) {
-        return r.weight_gain_data_sufficient;
-      },
-      dir: 'higher',
-      bands: [0.6, 0.4],
-    },
-    {
-      id: 'C10',
-      cat: 'Program quality',
-      name: '% plausible growth',
-      prom: 'Top',
-      unit: '%',
-      den: function (r) {
-        return r.weight_gain_data_sufficient;
-      },
-      num: function (r) {
-        return r.growth_class === 'plausible';
-      },
-      dir: 'higher',
-      bands: [0.7, 0.5],
-      tbdInput: 'growth_class thresholds are TBD in the workbook',
-    },
-    {
-      id: 'C11',
-      cat: 'Program quality',
-      name: '% slow growth',
-      prom: 'Top',
-      unit: '%',
-      den: function (r) {
-        return r.weight_gain_data_sufficient;
-      },
-      num: function (r) {
-        return r.growth_class === 'slow';
-      },
-      dir: 'lower',
-      bands: [0.15, 0.3],
-      tbdInput: 'growth_class thresholds are TBD in the workbook',
-    },
-    {
-      id: 'C12',
-      cat: 'Program quality',
-      name: '% fast growth',
-      prom: 'Lower',
-      unit: '%',
-      den: function (r) {
-        return r.weight_gain_data_sufficient;
-      },
-      num: function (r) {
-        return r.growth_class === 'fast';
-      },
-      dir: 'mid',
-      bands: [0.15, 0.3],
-      tbdInput: 'growth_class thresholds are TBD in the workbook',
-    },
-    {
-      id: 'C13',
-      cat: 'Program quality',
-      name: 'Mean early growth rate',
-      prom: 'Top',
-      unit: 'g/kg/d',
-      den: function (r) {
-        return r.weight_gain_data_sufficient;
-      },
-      mean: function (r) {
-        return r.early_g_per_kg_day;
-      },
-      kind: 'mean',
-      dir: 'higher',
-      bands: [15, 13],
-    },
+  // Frozen runs never query. Their values are in the snapshot; all they need from
+  // the server is the display contract, and `catalog_only` returns exactly that
+  // without touching a pipeline or the database.
+  var sCS = React.useState({
+    status: frozen ? 'loading' : 'idle',
+    rows: [],
+    measures: (frozen && frozen.cMeasures) || [],
+  });
+  var cSeries = sCS[0],
+    setCSeries = sCS[1];
 
-    {
-      id: 'C14',
-      cat: 'Performance',
-      name: 'Mortality',
-      prom: 'Top',
-      // This row is ALL LLOs pooled. The headline card above is gated to the
-      // credible recorders, so the two legitimately differ and the page must say
-      // which is which — an unlabelled pair reads as a bug.
-      scopeNote:
-        'All LLOs pooled, including the four the workbook says do not record deaths credibly. The headline card above is PIPN + EHA only, and reads higher because non-recorders add denominator without deaths.',
-      unit: '%',
-      den: function (r) {
-        return r.eligible && r.outcome_known;
-      },
-      num: function (r) {
-        return r.died;
-      },
-      dir: 'mid2',
-      bands: [
-        [0.04, 0.12],
-        [0.02, 0.16],
-      ],
-    },
-    {
-      id: 'C15',
-      cat: 'Performance',
-      name: 'Loss to follow-up by day 28',
-      prom: 'Top',
-      unit: '%',
-      flw: true,
-      den: function (r) {
-        return r.eligible;
-      },
-      num: function (r) {
-        return !r.outcome_known;
-      },
-      dir: 'lower',
-      bands: [0.1, 0.25],
-    },
-    {
-      id: 'C16',
-      cat: 'Performance',
-      name: '% enrolled within 3 days',
-      prom: 'Top',
-      unit: '%',
-      den: function (r) {
-        return r.started && typeof r.days_discharge_to_reg === 'number';
-      },
-      num: function (r) {
-        return r.enrolled_within_3d;
-      },
-      dir: 'higher',
-      bands: [0.5, 0.3],
-    },
-    {
-      id: 'C17',
-      cat: 'Performance',
-      name: 'Median days to enrolment',
-      prom: 'Lower',
-      unit: 'd',
-      den: function (r) {
-        return r.started && typeof r.days_discharge_to_reg === 'number';
-      },
-      median: function (r) {
-        return r.days_discharge_to_reg;
-      },
-      kind: 'median',
-      dir: 'lower',
-      bands: [3, 7],
-    },
-    {
-      id: 'C19',
-      cat: 'Performance',
-      // Denominator is babies WITH a danger sign, not all eligible babies. Against
-      // all-eligible this read 30.7% while danger-sign incidence (C20) read 7.0% —
-      // i.e. more babies referred for danger signs than had one, which cannot happen.
-      // `referred` counts referrals for any reason, so the fix is the denominator:
-      // of the babies who had a danger sign, how many were referred.
-      name: '% of danger-sign cases referred',
-      prom: 'Top',
-      unit: '%',
-      den: function (r) {
-        return r.eligible && r.ever_danger_sign;
-      },
-      num: function (r) {
-        return r.referred;
-      },
-      dir: 'mid',
-      bands: null,
-    },
-    {
-      id: 'C20',
-      cat: 'Performance',
-      name: 'Danger-sign incidence',
-      prom: 'Lower',
-      unit: '%',
-      den: function (r) {
-        return r.eligible;
-      },
-      num: function (r) {
-        return r.ever_danger_sign;
-      },
-      dir: 'mid',
-      bands: null,
-    },
-    {
-      id: 'C21',
-      cat: 'Performance',
-      name: 'Self-referrals per 100 cases',
-      prom: 'Lower',
-      unit: '/100',
-      den: function (r) {
-        return r.eligible;
-      },
-      mean: function (r) {
-        return r.self_referral_count * 100;
-      },
-      kind: 'mean',
-      bands: null,
-    },
-    {
-      id: 'C23',
-      cat: 'Performance',
-      name: 'Mean skin-to-skin hours',
-      prom: 'Lower',
-      unit: 'h',
-      den: function (r) {
-        return r.eligible;
-      },
-      mean: function (r) {
-        return r.kmc_hours_mean;
-      },
-      kind: 'mean',
-      bands: null,
-    },
-    {
-      id: 'C24',
-      cat: 'Performance',
-      name: 'Mean visits per started case',
-      prom: 'Lower',
-      unit: 'n',
-      flw: true,
-      // Says "per started case", so it must use started — it was using `eligible`,
-      // which is why it differed from C06 only by the 28-day eligibility filter.
-      den: function (r) {
-        return r.started;
-      },
-      mean: function (r) {
-        return r.num_visits;
-      },
-      kind: 'mean',
-      bands: null,
-    },
+  function cUrl(params) {
+    var wfId = nWorkflowId();
+    return wfId ? '/labs/workflow/api/' + wfId + '/semantic/?' + params : null;
+  }
 
-    {
-      id: 'C28',
-      cat: 'Data quality',
-      name: 'Birth-copy rate',
-      prom: 'Top',
-      unit: '%',
-      flw: true,
-      den: function (r) {
-        return r.enrollment_is_birth_copy !== null;
-      },
-      num: function (r) {
-        return r.enrollment_is_birth_copy;
-      },
-      dir: 'lower',
-      bands: [0.1, 0.2],
+  function loadCSeries() {
+    // A frozen run wants labels only; anything else wants the numbers too.
+    var wantRows = !frozen;
+    var url = cUrl(
+      wantRows ? 'series=C&scopes=' + C_SCOPES : 'series=C&catalog_only=1',
+    );
+    if (!url) {
+      setCSeries({
+        status: 'error',
+        rows: [],
+        measures: [],
+        error: 'could not determine the workflow id from the page',
+      });
+      return;
+    }
+    setCSeries({ status: 'loading', rows: [], measures: [] });
+    fetch(url)
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (data) {
+        if (data.error) {
+          setCSeries({
+            status: 'error',
+            rows: [],
+            measures: [],
+            error: data.error,
+          });
+          return;
+        }
+        setCSeries({
+          status: 'ready',
+          rows: data.rows || [],
+          measures: data.measures || [],
+          coldCache: data.cold_cache || false,
+          partialCache: data.partial_cache || false,
+          coldHint: data.cold_cache_hint || '',
+        });
+      })
+      .catch(function (err) {
+        setCSeries({
+          status: 'error',
+          rows: [],
+          measures: [],
+          error: String((err && err.message) || err),
+        });
+      });
+  }
+
+  // The C-series IS this dashboard's content, not a side panel, so unlike the
+  // N-series it loads with the page rather than behind a button. A frozen run
+  // fetches only the catalog, which runs no query at all.
+  React.useEffect(
+    function () {
+      if (frozen && (frozen.cMeasures || []).length) return;
+      loadCSeries();
     },
-    {
-      id: 'C31',
-      cat: 'Data quality',
-      name: 'Weight rounding rate',
-      prom: 'Top',
-      unit: '%',
-      flw: true,
-      denSum: function (r) {
-        return r.n_weight_readings;
-      },
-      numSum: function (r) {
-        return r.n_weights_round_100;
-      },
-      kind: 'sumratio',
-      dir: 'lower',
-      bands: null,
-      minDen: 100,
+    [Boolean(frozen)],
+  );
+
+  // The display contract, normalised into the field names the tables already use.
+  // The served catalog calls things `indicator` / `title` / `category` /
+  // `prominence`; `IND` called them id / name / cat / prom. Renaming HERE, once,
+  // means every display site downstream is untouched -- the smallest diff, and the
+  // one least able to silently mis-render a column.
+  //
+  // `measure` is the registry's own measure name (c09), which is the column prefix
+  // in a result row. `id` stays the workbook's indicator id (C09), which is what
+  // every table, selector and frozen snapshot is keyed on.
+  var C_LIST = React.useMemo(
+    function () {
+      return (cSeries.measures || [])
+        .filter(function (m) {
+          return m && m.indicator;
+        })
+        .map(function (m) {
+          return {
+            id: m.indicator,
+            measure: m.id,
+            name: m.title,
+            cat: m.category,
+            prom: m.prominence,
+            unit: m.unit,
+            kind: m.kind,
+            dir: m.direction,
+            bands: m.bands,
+            minDen: m.min_denominator,
+          };
+        });
     },
-  ];
+    [cSeries.measures],
+  );
+
+  var C_BY_ID = React.useMemo(
+    function () {
+      var m = {};
+      C_LIST.forEach(function (x) {
+        m[x.id] = x;
+      });
+      return m;
+    },
+    [C_LIST],
+  );
+
+  // `IND[6]` used to index the registry positionally. A lookup by id survives the
+  // registry gaining, losing or reordering a measure; a position does not. The
+  // fallback keeps a label on screen if the catalog has not arrived yet.
+  function indOf(id) {
+    return (
+      C_BY_ID[id] || {
+        id: id,
+        measure: String(id).toLowerCase(),
+        name: id,
+        unit: '',
+      }
+    );
+  }
+
+  // Rows, split by the `scope` label the GROUPING SETS query stamps on each one.
+  var cRows = React.useMemo(
+    function () {
+      var out = {
+        programme: null,
+        opportunity: {},
+        llo: {},
+        flw: {},
+        month: {},
+        llo_month: {},
+        opportunity_month: {},
+        flw_month: {},
+      };
+      (cSeries.rows || []).forEach(function (r) {
+        if (r.scope === 'programme') out.programme = r;
+        else if (r.scope === 'opportunity')
+          out.opportunity[String(r.opportunity_id)] = r;
+        else if (r.scope === 'llo') out.llo[String(r.llo)] = r;
+        else if (r.scope === 'flw')
+          out.flw[r.opportunity_id + FLW_SEP + r.username] = r;
+        else if (r.scope === 'month') out.month[cMonth(r)] = r;
+        else if (r.scope === 'llo_month')
+          out.llo_month[r.llo + '|' + cMonth(r)] = r;
+        else if (r.scope === 'opportunity_month')
+          out.opportunity_month[r.opportunity_id + '|' + cMonth(r)] = r;
+        else if (r.scope === 'flw_month')
+          out.flw_month[
+            r.opportunity_id + FLW_SEP + r.username + '|' + cMonth(r)
+          ] = r;
+      });
+      return out;
+    },
+    [cSeries.rows],
+  );
+
+  // One indicator's verdict for one scope row, in the shape the tables have always
+  // consumed: { id, n, value, band }. `evaluate` produced this from closures over
+  // case rows; it now reads three columns the query already computed.
+  function cEntry(measure, row) {
+    var id = measure.id;
+    var out = { id: id, n: 0, value: null, band: 'nodata' };
+    if (!row) return out;
+
+    var den = row[measure.measure + '_denominator'];
+    out.n = den === null || den === undefined ? 0 : Number(den);
+
+    // Credibility is a GATE, not a band: the workbook says this LLO does not
+    // record the thing credibly, so the figure exists and must not be published.
+    // The column comes from the registry's own `suppression:` rules -- the render
+    // no longer keeps its own copy of who is credible.
+    if (row[measure.measure + '_suppressed'] === true) {
+      out.band = 'notcredible';
+      return out;
+    }
+
+    var state = cInputState(id, row, cScopeOpps(row));
+    if (state !== 'ok') {
+      out.band = state;
+      return out;
+    }
+
+    var raw = row[measure.measure];
+    if (raw === null || raw === undefined || isNaN(Number(raw))) return out;
+
+    var minDen = measure.minDen || MIN_DEN;
+    if (out.n && minDen && out.n < minDen) {
+      out.band = 'insufficient';
+      return out;
+    }
+
+    out.band = cBandOf(measure, Number(raw));
+    out.value = measure.unit === '%' ? Number(raw) / 100 : Number(raw);
+    return out;
+  }
+
+  // 'ok' | 'notinapp' | 'unrecorded' -- the same two-reason gate that
+  // semantic/gates.py:input_state() implements server-side, reading the
+  // `anyrec_<field>` columns the registry emits for exactly this. It replaces the
+  // old anyRecorded(), which scanned derived case rows: at a drill scope the query
+  // already knows whether anything was recorded, and 268 of 5,302 per-FLW checks
+  // turned on getting this right.
+  //
+  // The distinction is real and worth keeping: an app that never ASKS the question
+  // ("not in this app") is a different fact about the programme from one that asks
+  // and recorded nothing ("no value reaches this row"). Both render n/a, so the
+  // values agree either way -- but reporting the wrong reason misdescribes it.
+  function cInputState(indId, row, opps) {
+    var need = IND_INPUTS[indId];
+    if (!need) return 'ok';
+    for (var i = 0; i < need.length; i++) {
+      if (!anyAsks(need[i], opps)) return 'notinapp';
+      var gate = row['anyrec_' + need[i]];
+      if (gate !== null && gate !== undefined && Number(gate) === 0)
+        return 'unrecorded';
+    }
+    return 'ok';
+  }
+
+  // Bands are graded in the REGISTRY's units (percent), before cEntry converts the
+  // value to the fraction this render carries. Shares `nBandOf`, which already
+  // implements the workbook's higher / lower / two-sided rules.
+  function cBandOf(measure, percentValue) {
+    return nBandOf(measure, percentValue);
+  }
+
+  // Which opportunities a scope row covers -- the input the "not in this app"
+  // gate needs, since an app that never asks a question is a different fact from
+  // one that asks and recorded nothing.
+  function cScopeOpps(row) {
+    if (row.scope === 'opportunity' || row.scope === 'flw')
+      return [row.opportunity_id];
+    if (row.scope === 'llo') {
+      return Object.keys(LLO_OF).filter(function (o) {
+        return LLO_OF[o] === row.llo;
+      });
+    }
+    return null;
+  }
+
+  // 'YYYY-MM'. The query returns cohort_month as a date or a timestamp depending
+  // on the driver, so slice rather than trust the type.
+  function cMonth(row) {
+    return String(row.cohort_month || '').slice(0, 7);
+  }
+
+  // Pool ONE indicator across several scope rows by summing its numerator and
+  // denominator. Needed because "mortality among the LLOs that record it credibly"
+  // is not any single scope: the programme row pools everyone, and the workbook
+  // says four of six do not record deaths credibly. Summing the parts is exact --
+  // averaging the per-LLO percentages would not be.
+  function cPooled(id, rows) {
+    var measure = indOf(id);
+    var out = { id: id, n: 0, value: null, band: 'nodata' };
+    var num = 0,
+      den = 0,
+      any = false;
+    rows.forEach(function (r) {
+      var nu = r[measure.measure + '_numerator'],
+        de = r[measure.measure + '_denominator'];
+      if (nu === null || nu === undefined || de === null || de === undefined)
+        return;
+      any = true;
+      num += Number(nu);
+      den += Number(de);
+    });
+    if (!any || !den) return out;
+    out.n = den;
+    var pct = (100 * num) / den;
+    var minDen = measure.minDen || MIN_DEN;
+    if (minDen && den < minDen) {
+      out.band = 'insufficient';
+      return out;
+    }
+    out.band = cBandOf(measure, pct);
+    out.value = measure.unit === '%' ? pct / 100 : pct;
+    return out;
+  }
+
+  // The LLO rows the registry did NOT suppress for an indicator -- i.e. the ones
+  // the workbook accepts as credible recorders. Read off the query rather than a
+  // local table, so there is one statement of who is credible.
+  function cCredibleLloRows(id, index) {
+    var measure = indOf(id);
+    var src = index || cRows.llo;
+    return Object.keys(src)
+      .map(function (k) {
+        return src[k];
+      })
+      .filter(function (r) {
+        return r[measure.measure + '_suppressed'] === false;
+      });
+  }
+
+  // Every indicator for one scope row, keyed by id -- the `evalAll` replacement.
+  function cIndFor(row) {
+    var m = {};
+    C_LIST.forEach(function (measure) {
+      m[measure.id] = cEntry(measure, row);
+    });
+    return m;
+  }
+
   // Declared in the workbook but not computable from what these programmes collect today.
   var NOT_COMPUTABLE = [
     {
@@ -1101,121 +1045,6 @@ function WorkflowUI({
     },
   ];
 
-  function evaluate(ind, rows) {
-    var den = rows.filter(
-      ind.den ||
-        function () {
-          return true;
-        },
-    );
-    var out = { id: ind.id, n: den.length, value: null, band: 'nodata' };
-    if (ind.kind === 'sumratio') {
-      var ds = rows.reduce(function (a, r) {
-        return a + (ind.denSum(r) || 0);
-      }, 0);
-      var ns = rows.reduce(function (a, r) {
-        return a + (ind.numSum(r) || 0);
-      }, 0);
-      out.n = ds;
-      out.value = ds ? ns / ds : null;
-    } else if (ind.kind === 'count') {
-      out.value = den.filter(ind.num).length;
-      out.n = den.length;
-    } else if (ind.kind === 'mean') {
-      var vals = den.map(ind.mean).filter(function (x) {
-        return typeof x === 'number' && !isNaN(x);
-      });
-      out.n = vals.length;
-      out.value = vals.length
-        ? vals.reduce(function (a, b) {
-            return a + b;
-          }, 0) / vals.length
-        : null;
-    } else if (ind.kind === 'median') {
-      var mv = den
-        .map(ind.median)
-        .filter(function (x) {
-          return typeof x === 'number' && !isNaN(x);
-        })
-        .sort(function (a, b) {
-          return a - b;
-        });
-      out.n = mv.length;
-      out.value = mv.length ? mv[Math.floor(mv.length / 2)] : null;
-    } else {
-      out.value = den.length ? den.filter(ind.num).length / den.length : null;
-    }
-    var minDen = ind.minDen || MIN_DEN;
-    if (out.value === null) {
-      out.band = 'nodata';
-      return out;
-    }
-    if (out.n < minDen) {
-      out.band = 'insufficient';
-      return out;
-    }
-    if (!ind.bands) {
-      out.band = 'unbanded';
-      return out;
-    }
-    var x = out.value,
-      b = ind.bands;
-    if (ind.dir === 'higher')
-      out.band = x >= b[0] ? 'green' : x >= b[1] ? 'yellow' : 'red';
-    else if (ind.dir === 'lower')
-      out.band = x <= b[0] ? 'green' : x <= b[1] ? 'yellow' : 'red';
-    else if (ind.dir === 'mid2')
-      out.band =
-        x >= b[0][0] && x <= b[0][1]
-          ? 'green'
-          : x >= b[1][0] && x <= b[1][1]
-          ? 'yellow'
-          : 'red';
-    else out.band = 'unbanded';
-    return out;
-  }
-
-  function evalAll(rows, llo, opps) {
-    var m = {};
-    var scope =
-      opps ||
-      rows
-        .map(function (r) {
-          return r.opp;
-        })
-        .filter(function (v, i, a) {
-          return a.indexOf(v) === i;
-        });
-    IND.forEach(function (i) {
-      var st = inputState(i.id, rows, scope);
-      if (st !== 'ok') {
-        m[i.id] = {
-          id: i.id,
-          n: 0,
-          value: null,
-          band: st === 'notinapp' ? 'notinapp' : 'unrecorded',
-        };
-        return;
-      }
-      if (!credibleFor(i.id, llo === undefined ? null : llo)) {
-        // Still compute it, but mark it. A blank cell reads as "no data", which is
-        // wrong and actively confusing — these LLOs DO record deaths, the workbook
-        // just says not credibly. Showing the figure greyed with the caveat lets a
-        // reader see both the number and why it is not to be trusted, and makes the
-        // under-recording visible: pooling every LLO reads LOWER than the credible
-        // recorders alone, because non-recorders add denominator without deaths.
-        // (Deliberately no figures here — an earlier version hardcoded them, they
-        // went stale as the cohort changed, and they were quoted as current.)
-        var ne = evaluate(i, rows);
-        ne.band = 'notcredible';
-        m[i.id] = ne;
-        return;
-      }
-      m[i.id] = evaluate(i, rows);
-    });
-    return m;
-  }
-
   // ── Roll up: opp → LLO → program ─────────────────────────────────────────
   var byOpp = React.useMemo(
     function () {
@@ -1230,11 +1059,11 @@ function WorkflowUI({
           opp: Number(o),
           llo: llo,
           rows: g[o],
-          ind: evalAll(g[o], llo),
+          ind: cIndFor(cRows.opportunity[String(o)]),
         };
       });
     },
-    [derived, frozen],
+    [derived, frozen, cRows, C_LIST],
   );
 
   var byLLO = React.useMemo(
@@ -1248,7 +1077,7 @@ function WorkflowUI({
         .sort()
         .map(function (l) {
           var rows = g[l];
-          var ind = evalAll(rows, l);
+          var ind = cIndFor(cRows.llo[String(l)]);
           var reds = Object.keys(ind).filter(function (k) {
             return ind[k].band === 'red';
           }).length;
@@ -1275,7 +1104,6 @@ function WorkflowUI({
   // string but Postgres cannot store it in a JSON column, so freezing a run died with
   // `UntranslatableCharacter: \u0000 cannot be converted to text` — the key only
   // became unstorable at the moment it was persisted, long after it was built.
-  var FLW_SEP = '::';
 
   // FLW rollup. Keyed by opp+username: FLW usernames are only unique within an
   // opportunity (the synthetic cohort reuses flw_001.. across opps), so keying on
@@ -1579,7 +1407,7 @@ function WorkflowUI({
             opp = Number(parts[0]);
           var rows = g[k],
             llo = lloOf(opp);
-          var ind = evalAll(rows, llo, [opp]);
+          var ind = cIndFor(cRows.flw[opp + FLW_SEP + parts[1]]);
           var reds = Object.keys(ind).filter(function (x) {
             return ind[x].band === 'red';
           }).length;
@@ -1607,7 +1435,7 @@ function WorkflowUI({
   var programInd = React.useMemo(
     function () {
       if (frozen) return frozen.programInd || {};
-      return evalAll(derived);
+      return cIndFor(cRows.programme);
     },
     [derived, frozen],
   );
@@ -1619,28 +1447,23 @@ function WorkflowUI({
   // reality because non-recorders contribute denominator without deaths.
   var mortalityCredible = React.useMemo(
     function () {
-      var rows = derived.filter(function (r) {
-        return MORTALITY_CREDIBLE[r.llo];
-      });
-      var llos = Object.keys(MORTALITY_CREDIBLE).filter(function (l) {
-        return byLLO.some(function (x) {
-          return x.llo === l;
+      var credible = cCredibleLloRows('C14');
+      var llos = credible
+        .map(function (r) {
+          return r.llo;
+        })
+        .filter(function (l) {
+          return byLLO.some(function (x) {
+            return x.llo === l;
+          });
         });
-      });
       return {
-        ind: rows.length
-          ? evaluate(
-              IND.filter(function (i) {
-                return i.id === 'C14';
-              })[0],
-              rows,
-            )
-          : null,
+        ind: credible.length ? cPooled('C14', credible) : null,
         llos: llos,
         of: byLLO.length,
       };
     },
-    [derived, byLLO],
+    [byLLO, cRows, C_LIST],
   );
   // ── UI ───────────────────────────────────────────────────────────────────
   var s1 = React.useState(null);
@@ -1666,6 +1489,32 @@ function WorkflowUI({
   // Each month's indicators are computed over the cases that ENTERED that month,
   // so a month's growth/weight figures describe that intake cohort rather than
   // everyone alive at the time.
+  // The month-scope row matching the current drill, if any.
+  function cMonthRow(month, lloArg, oppArg, flwArg) {
+    if (flwArg) return cRows.flw_month[flwArg + '|' + month];
+    if (oppArg) return cRows.opportunity_month[oppArg + '|' + month];
+    if (lloArg) return cRows.llo_month[lloArg + '|' + month];
+    return cRows.month[month];
+  }
+
+  // The rows to pool for credible-recorder mortality in one month. Undrilled that
+  // is every credible LLO's row for that month; drilled it is the single row for
+  // the scope in hand -- but only if the registry did not suppress it there, which
+  // is what keeps a non-credible LLO's drill from showing a mortality figure the
+  // programme card refuses to show.
+  function cMonthCredible(month, lloArg, oppArg, flwArg) {
+    if (flwArg || oppArg || lloArg) {
+      var row = cMonthRow(month, lloArg, oppArg, flwArg);
+      var measure = indOf('C14');
+      return row && row[measure.measure + '_suppressed'] === false ? [row] : [];
+    }
+    var index = {};
+    Object.keys(cRows.llo_month).forEach(function (k) {
+      if (k.slice(k.indexOf('|') + 1) === month) index[k] = cRows.llo_month[k];
+    });
+    return cCredibleLloRows('C14', index);
+  }
+
   // Scoped monthly series as a plain function, so the freeze step can precompute
   // every drill scope rather than only the one currently on screen.
   function monthlyFor(lloArg, oppArg, flwArg) {
@@ -1707,10 +1556,15 @@ function WorkflowUI({
       .sort();
     return months.map(function (k) {
       var rows = byMonth[k] || [];
-      var ind = rows.length ? evalAll(rows) : {};
-      var credible = rows.filter(function (r) {
-        return MORTALITY_CREDIBLE[r.llo];
-      });
+      // The trend FOLLOWS THE DRILL, so it reads the month scope that matches it:
+      // flw_month / opportunity_month / llo_month, else the programme-wide month.
+      // Those composite scopes exist for exactly this -- a bare `month` groups by
+      // cohort_month alone and cannot answer a drilled question.
+      var mrow = cMonthRow(k, lloArg, oppArg, flwArg);
+      var ind = mrow ? cIndFor(mrow) : {};
+      // Credible-recorder mortality still has to be pooled, and at a drill the
+      // scope is already restricted, so the row itself is the pool.
+      var credible = cMonthCredible(k, lloArg, oppArg, flwArg);
       return {
         month: k,
         started: rows.filter(function (r) {
@@ -1723,14 +1577,7 @@ function WorkflowUI({
         c09: ind['C09'],
         c13: ind['C13'],
         c15: ind['C15'],
-        mortality: credible.length
-          ? evaluate(
-              IND.filter(function (i) {
-                return i.id === 'C14';
-              })[0],
-              credible,
-            )
-          : null,
+        mortality: credible.length ? cPooled('C14', credible) : null,
       };
     });
   }
@@ -1749,76 +1596,15 @@ function WorkflowUI({
           : 'all';
         return (frozen.monthlyByScope && frozen.monthlyByScope[key]) || all;
       }
-      var m = function (d) {
-        return String(d || '').slice(0, 7);
-      };
-      // The trend follows the drill: pick an LLO or an opportunity on the
-      // Indicators tab and this shows that scope, not the whole programme.
-      var flwKey = selFLW ? String(selFLW).split(FLW_SEP) : null;
-      var inScope = function (oppId, llo, flw) {
-        // FLW is the deepest level, so it wins when set. Its key is opp+username
-        // because usernames only repeat across opportunities.
-        if (flwKey) return oppId === Number(flwKey[0]) && flw === flwKey[1];
-        if (selOpp) return oppId === selOpp;
-        if (selLLO) return llo === selLLO;
-        return true;
-      };
-      var byMonth = {};
-      var visitsByMonth = {};
-      derived
-        .filter(function (r) {
-          return inScope(r.opp, r.llo, r.flw);
-        })
-        .forEach(function (r) {
-          var k = m(r.first_visit);
-          if (k) (byMonth[k] = byMonth[k] || []).push(r);
-        });
-      // Visits per month come from the VISIT pipeline: visit_date is a base column on
-      // the raw visit cache, not a form_json path, so asking the entity stage to list
-      // it extracted nothing and every month showed 0 visits.
-      wrows.forEach(function (v) {
-        if (!inScope(v.opportunity_id, lloOf(v.opportunity_id), v.username))
-          return;
-        var vk = m(v.visit_date);
-        if (vk) visitsByMonth[vk] = (visitsByMonth[vk] || 0) + 1;
-      });
-      var months = Object.keys(byMonth).concat(Object.keys(visitsByMonth));
-      months = months
-        .filter(function (v, i, a) {
-          return v && a.indexOf(v) === i;
-        })
-        .sort();
-      return months.map(function (k) {
-        var rows = byMonth[k] || [];
-        var ind = rows.length ? evalAll(rows) : {};
-        var credible = rows.filter(function (r) {
-          return MORTALITY_CREDIBLE[r.llo];
-        });
-        return {
-          month: k,
-          started: rows.filter(function (r) {
-            return r.started;
-          }).length,
-          registered: rows.filter(function (r) {
-            return r.registered;
-          }).length,
-          visits: visitsByMonth[k] || 0,
-          c09: ind['C09'],
-          c13: ind['C13'],
-          c15: ind['C15'],
-          // same credibility gate as the topline card
-          mortality: credible.length
-            ? evaluate(
-                IND.filter(function (i) {
-                  return i.id === 'C14';
-                })[0],
-                credible,
-              )
-            : null,
-        };
-      });
+      // monthlyFor IS this computation, and the freeze step already calls it to
+      // precompute every drill scope. Inlining a second copy here let the two
+      // drift: this one cohorted on first_visit alone while monthlyFor cohorted on
+      // reg_date falling back to first_visit. They agree only for as long as
+      // reg_date stays unrecorded everywhere, which is a property of today's data,
+      // not of the code.
+      return monthlyFor(selLLO, selOpp, selFLW);
     },
-    [derived, wrows, selLLO, selOpp, selFLW, frozen],
+    [derived, wrows, selLLO, selOpp, selFLW, frozen, cRows, C_LIST],
   );
 
   var llosRed = byLLO.filter(function (l) {
@@ -1869,7 +1655,7 @@ function WorkflowUI({
           </tr>
         </thead>
         <tbody>
-          {IND.map(function (i) {
+          {C_LIST.map(function (i) {
             var e = ind[i.id];
             return (
               <tr
@@ -2404,7 +2190,7 @@ function WorkflowUI({
               <tbody>
                 {monthly.map(function (m) {
                   function cell(e, id) {
-                    var ind = IND.filter(function (i) {
+                    var ind = C_LIST.filter(function (i) {
                       return i.id === id;
                     })[0];
                     if (!e || e.value === null)
@@ -3042,7 +2828,7 @@ function WorkflowUI({
                     % weight data sufficient
                   </div>
                   <div className="text-2xl font-semibold mt-1">
-                    {fmt(IND[6], programInd['C09'])}
+                    {fmt(indOf('C09'), programInd['C09'])}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
                     Program row 3 · % weight data sufficient (C09), pooled
@@ -3052,7 +2838,7 @@ function WorkflowUI({
                   <div className="text-xs text-gray-500">Mortality</div>
                   <div className="text-2xl font-semibold mt-1">
                     {mortalityCredible.ind
-                      ? fmt(IND[11], mortalityCredible.ind)
+                      ? fmt(indOf('C14'), mortalityCredible.ind)
                       : '\u2014'}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
@@ -3134,16 +2920,16 @@ function WorkflowUI({
                             {l.ind['C02'].value}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(IND[6], l.ind['C09'])}
+                            {fmt(indOf('C09'), l.ind['C09'])}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(IND[10], l.ind['C13'])}
+                            {fmt(indOf('C13'), l.ind['C13'])}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(IND[11], l.ind['C14'])}
+                            {fmt(indOf('C14'), l.ind['C14'])}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(IND[13], l.ind['C16'])}
+                            {fmt(indOf('C16'), l.ind['C16'])}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {l.reds ? (
@@ -3250,19 +3036,19 @@ function WorkflowUI({
                             {caseCount(o)}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(IND[4], o.ind['C07'])}
+                            {fmt(indOf('C07'), o.ind['C07'])}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(IND[6], o.ind['C09'])}
+                            {fmt(indOf('C09'), o.ind['C09'])}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(IND[10], o.ind['C13'])}
+                            {fmt(indOf('C13'), o.ind['C13'])}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(IND[11], o.ind['C14'])}
+                            {fmt(indOf('C14'), o.ind['C14'])}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(IND[12], o.ind['C15'])}
+                            {fmt(indOf('C15'), o.ind['C15'])}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {reds ? (
@@ -3308,7 +3094,7 @@ function WorkflowUI({
                 if (f0) caseRows = f0.rows;
               }
               if (selInd) {
-                var indSel = IND.filter(function (i) {
+                var indSel = C_LIST.filter(function (i) {
                   return i.id === selInd;
                 })[0];
                 if (indSel && indSel.den)
@@ -3394,7 +3180,7 @@ function WorkflowUI({
                             })
                             .map(function (f) {
                               function cell(id) {
-                                var i = IND.filter(function (x) {
+                                var i = C_LIST.filter(function (x) {
                                   return x.id === id;
                                 })[0];
                                 return fmt(i, f.ind[id]);

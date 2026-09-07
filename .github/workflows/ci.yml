@@ -66,6 +66,34 @@ jobs:
           python -m pip install pre-commit
           pre-commit run --all-files --show-diff-on-failure
 
+  # The KMC render is a JSX template string transpiled by Babel IN THE BROWSER, so
+  # no Python test can execute it -- which is how a duplicated 87-line block reached
+  # main, and why every edit to it has been validated by opening the dashboard.
+  # These checks are cheap and catch the whole class: a file that does not parse and
+  # a name that does not resolve.
+  #
+  # Deliberately NOT `npm test`: context_picker.test.mjs has been failing on main
+  # ("workflow shows opps only (pathFilters)") and nothing ran it, so turning the
+  # whole suite on here would block every PR on an unrelated pre-existing failure.
+  # Widen this once that is green.
+  render-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check the workflow render templates
+        run: node --test connect_labs/workflow/templates/__tests__/kmc_render.test.mjs
+
   pytest:
     runs-on: ubuntu-latest
 

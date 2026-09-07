@@ -169,18 +169,37 @@ def measure_catalog(registry: dict[str, Any]) -> list[dict[str, Any]]:
     than stated by the spec, and a threshold whose provenance is invisible is one
     nobody can correct.
     """
+    by_name = {m.get("name"): m for m in registry.get("measures", []) if m.get("name")}
+    # How a value is FORMATTED, which `unit` alone does not decide. C06 and C24 are
+    # unit 'n' like C01, but they are means, not counts: rendering them as integers
+    # drops a real decimal and looks like a value, not a bug. Every indicator's own
+    # measure is `type: number` (it divides two others), so the distinction lives on
+    # its NUMERATOR -- count / avg / sum -- which is where the render's old `kind`
+    # came from too.
+    kinds = {"count": "count", "avg": "mean", "sum": "sumratio"}
+
     out = []
     for m in registry.get("measures", []):
         meta = m.get("meta")
         if not meta:
             continue
+        # Only when the indicator IS its numerator. A rate's numerator is a
+        # `count` too -- C09 counts cases -- but C09 is a percentage, and calling
+        # it a count would format it as a whole number.
+        numerator = {}
+        if str(m.get("sql") or "").strip() == "{" + str(m["name"]) + "_numerator}":
+            numerator = by_name.get(str(m["name"]) + "_numerator") or {}
         out.append(
             {
                 "id": m["name"],
                 "indicator": meta.get("indicator"),
                 "title": m.get("title"),
                 "category": meta.get("category"),
+                # Which indicators are headline rather than supporting. The render
+                # groups its tables on this; without it every measure reads as equal.
+                "prominence": meta.get("prominence"),
                 "unit": meta.get("unit"),
+                "kind": kinds.get(str(numerator.get("type"))),
                 "direction": meta.get("direction"),
                 "bands": meta.get("bands"),
                 "bands_source": meta.get("bands_source"),

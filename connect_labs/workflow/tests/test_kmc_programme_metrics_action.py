@@ -122,11 +122,21 @@ def test_the_render_can_load_the_N_series_from_the_semantic_endpoint():
 
 def test_the_N_series_is_fetched_on_demand_not_with_the_page():
     """It is a real query against the visit cache. Firing it on mount would make
-    every other tab pay for a tab the reader may never open."""
+    every OTHER tab pay for a tab the reader may never open.
+
+    This used to be spelled `"React.useEffect" not in src` — a blanket ban, which
+    was a fair proxy while nothing on the page loaded itself. It is too broad now:
+    the C-series IS the Indicators tab's own content, not a side panel, so it does
+    load with the page, and a frozen run's load is `catalog_only` (labels, no
+    query). The claim worth keeping is the one the docstring actually makes, so
+    assert THAT: nothing pulls loadNSeries into an effect, and the button stays.
+    """
     src = RENDER.read_text()
     assert "function loadNSeries" in src
-    # no effect hook drives it
-    assert "React.useEffect" not in src, "loading must stay user-triggered"
+    assert "onClick={loadNSeries}" in src, "the N-series must stay user-triggered"
+
+    for effect in re.findall(r"React\.useEffect\(([\s\S]*?)\n  \);", src):
+        assert "loadNSeries" not in effect, "an effect must not fire the N-series query"
 
 
 def test_the_endpoints_error_message_is_shown_rather_than_a_generic_failure():
