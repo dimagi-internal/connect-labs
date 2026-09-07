@@ -32,6 +32,7 @@ urlpatterns = [
     path("audit/", include("connect_labs.audit.urls", namespace="audit")),
     path("coverage/", include("connect_labs.coverage.urls", namespace="coverage")),
     path("microplans/", include("connect_labs.microplans.urls", namespace="microplans")),
+    path("mopup/", include("connect_labs.mopup.urls", namespace="mopup")),
     # Back-compat: the app was first shipped at /rooftop-surveys/ (a deployed opp may
     # reference it). Redirect the old prefix to the renamed /microplans/.
     path(
