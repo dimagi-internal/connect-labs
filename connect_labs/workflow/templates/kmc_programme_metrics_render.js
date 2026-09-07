@@ -2745,6 +2745,19 @@ function WorkflowUI({
             </div>
           )}
 
+          {/* A cold cache returns HTTP 200 with every count at zero, which is
+              indistinguishable on the page from a programme that genuinely has
+              no data. Say which one it is. */}
+          {nSeries.status === 'ready' && nSeries.coldCache && (
+            <div className="px-4 py-3 text-sm bg-amber-50 text-amber-900 border-b border-amber-100">
+              <span className="font-medium">
+                Every metric is zero because nothing is cached &mdash; not
+                because the programme has no data.
+              </span>{' '}
+              {nSeries.coldHint}
+            </div>
+          )}
+
           {nSeries.status === 'ready' &&
             (function () {
               var measures = nSeries.measures.filter(function (m) {
