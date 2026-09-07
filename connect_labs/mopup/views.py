@@ -4,12 +4,17 @@ Phase 1: opportunity picker (free — from the session's org/program/
 opportunity tree, no data pull), ward picker (cheap — work-area case
 properties only, see core/work_areas.py), and an optional coarse date range.
 
-Phase 2 (MopupCandidatesView): the live threshold-tunable candidate list —
-takes a run's scoped opportunity/wards, evaluates the §5/§6 indicators
-against whatever threshold/granularity config the reviewer currently has
-set, and returns candidates + a per-ward summary. Not yet built: the actual
-candidate-table/map UI (this is the JSON endpoint it will call), and locking
-a candidate set into Phase 3's microplans hand-off.
+Phase 2 (MopupCandidatesView/MopupLockView): the live threshold-tunable
+candidate list. The expensive part — pulling a whole opportunity's
+work-area/visit/geometry data — runs exactly ONCE per run, in a Celery task
+(`mopup.tasks.fetch_evaluation_data`; confirmed necessary this session — a
+synchronous web request doing this for a real opportunity gateway-times
+out). Every subsequent threshold/granularity tweak only re-runs
+`evaluate_run()` over that task's already-fetched result — pure Python, no
+network calls, and never re-dispatches the task. `_rows_or_progress` is the
+one place that dispatches-if-needed and polls a run's fetch task; both
+views go through it so "is the data ready yet" is answered identically
+everywhere.
 """
 
 from __future__ import annotations
@@ -24,7 +29,7 @@ from django.views.generic import TemplateView
 
 from connect_labs.labs.context import get_org_data
 from connect_labs.mopup.core import indicators as ind
-from connect_labs.mopup.core.candidates import build_evaluation_input, summarize_candidates_by_ward
+from connect_labs.mopup.core.candidates import summarize_candidates_by_ward
 from connect_labs.mopup.core.data_access import MopupRunDataAccess
 from connect_labs.mopup.core.handoff import HandoffError, create_plan_from_locked_run
 from connect_labs.mopup.core.models import STATUS_LOCKED
@@ -48,16 +53,40 @@ def _resolve_thresholds(run, payload: dict) -> tuple[dict, dict]:
     return indicator_configs, global_config
 
 
-def _evaluate(run, request, payload: dict) -> tuple[list[dict], list[dict], list[dict], dict, dict]:
-    """Fetch the run's scoped data and evaluate it against the resolved
-    thresholds. Returns (rows, candidates, ward_summary, indicator_configs,
-    global_config). Raises whatever build_evaluation_input raises — callers
-    catch and translate to a 502."""
-    indicator_configs, global_config = _resolve_thresholds(run, payload)
-    rows = build_evaluation_input(run.target_opportunity_id, run.selected_wards, request=request)
-    candidates = ind.evaluate_run(rows, indicator_configs, global_config)
-    ward_summary = summarize_candidates_by_ward(candidates, rows)
-    return rows, candidates, ward_summary, indicator_configs, global_config
+def _rows_or_progress(da, run, request, program_id) -> tuple[list[dict] | None, dict | None]:
+    """Ensure a fetch task exists for `run` (dispatching one if it's never
+    been started, or if the last one failed and was cleared), and report on
+    it. Returns `(rows, None)` once the task has actually finished, or
+    `(None, progress)` while it's still pending/running/failed — `progress`
+    is `build_task_progress`'s own canonical shape (the same one workflow
+    jobs and audit creation already use for poll-first progress), safe to
+    return to the client verbatim."""
+    from celery.result import AsyncResult
+
+    from connect_labs.labs.analysis.sse_streaming import build_task_progress
+    from connect_labs.mopup.tasks import fetch_evaluation_data
+
+    task_id = run.fetch_task_id
+    if not task_id:
+        result = fetch_evaluation_data.delay(program_id, run.id, request.user.id)
+        da.update_run(run, fetch_task_id=result.id)
+        return None, build_task_progress("PENDING", None)
+
+    task = AsyncResult(task_id)
+    # Pass task.info through AS-IS — build_task_progress itself distinguishes
+    # dict (PROGRESS/SUCCESS meta) from non-dict (a FAILURE's raw exception,
+    # which it str()'s for the error message). Coercing non-dict to None here
+    # would silently turn every real failure message into "Unknown error".
+    progress = build_task_progress(task.state, task.info)
+
+    if progress["status"] == "completed":
+        return progress["result"]["rows"], None
+    if progress["status"] == "failed":
+        # Clear so the NEXT poll re-dispatches automatically — the reviewer
+        # doesn't need a separate "retry" action, just keep polling (or
+        # re-open the page).
+        da.update_run(run, fetch_task_id=None)
+    return None, progress
 
 
 def _program_opportunities(request, program_id: int) -> list[dict]:
@@ -204,10 +233,13 @@ class MopupCandidatesView(LoginRequiredMixin, View):
     """Phase 2's live recompute: evaluate the run's scoped work areas against
     the given (or run-saved, or default) indicator/global config and return
     candidates + a per-ward summary. Every POST also persists the thresholds
-    used onto the run, so reopening it resumes where the reviewer left off —
-    "live" only in the sense that nothing is locked until an explicit lock
-    action (not built yet); this view can be called repeatedly as thresholds
-    change.
+    used onto the run, so reopening it resumes where the reviewer left off.
+
+    The expensive data pull happens at most once per run (see
+    `_rows_or_progress`) — while it's still running, this returns a
+    progress snapshot instead (`{"status": "pending"|"running"|"failed",
+    ...}`); once it's done, every call here is a fast, synchronous
+    re-evaluation, however many times the reviewer tweaks thresholds.
 
     Known gap: only ward-scoping is applied — the run's date_from/date_to
     isn't yet (see core/candidates.py's module docstring for why)."""
@@ -223,14 +255,13 @@ class MopupCandidatesView(LoginRequiredMixin, View):
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        try:
-            rows, candidates, ward_summary, indicator_configs, global_config = _evaluate(run, request, payload)
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "mopup candidates: fetching evaluation data failed (program=%s run=%s)", program_id, run_id
-            )
-            return JsonResponse({"status": "error", "detail": "Could not load visit/work-area data."}, status=502)
+        rows, progress = _rows_or_progress(da, run, request, program_id)
+        if rows is None:
+            return JsonResponse(progress)
 
+        indicator_configs, global_config = _resolve_thresholds(run, payload)
+        candidates = ind.evaluate_run(rows, indicator_configs, global_config)
+        ward_summary = summarize_candidates_by_ward(candidates, rows)
         da.update_run(run, thresholds={"indicator_configs": indicator_configs, "global_config": global_config})
 
         return JsonResponse(
@@ -250,7 +281,8 @@ class MopupLockView(LoginRequiredMixin, View):
     thresholds — same resolution as MopupCandidatesView) onto the run as
     `candidate_work_areas`, and mark it locked. Nothing downstream re-reads
     live thresholds after this — Phase 3's hand-off only ever acts on what
-    got frozen here."""
+    got frozen here. Same "at most one fetch" behavior as
+    MopupCandidatesView — can't lock while the data is still loading."""
 
     def post(self, request, program_id, run_id):
         da = MopupRunDataAccess(program_id, request=request)
@@ -263,11 +295,12 @@ class MopupLockView(LoginRequiredMixin, View):
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        try:
-            _rows, candidates, _ward_summary, indicator_configs, global_config = _evaluate(run, request, payload)
-        except Exception:  # noqa: BLE001
-            logger.exception("mopup lock: fetching evaluation data failed (program=%s run=%s)", program_id, run_id)
-            return JsonResponse({"status": "error", "detail": "Could not load visit/work-area data."}, status=502)
+        rows, progress = _rows_or_progress(da, run, request, program_id)
+        if rows is None:
+            return JsonResponse(progress)
+
+        indicator_configs, global_config = _resolve_thresholds(run, payload)
+        candidates = ind.evaluate_run(rows, indicator_configs, global_config)
 
         if not candidates:
             return JsonResponse(

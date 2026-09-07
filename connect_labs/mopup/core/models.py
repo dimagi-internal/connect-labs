@@ -73,5 +73,15 @@ class MopupRunRecord(LocalLabsRecord):
         return self.data.get("candidate_work_areas", [])
 
     @property
+    def fetch_task_id(self) -> str | None:
+        """The Celery task id (if any) for `mopup.tasks.fetch_evaluation_data`
+        — this run's one expensive work-area/visit/geometry pull. `None`
+        means no fetch has been dispatched yet (or the last one failed and
+        was cleared so the next poll re-dispatches). See
+        `MopupCandidatesView`/`MopupLockView` for how this is read back via
+        `AsyncResult`."""
+        return self.data.get("fetch_task_id")
+
+    @property
     def created_at(self) -> str:
         return self.data.get("created_at", "")
