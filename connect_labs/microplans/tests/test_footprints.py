@@ -197,7 +197,7 @@ def test_query_overture_falls_back_to_live_outside_extracted_region(monkeypatch)
         "_query_overture_live",
         lambda a, mc: (calls.__setitem__("live", calls["live"] + 1), _fake_buildings())[1],
     )
-    footprints._query_overture(box(36.80, -1.30, 36.81, -1.29), None)  # Nairobi, not extracted
+    footprints._query_overture(box(77.20, 28.60, 77.21, 28.61), None)  # Delhi — no extract anywhere near
     assert calls == {"extract": 0, "live": 1}
 
 
