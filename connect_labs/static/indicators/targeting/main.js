@@ -92,6 +92,12 @@
         var basis = info.bases.filter(function (b) {
           return b.code === S.basis;
         })[0];
+        // A preset names the indicator it is FOR. Kept across a change of
+        // indicator it kept its caveat too, so targeting household ITN
+        // ownership displayed Kangaroo Mother Care's warning about
+        // low-birthweight newborns — a different intervention's fine print
+        // under a different question's numbers.
+        S.preset = null;
         if (!basis || !basis.available_for_indicator) {
           var usable = info.bases.filter(function (b) {
             return b.available_for_indicator;
@@ -186,6 +192,26 @@
       .then(function (info) {
         S.methodInfo = info;
         T.menu.index();
+
+        // The same correction the methods channel applies when the indicator
+        // changes in-page. Without it here, a LINK to an indicator the default
+        // method cannot answer opened on "0 areas selected across 0
+        // countries" — the deep link being the one artifact people share, and
+        // a working method being one dropdown away. Only honoured when the URL
+        // did not name a method: an explicit choice is kept even when it
+        // answers nothing, because the page then says so and that is the
+        // point.
+        if (!wanted.method) {
+          var m = info.methods[S.method];
+          if (!m || !m.countries_available) {
+            var pick = T.controls.bestMethodFor(
+              info,
+              m ? m.resolution : 'subnational',
+            );
+            if (pick) S.method = pick;
+          }
+        }
+
         var meta = S.indicatorMeta[S.indicator] || {};
         S.threshold =
           wanted.threshold !== undefined && !isNaN(wanted.threshold)
@@ -215,9 +241,17 @@
       })
       .then(function (info) {
         S.costInfo = info;
-        var preset = info.interventions[0];
-        S.basis = preset ? preset.basis : 'person';
+        // Seed from a preset that is FOR this indicator, not from whichever
+        // happens to be first. interventions[0] is Kangaroo Mother Care, so
+        // every cold load — of any of the fifty-two indicators — opened
+        // costing ITN ownership or family planning as KMC per birth, complete
+        // with KMC's caveat about low-birthweight newborns.
+        var preset =
+          info.interventions.filter(function (i) {
+            return i.targets === S.indicator;
+          })[0] || null;
         S.preset = preset ? preset.slug : null;
+        S.basis = preset ? preset.basis : 'person';
         S.unitCost = preset ? preset.unit_cost_usd : 1;
         document.getElementById('tg-unitcost').value = S.unitCost;
         T.costing.renderControls();
