@@ -64,6 +64,19 @@ SCOPES: dict[str, list[str]] = {
     "llo": ["llo"],
     "flw": ["opportunity_id", "username"],
     "month": ["cohort_month"],
+    # The monthly trend FOLLOWS THE DRILL. Picking an LLO, an opportunity or a
+    # worker re-cohorts the trend to that scope, so a bare `month` -- which groups
+    # by cohort_month alone -- answers only the undrilled case. Without these the
+    # dashboard's Monthly trend tab cannot be served from the registry at all, and
+    # the browser has to keep an indicator engine alive purely to compute them.
+    #
+    # Free, structurally: GROUPING SETS already takes an arbitrary column tuple per
+    # scope, `all_cols` is the union, and each row is labelled back by GROUPING()
+    # per column -- so these are three more sets in the SAME single pass, not three
+    # more passes. Distinct column sets keep the labels unambiguous.
+    "llo_month": ["llo", "cohort_month"],
+    "opportunity_month": ["opportunity_id", "cohort_month"],
+    "flw_month": ["opportunity_id", "username", "cohort_month"],
 }
 
 # Scope columns the CTE chain produces on its own. Anything else has to be

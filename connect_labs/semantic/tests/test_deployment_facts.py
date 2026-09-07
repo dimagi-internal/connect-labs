@@ -220,3 +220,71 @@ def test_the_two_mortality_measures_agree_on_their_band():
         if (m.get("meta") or {}).get("indicator") in ("C14", "N13")
     }
     assert bands["C14"] == bands["N13"] == [[4, 12], [2, 16]]
+
+
+# ── the monthly trend follows the drill ──────────────────────────────────────
+
+
+def test_the_month_scope_has_a_drilled_counterpart_for_every_drill_level():
+    """A bare `month` answers only the UNDRILLED trend.
+
+    The dashboard's Monthly trend tab re-cohorts when you pick an LLO, an
+    opportunity or a worker on the Indicators tab. `month` groups by cohort_month
+    alone, so it cannot serve any of those — which is why the browser had to keep
+    an indicator engine alive purely to compute drilled monthly series, and why a
+    frozen run has to precompute `monthlyByScope` at freeze time.
+    """
+    from connect_labs.semantic.compiler import SCOPES
+
+    for drill in ("llo", "opportunity", "flw"):
+        composite = f"{drill}_month"
+        assert composite in SCOPES, f"no {composite} scope; the drilled trend cannot be served"
+        assert SCOPES[composite] == SCOPES[drill] + ["cohort_month"], (
+            f"{composite} must be exactly {drill} plus the month column, "
+            "or its rows will not line up with the drill they follow"
+        )
+
+
+def test_every_scope_has_a_distinct_column_set():
+    """Rows are labelled back to their scope by GROUPING() per column.
+
+    Two scopes with the same column set would produce identical GROUPING()
+    patterns, so the CASE would label both rows as whichever arm came first and
+    one scope's numbers would silently render as the other's.
+    """
+    from connect_labs.semantic.compiler import SCOPES
+
+    seen: dict[tuple[str, ...], str] = {}
+    for name, cols in SCOPES.items():
+        key = tuple(sorted(cols))
+        assert key not in seen, f"{name} and {seen[key]} share a column set {key}"
+        seen[key] = name
+
+
+def test_all_eight_scopes_compile_in_one_pass(props_doc, registry, deployment):
+    """Three more GROUPING SETS in the SAME pass, not three more queries."""
+    import re
+
+    llo_map, settings = deployment
+    sql = compile_rollup_sql(
+        props_doc,
+        registry,
+        "SELECT 1",
+        scopes=[
+            "programme",
+            "opportunity",
+            "llo",
+            "flw",
+            "month",
+            "llo_month",
+            "opportunity_month",
+            "flw_month",
+        ],
+        llo_map=llo_map,
+        settings=settings,
+    )
+    assert sql.count("GROUPING SETS") == 1, "must stay a single pass"
+    sets = re.search(r"GROUPING SETS \((.*)\)", sql, re.S).group(1)
+    assert sets.count("(") == 8, f"expected 8 grouping sets, got {sets.count('(')}"
+    for label in ("llo_month", "opportunity_month", "flw_month"):
+        assert f"THEN '{label}'" in sql, f"{label} rows would be labelled 'other'"
