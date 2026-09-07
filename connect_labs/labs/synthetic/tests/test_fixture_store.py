@@ -168,21 +168,69 @@ def test_reload_invalidates_other_processes_too():
     assert second_drive.download_calls == 1
 
 
-def test_oversized_payload_is_not_pushed_through_redis():
-    """A big opp's user_visits.json runs to many MB. Caching that shared would
-    trade one slow dependency for another, so above the byte gate L1 still
-    caches it and L2 declines — the second process re-fetches rather than
-    dragging megabytes through Redis on every miss."""
+def test_a_large_realistic_fixture_is_shared_rather_than_refetched():
+    """The tier used to decline exactly the files it existed for.
+
+    A big opp's user_visits.json runs to many MB, and the raw-bytes ceiling was
+    2 MB, so the opportunities most expensive to fetch were the ones that opted
+    out of L2 — every process re-downloaded them from Drive forever. The KMC demo
+    cohort paid ~2 minutes of Drive round-trips on every cold fill because of it.
+
+    Payload here is shaped like a real fixture (one repeated record shape, repeated
+    keys) and is comfortably over the OLD 2 MB raw ceiling. It must now reach the
+    second process without touching Drive."""
+    rows = [{"visit_id": i, "username": f"flw_{i % 20:03d}", "status": "approved"} for i in range(40000)]
+    big = json.dumps(rows).encode()
+    assert len(big) > 2 * 1024 * 1024, "payload must exceed the old raw ceiling to be a regression test"
+
+    first, first_drive = _store_with(42, "folder-a", {"user_visits.json": big})
+    assert first.load_endpoint(42, "user_visits") == rows
+    assert first_drive.download_calls == 1
+
+    second, second_drive = _store_with(42, "folder-a", {"user_visits.json": big})
+    assert second.load_endpoint(42, "user_visits") == rows
+    assert second_drive.download_calls == 0, "a sibling process must not re-download it"
+
+
+def test_a_fixture_still_oversized_after_compression_opts_out(monkeypatch):
+    """The ceiling still exists; compression only moves where it bites.
+
+    Something pathological enough to stay over the limit even gzipped must still
+    decline L2 rather than drag it through Redis, degrading to the L1-only
+    behaviour."""
     from connect_labs.labs.synthetic import fixture_store as fs
 
-    big = json.dumps([{"pad": "x" * (fs.SHARED_CACHE_MAX_BYTES + 1024)}]).encode()
-    assert len(big) > fs.SHARED_CACHE_MAX_BYTES
+    monkeypatch.setattr(fs, "SHARED_CACHE_MAX_BYTES", 512)
+    rows = [{"visit_id": i, "username": f"flw_{i % 20:03d}"} for i in range(5000)]
+    big = json.dumps(rows).encode()
 
     first, _ = _store_with(42, "folder-a", {"user_visits.json": big})
     first.load_endpoint(42, "user_visits")
 
     second, second_drive = _store_with(42, "folder-a", {"user_visits.json": big})
-    second.load_endpoint(42, "user_visits")
+    assert second.load_endpoint(42, "user_visits") == rows
+    assert second_drive.download_calls == 1, "over the ceiling even compressed -> L1 only"
+
+
+def test_a_corrupt_shared_entry_reads_as_a_miss_not_a_crash(monkeypatch):
+    """L2 holds gzipped bytes. An entry that will not decompress — a leftover from
+    another encoding, a truncated write — must degrade to a Drive re-fetch, never
+    raise at every caller."""
+    from connect_labs.labs.synthetic import fixture_store as fs
+
+    rows = [{"id": 1}]
+    files = {"user_visits.json": json.dumps(rows).encode()}
+    first, _ = _store_with(42, "folder-a", files)
+    first.load_endpoint(42, "user_visits")
+
+    # Only the payload entry is corrupt; the folder listing must still read
+    # normally, or this would be testing a different failure.
+    def corrupt_payload_only(key, *_a, **_k):
+        return b"not gzip at all" if ":raw:" in key else None
+
+    monkeypatch.setattr(fs.cache, "get", corrupt_payload_only)
+    second, second_drive = _store_with(42, "folder-a", files)
+    assert second.load_endpoint(42, "user_visits") == rows
     assert second_drive.download_calls == 1
 
 
