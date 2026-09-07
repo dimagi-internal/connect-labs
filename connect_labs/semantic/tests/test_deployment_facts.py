@@ -173,3 +173,50 @@ def test_mortality_credibility_stays_the_workbook_pair(deployment):
     _, settings = deployment
     credible = {k for k, v in settings["mortality_recording_credible"].items() if v}
     assert credible == {"PIPN", "EHA"}, "the source doc: only PIPN and EHA record deaths credibly"
+
+
+def test_bands_are_in_the_same_units_as_the_sql_that_produces_the_value(registry):
+    """A band is graded against the value, so it must be in that value's units.
+
+    The C-series was copied out of the render, where `evaluate` returns a RATIO
+    (num/den) and `fmt` multiplies by 100 at display time. The registry's sql does
+    the scaling itself -- `100.0 * {num} / NULLIF({den}, 0)` -- so the value is
+    already a percentage, and the bands came across unconverted: C09 graded a value
+    of 60.0 against a threshold of 0.6.
+
+    Nothing failed. `nBandOf` does `x >= b[0]`, so 60.0 >= 0.6 and every percentage
+    indicator in the series bands GREEN, at every scope, whatever the number. A 5%
+    figure reads green. That is the exact failure `measure_catalog`'s docstring says
+    serving the catalog alongside the rows exists to prevent -- "a band cannot drift
+    from the measure it grades" -- and it was live in the shipped registry, unreached
+    only because no client rendered the C-series yet.
+
+    The N-series, which IS rendered, had it right: N13 and C14 are the same mortality
+    measure and N13's bands were exactly 100x C14's.
+
+    A genuine sub-1% threshold would trip this. That is intended: it should be an
+    explicit decision, not a silent unit change.
+    """
+    offenders = []
+    for m in registry["measures"]:
+        meta = m.get("meta") or {}
+        bands = meta.get("bands")
+        if not bands or meta.get("unit") != "%":
+            continue
+        if "100.0 *" not in str(m.get("sql") or ""):
+            continue
+        flat = [x for v in bands for x in (v if isinstance(v, list) else [v])]
+        if max(flat) <= 1.0:
+            offenders.append((meta.get("indicator"), bands))
+    assert not offenders, f"bands look like fractions but the value is a percentage: {offenders}"
+
+
+def test_the_two_mortality_measures_agree_on_their_band():
+    """C14 and N13 are the same measure. They disagreed by exactly 100x."""
+    reg = yaml.safe_load((REGISTRY / "indicators.yml").read_text())
+    bands = {
+        m["meta"]["indicator"]: m["meta"].get("bands")
+        for m in reg["measures"]
+        if (m.get("meta") or {}).get("indicator") in ("C14", "N13")
+    }
+    assert bands["C14"] == bands["N13"] == [[4, 12], [2, 16]]

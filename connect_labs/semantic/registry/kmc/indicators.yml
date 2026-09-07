@@ -113,7 +113,7 @@ measures:
         prominence: Lower,
         unit: '%',
         direction: higher,
-        bands: [0.75, 0.55],
+        bands: [75, 55],
         min_denominator: 25,
       }
   - name: c07_numerator
@@ -138,7 +138,7 @@ measures:
         prominence: Lower,
         unit: '%',
         direction: higher,
-        bands: [0.8, 0.6],
+        bands: [80, 60],
         min_denominator: 25,
       }
   - name: c08_numerator
@@ -160,7 +160,7 @@ measures:
         prominence: Top,
         unit: '%',
         direction: higher,
-        bands: [0.6, 0.4],
+        bands: [60, 40],
         min_denominator: 25,
       }
   - name: c09_numerator
@@ -185,7 +185,7 @@ measures:
         prominence: Top,
         unit: '%',
         direction: higher,
-        bands: [0.7, 0.5],
+        bands: [70, 50],
         min_denominator: 25,
       }
   - name: c10_numerator
@@ -210,7 +210,7 @@ measures:
         prominence: Top,
         unit: '%',
         direction: lower,
-        bands: [0.15, 0.3],
+        bands: [15, 30],
         min_denominator: 25,
       }
   - name: c11_numerator
@@ -235,7 +235,7 @@ measures:
         prominence: Lower,
         unit: '%',
         direction: mid,
-        bands: [0.15, 0.3],
+        bands: [15, 30],
         min_denominator: 25,
       }
   - name: c12_numerator
@@ -288,7 +288,7 @@ measures:
         prominence: Top,
         unit: '%',
         direction: mid2,
-        bands: [[0.04, 0.12], [0.02, 0.16]],
+        bands: [[4, 12], [2, 16]],
         min_denominator: 25,
         note: 'TWO-SIDED. Implausibly low means under-recording. Gated by the
           Targets and settings credibility flag - see suppression below.',
@@ -315,7 +315,7 @@ measures:
         prominence: Top,
         unit: '%',
         direction: lower,
-        bands: [0.1, 0.25],
+        bands: [10, 25],
         min_denominator: 25,
         flw_applicable: true,
       }
@@ -337,7 +337,7 @@ measures:
         prominence: Top,
         unit: '%',
         direction: higher,
-        bands: [0.5, 0.3],
+        bands: [50, 30],
         min_denominator: 25,
       }
   - name: c16_numerator
@@ -505,7 +505,7 @@ measures:
         prominence: Top,
         unit: '%',
         direction: lower,
-        bands: [0.1, 0.2],
+        bands: [10, 20],
         min_denominator: 25,
         flw_applicable: true,
       }
