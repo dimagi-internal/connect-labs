@@ -1,6 +1,6 @@
 from django.urls import path
 
-from connect_labs.pulse import api, views
+from connect_labs.pulse import api, network_api, views
 
 app_name = "pulse"
 
@@ -10,12 +10,14 @@ urlpatterns = [
     path("api/events/", api.EventsView.as_view(), name="api_events"),
     path("api/replay/", api.ReplayView.as_view(), name="api_replay"),
     path("api/grid/", api.GridView.as_view(), name="api_grid"),
+    path("api/network/", network_api.NetworkView.as_view(), name="api_network"),
     # Drill-down, fetched on click rather than polled with the summary.
     path("api/partner/", api.PartnerView.as_view(), name="api_partner"),
     path("api/worker/", api.WorkerView.as_view(), name="api_worker"),
     path("api/opp/", api.OpportunityView.as_view(), name="api_opp"),
     # Authenticated views.
     path("", views.PulseIndexView.as_view(), name="index"),
+    path("network/", views.PulseNetworkView.as_view(), name="network"),
     path("v/<slug:layout>/", views.PulseDisplayView.as_view(), name="display"),
     path("opp/<int:opp_id>/", views.PulseOppView.as_view(), name="opp"),
     # Donor reports: authenticated authoring, public rendering.
