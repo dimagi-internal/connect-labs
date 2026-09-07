@@ -280,3 +280,80 @@ def test_window_is_utc_floored_and_self_consistent(hours):
     assert end_epoch - start_epoch == hours * 3600
     assert start_iso.endswith("Z") and end_iso.endswith("Z")
     assert start_epoch % 60 == 0 and end_epoch % 60 == 0
+
+
+def test_the_optional_retry_field_is_queried():
+    """#1435's falsifier is unrunnable unless the tool actually asks for the field."""
+    query = residual_bands.build_query((1500, 3000), "/audit/image/", False)
+    assert "retry_wait_ms" in query.splitlines()[0] or "retry_wait_ms" in query
+    stats_line = next(ln for ln in query.splitlines() if ln.startswith("| stats"))
+    assert "avg(retry_wait_ms) as avg_retry_wait_ms" in stats_line
+
+
+def test_an_absent_optional_metric_is_None_not_zero():
+    """The code emitting `retry_wait_ms` is newer than some windows this tool reads.
+
+    "the deploy predates this field" and "no retries happened" are different facts.
+    Rendering both as 0.0 would recreate, for the new column, exactly the
+    read-a-zero-as-a-measurement failure the strict check above exists to stop.
+    """
+    rows = [
+        [
+            {"field": "band", "value": "0"},
+            {"field": "n", "value": "100"},
+            {"field": "avg_duration_ms", "value": "900.0"},
+            {"field": "avg_cpu_ms", "value": "140.0"},
+            {"field": "avg_self_ms", "value": "260.0"},
+            {"field": "avg_outbound_ms", "value": "500.0"},
+            {"field": "avg_db_ms", "value": "13.0"},
+        ]
+    ]
+    bands = residual_bands._rows_to_bands(rows, (1500,))
+    assert bands[0]["retry_wait_ms"] is None
+
+
+def test_an_absent_optional_metric_does_not_raise_the_shape_error():
+    """A pre-#1435 window is a valid window, not a broken query."""
+    rows = [
+        [
+            {"field": "band", "value": "0"},
+            {"field": "n", "value": "100"},
+            {"field": "avg_duration_ms", "value": "900.0"},
+            {"field": "avg_cpu_ms", "value": "140.0"},
+            {"field": "avg_self_ms", "value": "260.0"},
+            {"field": "avg_outbound_ms", "value": "500.0"},
+            {"field": "avg_db_ms", "value": "13.0"},
+        ]
+    ]
+    residual_bands._rows_to_bands(rows, (1500,))  # must not raise
+
+
+def test_a_present_optional_metric_is_read():
+    rows = [
+        [
+            {"field": "band", "value": "0"},
+            {"field": "n", "value": "100"},
+            {"field": "avg_duration_ms", "value": "900.0"},
+            {"field": "avg_cpu_ms", "value": "140.0"},
+            {"field": "avg_self_ms", "value": "260.0"},
+            {"field": "avg_outbound_ms", "value": "500.0"},
+            {"field": "avg_db_ms", "value": "13.0"},
+            {"field": "avg_retry_wait_ms", "value": "312.4"},
+        ]
+    ]
+    bands = residual_bands._rows_to_bands(rows, (1500,))
+    assert bands[0]["retry_wait_ms"] == 312.4
+
+
+def test_a_required_metric_is_still_a_hard_error():
+    """The optional set must not have loosened the strict check it sits beside."""
+    rows = [
+        [
+            {"field": "band", "value": "0"},
+            {"field": "n", "value": "100"},
+            {"field": "avg_duration_ms", "value": "900.0"},
+            {"field": "avg_retry_wait_ms", "value": "10.0"},
+        ]
+    ]
+    with pytest.raises(RuntimeError, match="no .*column"):
+        residual_bands._rows_to_bands(rows, (1500,))

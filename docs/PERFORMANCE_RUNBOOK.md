@@ -114,12 +114,14 @@ Emitted by `connect_labs/utils/request_telemetry.py` for any request over ~3s,
 `{"connect.dimagi.com": 139}` **is** a fan-out — no further proof needed.
 
 **For `slow` alone, the counts cannot answer it — the split can.** Every line
-carries `outbound_ms`, `db_ms` and `self_ms` (whatever is left after both waits):
+carries `outbound_ms`, `db_ms`, `retry_wait_ms` and `self_ms` (whatever is left
+after all three waits):
 
 | Dominant term | Conclusion | Fix shape |
 | --- | --- | --- |
 | `outbound_ms` | we are waiting on an upstream, usually Connect | cache/batch the call, or move it off the request path; if Connect itself is slow, that is a Connect bug — file it there |
 | `db_ms` | a genuinely expensive query, not an N+1 (the count would be low) | read the plan; index or narrow it |
+| `retry_wait_ms` | we are sleeping between retries, so the upstream is FAILING, not merely slow | fix the upstream, or reconsider the backoff; `retry_waits` is the attempt count minus one |
 | `self_ms` | our own Python — **but see the caveat below before you believe it** | profile the view |
 
 This split exists because 2026-08-11 hit a shape the counts alone could not
@@ -130,11 +132,18 @@ forming a hypothesis; they are cheaper than being wrong.
 
 ### `self_ms` is a REMAINDER, not a measurement — check the clients first
 
-`self_ms` is computed as `duration_ms - outbound_ms - db_ms`. It is not observed;
-it is whatever the other two failed to account for. So an outbound call made by a
-client that does **not** report itself does not merely go uncounted — it is
-silently reclassified as our own Python, and this table then sends you to profile
-a view that is sitting on a socket.
+`self_ms` is computed as `duration_ms - outbound_ms - db_ms - retry_wait_ms`. It is
+not observed; it is whatever the others failed to account for. So an outbound call
+made by a client that does **not** report itself does not merely go uncounted — it
+is silently reclassified as our own Python, and this table then sends you to
+profile a view that is sitting on a socket.
+
+The same trap has now caught three different kinds of wait, which is the pattern
+worth carrying rather than the three instances: an unmeasured *call* (#1298), an
+unmeasured *body download* (#1386), and an unmeasured *sleep* (#1435). Each was
+invisible for a different reason and each surfaced identically — as our CPU. When
+a residual is large, the question is never "which of our functions is hot"; it is
+"what am I not measuring yet".
 
 Counting is opt-in. A client is instrumented only if it was built with
 `event_hooks=request_telemetry.httpx_event_hooks()`, or calls
