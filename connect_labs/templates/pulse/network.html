@@ -24,7 +24,8 @@ shows a funder, and the labs navigation bar has no business above it.
       </div>
     </header>
 
-    <main class="net-main" id="net" data-endpoint="{% url 'pulse:api_network' %}">
+    <main class="net-main" id="net" data-endpoint="{% url 'pulse:api_network' %}"
+          data-org-url="{% url 'pulse:display' 'nightmap' %}?org=__SLUG__">
       <p class="net-loading" id="net-loading">Loading the network…</p>
     </main>
   </div>

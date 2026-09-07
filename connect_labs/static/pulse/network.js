@@ -13,6 +13,10 @@
   var root = document.getElementById('net');
   if (!root) return;
 
+  // Set once the payload lands; the country detail rows read partners from it.
+  var ALL_POINTS = [];
+  var PULSE_ORG_URL = root.dataset.orgUrl || '';
+
   function el(tag, attrs, kids) {
     var node = document.createElementNS('http://www.w3.org/2000/svg', tag);
     Object.keys(attrs || {}).forEach(function (k) {
@@ -470,6 +474,71 @@
    * country beats typing its name, and sortable because "who delivers most"
    * and "where is the biggest bench" are different questions of the same rows.
    */
+
+  /* The partners inside one country, opened from its row.
+   *
+   * This is where the table stops being a summary and becomes a way in: a
+   * country is 93 organisations or it is one, and "who are they" is the next
+   * question every time. Each partner Connect has a workspace for links
+   * through to its own Pulse view; the ones without a workspace have never
+   * delivered, so there is nothing there to look at yet and no link.
+   */
+  function partnersRow(country, span) {
+    var tr = document.createElement('tr');
+    tr.className = 'net-detail-row';
+    var td = document.createElement('td');
+    td.colSpan = span;
+    td.className = 'net-detail';
+
+    var here = ALL_POINTS.filter(function (p) {
+      return p.iso3 === country.iso3;
+    }).sort(function (a, b) {
+      // Delivering first, then most recently joined: the ones doing the work,
+      // then the ones who might next.
+      if (a.delivering !== b.delivering) return a.delivering ? -1 : 1;
+      return (b.joined || '').localeCompare(a.joined || '');
+    });
+
+    if (!here.length) {
+      td.textContent =
+        'No partner is headquartered in ' +
+        country.name +
+        ' — the delivery here is run by a partner based elsewhere.';
+      tr.appendChild(td);
+      return tr;
+    }
+
+    var list = document.createElement('div');
+    list.className = 'net-orgs';
+    here.forEach(function (p) {
+      var item = document.createElement(p.slug ? 'a' : 'div');
+      item.className = 'net-org' + (p.delivering ? ' net-org-live' : '');
+      if (p.slug) {
+        item.href = PULSE_ORG_URL.replace(
+          '__SLUG__',
+          encodeURIComponent(p.slug),
+        );
+        item.title = 'Open ' + p.name + ' in Pulse';
+      }
+      var name = document.createElement('span');
+      name.className = 'net-org-name';
+      name.textContent = p.name;
+      var meta = document.createElement('span');
+      meta.className = 'net-org-meta';
+      meta.textContent = p.delivering
+        ? 'delivering since ' + p.since
+        : p.joined
+        ? 'joined ' + p.joined
+        : '';
+      item.appendChild(name);
+      item.appendChild(meta);
+      list.appendChild(item);
+    });
+    td.appendChild(list);
+    tr.appendChild(td);
+    return tr;
+  }
+
   function countryTable(rows, onPick) {
     var wrap = document.createElement('div');
     wrap.className = 'net-tablewrap';
@@ -558,30 +627,47 @@
         });
 
         var svc = document.createElement('td');
-        svc.className = 'net-td net-right';
-        // A bar behind the number: 1.3M against 2,033 is not a comparison
-        // anyone makes from digits alone.
-        var bar = document.createElement('span');
-        bar.className = 'net-bar';
-        bar.style.width = top
-          ? Math.max(2, (r.services / top) * 100) + '%'
-          : '0';
-        if (!r.services) bar.style.width = '0';
-        svc.appendChild(bar);
+        svc.className = 'net-td net-services';
         var num = document.createElement('span');
         num.className = 'net-barnum';
         num.textContent = r.services ? r.services.toLocaleString() : 'not yet';
         svc.appendChild(num);
+        // The bar lives in a fixed track of its own. Sizing it as a percentage
+        // of the cell put the largest country's bar across the full width,
+        // where it read as a stray rule through the neighbouring column.
+        var track = document.createElement('span');
+        track.className = 'net-track';
+        var bar = document.createElement('span');
+        bar.className = 'net-bar';
+        bar.style.width =
+          top && r.services ? Math.max(2, (r.services / top) * 100) + '%' : '0';
+        track.appendChild(bar);
+        svc.appendChild(track);
         tr.appendChild(svc);
 
-        if (onPick) {
-          tr.addEventListener('click', function () {
-            onPick(r);
-          });
-          tr.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') onPick(r);
-          });
+        var open = false;
+        var detail = null;
+        function toggle() {
+          if (open) {
+            if (detail) detail.parentNode.removeChild(detail);
+            detail = null;
+            open = false;
+            tr.classList.remove('net-tr-open');
+            return;
+          }
+          detail = partnersRow(r, COLS.length);
+          tr.parentNode.insertBefore(detail, tr.nextSibling);
+          open = true;
+          tr.classList.add('net-tr-open');
+          if (onPick) onPick(r);
         }
+        tr.addEventListener('click', toggle);
+        tr.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggle();
+          }
+        });
         tbody.appendChild(tr);
       });
 
@@ -640,6 +726,7 @@
 
   function render(data) {
     root.innerHTML = '';
+    ALL_POINTS = data.points || [];
     var t = data.totals;
 
     var kpis = document.createElement('div');

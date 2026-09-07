@@ -26,7 +26,7 @@ from __future__ import annotations
 import datetime as dt
 from collections import Counter
 
-from django.db.models import Min, Sum
+from django.db.models import Count, Min, Sum
 from django.http import JsonResponse
 from django.views import View
 
@@ -125,9 +125,27 @@ def countries_table(delivering: set[str]) -> list[dict]:
     return out
 
 
+def workspaces_by_partner() -> dict[str, str]:
+    """Partner name -> the Connect org slug to open Pulse at.
+
+    A partner can run several workspaces; the one with the most work is the one
+    someone means when they click through. Pulse scopes to a single ``?org=``,
+    so it has to be one slug rather than a list.
+    """
+    best: dict[str, tuple[int, str]] = {}
+    for record in PulseWork.objects.exclude(org_slug="").values("org_slug").annotate(n=Count("id")):
+        parent = resolve_partner(record["org_slug"])["parent"]
+        if not parent:
+            continue
+        if parent not in best or record["n"] > best[parent][0]:
+            best[parent] = (record["n"], record["org_slug"])
+    return {name: slug for name, (_, slug) in best.items()}
+
+
 def build_payload() -> dict:
     partners = list(PulsePartner.objects.all())
     delivering = first_service_by_partner()
+    workspaces = workspaces_by_partner()
 
     joined_months = Counter(p.joined_at.strftime("%Y-%m") for p in partners if p.joined_at)
     serving_months = Counter(d.strftime("%Y-%m") for d in delivering.values())
@@ -156,6 +174,9 @@ def build_payload() -> dict:
                 "joined": p.joined_at.isoformat() if p.joined_at else "",
                 "delivering": p.name in delivering,
                 "since": delivering[p.name].isoformat() if p.name in delivering else "",
+                # Present only for partners Connect has a workspace for, which
+                # is what makes a Pulse link possible at all.
+                "slug": workspaces.get(p.name, ""),
             }
         )
     points.sort(key=lambda r: (r["joined"] or "9999", r["name"]))
