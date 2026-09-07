@@ -417,3 +417,15 @@ def mint_public_token(user, *, label: str = "", layout: str = DEFAULT_LAYOUT, sh
         show_partner_names=show_partner_names,
         created_by=user,
     )
+
+
+class PulseNetworkView(LoginRequiredMixin, View):
+    """The partner network: how it grew, and where it is.
+
+    A different question from the rest of Pulse, which is about work happening
+    now. This is about who is in the network at all — including the majority who
+    have never delivered, and who therefore appear nowhere else in the product.
+    """
+
+    def get(self, request):
+        return render(request, "pulse/network.html", {})

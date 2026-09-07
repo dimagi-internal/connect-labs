@@ -1,0 +1,32 @@
+{% load static %}<!doctype html>
+{% comment %}
+Standalone like display.html, and for the same reason: this is a screen someone
+shows a funder, and the labs navigation bar has no business above it.
+{% endcomment %}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connect Pulse — the partner network</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'pulse/pulse.css' %}">
+</head>
+<body class="pulse-body">
+  <div class="net-shell">
+    <header class="pulse-bar">
+      <div class="pulse-brand">Connect <b>Pulse</b></div>
+      <div class="net-sub">the partner network</div>
+      <div class="pulse-transport-top">
+        <a class="net-back" href="{% url 'pulse:index' %}">Back to Pulse</a>
+      </div>
+    </header>
+
+    <main class="net-main" id="net" data-endpoint="{% url 'pulse:api_network' %}">
+      <p class="net-loading" id="net-loading">Loading the network…</p>
+    </main>
+  </div>
+  <script src="{% static 'pulse/network.js' %}"></script>
+</body>
+</html>
