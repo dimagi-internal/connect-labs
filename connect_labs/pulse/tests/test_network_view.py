@@ -15,7 +15,7 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from connect_labs.pulse import hq_location
-from connect_labs.pulse.models import PulseEvent, PulsePartner, PulseWork
+from connect_labs.pulse.models import PulseEvent, PulseOpportunity, PulsePartner, PulseWork
 from connect_labs.pulse.network_api import WORKS_FLOOR, build_payload, first_service_by_partner
 from connect_labs.pulse.partner_names import invalidate
 
@@ -222,3 +222,35 @@ class TestCountryFallback:
 
     def test_a_row_with_no_country_at_all_is_not_invented(self):
         assert hq_location.resolve("", "", "0") is None
+
+
+class TestCountriesTable:
+    """Where partners are and where work happens are different questions, and
+    the table is the union of both — taking one side hides the other."""
+
+    def test_a_country_with_partners_but_no_delivery_still_appears(self):
+        """Most of the network is in this state. Listing only countries with
+        delivery would report the network as a third of its real reach."""
+        PulsePartner.objects.create(name="A", country_iso3="MWI", lat=-13.3, lon=34.3)
+        rows = {r["iso3"]: r for r in build_payload()["countries"]}
+        assert rows["MWI"]["partners"] == 1
+        assert rows["MWI"]["services"] == 0
+
+    def test_a_country_with_delivery_but_no_partner_headquartered_there(self):
+        """A partner in one country running a programme across the border. The
+        country is real and the work is real; nobody is based there."""
+        PulseOpportunity.objects.create(
+            opportunity_id=90, name="Cross-border", org_slug="x", country="NE", lifetime_visit_count=500
+        )
+        rows = {r["iso3"]: r for r in build_payload()["countries"]}
+        assert rows["NER"]["services"] == 500
+        assert rows["NER"]["partners"] == 0
+
+    def test_the_two_country_counts_measure_different_things(self):
+        PulsePartner.objects.create(name="A", country_iso3="MWI", lat=-13.3, lon=34.3)
+        PulseOpportunity.objects.create(
+            opportunity_id=91, name="Work", org_slug="x", country="NG", lifetime_visit_count=10
+        )
+        totals = build_payload()["totals"]
+        assert totals["countries"] == 1  # partners are headquartered in one
+        assert totals["countries_delivering"] == 1  # and delivery happens in another

@@ -461,6 +461,156 @@
     return map;
   }
 
+  /* The country table. Two facts sit side by side in it that are easy to
+   * conflate: where partners are headquartered, and where work actually
+   * happens. The network reaches far more countries than delivery has, and
+   * that gap is the same one the chart draws — this is its geography.
+   *
+   * Filterable because 21 rows is past the point where scanning for one
+   * country beats typing its name, and sortable because "who delivers most"
+   * and "where is the biggest bench" are different questions of the same rows.
+   */
+  function countryTable(rows, onPick) {
+    var wrap = document.createElement('div');
+    wrap.className = 'net-tablewrap';
+
+    var sort = { key: 'services', dir: -1 };
+    var query = '';
+    var top = rows.reduce(function (m, r) {
+      return Math.max(m, r.services);
+    }, 0);
+
+    var table = document.createElement('table');
+    table.className = 'net-table';
+    var thead = document.createElement('thead');
+    var tbody = document.createElement('tbody');
+    table.appendChild(thead);
+    table.appendChild(tbody);
+
+    var COLS = [
+      { key: 'name', label: 'Country', align: 'left' },
+      { key: 'partners', label: 'In network', align: 'right' },
+      { key: 'delivering', label: 'Delivering', align: 'right' },
+      { key: 'services', label: 'Services delivered', align: 'right' },
+    ];
+
+    function head() {
+      thead.innerHTML = '';
+      var tr = document.createElement('tr');
+      COLS.forEach(function (c) {
+        var th = document.createElement('th');
+        th.textContent = c.label;
+        th.className =
+          'net-th net-' + c.align + (sort.key === c.key ? ' net-sorted' : '');
+        if (sort.key === c.key) th.textContent += sort.dir < 0 ? ' ↓' : ' ↑';
+        th.tabIndex = 0;
+        function pick() {
+          if (sort.key === c.key) sort.dir = -sort.dir;
+          else {
+            sort.key = c.key;
+            sort.dir = c.key === 'name' ? 1 : -1;
+          }
+          draw();
+        }
+        th.addEventListener('click', pick);
+        th.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            pick();
+          }
+        });
+        tr.appendChild(th);
+      });
+      thead.appendChild(tr);
+    }
+
+    function draw() {
+      head();
+      tbody.innerHTML = '';
+      var shown = rows
+        .filter(function (r) {
+          return !query || r.name.toLowerCase().indexOf(query) !== -1;
+        })
+        .slice()
+        .sort(function (a, b) {
+          var x = a[sort.key],
+            y = b[sort.key];
+          if (typeof x === 'string') return x.localeCompare(y) * sort.dir;
+          return (x - y) * sort.dir;
+        });
+
+      shown.forEach(function (r) {
+        var tr = document.createElement('tr');
+        tr.className = 'net-tr' + (r.services ? '' : ' net-tr-quiet');
+        tr.tabIndex = 0;
+
+        var name = document.createElement('td');
+        name.className = 'net-td';
+        name.textContent = r.name;
+        tr.appendChild(name);
+
+        [r.partners, r.delivering].forEach(function (v, i) {
+          var td = document.createElement('td');
+          td.className =
+            'net-td net-right' + (i === 1 && v ? ' net-live-num' : '');
+          td.textContent = v || '—';
+          tr.appendChild(td);
+        });
+
+        var svc = document.createElement('td');
+        svc.className = 'net-td net-right';
+        // A bar behind the number: 1.3M against 2,033 is not a comparison
+        // anyone makes from digits alone.
+        var bar = document.createElement('span');
+        bar.className = 'net-bar';
+        bar.style.width = top
+          ? Math.max(2, (r.services / top) * 100) + '%'
+          : '0';
+        if (!r.services) bar.style.width = '0';
+        svc.appendChild(bar);
+        var num = document.createElement('span');
+        num.className = 'net-barnum';
+        num.textContent = r.services ? r.services.toLocaleString() : 'not yet';
+        svc.appendChild(num);
+        tr.appendChild(svc);
+
+        if (onPick) {
+          tr.addEventListener('click', function () {
+            onPick(r);
+          });
+          tr.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') onPick(r);
+          });
+        }
+        tbody.appendChild(tr);
+      });
+
+      if (!shown.length) {
+        var tr = document.createElement('tr');
+        var td = document.createElement('td');
+        td.colSpan = COLS.length;
+        td.className = 'net-td net-empty';
+        td.textContent = 'No country matches “' + query + '”.';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      }
+    }
+
+    var filter = document.createElement('input');
+    filter.type = 'search';
+    filter.className = 'net-filter';
+    filter.placeholder = 'Filter countries…';
+    filter.setAttribute('aria-label', 'Filter countries');
+    filter.addEventListener('input', function () {
+      query = filter.value.trim().toLowerCase();
+      draw();
+    });
+
+    draw();
+    wrap.appendChild(table);
+    return { node: wrap, filter: filter };
+  }
+
   function kpi(n, label) {
     var d = document.createElement('div');
     d.className = 'net-kpi';
@@ -550,7 +700,40 @@
     geo.appendChild(note);
     root.appendChild(geo);
     // After the panel is in the document: Mapbox measures its container.
-    if (canUseGlobe) globeMap(mbox, data.points);
+    var liveMap = canUseGlobe ? globeMap(mbox, data.points) : null;
+
+    // Countries last: the chart says how fast, the map says where, and this
+    // says which — the level someone actually asks a follow-up question at.
+    var geoPanel = panel('Countries', '');
+    var built = countryTable(data.countries || [], function (row) {
+      if (!liveMap) return;
+      var here = data.points.filter(function (p) {
+        return p.iso3 === row.iso3;
+      });
+      if (!here.length) return;
+      var lat =
+        here.reduce(function (a, p) {
+          return a + p.lat;
+        }, 0) / here.length;
+      var lon =
+        here.reduce(function (a, p) {
+          return a + p.lon;
+        }, 0) / here.length;
+      liveMap.flyTo({ center: [lon, lat], zoom: 4.6, duration: 1400 });
+      mbox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    geoPanel.querySelector('.net-panel-bar').appendChild(built.filter);
+    geoPanel.appendChild(built.node);
+    var cnote = document.createElement('p');
+    cnote.className = 'net-note';
+    cnote.textContent =
+      'Partners are headquartered in ' +
+      t.countries +
+      ' countries; Connect delivery has started in ' +
+      t.countries_delivering +
+      '. A country can appear with no partner headquartered in it — that is a partner working across a border.';
+    geoPanel.appendChild(cnote);
+    root.appendChild(geoPanel);
   }
 
   fetch(root.dataset.endpoint, { credentials: 'same-origin' })
