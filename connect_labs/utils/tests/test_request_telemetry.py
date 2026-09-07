@@ -711,3 +711,83 @@ class TestUnbiasedSample:
         type(broken).path = property(lambda self: (_ for _ in ()).throw(RuntimeError("no path")))
 
         assert _middleware(lambda r: "ok")(broken) == "ok"
+
+
+class TestRetryWaitIsNotOurCpu:
+    """#1435: a deliberate backoff sleep was billed to ``self_ms`` as if it were CPU.
+
+    Third instance of one bug: an unmeasured wait becomes the residual, and the
+    residual reads as our Python. #1298 was an uncounted CALL, #1386 an uncounted
+    BODY DOWNLOAD, this one an uncounted SLEEP -- the thread is parked, so even
+    ``cpu_ms`` (which correctly reports ~0) cannot say what the time WAS, only what
+    it was not.
+    """
+
+    def test_a_retry_wait_lands_in_its_own_bucket_not_the_residual(self, request_obj, caplog):
+        def view_that_backs_off(_request):
+            request_telemetry.record_retry_wait(120.0)
+            return "ok"
+
+        caplog.set_level("WARNING")
+        with patch.object(request_telemetry, "SLOW_REQUEST_MS", 0):
+            _middleware(view_that_backs_off)(request_obj)
+
+        line = _lines(caplog)[0]
+        assert line["retry_wait_ms"] == 120
+        assert line["retry_waits"] == 1
+        # The point of the change: the sleep is NOT in the residual any more.
+        assert line["self_ms"] == max(0, line["duration_ms"] - line["outbound_ms"] - line["db_ms"] - 120)
+
+    def test_retry_waits_counts_attempts_minus_one(self, request_obj, caplog):
+        """``retry_waits`` is the field that separates the two branches of the fork.
+
+        A tail made of retries is an upstream reliability problem; a tail with no
+        retries in it is something else. The residual absorbs both identically,
+        which is why counting is not optional.
+        """
+
+        def view_that_retries_twice(_request):
+            request_telemetry.record_retry_wait(300.0)
+            request_telemetry.record_retry_wait(600.0)
+            return "ok"
+
+        caplog.set_level("WARNING")
+        with patch.object(request_telemetry, "SLOW_REQUEST_MS", 0):
+            _middleware(view_that_retries_twice)(request_obj)
+
+        line = _lines(caplog)[0]
+        assert line["retry_waits"] == 2, "two sleeps == three attempts"
+        assert line["retry_wait_ms"] == 900
+
+    def test_a_clean_request_reports_zero_not_absent(self, request_obj, caplog):
+        """Absent and zero must be distinguishable downstream, so we always emit."""
+        caplog.set_level("WARNING")
+        with patch.object(request_telemetry, "SLOW_REQUEST_MS", 0):
+            _middleware(lambda r: "ok")(request_obj)
+
+        line = _lines(caplog)[0]
+        assert line["retry_waits"] == 0
+        assert line["retry_wait_ms"] == 0
+
+    def test_counters_do_not_leak_between_requests(self, request_obj, caplog):
+        caplog.set_level("WARNING")
+        with patch.object(request_telemetry, "SLOW_REQUEST_MS", 0):
+            _middleware(lambda r: request_telemetry.record_retry_wait(500.0) or "ok")(request_obj)
+            _middleware(lambda r: "ok")(request_obj)
+
+        first, second = _lines(caplog)[0], _lines(caplog)[1]
+        assert first["retry_wait_ms"] == 500
+        assert second["retry_wait_ms"] == 0, "the ContextVar must be per-request"
+
+    def test_recording_outside_a_request_is_a_noop(self):
+        """Celery, management commands and the shell have no stats context."""
+        request_telemetry._stats.set(None)
+        request_telemetry.record_retry_wait(50.0)  # must not raise
+
+    def test_self_ms_never_goes_negative_when_the_wait_dominates(self, request_obj, caplog):
+        """A wait longer than the measured duration must clamp, not underflow."""
+        caplog.set_level("WARNING")
+        with patch.object(request_telemetry, "SLOW_REQUEST_MS", 0):
+            _middleware(lambda r: request_telemetry.record_retry_wait(999_999.0) or "ok")(request_obj)
+
+        assert _lines(caplog)[0]["self_ms"] == 0

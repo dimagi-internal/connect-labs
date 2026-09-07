@@ -4,15 +4,20 @@
     python3 tools/residual_bands.py --hours 8 --path-prefix /audit/image/
     python3 tools/residual_bands.py --hours 8 --json
 
-`self_ms` is a residual -- `duration_ms - outbound_ms - db_ms` -- so a large one
-only means "unexplained", never "our CPU". `cpu_ms` is the measurement that
-settles it, and the fork is the one `request_telemetry`'s module docstring
-already states:
+`self_ms` is a residual -- `duration_ms - outbound_ms - db_ms - retry_wait_ms` --
+so a large one only means "unexplained", never "our CPU". `cpu_ms` is the
+measurement that settles it, and the fork is the one `request_telemetry`'s module
+docstring already states:
 
   * `cpu_ms` ~= `self_ms` -- the time really is our Python. Profile the view.
   * `cpu_ms` << `self_ms` -- the thread was NOT RUNNING. Profiling finds nothing;
     look for an unmeasured wait (an uninstrumented client, a body download) or
     for descheduling.
+
+The `retry` column is the newest term, and it is the one that splits the tail
+(#1435): time we spent asleep between retries. A band where it dominates is an
+UPSTREAM RELIABILITY problem, not a labs-web one. It prints `-`, never `0`, for a
+window whose code epoch predates the field -- see `_OPTIONAL_METRIC_FIELDS`.
 
 This exists rather than a query in a doc because the comparison was hand-built
 five separate times for #1386, and BOTH of its failure modes return a confident
@@ -74,6 +79,17 @@ MAX_EDGES = 9
 # here, so the alias prefix lives in exactly one place.
 _METRIC_FIELDS = ("duration_ms", "cpu_ms", "self_ms", "outbound_ms", "db_ms")
 
+# Metrics that may legitimately be ABSENT, because the code emitting them is newer
+# than some of the windows this tool is pointed at. `retry_wait_ms` (#1435) landed
+# after the #1386 measurements, so a window spanning its deploy has rows without
+# the column -- and treating that as the shape-change error above would be a false
+# alarm on a perfectly good query.
+#
+# They are NOT defaulted to 0.0, for the reason the strict check exists: "the code
+# did not emit this" and "no retries happened" are different facts and must not
+# render as the same number. Absent prints as `-`.
+_OPTIONAL_METRIC_FIELDS = ("retry_wait_ms",)
+
 # Below this many rows in a band, the band's means are noise and get reported as
 # such. Not a hard failure -- a thin top band is the normal shape of this data
 # (90 rows in the >=3s band of the 4,177-request #1386 sample) -- but a band of
@@ -131,7 +147,7 @@ def build_query(edges: tuple[int, ...], path_prefix: str, allow_biased: bool) ->
     deliberately no code path here that issues a second query per field.
     """
     lines = [
-        "fields @timestamp, path, duration_ms, cpu_ms, self_ms, db_ms, outbound_ms, sampled",
+        "fields @timestamp, path, duration_ms, cpu_ms, self_ms, db_ms, outbound_ms, retry_wait_ms, sampled",
     ]
     if not allow_biased:
         # The load-bearing line. Everything else in this file is presentation.
@@ -168,7 +184,7 @@ def build_query(edges: tuple[int, ...], path_prefix: str, allow_biased: bool) ->
     lines.append(
         "| stats count() as n, avg(duration_ms) as avg_duration_ms, avg(cpu_ms) as avg_cpu_ms, "
         "avg(self_ms) as avg_self_ms, avg(outbound_ms) as avg_outbound_ms, "
-        "avg(db_ms) as avg_db_ms by band"
+        "avg(db_ms) as avg_db_ms, avg(retry_wait_ms) as avg_retry_wait_ms by band"
     )
     lines.append("| sort band asc")
     return "\n".join(lines)
@@ -242,6 +258,10 @@ def _rows_to_bands(rows: list[list[dict]], edges: tuple[int, ...]) -> list[dict]
         band = {"band": labels[idx], "index": idx, "n": int(float(rec.get("n", 0)))}
         for f in _METRIC_FIELDS:
             band[f] = round(float(rec[f"avg_{f}"]), 1)
+        for f in _OPTIONAL_METRIC_FIELDS:
+            # None, not 0.0 -- see _OPTIONAL_METRIC_FIELDS.
+            raw = rec.get(f"avg_{f}")
+            band[f] = round(float(raw), 1) if raw not in (None, "") else None
         bands.append(band)
     bands.sort(key=lambda b: b["index"])
     return bands
@@ -431,11 +451,15 @@ def main() -> int:
     w = data["window"]
     print(f"\nVERDICT: {result['verdict']}   ({w['start']} -> {w['end']} UTC, {data['path_prefix']})\n")
     if data["bands"]:
-        print(f"  {'band':>12}  {'n':>6}  {'dur':>8}  {'cpu':>8}  {'self':>8}  {'out':>8}  {'db':>8}")
+        header = f"  {'band':>12}  {'n':>6}  {'dur':>8}  {'cpu':>8}  {'self':>8}  {'out':>8}  {'db':>8}  {'retry':>8}"
+        print(header)
         for b in data["bands"]:
+            # `-` where the code epoch predates the field, so an absent column can
+            # never be misread as "no retries" -- see _OPTIONAL_METRIC_FIELDS.
+            retry = "-" if b.get("retry_wait_ms") is None else f"{b['retry_wait_ms']}"
             print(
                 f"  {b['band']:>12}  {b['n']:>6}  {b['duration_ms']:>8}  {b['cpu_ms']:>8}  "
-                f"{b['self_ms']:>8}  {b['outbound_ms']:>8}  {b['db_ms']:>8}"
+                f"{b['self_ms']:>8}  {b['outbound_ms']:>8}  {b['db_ms']:>8}  {retry:>8}"
             )
         print()
     for f in result["findings"]:

@@ -60,6 +60,16 @@ it was the entire cost, and it ranked a view that does no image work as the top 
 consumer on the web tier. ``send`` is now wrapped so the body read is billed to
 ``outbound_ms`` too (see ``_patch_client_send``).
 
+#1435 is the same error again, and it is not about an HTTP call at all: a
+deliberate ``time.sleep`` between retries. ``download_image_from_connect`` backs
+off up to 0.9 s per request, on the request thread. That wait is not outbound,
+not db and not CPU, so every millisecond of it landed in the residual and read as
+a hot loop. ``retry_wait_ms`` bills it to its own bucket (see
+``record_retry_wait``), and ``retry_waits`` counts the waits — which is the number
+that says whether a slow tail is made of *retries* (an upstream reliability
+problem) or of something still unnamed. On a path that sleeps once between
+attempts, ``attempts == retry_waits + 1``.
+
 Two gaps remain, deliberately: ``stream=True`` calls return at headers and the
 caller reads the body on its own time, and anything reaching the network by a route
 other than httpx is invisible — prefer httpx.
@@ -154,6 +164,10 @@ class RequestStats:
     outbound_ms: float = 0.0
     db_queries: int = 0
     db_ms: float = 0.0
+    # Deliberate waits we chose to take (retry backoff), billed away from the
+    # residual so a sleep does not read as our CPU. See ``record_retry_wait``.
+    retry_waits: int = 0
+    retry_wait_ms: float = 0.0
 
     def top_outbound(self, n: int = 3) -> dict[str, int]:
         return dict(self.outbound_by_host.most_common(n))
@@ -192,6 +206,26 @@ def add_outbound_ms(elapsed_ms: float) -> None:
     if stats is None:
         return
     stats.outbound_ms += elapsed_ms
+
+
+def record_retry_wait(elapsed_ms: float) -> None:
+    """Bill a deliberate between-retry sleep to its own bucket. No-op outside a request.
+
+    A backoff sleep is not outbound (nothing is on the wire), not db, and not CPU
+    (the thread is parked). ``self_ms`` is a residual, so without this the whole
+    wait is indistinguishable from a hot loop — which is #1435, and the same class
+    as #1298 and #1386 before it: a wait we chose to take, that nothing counted.
+
+    Counting the waits as well as timing them is the load-bearing half. It is what
+    separates "the tail is retries, so this is an upstream reliability problem"
+    from "the tail is something else" — two branches the residual cannot tell
+    apart, because it absorbs both.
+    """
+    stats = _stats.get()
+    if stats is None:
+        return
+    stats.retry_waits += 1
+    stats.retry_wait_ms += elapsed_ms
 
 
 # Where the start time is stashed between the request and response hooks. An
@@ -501,10 +535,18 @@ class RequestTelemetryMiddleware:
             "outbound_by_host": stats.top_outbound(),
             "db_queries": stats.db_queries,
             "db_ms": int(stats.db_ms),
-            # What is left after waiting on Postgres and on upstream HTTP. A large
-            # remainder means the time is in our own Python, and neither of the
-            # other two numbers will lead you to it.
-            "self_ms": max(0, duration_ms - int(stats.outbound_ms) - int(stats.db_ms)),
+            # Deliberate backoff sleeps on the request thread (#1435). Broken out
+            # of the residual because a sleep is not our CPU, and counted because
+            # retry_waits > 0 is what identifies the tail as upstream retries.
+            "retry_waits": stats.retry_waits,
+            "retry_wait_ms": int(stats.retry_wait_ms),
+            # What is left after waiting on Postgres, on upstream HTTP, and on our
+            # own backoff. A large remainder means the time is in our own Python,
+            # and none of the other three numbers will lead you to it.
+            "self_ms": max(
+                0,
+                duration_ms - int(stats.outbound_ms) - int(stats.db_ms) - int(stats.retry_wait_ms),
+            ),
             # CPU this request's thread actually burned. self_ms says how much time
             # is unexplained; cpu_ms says whether that time was us computing or us
             # not running at all. See the module docstring.

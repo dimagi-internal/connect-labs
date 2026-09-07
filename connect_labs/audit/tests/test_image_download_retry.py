@@ -81,3 +81,67 @@ def test_gives_up_after_max_attempts_on_persistent_transient_failure():
     with pytest.raises(ValueError, match="connection error"):
         da.download_image_from_connect("blob1", 1)
     assert da.http_client.get.call_count == AuditDataAccess.IMAGE_DOWNLOAD_MAX_ATTEMPTS
+
+
+class TestBackoffIsBilledToTelemetry:
+    """#1435: the backoff sleep is real time on the request thread, and it was
+    landing in ``self_ms`` -- the residual -- where it read as our own CPU on the
+    very endpoint whose residual was under investigation.
+
+    Note ``_no_sleep`` above patches the sleep out, so these assert the WIRING
+    (that a wait is recorded per retry, and how many), not the wall-clock value.
+    """
+
+    def test_each_retry_records_one_wait(self):
+        from connect_labs.utils import request_telemetry
+        from connect_labs.utils.request_telemetry import RequestStats
+
+        da = _make_data_access()
+        da.http_client.get.side_effect = [
+            httpx.ConnectError("boom"),
+            httpx.ConnectError("boom"),
+            _ok_response(b"IMG"),
+        ]
+        token = request_telemetry._stats.set(RequestStats())
+        try:
+            assert da.download_image_from_connect("blob1", 1) == b"IMG"
+            stats = request_telemetry.current_stats()
+            # Three attempts, two gaps between them.
+            assert stats.retry_waits == 2
+            assert da.http_client.get.call_count == stats.retry_waits + 1
+        finally:
+            request_telemetry._stats.reset(token)
+
+    def test_a_first_try_success_records_no_wait(self):
+        from connect_labs.utils import request_telemetry
+        from connect_labs.utils.request_telemetry import RequestStats
+
+        da = _make_data_access()
+        da.http_client.get.return_value = _ok_response(b"IMG")
+        token = request_telemetry._stats.set(RequestStats())
+        try:
+            da.download_image_from_connect("blob1", 1)
+            assert request_telemetry.current_stats().retry_waits == 0
+        finally:
+            request_telemetry._stats.reset(token)
+
+    def test_a_4xx_fails_fast_and_records_no_wait(self):
+        """The fast-fail path must not be billed a wait it never took."""
+        from connect_labs.utils import request_telemetry
+        from connect_labs.utils.request_telemetry import RequestStats
+
+        da = _make_data_access()
+        da.http_client.get.return_value = _status_error(404)
+        token = request_telemetry._stats.set(RequestStats())
+        try:
+            with pytest.raises(ValueError):
+                da.download_image_from_connect("blob1", 1)
+            assert request_telemetry.current_stats().retry_waits == 0
+        finally:
+            request_telemetry._stats.reset(token)
+
+    def test_download_still_works_outside_a_request_context(self):
+        """Celery and management commands call this with no stats context."""
+        da = _make_data_access()
+        da.http_client.get.side_effect = [httpx.ConnectError("boom"), _ok_response(b"IMG")]
+        assert da.download_image_from_connect("blob1", 1) == b"IMG"
