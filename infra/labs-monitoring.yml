@@ -769,22 +769,20 @@ Resources:
       # into the notification email, which pages an agent mailbox and is read
       # cold by a session with no prior context.
       AlarmDescription: >-
-        gunicorn workers on the web tier have been dying at a SUSTAINED elevated
-        rate — 6+ in a 30-minute window, in 2 of the last 3 windows — and no
-        deploy is rolling. This is the slow-burn counterpart to
-        labs-jj-web-worker-crash-loop, which only catches an acute 5-in-5-minutes
-        loop; a rate that sits just under that bar can run all day unobserved,
-        and did on 2026-09-07 (32 kills vs a 9/day baseline). Each kill drops
-        that worker's in-flight requests, so users see 5xx/stalls, not a graceful
-        error. These are KERNEL OOM kills: gunicorn logs a CRITICAL WORKER
-        TIMEOUT before reaping a hung worker, so if there are no TIMEOUT lines,
-        gunicorn did not send the signal. Do NOT diagnose from MemoryUtilization
-        — a 1-minute gauge misses a per-request spike, and it read 29-35%
-        through the 2026-08-24 incident. Start with #1361: query
-        /ecs/labs-jj-web for user_visits/?page_size=2500 and group by the
-        last_id cursor; cursors REPEATING across log streams mean several
-        workers are paginating one opportunity's whole visit export at once,
-        and peak memory is N x per-request.
+        Web-tier gunicorn workers are dying at a SUSTAINED rate: 6+ per 30-minute
+        window in 2 of the last 3, and no deploy is rolling. Counterpart to
+        labs-jj-web-worker-crash-loop, which catches only an acute 5-in-5-minute
+        loop — a rate under that bar runs all day unseen, and did on 2026-09-07
+        (32 kills vs a 9/day baseline). Each kill drops that worker's in-flight
+        requests, so users see 5xx and stalls. These are KERNEL OOM kills:
+        gunicorn logs CRITICAL WORKER TIMEOUT before reaping a hung worker, so
+        no TIMEOUT lines means gunicorn did not send the signal. Do NOT diagnose
+        from MemoryUtilization — a 1-minute gauge misses a per-request spike; it
+        read 29-35% through the 2026-08-24 incident. Start at #1361: in
+        /ecs/labs-jj-web query user_visits/?page_size=2500 grouped by last_id
+        cursor. Cursors REPEATING across log streams mean several workers are
+        paginating one opportunity's whole visit export at once, so peak memory
+        is N x per-request.
       AlarmRule: !Sub 'ALARM("${WebWorkerKillRateAlarm}") AND NOT ALARM("${DeployInProgressAlarm}")'
       AlarmActions: [!Ref AlertTopic]
       OKActions: [!Ref AlertTopic]
