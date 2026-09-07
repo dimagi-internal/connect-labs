@@ -1505,7 +1505,25 @@ function WorkflowUI({
   // server-side, which is the only version where the scopes below cost one pass
   // instead of three. Fetched ON DEMAND rather than with the page -- it is a real
   // query against the visit cache, and the other tabs must not pay for it.
-  var sN = React.useState({ status: 'idle', rows: [], measures: [] });
+  // A frozen run serves the N-series from its own snapshot. Every OTHER tab on
+  // this screen already loads from `state.frozen` and is instant; this one was
+  // the sole holdout, re-querying the semantic endpoint every time. That made it
+  // the only part of a supposedly-frozen dashboard that could still go wrong --
+  // and it did: production expires cached visits after an hour, so a snapshot
+  // that "cannot move" sat next to a live tab reading 608 of 8,718 cases.
+  // A snapshot is the right place for this. The rows are ~245 KB for 253 rows,
+  // comfortably inside the framework's 5 MB cap.
+  var sN = React.useState(
+    frozen && frozen.nSeries
+      ? {
+          status: 'ready',
+          rows: frozen.nSeries.rows || [],
+          measures: frozen.nSeries.measures || [],
+          opportunity_ids: frozen.nSeries.opportunity_ids || [],
+          fromSnapshot: true,
+        }
+      : { status: 'idle', rows: [], measures: [] },
+  );
   var nSeries = sN[0],
     setNSeries = sN[1];
 
@@ -1556,6 +1574,9 @@ function WorkflowUI({
           status: 'ready',
           rows: data.rows || [],
           measures: data.measures || [],
+          // Carried so the snapshot can keep it: the card footer counts the
+          // opportunities from here, and a frozen run has no response to read.
+          opportunity_ids: data.opportunity_ids || [],
           coldCache: data.cold_cache || false,
           partialCache: data.partial_cache || false,
           coldHint: data.cold_cache_hint || '',
@@ -2541,6 +2562,18 @@ function WorkflowUI({
     return {
       schema: 1,
       generated_at: new Date().toISOString(),
+      // The SQL-computed series, so the frozen run does not have to re-query for
+      // it. Null when the operator never ran the tab -- captured rather than
+      // required, because a snapshot without it is still a valid snapshot.
+      nSeries:
+        nSeries.status === 'ready' && nSeries.rows.length
+          ? {
+              rows: nSeries.rows,
+              measures: nSeries.measures,
+              opportunity_ids: nSeries.opportunity_ids || [],
+              generated_at: new Date().toISOString(),
+            }
+          : null,
       programInd: programInd,
       byLLO: byLLO.map(function (l) {
         return {
@@ -2612,6 +2645,16 @@ function WorkflowUI({
           'completed run cannot be reopened. Wait for the indicators to appear.',
       );
       return;
+    }
+    if (!(nSeries.status === 'ready' && nSeries.rows.length)) {
+      if (
+        !window.confirm(
+          'The Demo metrics (SQL) tab has not been run, so it will not be part ' +
+            'of this snapshot and will keep querying live (and can go stale). ' +
+            'Run it first for a fully frozen dashboard.\n\nSnapshot anyway?',
+        )
+      )
+        return;
     }
     onUpdateState({ frozen: buildFrozen() });
   }
