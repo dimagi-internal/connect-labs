@@ -710,6 +710,85 @@ Resources:
       AlarmActions: [!Ref AlertTopic]
       OKActions: [!Ref AlertTopic]
 
+  # ── Web worker SUSTAINED kill rate ────────────────────────────────────────
+  # The crash-loop alarm above catches an ACUTE loop: 5 kills in a 5-minute
+  # period, twice in four. Nothing catches a rate that never reaches that bar
+  # and simply never stops — which its own comment already names as the
+  # dangerous shape ("a loop that settles at 3-4 kills per period stays
+  # invisible indefinitely while killing workers around the clock").
+  #
+  # Measured 2026-09-07: 32 kills across the day against a post-#1293 baseline
+  # of NINE PER DAY, including 12:15-12:55 at 4/3/3/2/2/2/2/1 per 5-min period
+  # — 19 kills in 45 minutes, ~25/hour — with a single period touching 5. The
+  # crash-loop alarm needs two such periods, so it stayed OK the entire time
+  # and had not transitioned since 2026-09-03. A 3.5x-baseline day was
+  # completely unobserved; it was found only because a user reported an
+  # unrelated 404 and the kills happened to be in the same log window.
+  #
+  # So this is a COVERAGE gap, not the N-of-N config defect fixed in #1429 —
+  # every alarm in this file was audited for that on 2026-09-07 and only
+  # labs-jj-web-no-healthy-targets still omits DatapointsToAlarm, which #1429
+  # held back deliberately (60s period, availability-critical).
+  #
+  # Cause, when this fires: almost certainly the RawVisitCache stampede in
+  # #1361 — N gunicorn workers each paginating the SAME opportunity's whole
+  # visit export concurrently, so peak memory is N x per-request on a 4096 MB
+  # task. The tell is in /ecs/labs-jj-web: user_visits/?page_size=2500 fetches
+  # whose last_id cursors REPEAT across log streams. On 2026-09-07 that was 53
+  # fetches over 16 distinct cursors, every cursor 2-6x, across both tasks.
+  #
+  # Calibration, from 30-minute windows over the 14 days to 2026-09-07. The
+  # acute incidents sit at 28/25/21/14; this day sits at 12 and 7; every
+  # ordinary-day window at or above 6 is an ISOLATED singleton. So 6-in-30min
+  # twice within 90 minutes fires on both real incidents and on this day,
+  # and no ordinary day in the sample produces two such windows in a row.
+  WebWorkerKillRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-web-worker-kill-rate
+      AlarmDescription: >-
+        Raw sustained-kill signal. Deploy rollouts also kill workers, so this one
+        is NOT wired to notifications — see labs-jj-web-worker-kill-rate-actionable.
+      Namespace: Labs/Web
+      MetricName: WorkerKilled
+      Statistic: Sum
+      Period: 1800
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: 6
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      # NO AlarmActions/OKActions — deliberately, same split as
+      # labs-jj-web-cpu-high. The composite below carries the notification.
+
+  WebWorkerKillRateActionableAlarm:
+    Type: AWS::CloudWatch::CompositeAlarm
+    Properties:
+      AlarmName: labs-jj-web-worker-kill-rate-actionable
+      # This description is the ONLY briefing a responder gets — it is pasted
+      # into the notification email, which pages an agent mailbox and is read
+      # cold by a session with no prior context.
+      AlarmDescription: >-
+        gunicorn workers on the web tier have been dying at a SUSTAINED elevated
+        rate — 6+ in a 30-minute window, in 2 of the last 3 windows — and no
+        deploy is rolling. This is the slow-burn counterpart to
+        labs-jj-web-worker-crash-loop, which only catches an acute 5-in-5-minutes
+        loop; a rate that sits just under that bar can run all day unobserved,
+        and did on 2026-09-07 (32 kills vs a 9/day baseline). Each kill drops
+        that worker's in-flight requests, so users see 5xx/stalls, not a graceful
+        error. These are KERNEL OOM kills: gunicorn logs a CRITICAL WORKER
+        TIMEOUT before reaping a hung worker, so if there are no TIMEOUT lines,
+        gunicorn did not send the signal. Do NOT diagnose from MemoryUtilization
+        — a 1-minute gauge misses a per-request spike, and it read 29-35%
+        through the 2026-08-24 incident. Start with #1361: query
+        /ecs/labs-jj-web for user_visits/?page_size=2500 and group by the
+        last_id cursor; cursors REPEATING across log streams mean several
+        workers are paginating one opportunity's whole visit export at once,
+        and peak memory is N x per-request.
+      AlarmRule: !Sub 'ALARM("${WebWorkerKillRateAlarm}") AND NOT ALARM("${DeployInProgressAlarm}")'
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
   WebEmptyAiAuditMetricFilter:
     Type: AWS::Logs::MetricFilter
     Properties:
