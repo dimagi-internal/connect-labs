@@ -97,6 +97,19 @@ function WorkflowUI({
     return OPP_LABEL[o] || 'opp ' + o;
   }
 
+  // Case count for a rollup row. A FROZEN run carries the indicator results but
+  // NOT the per-case rows -- a snapshot deliberately drops them -- so reading
+  // `rows.length` there renders a confident 0 next to a Started column reading
+  // 606, which is worse than showing nothing: it looks like a measurement.
+  // C01's denominator IS every case in the group, and it does survive the
+  // snapshot, so fall through to that before giving up.
+  function caseCount(g) {
+    if (g && g.rows && g.rows.length) return g.rows.length;
+    if (g && g.ind && g.ind['C01'] && typeof g.ind['C01'].n === 'number')
+      return g.ind['C01'].n;
+    return '\u2014';
+  }
+
   var MIN_DEN = 25;
 
   // ── App-structure capability map ──────────────────────────────────────────
@@ -1302,6 +1315,26 @@ function WorkflowUI({
   // The audit window is the worker's OWN data range, not a fixed lookback: a
   // frozen run is a snapshot of a past period, and a trailing-30-days window
   // would silently audit nothing on one.
+  // The span a snapshot covers, from its own monthly series. Months are 'YYYY-MM'
+  // keys, so the end is the last day of the last month rather than its first.
+  function frozenSpan() {
+    var ms = ((frozen && frozen.monthly) || [])
+      .map(function (m) {
+        return m.month;
+      })
+      .filter(Boolean)
+      .sort();
+    if (!ms.length) return null;
+    var last = String(ms[ms.length - 1]).slice(0, 7);
+    var endDay = new Date(
+      Date.UTC(Number(last.slice(0, 4)), Number(last.slice(5, 7)), 0),
+    ).getUTCDate();
+    return {
+      start: String(ms[0]).slice(0, 7) + '-01',
+      end: last + '-' + (endDay < 10 ? '0' : '') + endDay,
+    };
+  }
+
   function flwDateRange(f) {
     var ds = (f.rows || [])
       .map(function (r) {
@@ -1309,12 +1342,18 @@ function WorkflowUI({
       })
       .filter(Boolean)
       .sort();
-    return ds.length
-      ? {
-          start: String(ds[0]).slice(0, 10),
-          end: String(ds[ds.length - 1]).slice(0, 10),
-        }
-      : null;
+    if (ds.length)
+      return {
+        start: String(ds[0]).slice(0, 10),
+        end: String(ds[ds.length - 1]).slice(0, 10),
+      };
+    // A FROZEN run keeps the indicator results but drops the per-case rows, so a
+    // worker has no dated visits HERE -- which is not the same as having none.
+    // Refusing the audit was the wrong answer: the worker, the opportunity and
+    // the period are all still known, and the audit takes a date range, so fall
+    // back to the span the snapshot itself covers. Without this the drill dead-
+    // ends on exactly the run the demo opens with.
+    return frozenSpan();
   }
 
   function auditWorker(f) {
@@ -1466,19 +1505,54 @@ function WorkflowUI({
   // server-side, which is the only version where the scopes below cost one pass
   // instead of three. Fetched ON DEMAND rather than with the page -- it is a real
   // query against the visit cache, and the other tabs must not pay for it.
-  var sN = React.useState({ status: 'idle', rows: [], measures: [] });
+  // A frozen run serves the N-series from its own snapshot. Every OTHER tab on
+  // this screen already loads from `state.frozen` and is instant; this one was
+  // the sole holdout, re-querying the semantic endpoint every time. That made it
+  // the only part of a supposedly-frozen dashboard that could still go wrong --
+  // and it did: production expires cached visits after an hour, so a snapshot
+  // that "cannot move" sat next to a live tab reading 608 of 8,718 cases.
+  // A snapshot is the right place for this. The rows are ~245 KB for 253 rows,
+  // comfortably inside the framework's 5 MB cap.
+  var sN = React.useState(
+    frozen && frozen.nSeries
+      ? {
+          status: 'ready',
+          rows: frozen.nSeries.rows || [],
+          measures: frozen.nSeries.measures || [],
+          opportunity_ids: frozen.nSeries.opportunity_ids || [],
+          fromSnapshot: true,
+        }
+      : { status: 'idle', rows: [], measures: [] },
+  );
   var nSeries = sN[0],
     setNSeries = sN[1];
 
+  // The DEFINITION id, which is NOT the run id. `definition.id` is not populated in
+  // this render context -- measured live: the panel rendered, fetched nothing, and
+  // reported "no workflow id" -- and instance.id is the RUN. The path carries it, so
+  // fall through to that rather than guessing at another prop shape.
+  function nWorkflowId() {
+    if (definition && definition.id) return definition.id;
+    if (instance && instance.definition_id) return instance.definition_id;
+    var m = String(window.location.pathname).match(/\/workflow\/(\d+)\//);
+    return m ? m[1] : null;
+  }
+
   function loadNSeries() {
-    if (!definition || !definition.id) {
-      setNSeries({ status: 'error', rows: [], error: 'no workflow id' });
+    var wfId = nWorkflowId();
+    if (!wfId) {
+      setNSeries({
+        status: 'error',
+        rows: [],
+        measures: [],
+        error: 'could not determine the workflow id from the page',
+      });
       return;
     }
     setNSeries({ status: 'loading', rows: [], measures: [] });
     fetch(
       '/labs/workflow/api/' +
-        definition.id +
+        wfId +
         '/semantic/?series=N&scopes=programme,opportunity,flw',
     )
       .then(function (res) {
@@ -1500,6 +1574,12 @@ function WorkflowUI({
           status: 'ready',
           rows: data.rows || [],
           measures: data.measures || [],
+          // Carried so the snapshot can keep it: the card footer counts the
+          // opportunities from here, and a frozen run has no response to read.
+          opportunity_ids: data.opportunity_ids || [],
+          coldCache: data.cold_cache || false,
+          partialCache: data.partial_cache || false,
+          coldHint: data.cold_cache_hint || '',
         });
       })
       .catch(function (err) {
@@ -1527,12 +1607,18 @@ function WorkflowUI({
       return x >= b[0] ? 'green' : x >= b[1] ? 'yellow' : 'red';
     if (m.direction === 'lower')
       return x <= b[0] ? 'green' : x <= b[1] ? 'yellow' : 'red';
-    if (m.direction === 'mid2')
-      return x >= b[0][0] && x <= b[0][1]
-        ? 'green'
-        : x >= b[1][0] && x <= b[1][1]
-        ? 'yellow'
-        : 'red';
+    if (m.direction === 'mid2') {
+      // Two-sided: green inside the inner range, yellow inside the outer, red
+      // beyond EITHER end. Guard the shape -- a one-dimensional band here would
+      // silently read as unbanded, which is the single outcome a two-sided
+      // mortality band exists to prevent (the spec: under ~2% means deaths are
+      // not being recorded, not that babies are surviving).
+      if (!b || !b.length || !b[0] || b[0].length !== 2) return 'unbanded';
+      if (x >= b[0][0] && x <= b[0][1]) return 'green';
+      if (b[1] && b[1].length === 2 && x >= b[1][0] && x <= b[1][1])
+        return 'yellow';
+      return 'red';
+    }
     return 'unbanded';
   }
 
@@ -1653,58 +1739,6 @@ function WorkflowUI({
   var s3 = React.useState(null);
   var selInd = s3[0],
     setSelInd = s3[1];
-  // ══ N-series (Neal's demo compute spec), served by the semantic layer ══════
-  // Everything else on this screen is computed in the browser from pipeline rows.
-  // These come from SQL: the registry compiles to one GROUPING SETS query and runs
-  // server-side, which is the only version where the scopes below cost one pass
-  // instead of three. Fetched ON DEMAND rather than with the page -- it is a real
-  // query against the visit cache, and the other tabs must not pay for it.
-  var sN = React.useState({ status: 'idle', rows: [], measures: [] });
-  var nSeries = sN[0],
-    setNSeries = sN[1];
-
-  function loadNSeries() {
-    if (!definition || !definition.id) {
-      setNSeries({ status: 'error', rows: [], error: 'no workflow id' });
-      return;
-    }
-    setNSeries({ status: 'loading', rows: [], measures: [] });
-    fetch(
-      '/labs/workflow/api/' +
-        definition.id +
-        '/semantic/?series=N&scopes=programme,opportunity,flw',
-    )
-      .then(function (res) {
-        return res.json();
-      })
-      .then(function (data) {
-        if (data.error) {
-          // The message names the missing column or relation -- show it rather
-          // than a generic failure, which is the whole reason it is a 400.
-          setNSeries({
-            status: 'error',
-            rows: [],
-            measures: [],
-            error: data.error,
-          });
-          return;
-        }
-        setNSeries({
-          status: 'ready',
-          rows: data.rows || [],
-          measures: data.measures || [],
-        });
-      })
-      .catch(function (err) {
-        setNSeries({
-          status: 'error',
-          rows: [],
-          measures: [],
-          error: String((err && err.message) || err),
-        });
-      });
-  }
-
   var s5 = React.useState('indicators');
   var tab = s5[0],
     setTab = s5[1];
@@ -2528,6 +2562,18 @@ function WorkflowUI({
     return {
       schema: 1,
       generated_at: new Date().toISOString(),
+      // The SQL-computed series, so the frozen run does not have to re-query for
+      // it. Null when the operator never ran the tab -- captured rather than
+      // required, because a snapshot without it is still a valid snapshot.
+      nSeries:
+        nSeries.status === 'ready' && nSeries.rows.length
+          ? {
+              rows: nSeries.rows,
+              measures: nSeries.measures,
+              opportunity_ids: nSeries.opportunity_ids || [],
+              generated_at: new Date().toISOString(),
+            }
+          : null,
       programInd: programInd,
       byLLO: byLLO.map(function (l) {
         return {
@@ -2599,6 +2645,16 @@ function WorkflowUI({
           'completed run cannot be reopened. Wait for the indicators to appear.',
       );
       return;
+    }
+    if (!(nSeries.status === 'ready' && nSeries.rows.length)) {
+      if (
+        !window.confirm(
+          'The Demo metrics (SQL) tab has not been run, so it will not be part ' +
+            'of this snapshot and will keep querying live (and can go stale). ' +
+            'Run it first for a fully frozen dashboard.\n\nSnapshot anyway?',
+        )
+      )
+        return;
     }
     onUpdateState({ frozen: buildFrozen() });
   }
@@ -2772,6 +2828,24 @@ function WorkflowUI({
             </div>
           )}
 
+          {/* Two different lies the numbers cannot tell you about themselves.
+              COLD: every count is zero, which reads as a programme with no
+              babies. PARTIAL is worse and was silent -- the total is a real
+              number computed over only the opportunities that happen to be
+              cached, so it looks entirely credible while understating the
+              cohort. Neither is visible in the figures. */}
+          {nSeries.status === 'ready' &&
+            (nSeries.coldCache || nSeries.partialCache) && (
+              <div className="px-4 py-3 text-sm bg-amber-50 text-amber-900 border-b border-amber-100">
+                <span className="font-medium">
+                  {nSeries.coldCache
+                    ? 'Every metric is zero because nothing is cached \u2014 not because the programme has no data.'
+                    : 'These totals cover only part of the cohort.'}
+                </span>{' '}
+                {nSeries.coldHint}
+              </div>
+            )}
+
           {nSeries.status === 'ready' &&
             (function () {
               var measures = nSeries.measures.filter(function (m) {
@@ -2789,11 +2863,112 @@ function WorkflowUI({
               }
               // One column per metric, one row per entity in the scope. At
               // programme scope that is a single row, which reads as the topline.
+              // FLW usernames are only unique WITHIN an opportunity -- the synthetic
+              // cohort reuses flw_001.. across all eleven -- so the username alone
+              // puts two different people on two rows reading the same name, with
+              // nothing on screen to tell them apart. Measured live: flw_001
+              // appeared twice in the first seven rows. The rollup elsewhere in this
+              // file keys on opp+username for exactly this reason; the label has to
+              // carry the same context or the drill points at the wrong person.
               var labelFor = function (r) {
                 if (nScope === 'opportunity') return oppLabel(r.opportunity_id);
-                if (nScope === 'flw') return r.username || '(unassigned)';
+                if (nScope === 'flw')
+                  return (
+                    (r.username || '(unassigned)') +
+                    ' \u00b7 ' +
+                    oppLabel(r.opportunity_id)
+                  );
                 return 'All opportunities';
               };
+
+              // At PROGRAMME scope there is exactly one row, and a 14-column table
+              // to show a single record puts all the weight on the header and none
+              // on the number -- measured live: the table clipped at the viewport
+              // edge with two thirds of the page empty below it. Cards give the
+              // topline the hierarchy it should have; the table stays for the
+              // scopes that genuinely have many rows.
+              if (nScope === 'programme') {
+                var pr = rows[0];
+                var counts = measures.filter(function (m) {
+                  return m.unit === 'n' && !m.bands;
+                });
+                var rest = measures.filter(function (m) {
+                  return !(m.unit === 'n' && !m.bands);
+                });
+                var TONE = {
+                  green: 'border-green-200 bg-green-50 text-green-900',
+                  yellow: 'border-amber-200 bg-amber-50 text-amber-900',
+                  red: 'border-red-200 bg-red-50 text-red-900',
+                  unbanded: 'border-gray-200 bg-white text-gray-900',
+                  nodata: 'border-gray-200 bg-gray-50 text-gray-400',
+                  insufficient: 'border-gray-200 bg-gray-50 text-gray-400',
+                };
+                var card = function (m, big) {
+                  var c = nCell(m, pr);
+                  var derived =
+                    m.bands_source &&
+                    m.bands_source.indexOf('PROVISIONAL') !== -1;
+                  return (
+                    <div
+                      key={m.id}
+                      className={
+                        'rounded-lg border p-3 ' +
+                        (TONE[c.band] || TONE.unbanded)
+                      }
+                      title={m.bands_source || 'no band defined'}
+                    >
+                      <div
+                        className={
+                          (big ? 'text-3xl' : 'text-2xl') +
+                          ' font-semibold leading-none'
+                        }
+                      >
+                        {c.text}
+                      </div>
+                      <div className="text-xs mt-1.5 leading-snug opacity-80">
+                        {m.title}
+                        {derived ? (
+                          <span
+                            className="text-amber-600"
+                            title="band derived, not stated by the spec"
+                          >
+                            {' *'}
+                          </span>
+                        ) : (
+                          ''
+                        )}
+                      </div>
+                      <div className="text-[11px] mt-1 opacity-50">
+                        {c.den === null || c.den === undefined
+                          ? '\u2014'
+                          : 'n = ' + c.den}
+                      </div>
+                    </div>
+                  );
+                };
+                return (
+                  <div className="p-4">
+                    <div className="grid grid-cols-4 gap-3 mb-3">
+                      {counts.map(function (m) {
+                        return card(m, true);
+                      })}
+                    </div>
+                    <div className="grid grid-cols-5 gap-3">
+                      {rest.map(function (m) {
+                        return card(m, false);
+                      })}
+                    </div>
+                    <div className="mt-4 text-xs text-gray-400">
+                      Across {pr.n_cases} cases in{' '}
+                      {(nSeries.opportunity_ids || []).length || 11}{' '}
+                      opportunities. Hover a card for where its band came from.{' '}
+                      <span className="text-amber-600">*</span> marks a band
+                      DERIVED from the workbook or from the spec's own
+                      expected-answers table rather than stated by the spec.
+                    </div>
+                  </div>
+                );
+              }
               return (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-xs">
@@ -2873,6 +3048,11 @@ function WorkflowUI({
                     </tbody>
                   </table>
                   <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
+                    <span className="text-gray-500">
+                      {rows.length} row{rows.length === 1 ? '' : 's'} · scroll
+                      sideways for the rest of the {measures.length} metrics
+                      &rarr;
+                    </span>{' '}
                     Hover a value for its denominator, or a column for where its
                     band came from. <span className="text-amber-600">*</span>{' '}
                     marks a band DERIVED from the workbook or from the spec's
@@ -3035,7 +3215,7 @@ function WorkflowUI({
                             {l.opps.length}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {l.rows.length}
+                            {caseCount(l)}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {l.ind['C02'].value}
@@ -3154,7 +3334,7 @@ function WorkflowUI({
                             {oppLabel(o.opp)}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {o.rows.length}
+                            {caseCount(o)}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {fmt(IND[4], o.ind['C07'])}
@@ -3321,7 +3501,7 @@ function WorkflowUI({
                                     {f.flw}
                                   </td>
                                   <td className="px-3 py-2 text-right">
-                                    {f.rows.length}
+                                    {caseCount(f)}
                                   </td>
                                   <td className="px-3 py-2 text-right">
                                     {cell('C09')}

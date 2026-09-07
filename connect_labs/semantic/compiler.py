@@ -338,7 +338,19 @@ visit_agg AS (
     GROUP BY opportunity_id, baby_case_id
 ),
 base_m AS (
-    SELECT v.*, w.*, DATE_TRUNC('month', v.reg_date::timestamp)::date AS cohort_month{llo_col}
+    SELECT v.*, w.*,
+           -- Cohort on registration, falling back to the first visit. The render
+           -- has always done this (`m(r.reg_date) || m(r.first_visit)`), and
+           -- reg_date is NOT guaranteed: it is a FILTERed MIN over the visits, so
+           -- a baby whose rows never carried one aggregates to NULL. Truncating
+           -- reg_date alone drops those cases out of every month instead of
+           -- cohorting them, which silently understates the trend. Parity never
+           -- caught it because it covered programme/opportunity/llo/flw and not
+           -- month -- the one scope this column exists for.
+           DATE_TRUNC(
+               'month',
+               COALESCE(v.reg_date, v.first_visit::timestamp)
+           )::date AS cohort_month{llo_col}
     FROM visit_agg v
     LEFT JOIN weight_agg w USING (baby_id)
 ),

@@ -264,3 +264,23 @@ def test_no_compiled_sql_contains_a_bare_percent_operator():
     assert not offenders, (
         "compiled SQL contains a bare % (psycopg2 reads it as a placeholder); " f"use MOD() instead: {offenders[:3]}"
     )
+
+
+def test_month_cohorting_falls_back_to_the_first_visit(props_doc, registry):
+    """A baby with no reg_date must still land in a month.
+
+    `reg_date` is a FILTERed MIN over the visits, so a baby whose rows never
+    carried one aggregates to NULL. Truncating reg_date alone puts that baby in
+    no month at all -- it silently vanishes from the trend rather than being
+    cohorted -- and the render has always fallen back to the first visit for
+    exactly this reason (`m(r.reg_date) || m(r.first_visit)`).
+
+    Parity is why this went unnoticed: it covered programme, opportunity, llo and
+    flw, and NOT month -- the one scope this column exists for. So the check is a
+    static one on the compiled SQL, which is what the omission left uncovered.
+    """
+    sql = compile_indicator_sql(props_doc, registry, "SELECT 1", scope="month")
+    assert "AS cohort_month" in sql, "no cohort_month column was compiled for the month scope"
+    window = sql[sql.index("DATE_TRUNC(") : sql.index("AS cohort_month")]
+    assert "COALESCE" in window, "cohort_month must fall back, not truncate reg_date alone"
+    assert "first_visit" in window, "the fallback must be the first visit, as the render does"
