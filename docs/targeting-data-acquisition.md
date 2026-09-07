@@ -191,7 +191,7 @@ fraction of the cost.
 | 24 ✅ | Monthly rainfall climatology | CHIRPS (UCSB/USGS), public domain | **The system has diagnosed its own gap here.** The ORS seasonality work concluded: *"nothing in this dataset is monthly. It can size a campaign and cannot time one."* West Africa has two diarrhoea seasons — bacterial in the rains, rotavirus in the dry — so timing is not a detail. This is what would let a distribution schedule be defended rather than asserted. |
 | 25 ❌ | Western Sahara boundaries | geoBoundaries | 55 ISO codes, 54 ADM0 polygons. The one country in scope with no geometry at all, so it can never appear in any answer. Small, and currently a silent absence. |
 | 26 | GRID3 Nigeria operational wards | GRID3, CC BY 4.0 | Recorded `candidate`. The only national ward layer and openly licensed, but GRID3 calls it "operational rather than authoritative" — 4% Authorized, 37% Placeholder. Worth loading only against a concrete ADM3 question, and worth **not** loading speculatively. |
-| 27 | Nigeria poverty source rescan | — | The `nigeria-household-poverty-targeting` note has **never had a full alternative-source scan**. Its checks confirm what we found; only a scan says whether something better has since been published. |
+| 27 ✅ | Nigeria poverty source rescan | — | The `nigeria-household-poverty-targeting` note has **never had a full alternative-source scan**. Its checks confirm what we found; only a scan says whether something better has since been published. |
 
 ---
 
@@ -246,6 +246,43 @@ Sahel, not the Sahara. Nearly 3× for Niger, and it is the right number for
 "when does it rain on the people we are shipping to". The measure description
 carries the Niger comparison so nobody rediscovers it as a bug.
 
+### 27 — Nigeria poverty source rescan ✅ run 2026-09-07
+
+The first full alternative-source scan in the note's life, and it changed the
+headline. **NLSS 2022/23 was released in August 2025**: national poverty is
+**56.2%** at the national line against the **40.1%** the note reasoned from, and
+extreme poverty 41.8% at \$3.00/day against 34.7%. Any deliverable still quoting
+40.1% as current is wrong by sixteen points. The World Bank's October 2025
+Poverty & Equity Brief carries the figure under CC BY 3.0 IGO, so it is
+quotable — the same vehicle trick the note already used for the 2018/19 table.
+
+Two things stop it being a clean swap, and both are now in the note. The
+**exclusion moved** — 2018/19 excluded Borno, 2022/23 excludes Taraba and
+Zamfara — so the two rounds are comparable by design over a frame that is not.
+And a **PPI programme should keep the older round for scoring**, because the PPI
+2020 was estimated on NLSS 2018/19 against that line; this is the one place
+where "use the newest data" is the wrong instinct.
+
+**Below ADM1 nothing moved, and that is the other half of the result.** The
+LGA-level MPI survey the 2022 report calls itself a baseline for, "due in 2023",
+still has no published result. No openly-licensed ward-level wealth product has
+appeared, so RWI remains the only one and remains CC BY-NC. Nigeria's census is
+still 2006, which is why neither gap closed. A confirmed negative is worth as
+much here as a find — it is what stops the next session re-deriving it.
+
+One trap was added rather than removed: the **UNDP Global MPI 2025** briefing
+reports 33.0% from 2021 fieldwork, against the National MPI 2022's 63%. Ten
+indicators versus fifteen. Quoted together they look like a contradiction and
+are not one; the note now records it as `rejected` so nobody adopts it as an
+update.
+
+Left open and named rather than papered over: the **state-level** NLSS 2022/23
+table was not located under a redistributable licence. The survey is documented
+as state-representative and the brief carries only national and zone figures, so
+the only redistributable state table is still Annex 2.1 of the 2022 Assessment,
+carrying 2018/19 numbers.
+
+---
 ### 25 — Western Sahara ❌ closed, not actionable
 
 geoBoundaries publishes 230 ADM0 countries and **ESH is not among them** — a
@@ -269,13 +306,10 @@ its own layer "operational rather than authoritative" — 4% Authorized, 37%
 Placeholder — so it is worth loading against a concrete ADM3 question and not
 worth loading speculatively.
 
-**Item 27 (the Nigeria poverty source rescan) needs a decision, not a
-keystroke.** The `nigeria-household-poverty-targeting` note has never had a
-full alternative-source scan. Its checks all still pass, but checks only
-confirm what was already found; only a scan says whether something better has
-been published since. The research tool's own advice is to *ask* before running
-one, because a full scan is a research exercise rather than a fetch — so it is
-recorded here rather than done unilaterally.
+**Item 27 (the Nigeria poverty source rescan) was run on 2026-09-07** and is
+closed; see its outcome above. The note now carries
+`last_full_source_scan: 2026-09-07`, so the 180-day clock is running rather than
+never having started.
 
 After each tier: re-derive, sweep, export a snapshot, and import to production
 **with `--prune`** — a restore without it is additive, and would leave superseded
