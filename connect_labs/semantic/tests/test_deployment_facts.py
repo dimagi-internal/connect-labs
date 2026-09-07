@@ -288,3 +288,68 @@ def test_all_eight_scopes_compile_in_one_pass(props_doc, registry, deployment):
     assert sets.count("(") == 8, f"expected 8 grouping sets, got {sets.count('(')}"
     for label in ("llo_month", "opportunity_month", "flw_month"):
         assert f"THEN '{label}'" in sql, f"{label} rows would be labelled 'other'"
+
+
+# ── the catalog must carry what the render formats with ──────────────────────
+
+
+def test_the_catalog_distinguishes_counts_from_means():
+    """`unit` alone does not decide how a value is printed.
+
+    C01, C02 and C05 are counts. C06 and C24 share their unit ('n') and are MEANS.
+    The render's old `IND` said so via `kind`; formatting a mean as an integer drops
+    a real decimal and reads as a value rather than a bug.
+
+    Every indicator's own measure is `type: number` — it divides two others — so the
+    distinction lives on its numerator. But only when the indicator IS its numerator:
+    C09's numerator is a `count` too (it counts cases), and C09 is a percentage.
+    """
+    from connect_labs.semantic.runtime import filter_to_series, load_registry, measure_catalog
+
+    _, reg = load_registry()
+    cat = {m["indicator"]: m for m in measure_catalog(filter_to_series(reg, "C"))}
+
+    assert {i: cat[i]["kind"] for i in cat if cat[i]["unit"] == "n"} == {
+        "C01": "count",
+        "C02": "count",
+        "C05": "count",
+        "C06": "mean",
+        "C24": "mean",
+    }
+    for ratio in ("C07", "C09", "C31"):
+        assert cat[ratio]["kind"] is None, f"{ratio} is a rate, not a {cat[ratio]['kind']}"
+
+
+def test_the_catalog_carries_prominence():
+    """The render groups headline indicators from this; without it all 22 read equal."""
+    from connect_labs.semantic.runtime import filter_to_series, load_registry, measure_catalog
+
+    _, reg = load_registry()
+    cat = {m["indicator"]: m for m in measure_catalog(filter_to_series(reg, "C"))}
+    assert cat["C09"]["prominence"] == "Top"
+    assert cat["C06"]["prominence"] == "Lower"
+    assert all(m["prominence"] for m in cat.values()), "every indicator needs a prominence"
+
+
+def test_filtering_to_a_series_keeps_the_availability_gates():
+    """The gates are infrastructure, not part of any series.
+
+    The reachability walk cannot find them: they carry no `meta`, so they are not
+    roots, and no indicator's sql references them — they are read ALONGSIDE a value,
+    not inside it. So `series=C` came back with no `anyrec_*` columns at all, and a
+    caller had no way to tell "the app never asked this question" from "the answer
+    is 0". A worker who logged no danger signs has not achieved a 0% danger-sign
+    rate. That distinction was worth 268 of 5,302 per-FLW checks when it was ported.
+    """
+    from connect_labs.semantic.runtime import filter_to_series, load_registry, measure_catalog
+
+    _, reg = load_registry()
+    all_gates = {m["name"] for m in reg["measures"] if m.get("gate")}
+    assert all_gates, "the registry must mark its gates explicitly, not by name prefix"
+
+    for series, expected_indicators in (("C", 22), ("N", 14)):
+        kept = filter_to_series(reg, series)
+        names = {m["name"] for m in kept["measures"]}
+        assert all_gates <= names, f"series={series} dropped gates: {sorted(all_gates - names)}"
+        # and keeping them must not smuggle them into the display contract
+        assert len(measure_catalog(kept)) == expected_indicators
