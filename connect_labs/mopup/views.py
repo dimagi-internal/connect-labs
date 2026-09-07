@@ -62,16 +62,19 @@ def _evaluate(run, request, payload: dict) -> tuple[list[dict], list[dict], list
 
 def _program_opportunities(request, program_id: int) -> list[dict]:
     """The program's own opportunities, from the session's org/program/
-    opportunity tree (`get_org_data`) — free, no API call of our own. Mirrors
-    the exact nested shape `mcp__connect_labs__labs_context` exposes
-    (organizations -> programs -> opportunities), since `get_org_data` is the
-    same data, just read from the session instead of fetched live."""
+    opportunity data (`get_org_data`) — free, no API call of our own.
+
+    `get_org_data(request)` is THREE FLAT top-level lists (`organizations`,
+    `programs`, `opportunities`), not a nested tree — confirmed directly
+    against production's `ProgramOpportunityOrganizationDataView`/
+    `OpportunityDataExportSerializer` (dimagi/commcare-connect), whose
+    `program` field is a `SerializerMethodField` returning `obj.program_id`
+    (verified live against program 217: an earlier nested-tree assumption
+    here returned zero opportunities in the browser). Mirrors the existing,
+    already-working `get_org_data(self.request).get("opportunities", [])`
+    pattern in `microplans/views.py`'s service-delivery opportunity picker."""
     org_data = get_org_data(request)
-    for org in org_data.get("organizations", []):
-        for program in org.get("programs", []):
-            if program.get("id") == program_id:
-                return program.get("opportunities", [])
-    return []
+    return [opp for opp in org_data.get("opportunities", []) if opp.get("program") == program_id]
 
 
 class MopupSetupView(LoginRequiredMixin, TemplateView):

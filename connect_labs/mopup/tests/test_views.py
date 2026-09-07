@@ -79,6 +79,49 @@ def _make_fake_run_da(monkeypatch, runs=None):
     return runs
 
 
+# --- _program_opportunities ---------------------------------------------------
+#
+# Real bug caught in live browser verification: an earlier version assumed
+# get_org_data() returned a nested organizations->programs->opportunities
+# tree; production's actual shape is three FLAT top-level lists, and each
+# opportunity's parent program is under the key "program" (an int, per
+# OpportunityDataExportSerializer.get_program -> obj.program_id), not
+# "program_id" and not a nested list. These tests exercise the real
+# function against that verified shape, rather than mocking it away.
+
+
+def test_program_opportunities_filters_flat_list_by_program_field(monkeypatch):
+    import connect_labs.mopup.views as views_module
+    from connect_labs.mopup.views import _program_opportunities
+
+    # views.py imports get_org_data at module load time (`from ...context
+    # import get_org_data`), so patch the name AS BOUND IN views.py.
+    monkeypatch.setattr(
+        views_module,
+        "get_org_data",
+        lambda request: {
+            "organizations": [{"id": 359, "slug": "dimagi-chc-rct", "name": "DIMAGI-CHC-RCT"}],
+            "programs": [{"id": 217, "name": "CHC - NG - RCT - Aug 2026"}],
+            "opportunities": [
+                {"id": 2154, "name": "CHC - NG - JHF - RCT - AUG 26", "program": 217, "is_active": True},
+                {"id": 2155, "name": "CHC - NG - EHA - RCT - AUG 26", "program": 217, "is_active": True},
+                {"id": 9999, "name": "Unrelated opportunity", "program": 999, "is_active": True},
+            ],
+        },
+    )
+    result = _program_opportunities(object(), 217)
+    assert {opp["id"] for opp in result} == {2154, 2155}
+
+
+def test_program_opportunities_returns_empty_for_unknown_program(monkeypatch):
+    import connect_labs.mopup.views as views_module
+
+    monkeypatch.setattr(views_module, "get_org_data", lambda request: {"opportunities": []})
+    from connect_labs.mopup.views import _program_opportunities
+
+    assert _program_opportunities(object(), 217) == []
+
+
 # --- MopupSetupView ---------------------------------------------------------
 
 
