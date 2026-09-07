@@ -917,7 +917,16 @@ class WorkflowDataAccess(BaseDataAccess):
 
         return records
 
-    def get_run(self, run_id: int) -> WorkflowRunRecord | None:
+    def _get_run_direct(self, run_id: int) -> WorkflowRunRecord | None:
+        """One by-id lookup at THIS DAO's scope, with no fallback of any kind."""
+        return self.labs_api.get_record_by_id(
+            record_id=run_id,
+            experiment=self.EXPERIMENT,
+            type="workflow_run",
+            model_class=WorkflowRunRecord,
+        )
+
+    def get_run(self, run_id: int, *, program_hint: int | None = None) -> WorkflowRunRecord | None:
         """Get a workflow run by ID.
 
         Same bug class as ``list_runs``: when this DAO is program-scoped
@@ -934,13 +943,23 @@ class WorkflowDataAccess(BaseDataAccess):
         ``list_runs`` fan-out. If the direct lookup misses, fall back to
         fanning out across every definition's own ``opportunity_ids`` and
         return the first hit.
+
+        ``program_hint`` handles the MIRROR IMAGE of that, which had no fallback
+        at all: an OPPORTUNITY-scoped DAO looking up a PROGRAM-owned run. The
+        exact-match filter misses it for the same reason in the other direction,
+        and the fan-out above cannot help because it only runs when
+        ``opportunity_id`` is unset. There is no cheap way for the DAO to guess
+        which program to try, so the caller — which usually knows, because the
+        opportunity it is scoped to belongs to exactly one program — passes it in.
+        Untrusted by construction, like ``_session_opportunity_hint``: the retry
+        goes out with the caller's own token and the server still runs its own
+        per-user check, so a wrong value costs one request and a forged one buys
+        nothing.
+
+        The hint is a FALLBACK, never a replacement: an opportunity-owned run is
+        still found by the scope the DAO already has, and pays nothing extra.
         """
-        run = self.labs_api.get_record_by_id(
-            record_id=run_id,
-            experiment=self.EXPERIMENT,
-            type="workflow_run",
-            model_class=WorkflowRunRecord,
-        )
+        run = self._get_run_direct(run_id)
         if run is not None:
             return run
 
@@ -956,6 +975,16 @@ class WorkflowDataAccess(BaseDataAccess):
                     opp_access.close()
                 if run is not None:
                     return run
+
+        if program_hint is not None and self.program_id is None:
+            # Deliberately _get_run_direct, not get_run: a program-scoped DAO's own
+            # miss path is the fan-out above, and paying that on every genuinely
+            # absent run would turn one 404 into one request per member opportunity.
+            prog_access = WorkflowDataAccess(access_token=self.access_token, program_id=program_hint)
+            try:
+                return prog_access._get_run_direct(run_id)
+            finally:
+                prog_access.close()
 
         return None
 

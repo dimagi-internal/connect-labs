@@ -1197,6 +1197,12 @@ const opportunityId = {{ opportunity_id|default:"null" }};
 const connectUrl = '{{ connect_url|default:"https://connect.dimagi.com" }}';
 const orgSlug = '{{ org_slug|default:"" }}';
 const workflowRunId = {{ workflow_run_id|default:"null" }};
+// This page is opportunity-scoped, but the run that launched it may be program-owned.
+// Pass the owning program as a FALLBACK scope on every workflow-run call, or they 404.
+// Never as `program_id` -- that is a labs context param and would repoint the session's
+// ambient scope, breaking this page's own opportunity-scoped calls.
+const owningProgramId = {{ owning_program_id|default:"null" }};
+const runScopeQuery = owningProgramId ? '?owning_program_id=' + owningProgramId : '';
 // The retired "Muac Picture Audit" review screen wrote two per-image results the
 // shared screen never offers -- "duplicate" and "fake" -- and #1385 deliberately
 // left those stored values alone rather than migrating them. So reads have to
@@ -1402,7 +1408,7 @@ function bulkAssessmentInterface() {
       this.fetchAgents();
       // Load persisted task info from workflow run state (for reopen)
       if (workflowRunId) {
-        fetch('/labs/workflow/api/run/' + workflowRunId + '/')
+        fetch('/labs/workflow/api/run/' + workflowRunId + '/' + runScopeQuery)
           .then(r => r.json())
           .then(data => {
             if (data.run && data.run.state) {
@@ -1995,10 +2001,13 @@ function bulkAssessmentInterface() {
             await fetch('/labs/workflow/api/run/' + workflowRunId + '/state/', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrfToken },
-              body: JSON.stringify({ state: {
-                tasks_created: this.createdTaskFLWs.size,
-                flw_tasks: this.flwTasks,
-              }}),
+              body: JSON.stringify({
+                owning_program_id: owningProgramId,
+                state: {
+                  tasks_created: this.createdTaskFLWs.size,
+                  flw_tasks: this.flwTasks,
+                },
+              }),
             });
           } catch (_) { /* non-critical, ignore */ }
         }
@@ -2448,6 +2457,7 @@ function bulkAssessmentInterface() {
                   'X-CSRFToken': this.csrfToken,
                 },
                 body: JSON.stringify({
+                  owning_program_id: owningProgramId,
                   state: {
                     phase: 'completed',
                     status: 'completed',
