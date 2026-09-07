@@ -2862,22 +2862,86 @@
   color: var(--brand-marigold);
   font-weight: 600;
 }
-.net-td.net-right {
-  position: relative;
-}
-.net-bar {
-  position: absolute;
-  right: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 15px;
-  background: var(--brand-sky);
-  opacity: 0.16;
-  border-radius: 2px;
-  pointer-events: none;
+.net-services {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
 }
 .net-barnum {
-  position: relative;
+  min-width: 74px;
+  text-align: right;
+}
+/* The bar gets a track of its own. Sized as a share of the cell it ran the
+   full width on the largest country and read as a rule through the column
+   beside it. */
+.net-track {
+  width: 96px;
+  height: 6px;
+  background: var(--rule-soft);
+  border-radius: 3px;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.net-bar {
+  display: block;
+  height: 100%;
+  background: var(--brand-sky);
+  opacity: 0.75;
+  border-radius: 3px;
+}
+.net-tr-open {
+  background: var(--panel-2);
+}
+.net-tr-open .net-td {
+  border-bottom-color: transparent;
+}
+.net-detail-row {
+  background: var(--panel-2);
+}
+.net-detail {
+  padding: 4px 16px 16px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.net-orgs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 6px;
+}
+.net-org {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 11px;
+  border: 1px solid var(--rule-soft);
+  border-radius: 5px;
+  background: var(--ground);
+  text-decoration: none;
+  color: inherit;
+}
+a.net-org:hover,
+a.net-org:focus-visible {
+  border-color: var(--brand-cornflower);
+  outline: none;
+}
+/* A partner with a workspace is a link; one without has never delivered, so
+   there is nothing to open. The cursor is the only thing that should differ. */
+a.net-org {
+  cursor: pointer;
+}
+.net-org-name {
+  color: var(--ink);
+  font-size: 13px;
+}
+.net-org-live .net-org-name {
+  color: var(--brand-marigold);
+}
+.net-org-meta {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
 }
 .net-empty {
   color: var(--ink-3);
