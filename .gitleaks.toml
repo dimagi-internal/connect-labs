@@ -1,0 +1,35 @@
+# gitleaks configuration.
+#
+# Extends the bundled ruleset rather than replacing it — without useDefault the
+# ~170 default rules are switched OFF, which is a silent and total loss of
+# coverage that looks exactly like "no findings".
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Secrets Manager ARNs are references, not secret values"
+
+# Match against the whole LINE, not the extracted secret. gitleaks compares an
+# allowlist regex to the captured secret by default, and the capture here is the
+# ARN's random suffix alone — six characters with no ARN context, which cannot be
+# allowlisted without also allowlisting any six-character string anywhere. The
+# line is what carries the proof that this is a reference.
+regexTarget = "line"
+
+# An ECS task definition names each runtime secret by ARN in `valueFrom`; the
+# container runtime resolves it at start-up and the value never enters the repo.
+# That is the CORRECT pattern and the whole point of the task-definition files.
+#
+# The generic-api-key rule still fires on them, because Secrets Manager appends
+# a random six-character suffix to every ARN and a high-entropy tail next to the
+# word "secret:" is precisely what that rule looks for. So the check flags the
+# right shape for the wrong reason: it cannot tell "here is a credential" from
+# "here is the NAME of a credential kept somewhere safe".
+#
+# Narrow on purpose. This allows the ARN form only — `arn:aws:secretsmanager:`
+# followed by region, account, `secret:` and a name. A literal credential
+# pasted into the same file is not an ARN and is still caught, and every other
+# gitleaks rule still applies to these files.
+regexes = [
+  '''arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+''',
+]

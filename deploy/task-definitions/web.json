@@ -163,6 +163,10 @@
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ocs-oauth-client-secret-xDfhky"
         },
         {
+          "name": "OCS_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ocs-api-key-z8G6VE"
+        },
+        {
           "name": "SCALE_VALIDATION_API_KEY",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-scale-validation-api-key-OR5xdE"
         },
