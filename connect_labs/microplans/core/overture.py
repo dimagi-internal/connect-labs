@@ -75,11 +75,11 @@ _EXTRACT_BASE = f"s3://{EXTRACT_BUCKET}/overture"
 EXTRACT_REGIONS: dict[str, dict] = {
     "nigeria": {"release": "2026-08-19.0", "bbox": (2.6, 4.2, 14.7, 13.9)},
     # The next five hold, with Nigeria, 91% of every boundary row we serve.
-    "liberia": {"release": None, "bbox": (-11.6, 4.3, -7.3, 8.7)},
-    "drc": {"release": None, "bbox": (12.1, -13.6, 31.4, 5.5)},
-    "kenya": {"release": None, "bbox": (33.8, -4.8, 42.0, 5.5)},
-    "zambia": {"release": None, "bbox": (21.9, -18.2, 33.8, -8.2)},
-    "ethiopia": {"release": None, "bbox": (32.9, 3.3, 48.1, 15.0)},
+    "liberia": {"release": "2026-08-19.0", "bbox": (-11.6, 4.3, -7.3, 8.7)},
+    "drc": {"release": "2026-08-19.0", "bbox": (12.1, -13.6, 31.4, 5.5)},
+    "kenya": {"release": "2026-08-19.0", "bbox": (33.8, -4.8, 42.0, 5.5)},
+    "zambia": {"release": "2026-08-19.0", "bbox": (21.9, -18.2, 33.8, -8.2)},
+    "ethiopia": {"release": "2026-08-19.0", "bbox": (32.9, 3.3, 48.1, 15.0)},
     # The rest of the countries with a configured boundary source.
     "tanzania": {"release": None, "bbox": (29.2, -11.9, 40.5, -0.9)},
     "cote_divoire": {"release": None, "bbox": (-8.7, 4.2, -2.4, 10.8)},

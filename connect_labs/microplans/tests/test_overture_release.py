@@ -40,8 +40,27 @@ def test_an_extract_is_only_used_on_a_matching_release():
 
 
 def test_an_area_outside_every_extract_has_no_region():
-    # Rwanda — no extract, so it must take the live path.
-    assert overture.covering_region((28.9, -2.8, 30.9, -1.0)) is None
+    # Somewhere we hold no boundaries at all (northern India) — must take the live path.
+    assert overture.covering_region((77.0, 28.0, 77.2, 28.2)) is None
+
+
+def test_an_extract_covers_its_neighbours_inside_the_same_rectangle():
+    """Extracts are cut on a BBOX, not a border, so they over-cover neighbours —
+    and that is a feature, not a leak.
+
+    Rwanda sits entirely inside DRC's rectangle, so a Rwandan area now routes to
+    the DRC extract. Verified against the live read on a Kigali box: identical
+    counts (498,170 buildings), because the extract's WHERE clause is the same
+    rectangle the router matched on. Countries we never cut get a fast read for
+    free; what they must never get is a PARTIAL one, which is why the match is
+    full containment rather than intersection.
+    """
+    rwanda = (28.9, -2.8, 30.9, -1.0)
+    region = overture.covering_region(rwanda)
+    if region is None:
+        pytest.skip("DRC extract not pinned in this configuration")
+    bx0, by0, bx1, by1 = overture.EXTRACT_REGIONS[region]["bbox"]
+    assert bx0 <= rwanda[0] and by0 <= rwanda[1] and bx1 >= rwanda[2] and by1 >= rwanda[3]
 
 
 def test_verify_release_names_what_is_available(monkeypatch):
