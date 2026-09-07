@@ -370,7 +370,6 @@
           name: p.short || p.name,
           full: p.name,
           place: p.place || 'location unknown',
-          precision: p.precision,
           country: p.country || '',
           delivering: !!p.delivering,
           since: p.since || '',
