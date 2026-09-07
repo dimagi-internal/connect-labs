@@ -149,12 +149,40 @@ def columns_for(selection: Selection) -> list[tuple[str, str]]:
 
 def to_csv(selection: Selection) -> str:
     buf = io.StringIO()
-    cols = columns_for(selection)
+    rows = list(_rows(selection))
+    cols = [c for c in columns_for(selection) if _carries_anything(c[0], rows)]
     w = csv.DictWriter(buf, fieldnames=[k for k, _ in cols], extrasaction="ignore")
     w.writerow({k: label for k, label in cols})
-    for row in _rows(selection):
+    for row in rows:
         w.writerow(row)
     return buf.getvalue()
+
+
+#: Columns belonging to a particular measure rather than to every selection.
+#: These are the only ones dropped when empty. Provenance and uncertainty
+#: columns stay whatever they hold: this export exists to be checked, and a
+#: blank "Confidence interval" is itself the finding that the source published
+#: no interval. Dropping those would quietly make the artifact look tidier and
+#: less answerable at the same time.
+_MEASURE_SPECIFIC = frozenset({"ors_gap_children", "gap_annual"})
+
+
+def _carries_anything(key: str, rows: list[dict]) -> bool:
+    """Whether a measure-specific column has anything in it.
+
+    The column list is fixed, so every export shipped every column whether or
+    not the measure had one: an improved-water CSV arrived with "Children with
+    untreated diarrhoea" and "Unreached per year (annualised)" blank in all
+    rows. A blank column does not read as "does not apply to this indicator",
+    it reads as "this failed to load" — and it sends someone looking for a
+    number that was never meant to exist.
+
+    A selection with no rows keeps every column, because the header is then the
+    only thing describing the shape of the answer.
+    """
+    if key not in _MEASURE_SPECIFIC or not rows:
+        return True
+    return any(row.get(key) not in (None, "") for row in rows)
 
 
 def _sources_used(selection: Selection) -> list[IndicatorValue]:

@@ -210,3 +210,69 @@ class TestAnEmptySelectionIsNotAFinding:
         assert "Liberia" in md
         # Absent is not the same as zero, and the difference changes a total.
         assert "rather than counted as zero" in md
+
+
+class TestTheExportDropsOnlyWhatDoesNotApply:
+    """A blank column reads as a failed fetch, not as "not applicable".
+
+    Every export shipped the full fixed column list, so an improved-water CSV
+    arrived with "Children with untreated diarrhoea" and "Unreached per year
+    (annualised)" empty in every row — sending a reader looking for a number
+    that was never meant to exist. Provenance columns are a different case and
+    are never dropped: a blank "Confidence interval" is itself the finding that
+    the source published no interval, and this file exists to be checked.
+    """
+
+    def _water_selection(self):
+        from connect_labs.labs.indicators.resolve import select_above
+
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        region = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=2)
+        set_value(region, "improved_water", 30.0, source=Source.DHS)
+        set_value(region, "births", 1000)
+        return select_above(indicator="improved_water", threshold=50.0, method="subnational_survey")
+
+    def test_a_measure_specific_column_with_nothing_in_it_is_dropped(self):
+        from connect_labs.labs.indicators import export
+
+        selection = self._water_selection()
+        assert selection.areas, "fixture must select something"
+
+        headings = [h for _, h in export.columns_for(selection)]
+        csv_headings = export.to_csv(selection).splitlines()[0]
+
+        # Declared in the column list...
+        assert "Children with untreated diarrhoea" in headings
+        # ...but not shipped, because no row has one.
+        assert "Children with untreated diarrhoea" not in csv_headings
+        assert "Unreached per year (annualised)" not in csv_headings
+
+    def test_provenance_columns_survive_being_empty(self):
+        from connect_labs.labs.indicators import export
+
+        csv_headings = export.to_csv(self._water_selection()).splitlines()[0]
+
+        # None of these are populated by the fixture, and all must remain: an
+        # export that hides what it could not establish is less answerable,
+        # not tidier.
+        for heading in (
+            "Confidence interval",
+            "Within uncertainty of threshold",
+            "Adjustment",
+            "Source link",
+        ):
+            assert heading in csv_headings, f"{heading} was dropped"
+
+    def test_an_empty_selection_still_describes_its_shape(self):
+        from connect_labs.labs.indicators import export
+        from connect_labs.labs.indicators.resolve import select_above
+
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        region = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=2)
+        set_value(region, "ors_coverage", 90.0, source=Source.DHS)
+        selection = select_above(indicator="ors_coverage", threshold=10.0, method="subnational_survey")
+
+        assert not selection.areas
+        # With no rows there is no evidence a column does not apply, and the
+        # header is the only thing telling a reader what was asked for.
+        assert "Children with untreated diarrhoea" in export.to_csv(selection).splitlines()[0]

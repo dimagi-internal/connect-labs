@@ -708,6 +708,10 @@ class TestTheDownloadIsTheQuestionOnScreen:
         # sibling, x19.9 apart.
         set_value(b, "ors_coverage_gap", 5_000, source=Source.DERIVED)
         set_value(b, "ors_coverage_gap_annual", 99_700, source=Source.DERIVED)
+        # The column the fortnight figure is actually read from. Without it
+        # that cell was blank and `or 0` below turned the comparison into
+        # 0 != 99,700 — true for the wrong reason.
+        set_value(b, "ors_gap_children", 5_000, source=Source.DERIVED)
 
         text = client_in.get(
             reverse("targeting:download"),
@@ -722,8 +726,9 @@ class TestTheDownloadIsTheQuestionOnScreen:
         rows = list(csv.DictReader(io.StringIO(text)))
 
         assert [r["Area"] for r in rows] == ["Bong"]
-        fortnight = float(rows[0]["Children with untreated diarrhoea"] or 0)
+        fortnight = float(rows[0]["Children with untreated diarrhoea"])
         annual = float(rows[0]["Unreached per year (annualised)"])
+        assert fortnight == 5_000
         assert annual == 99_700
         # A different question in the same units, not a rounding difference.
         assert fortnight != annual
