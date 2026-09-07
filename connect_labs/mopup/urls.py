@@ -18,4 +18,14 @@ urlpatterns = [
         views.MopupCandidatesView.as_view(),
         name="candidates",
     ),
+    path(
+        "program/<int:program_id>/run/<int:run_id>/lock/",
+        views.MopupLockView.as_view(),
+        name="lock",
+    ),
+    path(
+        "program/<int:program_id>/run/<int:run_id>/create_plan/",
+        views.MopupCreatePlanView.as_view(),
+        name="create_plan",
+    ),
 ]

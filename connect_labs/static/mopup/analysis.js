@@ -188,6 +188,60 @@ window.MopupAnalysis = (function () {
     }
   }
 
+  async function lockRun() {
+    $('status').textContent = 'Locking candidates…';
+    try {
+      const resp = await fetch(CFG.lockUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': CFG.csrfToken,
+        },
+        body: JSON.stringify({
+          indicator_configs: indicatorConfigs,
+          global_config: globalConfig,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== 'ok') {
+        $('status').textContent = data.detail || 'Failed to lock.';
+        return;
+      }
+      $(
+        'status',
+      ).textContent = `Locked ${data.locked_count} candidate work area(s).`;
+      $('lock-run').disabled = true;
+      $('lock-run').textContent = `Locked (${data.locked_count} WAs)`;
+      $('create-plan').disabled = false;
+    } catch (e) {
+      $('status').textContent = 'Failed to lock.';
+    }
+  }
+
+  async function createPlan() {
+    $('status').textContent = 'Creating plan…';
+    try {
+      const resp = await fetch(CFG.createPlanUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': CFG.csrfToken,
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== 'ok') {
+        $('status').textContent = data.detail || 'Failed to create plan.';
+        return;
+      }
+      $('status').textContent = 'Plan created — opening review…';
+      if (data.urls && data.urls.review)
+        window.location.href = data.urls.review;
+    } catch (e) {
+      $('status').textContent = 'Failed to create plan.';
+    }
+  }
+
   function init(cfg) {
     CFG = cfg;
     indicatorDefs = JSON.parse($('indicator-defs-data').textContent);
@@ -200,7 +254,9 @@ window.MopupAnalysis = (function () {
       severitySortDesc = !severitySortDesc;
       renderCandidates();
     });
-    recompute();
+    $('lock-run').addEventListener('click', lockRun);
+    $('create-plan').addEventListener('click', createPlan);
+    if (!CFG.locked) recompute();
   }
 
   return { init };
