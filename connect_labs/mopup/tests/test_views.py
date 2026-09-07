@@ -470,3 +470,178 @@ def test_analysis_view_falls_back_to_defaults_when_no_thresholds_saved(client, d
     from connect_labs.mopup.core import indicators as ind
 
     assert str(ind.DEFAULT_INDICATOR_CONFIGS[ind.EVC_SHORTFALL]["threshold"]).encode() in resp.content
+
+
+# --- MopupLockView -----------------------------------------------------------
+
+
+def test_lock_requires_login(client):
+    resp = client.post(reverse("mopup:lock", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_lock_returns_404_for_missing_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_run_da(monkeypatch)
+    resp = client.post(reverse("mopup:lock", kwargs={"program_id": 217, "run_id": 999}))
+    assert resp.status_code == 404
+
+
+def test_lock_rejects_when_no_candidates(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)
+    _mock_evaluation_input(monkeypatch, [])  # no work areas at all -> no candidates
+    resp = client.post(
+        reverse("mopup:lock", kwargs={"program_id": 217, "run_id": 1}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert "nothing to lock" in resp.json()["detail"]
+
+
+def test_lock_freezes_candidates_and_sets_status(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)
+    _mock_evaluation_input(
+        monkeypatch,
+        [
+            {
+                "wa_id": "wa-1",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "flw_username": "flw-1",
+                "lat": None,
+                "lon": None,
+                "boundary": {"type": "Polygon", "coordinates": []},
+                "status": "VISITED",
+                "building_count": 10,
+                "expected_visit_count": 10,
+                "approved_hsd_count": 1,
+                "approved_ncf_count": 0,
+                "approved_inaccessible_count": 0,
+                "deworming_given": 0,
+                "muac_given": 0,
+                "vaccination_given": 0,
+            }
+        ],
+    )
+    from connect_labs.mopup.core import indicators as ind
+
+    resp = client.post(
+        reverse("mopup:lock", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps(
+            {
+                "indicator_configs": {
+                    ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_WA_ONLY}
+                }
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["locked_count"] == 1
+    from connect_labs.mopup.core.models import STATUS_LOCKED
+
+    assert body["run_status"] == STATUS_LOCKED
+    assert runs[1].status == STATUS_LOCKED
+    assert len(runs[1].candidate_work_areas) == 1
+    assert runs[1].candidate_work_areas[0]["wa_id"] == "wa-1"
+
+
+def test_lock_fetch_failure_is_502(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)
+    import connect_labs.mopup.views as views_module
+
+    def boom(opp_id, wards, request=None):
+        raise RuntimeError("CCHQ auth expired")
+
+    monkeypatch.setattr(views_module, "build_evaluation_input", boom)
+    resp = client.post(
+        reverse("mopup:lock", kwargs={"program_id": 217, "run_id": 1}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 502
+
+
+# --- MopupCreatePlanView -----------------------------------------------------
+
+
+def test_create_plan_requires_login(client):
+    resp = client.post(reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_create_plan_returns_404_for_missing_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_run_da(monkeypatch)
+    resp = client.post(reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 999}))
+    assert resp.status_code == 404
+
+
+def test_create_plan_requires_locked_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)  # status is STATUS_ANALYSIS, not locked
+    resp = client.post(reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 400
+    assert "Lock the run" in resp.json()["detail"]
+
+
+def test_create_plan_calls_handoff_and_returns_its_response(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    from connect_labs.mopup.core.models import STATUS_LOCKED
+
+    run = _seed_run(runs)
+    run.data["status"] = STATUS_LOCKED
+    run.data["candidate_work_areas"] = [{"wa_id": "wa-1"}]
+
+    import connect_labs.mopup.views as views_module
+
+    calls = []
+
+    def fake_handoff(run_arg, program_id, *, request=None, grouping=None, group_id=None):
+        calls.append((run_arg.id, program_id, grouping, group_id))
+        return {"plan_id": 42, "plan_status": "draft", "urls": {"review": "/microplans/program/217/plan/42/review/"}}
+
+    monkeypatch.setattr(views_module, "create_plan_from_locked_run", fake_handoff)
+    resp = client.post(
+        reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"group_id": 7}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["plan_id"] == 42
+    assert calls == [(1, 217, None, 7)]
+
+
+def test_create_plan_handoff_error_is_400(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    from connect_labs.mopup.core.models import STATUS_LOCKED
+
+    run = _seed_run(runs)
+    run.data["status"] = STATUS_LOCKED
+    run.data["candidate_work_areas"] = [{"wa_id": "wa-1"}]
+
+    import connect_labs.mopup.views as views_module
+    from connect_labs.mopup.core.handoff import HandoffError
+
+    def fake_handoff(*a, **k):
+        raise HandoffError("no boundary geometry")
+
+    monkeypatch.setattr(views_module, "create_plan_from_locked_run", fake_handoff)
+    resp = client.post(
+        reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "no boundary geometry"

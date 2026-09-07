@@ -26,9 +26,38 @@ from connect_labs.labs.context import get_org_data
 from connect_labs.mopup.core import indicators as ind
 from connect_labs.mopup.core.candidates import build_evaluation_input, summarize_candidates_by_ward
 from connect_labs.mopup.core.data_access import MopupRunDataAccess
+from connect_labs.mopup.core.handoff import HandoffError, create_plan_from_locked_run
+from connect_labs.mopup.core.models import STATUS_LOCKED
 from connect_labs.mopup.core.work_areas import list_work_areas, summarize_wards
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_thresholds(run, payload: dict) -> tuple[dict, dict]:
+    """Given a request payload, the run's saved thresholds, and the built-in
+    defaults, resolve which indicator/global config to evaluate with — in
+    that priority order."""
+    indicator_configs = (
+        payload.get("indicator_configs")
+        or run.thresholds.get("indicator_configs")
+        or dict(ind.DEFAULT_INDICATOR_CONFIGS)
+    )
+    global_config = (
+        payload.get("global_config") or run.thresholds.get("global_config") or dict(ind.DEFAULT_GLOBAL_CONFIG)
+    )
+    return indicator_configs, global_config
+
+
+def _evaluate(run, request, payload: dict) -> tuple[list[dict], list[dict], list[dict], dict, dict]:
+    """Fetch the run's scoped data and evaluate it against the resolved
+    thresholds. Returns (rows, candidates, ward_summary, indicator_configs,
+    global_config). Raises whatever build_evaluation_input raises — callers
+    catch and translate to a 502."""
+    indicator_configs, global_config = _resolve_thresholds(run, payload)
+    rows = build_evaluation_input(run.target_opportunity_id, run.selected_wards, request=request)
+    candidates = ind.evaluate_run(rows, indicator_configs, global_config)
+    ward_summary = summarize_candidates_by_ward(candidates, rows)
+    return rows, candidates, ward_summary, indicator_configs, global_config
 
 
 def _program_opportunities(request, program_id: int) -> list[dict]:
@@ -154,6 +183,8 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         context["run_id"] = run_id
         context["run"] = run
         context["candidates_url"] = reverse("mopup:candidates", args=[program_id, run_id])
+        context["lock_url"] = reverse("mopup:lock", args=[program_id, run_id])
+        context["create_plan_url"] = reverse("mopup:create_plan", args=[program_id, run_id])
         context["indicator_configs"] = run.thresholds.get("indicator_configs") or ind.DEFAULT_INDICATOR_CONFIGS
         context["global_config"] = run.thresholds.get("global_config") or ind.DEFAULT_GLOBAL_CONFIG
         context["indicator_defs"] = [
@@ -189,25 +220,13 @@ class MopupCandidatesView(LoginRequiredMixin, View):
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        indicator_configs = (
-            payload.get("indicator_configs")
-            or run.thresholds.get("indicator_configs")
-            or dict(ind.DEFAULT_INDICATOR_CONFIGS)
-        )
-        global_config = (
-            payload.get("global_config") or run.thresholds.get("global_config") or dict(ind.DEFAULT_GLOBAL_CONFIG)
-        )
-
         try:
-            rows = build_evaluation_input(run.target_opportunity_id, run.selected_wards, request=request)
+            rows, candidates, ward_summary, indicator_configs, global_config = _evaluate(run, request, payload)
         except Exception:  # noqa: BLE001
             logger.exception(
                 "mopup candidates: fetching evaluation data failed (program=%s run=%s)", program_id, run_id
             )
             return JsonResponse({"status": "error", "detail": "Could not load visit/work-area data."}, status=502)
-
-        candidates = ind.evaluate_run(rows, indicator_configs, global_config)
-        ward_summary = summarize_candidates_by_ward(candidates, rows)
 
         da.update_run(run, thresholds={"indicator_configs": indicator_configs, "global_config": global_config})
 
@@ -220,3 +239,83 @@ class MopupCandidatesView(LoginRequiredMixin, View):
                 "candidate_count": len(candidates),
             }
         )
+
+
+class MopupLockView(LoginRequiredMixin, View):
+    """The Phase 2 -> Phase 3 boundary (design brief): freeze the CURRENT
+    candidate set (evaluated against the given, or run-saved, or default
+    thresholds — same resolution as MopupCandidatesView) onto the run as
+    `candidate_work_areas`, and mark it locked. Nothing downstream re-reads
+    live thresholds after this — Phase 3's hand-off only ever acts on what
+    got frozen here."""
+
+    def post(self, request, program_id, run_id):
+        da = MopupRunDataAccess(program_id, request=request)
+        run = da.get_run(run_id)
+        if run is None:
+            return JsonResponse({"status": "error", "detail": "Run not found."}, status=404)
+
+        try:
+            payload = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        try:
+            _rows, candidates, _ward_summary, indicator_configs, global_config = _evaluate(run, request, payload)
+        except Exception:  # noqa: BLE001
+            logger.exception("mopup lock: fetching evaluation data failed (program=%s run=%s)", program_id, run_id)
+            return JsonResponse({"status": "error", "detail": "Could not load visit/work-area data."}, status=502)
+
+        if not candidates:
+            return JsonResponse(
+                {"status": "error", "detail": "No candidates under the current thresholds — nothing to lock."},
+                status=400,
+            )
+
+        run = da.update_run(
+            run,
+            status=STATUS_LOCKED,
+            candidate_work_areas=candidates,
+            thresholds={"indicator_configs": indicator_configs, "global_config": global_config},
+        )
+
+        return JsonResponse(
+            {"status": "ok", "run_id": run.id, "run_status": run.status, "locked_count": len(candidates)}
+        )
+
+
+class MopupCreatePlanView(LoginRequiredMixin, View):
+    """Phase 3: hand a locked run's candidate set to the existing microplans
+    coverage engine. Only acts on `run.candidate_work_areas` (frozen at lock
+    time) — never re-reads thresholds. See core/handoff.py for the actual
+    microplans calls."""
+
+    def post(self, request, program_id, run_id):
+        da = MopupRunDataAccess(program_id, request=request)
+        run = da.get_run(run_id)
+        if run is None:
+            return JsonResponse({"status": "error", "detail": "Run not found."}, status=404)
+        if run.status != STATUS_LOCKED:
+            return JsonResponse({"status": "error", "detail": "Lock the run before creating a plan."}, status=400)
+
+        try:
+            payload = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        try:
+            resp = create_plan_from_locked_run(
+                run,
+                program_id,
+                request=request,
+                grouping=payload.get("grouping"),
+                group_id=payload.get("group_id"),
+            )
+        except HandoffError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
+        except Exception:  # noqa: BLE001
+            logger.exception("mopup create_plan: hand-off failed (program=%s run=%s)", program_id, run_id)
+            return JsonResponse({"status": "error", "detail": "Could not create the plan."}, status=502)
+
+        resp["status"] = "ok"
+        return JsonResponse(resp)

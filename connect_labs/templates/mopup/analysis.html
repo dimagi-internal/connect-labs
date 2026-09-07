@@ -91,6 +91,16 @@
       </table>
     </div>
   </section>
+
+  <section class="border-t border-gray-200 pt-4 flex items-center gap-3">
+    <div>
+      <button type="button" id="lock-run" class="button outline-style" {% if run.status == "locked" %}disabled{% endif %}>
+        {% if run.status == "locked" %}Locked ({{ run.candidate_work_areas|length }} WAs){% else %}Lock candidates{% endif %}
+      </button>
+      <p class="text-xs text-gray-500 mt-1" title="Freezes the current candidate set. Nothing past this point re-reads live thresholds.">Freezes the current set — thresholds stop mattering after this ⓘ</p>
+    </div>
+    <button type="button" id="create-plan" class="button primary-dark" {% if run.status != "locked" %}disabled{% endif %}>Create mop-up plan</button>
+  </section>
 </div>
 {% endblock %}
 
@@ -104,7 +114,10 @@
 (function () {
   MopupAnalysis.init({
     candidatesUrl: "{{ candidates_url }}",
+    lockUrl: "{{ lock_url }}",
+    createPlanUrl: "{{ create_plan_url }}",
     csrfToken: "{{ csrf_token }}",
+    locked: "{{ run.status }}" === "locked",
   });
 })();
 </script>
