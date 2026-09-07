@@ -175,6 +175,102 @@ class TestScenario:
             targeting.targeting_scenario(None, indicator="stunting", basis="case", unit_cost=10)
 
         assert "no count" in str(err.value)
+        # The decline is only useful if it says what to use instead, and it must
+        # not offer the two case bases it just refused.
+        assert "under_5" in str(err.value)
+        assert "case_year" not in str(err.value)
+
+    def test_a_rejected_basis_names_the_legal_values(self):
+        """'Unknown basis' with no list is a dead end.
+
+        The caller reaches for a basis after reading a selection, where the counts
+        are called pop_u5 / births / pop_total, so guessing wrong is the normal
+        case rather than the careless one.
+        """
+        _, region, _ = _nigeria()
+        set_value(region, "u5mr", 150, source=Source.DHS)
+
+        with pytest.raises(MCPToolError) as err:
+            targeting.targeting_scenario(None, indicator="u5mr", basis="not_a_basis", unit_cost=10)
+
+        message = str(err.value)
+        assert "not_a_basis" in message
+        for legal in ("birth", "under_5", "person", "household", "case", "case_year"):
+            assert legal in message
+
+    def test_a_count_field_name_is_accepted_as_a_basis(self):
+        """pop_u5 is what the rows and targeting_compare_criteria's `count` call it."""
+        _, region, other = _nigeria()
+        set_value(region, "u5mr", 150, source=Source.DHS)
+        set_value(other, "u5mr", 150, source=Source.DHS)
+        set_value(region, "pop_u5", 2000)
+
+        by_column = targeting.targeting_scenario(
+            None, indicator="u5mr", threshold=80, basis="pop_u5", unit_cost=3, method="subnational_survey"
+        )
+        by_basis = targeting.targeting_scenario(
+            None, indicator="u5mr", threshold=80, basis="under_5", unit_cost=3, method="subnational_survey"
+        )
+
+        assert by_column["basis"] == "under_5"
+        assert by_column["absorbable_usd"] == by_basis["absorbable_usd"] == 6000
+
+
+class TestSchemaMatchesImplementation:
+    """The schema is the only surface an MCP caller has.
+
+    Every tool sets ``additionalProperties: False``, so a parameter the function
+    accepts but the schema omits is not merely undocumented — it is unreachable,
+    and it fails as though it were never built. Both defects this class guards
+    shipped that way: ``targeting_select`` implemented ``admin_level``,
+    ``target_year`` and ``rollup`` while offering none of them (and two sibling
+    tools described their own ``target_year`` as "See targeting_select"), and
+    ``targeting_scenario``'s enum omitted the ``case_year`` basis, leaving callers
+    able to price only a fortnight of cases where they meant a year.
+    """
+
+    def _tool(self, name):
+        from connect_labs.mcp import tool_registry
+
+        tool = tool_registry.get_tool(name)
+        assert tool is not None, f"{name} is not registered"
+        return tool
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "targeting_indicators",
+            "targeting_select",
+            "targeting_methodology",
+            "targeting_scenario",
+            "targeting_admin_levels",
+            "targeting_research",
+            "targeting_research_write",
+            "targeting_compare_criteria",
+        ],
+    )
+    def test_every_accepted_parameter_is_offered_by_the_schema(self, name):
+        import inspect
+
+        tool = self._tool(name)
+        offered = set((tool.input_schema.get("properties") or {}).keys())
+        accepted = {
+            p.name
+            for p in inspect.signature(tool.handler).parameters.values()
+            if p.kind is inspect.Parameter.KEYWORD_ONLY
+        }
+
+        hidden = sorted(accepted - offered)
+        assert not hidden, (
+            f"{name} accepts {hidden} but does not offer them in its input_schema. "
+            "With additionalProperties: False that makes them unreachable over MCP."
+        )
+
+    def test_the_basis_enum_offers_every_unit_basis(self):
+        from connect_labs.labs.indicators import interventions
+
+        offered = set(self._tool("targeting_scenario").input_schema["properties"]["basis"]["enum"])
+        assert offered == {b.value for b in interventions.UnitBasis}
 
 
 class TestAdminLevels:
@@ -242,6 +338,76 @@ class TestCompareCriteria:
         assert got["unanimous"] == 0
         assert got["contested"] == 2
         assert got["contested_share_of_count"] == 100.0
+
+    def test_an_unanswerable_screen_is_not_counted_as_agreement(self):
+        """A screen that could not be asked must not silently narrow the comparison.
+
+        It contributes no areas, so every area it might have KEPT looks unanimous
+        among the screens that did run. The agreement is then overstated, and the
+        caller has no way to see it from the numbers.
+        """
+        self._two_counties()
+
+        got = targeting.targeting_compare_criteria(
+            None,
+            criteria=[
+                {"indicator": "ors_coverage", "threshold": 70, "label": "coverage"},
+                # Liberia has no survey behind this one; the screen cannot be asked.
+                {"indicator": "improved_water", "threshold": 50, "label": "water"},
+            ],
+            iso_codes=["LBR"],
+        )
+
+        water = next(s for s in got["screens"] if s["label"] == "water")
+        coverage = next(s for s in got["screens"] if s["label"] == "coverage")
+        assert water["empty_because_unanswerable"] is True
+        assert coverage["empty_because_unanswerable"] is False
+        assert got["unanswerable_screens"] == ["water"]
+        assert "WARNING" in got["advice"]
+        assert "overstated" in got["advice"]
+
+    def test_a_wholly_unanswerable_comparison_says_so_instead_of_reporting_zero(self):
+        """The admin_level=2 shape: nothing can be asked, so nothing comes back.
+
+        The old advice line reported this as '0 areas are selected by every screen
+        ... holding 0% of the pop u5 in play', which reads as a finding that no
+        area qualifies. It is a finding that the question was never asked.
+        """
+        self._two_counties()
+
+        got = targeting.targeting_compare_criteria(
+            None,
+            criteria=[
+                {"indicator": "improved_water", "threshold": 50},
+                {"indicator": "improved_sanitation", "threshold": 50},
+            ],
+            iso_codes=["LBR"],
+        )
+
+        assert got["areas"] == []
+        assert got["empty_because_unanswerable"] is True
+        assert len(got["unanswerable_screens"]) == 2
+        assert "could not be run" in got["advice"]
+        assert "NOT a finding" in got["advice"]
+        # The old sentence must not be reachable in this state.
+        assert "selected by every screen" not in got["advice"]
+
+    def test_a_genuinely_empty_comparison_is_not_marked_unanswerable(self):
+        """Answerable screens that simply keep nothing stay a real finding."""
+        self._two_counties()
+
+        got = targeting.targeting_compare_criteria(
+            None,
+            criteria=[
+                # Both answerable in Liberia; neither county clears these bars.
+                {"indicator": "ors_coverage", "threshold": 1},
+                {"indicator": "diarrhoea_prevalence", "threshold": 99},
+            ],
+            iso_codes=["LBR"],
+        )
+
+        assert got["empty_because_unanswerable"] is False
+        assert got["unanswerable_screens"] == []
 
     def test_one_criterion_is_refused_because_there_is_nothing_to_compare(self):
         with pytest.raises(Exception):
