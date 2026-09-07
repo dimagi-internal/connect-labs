@@ -55,10 +55,44 @@ class TestBuildEvaluationInput:
                 },
             ],
         )
+        monkeypatch.setattr(candidates_module, "fetch_work_area_geometry", lambda opportunity_id, request=None: {})
         rows = build_evaluation_input(1, [{"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"}], request=object())
         assert len(rows) == 1
         assert rows[0]["wa_id"] == "wa-1"
         assert rows[0]["approved_hsd_count"] == 1  # wa-2's visit correctly excluded from aggregation
+        assert rows[0]["lat"] is None  # no geometry match -> None, not a crash
+
+    def test_merges_geometry_by_wa_id(self, monkeypatch):
+        import connect_labs.mopup.core.candidates as candidates_module
+
+        monkeypatch.setattr(
+            candidates_module,
+            "list_work_areas",
+            lambda opportunity_id, request=None, pipeline=None: [
+                {
+                    "case_id": "wa-1",
+                    "ward": "Sabon Gari",
+                    "lga": "Rano",
+                    "state": "Kano",
+                    "building_count": 10,
+                    "expected_visit_count": 8,
+                    "status": "VISITED",
+                    "owner_id": "flw-1",
+                }
+            ],
+        )
+        monkeypatch.setattr(candidates_module, "list_approved_visits", lambda *a, **k: [])
+        monkeypatch.setattr(
+            candidates_module,
+            "fetch_work_area_geometry",
+            lambda opportunity_id, request=None: {
+                "wa-1": {"lat": 9.74, "lon": 11.18, "boundary": {"type": "Polygon", "coordinates": []}}
+            },
+        )
+        rows = build_evaluation_input(1, [], request=object())
+        assert rows[0]["lat"] == 9.74
+        assert rows[0]["lon"] == 11.18
+        assert rows[0]["boundary"]["type"] == "Polygon"
 
     def test_empty_selection_means_every_ward(self, monkeypatch):
         import connect_labs.mopup.core.candidates as candidates_module
@@ -90,6 +124,7 @@ class TestBuildEvaluationInput:
             ],
         )
         monkeypatch.setattr(candidates_module, "list_approved_visits", lambda *a, **k: [])
+        monkeypatch.setattr(candidates_module, "fetch_work_area_geometry", lambda opportunity_id, request=None: {})
         rows = build_evaluation_input(1, [], request=object())
         assert len(rows) == 2
 

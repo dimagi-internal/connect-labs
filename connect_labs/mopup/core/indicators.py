@@ -22,6 +22,10 @@ layers are responsible for populating these — this module only computes):
         "deworming_given": int,       # of approved_hsd_count visits
         "muac_given": int,
         "vaccination_given": int,
+        "boundary": dict | None,      # optional — GeoJSON, carried through onto
+                                       # any resulting candidate, unused by the
+                                       # math itself (see evaluate_run's own
+                                       # comment on why)
     }
 
 Every rate the three data-quality metrics compute shares `approved_hsd_count`
@@ -353,6 +357,10 @@ def evaluate_run(
                     "lga": wa.get("lga", ""),
                     "state": wa.get("state", ""),
                     "flw_username": wa.get("flw_username", ""),
+                    # Carried through, not computed here, so the map (§6's map
+                    # cue) and Phase 3's lock hand-off (build_mopup_areas needs
+                    # a geometry per candidate) don't need a second lookup.
+                    "boundary": wa.get("boundary"),
                     "triggered_indicators": triggered,
                     "severity_count": len(triggered),
                     "detail": detail,

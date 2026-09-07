@@ -1,8 +1,8 @@
 """Phase 2's live "how many work areas would this create" recompute: fetch
 (cache-warmed after the first call — see `core/work_areas.py`/`core/visits.py`
-docstrings) the run's scoped work areas + visits, evaluate against whatever
-indicator/global config the reviewer currently has set, and return candidates
-+ a per-ward summary rollup.
+docstrings) the run's scoped work areas + visits + geometry, evaluate against
+whatever indicator/global config the reviewer currently has set, and return
+candidates + a per-ward summary rollup.
 
 **Known gap, not an oversight**: only WARD scoping is wired up here. A run's
 `date_from`/`date_to` (Phase 1) isn't applied yet — `AnalysisPipelineConfig`'s
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from django.http import HttpRequest
 
+from connect_labs.mopup.core.geometry import fetch_work_area_geometry
 from connect_labs.mopup.core.visits import aggregate_visits_by_wa, build_evaluation_rows, list_approved_visits
 from connect_labs.mopup.core.work_areas import list_work_areas
 
@@ -38,7 +39,13 @@ def build_evaluation_input(
     request: HttpRequest | None = None,
 ) -> list[dict]:
     """The full per-WA row list, scoped to `selected_wards` (empty = every
-    ward in the opportunity), ready for `core.indicators.evaluate_run`."""
+    ward in the opportunity), ready for `core.indicators.evaluate_run`.
+
+    Merges in real centroid (`lat`/`lon`, for §6a's spatial neighbor graph)
+    and boundary geometry (for a locked candidate's Phase 3 hand-off) from
+    `core.geometry.fetch_work_area_geometry` — a work area with no geometry
+    match just keeps `lat`/`lon`/`boundary` at `None` (evaluate_run already
+    degrades gracefully for that)."""
     work_areas = list_work_areas(opportunity_id, request=request)
     scoped = [wa for wa in work_areas if _ward_matches(wa, selected_wards)]
     wa_ids = {wa["case_id"] for wa in scoped}
@@ -46,7 +53,16 @@ def build_evaluation_input(
     visits = list_approved_visits(opportunity_id, request=request)
     aggregates = aggregate_visits_by_wa(visits, wa_ids=wa_ids)
 
-    return build_evaluation_rows(scoped, aggregates)
+    rows = build_evaluation_rows(scoped, aggregates)
+
+    geometry = fetch_work_area_geometry(opportunity_id, request=request)
+    for row in rows:
+        geo = geometry.get(row["wa_id"], {})
+        row["lat"] = geo.get("lat")
+        row["lon"] = geo.get("lon")
+        row["boundary"] = geo.get("boundary")
+
+    return rows
 
 
 def summarize_candidates_by_ward(candidates: list[dict], all_rows: list[dict]) -> list[dict]:
