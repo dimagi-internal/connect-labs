@@ -61,6 +61,63 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # ONE SOURCE OF TRUTH for the task network: the SERVICE's own configuration.
+      #
+      # These run-task calls exist to run the same container in the same place as
+      # the web service, so reading the network config off that service is not a
+      # convenience — it is the definition. The literals this replaces had already
+      # drifted: they pinned ONE subnet while the service spans two, so every
+      # migration, drift-check and one-off management command has been running in
+      # a single AZ. That is invisible until that AZ is the one having a bad day,
+      # and then it fails at the least convenient moment. The same value was
+      # hardcoded in four places (twice in deploy-labs.yml, once in
+      # run-labs-command.yml, once as a CloudFormation parameter default in
+      # infra/labs-audit-analytics.yml) and three of them had no way to learn that
+      # the fourth had changed.
+      #
+      # DELIBERATELY NOT A GITHUB SECRET, and this is the part worth keeping.
+      # Subnet, security-group and VPC IDs are IDENTIFIERS, not credentials —
+      # inert without an IAM principal, which is why AWS puts them in console URLs
+      # and does not treat an account ID as sensitive. Filing them as secrets buys
+      # no protection and costs real debuggability, because GitHub MASKS secret
+      # values in logs: every --network-configuration line this workflow prints
+      # would render as '***', and the drift described above — the actual bug —
+      # becomes undiagnosable from a run log. Non-secret shared config belongs in
+      # env:/vars:, or better, is read from the infrastructure itself, which is
+      # what this step does.
+      #
+      # Credentials still go in secrets: AWS_ROLE_ARN above, and every runtime
+      # secret stays a Secrets Manager ARN reference in the task definitions,
+      # never a value.
+      #
+      # --output text on a list is TAB-separated, hence the tr. No embedded
+      # python: an unindented heredoc body inside a `run: |` block scalar is a
+      # YAML syntax error, and the parse failure names a line number nowhere near
+      # the cause.
+      - name: Read task network config from the web service
+        id: netcfg
+        run: |
+          NET_QUERY='services[0].networkConfiguration.awsvpcConfiguration'
+          SUBNETS=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_WEB_SERVICE }} \
+            --query "$NET_QUERY.subnets" --output text | tr '\t' ',')
+          SGS=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_WEB_SERVICE }} \
+            --query "$NET_QUERY.securityGroups" --output text | tr '\t' ',')
+          PUBIP=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_WEB_SERVICE }} \
+            --query "$NET_QUERY.assignPublicIp" --output text)
+          if [ -z "$SUBNETS" ] || [ "$SUBNETS" = "None" ] \
+             || [ -z "$SGS" ] || [ "$SGS" = "None" ]; then
+            echo "::error::Could not read the web service's awsvpc network configuration."
+            echo "::error::run-task cannot be placed without it; refusing to guess."
+            exit 1
+          fi
+          [ -n "$PUBIP" ] && [ "$PUBIP" != "None" ] || PUBIP=ENABLED
+          CFG="awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SGS],assignPublicIp=$PUBIP}"
+          echo "Task network: $CFG"
+          echo "net_config=$CFG" >> "$GITHUB_OUTPUT"
+
       - name: Run command as a one-off Fargate task
         env:
           MGMT_CMD: ${{ github.event.inputs.command }}
@@ -78,7 +135,7 @@ jobs:
             --cluster ${{ env.ECS_CLUSTER }} \
             --task-definition "$TASK_DEF_ARN" \
             --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[subnet-06646effb09be2f42],securityGroups=[sg-0666a5ed512c97d9d],assignPublicIp=ENABLED}" \
+            --network-configuration "${{ steps.netcfg.outputs.net_config }}" \
             --overrides "$OVERRIDES" \
             --query 'tasks[0].taskArn' --output text)
           echo "Task: $TASK_ARN"
