@@ -1,0 +1,527 @@
+/* Connect in action: the Nigeria cholera-response story.
+   Standalone page, not an SPA section. Everything is scoped to .cia and the
+   cia- class prefix, so this file cannot reach the rest of the marketing site
+   and styles.css cannot reach in. */
+.cia{
+  /* Connect design tokens, taken from the marketing site's styles.css */
+  --ink:#0a0620; --ink-2:#14103a; --ink-3:#4a5468;
+  --paper:#fafbff; --paper-2:#ffffff; --paper-warm:#eef0fa; --ground:#f1f3fc;
+  --line:#e6e7f0; --rule:#c9cce0;
+  --indigo:#3843d0; --indigo-deep:#2832a0; --indigo-soft:#e7e9fb;
+  --sky:#8ea1ff; --sky-deep:#5c6fe8;
+  --muted:#6b7388;
+  --on-dark-primary:rgba(255,255,255,.95);
+  --on-dark-secondary:rgba(255,255,255,.78);
+  --on-dark-muted:rgba(255,255,255,.55);
+  --grad-text:linear-gradient(90deg,#1a1f3a 0%,#2a368a 55%,#3a4fa0 100%);
+  --grad-text-on-dark:linear-gradient(90deg,#ffffff 0%,#c0ceee 100%);
+  --sans:'Work Sans',-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;
+  --mono:'JetBrains Mono','SF Mono',Menlo,monospace;
+  --radius:14px; --radius-lg:22px;
+  --fs-h2:clamp(32px,4.4vw,62px);
+  --fs-lede:clamp(17px,1.25vw,20px);
+  --hdr-h:64px;
+  --gutter:clamp(44px,7vw,136px);
+
+  /* One hue per side of the marketplace. The thread carries each as it crosses. */
+  --c-fund:#0b8a82;
+  --c-conn:#3843d0;
+  --c-front:#c0381a;
+  --c-note:#5a6172;
+}
+.cia{background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.cia img{max-width:100%;display:block}
+.cia a{color:var(--indigo)}
+.cia h1,.cia h2{margin:0;color:var(--ink);letter-spacing:-.03em;line-height:1.04;font-weight:300;text-wrap:balance}
+.cia h3{margin:0;color:var(--ink);letter-spacing:-.02em;line-height:1.16;font-weight:400;text-wrap:balance}
+.cia h1 em,.cia h2 em{font-style:normal;font-weight:600;background:var(--grad-text);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.on-dark h1 em,.on-dark h2 em{background:var(--grad-text-on-dark);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.cia-wrap{max-width:1460px;margin:0 auto;padding:0 clamp(20px,4vw,40px)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+:where(a[href],button):focus-visible{outline:2px solid var(--indigo);outline-offset:3px;border-radius:4px}
+.on-dark :where(a[href],button):focus-visible{outline-color:var(--sky)}
+
+.eyebrow{display:inline-flex;align-items:center;gap:12px;font-size:12px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--indigo);margin:0 0 20px}
+.eyebrow::before{content:'';width:26px;height:1px;background:currentColor}
+.eyebrow.on-dark{color:var(--on-dark-secondary)}
+
+.btn{display:inline-flex;align-items:center;gap:8px;padding:13px 24px;font-family:var(--sans);font-size:14px;font-weight:600;border-radius:999px;cursor:pointer;border:1px solid transparent;text-decoration:none;transition:transform .15s,box-shadow .2s,background .2s,color .2s,border-color .2s}
+.cia-btn-ghost-on-dark{color:#fff;border-color:rgba(255,255,255,.32)}
+.cia-btn-ghost-on-dark:hover{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.5)}
+.cia-btn-white{background:#fff;color:var(--indigo);border-color:rgba(255,255,255,.6)}
+.cia-btn-white:hover{color:var(--indigo-deep);transform:translateY(-1px);box-shadow:0 8px 24px rgba(10,6,32,.18)}
+
+/* &#9472;&#9472; Header &#9472;&#9472; */
+.cia-site-header{position:sticky;top:0;z-index:60;height:var(--hdr-h);display:flex;align-items:center;background:rgba(10,6,32,.86);backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.10)}
+.cia-site-header .cia-wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%}
+.cia-logo{color:#fff;display:inline-flex;align-items:center;text-decoration:none;transition:color .18s}
+.cia-logo:hover{color:var(--sky)}
+.cia-logo svg{height:26px;width:auto;display:block}
+.cia-hdr-right{display:flex;align-items:center;gap:18px}
+.cia-hdr-label{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--on-dark-muted)}
+#cia-progress-rail{position:fixed;top:var(--hdr-h);left:0;right:0;height:2px;z-index:59;pointer-events:none}
+#cia-progress-bar{height:100%;width:0;background:linear-gradient(90deg,var(--c-fund),var(--c-conn) 55%,var(--c-front))}
+
+/* ══════════ HERO ══════════ */
+.cia-hero{
+  position:relative;overflow:hidden;color:#fff;background:var(--ink);
+  padding:clamp(48px,5.8vw,92px) 0 clamp(56px,6.8vw,96px);
+}
+.cia-hero::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background-image:linear-gradient(rgba(142,161,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(142,161,255,.06) 1px,transparent 1px);
+  background-size:64px 64px}
+.cia-hero::after{content:'';position:absolute;inset:0;pointer-events:none;background:radial-gradient(70% 60% at 88% 4%,rgba(56,67,208,.5),transparent 62%)}
+.cia-hero>*{position:relative}
+.cia-hero-grid{display:grid;grid-template-columns:1fr 1.14fr;gap:clamp(30px,4.4vw,68px);align-items:center}
+.cia-stamp{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:rgba(255,255,255,.82);margin:0 0 24px}
+.cia-stamp i{width:8px;height:8px;border-radius:50%;background:#2ee08a;display:block;box-shadow:0 0 0 5px rgba(46,224,138,.22);animation:pulse-live 2s ease-in-out infinite}
+@keyframes pulse-live{0%,100%{box-shadow:0 0 0 4px rgba(46,224,138,.3);opacity:1}50%{box-shadow:0 0 0 10px rgba(46,224,138,0);opacity:.62}}
+.cia-hero h1{font-size:clamp(38px,5.1vw,72px);color:#fff;line-height:.99;letter-spacing:-.042em;font-weight:200;max-width:13ch}
+.cia-hero h1 em{background:linear-gradient(90deg,#ffffff 0%,#bcd0ff 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;font-weight:600}
+.cia-hero-lede{font-size:clamp(18px,1.5vw,23px);color:rgba(255,255,255,.84);max-width:40ch;margin:28px 0 0;line-height:1.5;font-weight:300}
+.cia-hero-photo{border-radius:14px;overflow:hidden;box-shadow:0 40px 80px -44px rgba(4,2,26,.85),0 0 0 1px rgba(255,255,255,.14)}
+.cia-hero-photo img,.cia-hero-photo video{width:100%;height:auto;display:block;background:var(--ink-2)}
+.cia-hero-credit{margin:14px 0 0;font-size:12.5px;color:rgba(255,255,255,.6);line-height:1.5}
+.cia-facts{display:flex;flex-wrap:wrap;gap:22px 0;margin:clamp(38px,4.6vw,62px) 0 0;padding-top:30px;border-top:1px solid rgba(255,255,255,.24)}
+.cia-facts div{padding-right:clamp(22px,2.8vw,44px);margin-right:clamp(22px,2.8vw,44px);border-right:1px solid rgba(255,255,255,.2)}
+.cia-facts div:last-child{border-right:0;margin-right:0;padding-right:0}
+.cia-facts dt{font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.62);margin-bottom:8px}
+.cia-facts dd{margin:0;font-size:clamp(18px,1.6vw,24px);font-weight:500;color:#fff;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+/* A qualifier that belongs to the figure, kept subordinate to it. */
+.cia-facts dd small{display:block;font-size:12.5px;font-weight:400;letter-spacing:0;color:rgba(255,255,255,.66);margin-top:6px;line-height:1.4}
+/* Staged on load, not on an observer, so the opener is never parked invisible. */
+.js .cia-hero-grid > *{animation:rise .9s cubic-bezier(.2,.75,.25,1) both}
+.js .cia-hero-grid > :nth-child(2){animation-delay:.18s}
+.js .cia-facts{animation:rise .9s cubic-bezier(.2,.75,.25,1) .3s both}
+@keyframes rise{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+
+/* ══════════ LOCATOR, INSET, DESKTOP MOCK ══════════ */
+.cia-locator{position:relative}
+.cia-locator svg{width:100%;height:auto;display:block;overflow:hidden;max-width:420px;margin:0 auto}
+.cia-ng-land{fill:#eef0fa;stroke:#c9cce0;stroke-width:1.6;stroke-linejoin:round}
+.cia-ng-outline{fill:none;stroke:var(--sky-deep);stroke-width:2;stroke-linejoin:round}
+.cia-ng-borno{fill:rgba(192,56,26,.16);stroke:var(--c-front);stroke-width:1.6;stroke-linejoin:round}
+.cia-lens-ring{fill:none;stroke:var(--ink);stroke-width:2.5}
+.cia-lens-bg{fill:#fff}
+.cia-lens-handle{stroke:var(--ink);stroke-width:6;stroke-linecap:round}
+.cia-pin{fill:var(--c-front)}
+.cia-ripple{fill:none;stroke:var(--c-front);stroke-width:2}
+.cia-locator text{font-family:var(--mono);letter-spacing:.14em;text-transform:uppercase}
+.cia-loc-country{fill:var(--muted);font-size:15px}
+.cia-loc-state{fill:var(--c-front);font-size:13px}
+.cia-loc-city{fill:var(--ink);font-size:12px;letter-spacing:.06em;text-transform:none}
+.js .cia-locator .cia-ng-outline,.js .cia-locator .cia-ng-borno{stroke-dasharray:2400;stroke-dashoffset:2400}
+.js .cia-locator.cia-in .cia-ng-outline{animation:trace 2.1s cubic-bezier(.4,0,.2,1) forwards}
+.js .cia-locator.cia-in .cia-ng-borno{animation:trace 1.5s cubic-bezier(.4,0,.2,1) .7s forwards}
+@keyframes trace{to{stroke-dashoffset:0}}
+.js .cia-locator .cia-lens{opacity:0;transform:scale(.86);transform-origin:497px 132px}
+.js .cia-locator.cia-in .cia-lens{animation:lens-in .9s cubic-bezier(.2,.8,.3,1) 1.5s forwards}
+@keyframes lens-in{to{opacity:1;transform:scale(1)}}
+.cia-locator.cia-in .cia-ripple{animation:ripple 3s ease-out infinite 2.2s}
+@keyframes ripple{0%{r:5;opacity:.85}100%{r:34;opacity:0}}
+
+/* The locator sits beside the opening card: where this happened, and who. */
+.cia-locator-card{position:relative;z-index:2;background:var(--paper-2);border:1px solid var(--line);border-radius:var(--radius-lg);padding:28px 30px 30px;box-shadow:0 20px 44px -38px rgba(10,6,32,.55)}
+.cia-locator-org{display:flex;align-items:center;gap:16px;margin:18px 0 0;padding-top:18px;border-top:1px solid var(--line)}
+.cia-locator-org img{width:96px;height:auto;flex:0 0 auto}
+.cia-locator-org>span{min-width:0}
+.cia-locator-org b{display:block;font-size:13px;color:var(--ink);font-weight:600;letter-spacing:.01em}
+.cia-locator-org span span,.cia-locator-org>span>span{display:block;font-size:12.5px;color:var(--muted);line-height:1.45;margin-top:3px}
+
+/* An inset aside inside a card: the thing that happened last time. */
+.cia-before{margin:24px 0 0;padding:19px 21px;background:var(--paper-warm);border-left:2px solid var(--rule);border-radius:0 8px 8px 0}
+.cia-before p{margin:0;font-size:14px;color:var(--ink-3);line-height:1.6}
+.cia-before .cia-lb{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+
+/* Connect as people actually meet it: on a desktop machine. A real bezel with a
+   chin and brand notch, a tapered neck, a weighted foot, and a glare across the
+   glass, so it reads as a monitor rather than a rounded rectangle. */
+.cia-desk{position:relative;z-index:2}
+.cia-desk-screen{
+  position:relative;background:linear-gradient(#33344f,#14152a);
+  border-radius:16px;padding:9px 9px 24px;
+  box-shadow:
+    0 32px 62px -34px rgba(4,2,26,.8),
+    inset 0 1px 0 rgba(255,255,255,.18),
+    inset 0 -1px 0 rgba(0,0,0,.55);
+}
+.cia-desk-screen::after{
+  content:'';position:absolute;left:50%;bottom:9px;transform:translateX(-50%);
+  width:32px;height:4px;border-radius:2px;background:rgba(255,255,255,.2);
+}
+.cia-desk-screen>.cia-inner{position:relative;background:var(--paper-2);border-radius:5px;overflow:hidden}
+.cia-desk-screen>.cia-inner::after{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(112deg,rgba(255,255,255,.2) 0,rgba(255,255,255,.07) 26%,rgba(255,255,255,0) 47%);
+}
+.cia-desk-bar{position:relative;z-index:1;display:flex;align-items:center;gap:6px;padding:9px 13px;background:var(--paper-warm);border-bottom:1px solid var(--line)}
+.cia-desk-bar i{width:8px;height:8px;border-radius:50%;background:var(--rule);flex:0 0 auto}
+.cia-desk-bar span{margin-left:8px;font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.03em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cia-desk-view{overflow:hidden}
+.cia-desk-view img{width:100%;height:auto;display:block}
+/* The platform's own screen: brand mark on Connect indigo, nothing else. */
+.cia-desk-brand{
+  display:grid;place-content:center;justify-items:center;
+  height:clamp(206px,23vw,296px);
+  background:linear-gradient(148deg,var(--indigo-deep) 0%,var(--indigo) 58%,#5a65e8 100%);
+}
+.cia-desk-brand svg{height:clamp(44px,5.6vw,82px);width:auto;color:#fff}
+/* Without this the caption falls back to the browser default and outsizes
+   every other caption on the page. */
+.cia-desk figcaption{padding:13px 2px 0;font-size:12.5px;color:var(--muted);line-height:1.5;max-width:62ch}
+.cia-desk-neck{
+  height:22px;width:15%;margin:0 auto;
+  background:linear-gradient(90deg,#c3c7dd,#e9eaf4 42%,#c3c7dd);
+  clip-path:polygon(20% 0,80% 0,100% 100%,0 100%);
+}
+.cia-desk-foot{
+  height:10px;width:31%;margin:0 auto;
+  background:linear-gradient(#d6d9e8,#f0f1f9);
+  border-radius:3px 3px 7px 7px;
+  box-shadow:0 16px 24px -16px rgba(10,6,32,.55);
+}
+
+/* &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; TIMELINE &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; */
+.cia-timeline{background:var(--ground);padding:clamp(58px,7vw,104px) 0 clamp(64px,8vw,112px)}
+.cia-tl-head{max-width:820px;margin:0 auto clamp(22px,2.6vw,36px);text-align:center}
+.cia-tl-head h2{font-size:var(--fs-h2)}
+.cia-tl-head p{font-size:var(--fs-lede);color:var(--ink-3);margin:22px 0 0;max-width:60ch}
+
+.cia-tl-layout{display:grid;grid-template-columns:132px 1fr;gap:clamp(20px,2.6vw,40px);align-items:start}
+.cia-date-rail{position:sticky;top:calc(var(--hdr-h) + 78px);display:grid;gap:0;padding-top:2px}
+.cia-date-rail b{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:400;margin-bottom:12px}
+.cia-date-rail span{
+  position:relative;display:block;padding:11px 0 11px 18px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+  color:var(--rule);border-left:2px solid var(--line);
+  transition:color .35s ease,border-color .35s ease;
+}
+.cia-date-rail span::before{content:'';position:absolute;left:-4px;top:50%;margin-top:-3px;width:6px;height:6px;border-radius:50%;background:var(--line);transition:background .35s ease,transform .35s ease}
+.cia-date-rail span.cia-done{color:var(--muted);border-color:var(--rule)}
+.cia-date-rail span.cia-done::before{background:var(--rule)}
+.cia-date-rail span.cia-on{color:var(--ink);font-weight:500}
+.cia-date-rail span.cia-on::before{transform:scale(1.7)}
+.cia-date-rail span.cia-on[data-role='fund']{border-color:var(--c-fund)}
+.cia-date-rail span.cia-on[data-role='fund']::before{background:var(--c-fund)}
+.cia-date-rail span.cia-on[data-role='conn']{border-color:var(--c-conn)}
+.cia-date-rail span.cia-on[data-role='conn']::before{background:var(--c-conn)}
+.cia-date-rail span.cia-on[data-role='front']{border-color:var(--c-front)}
+.cia-date-rail span.cia-on[data-role='front']::before{background:var(--c-front)}
+.cia-date-rail span.cia-on[data-role='note']{border-color:var(--c-note)}
+.cia-date-rail span.cia-on[data-role='note']::before{background:var(--c-note)}
+
+/* Two sides of the marketplace; Connect is the line between them, not a column */
+/* A legend, not a pair of thumbnails: two named sides with the platform mark
+   between them. Photographs at 46px were unreadable and read as noise. */
+.cia-sides-bar{
+  position:sticky;top:var(--hdr-h);z-index:30;
+  background:var(--ground);border-bottom:1px solid var(--line);
+  box-shadow:0 12px 20px -18px rgba(10,6,32,.5);
+}
+.cia-sides{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:clamp(12px,3vw,44px);padding:11px 0 10px}
+.cia-side{display:flex;align-items:center;gap:12px;min-width:0;opacity:.48;transition:opacity .45s ease}
+.cia-side.cia-right{flex-direction:row-reverse;justify-content:flex-start;padding-right:2px}
+.cia-side .cia-thumb{width:52px;height:52px;flex:0 0 auto;display:grid;place-items:center;overflow:hidden}
+.cia-side .cia-thumb img{width:100%;height:100%;object-fit:contain}
+.cia-side .cia-sn{
+  font-family:var(--mono);font-size:12.5px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;line-height:1.3;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.cia-side.cia-left .cia-sn{color:var(--c-fund)}
+.cia-side.cia-right .cia-sn{color:var(--c-front)}
+.cia-side.cia-mid{justify-content:center}
+.cia-sides-mark{height:38px;width:auto;color:var(--c-conn);display:block}
+/* Whichever party the thread has reached steps forward. */
+.cia-sides[data-active='fund'] .cia-side.cia-left,
+.cia-sides[data-active='conn'] .cia-side.cia-mid,
+.cia-sides[data-active='front'] .cia-side.cia-right,
+.cia-sides[data-active='note'] .cia-side.cia-mid{opacity:1}
+.cia-side .cia-thumb img{filter:grayscale(1);opacity:.75;transition:filter .45s ease,opacity .45s ease}
+.cia-sides[data-active='fund'] .cia-side.cia-left .cia-thumb img,
+.cia-sides[data-active='front'] .cia-side.cia-right .cia-thumb img{filter:none;opacity:1}
+.cia-sides-mark{filter:grayscale(1);opacity:.75;transition:filter .45s ease,opacity .45s ease}
+.cia-sides[data-active='conn'] .cia-sides-mark,
+.cia-sides[data-active='note'] .cia-sides-mark{filter:none;opacity:1}
+.cia-tl-body{position:relative;margin-top:0;min-width:0}
+#cia-ribbon{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:0}
+#cia-ribbon-halo{fill:none;stroke:var(--ground);stroke-width:11;stroke-linecap:round}
+#cia-ribbon-track{fill:none;stroke:var(--rule);stroke-width:2;opacity:.5}
+#cia-ribbon-path{fill:none;stroke:url(#cia-ribbon-grad);stroke-width:4;stroke-linecap:round}
+#cia-ribbon-head{opacity:0}
+#cia-ribbon-end{transition:opacity .5s ease}
+/* Each phase carries its party on the thread itself: the badge sits where the
+   line meets the card, so the hand-off is legible without a separate legend. */
+.cia-node{
+  position:absolute;z-index:4;width:62px;height:62px;border-radius:50%;
+  background:var(--paper-2);border:2px solid var(--rule);
+  display:grid;place-items:center;overflow:hidden;
+  box-shadow:0 6px 18px -8px rgba(10,6,32,.4);
+  transform:translate(-50%,-100%) scale(.74);transform-origin:50% 100%;opacity:.5;
+  transition:transform .5s cubic-bezier(.2,.8,.3,1),opacity .5s ease,border-color .5s ease,box-shadow .5s ease;
+}
+.cia-node img{width:76%;height:76%;object-fit:contain;filter:grayscale(1);transition:filter .5s ease}
+.cia-node svg{width:74%;height:auto;color:var(--rule);transition:color .5s ease}
+.cia-node.cia-plain{width:16px;height:16px;border-width:3px;box-shadow:none;transform:translate(-50%,-50%) scale(.74)}
+.cia-node.cia-plain.cia-on{transform:translate(-50%,-50%) scale(1)}
+/* The party's name sits in the gap above its badge, so the hand-off is
+   readable without a legend anywhere on the page. */
+.cia-node-cap{
+  position:absolute;z-index:4;transform:translate(-50%,-100%);pointer-events:none;
+  font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.17em;
+  text-transform:uppercase;white-space:nowrap;color:var(--rule);
+  /* The thread often arrives right where the label sits; a chip in the ground
+     colour keeps the words legible without hiding the line. */
+  background:var(--ground);padding:3px 8px;border-radius:5px;
+}
+/* Same lane as the block above, so the line comes straight down through the
+   label's usual spot: sit beside the badge instead. */
+.cia-node-cap.cia-aside{
+  transform:translate(42px,-50%);
+  opacity:0;transition:opacity .5s ease,color .5s ease;
+}
+.cia-node-cap.cia-on{opacity:1}
+.cia-node-cap.cia-on[data-role='fund']{color:var(--c-fund)}
+.cia-node-cap.cia-on[data-role='conn']{color:var(--c-conn)}
+.cia-node-cap.cia-on[data-role='front']{color:var(--c-front)}
+.cia-node.cia-on{transform:translate(-50%,-100%) scale(1);opacity:1}
+.cia-node.cia-on img{filter:none}
+.cia-node.cia-on[data-role='fund']{border-color:var(--c-fund);box-shadow:0 0 0 5px rgba(11,138,130,.13),0 8px 22px -10px rgba(11,138,130,.5)}
+.cia-node.cia-on[data-role='conn']{border-color:var(--c-conn);box-shadow:0 0 0 5px rgba(56,67,208,.13),0 8px 22px -10px rgba(56,67,208,.5)}
+.cia-node.cia-on[data-role='conn'] svg{color:var(--c-conn)}
+.cia-node.cia-on[data-role='front']{border-color:var(--c-front);box-shadow:0 0 0 5px rgba(192,56,26,.13),0 8px 22px -10px rgba(192,56,26,.5)}
+.cia-node.cia-on[data-role='note']{border-color:var(--c-note)}
+
+.cia-rows{display:grid;grid-template-columns:1fr 1fr;gap:0 var(--gutter);align-items:start;min-width:0;position:relative;z-index:1;isolation:isolate}
+.cia-rows>*{min-width:0}
+[data-row='1']{grid-row:1}[data-row='2']{grid-row:2}[data-row='3']{grid-row:3}
+[data-row='4']{grid-row:4}[data-row='5']{grid-row:5}[data-row='6']{grid-row:6}
+[data-row='7']{grid-row:7}[data-row='8']{grid-row:8}[data-row='9']{grid-row:9}
+[data-row='10']{grid-row:10}[data-row='11']{grid-row:11}[data-row='12']{grid-row:12}[data-row='12']{grid-row:12}
+[data-row='13']{grid-row:13}
+
+.cia-beat,.cia-pair,.cia-shot{margin-bottom:clamp(74px,8vw,148px)}
+/* One elevation, used once. The lane reads off the coloured edge rather than a
+   badge, so a row is identifiable before any of it is read. */
+.cia-beat{
+  position:relative;z-index:2;background:var(--paper-2);
+  border:1px solid var(--line);border-radius:var(--radius-lg);
+  padding:34px 34px 38px;box-shadow:0 20px 44px -38px rgba(10,6,32,.55);
+  overflow:hidden;
+}
+.cia-beat::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--rule)}
+.cia-beat[data-role='fund']::before{background:var(--c-fund)}
+.cia-beat[data-role='front']::before{background:var(--c-front)}
+.cia-beat[data-role='conn']::before,.cia-beat--conn::before{background:var(--c-conn)}
+.cia-beat[data-col='l']{grid-column:1}
+.cia-beat[data-col='r']{grid-column:2}
+/* Connect sits on the line, never in a side lane: tinted, and centred when it
+   has the row to itself. */
+.cia-beat--conn{
+  background:linear-gradient(180deg,#fff,#f7f8ff);
+  border-color:rgba(56,67,208,.28);box-shadow:0 24px 60px -40px rgba(56,67,208,.7);
+}
+.cia-beat[data-col='c']{grid-column:1/-1;max-width:520px;margin-inline:auto}
+.cia-conn-mark{height:19px;width:auto;color:var(--c-conn);margin-bottom:18px}
+/* The badge above each dot now names the party, so showing the in-card chip too
+   would stutter. It is hidden visually but kept in the accessibility tree, since
+   the badge caption is absolutely positioned and would read out of order. */
+.cia-beat:not(.cia-quote) > .cia-beat-role{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+.cia-beat-role{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;margin-bottom:18px}
+.cia-beat-role::before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor}
+.cia-beat[data-role='fund'] .cia-beat-role{color:var(--c-fund)}
+.cia-beat[data-role='front'] .cia-beat-role{color:var(--c-front)}
+.cia-beat .cia-when{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 13px}
+.cia-beat h3{font-size:clamp(24px,2.3vw,34px);font-weight:400;letter-spacing:-.032em;line-height:1.14}
+.cia-beat p{font-size:16.5px;color:var(--ink-3);line-height:1.68;margin:17px 0 0}
+
+/* Photographs and screens: shown whole, never cropped, captions underneath */
+/* A photograph wearing a card's border, radius and shadow reads as a portfolio
+   tile. Chrome is reserved for screenshots, which need a frame to read as UI. */
+.cia-shot{grid-column:1/-1;position:relative;z-index:2}
+.cia-shot img{border-radius:10px}
+.cia-shot--ui{background:var(--paper-2);border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;box-shadow:0 24px 54px -44px rgba(10,6,32,.6)}
+.cia-shot--ui img{border-radius:0}
+.cia-shot--narrow{max-width:640px;margin-inline:auto}
+.cia-shot--thumb{max-width:270px;margin-right:auto}
+.cia-shot--thumb figcaption{padding:11px 14px 13px;font-size:12px}
+.cia-shot--thumb .cia-shot-bar{padding:8px 12px}
+.cia-shot--thumb .cia-shot-bar i{width:7px;height:7px}
+.cia-shot--thumb .cia-shot-bar span{font-size:10px}
+.cia-shot img{width:100%;height:auto}
+.cia-shot figcaption{padding:13px 2px 0;font-size:12.5px;color:var(--muted);line-height:1.5;max-width:62ch}
+.cia-shot--ui figcaption{padding:14px 20px 16px;border-top:1px solid var(--line);max-width:none}
+.cia-shot figcaption a{font-weight:500;text-underline-offset:3px;text-decoration-thickness:1px}
+.cia-shot figcaption a:hover{color:var(--indigo-deep)}
+.cia-shot-bar{display:flex;align-items:center;gap:7px;padding:11px 16px;background:var(--paper-warm);border-bottom:1px solid var(--line)}
+.cia-shot-bar i{width:9px;height:9px;border-radius:50%;background:var(--rule);flex:0 0 auto}
+.cia-shot-bar span{margin-left:8px;font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.03em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* A row holding two things side by side; the thread runs down between them */
+.cia-pair{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:var(--gutter);align-items:center;position:relative}
+.cia-pair>*{margin-bottom:0;min-width:0}
+/* Top-aligned row: let the photograph take the card's height exactly, so both
+   edges line up however long the card's copy runs. */
+.cia-pair--top{align-items:stretch}
+.cia-pair--top>.cia-shot{display:flex;flex-direction:column}
+/* The image is taken out of flow inside a flexible frame, so it contributes no
+   intrinsic height to the grid row. The card alone sets the height and the
+   photograph fills it, leaving no dead space under either one. */
+.cia-pair--top>.cia-shot .cia-fill{position:relative;display:block;flex:1 1 0;min-height:240px;border-radius:10px;overflow:hidden}
+.cia-pair--top>.cia-shot .cia-fill img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:0}
+/* .cia-shot spans the full grid at row level; inside a pair it must take just its
+   own half, or it drops onto a line of its own below the card. */
+.cia-pair>.cia-shot,.cia-pair>.cia-desk,.cia-pair>.cia-locator-card{grid-column:auto;max-width:none}
+/* ...except the citation thumb, which must stay small inside a pair. */
+.cia-pair>.cia-shot--thumb{max-width:none}
+
+/* Context note */
+.cia-note{
+  position:relative;z-index:2;
+  background:var(--paper-warm);border:1px solid var(--line);border-left:3px solid var(--c-note);
+  border-radius:0 var(--radius) var(--radius) 0;padding:28px 30px 30px;
+}
+.cia-note .cia-when{font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--c-note);margin:0 0 9px}
+.cia-note p{margin:0;font-size:15px;line-height:1.62;color:var(--ink-3)}
+
+/* Figures inside cards */
+.cia-fig-money{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px 18px;padding-left:clamp(0px,2vw,26px)}
+.cia-fig-money .cia-amt i{font-style:normal;font-size:.3em;font-weight:600;letter-spacing:.08em;vertical-align:.9em;margin-left:.12em;color:var(--teal-deep,#0b8a82)}
+.cia-fig-money .cia-amt{font-size:clamp(46px,5.6vw,86px);font-weight:600;color:var(--c-fund);letter-spacing:-.035em;line-height:1;font-variant-numeric:tabular-nums}
+.cia-fig-money .cia-for{font-size:15px;color:var(--ink-3);line-height:1.45}
+.cia-memo{margin:22px 0 0;padding:22px 0 0 0;border-top:1px solid var(--line);display:grid;gap:13px}
+.cia-memo li{list-style:none;display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:baseline;font-size:14.5px;color:var(--ink-3);line-height:1.45}
+.cia-memo li span{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--c-conn);padding-top:2px}
+/* Where the money went. Two quiet lines under the figure, sized to match the
+   group labels in the outcomes card. */
+.cia-allot{margin:22px 0 0;padding-left:clamp(0px,2vw,26px);display:grid;gap:6px}
+.cia-allot div{display:flex;align-items:baseline;gap:9px}
+.cia-allot dt{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--c-fund);font-variant-numeric:tabular-nums;min-width:3.4ch}
+.cia-allot div:last-child dt{color:var(--muted)}
+.cia-allot dd{margin:0;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);line-height:1.5}
+.cia-chips{display:grid;gap:10px;margin:24px 0 0;padding:0}
+.cia-chips li{
+  list-style:none;display:grid;grid-template-columns:auto 1fr;align-items:center;gap:12px;
+  font-size:13.5px;color:var(--ink-3);line-height:1.45;
+  background:var(--paper-warm);border:1px solid var(--line);border-radius:10px;padding:11px 15px;
+}
+.cia-chips svg{width:17px;height:17px;fill:none;stroke:var(--c-front);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+/* A quote set inside a card, distinct from the full dark quote panels. */
+.cia-card-quote{margin:26px 0 0;padding:24px 0 0;border-top:1px solid var(--line)}
+.cia-card-quote p{margin:0;font-size:15.5px;line-height:1.6;color:var(--ink-2);font-weight:300;font-style:italic}
+.cia-card-quote p::before{content:'\201C'}
+.cia-card-quote p::after{content:'\201D'}
+.cia-card-quote cite{display:block;margin-top:14px;font-style:normal;font-size:12.5px;color:var(--muted);line-height:1.45}
+.cia-card-quote cite b{display:block;color:var(--ink);font-weight:600;font-size:13.5px}
+.cia-live-count{margin:24px 0 0;padding-top:22px;border-top:1px solid var(--line)}
+.cia-live-count .cia-n{font-family:var(--mono);font-size:clamp(30px,2.8vw,42px);font-weight:500;color:var(--c-conn);letter-spacing:-.025em;line-height:1;font-variant-numeric:tabular-nums}
+.cia-live-count .cia-lb{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);margin-top:8px}
+.cia-stat-hero{margin:22px 0 0;padding-top:20px;border-top:1px solid var(--line)}
+/* The figure the card builds to, so it closes rather than trailing off. */
+.cia-stat-foot{margin:30px 0 0;padding-top:28px;border-top:2px solid var(--indigo-soft)}
+.cia-stat-foot .cia-n{display:block;font-size:clamp(52px,6.6vw,92px);font-weight:600;color:var(--indigo-deep);letter-spacing:-.05em;line-height:.92;font-variant-numeric:tabular-nums}
+.cia-stat-foot .cia-lb{display:block;margin-top:14px;font-size:16px;color:var(--ink-3);font-weight:500;line-height:1.4}
+.cia-stat-hero .cia-n{display:block;font-size:clamp(58px,7.4vw,104px);font-weight:600;color:var(--indigo-deep);letter-spacing:-.05em;line-height:.92;font-variant-numeric:tabular-nums}
+.cia-stat-hero .cia-lb{display:block;margin-top:14px;font-size:16px;color:var(--ink-3);font-weight:500;line-height:1.4}
+/* One column for the figures so the digits stack, whatever their width. */
+.cia-outcome{list-style:none;margin:26px 0 0;padding:24px 0 0;border-top:1px solid var(--line);display:grid;gap:20px}
+.cia-outcome li{display:grid;grid-template-columns:96px 1fr;gap:2px 18px;align-items:baseline}
+.cia-outcome .cia-n{font-size:clamp(22px,1.9vw,27px);font-weight:600;color:var(--indigo-deep);letter-spacing:-.03em;line-height:1.1;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.cia-outcome .cia-lb{font-size:14px;color:var(--ink-3);line-height:1.4}
+.cia-outcome .cia-sb{grid-column:2;font-size:12.5px;color:var(--muted);line-height:1.45}
+.cia-outcome .cia-sb + .cia-sb{margin-top:3px}
+.cia-outcome .cia-grp{grid-template-columns:1fr;margin-top:4px}
+.cia-outcome .cia-grp + li{margin-top:-4px}
+.cia-outcome .cia-gl{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+
+/* Quotes are their own visual: a dark panel against the white timeline */
+.cia-beat.cia-quote{background:var(--ink);border-color:transparent;box-shadow:0 28px 64px -40px rgba(10,6,32,.85)}
+.cia-beat.cia-quote[data-role='front'] .cia-beat-role{color:#ff9a7d;background:rgba(252,95,54,.14);border-color:rgba(252,95,54,.42)}
+.cia-beat.cia-quote .cia-q-intro{font-size:14px;color:var(--on-dark-muted);line-height:1.55;margin:0}
+.cia-beat.cia-quote .cia blockquote{margin:0}
+.cia-beat.cia-quote .cia-mark{font-size:56px;line-height:.55;color:var(--sky);opacity:.65;font-weight:600;display:block;margin:16px 0 12px}
+.cia-beat.cia-quote blockquote p{font-size:clamp(16px,1.25vw,18px);line-height:1.62;color:#fff;font-weight:300;margin:0}
+.cia-beat.cia-quote cite{display:block;margin-top:22px;padding-top:18px;border-top:1px solid rgba(255,255,255,.16);font-style:normal;font-size:13px;color:var(--on-dark-muted);line-height:1.5}
+.cia-beat.cia-quote cite b{display:block;color:#fff;font-weight:600;font-size:15px}
+
+/* &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; CLOSING &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; */
+.cia-close{
+  position:relative;overflow:hidden;color:#fff;padding:clamp(76px,9.5vw,128px) 0;
+  background:linear-gradient(150deg,#1b1f6e 0%,var(--indigo-deep) 38%,var(--indigo) 78%,#4a56e0 100%);
+}
+.cia-close::before{content:'';position:absolute;inset:0;pointer-events:none;background:radial-gradient(80% 70% at 92% 6%,rgba(142,161,255,.4),transparent 62%),radial-gradient(70% 60% at 4% 100%,rgba(11,10,50,.5),transparent 60%)}
+.cia-close>*{position:relative}
+.cia-close-grid{display:grid;grid-template-columns:1.06fr .94fr;gap:var(--gutter);align-items:center}
+.cia-close h2{font-size:var(--fs-h2);color:#fff}
+.cia-close .eyebrow.on-dark{color:rgba(255,255,255,.82)}
+.cia-close p{font-size:var(--fs-lede);color:rgba(255,255,255,.84);margin:24px 0 0;line-height:1.62}
+.cia-close .cia-cta{margin-top:36px;display:flex;flex-wrap:wrap;gap:14px 18px;align-items:center}
+.cia-close .cia-cta-note{font-size:14px;color:rgba(255,255,255,.7)}
+.cia-close-photo{border-radius:var(--radius-lg);overflow:hidden;box-shadow:0 34px 74px -34px rgba(4,2,26,.75),0 0 0 1px rgba(255,255,255,.14)}
+.cia-close-photo img{width:100%;height:clamp(280px,34vw,440px);object-fit:cover;object-position:52% 52%;will-change:transform}
+.cia-foot{padding:32px 0 46px;background:var(--ink);color:var(--on-dark-muted);font-size:13px;border-top:1px solid rgba(255,255,255,.1)}
+.cia-foot .cia-wrap{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;justify-content:space-between}
+.cia-foot a{color:var(--sky);text-decoration:none}
+.cia-foot a:hover{text-decoration:underline}
+
+/* &#9472;&#9472; Reveal (opt-in, so the page never rests invisible) &#9472;&#9472; */
+.js .cia-rv{opacity:0;transform:translateY(20px);transition:opacity .75s ease,transform .75s cubic-bezier(.2,.7,.2,1)}
+.js .cia-rv.cia-in{opacity:1;transform:none}
+
+/* &#9472;&#9472; Responsive &#9472;&#9472; */
+@media (max-width:1180px){
+  .cia-tl-layout{grid-template-columns:1fr}
+  .cia-date-rail{display:none}
+}
+@media (max-width:1000px){
+  .cia-delay-grid,.cia-close-grid{grid-template-columns:1fr}
+  /* Stack the opener so the clip gets the full column width on a phone. */
+  .cia-hero-grid{grid-template-columns:1fr;gap:28px}
+  .cia-delay-grid{gap:44px}
+}
+@media (max-width:860px){
+  .cia{--hdr-h:58px;--gutter:26px}
+  .cia-facts div{border-right:0;padding-right:0;margin-right:0;flex:1 0 44%}
+  .cia-facts{gap:18px 24px}
+  /* The active-state growth is sized for a wide bar; cap it on a phone, where
+     it would otherwise push the sticky bar to twice its height. */
+  .cia-sides{gap:8px;padding:9px 0 8px}
+  .cia-side{gap:7px}
+  .cia-side .cia-thumb{width:26px;height:26px}
+  .cia-side .cia-sn{font-size:9px;letter-spacing:.08em}
+  .cia-sides-mark{height:20px}
+  /* One column, with the thread redrawn as a rail down the left margin. */
+  .cia-rows{grid-template-columns:1fr;padding-left:56px}
+  .cia-node{width:40px;height:40px;border-width:2px}
+  .cia-node-cap{transform:translate(-50%,-100%);font-size:9px;letter-spacing:.12em}
+  .cia-node-cap.cia-aside{transform:translate(30px,-50%)}
+  .cia-node.cia-plain{width:13px;height:13px;border-width:3px}
+  [data-row]{grid-row:auto}
+  .cia-beat[data-col='l'],.cia-beat[data-col='r'],.cia-beat[data-col='c'],.cia-shot,.cia-pair{grid-column:1}
+  .cia-beat[data-col='c']{max-width:none}
+  .cia-pair{grid-template-columns:1fr;gap:0}
+  .cia-pair>*{margin-bottom:clamp(32px,7vw,54px)}
+  .cia-pair>*:last-child{margin-bottom:0}
+  .cia-beat,.cia-shot,.cia-pair{margin-bottom:clamp(38px,8vw,66px)}
+  .cia-beat{padding:26px 22px 28px}
+  .cia-shot--narrow{max-width:none}
+  .cia-shot--thumb{max-width:300px}
+  .cia-shot img[data-wide]{min-width:560px}
+  .cia-shot:has(img[data-wide]){overflow-x:auto}
+}
+@media (max-width:560px){
+  .cia-hdr-label{display:none}
+  .cia-side .cia-thumb{width:26px;height:26px}
+  .cia-outcome li{grid-template-columns:82px 1fr}
+  .cia-outcome .cia-sb{grid-column:2}
+  .cia-versus{gap:12px 18px}
+  .cia-versus .cia-arrow{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  .js .cia-rv{opacity:1;transform:none}
+  .js .cia-hero-inner > .cia-wrap > *{animation:none}
+  .cia-hero-media{animation:none}
+  .js .cia-locator .cia-ng-outline,.js .cia-locator .cia-ng-borno{stroke-dashoffset:0}
+  .js .cia-locator .cia-lens{opacity:1;transform:none}
+}
