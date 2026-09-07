@@ -366,6 +366,12 @@ class SelectionView(OpenLocallyMixin, View):
                 "indicator_label": measure.label,
                 "indicator_unit": measure.unit,
                 "lower_is_worse": indicator in measures.LOWER_IS_WORSE,
+                # The population the measure is about, named. For a coverage
+                # measure this is its denominator; for a burden it is what the
+                # rate is weighted by. Either way it is the count a reader
+                # needs and the fixed under-5 tiles could not give them.
+                "denominator": measure.weight_by,
+                "denominator_label": (measures.get(measure.weight_by).label if measure.weight_by else None),
                 "gap_label": (
                     measures.get(f"{indicator}_gap").label if f"{indicator}_gap" in measures.MEASURES else None
                 ),
@@ -382,6 +388,7 @@ class SelectionView(OpenLocallyMixin, View):
                     "ors_gap_children": selection.totals.get("ors_gap_children"),
                     "gap": selection.totals.get(f"{indicator}_gap"),
                     "gap_annual": selection.totals.get(annual_gap) if annual_gap else None,
+                    "denominator": (selection.totals.get(measure.weight_by) if measure.weight_by else None),
                     "births": selection.totals.get("births"),
                     "pop_u5": selection.totals.get("pop_u5"),
                     "pop_total": selection.totals.get("pop_total"),
