@@ -23,7 +23,7 @@ def _make_definition(definition_id=6621):
 def test_backfill_calls_run_default_once_per_week_with_non_overlapping_windows(
     mock_get_token, MockWDA, mock_run_default
 ):
-    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    User.objects.create(username="wouter", email="analyst@example.com")
     mock_get_token.return_value = "connect-tok"
 
     fetch_instance = mock.Mock()
@@ -40,7 +40,7 @@ def test_backfill_calls_run_default_once_per_week_with_non_overlapping_windows(
         "--program",
         "176",
         "--owner-email",
-        "wvink@dimagi.com",
+        "analyst@example.com",
         "--weeks",
         "3",
         stdout=out,
@@ -72,7 +72,7 @@ def test_backfill_replace_existing_deletes_only_matching_period_runs(mock_get_to
     (definition, period_start) before creating the new one -- e.g. after a
     fix to flw_audit_compute.py, so a re-run replaces stale runs computed
     under the old logic instead of piling up duplicates alongside them."""
-    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    User.objects.create(username="wouter", email="analyst@example.com")
     mock_get_token.return_value = "connect-tok"
     mock_run_default.return_value = {"opportunities": {}, "period_start": "x", "period_end": "y"}
 
@@ -88,7 +88,7 @@ def test_backfill_replace_existing_deletes_only_matching_period_runs(mock_get_to
         "--program",
         "176",
         "--owner-email",
-        "wvink@dimagi.com",
+        "analyst@example.com",
         "--weeks",
         "2",
         stdout=out,
@@ -113,7 +113,7 @@ def test_backfill_replace_existing_deletes_only_matching_period_runs(mock_get_to
         "--program",
         "176",
         "--owner-email",
-        "wvink@dimagi.com",
+        "analyst@example.com",
         "--weeks",
         "2",
         "--replace-existing",
@@ -130,7 +130,7 @@ def test_backfill_replace_existing_deletes_only_matching_period_runs(mock_get_to
 @mock.patch("connect_labs.workflow.management.commands.backfill_flw_weekly_audit_report.WorkflowDataAccess")
 @mock.patch("connect_labs.workflow.management.commands.backfill_flw_weekly_audit_report.get_valid_access_token")
 def test_backfill_raises_when_definition_not_found(mock_get_token, MockWDA):
-    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    User.objects.create(username="wouter", email="analyst@example.com")
     mock_get_token.return_value = "connect-tok"
 
     fetch_instance = mock.Mock()
@@ -145,7 +145,7 @@ def test_backfill_raises_when_definition_not_found(mock_get_token, MockWDA):
             "--program",
             "176",
             "--owner-email",
-            "wvink@dimagi.com",
+            "analyst@example.com",
         )
 
 
@@ -166,7 +166,7 @@ def test_backfill_raises_when_owner_email_unknown():
 @pytest.mark.django_db
 @mock.patch("connect_labs.workflow.management.commands.backfill_flw_weekly_audit_report.get_valid_access_token")
 def test_backfill_raises_when_token_unavailable(mock_get_token):
-    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    User.objects.create(username="wouter", email="analyst@example.com")
     mock_get_token.side_effect = ConnectTokenError("no token stored")
 
     with pytest.raises(CommandError, match="no token stored"):
@@ -177,5 +177,5 @@ def test_backfill_raises_when_token_unavailable(mock_get_token):
             "--program",
             "176",
             "--owner-email",
-            "wvink@dimagi.com",
+            "analyst@example.com",
         )

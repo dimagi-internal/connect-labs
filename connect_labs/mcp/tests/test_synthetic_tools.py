@@ -437,7 +437,7 @@ def test_profile_opp_tool_invokes_service(tmp_path):
     from connect_labs.mcp.tools import synthetic as tools
 
     class _User:
-        email = "jjackson@dimagi.com"
+        email = "admin@example.com"
 
     with (
         patch.object(tools, "require_connect_token", return_value="tok"),
@@ -457,7 +457,7 @@ def test_clone_profile_tool_returns_updated_spec():
     from connect_labs.mcp.tools import synthetic as tools
 
     class _User:
-        email = "jjackson@dimagi.com"
+        email = "admin@example.com"
 
     def fake_profile_cohort(spec, *, base_url, oauth_token, drive=None, progress=None):
         spec.bundle_root = "gdrive:run123"

@@ -29,7 +29,7 @@ def _make_definition(definition_id=8061):
 def test_backfill_calls_run_default_once_per_day_with_non_overlapping_windows(
     mock_get_token, mock_get_cchq_token, MockWDA, mock_run_default
 ):
-    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    User.objects.create(username="wouter", email="analyst@example.com")
     mock_get_token.return_value = "connect-tok"
     mock_get_cchq_token.return_value = "cchq-tok"
 
@@ -47,7 +47,7 @@ def test_backfill_calls_run_default_once_per_day_with_non_overlapping_windows(
         "--program",
         "176",
         "--owner-email",
-        "wvink@dimagi.com",
+        "analyst@example.com",
         "--days",
         "14",
         stdout=out,
@@ -83,7 +83,7 @@ def test_backfill_proceeds_without_cchq_token_when_owner_never_authorized(
 ):
     """A missing/unauthorized CommCare HQ token must not abort the backfill --
     run_default itself degrades gracefully (indicator #2 becomes None)."""
-    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    User.objects.create(username="wouter", email="analyst@example.com")
     mock_get_token.return_value = "connect-tok"
     mock_get_cchq_token.side_effect = CCHQTokenError("no CommCare HQ OAuth token stored")
 
@@ -100,7 +100,7 @@ def test_backfill_proceeds_without_cchq_token_when_owner_never_authorized(
         "--program",
         "176",
         "--owner-email",
-        "wvink@dimagi.com",
+        "analyst@example.com",
         "--days",
         "2",
         stdout=out,
@@ -120,7 +120,7 @@ def test_backfill_proceeds_without_cchq_token_when_owner_never_authorized(
 def test_backfill_replace_existing_deletes_only_matching_period_runs(
     mock_get_token, mock_get_cchq_token, MockWDA, mock_run_default
 ):
-    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    User.objects.create(username="wouter", email="analyst@example.com")
     mock_get_token.return_value = "connect-tok"
     mock_get_cchq_token.return_value = "cchq-tok"
     mock_run_default.return_value = {"opportunities": {}, "date": "x"}
@@ -137,7 +137,7 @@ def test_backfill_replace_existing_deletes_only_matching_period_runs(
         "--program",
         "176",
         "--owner-email",
-        "wvink@dimagi.com",
+        "analyst@example.com",
         "--days",
         "2",
         stdout=out,
@@ -166,7 +166,7 @@ def test_backfill_replace_existing_deletes_only_matching_period_runs(
         "--program",
         "176",
         "--owner-email",
-        "wvink@dimagi.com",
+        "analyst@example.com",
         "--days",
         "2",
         "--replace-existing",
@@ -191,7 +191,7 @@ def test_backfill_replace_existing_deletes_the_day_being_recreated_not_the_day_b
     day run_default is about to (re)create -- wat_date(window_start), a
     WAT-adjusted date. A stale run tagged with window_start's own raw UTC date
     (one day earlier) is a DIFFERENT, still-valid day's run and must survive."""
-    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    User.objects.create(username="wouter", email="analyst@example.com")
     mock_get_token.return_value = "connect-tok"
     mock_get_cchq_token.return_value = "cchq-tok"
     mock_run_default.return_value = {"opportunities": {}, "date": "x"}
@@ -201,7 +201,7 @@ def test_backfill_replace_existing_deletes_the_day_being_recreated_not_the_day_b
     MockWDA.return_value = fetch_instance
 
     call_command(
-        COMMAND, "--definition", "8061", "--program", "176", "--owner-email", "wvink@dimagi.com", "--days", "1"
+        COMMAND, "--definition", "8061", "--program", "176", "--owner-email", "analyst@example.com", "--days", "1"
     )
     window_start = mock_run_default.call_args.kwargs["window"][0]
     correct_period = wat_date(window_start)
@@ -220,7 +220,7 @@ def test_backfill_replace_existing_deletes_the_day_being_recreated_not_the_day_b
         "--program",
         "176",
         "--owner-email",
-        "wvink@dimagi.com",
+        "analyst@example.com",
         "--days",
         "1",
         "--replace-existing",
@@ -240,7 +240,7 @@ def test_backfill_end_date_anchors_the_window_instead_of_yesterday(
 ):
     """--end-date lets a later backfill reach further back without re-touching
     the more-recent days an earlier (no --end-date) backfill already covered."""
-    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    User.objects.create(username="wouter", email="analyst@example.com")
     mock_get_token.return_value = "connect-tok"
     mock_get_cchq_token.return_value = "cchq-tok"
 
@@ -257,7 +257,7 @@ def test_backfill_end_date_anchors_the_window_instead_of_yesterday(
         "--program",
         "176",
         "--owner-email",
-        "wvink@dimagi.com",
+        "analyst@example.com",
         "--days",
         "40",
         "--end-date",
@@ -280,7 +280,7 @@ def test_backfill_end_date_anchors_the_window_instead_of_yesterday(
 @mock.patch(f"{MODPATH}.WorkflowDataAccess")
 @mock.patch(f"{MODPATH}.get_valid_access_token")
 def test_backfill_raises_on_malformed_end_date(mock_get_token, MockWDA, mock_get_cchq_token):
-    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    User.objects.create(username="wouter", email="analyst@example.com")
     mock_get_token.return_value = "connect-tok"
     mock_get_cchq_token.return_value = "cchq-tok"
     MockWDA.return_value.get_definition.return_value = _make_definition()
@@ -293,7 +293,7 @@ def test_backfill_raises_on_malformed_end_date(mock_get_token, MockWDA, mock_get
             "--program",
             "176",
             "--owner-email",
-            "wvink@dimagi.com",
+            "analyst@example.com",
             "--end-date",
             "not-a-date",
         )
@@ -304,7 +304,7 @@ def test_backfill_raises_on_malformed_end_date(mock_get_token, MockWDA, mock_get
 @mock.patch(f"{MODPATH}.WorkflowDataAccess")
 @mock.patch(f"{MODPATH}.get_valid_access_token")
 def test_backfill_raises_when_definition_not_found(mock_get_token, MockWDA, mock_get_cchq_token):
-    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    User.objects.create(username="wouter", email="analyst@example.com")
     mock_get_token.return_value = "connect-tok"
     mock_get_cchq_token.return_value = "cchq-tok"
 
@@ -320,7 +320,7 @@ def test_backfill_raises_when_definition_not_found(mock_get_token, MockWDA, mock
             "--program",
             "176",
             "--owner-email",
-            "wvink@dimagi.com",
+            "analyst@example.com",
         )
 
 
@@ -341,7 +341,7 @@ def test_backfill_raises_when_owner_email_unknown():
 @pytest.mark.django_db
 @mock.patch(f"{MODPATH}.get_valid_access_token")
 def test_backfill_raises_when_connect_token_unavailable(mock_get_token):
-    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    User.objects.create(username="wouter", email="analyst@example.com")
     mock_get_token.side_effect = ConnectTokenError("no token stored")
 
     with pytest.raises(CommandError, match="no token stored"):
@@ -352,5 +352,5 @@ def test_backfill_raises_when_connect_token_unavailable(mock_get_token):
             "--program",
             "176",
             "--owner-email",
-            "wvink@dimagi.com",
+            "analyst@example.com",
         )
