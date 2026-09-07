@@ -278,7 +278,7 @@ Connect OAuth token (`~/.commcare-connect/token.json`).
 A remote MCP server hosted inside the labs Django app (`connect_labs/mcp/`)
 at `https://labs.connect.dimagi.com/mcp/`. The protocol endpoint is a
 FastMCP 3.x Streamable-HTTP ASGI app mounted in `config/asgi.py`; the catalog
-registers **96 tools** (write tools are rate-limited and fully argument-logged
+registers **100 tools** (write tools are rate-limited and fully argument-logged
 to `MCPAuditLog`).
 
 **Auth:** Personal Access Tokens (PAT) — a deliberate permanent design, not a
