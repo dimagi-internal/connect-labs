@@ -205,14 +205,23 @@ class TestGeometryValidity:
 
     def test_a_valid_geometry_is_still_valid_after_a_round_trip(self):
         _seed()
-        for b in AdminBoundary.objects.all():
+        seeded = list(AdminBoundary.objects.all())
+        assert seeded, "fixture seeded nothing, so nothing below is being tested"
+        for b in seeded:
             assert b.geometry.valid, "fixture is not valid to begin with"
 
         blob = snapshot.export(iso_codes=["KEN"])
         _wipe()
         snapshot.import_snapshot(blob)
 
-        for b in AdminBoundary.objects.all():
+        # Without this the test passes when the import restores NOTHING: the
+        # loop below runs zero times and reports total data loss as success.
+        # "Every boundary is still valid" is only worth asserting alongside
+        # "there are still boundaries".
+        restored = list(AdminBoundary.objects.all())
+        assert restored, "the round trip restored no boundaries at all"
+
+        for b in restored:
             assert b.geometry.valid, f"{b.boundary_id} was invalidated by the round trip"
 
     def test_an_already_invalid_geometry_survives_rather_than_being_dropped(self):
