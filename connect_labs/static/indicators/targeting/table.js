@@ -49,9 +49,58 @@
     return r.expected_deaths;
   }
 
+  /* Why the table is empty, which is not always what it looks like.
+
+     "No area is above this threshold" is a finding: it says the places we
+     asked about are doing fine. When the country simply has no survey behind
+     this indicator, that sentence asserts something we did not measure —
+     Liberia has no improved-water data at all, and the page was reporting
+     that as good water coverage. The method matrix already carries the real
+     reason per country; say that instead.
+
+     The direction is read from the measure too: a coverage indicator selects
+     BELOW its threshold, so "above" was wrong for half the registry. */
+  function emptyReason() {
+    var S = state.get();
+    var meta = (S.indicatorMeta || {})[S.indicator] || {};
+    var info = S.methodInfo && S.methodInfo.methods[S.method];
+
+    if (S.iso && info && info.countries) {
+      var here = info.countries.filter(function (c) {
+        return c.iso === S.iso;
+      })[0];
+      if (here && !here.available) {
+        return util.esc(
+          here.name +
+            ' has no data for this indicator under this method' +
+            (here.reason ? ' — ' + here.reason : '') +
+            '. That is a gap in what we can see, not a finding about ' +
+            here.name +
+            '. Try another method, or another indicator.',
+        );
+      }
+    }
+    return (
+      'No area is ' +
+      (meta.lower_is_worse ? 'below' : 'above') +
+      ' this threshold.'
+    );
+  }
+
   function renderTable(data) {
     var th = document.getElementById('th-burden');
     if (th) th.textContent = burdenHeader();
+
+    // The heading was written into the template and never touched again, so
+    // every coverage indicator — half the registry — sat under "Areas above
+    // threshold" while selecting the areas below it.
+    var S = state.get();
+    var meta = (S.indicatorMeta || {})[S.indicator] || {};
+    var title = document.getElementById('tg-table-title');
+    if (title) {
+      title.textContent =
+        'Areas ' + (meta.lower_is_worse ? 'below' : 'above') + ' threshold';
+    }
 
     var tbody = document.getElementById('tg-rows');
     tbody.innerHTML = '';
@@ -59,7 +108,8 @@
     if (!data.rows.length) {
       tbody.innerHTML =
         '<tr><td colspan="10" class="px-5 py-8 text-center text-stone-400">' +
-        'No area is above this threshold.</td></tr>';
+        emptyReason() +
+        '</td></tr>';
       return;
     }
 
@@ -405,5 +455,8 @@
       renderHeadline(data);
       renderTable(data);
     },
+    // Exposed for tests: the sentence an empty table shows is a claim about
+    // the world, and it has been wrong in two different ways.
+    emptyReason: emptyReason,
   };
 })();

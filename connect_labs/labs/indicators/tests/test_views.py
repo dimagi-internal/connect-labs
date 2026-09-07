@@ -1092,3 +1092,49 @@ class TestBadQueryParametersDegrade:
     def test_a_known_indicator_is_still_honoured(self, client_in, africa):
         r = client_in.get(reverse("targeting:selection"), {"indicator": "stunting"}).json()
         assert r["indicator"] == "stunting"
+
+
+class TestDefaultMethodAnswersTheIndicator:
+    """A default nobody chose must still be able to answer the question.
+
+    The registry's default is per *resolution*, so it was picked without
+    knowing the indicator: `subnational_igme`, because IGME is what the page
+    began as. IGME publishes mortality only. Every other indicator therefore
+    defaulted to a method with data for zero countries, and the API returned an
+    empty selection with nothing on it to say why. The browser hid this — it
+    re-picks a usable method client-side — but the JSON API and the MCP
+    targeting tools took the default at its word.
+    """
+
+    @pytest.fixture
+    def survey_only(self, africa):
+        """An indicator carried by a survey source and by no IGME model."""
+        for b in africa.values():
+            set_value(b, "improved_water", 55.0, source=Source.DHS)
+        return africa
+
+    def test_default_prefers_a_method_with_data_over_the_registry_constant(self, survey_only):
+        from connect_labs.labs.indicators import availability, methods
+
+        chosen = availability.default_method_for("improved_water", methods.Resolution.SUBNATIONAL)
+        assert chosen is not None
+        assert any(
+            r.available for r in availability.for_method(chosen, "improved_water")
+        ), f"{chosen.code} answers no country for improved_water"
+        # The constant is still right for the measure it was chosen for.
+        mortality = availability.default_method_for("u5mr", methods.Resolution.SUBNATIONAL)
+        assert mortality.resolution is methods.Resolution.SUBNATIONAL
+
+    def test_methods_payload_advertises_a_default_that_works(self, client_in, survey_only):
+        payload = client_in.get(reverse("targeting:methods"), {"indicator": "improved_water"}).json()
+        default = payload["default"]
+        assert (
+            payload["methods"][default]["countries_available"] > 0
+        ), f"improved_water defaults to {default}, which answers no country"
+
+    def test_selection_without_an_explicit_method_is_not_silently_empty(self, client_in, survey_only):
+        # The shape a shared link and every MCP call take: an indicator, a
+        # threshold, and no opinion about method.
+        resp = client_in.get(reverse("targeting:selection"), {"indicator": "improved_water", "threshold": 90})
+        assert resp.status_code == 200
+        assert resp.json()["rows"], "an indicator with data returned nothing without ?method="

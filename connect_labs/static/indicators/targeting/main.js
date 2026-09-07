@@ -55,6 +55,17 @@
     });
   }
 
+  // A preset survives a costing refresh if it is still on offer and still
+  // aimed at the indicator on screen.
+  function keptPreset(S, info) {
+    if (!S.preset) return null;
+    var still = (info.interventions || []).filter(function (i) {
+      return i.slug === S.preset;
+    })[0];
+    if (!still) return null;
+    return !still.targets || still.targets === S.indicator ? S.preset : null;
+  }
+
   function syncLinks() {
     var href = api.downloadHref();
     var a = document.getElementById('tg-download');
@@ -124,13 +135,18 @@
         // ownership displayed Kangaroo Mother Care's warning about
         // low-birthweight newborns — a different intervention's fine print
         // under a different question's numbers.
-        S.preset = null;
+        //
+        // Drop it only when it does not belong here. Clearing it outright
+        // also cleared a preset the reader had just picked, whenever this
+        // request was still in flight when they picked it — and a preset
+        // with no slug sends no intervention, so the costing panel answered
+        // a question nobody asked.
+        S.preset = keptPreset(S, info);
         if (!basis || !basis.available_for_indicator) {
           var usable = info.bases.filter(function (b) {
             return b.available_for_indicator;
           });
           if (usable.length) S.basis = usable[usable.length - 1].code;
-          S.preset = null;
         }
         T.costing.renderControls();
       });

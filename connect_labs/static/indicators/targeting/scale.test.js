@@ -125,3 +125,82 @@ describe('per-channel tickets', () => {
     expect(state.isCurrent('costing', cost)).toBe(true);
   });
 });
+
+describe('the sentence an empty table shows', () => {
+  // This text is the whole answer when nothing is selected, and a reader acts
+  // on it. It has been wrong twice: it asserted "above" for coverage measures
+  // that select below, and it reported a country we have no data for as a
+  // country where nothing crossed the threshold — which reads as good news.
+  function load(S) {
+    globalThis.window = globalThis.window || globalThis;
+    globalThis.window.Targeting = {
+      util: { esc: (x) => x },
+      state: { get: () => S },
+    };
+    const fs = require('fs');
+    // eslint-disable-next-line no-eval
+    eval(fs.readFileSync(new URL('./table.js', import.meta.url), 'utf8'));
+    return globalThis.window.Targeting.table.emptyReason;
+  }
+
+  const withData = {
+    method: 'subnational_survey',
+    methodInfo: {
+      methods: {
+        subnational_survey: {
+          countries: [
+            { iso: 'NGA', name: 'Nigeria', available: true, reason: '' },
+          ],
+        },
+      },
+    },
+  };
+
+  it('says "above" for a burden measure', () => {
+    const reason = load({
+      ...withData,
+      iso: 'NGA',
+      indicator: 'u5mr',
+      indicatorMeta: { u5mr: { lower_is_worse: false } },
+    });
+    expect(reason()).toBe('No area is above this threshold.');
+  });
+
+  it('says "below" for a coverage measure', () => {
+    const reason = load({
+      ...withData,
+      iso: 'NGA',
+      indicator: 'ors_coverage',
+      indicatorMeta: { ors_coverage: { lower_is_worse: true } },
+    });
+    expect(reason()).toBe('No area is below this threshold.');
+  });
+
+  it('does not report an unmeasured country as one that cleared the bar', () => {
+    const reason = load({
+      iso: 'LBR',
+      indicator: 'improved_water',
+      indicatorMeta: { improved_water: { lower_is_worse: true } },
+      method: 'subnational_relevelled',
+      methodInfo: {
+        methods: {
+          subnational_relevelled: {
+            countries: [
+              {
+                iso: 'LBR',
+                name: 'Liberia',
+                available: false,
+                reason: 'no subnational survey for this country',
+              },
+            ],
+          },
+        },
+      },
+    });
+    const text = reason();
+    expect(text).toContain('no subnational survey for this country');
+    expect(text).toContain('not a finding about Liberia');
+    // The bug: this sentence claimed Liberia's water coverage was fine.
+    expect(text).not.toContain('this threshold.');
+  });
+});

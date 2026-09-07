@@ -157,9 +157,12 @@ def _method(request, indicator: str = "u5mr") -> str:
         return code
     resolution = request.GET.get("resolution")
     res = methods.Resolution(resolution) if resolution in (r.value for r in methods.Resolution) else None
-    if res is None:
-        return DEFAULT_METHOD
-    return availability.default_method_for(indicator, res).code
+    # No resolution asked for still means "the subnational default", but which
+    # method that is depends on the indicator. The flat constant is right for
+    # the mortality measures this began as and answers no country at all for,
+    # say, improved drinking water — so a link without ?method= landed on a
+    # method with nothing behind it.
+    return availability.default_method_for(indicator, res or methods.Resolution.SUBNATIONAL).code
 
 
 def _float(request, key, default):
@@ -561,7 +564,10 @@ class MethodsView(OpenLocallyMixin, View):
         return JsonResponse(
             {
                 "resolutions": availability.resolutions(),
-                "default": DEFAULT_METHOD,
+                # Indicator-aware: this field is what a client picks when the
+                # reader has not chosen, so it has to be a method that can
+                # answer the question being asked.
+                "default": availability.default_method_for(indicator, methods.Resolution.SUBNATIONAL).code,
                 # Order matters and belongs to the registry: the menu reads
                 # groups in this order rather than sorting them alphabetically,
                 # because "Child survival" leads for a reason.

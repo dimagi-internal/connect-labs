@@ -49,14 +49,40 @@
     }
     el.textContent =
       d.absorbable_usd === null ? '—' : '$' + util.fmt(d.absorbable_usd);
-    detail.textContent =
-      util.fmtFull(d.units) +
-      ' ' +
-      d.basis.noun_plural +
-      ' — ' +
-      d.basis.measure_label;
+    // No count at all is a different answer from a partial one, and it has to
+    // read as one. Formatting null through the normal path produced
+    // "— households — Households", which says nothing and looks broken.
+    var none = d.units === null || d.units === undefined;
+    // An empty selection and a selection that carries no count are different
+    // problems with different remedies, and neither is "0 of 0 regions".
+    var empty = none && !d.unit_coverage.of;
+    detail.textContent = empty
+      ? 'Nothing is selected at this threshold, so there is nothing to price.'
+      : none
+      ? // The label is used verbatim: lowercasing one that already carries a
+        // colon ("Unreached: ITN use, under-5s") reads like a typo.
+        d.basis.measure_label +
+        ' is not counted anywhere in this selection, so it cannot be priced ' +
+        d.basis.label +
+        '.'
+      : util.fmtFull(d.units) +
+        ' ' +
+        d.basis.noun_plural +
+        ' — ' +
+        d.basis.measure_label;
     var notes = [];
-    if (!d.complete) {
+    // "A floor" promises a number that is at least partly there. When nothing
+    // is, saying so is the whole message.
+    if (empty) {
+      notes.push('Lower the threshold, or widen the countries in scope.');
+    } else if (none) {
+      notes.push(
+        'None of the ' +
+          d.unit_coverage.of +
+          ' selected regions carries this count. Pick another basis, or a ' +
+          'method measured at a level that has one.',
+      );
+    } else if (!d.complete) {
       notes.push(
         'A floor: ' +
           (d.unit_coverage.of - d.unit_coverage.with_value) +
