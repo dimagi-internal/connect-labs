@@ -35,7 +35,7 @@ class ContactView(HomeView):
 
 
 class InActionView(HomeView):
-    """"Connect in action" story pages.
+    """ "Connect in action" story pages.
 
     Standalone templates rather than SPA sections: each one carries its own
     stylesheet and scroll script, and none of it belongs in home.html's bundle.
