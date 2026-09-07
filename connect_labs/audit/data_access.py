@@ -31,6 +31,7 @@ from connect_labs.labs.analysis.models import LocalUserVisit
 from connect_labs.labs.analysis.pipeline import AnalysisPipeline
 from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
 from connect_labs.labs.models import LocalLabsRecord
+from connect_labs.utils.request_telemetry import record_retry_wait
 from connect_labs.workflow.data_access import BaseDataAccess
 
 logger = logging.getLogger(__name__)
@@ -1943,7 +1944,14 @@ class AuditDataAccess(BaseDataAccess):
                     f"(attempt {attempt}/{self.IMAGE_DOWNLOAD_MAX_ATTEMPTS}): {e}"
                 )
             if attempt < self.IMAGE_DOWNLOAD_MAX_ATTEMPTS:
+                # Bill the backoff to its own telemetry bucket. Without this the
+                # sleep lands in ``self_ms``, which is a residual, and reads as our
+                # CPU on the very endpoint whose residual we are trying to explain
+                # (#1435). Timed rather than derived from the formula so the number
+                # is what actually elapsed.
+                wait_started = time.perf_counter()
                 time.sleep(self.IMAGE_DOWNLOAD_BACKOFF_BASE * (2 ** (attempt - 1)))
+                record_retry_wait((time.perf_counter() - wait_started) * 1000)
 
         logger.error(
             f"[Audit] Giving up on image blob_id={blob_id} opp={opportunity_id} "
