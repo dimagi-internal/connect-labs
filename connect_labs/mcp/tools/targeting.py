@@ -203,6 +203,35 @@ def targeting_indicators(user, *, indicator=None):
                 "description": "Optional ISO-3 filter, e.g. ['NGA','ETH']. Default: all of Africa.",
             },
             "limit": {"type": "integer", "description": f"Rows to return (default {DEFAULT_ROW_LIMIT})."},
+            # These three were implemented and callable in Python but absent from the
+            # schema, and `additionalProperties: False` made them unreachable over MCP.
+            # `target_year` was the loudest: targeting_scenario and
+            # targeting_compare_criteria both describe theirs as "See targeting_select",
+            # pointing at a parameter targeting_select did not offer.
+            "target_year": {
+                "type": "integer",
+                "description": (
+                    "Carry counts to a delivery year before selecting. Omit to use the " "source years as published."
+                ),
+            },
+            "admin_level": {
+                "type": "integer",
+                "description": (
+                    "Pin the level selected on: 1 for regions, 2 for districts. Omit to let "
+                    "each row sit at the coarsest unit that is honestly describable. NOTE: "
+                    "indicators resolve to ADM1 at best, so admin_level 2 will usually select "
+                    "nothing and return 'empty_because_unanswerable': true — that is the "
+                    "question being unaskable, not a finding."
+                ),
+            },
+            "rollup": {
+                "type": "boolean",
+                "default": True,
+                "description": (
+                    "Collapse a country whose every region clears the threshold into one "
+                    "'whole country' row. Set false to always get individual regions."
+                ),
+            },
         },
         "required": ["indicator"],
         "additionalProperties": False,
@@ -378,8 +407,19 @@ def targeting_methodology(
             "threshold": {"type": "number"},
             "basis": {
                 "type": "string",
-                "enum": ["birth", "under_5", "person", "household", "case"],
-                "description": "What one unit of cost buys.",
+                # 'case_year' was implemented and reachable in Python but missing from
+                # this enum, so no MCP caller could select it. That is not a cosmetic
+                # gap: 'case' is a survey recall window (a fortnight) and 'case_year' is
+                # a year of the same episodes, and for ORS across Africa they are
+                # 10.8M against 215.1M. Costing a year of supply on the fortnight figure
+                # under-prices it roughly twentyfold, and the enum offered only the
+                # fortnight.
+                "enum": ["birth", "under_5", "person", "household", "case", "case_year"],
+                "description": (
+                    "What one unit of cost buys. 'case' counts a survey recall window "
+                    "(a fortnight); 'case_year' counts a year of the same episodes -- "
+                    "pick deliberately, they differ by more than an order of magnitude."
+                ),
             },
             "unit_cost": {"type": "number", "description": "USD per unit."},
             "resolution": {"type": "string", "enum": ["national", "subnational"], "default": "subnational"},
@@ -417,18 +457,40 @@ def targeting_scenario(
     target_year=None,
 ):
     _, _, interventions_mod, _, _, _, _ = _imports()
+    legal = [b.value for b in interventions_mod.UnitBasis]
+    # The count fields every other targeting tool speaks -- rows and totals carry
+    # 'pop_u5'/'births'/'pop_total', and targeting_compare_criteria's `count` takes
+    # them verbatim -- while a basis is named for the unit rather than the column.
+    # Reusing the field you just read off a selection is the obvious move and it used
+    # to fail. Derived from measure_for() so it cannot drift from the real mapping.
+    aliases = {}
+    for b in interventions_mod.UnitBasis:
+        if b in (interventions_mod.UnitBasis.DISEASE_CASE, interventions_mod.UnitBasis.CASE_YEAR):
+            continue  # these resolve against the indicator, so they have no fixed column
+        column = interventions_mod.measure_for(b)
+        if column:
+            aliases[column] = b.value
+
+    requested = basis
+    if basis in aliases:
+        basis = aliases[basis]
     try:
         unit_basis = interventions_mod.UnitBasis(basis)
     except ValueError:
-        raise MCPToolError("BAD_REQUEST", f"Unknown basis {basis!r}") from None
+        raise MCPToolError(
+            "BAD_REQUEST",
+            f"Unknown basis {requested!r}. Choose one of: {', '.join(legal)}. "
+            f"(Count-field names are accepted too: {', '.join(sorted(aliases))}.)",
+        ) from None
 
     cases_measure = interventions_mod.measure_for(unit_basis, indicator)
     if cases_measure is None:
+        alternatives = [b for b in legal if b not in ("case", "case_year")]
         raise MCPToolError(
             "BAD_REQUEST",
             f"A {basis!r} basis has no count for {indicator!r} — that indicator implies no "
             "case count, so pricing per case would be an approximation dressed as a figure. "
-            "Choose person, household, birth or under_5.",
+            f"Choose one of: {', '.join(alternatives)}.",
         )
 
     if not 0 < reach <= 1:
@@ -753,7 +815,14 @@ def targeting_research_write(
         "which criteria keep it — so the contested places are visible rather than hidden "
         "behind whichever screen was run first. "
         "Use this before defending a geographic selection, and put the disagreement in the "
-        "write-up: a reviewer who finds it first will not believe the rest."
+        "write-up: a reviewer who finds it first will not believe the rest. "
+        "Read 'empty_because_unanswerable' and 'unanswerable_screens' before quoting any "
+        "agreement figure: a screen that could not be asked in the scope requested keeps "
+        "nothing, which silently inflates how much the remaining screens appear to agree. "
+        "When every screen is unanswerable the result is NOT a finding that no area "
+        "qualifies — the usual cause is an admin_level finer than the indicator supports, "
+        "since indicators resolve to ADM1 at best even where boundaries and population "
+        "reach ADM2."
     ),
     input_schema={
         "type": "object",
@@ -777,7 +846,11 @@ def targeting_research_write(
             },
             "admin_level": {
                 "type": "integer",
-                "description": "Pin the level compared on: 1 for regions, 2 for districts.",
+                "description": (
+                    "Pin the level compared on: 1 for regions, 2 for districts. Indicators "
+                    "resolve to ADM1 at best, so 2 usually leaves every screen unanswerable "
+                    "-- check 'unanswerable_screens' rather than reading zeros as a finding."
+                ),
             },
         },
         "required": ["criteria"],
@@ -837,6 +910,15 @@ def targeting_compare_criteria(
                 "units": sum(a.units_covered for a in selection.areas),
                 count: round(selection.totals.get(count) or 0),
                 "small_sample_units": selection.small_sample_units,
+                # Same honesty flag targeting_select carries, per screen. Without it a
+                # comparison run at a level or in a scope the indicator cannot answer
+                # returns zeros that read as a finding -- "nowhere is kept by every
+                # screen" -- when the truth is that the question was never asked. The
+                # common way in is admin_level=2: indicators resolve to ADM1 at best,
+                # while boundaries and population go to ADM2, so the caller has every
+                # reason to think districts are available.
+                "empty_because_unanswerable": bool(not selection.area_count and not selection.countries_supported),
+                "countries_unsupported": selection.countries_unsupported,
                 "_kept": kept,
             }
         )
@@ -863,6 +945,41 @@ def targeting_compare_criteria(
     for s in screens:
         del s["_kept"]
 
+    unanswerable = [s["label"] for s in screens if s["empty_because_unanswerable"]]
+    share = round(100 * sum(r[count] for r in contested) / max(sum(r[count] for r in rows), 1))
+
+    # A comparison is only as answerable as its screens. Reporting "0 areas, 0%"
+    # for a question that could not be asked is the one output here a reader will
+    # quote as a finding, so it never gets phrased as one.
+    if unanswerable and not rows:
+        advice = (
+            "This comparison could not be run: "
+            + ", ".join(repr(lbl) for lbl in unanswerable)
+            + " cannot be answered anywhere in the scope requested, so there is nothing to "
+            "compare. This is NOT a finding that no area qualifies. The usual cause is an "
+            "admin_level finer than the indicator supports -- indicators resolve to ADM1 at "
+            "best, even where boundaries and population go to ADM2 -- or a country filter the "
+            "method does not cover. Widen the scope, or call targeting_admin_levels and "
+            "targeting_indicators to see what can be answered."
+        )
+    elif unanswerable:
+        advice = (
+            f"{len(unanimous)} areas are selected by every ANSWERABLE screen and {len(contested)} by "
+            f"some but not all, holding {share}% of the {count.replace('_', ' ')} in play. "
+            "WARNING: " + ", ".join(repr(lbl) for lbl in unanswerable) + " could not be answered in "
+            "this scope and contributed nothing -- an area it might have kept cannot show as "
+            "contested, so the agreement below is overstated. Fix the scope before quoting these "
+            "numbers, or drop the screen and say you did."
+        )
+    else:
+        advice = (
+            f"{len(unanimous)} areas are selected by every screen and {len(contested)} by some but not all, "
+            f"holding {share}% "
+            f"of the {count.replace('_', ' ')} in play. The unanimous set is what a selection can be defended "
+            "on without argument; the contested set is what a reviewer will ask about, so name it and say "
+            "which screen you chose and why."
+        )
+
     return {
         "screens": screens,
         "count": count,
@@ -872,11 +989,7 @@ def targeting_compare_criteria(
         "contested_share_of_count": (
             round(100 * sum(r[count] for r in contested) / max(sum(r[count] for r in rows), 1), 1)
         ),
-        "advice": (
-            f"{len(unanimous)} areas are selected by every screen and {len(contested)} by some but not all, "
-            f"holding {round(100 * sum(r[count] for r in contested) / max(sum(r[count] for r in rows), 1))}% "
-            f"of the {count.replace('_', ' ')} in play. The unanimous set is what a selection can be defended "
-            "on without argument; the contested set is what a reviewer will ask about, so name it and say "
-            "which screen you chose and why."
-        ),
+        "unanswerable_screens": unanswerable,
+        "empty_because_unanswerable": bool(unanswerable and not rows),
+        "advice": advice,
     }
