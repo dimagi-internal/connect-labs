@@ -154,7 +154,18 @@ class TestEntitlement:
     def test_an_unimported_directory_says_so_rather_than_drawing_a_dead_network(self, client):
         user = get_user_model().objects.create_user(username="analyst2", password="x")  # noqa: S106
         client.force_login(user)
-        assert "empty_reason" in client.get("/labs/pulse/api/network/").json()
+        assert "No partners imported yet" in client.get("/labs/pulse/api/network/").json()["empty_reason"]
+
+    def test_partners_without_locations_get_their_own_message(self, client):
+        """The state you actually hit after a migration adds location columns:
+        the partners are there, they just have nowhere to be drawn. Telling
+        someone to import partners they already have sends them the wrong way."""
+        PulsePartner.objects.create(name="A", joined_at=dt.date(2025, 1, 1))
+        user = get_user_model().objects.create_user(username="analyst3", password="x")  # noqa: S106
+        client.force_login(user)
+        reason = client.get("/labs/pulse/api/network/").json()["empty_reason"]
+        assert "1 partners imported" in reason
+        assert "none carry a location" in reason
 
 
 def test_the_page_requires_a_session(client):

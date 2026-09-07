@@ -140,7 +140,14 @@ class NetworkView(View):
             return JsonResponse({"error": "not_authorised"}, status=403)
         payload = build_payload()
         if not payload["points"]:
-            # An empty table is the un-imported state, not an error. Say so,
-            # rather than rendering an empty map that looks like a dead network.
-            payload["empty_reason"] = "No partners imported yet — run pulse_partner_import."
+            # Nothing to draw is the un-imported state, not an error — but say
+            # WHICH un-imported state. "No partners" and "partners with no
+            # locations" need different fixes, and after a migration that adds
+            # location columns the second is the one you actually hit.
+            total = payload["totals"]["partners"]
+            payload["empty_reason"] = (
+                "No partners imported yet — run pulse_partner_import."
+                if not total
+                else f"{total} partners imported, but none carry a location yet — re-run pulse_partner_import."
+            )
         return JsonResponse(payload)
