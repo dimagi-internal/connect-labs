@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}CHC Mop-up — Setup{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto p-6 space-y-6" x-data>
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">CHC Mop-up — Setup</h1>
+    <p class="text-sm text-gray-500">Program #{{ program_id }} — pick an opportunity, then which ward(s) to review, before pulling any visit data.</p>
+  </div>
+
+  <div id="status" class="text-sm text-gray-500"></div>
+
+  <section class="space-y-2">
+    <label for="opp-select" class="block text-sm font-semibold text-gray-700">1. Opportunity</label>
+    <select id="opp-select" class="base-input">
+      <option value="">— pick an opportunity —</option>
+      {% for opp in opportunities %}
+        <option value="{{ opp.id }}">{{ opp.name }}{% if not opp.is_active %} (inactive){% endif %}</option>
+      {% endfor %}
+    </select>
+  </section>
+
+  <section class="space-y-2">
+    <div class="flex items-center justify-between">
+      <label class="block text-sm font-semibold text-gray-700">2. Ward(s)</label>
+      <button type="button" id="refresh-wards" class="button button-sm outline-style" disabled title="Re-pull work-area data for this opportunity, bypassing the cache">Refresh</button>
+    </div>
+    <p class="text-xs text-gray-500">Leave none selected to review every ward in this opportunity. Loaded from work-area case data only (ward/LGA/state/building counts) — no visit data yet.</p>
+    <div id="ward-status" class="text-xs text-gray-500"></div>
+    <div id="ward-list" class="border border-gray-200 rounded divide-y divide-gray-100 max-h-80 overflow-y-auto"></div>
+  </section>
+
+  <section class="space-y-2">
+    <label class="block text-sm font-semibold text-gray-700">3. Date range <span class="font-normal text-gray-400">(optional — default: all-time)</span></label>
+    <div class="flex items-center gap-2">
+      <input type="date" id="date-from" class="base-input" style="width:auto">
+      <span class="text-gray-400">to</span>
+      <input type="date" id="date-to" class="base-input" style="width:auto">
+    </div>
+  </section>
+
+  <div class="pt-2">
+    <button type="button" id="start-analysis" class="button primary-dark" disabled>Start analysis</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+<script src="{% static 'mopup/setup.js' %}"></script>
+<script>
+(function () {
+  MopupSetup.init({
+    wardListUrl: "{{ ward_list_url }}",
+    createRunUrl: "{{ create_run_url }}",
+    csrfToken: "{{ csrf_token }}",
+  });
+})();
+</script>
+{% endblock %}
