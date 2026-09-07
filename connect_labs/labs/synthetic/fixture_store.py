@@ -21,6 +21,7 @@ behaviour degrades to exactly the L1-only design -- never an error.
 
 from __future__ import annotations
 
+import gzip
 import json
 import logging
 from collections.abc import Callable
@@ -58,11 +59,23 @@ ENDPOINT_FILES: dict[str, str] = {
 SHARED_CACHE_TTL_SECONDS = 900
 
 # Raw bytes are cached, not the parsed object: Redis stays compact and there is no
-# pickle round-trip of a large nested structure. A big opp's user_visits.json runs
-# to many MB (a KMC clone is ~11.5k visits), and pushing that through Redis on
-# every miss would trade one slow dependency for another -- so above this size L1
-# still caches it and L2 declines.
-SHARED_CACHE_MAX_BYTES = 2 * 1024 * 1024
+# pickle round-trip of a large nested structure.
+#
+# Those bytes are GZIPPED first, and the ceiling below applies to the COMPRESSED
+# size. Before that they went to Redis raw under a 2 MB ceiling, which meant the
+# tier declined exactly the files it was built for: a big opp's user_visits.json
+# runs to many MB (a KMC clone is ~11.5k visits), so the opportunities that cost
+# the most to fetch were the ones that opted out, and every worker re-downloaded
+# them from Drive forever. The KMC demo cohort paid ~2 minutes of Drive round-
+# trips on every cold pipeline fill because of it.
+#
+# Compression is what makes storing them reasonable rather than just raising the
+# number. Fixture JSON is one repeated record shape with repeated keys, which is
+# close to the best case for gzip -- an order of magnitude is typical -- so the
+# multi-MB files land far under this ceiling while a genuinely pathological file
+# still opts out. Decompression is single-digit milliseconds against a Drive
+# download measured at 12-16s per run page.
+SHARED_CACHE_MAX_BYTES = 8 * 1024 * 1024
 
 
 class FixtureStore:
@@ -114,7 +127,10 @@ class FixtureStore:
             return 0
 
     def _shared_key(self, opp_id: int, folder_id: str, suffix: str, gen: int) -> str:
-        return f"synthetic:fixture:v1:{gen}:{opp_id}:{folder_id}:{suffix}"
+        # v2: payload bytes under this namespace are gzipped. A v1 entry holds raw
+        # bytes and must never be handed to gzip.decompress, so the namespace bump
+        # retires them rather than relying on sniffing the magic number.
+        return f"synthetic:fixture:v2:{gen}:{opp_id}:{folder_id}:{suffix}"
 
     def _shared_get(self, key: str):
         try:
@@ -128,6 +144,30 @@ class FixtureStore:
             cache.set(key, value, SHARED_CACHE_TTL_SECONDS)
         except Exception:
             logger.debug("synthetic: shared cache write failed for %s", key, exc_info=True)
+
+    def _shared_get_blob(self, key: str) -> bytes | None:
+        """Read gzipped fixture bytes from L2. A corrupt entry reads as a miss."""
+        packed = self._shared_get(key)
+        if packed is None:
+            return None
+        try:
+            return gzip.decompress(packed)
+        except (OSError, EOFError, TypeError):
+            logger.warning("synthetic: undecompressable shared entry %s; treating as a miss", key)
+            return None
+
+    def _shared_set_blob(self, key: str, raw: bytes) -> None:
+        """Gzip and store, unless even compressed it is beyond the ceiling."""
+        packed = gzip.compress(raw, compresslevel=6)
+        if len(packed) > SHARED_CACHE_MAX_BYTES:
+            logger.info(
+                "synthetic: %s is %d bytes compressed, over the %d ceiling; L1 only",
+                key,
+                len(packed),
+                SHARED_CACHE_MAX_BYTES,
+            )
+            return
+        self._shared_set(key, packed)
 
     def load_endpoint(self, opp_id: int, endpoint_key: str) -> list[dict] | dict:
         """Return parsed JSON for one endpoint. Empty list on any miss."""
@@ -182,7 +222,7 @@ class FixtureStore:
             return []
 
         raw_key = self._shared_key(opp_id, folder_id, f"raw:{endpoint_key}:{file_id}", gen)
-        raw = self._shared_get(raw_key)
+        raw = self._shared_get_blob(raw_key)
         if raw is None:
             try:
                 raw = self._drive.download_file(file_id)
@@ -194,10 +234,7 @@ class FixtureStore:
                     e,
                 )
                 return []
-            # The size gate is on the raw bytes, which is the number we already
-            # have -- measuring the parsed object would mean serialising it twice.
-            if len(raw) <= SHARED_CACHE_MAX_BYTES:
-                self._shared_set(raw_key, raw)
+            self._shared_set_blob(raw_key, raw)
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError as e:
