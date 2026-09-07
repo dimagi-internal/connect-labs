@@ -1,13 +1,14 @@
-"""Tests for the CHC mop-up microplanning seam (pure geometry + mocked analysis
-pipeline calls — no network/DB, mirrors test_coverage.py's fetch-mocking style)."""
+"""Tests for the mop-up/microplans seam (pure geometry + mocked analysis
+pipeline calls — no network/DB, mirrors microplans/tests/test_coverage.py's
+fetch-mocking style)."""
 
 from __future__ import annotations
 
 import pytest
 from shapely.geometry import shape
 
-from connect_labs.microplans.core import mopup
-from connect_labs.microplans.core.mopup import build_mopup_areas, ward_children_per_building
+from connect_labs.mopup.core import areas
+from connect_labs.mopup.core.areas import build_mopup_areas, ward_children_per_building
 
 # ---------------------------------------------------------------------------
 # build_mopup_areas
@@ -21,9 +22,9 @@ def _square(x0, y0, x1, y1):
 class TestBuildMopupAreas:
     def test_single_ward_single_wa_passthrough(self):
         wa = {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "geometry": _square(0, 0, 1, 1)}
-        areas = build_mopup_areas([wa])
-        assert len(areas) == 1
-        area = areas[0]
+        areas_out = build_mopup_areas([wa])
+        assert len(areas_out) == 1
+        area = areas_out[0]
         assert area["ward"] == "Sabon Gari"
         assert area["lga"] == "Rano"
         assert area["state"] == "Kano"
@@ -34,9 +35,9 @@ class TestBuildMopupAreas:
         # Two adjacent WAs in the same ward -> one unioned area covering both.
         wa1 = {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "geometry": _square(0, 0, 1, 1)}
         wa2 = {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "geometry": _square(1, 0, 2, 1)}
-        areas = build_mopup_areas([wa1, wa2])
-        assert len(areas) == 1
-        union = shape(areas[0]["geometry"])
+        areas_out = build_mopup_areas([wa1, wa2])
+        assert len(areas_out) == 1
+        union = shape(areas_out[0]["geometry"])
         assert union.area == pytest.approx(2.0)
         assert union.contains(shape({"type": "Point", "coordinates": [0.5, 0.5]}))
         assert union.contains(shape({"type": "Point", "coordinates": [1.5, 0.5]}))
@@ -44,20 +45,21 @@ class TestBuildMopupAreas:
     def test_distinct_wards_stay_separate(self):
         wa1 = {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "geometry": _square(0, 0, 1, 1)}
         wa2 = {"ward": "Unguwar Arewa", "lga": "Rano", "state": "Kano", "geometry": _square(5, 5, 6, 6)}
-        areas = build_mopup_areas([wa1, wa2])
-        assert {a["ward"] for a in areas} == {"Sabon Gari", "Unguwar Arewa"}
-        assert {a["area_id"] for a in areas} == {"mopup-kano-rano-sabon-gari", "mopup-kano-rano-unguwar-arewa"}
+        areas_out = build_mopup_areas([wa1, wa2])
+        assert {a["ward"] for a in areas_out} == {"Sabon Gari", "Unguwar Arewa"}
+        assert {a["area_id"] for a in areas_out} == {"mopup-kano-rano-sabon-gari", "mopup-kano-rano-unguwar-arewa"}
 
     def test_same_ward_name_different_lga_not_conflated(self):
-        """Two same-named wards in different LGAs must get distinct area_ids — a
-        real prior bug class in this codebase (see core/frame.py:_area_meta and
-        core/ward_codes.py's module docstring for the "Doka"/"Doka Dawa" incident
-        this exact scenario is modeled on)."""
+        """Two same-named wards in different LGAs must get distinct area_ids —
+        a real prior bug class in this codebase (see
+        microplans/core/frame.py:_area_meta and core/ward_codes.py's module
+        docstring for the "Doka"/"Doka Dawa" incident this scenario is modeled
+        on)."""
         wa1 = {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "geometry": _square(0, 0, 1, 1)}
         wa2 = {"ward": "Sabon Gari", "lga": "Fagge", "state": "Kano", "geometry": _square(5, 5, 6, 6)}
-        areas = build_mopup_areas([wa1, wa2])
-        assert len(areas) == 2
-        assert len({a["area_id"] for a in areas}) == 2
+        areas_out = build_mopup_areas([wa1, wa2])
+        assert len(areas_out) == 2
+        assert len({a["area_id"] for a in areas_out}) == 2
 
     def test_missing_ward_raises(self):
         with pytest.raises(ValueError, match="ward"):
@@ -136,7 +138,7 @@ class TestWardChildrenPerBuilding:
                 "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
             },
         )
-        monkeypatch.setattr(mopup, "fetch_buildings", lambda area: [object()] * 10)
+        monkeypatch.setattr(areas, "fetch_buildings", lambda area: [object()] * 10)
 
         rate = ward_children_per_building("Sabon Gari", "Rano", "Kano", [1], pipeline=pipeline)
         # 2 distinct children (A, B) / 10 buildings
@@ -151,7 +153,7 @@ class TestWardChildrenPerBuilding:
                 "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
             },
         )
-        monkeypatch.setattr(mopup, "fetch_buildings", lambda area: [object()] * 5)
+        monkeypatch.setattr(areas, "fetch_buildings", lambda area: [object()] * 5)
         rate = ward_children_per_building("Nowhere", "Nowhere", "Nowhere", [1], pipeline=pipeline)
         assert rate == 0.0
 
@@ -177,7 +179,7 @@ class TestWardChildrenPerBuilding:
                 "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
             },
         )
-        monkeypatch.setattr(mopup, "fetch_buildings", lambda area: [])
+        monkeypatch.setattr(areas, "fetch_buildings", lambda area: [])
         rate = ward_children_per_building("Sabon Gari", "Rano", "Kano", [1], pipeline=pipeline)
         assert rate == 0.0
 
@@ -198,7 +200,7 @@ class TestWardChildrenPerBuilding:
                 "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
             },
         )
-        monkeypatch.setattr(mopup, "fetch_buildings", lambda area: [object()] * 4)
+        monkeypatch.setattr(areas, "fetch_buildings", lambda area: [object()] * 4)
         rate = ward_children_per_building("Sabon Gari", "Rano", "Kano", [1, 2], pipeline=pipeline)
         # 2 distinct children total (one per opp) / 4 buildings
         assert rate == pytest.approx(0.5)

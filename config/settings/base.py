@@ -166,6 +166,7 @@ LOCAL_APPS = [
     "connect_labs.prelogin",
     "connect_labs.program",
     "connect_labs.microplans",
+    "connect_labs.mopup",
     "connect_labs.pages",
     "connect_labs.pulse",
     "connect_labs.solicitations",
