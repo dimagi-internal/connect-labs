@@ -58,7 +58,13 @@
    * Guarded on source === 'composite' so only Mapbox's own layers are touched,
    * never ones the page adds afterwards. Call inside a 'load' handler.
    */
-  function calmBasemap(map, opacity) {
+  function calmBasemap(map, opts) {
+    opts = opts || {};
+    var text = opts.text == null ? 0.4 : opts.text;
+    // Icons carry as much visual weight as the labels beside them, so dimming
+    // one without the other leaves the basemap half-calmed. The wall display
+    // already did both; this is that behaviour, shared.
+    var icon = opts.icon == null ? 0.3 : opts.icon;
     try {
       var layers = map.getStyle().layers || [];
       for (var i = 0; i < layers.length; i++) {
@@ -68,15 +74,14 @@
           map.setLayoutProperty(layer.id, 'visibility', 'none');
           continue;
         }
-        map.setPaintProperty(
-          layer.id,
-          'text-opacity',
-          opacity == null ? 0.4 : opacity,
-        );
+        map.setPaintProperty(layer.id, 'text-opacity', text);
+        map.setPaintProperty(layer.id, 'icon-opacity', icon);
       }
     } catch (err) {
-      // A style that does not carry these layers is not an error worth
-      // breaking the map over.
+      // A style without these layers is not worth breaking the map over, but
+      // it is worth saying: silently skipping leaves a basemap that competes
+      // with the data and no clue why.
+      if (global.console) console.warn('[pulse] basemap calming skipped', err);
     }
   }
 

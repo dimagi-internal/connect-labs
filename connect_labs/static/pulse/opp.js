@@ -410,18 +410,10 @@
       interactive: true,
     });
     map.on('load', () => {
-      try {
-        for (const layer of map.getStyle().layers) {
-          if (layer.type !== 'symbol' || layer.source !== 'composite') continue;
-          if (/poi|road|transit|airport/.test(layer.id)) {
-            map.setLayoutProperty(layer.id, 'visibility', 'none');
-            continue;
-          }
-          map.setPaintProperty(layer.id, 'text-opacity', 0.4);
-        }
-      } catch (err) {
-        /* basemap dimming is cosmetic */
-      }
+      // See ConnectMap.calmBasemap — shared with the wall display and the
+      // network page. This page dimmed labels but not icons, so its basemap
+      // was only half-calmed; the shared behaviour does both.
+      window.ConnectMap.calmBasemap(map);
       const maxN = Math.max(...points.map((p) => p[2]), 1);
       map.addSource('opp-points', {
         type: 'geojson',

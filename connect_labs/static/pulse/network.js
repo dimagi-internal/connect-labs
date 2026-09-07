@@ -379,7 +379,7 @@
     });
 
     map.on('load', function () {
-      window.ConnectMap.calmBasemap(map, 0.45);
+      window.ConnectMap.calmBasemap(map, { text: 0.45 });
       map.setFog({
         color: '#100a3d',
         'high-color': '#16006d',
