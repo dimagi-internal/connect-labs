@@ -196,3 +196,65 @@ def test_the_weight_series_pipeline_is_supplied_as_an_extra_field(client, django
         "weight_g": visit_cfg
     }, "the weight-series config must reach layer 1 as the weight_g column"
     assert ev.call_args.args[0] is entity_cfg
+
+
+def test_a_cold_cache_is_reported_rather_than_shown_as_zeros(client, django_user_model):
+    """Measured live: the first successful call returned HTTP 200 with n_cases 0 and
+    every metric zero, because the visit cache had nothing for those opportunities.
+
+    "This programme has no babies" and "nothing has been cached yet" are completely
+    different statements, and the numbers cannot tell them apart. This endpoint only
+    READS the cache; something else has to populate it.
+    """
+    user = django_user_model.objects.create_user(username="u7", password="p")
+    client.force_login(user)
+
+    class _Def:
+        pipeline_sources = [{"alias": "children", "pipeline_id": 5108}]
+        opportunity_ids = [10042]
+
+    class _Pipe:
+        schema = {"fields": [], "terminal_stage": "entity"}
+
+    with (
+        patch("connect_labs.workflow.views.WorkflowDataAccess") as wda,
+        patch("connect_labs.workflow.data_access.PipelineDataAccess") as pda,
+        patch("connect_labs.semantic.runtime.evaluate") as ev,
+    ):
+        wda.return_value.get_definition.return_value = _Def()
+        pda.return_value.get_definition.return_value = _Pipe()
+        pda.return_value._schema_to_config.return_value = object()
+        ev.return_value = [{"scope": "programme", "n_cases": 0, "n03": 0}]
+        resp = client.get(_url(1), {"series": "N"})
+
+    body = resp.json()
+    assert body["cold_cache"] is True
+    assert "cached" in body["cold_cache_hint"]
+
+
+def test_real_data_is_not_mislabelled_as_a_cold_cache(client, django_user_model):
+    """The inverse, so the notice cannot become noise that people learn to ignore."""
+    user = django_user_model.objects.create_user(username="u8", password="p")
+    client.force_login(user)
+
+    class _Def:
+        pipeline_sources = [{"alias": "children", "pipeline_id": 5108}]
+        opportunity_ids = [10042]
+
+    class _Pipe:
+        schema = {"fields": [], "terminal_stage": "entity"}
+
+    with (
+        patch("connect_labs.workflow.views.WorkflowDataAccess") as wda,
+        patch("connect_labs.workflow.data_access.PipelineDataAccess") as pda,
+        patch("connect_labs.semantic.runtime.evaluate") as ev,
+    ):
+        wda.return_value.get_definition.return_value = _Def()
+        pda.return_value.get_definition.return_value = _Pipe()
+        pda.return_value._schema_to_config.return_value = object()
+        ev.return_value = [{"scope": "programme", "n_cases": 8718, "n03": 4168}]
+        resp = client.get(_url(1), {"series": "N"})
+
+    body = resp.json()
+    assert body["cold_cache"] is False
+    assert body["cold_cache_hint"] is None
