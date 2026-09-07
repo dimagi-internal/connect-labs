@@ -2976,10 +2976,25 @@ def semantic_indicators_api(request, definition_id):
         if series:
             reg = filter_to_series(reg, series)
 
+        # A cold visit cache produces a full table of ZEROS, which reads as "this
+        # programme has no babies" rather than "nothing has been cached yet". They are
+        # completely different statements and the numbers cannot tell them apart, so
+        # say which one this is. The cache is populated by running the pipelines (the
+        # dashboard's own data load does it); this endpoint only READS it.
+        cold = bool(rows) and all(not (r.get("n_cases") or 0) for r in rows)
+
         return JsonResponse(
             {
                 "rows": rows,
                 "measures": measure_catalog(reg),
+                "cold_cache": cold,
+                "cold_cache_hint": (
+                    "No cached visits for these opportunities, so every metric is zero "
+                    "rather than genuinely zero. Load the workflow's data once (the "
+                    "Indicators tab does this) to populate the cache, then re-run."
+                    if cold
+                    else None
+                ),
                 "series": series or "all",
                 "scopes": scopes or ["programme"],
                 "opportunity_ids": [int(o) for o in opportunity_ids],
