@@ -61,6 +61,24 @@ def _coerce_int(value):
         return None
 
 
+def _run_program_hint(request) -> int | None:
+    """The program a caller already knows this run might be owned by.
+
+    Deliberately NOT named ``program_id``: that is one of
+    ``labs.context.CONTEXT_PARAMS``, so putting it on a URL rewrites the
+    session's ambient scope for every later request from the same page. A page
+    scoped to one opportunity that merely wants to READ a program-owned run must
+    not thereby become program-scoped — its own opportunity-scoped calls would
+    then start missing.
+
+    Untrusted by construction, exactly like ``audit.views._session_opportunity_hint``:
+    it is a hint, not an authorization. The retry still goes out with the caller's
+    own token and the server still runs its per-user check, so a wrong value costs
+    one request and a forged one buys nothing. Anything unparseable is dropped.
+    """
+    return _coerce_int(request.POST.get("owning_program_id") or request.GET.get("owning_program_id"))
+
+
 def _resolve_pipeline_definition(pipeline_access, pipeline_id, opp_ids=None, request=None, access_token=None):
     """Look up a pipeline definition, retrying across every opportunity a
     multi-opp workflow spans.
@@ -1838,7 +1856,9 @@ def update_state_api(request, run_id):
             return JsonResponse({"error": "state required in request body"}, status=400)
 
         data_access = WorkflowDataAccess(request=request)
-        run = data_access.get_run(run_id)
+        # POSTs carry the hint in the JSON body, not the querystring: LabsContextMiddleware
+        # only decorates GETs, and a POST body is the one thing a redirect cannot preserve.
+        run = data_access.get_run(run_id, program_hint=_coerce_int(data.get("owning_program_id")))
         if not run:
             return JsonResponse({"error": "Run not found"}, status=404)
         if run.is_completed:
@@ -2245,7 +2265,7 @@ def get_run_api(request, run_id):
     """API endpoint to get workflow run details."""
     try:
         data_access = WorkflowDataAccess(request=request)
-        run = data_access.get_run(run_id)
+        run = data_access.get_run(run_id, program_hint=_run_program_hint(request))
 
         if run:
             return JsonResponse(

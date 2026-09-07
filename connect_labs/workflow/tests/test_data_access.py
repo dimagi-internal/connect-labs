@@ -991,6 +991,105 @@ class TestGetRunProgramScopedFanOut:
         assert run is None
 
 
+class TestGetRunProgramHint:
+    """Regression: the MIRROR IMAGE of TestGetRunProgramScopedFanOut, which had
+    no fallback at all. Confirmed live 2026-09-07 on run 18803 (program 217):
+    read 200 under program_id=217 from the workflow page, then 404 nineteen
+    seconds later under opportunity_id=2154 from the bulk audit page it
+    launched. The audit page pins the ambient scope to ONE opportunity
+    (?opportunity_id=<n>), so every /labs/workflow/api/run/<id>/ call it makes
+    exact-matches the wrong scope dimension. 1,769 such 404s in the preceding
+    7 days, across four users. The fan-out above cannot help: it only runs when
+    opportunity_id is unset. The caller passes the owning program instead."""
+
+    def _patched_client(self, runs_by_scope=None, calls=None):
+        runs_by_scope = runs_by_scope or {}
+
+        def _make_client(access_token, opportunity_id=None, organization_id=None, program_id=None):
+            client = MagicMock()
+            client.get_records.side_effect = lambda **kwargs: []
+
+            def _get_record_by_id(**kwargs):
+                if calls is not None:
+                    calls.append((opportunity_id, program_id))
+                for run in runs_by_scope.get((opportunity_id, program_id), []):
+                    if run.id == kwargs.get("record_id"):
+                        return run
+                return None
+
+            client.get_record_by_id.side_effect = _get_record_by_id
+            return client
+
+        return patch("connect_labs.workflow.data_access.LabsRecordAPIClient", side_effect=_make_client)
+
+    def _dao(self, **scope):
+        from connect_labs.workflow.data_access import WorkflowDataAccess
+
+        return WorkflowDataAccess(access_token="fake", **scope)
+
+    def test_opportunity_scoped_lookup_falls_back_to_the_hinted_program(self):
+        program_run = _make_run_record(18803, 12705)
+
+        with self._patched_client(runs_by_scope={(2154, None): [], (None, 217): [program_run]}):
+            with patch("connect_labs.workflow.data_access.settings") as mock_settings:
+                mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+                run = self._dao(opportunity_id=2154).get_run(18803, program_hint=217)
+
+        assert run is not None
+        assert run.id == 18803
+
+    def test_no_hint_still_misses(self):
+        """Without the hint nothing changes — this is the bug, reproduced."""
+        program_run = _make_run_record(18803, 12705)
+
+        with self._patched_client(runs_by_scope={(2154, None): [], (None, 217): [program_run]}):
+            with patch("connect_labs.workflow.data_access.settings") as mock_settings:
+                mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+                run = self._dao(opportunity_id=2154).get_run(18803)
+
+        assert run is None
+
+    def test_opportunity_owned_run_costs_no_extra_lookup(self):
+        """The hint is a FALLBACK. A run the DAO's own scope can see must be
+        returned by the first call, with no second request against the program."""
+        opp_run = _make_run_record(18804, 12705, opportunity_id=2154)
+        calls = []
+
+        with self._patched_client(runs_by_scope={(2154, None): [opp_run]}, calls=calls):
+            with patch("connect_labs.workflow.data_access.settings") as mock_settings:
+                mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+                run = self._dao(opportunity_id=2154).get_run(18804, program_hint=217)
+
+        assert run is not None
+        assert calls == [(2154, None)]
+
+    def test_a_wrong_hint_costs_exactly_one_extra_lookup_and_still_returns_none(self):
+        """A hint is untrusted input. A bogus one must not fan out, recurse, or
+        raise — one extra scoped request, then None."""
+        calls = []
+
+        with self._patched_client(runs_by_scope={(2154, None): [], (None, 999): []}, calls=calls):
+            with patch("connect_labs.workflow.data_access.settings") as mock_settings:
+                mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+                run = self._dao(opportunity_id=2154).get_run(18803, program_hint=999)
+
+        assert run is None
+        assert calls == [(2154, None), (None, 999)]
+
+    def test_program_scoped_dao_ignores_the_hint(self):
+        """A DAO that is already program-scoped keeps its existing miss path
+        (the fan-out); the hint must not add a second program lookup."""
+        calls = []
+
+        with self._patched_client(runs_by_scope={(None, 217): []}, calls=calls):
+            with patch("connect_labs.workflow.data_access.settings") as mock_settings:
+                mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+                run = self._dao(program_id=217).get_run(18803, program_hint=217)
+
+        assert run is None
+        assert calls == [(None, 217)]
+
+
 class TestGetPipelineDataDoesNotLeakProgramScope:
     """Pipeline records are opportunity-owned regardless of who owns the
     workflow. A program-owned WorkflowDataAccess (self.program_id set) must

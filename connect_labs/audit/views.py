@@ -351,6 +351,15 @@ class ExperimentBulkAssessmentView(LoginRequiredMixin, DetailView):
                 "opportunity_id": opportunity_id,
                 "connect_url": settings.CONNECT_PRODUCTION_URL,
                 "workflow_run_id": session.workflow_run_id,
+                # The run that launched this page may be PROGRAM-owned while the page
+                # itself is opportunity-scoped (?opportunity_id=<n> pins the ambient
+                # scope). The production API exact-matches scope, so every
+                # /labs/workflow/api/run/<id>/ call from here 404s on such a run --
+                # silently, because all three call sites swallow it, which cost the
+                # completion write-back and the persisted flw_tasks. This opportunity
+                # belongs to exactly one program and it is already resolved above, so
+                # hand it back as a fallback scope (see workflow.views._run_program_hint).
+                "owning_program_id": program_id,
                 "pass_threshold": self.request.GET.get("threshold", "80"),
                 # The review screen renders a stored "duplicate" or "fake" as
                 # Duplicate/Fake rather than as unreviewed -- see
