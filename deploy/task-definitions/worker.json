@@ -117,6 +117,14 @@
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-connect-oauth-client-secret-as2RFY"
         },
         {
+          "name": "COMMCARE_OAUTH_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-commcare-oauth-client-id-JKsDA0"
+        },
+        {
+          "name": "COMMCARE_OAUTH_CLIENT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-commcare-oauth-client-secret-AvOUsA"
+        },
+        {
           "name": "SCALE_VALIDATION_API_KEY",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-scale-validation-api-key-OR5xdE"
         },
