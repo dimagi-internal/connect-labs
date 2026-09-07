@@ -1002,12 +1002,15 @@ class TestGetRunProgramHint:
     7 days, across four users. The fan-out above cannot help: it only runs when
     opportunity_id is unset. The caller passes the owning program instead."""
 
-    def _patched_client(self, runs_by_scope=None, calls=None):
+    def _patched_client(self, runs_by_scope=None, calls=None, definitions=None):
         runs_by_scope = runs_by_scope or {}
+        definitions = definitions or []
 
         def _make_client(access_token, opportunity_id=None, organization_id=None, program_id=None):
             client = MagicMock()
-            client.get_records.side_effect = lambda **kwargs: []
+            client.get_records.side_effect = lambda **kwargs: (
+                list(definitions) if kwargs.get("type") == "workflow_definition" else []
+            )
 
             def _get_record_by_id(**kwargs):
                 if calls is not None:
@@ -1063,9 +1066,10 @@ class TestGetRunProgramHint:
         assert run is not None
         assert calls == [(2154, None)]
 
-    def test_a_wrong_hint_costs_exactly_one_extra_lookup_and_still_returns_none(self):
-        """A hint is untrusted input. A bogus one must not fan out, recurse, or
-        raise — one extra scoped request, then None."""
+    def test_a_wrong_hint_is_bounded_and_still_returns_none(self):
+        """A hint is untrusted input. A bogus one must not raise, and must not
+        wander past the program it names -- its cost is one lookup for that
+        program plus, at most, its own membership."""
         calls = []
 
         with self._patched_client(runs_by_scope={(2154, None): [], (None, 999): []}, calls=calls):
@@ -1074,7 +1078,33 @@ class TestGetRunProgramHint:
                 run = self._dao(opportunity_id=2154).get_run(18803, program_hint=999)
 
         assert run is None
+        # A program the caller cannot see has no definitions, so no membership to walk.
         assert calls == [(2154, None), (None, 999)]
+
+    def test_falls_back_to_a_SIBLING_opportunity_in_the_hinted_program(self):
+        """The case the first version of this fix missed, measured in production:
+        run 18921 is owned by opportunity 1487 while the page sits in its sibling
+        1488 (program 46). Neither the page's own scope nor a direct lookup at the
+        hinted program can see it -- only the program's member fan-out can, so the
+        hint path must recurse into get_run() rather than do one direct lookup."""
+        definition = _make_definition_record(definition_id=900, data={"name": "WF", "opportunity_ids": [1487, 1488]})
+        sibling_run = _make_run_record(18921, 900, opportunity_id=1487)
+        calls = []
+
+        with self._patched_client(
+            definitions=[definition],
+            runs_by_scope={(1488, None): [], (None, 46): [], (1487, None): [sibling_run]},
+            calls=calls,
+        ):
+            with patch("connect_labs.workflow.data_access.settings") as mock_settings:
+                mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+                run = self._dao(opportunity_id=1488).get_run(18921, program_hint=46)
+
+        assert run is not None
+        assert run.id == 18921
+        # The page's own scope, then the program, then its members.
+        assert calls[:2] == [(1488, None), (None, 46)]
+        assert (1487, None) in calls
 
     def test_program_scoped_dao_ignores_the_hint(self):
         """A DAO that is already program-scoped keeps its existing miss path
