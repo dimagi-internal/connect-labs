@@ -235,7 +235,10 @@ class TestMissingBirthsSurfacing:
 
         assert row["births"] is None
         assert row["births_partial"] is True
-        assert data["coverage"]["births"] == {"with_value": 0, "of": 1}
+        cov = data["coverage"]["births"]
+        assert (cov["with_value"], cov["of"]) == (0, 1)
+        # Named, so the floor warning can say which count is short.
+        assert cov["label"] == "Annual births"
 
     def test_csv_leaves_missing_births_blank(self, client_in):
         make_boundary("TCD", 0, "Chad", "TCD-0", x=30)
@@ -892,3 +895,55 @@ class TestHeadlineFollowsTheMeasure:
     def test_a_coverage_measure_does_offer_one(self, client_in, africa):
         r = client_in.get(reverse("targeting:selection"), {"indicator": "improved_water"}).json()
         assert r["gap_label"] is not None
+
+
+class TestFloorWarningCoversEveryCount:
+    """It only ever guarded births.
+
+    The warning exists to stop an undercount being read as a total, and then
+    checked exactly one of the counts. A handwashing selection carrying a gap
+    for 371 of 386 units showed its headline as though it were complete,
+    because the missing count was households rather than births.
+    """
+
+    def test_every_coverage_entry_is_named(self, client_in, africa):
+        r = client_in.get(reverse("targeting:selection"), {"indicator": "u5mr"}).json()
+        assert r["coverage"], "a selection carries counts, so it reports coverage for them"
+        for code, cov in r["coverage"].items():
+            assert cov.get("label"), f"{code} has no label for the floor warning to name"
+            assert set(cov) == {"with_value", "of", "label"}
+
+
+class TestABareLinkLandsSomewhereUsable:
+    """A link naming only an indicator must not open on nothing.
+
+    The default method is IGME's small-area model, which publishes mortality
+    and nothing else. A link to zero-dose or unmet need therefore opened on
+    "0 areas selected across 0 countries" — with a correct explanation naming
+    every country it could not answer for, and a working method one dropdown
+    away. The in-page flow corrected this on every indicator change; the deep
+    link, which is the artifact people actually share, did not.
+    """
+
+    def test_the_default_method_cannot_answer_what_a_survey_can(self, client_in, africa):
+        """The premise the boot correction rests on: for a survey-only
+        indicator the default method answers nobody and another method answers
+        somebody, so there is something to correct TO."""
+        from connect_labs.labs.indicators import availability, methods
+
+        set_value(africa["a1"], "zero_dose", 22.0, source=Source.DHS)
+
+        igme = methods.get("subnational_igme")
+        survey = methods.get("subnational_survey")
+
+        assert availability.countries_supporting(igme, "zero_dose") == []
+        assert availability.countries_supporting(survey, "zero_dose") == ["NER"]
+
+    def test_the_methods_api_reports_both_so_the_surface_can_choose(self, client_in, africa):
+        set_value(africa["a1"], "zero_dose", 22.0, source=Source.DHS)
+
+        r = client_in.get(reverse("targeting:methods"), {"indicator": "zero_dose"}).json()
+
+        assert r["methods"]["subnational_igme"]["countries_available"] == 0
+        usable = [c for c, m in r["methods"].items() if m["countries_available"]]
+        assert "subnational_survey" in usable

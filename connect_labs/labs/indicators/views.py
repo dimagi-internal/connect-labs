@@ -408,7 +408,18 @@ class SelectionView(OpenLocallyMixin, View):
                 # How much of the selection actually carries each count. Where
                 # these fall short the total is a floor, and the UI says so
                 # rather than presenting an undercount as a measurement.
-                "coverage": {c: {"with_value": got, "of": total} for c, (got, total) in selection.coverage.items()},
+                "coverage": {
+                    c: {
+                        "with_value": got,
+                        "of": total,
+                        # Named, so a shortfall can be reported as "unreached
+                        # households" rather than as a measure code — or, as it
+                        # was, not reported at all unless it happened to be
+                        # births.
+                        "label": measures.get(c).label if c in measures.MEASURES else c,
+                    }
+                    for c, (got, total) in selection.coverage.items()
+                },
                 "method": selection.method,
                 "resolution": selection.resolution,
                 # The shape the question was asked in, echoed back. A reader

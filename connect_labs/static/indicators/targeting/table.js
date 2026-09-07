@@ -310,14 +310,40 @@
     // The floor caveat belongs beside the number it qualifies, not at the foot
     // of the page under a 150-row table.
     var floorEl = document.getElementById('tg-floor');
-    var cov = (data.coverage || {}).births;
+    // ANY count that is short, not just births. The warning existed to stop an
+    // undercount being read as a total, and then only ever guarded one of the
+    // counts: a handwashing selection with 371 of 386 units carrying a gap
+    // showed its headline as though it were complete, because the missing
+    // count was households rather than births.
+    var short = Object.keys(data.coverage || {})
+      .map(function (k) {
+        return Object.assign({ code: k }, data.coverage[k]);
+      })
+      .filter(function (c) {
+        return c.of && c.with_value < c.of;
+      })
+      // Worst first: the count furthest from complete is the one that most
+      // undermines the headline.
+      .sort(function (a, b) {
+        return a.with_value / a.of - b.with_value / b.of;
+      });
+    var cov = short[0];
     if (cov && cov.of && cov.with_value < cov.of) {
       floorEl.innerHTML =
         '<strong>A floor, not a total.</strong> ' +
         (cov.of - cov.with_value) +
         ' of ' +
         cov.of +
-        ' regions have no births estimate yet and contribute nothing here.';
+        ' areas carry no <b>' +
+        util.esc(cov.label || cov.code) +
+        '</b> and contribute nothing to that figure.' +
+        (short.length > 1
+          ? ' (' +
+            (short.length - 1) +
+            ' other count' +
+            util.plural(short.length - 1, '') +
+            ' also short.)'
+          : '');
       floorEl.classList.remove('hidden');
     } else {
       floorEl.classList.add('hidden');
