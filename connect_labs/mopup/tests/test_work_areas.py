@@ -42,6 +42,7 @@ class TestListWorkAreas:
                 building_count="42",
                 expected_visit_count="10",
                 status="VISITED",
+                owner_id="flw-1",
             ),
             _FakeRow(
                 "wa-2",
@@ -51,6 +52,7 @@ class TestListWorkAreas:
                 building_count=None,
                 expected_visit_count=None,
                 status="NOT_VISITED",
+                owner_id=None,
             ),
         ]
         pipeline = _FakePipeline(rows)
@@ -64,6 +66,7 @@ class TestListWorkAreas:
                 "building_count": 42,
                 "expected_visit_count": 10,
                 "status": "VISITED",
+                "owner_id": "flw-1",
             },
             {
                 "case_id": "wa-2",
@@ -73,6 +76,7 @@ class TestListWorkAreas:
                 "building_count": 0,
                 "expected_visit_count": 0,
                 "status": "NOT_VISITED",
+                "owner_id": "",
             },
         ]
 

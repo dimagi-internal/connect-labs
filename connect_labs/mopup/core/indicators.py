@@ -255,6 +255,18 @@ DEFAULT_GLOBAL_CONFIG = {
     "include_not_yet_visited": False,
 }
 
+# Starting-point thresholds — every one of these is meant to be reviewer-
+# tunable in the UI (§6's "per-indicator thresholds" requirement), not a
+# fixed judgment call baked in here. Cluster-aware is the recommended
+# granularity default per §6's three-way view.
+DEFAULT_INDICATOR_CONFIGS = {
+    EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": GRANULARITY_CLUSTER_AWARE},
+    NCF_INACCESSIBLE: {"enabled": True, "threshold": 0.3, "granularity": GRANULARITY_CLUSTER_AWARE},
+    DEWORMING: {"enabled": True, "threshold": 0.7, "granularity": GRANULARITY_CLUSTER_AWARE},
+    MUAC: {"enabled": True, "threshold": 0.7, "granularity": GRANULARITY_CLUSTER_AWARE},
+    VACCINATION: {"enabled": True, "threshold": 0.7, "granularity": GRANULARITY_CLUSTER_AWARE},
+}
+
 
 def evaluate_run(
     work_areas: list[dict],

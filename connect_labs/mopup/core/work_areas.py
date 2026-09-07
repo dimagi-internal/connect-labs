@@ -25,6 +25,9 @@ _CASE_PROPERTY_PATHS = {
     "expected_visit_count": "case.properties.expected_visit_count",
     "status": "case.properties.status",
 }
+# Not a case property — a base case field (Connect's internal FLW id, the
+# grouping key for §6b's within-FLW clustering + the whole-FLW-average view).
+_OWNER_ID_PATH = "case.owner_id"
 
 
 def _int_or_zero(v) -> int:
@@ -42,7 +45,7 @@ def list_work_areas(
 ) -> list[dict]:
     """One dict per work-area case in `opportunity_id`:
     ``{"case_id", "ward", "lga", "state", "building_count",
-    "expected_visit_count", "status"}``.
+    "expected_visit_count", "status", "owner_id"}``.
 
     Reuses the same `cchq_cases`/`work-area` pipeline shape as
     `connect_labs.mopup.core.areas._work_area_ids_for_ward`, just with more
@@ -63,7 +66,8 @@ def list_work_areas(
         terminal_stage="visit_level",
         fields=[
             FieldComputation(name=name, path=path, aggregation="first") for name, path in _CASE_PROPERTY_PATHS.items()
-        ],
+        ]
+        + [FieldComputation(name="owner_id", path=_OWNER_ID_PATH, aggregation="first")],
     )
     result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
     work_areas = []
@@ -78,6 +82,7 @@ def list_work_areas(
                 "building_count": _int_or_zero(c.get("building_count")),
                 "expected_visit_count": _int_or_zero(c.get("expected_visit_count")),
                 "status": c.get("status") or "",
+                "owner_id": c.get("owner_id") or "",
             }
         )
     return work_areas

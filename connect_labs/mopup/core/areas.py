@@ -128,7 +128,7 @@ HSD_FORM_NAME = "Health Service Delivery"
 
 # HSD visits carry the work-area case id at form.work_area_info.wa_caseid; the
 # No Children Found form stores it separately at the top-level form.wa_case_id.
-_WA_CASE_ID_PATHS = ["form.work_area_info.wa_caseid", "form.wa_case_id"]
+WA_CASE_ID_PATHS = ["form.work_area_info.wa_caseid", "form.wa_case_id"]
 _CHILD_CASE_ID_PATH = "form.case.@case_id"
 _FORM_NAME_PATH = "form.@name"
 
@@ -186,7 +186,7 @@ def _hsd_registered_children_count(pipeline, opportunity_id: int, wa_ids: set[st
         filters={"status": ["approved"]},
         fields=[
             FieldComputation(name="form_name", path=_FORM_NAME_PATH, aggregation="first"),
-            FieldComputation(name="wa_case_id", paths=_WA_CASE_ID_PATHS, aggregation="first"),
+            FieldComputation(name="wa_case_id", paths=WA_CASE_ID_PATHS, aggregation="first"),
             FieldComputation(name="child_case_id", path=_CHILD_CASE_ID_PATH, aggregation="first"),
         ],
     )
