@@ -473,6 +473,11 @@ class Selection:
     method: str = ""
     resolution: str = ""
     countries_unsupported: list[str] = field(default_factory=list)
+    #: The countries this method COULD answer for, whether or not any of their
+    #: areas met the threshold. Without it an empty selection is ambiguous:
+    #: nowhere qualified, or nowhere could be asked. Those are opposite
+    #: findings and the methodology has to tell them apart.
+    countries_supported: list[str] = field(default_factory=list)
     #: The year every count was carried to, if one was asked for. A count in
     #: this selection is then a projection, not a measurement, and the surface
     #: has to say so — the whole reason for naming it here rather than quietly
@@ -646,6 +651,7 @@ def select_above(
         national_only = False
 
     unsupported: list[str] = []
+    answerable: list[str] = []
     if chosen is not None:
         from connect_labs.labs.indicators import availability
 
@@ -657,6 +663,7 @@ def select_above(
         unsupported = sorted(
             name_for(r.iso_code) for r in availability.for_method(chosen, indicator, iso_codes) if not r.available
         )
+        answerable = sorted(name_for(iso) for iso in supported)
     else:
         qs = boundary_set.owned().filter(admin_level__in=levels)
         if iso_codes:
@@ -880,6 +887,7 @@ def select_above(
         method=chosen.code if chosen else "",
         resolution=chosen.resolution.value if chosen else "",
         countries_unsupported=unsupported,
+        countries_supported=answerable,
         projected_to=target_year,
         projected_without_rate=projected_without_rate,
         rolled_up=rollup,

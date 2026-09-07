@@ -200,6 +200,13 @@ def _rerun(selection: Selection, method_code: str) -> Selection:
     )
 
 
+def _join_names(names: list[str]) -> str:
+    """ "A", "A and B", "A, B and C" — the list reads as a sentence."""
+    if len(names) == 1:
+        return names[0]
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
 def to_methodology(selection: Selection, *, alternatives: bool = True) -> str:
     m = measures.get(selection.indicator)
     generated = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
@@ -225,6 +232,32 @@ def to_methodology(selection: Selection, *, alternatives: bool = True) -> str:
         f"**{selection.unit_count} ADM1-equivalent units** across "
         f"**{selection.country_count} countries**.\n"
     )
+
+    # An empty selection is not a finding unless the places asked about could
+    # have answered. Reading "0 rows" under "where improved drinking water
+    # falls below 50%" as good news is the natural reading, and it is wrong
+    # when the country has no survey behind the indicator at all. This
+    # document is what goes into a proposal, so it has to say which it is.
+    if selection.countries_unsupported:
+        unanswered = _join_names(selection.countries_unsupported)
+        verb = "has" if len(selection.countries_unsupported) == 1 else "have"
+        # Strong wording only when nothing in scope could have answered. If
+        # some country answered and simply had no area past the bar, the empty
+        # result IS a finding — just a partial one.
+        if not selection.area_count and not selection.countries_supported:
+            add(
+                f"**This is not a finding.** {unanswered} {verb} no data for "
+                f"{m.label.lower()} under this method, so the selection is empty "
+                "because the question could not be asked — not because nowhere "
+                "met the threshold. Nothing below should be read as evidence "
+                f"about {unanswered}.\n"
+            )
+        else:
+            add(
+                f"{unanswered} {verb} no data for {m.label.lower()} under this "
+                "method and {} absent from every figure below, rather than "
+                "counted as zero.\n".format("is" if len(selection.countries_unsupported) == 1 else "are")
+            )
 
     add("## How rows are aggregated\n")
     add(

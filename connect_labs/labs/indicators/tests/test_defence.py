@@ -147,3 +147,66 @@ class TestMethodologyCarriesTheDefence:
 
         assert "## Does this survive a sanity check?" in md
         assert "## Other methods considered" not in md
+
+
+class TestAnEmptySelectionIsNotAFinding:
+    """Zero rows means one of two opposite things, and the document must say which.
+
+    "Every area where improved drinking water falls below 50% ... 0 rows" reads
+    as good news. It is good news only if the places asked about could have
+    answered. When the country has no survey behind the indicator, the same
+    sentence asserts something nobody measured — and this file is what gets
+    pasted into a proposal.
+    """
+
+    def _country_without_the_indicator(self):
+        # Liberia's shape: boundaries loaded, mortality present, nothing for water.
+        make_boundary("LBR", 0, "Liberia", "LBR-0", x=0)
+        region = make_boundary("LBR", 1, "Bong", "LBR-1-1", x=2)
+        set_value(region, "u5mr", 90, source=Source.DHS)
+        set_value(region, "births", 1000)
+        return region
+
+    def test_says_so_when_nothing_could_have_answered(self):
+        from connect_labs.labs.indicators import export
+
+        self._country_without_the_indicator()
+        selection = select_above(indicator="improved_water", threshold=50.0, method="subnational_survey")
+
+        md = export.to_methodology(selection, alternatives=False)
+
+        assert "This is not a finding" in md
+        assert "Liberia" in md
+        assert "not because nowhere met the threshold" in md
+
+    def test_a_real_empty_result_is_left_alone(self):
+        from connect_labs.labs.indicators import export
+
+        # The country CAN answer; no area simply clears the bar.
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        region = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=2)
+        set_value(region, "u5mr", 20, source=Source.DHS)
+        set_value(region, "births", 1000)
+        selection = select_above(indicator="u5mr", threshold=200.0, method="subnational_survey")
+
+        md = export.to_methodology(selection, alternatives=False)
+
+        assert not selection.areas
+        assert "This is not a finding" not in md
+
+    def test_countries_dropped_from_a_populated_selection_are_named(self):
+        from connect_labs.labs.indicators import export
+
+        self._country_without_the_indicator()
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=6)
+        answers = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=8)
+        set_value(answers, "improved_water", 30.0, source=Source.DHS)
+        set_value(answers, "births", 1000)
+        selection = select_above(indicator="improved_water", threshold=50.0, method="subnational_survey")
+
+        md = export.to_methodology(selection, alternatives=False)
+
+        assert selection.areas, "fixture must produce rows for the populated branch"
+        assert "Liberia" in md
+        # Absent is not the same as zero, and the difference changes a total.
+        assert "rather than counted as zero" in md
