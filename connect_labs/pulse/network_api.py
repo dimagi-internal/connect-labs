@@ -26,12 +26,12 @@ from __future__ import annotations
 import datetime as dt
 from collections import Counter
 
-from django.db.models import Min
+from django.db.models import Min, Sum
 from django.http import JsonResponse
 from django.views import View
 
 from connect_labs.microplans.core import iso as iso_codes
-from connect_labs.pulse.models import PulseEvent, PulsePartner, PulseWork
+from connect_labs.pulse.models import PulseEvent, PulseOpportunity, PulsePartner, PulseWork
 from connect_labs.pulse.partner_names import resolve as resolve_partner
 
 # Connect bulk-created its completed_works table at this instant.
@@ -72,6 +72,59 @@ def first_service_by_partner() -> dict[str, dt.date]:
     return out
 
 
+def countries_table(delivering: set[str]) -> list[dict]:
+    """One row per country, over the UNION of two different facts.
+
+    Where a partner is headquartered and where work happens are not the same
+    question, and the difference is the point of the table: the network reaches
+    countries Connect has not started delivering in, and delivery reaches
+    countries no partner is headquartered in — a partner in one country running
+    a programme across the border.
+
+    Taking only one side would hide whichever countries sit on the other.
+    """
+    rows: dict[str, dict] = {}
+
+    def row(iso3: str) -> dict:
+        return rows.setdefault(
+            iso3,
+            {
+                "iso3": iso3,
+                "name": iso_codes.country_name(iso3) or iso3,
+                "partners": 0,
+                "delivering": 0,
+                "services": 0,
+                "usd": 0.0,
+            },
+        )
+
+    for partner in PulsePartner.objects.exclude(country_iso3=""):
+        entry = row(partner.country_iso3)
+        entry["partners"] += 1
+        if partner.name in delivering:
+            entry["delivering"] += 1
+
+    # Opportunities carry alpha-2 and the lifetime visit count, which is the
+    # honest "services delivered here" figure -- works are a payment unit and
+    # count differently per programme.
+    for record in (
+        PulseOpportunity.objects.exclude(country="").values("country").annotate(visits=Sum("lifetime_visit_count"))
+    ):
+        iso3 = iso_codes.to_alpha3(record["country"])
+        if iso3:
+            row(iso3)["services"] += record["visits"] or 0
+
+    for record in PulseWork.objects.exclude(country="").values("country").annotate(usd=Sum("usd_to_org")):
+        iso3 = iso_codes.to_alpha3(record["country"])
+        if iso3:
+            row(iso3)["usd"] += float(record["usd"] or 0)
+
+    out = sorted(rows.values(), key=lambda r: (-r["services"], -r["partners"], r["name"]))
+    for entry in out:
+        entry["usd"] = round(entry["usd"], 2)
+    return out
+
+
 def build_payload() -> dict:
     partners = list(PulsePartner.objects.all())
     delivering = first_service_by_partner()
@@ -107,12 +160,14 @@ def build_payload() -> dict:
         )
     points.sort(key=lambda r: (r["joined"] or "9999", r["name"]))
 
-    by_country = Counter(p["iso3"] for p in points if p["iso3"])
+    countries = countries_table(set(delivering))
     return {
+        "countries": countries,
         "totals": {
             "partners": len(partners),
             "delivering": len(delivering),
-            "countries": len(by_country),
+            "countries": sum(1 for c in countries if c["partners"]),
+            "countries_delivering": sum(1 for c in countries if c["services"]),
             "located": len(points),
             "with_join_date": sum(1 for p in partners if p.joined_at),
             # Dated from an EOI, as opposed to stamped when we first saw them.

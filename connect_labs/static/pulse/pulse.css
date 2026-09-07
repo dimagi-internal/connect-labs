@@ -2786,6 +2786,104 @@
   stroke-width: 3px;
   stroke-linejoin: round;
 }
+/* ── country table ─────────────────────────────────────────────────────── */
+.net-filter {
+  margin-left: auto;
+  background: var(--ground);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 5px 9px;
+  min-width: 190px;
+}
+.net-filter::placeholder {
+  color: var(--ink-3);
+}
+.net-filter:focus-visible {
+  outline: none;
+  border-color: var(--brand-cornflower);
+}
+.net-tablewrap {
+  overflow-x: auto;
+}
+.net-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.net-th {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 500;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.net-th:hover,
+.net-th:focus-visible {
+  color: var(--ink);
+  outline: none;
+}
+.net-sorted {
+  color: var(--brand-sky);
+}
+.net-td {
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: 13px;
+}
+.net-left {
+  text-align: left;
+}
+.net-right {
+  text-align: right;
+}
+.net-tr {
+  cursor: pointer;
+}
+.net-tr:hover,
+.net-tr:focus-visible {
+  background: var(--panel-2);
+  outline: none;
+}
+/* A country with no delivery yet is still in the network — present, not
+   greyed out of the story. */
+.net-tr-quiet .net-td {
+  color: var(--ink-2);
+}
+.net-live-num {
+  color: var(--brand-marigold);
+  font-weight: 600;
+}
+.net-td.net-right {
+  position: relative;
+}
+.net-bar {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 15px;
+  background: var(--brand-sky);
+  opacity: 0.16;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.net-barnum {
+  position: relative;
+}
+.net-empty {
+  color: var(--ink-3);
+  text-align: center;
+  padding: 22px;
+}
 .net-grat {
   stroke: var(--rule-soft);
   stroke-width: 1;
