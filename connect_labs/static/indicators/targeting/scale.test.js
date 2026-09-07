@@ -293,3 +293,39 @@ describe('a channel that cannot answer', () => {
     expect(state.isStale()).toBe(false);
   });
 });
+
+describe('the column head over the value', () => {
+  function load(S) {
+    globalThis.window = globalThis;
+    globalThis.window.Targeting = {
+      util: { esc: (x) => x },
+      state: { get: () => S },
+    };
+    const fs = require('fs');
+    // eslint-disable-next-line no-eval
+    eval(fs.readFileSync(new URL('./table.js', import.meta.url), 'utf8'));
+    return globalThis.window.Targeting.table.valueHeader;
+  }
+
+  it('names the measure rather than the one the page started with', () => {
+    // It was the literal "U5MR" in the template, never written to, so an ORS
+    // coverage table put a percentage under a mortality heading. Its
+    // neighbouring column was made to follow the measure; this one was missed.
+    const header = load({
+      indicator: 'ors_coverage',
+      indicatorMeta: {
+        ors_coverage: {
+          label: 'ORS treatment coverage',
+          unit: '% of under-5s with diarrhoea',
+        },
+      },
+    });
+    expect(header()).toBe('ORS treatment coverage');
+    expect(header()).not.toBe('U5MR');
+  });
+
+  it('falls back to the code when the registry has not arrived yet', () => {
+    const header = load({ indicator: 'stunting', indicatorMeta: {} });
+    expect(header()).toBe('stunting');
+  });
+});

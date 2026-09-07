@@ -37,11 +37,31 @@
     return 'Expected under-5 deaths / year';
   }
 
+  /* What the value column is showing. The unit is left to the tooltip and the
+     methodology: every unit in this registry ("per 1,000 live births",
+     "% of under-5s with diarrhoea") is longer than the column is wide. */
+  function valueHeader() {
+    var S = state.get();
+    var meta = (S.indicatorMeta || {})[S.indicator] || {};
+    return meta.label || S.indicator;
+  }
+
   function burdenHeader() {
     if (burdenIsOrs()) return 'Untreated/now';
     if (lastData && lastData.gap_label) return 'Unreached';
     return 'Deaths/yr';
   }
+
+  /* Hidden with a class rather than removed: the header and every cell must
+     disappear together, and rebuilding the row shape per indicator would put
+     the empty-state colspan out of step with it. */
+  function showBurdenColumn(show) {
+    var th = document.getElementById('th-burden');
+    if (th) th.hidden = !show;
+    burdenShown = show;
+  }
+
+  var burdenShown = true;
 
   function burdenOf(r) {
     if (burdenIsOrs()) return r.ors_gap_children;
@@ -91,6 +111,22 @@
     var th = document.getElementById('th-burden');
     if (th) th.textContent = burdenHeader();
 
+    // The column holding the value had an id and a literal: "U5MR", for all
+    // 52 indicators. Its neighbour was made to follow the measure and this one
+    // was not, so an ORS coverage table put a percentage under a mortality
+    // heading — the same string-beside-a-variable-number mistake the CSV
+    // export already had fixed.
+    var thValue = document.getElementById('th-value');
+    if (thValue) {
+      thValue.textContent = valueHeader();
+    }
+
+    // The tile carrying this quantity is hidden when the measure implies no
+    // fundable count, because "Expected under-5 deaths" over a family-planning
+    // selection reads as the thing being targeted. The column beside it kept
+    // showing exactly that under "Deaths/yr". Same rule, same reason.
+    showBurdenColumn(hasBurdenCount());
+
     // The heading was written into the template and never touched again, so
     // every coverage indicator — half the registry — sat under "Areas above
     // threshold" while selecting the areas below it.
@@ -107,7 +143,9 @@
 
     if (!data.rows.length) {
       tbody.innerHTML =
-        '<tr><td colspan="10" class="px-5 py-8 text-center text-stone-400">' +
+        '<tr><td colspan="' +
+        (burdenShown ? 10 : 9) +
+        '" class="px-5 py-8 text-center text-stone-400">' +
         emptyReason() +
         '</td></tr>';
       return;
@@ -195,7 +233,9 @@
             '</span>'
           : '') +
         '</td>' +
-        '<td class="px-3 py-2 text-right tg-num font-medium">' +
+        '<td class="px-3 py-2 text-right tg-num font-medium"' +
+        (burdenShown ? '' : ' hidden') +
+        '>' +
         (burdenOf(r) === null
           ? '<span class="text-stone-400">—</span>'
           : util.fmtFull(burdenOf(r))) +
@@ -463,5 +503,7 @@
     // Exposed for tests: the sentence an empty table shows is a claim about
     // the world, and it has been wrong in two different ways.
     emptyReason: emptyReason,
+    // Exposed for tests: this column head was a literal for all 52 indicators.
+    valueHeader: valueHeader,
   };
 })();
