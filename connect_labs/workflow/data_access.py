@@ -977,12 +977,23 @@ class WorkflowDataAccess(BaseDataAccess):
                     return run
 
         if program_hint is not None and self.program_id is None:
-            # Deliberately _get_run_direct, not get_run: a program-scoped DAO's own
-            # miss path is the fan-out above, and paying that on every genuinely
-            # absent run would turn one 404 into one request per member opportunity.
+            # Full get_run, not _get_run_direct: the hinted program may not own the
+            # run either. A program's runs can be owned by any ONE of its member
+            # opportunities, and the page is scoped to a DIFFERENT member -- so a
+            # direct program lookup misses exactly as the opportunity one did.
+            # Recursing here reuses the fan-out above, which is the only thing that
+            # resolves that case.
+            #
+            # This started life as a direct lookup, to keep a genuine 404 at one
+            # request rather than one per member opportunity. Measured after
+            # deploying it: run 18921 is owned by opportunity 1487 while the page
+            # sits in its sibling 1488 (program 46), and the hint fired, missed, and
+            # 404'd anyway -- the cheap version simply did not fix the bug for that
+            # shape. The fan-out cost is bounded by the program's membership and is
+            # paid only on a miss, which is now the rare path.
             prog_access = WorkflowDataAccess(access_token=self.access_token, program_id=program_hint)
             try:
-                return prog_access._get_run_direct(run_id)
+                return prog_access.get_run(run_id)
             finally:
                 prog_access.close()
 
