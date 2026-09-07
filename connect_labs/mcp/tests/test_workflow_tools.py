@@ -1607,3 +1607,108 @@ def test_workflow_remove_pipeline_source_not_found(mock_wda_cls, client, auth_us
     )
     err = data["result"]["structuredContent"]["error"]
     assert err["code"] == "NOT_FOUND"
+
+
+# ── workflow_sync_from_deployed_template ─────────────────────────────────────
+#
+# The gap: merging and deploying a render change updates NO existing workflow.
+# Every dashboard keeps serving the render_code saved on its own row, so shipped
+# work sits inert. Found live — workflow 5456 was running a render ~528 lines
+# behind main, with a broken N-series tab whose fix had merged hours earlier.
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_sync_from_deployed_template_writes_the_shipped_render(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    wda = mock_wda_cls.return_value
+    wda.get_definition.return_value = MagicMock(template_type="kmc_programme_metrics", name="KMC Demo")
+    wda.get_render_code.return_value = MagicMock(version=5, component_code="OLD RENDER")
+    wda.save_render_code.return_value = MagicMock(version=6)
+
+    with patch(
+        "connect_labs.workflow.templates.get_template",
+        return_value={"render_code": VALID_JSX},
+    ):
+        data = _call_tool(
+            client,
+            raw,
+            "workflow_sync_from_deployed_template",
+            {"workflow_id": 5456, "opportunity_id": 10042, "expected_version": 5},
+        )
+
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["new_version"] == 6
+    assert content["template_key"] == "kmc_programme_metrics"
+    assert content["identical"] is False
+
+    # The version must ADVANCE. sync_template_render_code_api -- the Django view
+    # this replaces -- passed version=1 on every save, resetting the counter that
+    # every other writer here uses for optimistic concurrency.
+    assert wda.save_render_code.call_args.kwargs["version"] == 6
+    assert wda.save_render_code.call_args.kwargs["component_code"] == VALID_JSX
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_sync_from_deployed_template_dry_run_writes_nothing(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    wda = mock_wda_cls.return_value
+    wda.get_definition.return_value = MagicMock(template_type="kmc_programme_metrics", name="KMC Demo")
+    wda.get_render_code.return_value = MagicMock(version=5, component_code="OLD RENDER")
+
+    with patch("connect_labs.workflow.templates.get_template", return_value={"render_code": VALID_JSX}):
+        data = _call_tool(
+            client,
+            raw,
+            "workflow_sync_from_deployed_template",
+            {"workflow_id": 5456, "opportunity_id": 10042, "expected_version": 5, "dry_run": True},
+        )
+
+    assert data["result"]["isError"] is False, data
+    assert data["result"]["structuredContent"]["dry_run"] is True
+    wda.save_render_code.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_sync_from_deployed_template_is_a_noop_when_already_current(mock_wda_cls, client, auth_user):
+    """Re-syncing a current workflow must not burn a version."""
+    _, raw = auth_user
+    wda = mock_wda_cls.return_value
+    wda.get_definition.return_value = MagicMock(template_type="kmc_programme_metrics", name="KMC Demo")
+    wda.get_render_code.return_value = MagicMock(version=5, component_code=VALID_JSX)
+
+    with patch("connect_labs.workflow.templates.get_template", return_value={"render_code": VALID_JSX}):
+        data = _call_tool(
+            client,
+            raw,
+            "workflow_sync_from_deployed_template",
+            {"workflow_id": 5456, "opportunity_id": 10042, "expected_version": 5},
+        )
+
+    content = data["result"]["structuredContent"]
+    assert content["identical"] is True
+    assert content["new_version"] == 5
+    wda.save_render_code.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_sync_from_deployed_template_refuses_a_stale_version(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    wda = mock_wda_cls.return_value
+    wda.get_definition.return_value = MagicMock(template_type="kmc_programme_metrics", name="KMC Demo")
+    wda.get_render_code.return_value = MagicMock(version=7, component_code="OLD")
+
+    with patch("connect_labs.workflow.templates.get_template", return_value={"render_code": VALID_JSX}):
+        data = _call_tool(
+            client,
+            raw,
+            "workflow_sync_from_deployed_template",
+            {"workflow_id": 5456, "opportunity_id": 10042, "expected_version": 5},
+        )
+
+    assert data["result"]["isError"] is True, data
+    wda.save_render_code.assert_not_called()
