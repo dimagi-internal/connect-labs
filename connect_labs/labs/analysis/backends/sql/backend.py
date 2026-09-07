@@ -24,6 +24,7 @@ from connect_labs.labs.analysis.backends.sql.query_builder import (
     execute_flw_aggregation,
     execute_visit_extraction,
 )
+from connect_labs.labs.analysis.backends.sql.single_flight import claim_raw_rebuild
 from connect_labs.labs.analysis.config import VISIT_PASSTHROUGH_COLUMNS, AnalysisPipelineConfig, CacheStage
 from connect_labs.labs.analysis.models import (
     EntityAnalysisResult,
@@ -54,6 +55,14 @@ RAW_CACHE_MAX_ATTEMPTS = 3
 # underlying data got a real chance to refresh, reintroducing a milder
 # version of the exact bug this guard exists to prevent.
 RAW_CACHE_ANOMALY_TTL_MINUTES = 10
+# How long to lend the existing rows when ANOTHER connection is already
+# rebuilding this slot (see single_flight.py). Deliberately short: it only has
+# to outlast the peer's walk -- measured at 10-20s, worst case the 180s export
+# client timeout -- and every minute past that is a minute of staleness bought
+# for nothing. Unlike RAW_CACHE_ANOMALY_TTL_MINUTES this window carries no
+# anomaly banner, because nothing is wrong: the data is one rebuild behind, the
+# rebuild is happening right now, and the next reader gets the fresh copy.
+RAW_CACHE_PEER_REBUILD_TTL_MINUTES = 5
 
 
 def _with_passthrough_columns(row: dict, computed: dict) -> dict:
@@ -277,6 +286,60 @@ class SQLBackend:
         # Cache miss or force refresh - fetch from API
         logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, fetching from API")
 
+        # One walk at a time per slot (#1361). force_refresh is an explicit
+        # "go and get it", so it is never handed stale rows. include_images is
+        # excluded too: the lendable rows may be the image-less variant this
+        # caller already rejected a few lines above.
+        if not force_refresh and not include_images:
+            with claim_raw_rebuild(opportunity_id, pipeline_id) as is_leader:
+                if not is_leader:
+                    lent = self._lend_cache_during_peer_rebuild(
+                        cache_manager, opportunity_id, pipeline_id, skip_form_json=skip_form_json
+                    )
+                    if lent is not None:
+                        self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                        return lent
+                # Still inside the `with`: the leader must hold the lock for the whole
+                # walk, or the guard buys nothing.
+                return self._fetch_raw_visits_uncached(
+                    opportunity_id,
+                    access_token,
+                    cache_manager,
+                    include_images=include_images,
+                    user=user,
+                    accept_low_count=accept_low_count,
+                    pipeline_id=pipeline_id,
+                    filter_visit_ids=filter_visit_ids,
+                    skip_form_json=skip_form_json,
+                )
+
+        return self._fetch_raw_visits_uncached(
+            opportunity_id,
+            access_token,
+            cache_manager,
+            include_images=include_images,
+            user=user,
+            accept_low_count=accept_low_count,
+            pipeline_id=pipeline_id,
+            filter_visit_ids=filter_visit_ids,
+            skip_form_json=skip_form_json,
+        )
+
+    def _fetch_raw_visits_uncached(
+        self,
+        opportunity_id: int,
+        access_token: str,
+        cache_manager,
+        *,
+        include_images: bool,
+        user,
+        accept_low_count: bool,
+        pipeline_id: int | None,
+        filter_visit_ids,
+        skip_form_json: bool,
+    ) -> list[dict]:
+        """The actual fetch + cache write. Split out of ``fetch_raw_visits`` so the
+        single-flight guard can wrap it without re-indenting the retry/anomaly logic."""
         # Guard against a fetch that comes back suspiciously smaller than what's
         # already cached (see RAW_CACHE_SHRINK_THRESHOLD_PCT) -- retry a couple
         # times before trusting it. `prior_count` is 0 for a first-ever fetch,
@@ -387,10 +450,6 @@ class SQLBackend:
         Memory note: each page is bounded at DEFAULT_PAGE_SIZE records,
         so we never need a temp file like the v1 streaming CSV path did.
         """
-        from connect_labs.labs.analysis.backends.visit_record import record_to_visit_dict
-        from connect_labs.labs.integrations.connect.export_client import ExportAPIError
-        from connect_labs.labs.integrations.connect.factory import get_export_client
-
         self.last_raw_fetch_anomaly = None
         cache_manager = SQLCacheManager(opportunity_id, pipeline_id=pipeline_id)
 
@@ -405,6 +464,56 @@ class SQLBackend:
                 return
 
         logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, paginating export API")
+
+        # One walk at a time per slot (#1361). force_refresh is an explicit
+        # "go and get it", so it is never handed stale rows.
+        if not force_refresh:
+            with claim_raw_rebuild(opportunity_id, pipeline_id) as is_leader:
+                if not is_leader:
+                    lent = self._lend_cache_during_peer_rebuild(
+                        cache_manager, opportunity_id, pipeline_id, skip_form_json=True
+                    )
+                    if lent is not None:
+                        self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                        yield ("cached", lent)
+                        return
+                yield from self._stream_raw_visits_uncached(
+                    opportunity_id,
+                    access_token,
+                    cache_manager,
+                    expected_visit_count=expected_visit_count,
+                    user=user,
+                    accept_low_count=accept_low_count,
+                    pipeline_id=pipeline_id,
+                )
+                return
+
+        yield from self._stream_raw_visits_uncached(
+            opportunity_id,
+            access_token,
+            cache_manager,
+            expected_visit_count=expected_visit_count,
+            user=user,
+            accept_low_count=accept_low_count,
+            pipeline_id=pipeline_id,
+        )
+
+    def _stream_raw_visits_uncached(
+        self,
+        opportunity_id: int,
+        access_token: str,
+        cache_manager,
+        *,
+        expected_visit_count: int | None,
+        user,
+        accept_low_count: bool,
+        pipeline_id: int | None,
+    ) -> Generator[tuple[str, Any], None, None]:
+        """The actual pagination + cache write. Split out of ``stream_raw_visits`` so the
+        single-flight guard can wrap it without re-indenting the retry/anomaly logic."""
+        from connect_labs.labs.analysis.backends.visit_record import record_to_visit_dict
+        from connect_labs.labs.integrations.connect.export_client import ExportAPIError
+        from connect_labs.labs.integrations.connect.factory import get_export_client
 
         endpoint = f"/export/opportunity/{opportunity_id}/user_visits/"
         # See the matching comment in fetch_raw_visits: must ignore TTL, since
@@ -511,6 +620,45 @@ class SQLBackend:
         """Check if valid raw cache exists in SQL."""
         cache_manager = SQLCacheManager(opportunity_id, pipeline_id=pipeline_id)
         return cache_manager.has_valid_raw_cache(expected_visit_count, tolerance_pct=tolerance_pct)
+
+    def _lend_cache_during_peer_rebuild(self, cache_manager, opportunity_id, pipeline_id, *, skip_form_json):
+        """Serve the existing rows because another connection is already rebuilding.
+
+        Returns the loaded dicts, or None when there is nothing to lend — a
+        first-ever fetch has no prior rows, and serving nothing would be far worse
+        than briefly duplicating a walk, so the caller falls through and rebuilds.
+
+        Same shape as the shrink-anomaly fallback below: push the TTL out, load, and
+        let the caller present it as an ordinary cache hit. It deliberately does NOT
+        set a pending anomaly — that flag means "the data may be wrong", and here it
+        is merely one rebuild old, by design.
+        """
+        prior_count = cache_manager.get_raw_visit_count_ignoring_ttl()
+        if not prior_count:
+            logger.info(
+                "[SingleFlight] opp %s pipeline %s is being rebuilt elsewhere but has no prior "
+                "rows to lend — rebuilding anyway",
+                opportunity_id,
+                pipeline_id,
+            )
+            return None
+
+        cache_manager.extend_raw_cache_ttl(minutes=RAW_CACHE_PEER_REBUILD_TTL_MINUTES)
+        visit_dicts = self._load_from_cache(cache_manager, skip_form_json=skip_form_json, filter_visit_ids=None)
+        if not visit_dicts:
+            # Extending the TTL should have made them readable; if they vanished
+            # underneath us (a concurrent finalize racing this) there is nothing to
+            # lend after all.
+            return None
+
+        logger.info(
+            "[SingleFlight] opp %s pipeline %s is being rebuilt by another connection — "
+            "serving %s existing visits instead of starting a second walk",
+            opportunity_id,
+            pipeline_id,
+            len(visit_dicts),
+        )
+        return visit_dicts
 
     def _load_from_cache(
         self,
