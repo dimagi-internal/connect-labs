@@ -81,11 +81,11 @@ EXTRACT_REGIONS: dict[str, dict] = {
     "zambia": {"release": "2026-08-19.0", "bbox": (21.9, -18.2, 33.8, -8.2)},
     "ethiopia": {"release": "2026-08-19.0", "bbox": (32.9, 3.3, 48.1, 15.0)},
     # The rest of the countries with a configured boundary source.
-    "tanzania": {"release": None, "bbox": (29.2, -11.9, 40.5, -0.9)},
-    "cote_divoire": {"release": None, "bbox": (-8.7, 4.2, -2.4, 10.8)},
-    "mozambique": {"release": None, "bbox": (30.1, -27.0, 40.9, -10.4)},
-    "malawi": {"release": None, "bbox": (32.6, -17.2, 36.0, -9.3)},
-    "sierra_leone": {"release": None, "bbox": (-13.4, 6.8, -10.2, 10.1)},
+    "tanzania": {"release": "2026-08-19.0", "bbox": (29.2, -11.9, 40.5, -0.9)},
+    "cote_divoire": {"release": "2026-08-19.0", "bbox": (-8.7, 4.2, -2.4, 10.8)},
+    "mozambique": {"release": "2026-08-19.0", "bbox": (30.1, -27.0, 40.9, -10.4)},
+    "malawi": {"release": "2026-08-19.0", "bbox": (32.6, -17.2, 36.0, -9.3)},
+    "sierra_leone": {"release": "2026-08-19.0", "bbox": (-13.4, 6.8, -10.2, 10.1)},
 }
 
 
