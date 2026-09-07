@@ -34,9 +34,25 @@ from django.db.models import QuerySet
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 
-#: geoBoundaries is the boundary source for targeting: CC BY 4.0, ADM0-2 for
-#: every African country, and the tessellation every indicator here was matched
-#: against. See README § "Where the data comes from".
+#: geoBoundaries is the boundary source for targeting: CC BY 4.0, and the
+#: tessellation every indicator here was matched against. See README §
+#: "Where the data comes from".
+#:
+#: ADM0 and ADM1 cover every African country. **ADM2 does not** — 1,518 units
+#: across 18 countries are loaded, and the 37 without one include Nigeria, DR
+#: Congo, Kenya, Côte d'Ivoire, Mozambique and CAR. This comment used to claim
+#: "ADM0-2 for every African country", which is how the partial load went
+#: unnoticed: a pinned `admin_level=2` DROPS a country with no boundary at that
+#: level (subnational spans levels 1-2, with no ADM0 to fall back to), so asking
+#: for Nigerian districts returned "nothing qualifies" rather than an error.
+#: `countries_missing_level` on a Selection now names them.
+#:
+#: geoBoundaries publishes ADM2 for all six under CC BY, so closing the gap is a
+#: LOAD, not an acquisition: `load_boundaries NGA KEN COD CIV MOZ CAF --levels 2`.
+#: Know what it buys before running it — an indicator measured at ADM1 is
+#: INHERITED down to ADM2 rather than refined (Liberia: 54 districts carrying 4
+#: distinct ORS values), so it is a finer delivery grid over the same signal.
+#: Population is real per-district, and needs its own WorldPop backfill.
 SOURCE = AdminBoundary.Source.GEOBOUNDARIES
 
 #: The levels targeting works at: country, region, district. Deeper levels of the
