@@ -36,8 +36,34 @@ IND_INPUTS: dict[str, list[str]] = {
     "C28": ["birth_weight_g", "enrollment_weight_g"],
 }
 
-MORTALITY_CREDIBLE = {"PIPN": True, "EHA": True}
-COMPLETION_CREDIBLE = {"GHI": False}
+
+def _credibility(setting: str) -> dict[str, bool]:
+    """One copy of the workbook's credibility tables, read from deployment.yml.
+
+    These lived in three places at once: `var MORTALITY_CREDIBLE` in the render,
+    literals here, and `settings:` in registry/kmc/deployment.yml (which the
+    compiler needs, because a suppression rule cannot be compiled without them).
+    Three copies of a human judgement about which LLOs record deaths credibly is
+    two copies too many, and the failure mode is silent -- they disagree and every
+    engine still returns a number.
+
+    Safe to unify despite the two readings being opposite: this module asks
+    "is X NOT false" (a deny-list) and the compiler asks "is X true" (an
+    allow-list). Those agree only when every LLO is listed explicitly, which
+    deployment.yml does deliberately -- see its `settings:` comment.
+    """
+    from connect_labs.semantic.runtime import load_deployment
+
+    _, settings = load_deployment()
+    return settings.get(setting, {})
+
+
+def _mortality_credible() -> dict[str, bool]:
+    return _credibility("mortality_recording_credible")
+
+
+def _completion_credible() -> dict[str, bool]:
+    return _credibility("completion_recording_credible")
 
 
 # derived-property name -> the pipeline column APP_ASKS is keyed on
@@ -360,7 +386,7 @@ def input_state(indicator: str, row: dict[str, Any], opportunity_ids=None) -> st
 def credible_for(indicator: str, llo: str | None) -> bool:
     """Programme scope (llo=None) is never gated: it pools credible recorders."""
     if indicator == "C14":
-        return llo is None or bool(MORTALITY_CREDIBLE.get(llo))
+        return llo is None or bool(_mortality_credible().get(llo))
     if indicator in ("C18", "C22"):
-        return llo is None or COMPLETION_CREDIBLE.get(llo) is not False
+        return llo is None or _completion_credible().get(llo) is not False
     return True
