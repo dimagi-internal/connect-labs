@@ -25,6 +25,10 @@ reads off the page:
     built mostly that way is a national figure repeated, not a subnational one.
   * ``countries_unsupported`` — countries the method cannot answer at all,
     listed rather than silently dropped.
+  * ``countries_supported`` + ``empty_because_unanswerable`` — whether an empty
+    answer is a finding. Zero rows because nowhere crossed the threshold and
+    zero rows because nothing in scope had data are opposite conclusions, and
+    a summariser cannot tell them apart from the totals alone.
 """
 
 from __future__ import annotations
@@ -112,8 +116,9 @@ def _selection(
         "threshold selects places BELOW it and the quantity worth funding is the "
         "unreached count, not the coverage rate. Also returns each indicator's own unit "
         "(per 1,000 vs percent — they are not interchangeable), its sensible threshold "
-        "range, and which methods can actually answer it, since IGME publishes mortality "
-        "only and cannot answer 14 of the 21. Start here."
+        "range, and which methods can actually answer it — IGME publishes mortality only, "
+        "so it can answer almost none of them and the default method is chosen per "
+        "indicator rather than fixed. Start here."
     ),
     input_schema={
         "type": "object",
@@ -175,7 +180,10 @@ def targeting_indicators(user, *, indicator=None):
         "repeated across regions; 'small_sample_units' says how many rest on a "
         "survey estimate the source itself flags as too thin to rely on (DHS "
         "suppresses below 25 unweighted cases and brackets below 50); and "
-        "'countries_unsupported' lists countries the method cannot answer at all."
+        "'countries_unsupported' lists countries the method cannot answer at all; and "
+        "'empty_because_unanswerable' is true when a zero-row answer means the question "
+        "could not be asked anywhere in scope rather than that nowhere crossed the "
+        "threshold — do not report that case as a finding."
     ),
     input_schema={
         "type": "object",
@@ -266,6 +274,13 @@ def targeting_select(
         "countries_fully_above": selection.countries_fully_above,
         "countries_partly_above": selection.countries_partly_above,
         "countries_unsupported": selection.countries_unsupported,
+        "countries_supported": selection.countries_supported,
+        # Zero rows means one of two opposite things and the caller cannot tell
+        # them apart from the numbers: nowhere met the threshold (a finding), or
+        # nothing in scope could be asked (not a finding). A model summarising
+        # "0 areas above 50% improved water in Liberia" will report it as good
+        # news unless something says otherwise. This says otherwise.
+        "empty_because_unanswerable": bool(not selection.area_count and not selection.countries_supported),
         "rows": rows,
         "rows_returned": len(rows),
         "rows_total": selection.area_count,

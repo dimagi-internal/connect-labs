@@ -96,6 +96,36 @@ class TestSelect:
         assert got["method"] != "subnational_igme"
         assert got["counts"]["units"] == 1
 
+    def test_an_unanswerable_empty_is_marked_so_it_is_not_read_as_a_finding(self):
+        """Zero rows means two opposite things and the totals cannot tell them apart.
+
+        "0 areas above 50% improved water in Liberia" summarises as good news.
+        It is only good news if Liberia could have answered; with no survey
+        behind the indicator the question was never asked. A model reading this
+        JSON has none of the page's prose to warn it, so the flag has to be in
+        the payload.
+        """
+        _, region, _ = _nigeria()
+        # Boundaries and an unrelated measure exist; this indicator does not.
+        set_value(region, "u5mr", 90, source=Source.DHS)
+
+        got = targeting.targeting_select(None, indicator="improved_water", threshold=50)
+
+        assert got["counts"]["areas"] == 0
+        assert got["countries_supported"] == []
+        assert got["empty_because_unanswerable"] is True
+
+    def test_a_genuinely_empty_result_is_not_marked_unanswerable(self):
+        _, region, _ = _nigeria()
+        # Nigeria CAN answer; no area simply clears the bar.
+        set_value(region, "improved_water", 95.0, source=Source.DHS)
+
+        got = targeting.targeting_select(None, indicator="improved_water", threshold=10)
+
+        assert got["counts"]["areas"] == 0
+        assert got["countries_supported"], "the country could answer, so it must be listed"
+        assert got["empty_because_unanswerable"] is False
+
     def test_rows_are_capped_so_a_chat_gets_a_summary_not_a_dump(self):
         _, region, _ = _nigeria()
         set_value(region, "u5mr", 150, source=Source.DHS)
