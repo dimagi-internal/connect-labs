@@ -50,7 +50,9 @@ class Command(BaseCommand):
             bbox = meta["bbox"]
             dest = f"s3://{overture.EXTRACT_BUCKET}/overture/{region}/{release}"
             self.stdout.write(
-                self.style.MIGRATE_HEADING(f"{region}: {meta['release']} -> {release}\n  bbox {bbox}\n  dest {dest}")
+                self.style.MIGRATE_HEADING(
+                    f"{region}: {meta['release'] or 'never cut'} -> {release}\n  bbox {bbox}\n  dest {dest}"
+                )
             )
 
             # One row per building, pre-projected to the columns the reader wants,

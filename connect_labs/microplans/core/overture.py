@@ -60,8 +60,32 @@ _EXTRACT_BASE = f"s3://{EXTRACT_BUCKET}/overture"
 # safe, but it silently gives up the speedup. Nigeria is on 2026-05-20.0 and so
 # is currently NOT being used; re-extract it onto the current release to restore
 # the fast path (see the module docstring in the extract runbook).
+# Every country we hold admin boundaries for, so a planner can never pick an area
+# that lands on the slow cross-region live read. bbox values are the Extent() of
+# OUR OWN AdminBoundary geometry per iso_code, padded 0.1deg for float noise —
+# derived rather than copied off a map, so an extract covers exactly what is
+# pickable and nothing more.
+#
+# ``release`` is the Overture release the extract was CUT from:
+#   a matching release  -> read our us-east-1 copy (sub-second)
+#   a different release -> STALE; bypassed, and warned about on every fetch
+#   None                -> declared but never cut yet; bypassed, NOT warned
+# The None case is the difference between "someone needs to re-cut this" and
+# "we have not got to this country yet", which are not the same problem.
 EXTRACT_REGIONS: dict[str, dict] = {
     "nigeria": {"release": "2026-08-19.0", "bbox": (2.6, 4.2, 14.7, 13.9)},
+    # The next five hold, with Nigeria, 91% of every boundary row we serve.
+    "liberia": {"release": None, "bbox": (-11.6, 4.3, -7.3, 8.7)},
+    "drc": {"release": None, "bbox": (12.1, -13.6, 31.4, 5.5)},
+    "kenya": {"release": None, "bbox": (33.8, -4.8, 42.0, 5.5)},
+    "zambia": {"release": None, "bbox": (21.9, -18.2, 33.8, -8.2)},
+    "ethiopia": {"release": None, "bbox": (32.9, 3.3, 48.1, 15.0)},
+    # The rest of the countries with a configured boundary source.
+    "tanzania": {"release": None, "bbox": (29.2, -11.9, 40.5, -0.9)},
+    "cote_divoire": {"release": None, "bbox": (-8.7, 4.2, -2.4, 10.8)},
+    "mozambique": {"release": None, "bbox": (30.1, -27.0, 40.9, -10.4)},
+    "malawi": {"release": None, "bbox": (32.6, -17.2, 36.0, -9.3)},
+    "sierra_leone": {"release": None, "bbox": (-13.4, 6.8, -10.2, 10.1)},
 }
 
 
@@ -89,7 +113,22 @@ def stale_extracts() -> list[str]:
     ~5s becomes ~350s), so it is worth being able to see rather than rediscover
     from a user complaining that sampling got slow.
     """
-    return [name for name, meta in EXTRACT_REGIONS.items() if meta["release"] != OVERTURE_RELEASE]
+    return [
+        name
+        for name, meta in EXTRACT_REGIONS.items()
+        if meta["release"] is not None and meta["release"] != OVERTURE_RELEASE
+    ]
+
+
+def uncut_regions() -> list[str]:
+    """Regions declared but never extracted (``release is None``).
+
+    Not an error and deliberately NOT part of ``stale_extracts()``: a country we
+    have not cut yet is a backlog item, while a country cut from a release we no
+    longer read is a regression someone introduced. Warning about both on every
+    fetch would bury the second in the first.
+    """
+    return [name for name, meta in EXTRACT_REGIONS.items() if meta["release"] is None]
 
 
 def verify_release_quietly() -> None:
