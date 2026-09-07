@@ -7,7 +7,7 @@ import random
 import uuid
 from typing import Any
 
-from .fields import _set_nested
+from .fields import _get_nested, _set_nested
 from .manifest import ImageConfig
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,40 @@ def _pool_blob_id(image_index: int, pool_count: int, pool_tag: str, corpus: str)
     return f"synth-{corpus}-{pool_tag}-{(image_index % pool_count) + 1:03d}"
 
 
+def _nearest_blob(
+    target: float,
+    pool_count: int,
+    pool_tag: str,
+    corpus: str,
+    readings: dict[str, float],
+    tolerance: float,
+) -> tuple[str | None, float | None]:
+    """Pick the pool image whose true reading is closest to ``target``.
+
+    Returns ``(blob_id, true_reading)``, or ``(None, None)`` when the pool has
+    nothing within ``tolerance`` -- the caller must then leave the visit without
+    a photo rather than attach one and overwrite the cohort's value, which is the
+    whole defect this function exists to remove (#1558).
+
+    Ties break on the LOWER blob index so the choice is deterministic for a given
+    corpus; a synthetic run has to be reproducible from its seed.
+    """
+    best_id: str | None = None
+    best_reading: float | None = None
+    best_delta: float | None = None
+    for i in range(pool_count):
+        blob_id = _pool_blob_id(i, pool_count, pool_tag, corpus)
+        reading = readings.get(blob_id)
+        if reading is None:
+            continue
+        delta = abs(reading - target)
+        if best_delta is None or delta < best_delta:
+            best_id, best_reading, best_delta = blob_id, reading, delta
+    if best_delta is None or best_delta > tolerance:
+        return None, None
+    return best_id, best_reading
+
+
 def assign_visit_images(
     visits: list[dict[str, Any]],
     config: ImageConfig,
@@ -73,10 +107,13 @@ def assign_visit_images(
 ) -> dict[str, int]:
     """Mutate visits in-place: add synthetic image entries to MUAC visits.
 
-    Returns ``{"eligible_visits", "images_assigned", "reading_mismatches"}`` so the
-    caller can surface the counts instead of a generation that quietly produced none.
-    ``reading_mismatches`` is how many visits were given an entered value that
-    disagrees with their photo — the population an agreement reviewer should catch.
+    Returns ``{"eligible_visits", "images_assigned", "reading_mismatches",
+    "unmatched_visits"}`` so the caller can surface the counts instead of a
+    generation that quietly produced none. ``reading_mismatches`` is how many
+    visits were given an entered value that disagrees with their photo — the
+    population an agreement reviewer should catch. ``unmatched_visits`` is how
+    many were left photo-less because the corpus had nothing near their weight
+    (weight-matched mode only).
 
     Two modes:
 
@@ -87,10 +124,22 @@ def assign_visit_images(
       the good pool or the bad pool based on the FLW's bad-rate
       (``flw_bad_rates[username]`` falls back to ``default_bad_rate``).
       Pools round-robin independently so a small bad set still spreads.
+    - **Weight-matched two-pool**: as above, plus ``reading_match_tolerance``.
+      The bad-rate coin-flip still picks the POOL, but within it the photo is
+      chosen to fit the weight the cohort already generated rather than drawn
+      round-robin and then written over it. This is what keeps a longitudinal
+      cohort's growth curve intact while still giving the agreement reviewers a
+      photo whose value genuinely matches the entered one (#1558).
     """
     use_pools = config.good_image_count is not None
+    # Weight-matched selection is opt-in and pool-only: the legacy uncategorized
+    # pool has no ground truth to match against. Guarded on reading_path too so a
+    # partial config degrades to the old behaviour rather than crashing (#1558).
+    match_weight = bool(
+        use_pools and config.reading_match_tolerance is not None and config.readings and config.reading_path
+    )
     legacy_count = config.stock_image_count
-    eligible = assigned = mismatched = 0
+    eligible = assigned = mismatched = unmatched = 0
 
     # Per-pool round-robin counters (used in two-pool mode).
     good_index = 0
@@ -117,14 +166,39 @@ def assign_visit_images(
             # between lets you tune how much evidence the audit "finds" on
             # that worker without the rest of the cohort looking compromised.
             pick_bad = rng.random() < bad_rate
-            if pick_bad and config.bad_image_count:
-                blob_id = _pool_blob_id(bad_index, config.bad_image_count, "bad", corpus)
+            use_bad_pool = bool(pick_bad and config.bad_image_count)
+            pool_tag = "bad" if use_bad_pool else "good"
+            pool_count = config.bad_image_count if use_bad_pool else config.good_image_count
+            from_bad_pool = use_bad_pool
+
+            if match_weight:
+                # Choose the photo to fit the weight the cohort already generated,
+                # instead of drawing one blind and then writing over that weight.
+                # The coin-flip above still decides WHICH pool, so per-FLW bad
+                # rates behave exactly as before -- only the pick within the pool
+                # changes.
+                target = _get_nested(fj, config.reading_path)
+                if not isinstance(target, (int, float)) or isinstance(target, bool):
+                    # No usable cohort value to match against. Skipping is the
+                    # honest outcome: attaching a photo here would reintroduce the
+                    # overwrite this mode exists to prevent.
+                    unmatched += 1
+                    continue
+                blob_id, _matched_reading = _nearest_blob(
+                    float(target), pool_count, pool_tag, corpus, config.readings, config.reading_match_tolerance
+                )
+                if blob_id is None:
+                    # The corpus has no photo showing anything near this weight.
+                    # Leave the visit photo-less and count it -- a thin corpus must
+                    # surface as a coverage gap, not as silently rewritten data.
+                    unmatched += 1
+                    continue
+            elif use_bad_pool:
+                blob_id = _pool_blob_id(bad_index, pool_count, "bad", corpus)
                 bad_index += 1
-                from_bad_pool = True
             else:
-                blob_id = _pool_blob_id(good_index, config.good_image_count, "good", corpus)
+                blob_id = _pool_blob_id(good_index, pool_count, "good", corpus)
                 good_index += 1
-                from_bad_pool = False
         else:
             blob_id = _legacy_blob_id(legacy_index, legacy_count, corpus)
             legacy_index += 1
@@ -183,4 +257,22 @@ def assign_visit_images(
             eligible,
             mismatched,
         )
-    return {"eligible_visits": eligible, "images_assigned": assigned, "reading_mismatches": mismatched}
+    if match_weight and unmatched:
+        # A coverage gap is the one failure mode weight-matching introduces, so it
+        # gets its own line rather than hiding inside a lower assigned count. The
+        # fix is more photos across the range, not a wider tolerance.
+        logger.warning(
+            "[SyntheticImages] weight-matched selection left %d of %d eligible visit(s) without a "
+            "photo: no '%s' image within +/-%s of the visit's own reading. Widen the corpus's weight "
+            "coverage rather than the tolerance.",
+            unmatched,
+            eligible,
+            corpus,
+            config.reading_match_tolerance,
+        )
+    return {
+        "eligible_visits": eligible,
+        "images_assigned": assigned,
+        "reading_mismatches": mismatched,
+        "unmatched_visits": unmatched,
+    }
