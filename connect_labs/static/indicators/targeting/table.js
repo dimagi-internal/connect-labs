@@ -272,10 +272,15 @@
     // "Under-5 population" tile could never have shown.
     var denomEl = document.getElementById('tg-popu5');
     var denomLabel = document.getElementById('tg-popu5-label');
+    // ...unless it is the quantity the tile beside it already shows. A rate
+    // weighted by births has births as its denominator, so following
+    // weight_by blindly printed "Annual births 13.9M" twice, side by side,
+    // and spent one of four headline slots saying nothing new.
     var haveDenom =
       data.denominator_label &&
       data.totals.denominator !== null &&
-      data.totals.denominator !== undefined;
+      data.totals.denominator !== undefined &&
+      data.totals.denominator !== data.totals.births;
     denomEl.textContent = util.fmt(
       haveDenom ? data.totals.denominator : data.totals.pop_u5,
     );

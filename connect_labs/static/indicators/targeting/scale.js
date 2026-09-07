@@ -18,11 +18,22 @@
   var RAMP = ['#f0f9f8', '#c3e5e1', '#8fcac4', '#57a9a2', '#2f867f', '#14554f'];
 
   // A round number a reader can hold: 1 / 2 / 5 x a power of ten.
+  /* The smallest round step that still covers the whole range.
+
+     This used to round DOWN to 1/2/5, which makes a tidy number and a ramp
+     too short to reach the data: under-5 mortality runs to 200, and a step of
+     20 across six colours stopped at 100 — so every region between 100 and
+     200, the worst half of the measure, was painted the same darkest shade.
+     That is the flat-block failure the derived ramp was introduced to fix,
+     surviving at the top end.
+
+     Rounding up costs at most one wasted band and guarantees the last stop
+     sits at or above the maximum. */
   function niceStep(span, count) {
     var raw = span / count;
     var mag = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10));
     var norm = raw / mag;
-    var step = norm >= 5 ? 5 : norm >= 2 ? 2 : 1;
+    var step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
     return step * mag;
   }
 

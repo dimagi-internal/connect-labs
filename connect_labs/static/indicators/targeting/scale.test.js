@@ -17,6 +17,38 @@ describe('scale', () => {
   const T = loadModule('./scale.js');
   const scale = T.scale;
 
+  it('reaches the top of the range it is drawing', () => {
+    // The ramp used to round its step DOWN to a tidy 1/2/5, which made the
+    // colours stop short of the data: under-5 mortality runs to 200 and the
+    // ramp ended at 100, so every region in the worst half of the measure was
+    // painted the same darkest shade. Every one of the 52 targetable
+    // indicators was short this way.
+    const ranges = [
+      { threshold_min: 10, threshold_max: 200 }, // under-5 mortality
+      { threshold_min: 0, threshold_max: 800 }, // malaria incidence
+      { threshold_min: 10, threshold_max: 95 }, // a coverage percentage
+      { threshold_min: 0, threshold_max: 30 }, // ARI prevalence
+    ];
+    for (const meta of ranges) {
+      const stops = scale.stopsFor(meta);
+      const top = stops[stops.length - 1][0];
+      expect(top).toBeGreaterThanOrEqual(meta.threshold_max);
+    }
+  });
+
+  it('keeps its stops strictly ascending, which mapbox requires', () => {
+    for (const meta of [
+      { threshold_min: 10, threshold_max: 200 },
+      { threshold_min: 0, threshold_max: 1 },
+      { threshold_min: 5, threshold_max: 5 },
+    ]) {
+      const stops = scale.stopsFor(meta);
+      for (let i = 1; i < stops.length; i++) {
+        expect(stops[i][0]).toBeGreaterThan(stops[i - 1][0]);
+      }
+    }
+  });
+
   it('spans the measure it is drawing, not under-5 mortality', () => {
     // The ramp used to be six hard-coded stops at 0/25/50/75/100/150 — the
     // reporting breaks for under-5 mortality. Malaria incidence runs to 800
