@@ -23,7 +23,23 @@ on:
   push:
     branches: ['main']
 
+  # REQUIRED BY THE MERGE QUEUE, and it must land BEFORE the queue is switched
+  # on. GitHub runs the required checks against the QUEUED MERGE RESULT — this
+  # PR rebased onto the queue head — which arrives as a `merge_group` event on a
+  # `gh-readonly-queue/...` ref, not as a `pull_request` on the branch. Without
+  # this trigger `linter` and `pytest` never report for a queued entry, every
+  # entry sits until `check_response_timeout_minutes` expires, and NOTHING in
+  # the repository can merge. Enabling the queue first also deadlocks the fix:
+  # the PR that adds this line would itself be stuck in the queue.
+  merge_group:
+
 concurrency:
+  # `head_ref` is empty for `merge_group` (and for `push`), so the group falls
+  # back to the unique `run_id` and a queued build is never cancelled by a
+  # sibling. That is the behaviour the queue needs — a cancelled required check
+  # is a check that never reports — and it is why this expression is left alone
+  # rather than being "simplified" to a bare `github.ref`, which WOULD collide
+  # across queue entries.
   group: ${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
