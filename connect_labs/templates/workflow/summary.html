@@ -156,7 +156,7 @@
                     {% elif audits_summary.recent %}
                     <div class="space-y-2 mb-4">
                         {% for audit in audits_summary.recent %}
-                        <a href="{% url 'audit:bulk_assessment' audit.id %}"
+                        <a href="{% url 'audit:bulk_assessment' audit.id %}{% if audit.opportunity_id %}?opportunity_id={{ audit.opportunity_id }}{% endif %}"
                            class="flex items-center justify-between p-2 bg-white rounded border border-gray-200 hover:border-blue-300 transition-colors">
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm font-medium text-gray-900 truncate">{{ audit.title }}</p>
