@@ -432,3 +432,41 @@ def test_candidates_rejects_malformed_body(client, django_user_model, monkeypatc
         content_type="application/json",
     )
     assert resp.status_code == 400
+
+
+# --- MopupAnalysisView -------------------------------------------------------
+
+
+def test_analysis_view_requires_login(client):
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_analysis_view_404s_for_missing_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_run_da(monkeypatch)
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 999}))
+    assert resp.status_code == 404
+
+
+def test_analysis_view_renders_saved_thresholds(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    from connect_labs.mopup.core import indicators as ind
+
+    custom = {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.42, "granularity": ind.GRANULARITY_WA_ONLY}}
+    _seed_run(runs, thresholds={"indicator_configs": custom})
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200
+    assert b"0.42" in resp.content
+
+
+def test_analysis_view_falls_back_to_defaults_when_no_thresholds_saved(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200
+    from connect_labs.mopup.core import indicators as ind
+
+    assert str(ind.DEFAULT_INDICATOR_CONFIGS[ind.EVC_SHORTFALL]["threshold"]).encode() in resp.content

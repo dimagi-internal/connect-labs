@@ -125,6 +125,47 @@ class MopupCreateRunView(LoginRequiredMixin, View):
         )
 
 
+class MopupAnalysisView(LoginRequiredMixin, TemplateView):
+    """Phase 2: the threshold-tunable candidate-analysis screen for one run.
+    Bootstraps the page with the run's saved (or default) indicator/global
+    config; the JS drives further recomputes via MopupCandidatesView."""
+
+    template_name = "mopup/analysis.html"
+
+    def get(self, request, *args, **kwargs):
+        from django.http import Http404
+
+        da = MopupRunDataAccess(kwargs["program_id"], request=request)
+        run = da.get_run(kwargs["run_id"])
+        if run is None:
+            raise Http404("Mop-up run not found.")
+        self._run = run
+        return super().get(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        from django.urls import reverse
+
+        context = super().get_context_data(**kwargs)
+        program_id = kwargs["program_id"]
+        run_id = kwargs["run_id"]
+        run = self._run
+
+        context["program_id"] = program_id
+        context["run_id"] = run_id
+        context["run"] = run
+        context["candidates_url"] = reverse("mopup:candidates", args=[program_id, run_id])
+        context["indicator_configs"] = run.thresholds.get("indicator_configs") or ind.DEFAULT_INDICATOR_CONFIGS
+        context["global_config"] = run.thresholds.get("global_config") or ind.DEFAULT_GLOBAL_CONFIG
+        context["indicator_defs"] = [
+            {"key": ind.EVC_SHORTFALL, "label": "EVC shortfall", "direction": "below"},
+            {"key": ind.NCF_INACCESSIBLE, "label": "NCF / inaccessible rate", "direction": "above"},
+            {"key": ind.DEWORMING, "label": "Deworming completion", "direction": "below"},
+            {"key": ind.MUAC, "label": "MUAC-recorded rate", "direction": "below"},
+            {"key": ind.VACCINATION, "label": "Vaccination-given rate", "direction": "below"},
+        ]
+        return context
+
+
 class MopupCandidatesView(LoginRequiredMixin, View):
     """Phase 2's live recompute: evaluate the run's scoped work areas against
     the given (or run-saved, or default) indicator/global config and return

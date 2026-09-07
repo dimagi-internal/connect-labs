@@ -104,11 +104,9 @@ window.MopupSetup = (function () {
         return;
       }
       $('status').textContent =
-        'Run #' +
-        data.run_id +
-        ' created (' +
-        (data.selected_wards.length || 'all') +
-        ' ward(s) selected). Phase 2 analysis screen is not built yet.';
+        'Run #' + data.run_id + ' created — opening analysis…';
+      window.location.href =
+        CFG.programBase + 'run/' + data.run_id + '/analysis/';
     } catch (e) {
       $('status').textContent = 'Failed to create run.';
     }
