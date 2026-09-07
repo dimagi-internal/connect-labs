@@ -14,6 +14,23 @@
     );
   }
 
+  var MORTALITY = ['u5mr', 'nmr', 'imr'];
+
+  /* Does this indicator imply a fundable count at all?
+
+     A coverage measure has an unreached count; mortality has expected deaths.
+     A burden measure like stunting, open defecation or unmet need for family
+     planning has neither — and the emphasised tile fell back to "Expected
+     under-5 deaths / year" for every one of them. That is not a fallback, it
+     is a different subject: a selection on anaemia in women 15-49 headlined
+     1.7M under-5 deaths. Roughly fifteen of the fifty-two indicators were
+     affected. */
+  function hasBurdenCount() {
+    if (burdenIsOrs()) return true;
+    if (lastData && lastData.gap_label) return true;
+    return MORTALITY.indexOf(state.get().indicator) !== -1;
+  }
+
   function burdenLabel() {
     if (burdenIsOrs()) return 'Children with untreated diarrhoea';
     if (lastData && lastData.gap_label) return lastData.gap_label;
@@ -200,9 +217,33 @@
       annualEl.classList.add('hidden');
       annualEl.textContent = '';
     }
-    document.getElementById('tg-popu5').textContent = util.fmt(
-      data.totals.pop_u5,
+    // The population this measure is about, named by the server. For ORS that
+    // is under-fives; for unmet need it is married women 15-49, which a fixed
+    // "Under-5 population" tile could never have shown.
+    var denomEl = document.getElementById('tg-popu5');
+    var denomLabel = document.getElementById('tg-popu5-label');
+    var haveDenom =
+      data.denominator_label &&
+      data.totals.denominator !== null &&
+      data.totals.denominator !== undefined;
+    denomEl.textContent = util.fmt(
+      haveDenom ? data.totals.denominator : data.totals.pop_u5,
     );
+    if (denomLabel) {
+      denomLabel.textContent = haveDenom
+        ? data.denominator_label
+        : 'Under-5 population';
+    }
+
+    // The emphasised tile is hidden rather than filled with a different
+    // subject when this indicator implies no fundable count.
+    // Inline style, not a utility class: Tailwind is built ahead of time and
+    // purges classes it cannot see in the source, so a class only ever added
+    // from JS ships with no rule behind it and silently does nothing.
+    var burdenTile = document.getElementById('tg-burden-tile');
+    if (burdenTile) {
+      burdenTile.style.visibility = hasBurdenCount() ? '' : 'hidden';
+    }
     document.getElementById('tg-poptotal').textContent = util.fmt(
       data.totals.pop_total,
     );
