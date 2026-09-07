@@ -23,7 +23,7 @@ jobs:
       pull-requests: read
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # Push via a deploy key, not GITHUB_TOKEN: main's ruleset requires
