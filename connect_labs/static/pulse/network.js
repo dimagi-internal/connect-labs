@@ -160,12 +160,13 @@
   function map(points) {
     var W = 1000,
       M = 30;
-    var svg = el('svg', {
-      viewBox: '0 0 ' + W + ' ' + H,
-      role: 'img',
-      'aria-label': 'Partner organisation locations',
-    });
-    if (!points.length) return svg;
+    if (!points.length) {
+      return el('svg', {
+        viewBox: '0 0 ' + W + ' 200',
+        role: 'img',
+        'aria-label': 'No partner locations to draw',
+      });
+    }
 
     // Fit to where the partners actually are, not to the extremes. Nearly all
     // of them are in one region; a single partner on another continent doubles
@@ -203,7 +204,15 @@
     // bands above and below the continent nearly every partner is on.
     var scale = (W - 2 * M) / (lo1 - lo0);
     var H = Math.round((la1 - la0) * scale) + 2 * M;
-    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    // Built here rather than above: the height comes out of the fit, and an
+    // element created before it is known carries viewBox="0 0 1000 undefined"
+    // until it is corrected -- which the browser reports as an error even
+    // though the drawing ends up right.
+    var svg = el('svg', {
+      viewBox: '0 0 ' + W + ' ' + H,
+      role: 'img',
+      'aria-label': 'Partner organisation locations',
+    });
     var cx = (lo0 + lo1) / 2,
       cy = (la0 + la1) / 2;
     var X = function (lon) {
