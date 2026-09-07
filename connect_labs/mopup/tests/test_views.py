@@ -59,7 +59,7 @@ def _make_fake_run_da(monkeypatch, runs=None):
             return runs[rid]
 
         def get_run(self, run_id):
-            return runs[int(run_id)]
+            return runs.get(int(run_id))
 
         def list_runs(self):
             return list(runs.values())
@@ -247,6 +247,188 @@ def test_create_run_rejects_non_list_wards(client, django_user_model, monkeypatc
     resp = client.post(
         reverse("mopup:create_run", kwargs={"program_id": 217}),
         data=json.dumps({"opportunity_id": 2154, "wards": "not-a-list"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+# --- MopupCandidatesView -----------------------------------------------------
+
+
+def _seed_run(runs, *, target_opportunity_id=2154, thresholds=None):
+    from connect_labs.mopup.core.models import STATUS_ANALYSIS, MopupRunRecord
+
+    runs[1] = MopupRunRecord(
+        {
+            "id": 1,
+            "experiment": "217",
+            "type": "mopup_run",
+            "opportunity_id": None,
+            "program_id": 217,
+            "data": {
+                "status": STATUS_ANALYSIS,
+                "name": "Test run",
+                "target_opportunity_id": target_opportunity_id,
+                "selected_wards": [],
+                "date_from": None,
+                "date_to": None,
+                "thresholds": thresholds or {},
+                "candidate_work_areas": [],
+                "created_at": "2026-01-01T00:00:00+00:00",
+            },
+        }
+    )
+    return runs[1]
+
+
+def _mock_evaluation_input(monkeypatch, rows):
+    import connect_labs.mopup.views as views_module
+
+    monkeypatch.setattr(views_module, "build_evaluation_input", lambda opp_id, wards, request=None: rows)
+
+
+def test_candidates_requires_login(client):
+    resp = client.post(reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_candidates_returns_404_for_missing_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_run_da(monkeypatch)
+    resp = client.post(reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 999}))
+    assert resp.status_code == 404
+
+
+def test_candidates_uses_default_config_when_none_saved(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)
+    _mock_evaluation_input(
+        monkeypatch,
+        [
+            {
+                "wa_id": "wa-1",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "flw_username": "flw-1",
+                "lat": None,
+                "lon": None,
+                "status": "VISITED",
+                "building_count": 10,
+                "expected_visit_count": 10,
+                "approved_hsd_count": 1,
+                "approved_ncf_count": 0,
+                "approved_inaccessible_count": 0,
+                "deworming_given": 0,
+                "muac_given": 0,
+                "vaccination_given": 0,
+            }
+        ],
+    )
+    resp = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["total_work_areas"] == 1
+    # Default granularity is cluster-aware (§6's recommended default) — a
+    # single isolated WA has no neighbors to corroborate a bad EVC ratio, so
+    # it correctly does NOT become a candidate (see test_indicators.py's
+    # isolated-outlier coverage for the same rule in isolation).
+    assert body["candidate_count"] == 0
+
+
+def test_candidates_accepts_threshold_override(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)
+    _mock_evaluation_input(
+        monkeypatch,
+        [
+            {
+                "wa_id": "wa-1",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "flw_username": "flw-1",
+                "lat": None,
+                "lon": None,
+                "status": "VISITED",
+                "building_count": 10,
+                "expected_visit_count": 10,
+                "approved_hsd_count": 9,
+                "approved_ncf_count": 0,
+                "approved_inaccessible_count": 0,
+                "deworming_given": 0,
+                "muac_given": 0,
+                "vaccination_given": 0,
+            }
+        ],
+    )
+    from connect_labs.mopup.core import indicators as ind
+
+    resp = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps(
+            {
+                "indicator_configs": {
+                    ind.EVC_SHORTFALL: {
+                        "enabled": True,
+                        "threshold": 0.95,  # tighter than default -> 0.9 now fails
+                        "granularity": ind.GRANULARITY_WA_ONLY,
+                    }
+                }
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["candidate_count"] == 1
+
+
+def test_candidates_persists_thresholds_used(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)
+    _mock_evaluation_input(monkeypatch, [])
+    from connect_labs.mopup.core import indicators as ind
+
+    custom_configs = {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.4, "granularity": ind.GRANULARITY_WA_ONLY}}
+    client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"indicator_configs": custom_configs}),
+        content_type="application/json",
+    )
+    assert runs[1].thresholds["indicator_configs"] == custom_configs
+
+
+def test_candidates_fetch_failure_is_502(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)
+    import connect_labs.mopup.views as views_module
+
+    def boom(opp_id, wards, request=None):
+        raise RuntimeError("CCHQ auth expired")
+
+    monkeypatch.setattr(views_module, "build_evaluation_input", boom)
+    resp = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 502
+
+
+def test_candidates_rejects_malformed_body(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)
+    resp = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        data="not json",
         content_type="application/json",
     )
     assert resp.status_code == 400

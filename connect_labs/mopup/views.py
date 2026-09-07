@@ -1,10 +1,15 @@
 """Views for the CHC mop-up feature.
 
-Phase 1 (setup) only, for now: opportunity picker (free — from the session's
-org/program/opportunity tree, no data pull), ward picker (cheap — work-area
-case properties only, see core/work_areas.py), and an optional coarse date
-range. Only once all three are picked does anything touch visit-form data —
-and that's Phase 2, not built yet.
+Phase 1: opportunity picker (free — from the session's org/program/
+opportunity tree, no data pull), ward picker (cheap — work-area case
+properties only, see core/work_areas.py), and an optional coarse date range.
+
+Phase 2 (MopupCandidatesView): the live threshold-tunable candidate list —
+takes a run's scoped opportunity/wards, evaluates the §5/§6 indicators
+against whatever threshold/granularity config the reviewer currently has
+set, and returns candidates + a per-ward summary. Not yet built: the actual
+candidate-table/map UI (this is the JSON endpoint it will call), and locking
+a candidate set into Phase 3's microplans hand-off.
 """
 
 from __future__ import annotations
@@ -18,6 +23,8 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from connect_labs.labs.context import get_org_data
+from connect_labs.mopup.core import indicators as ind
+from connect_labs.mopup.core.candidates import build_evaluation_input, summarize_candidates_by_ward
 from connect_labs.mopup.core.data_access import MopupRunDataAccess
 from connect_labs.mopup.core.work_areas import list_work_areas, summarize_wards
 
@@ -114,5 +121,61 @@ class MopupCreateRunView(LoginRequiredMixin, View):
                 "selected_wards": run.selected_wards,
                 "date_from": run.date_from,
                 "date_to": run.date_to,
+            }
+        )
+
+
+class MopupCandidatesView(LoginRequiredMixin, View):
+    """Phase 2's live recompute: evaluate the run's scoped work areas against
+    the given (or run-saved, or default) indicator/global config and return
+    candidates + a per-ward summary. Every POST also persists the thresholds
+    used onto the run, so reopening it resumes where the reviewer left off —
+    "live" only in the sense that nothing is locked until an explicit lock
+    action (not built yet); this view can be called repeatedly as thresholds
+    change.
+
+    Known gap: only ward-scoping is applied — the run's date_from/date_to
+    isn't yet (see core/candidates.py's module docstring for why)."""
+
+    def post(self, request, program_id, run_id):
+        da = MopupRunDataAccess(program_id, request=request)
+        run = da.get_run(run_id)
+        if run is None:
+            return JsonResponse({"status": "error", "detail": "Run not found."}, status=404)
+
+        try:
+            payload = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        indicator_configs = (
+            payload.get("indicator_configs")
+            or run.thresholds.get("indicator_configs")
+            or dict(ind.DEFAULT_INDICATOR_CONFIGS)
+        )
+        global_config = (
+            payload.get("global_config") or run.thresholds.get("global_config") or dict(ind.DEFAULT_GLOBAL_CONFIG)
+        )
+
+        try:
+            rows = build_evaluation_input(run.target_opportunity_id, run.selected_wards, request=request)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "mopup candidates: fetching evaluation data failed (program=%s run=%s)", program_id, run_id
+            )
+            return JsonResponse({"status": "error", "detail": "Could not load visit/work-area data."}, status=502)
+
+        candidates = ind.evaluate_run(rows, indicator_configs, global_config)
+        ward_summary = summarize_candidates_by_ward(candidates, rows)
+
+        da.update_run(run, thresholds={"indicator_configs": indicator_configs, "global_config": global_config})
+
+        return JsonResponse(
+            {
+                "status": "ok",
+                "candidates": candidates,
+                "ward_summary": ward_summary,
+                "total_work_areas": len(rows),
+                "candidate_count": len(candidates),
             }
         )
