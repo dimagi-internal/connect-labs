@@ -107,7 +107,19 @@ def fetch_ocs_sessions_as_visit_dicts(
     # Prefer api_key (X-API-KEY) when available — it gives team-scoped access
     # regardless of which OCS account the viewer is logged into. Fall back to
     # the user's OAuth Bearer token when no api_key is configured.
-    api_key = data_source.api_key or getattr(settings, "OCS_PIPELINE_API_KEY", "")
+    #
+    # data_source.api_key is resolved in data_access.py: an explicit per-schema
+    # key wins (for a non-default OCS team), otherwise settings.OCS_API_KEY.
+    #
+    # This used to fall back to settings.OCS_PIPELINE_API_KEY, a setting that
+    # was READ HERE AND DEFINED NOWHERE — not in config/settings, not in
+    # .env.tpl, not in the task definitions. getattr(..., "") therefore returned
+    # "" every time, so the fallback never fell back. That is half of why the
+    # only key that ever reached this function was one hardcoded into a workflow
+    # template: of the two configuration routes, one had no definition (this
+    # one) and the other, OCS_API_KEY, had no reader and was never wired into
+    # ECS. Inlining the credential was the only path that worked.
+    api_key = data_source.api_key
 
     if api_key:
         import httpx
