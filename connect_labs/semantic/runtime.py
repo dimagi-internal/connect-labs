@@ -151,8 +151,15 @@ def filter_to_series(registry: dict[str, Any], series: str) -> dict[str, Any]:
             if ref in by_name and ref not in reachable:
                 queue.append(ref)
 
+    # Gates are INFRASTRUCTURE, not part of any series, and the reachability walk
+    # cannot find them: they carry no `meta`, so they are not roots, and no
+    # indicator's sql references them -- they are read alongside a value, not inside
+    # it. So filtering to one series dropped every `anyrec_*` column, and the caller
+    # got indicators with no way to tell "the app never asked" from "the answer is
+    # 0". Measured cost of that distinction when it was first ported: 268 of 5,302
+    # per-FLW checks.
     out = dict(registry)
-    out["measures"] = [m for m in registry.get("measures", []) if m.get("name") in reachable]
+    out["measures"] = [m for m in registry.get("measures", []) if m.get("name") in reachable or m.get("gate")]
     return out
 
 

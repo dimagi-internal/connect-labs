@@ -885,27 +885,35 @@ measures:
   # ZERO_IS_ABSENT fields (referred, ever_danger_sign, self_referral_count) test
   # for a TRUTHY value: a recorded zero means "nothing was recorded", not a real 0.
   - name: anyrec_weights
+    gate: true
     type: max
     sql: 'CASE WHEN COALESCE({CUBE}.n_weights, 0) > 0 THEN 1 ELSE 0 END'
   - name: anyrec_days_discharge_to_reg
+    gate: true
     type: max
     sql: 'CASE WHEN {CUBE}.days_discharge_to_reg IS NOT NULL THEN 1 ELSE 0 END'
   - name: anyrec_referred
+    gate: true
     type: max
     sql: 'CASE WHEN {CUBE}.referred THEN 1 ELSE 0 END'
   - name: anyrec_ever_danger_sign
+    gate: true
     type: max
     sql: 'CASE WHEN {CUBE}.ever_danger_sign THEN 1 ELSE 0 END'
   - name: anyrec_self_referral_count
+    gate: true
     type: max
     sql: 'CASE WHEN COALESCE({CUBE}.self_referral_count, 0) > 0 THEN 1 ELSE 0 END'
   - name: anyrec_kmc_hours_mean
+    gate: true
     type: max
     sql: 'CASE WHEN {CUBE}.kmc_hours_mean IS NOT NULL THEN 1 ELSE 0 END'
   - name: anyrec_birth_weight_g
+    gate: true
     type: max
     sql: 'CASE WHEN {CUBE}.birth_weight_g IS NOT NULL THEN 1 ELSE 0 END'
   - name: anyrec_enrollment_weight_g
+    gate: true
     type: max
     sql: 'CASE WHEN {CUBE}.enrollment_weight_g IS NOT NULL THEN 1 ELSE 0 END'
 

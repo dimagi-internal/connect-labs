@@ -864,9 +864,7 @@ function WorkflowUI({
 
     // Credibility is a GATE, not a band: the workbook says this LLO does not
     // record the thing credibly, so the figure exists and must not be published.
-    // The column comes from the registry's own `suppression:` rules -- the render
-    // no longer keeps its own copy of who is credible.
-    if (row[measure.measure + '_suppressed'] === true) {
+    if (!cCredible(measure, row)) {
       out.band = 'notcredible';
       return out;
     }
@@ -912,6 +910,55 @@ function WorkflowUI({
         return 'unrecorded';
     }
     return 'ok';
+  }
+
+  // Is this row's scope a credible recorder for this measure?
+  //
+  // NOT simply `row.<measure>_suppressed`. That column is
+  // `(props.llo IS NULL OR props.llo NOT IN (credible))`, and `props.llo` is NULL in
+  // every grouping set that does not group BY llo -- programme, opportunity, flw,
+  // month. So the column reads TRUE there, and trusting it renders "recording not
+  // credible" on the programme card, which is the one scope semantic/gates.py says
+  // must never be gated ("Programme scope (llo=None) is never gated: it pools
+  // credible recorders").
+  //
+  // So: read the credible SET off the llo scope, where the column does mean what it
+  // says, then gate each row by ITS OWN llo. Programme has none and stays ungated,
+  // which is also what the old render did -- it passed `llo` per scope and
+  // `credibleFor` returned true for null.
+  function cCredible(measure, row) {
+    var llo = cLloOfRow(row);
+    if (!llo) return true;
+    var credible = cCredibleSet(measure.id);
+    return credible === null || credible[llo] === true;
+  }
+
+  // The llo a scope row belongs to, or null when the row pools several.
+  function cLloOfRow(row) {
+    if (row.llo) return row.llo;
+    if (row.opportunity_id !== null && row.opportunity_id !== undefined)
+      return lloOf(Number(row.opportunity_id));
+    return null;
+  }
+
+  // { LLO: true } for the recorders the registry did not suppress, read off the llo
+  // scope. Null when that scope is absent from the response, which means "no basis
+  // to gate" rather than "gate everything" -- withholding every number because a
+  // scope was not requested would be worse than showing them.
+  function cCredibleSet(id) {
+    var measure = indOf(id);
+    var keys = Object.keys(cRows.llo);
+    if (!keys.length) return null;
+    var out = {};
+    var sawColumn = false;
+    keys.forEach(function (k) {
+      var r = cRows.llo[k];
+      var v = r[measure.measure + '_suppressed'];
+      if (v === undefined) return;
+      sawColumn = true;
+      if (v === false) out[r.llo] = true;
+    });
+    return sawColumn ? out : null;
   }
 
   // Bands are graded in the REGISTRY's units (percent), before cEntry converts the
@@ -985,7 +1032,7 @@ function WorkflowUI({
         return src[k];
       })
       .filter(function (r) {
-        return r[measure.measure + '_suppressed'] === false;
+        return cCredible(measure, r);
       });
   }
 
@@ -1506,7 +1553,7 @@ function WorkflowUI({
     if (flwArg || oppArg || lloArg) {
       var row = cMonthRow(month, lloArg, oppArg, flwArg);
       var measure = indOf('C14');
-      return row && row[measure.measure + '_suppressed'] === false ? [row] : [];
+      return row && cCredible(measure, row) ? [row] : [];
     }
     var index = {};
     Object.keys(cRows.llo_month).forEach(function (k) {
