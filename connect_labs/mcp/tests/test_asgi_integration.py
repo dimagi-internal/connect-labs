@@ -168,6 +168,53 @@ def test_unauthenticated_challenge_is_plain_bearer_not_oauth(asgi_app):
     assert 'realm="labs-mcp"' in challenge, f"expected plain Bearer realm, got: {challenge!r}"
 
 
+@pytest.mark.django_db(transaction=True)
+def test_the_401_body_describes_a_PAT_server_not_an_oauth_one(asgi_app):
+    """The challenge header was fixed; the body kept FastMCP's OAuth prose.
+
+    It told the reader to "clear authentication tokens in your MCP client and
+    reconnect. Your client should automatically re-register and obtain new
+    tokens." There is no registration here and nothing to obtain — following it
+    sends someone away from the only two real causes (no header arrived, or the
+    PAT is bad) toward an operation this server does not implement. A live
+    debugging session lost time to exactly that.
+    """
+    import anyio
+
+    application = asgi_app
+
+    async def _run():
+        async with application.router.lifespan_context(application):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=application), base_url="http://testserver"
+            ) as c:
+                return await c.post(
+                    "/mcp/",
+                    headers={
+                        "Accept": "application/json, text/event-stream",
+                        "Content-Type": "application/json",
+                    },
+                    json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                )
+
+    resp = anyio.run(_run)
+
+    assert resp.status_code == 401
+    body = resp.json()
+    described = body["error_description"]
+    # The advice that cannot work on a PAT-only server must be gone. These are
+    # FastMCP's exact words, not a paraphrase, so the assertion cannot drift.
+    assert "re-register" not in described
+    assert "clear authentication tokens" not in described
+    assert "obtain new tokens" not in described
+    # ...and replaced by what is actually true and actionable here.
+    assert "Personal Access Token" in described
+    assert "/labs/mcp/tokens/" in described
+    # The body must stay parseable and correctly framed after the rewrite.
+    assert resp.headers["content-type"].startswith("application/json")
+    assert int(resp.headers["content-length"]) == len(resp.content)
+
+
 def test_mcp_mount_wrapped_with_closing_connections_middleware(asgi_app):
     """The /mcp mount must be wrapped by the boundary-close ASGI middleware.
 

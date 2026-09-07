@@ -25,6 +25,7 @@ The deploy entrypoint (``docker/start``) runs this module under gunicorn's
 an ASGI app.
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -121,6 +122,37 @@ class _PlainBearerChallenge:
 
     _PLAIN_CHALLENGE = b'Bearer realm="labs-mcp"'
 
+    #: The 401 BODY needs the same treatment as the challenge header, for the
+    #: same reason and it was missed. FastMCP answers with RFC 6750 prose --
+    #: "clear authentication tokens in your MCP client and reconnect. Your
+    #: client should automatically re-register and obtain new tokens." -- which
+    #: describes an OAuth resource server. connect-labs is PAT-only: there is
+    #: nothing to re-register, no tokens to obtain, and clearing the client's
+    #: state cannot help. A reader who follows that advice is sent away from the
+    #: two things that are actually wrong (no header reached us, or the PAT is
+    #: bad/expired) and toward an operation that does not exist here.
+    #:
+    #: It also hides the distinction that makes this diagnosable at all: a
+    #: request arriving with NO Authorization header gets byte-identical prose
+    #: to one arriving with a rejected token, so a client whose header helper
+    #: silently produced nothing looks exactly like a revoked PAT. That
+    #: ambiguity cost a real investigation.
+    _PAT_ERROR_BODY = json.dumps(
+        {
+            "error": "invalid_token",
+            "error_description": (
+                "connect-labs MCP authenticates with a Personal Access Token sent as "
+                "'Authorization: Bearer <token>'. This request was rejected because that "
+                "header was missing, malformed, or carried a token this server does not "
+                "recognise. There is no OAuth registration here and no tokens to obtain "
+                "automatically -- clearing your client's auth state will not help. Check "
+                "that your client is actually sending the header (a helper that fails "
+                "silently sends none), then mint or rotate a PAT at "
+                "https://labs.connect.dimagi.com/labs/mcp/tokens/."
+            ),
+        }
+    ).encode()
+
     def __init__(self, app):
         self.app = app
 
@@ -129,11 +161,36 @@ class _PlainBearerChallenge:
             await self.app(scope, receive, send)
             return
 
+        # Rewriting the body means the upstream Content-Length is wrong, so the
+        # start message is held until the body is in hand.
+        state = {"is_401": False, "start": None}
+
         async def _send(message):
-            if message["type"] == "http.response.start" and message.get("status") == 401:
-                headers = [(k, v) for (k, v) in message.get("headers", []) if k.lower() != b"www-authenticate"]
-                headers.append((b"www-authenticate", self._PLAIN_CHALLENGE))
-                message = {**message, "headers": headers}
+            if message["type"] == "http.response.start":
+                if message.get("status") == 401:
+                    headers = [
+                        (k, v)
+                        for (k, v) in message.get("headers", [])
+                        if k.lower() not in (b"www-authenticate", b"content-length", b"content-type")
+                    ]
+                    headers.append((b"www-authenticate", self._PLAIN_CHALLENGE))
+                    headers.append((b"content-type", b"application/json"))
+                    headers.append((b"content-length", str(len(self._PAT_ERROR_BODY)).encode()))
+                    state["is_401"] = True
+                    state["start"] = {**message, "headers": headers}
+                    return
+                await send(message)
+                return
+
+            if message["type"] == "http.response.body" and state["is_401"]:
+                # Swallow the upstream body entirely; emit ours once, at the end.
+                if message.get("more_body"):
+                    return
+                await send(state["start"])
+                await send({"type": "http.response.body", "body": self._PAT_ERROR_BODY, "more_body": False})
+                state["is_401"] = False
+                return
+
             await send(message)
 
         await self.app(scope, receive, _send)
