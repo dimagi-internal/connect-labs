@@ -856,3 +856,39 @@ class TestDownloadFilenameNamesTheQuestion:
             skipped_no_data=[],
         )
         assert export.filename_stem(sel) == "targeting_u5mr_gt80"
+
+
+class TestHeadlineFollowsTheMeasure:
+    """The tiles were fixed to a child-survival framing.
+
+    Three of the four headline quantities were about children, whatever was
+    selected. A selection on unmet need for family planning — a measure about
+    married women 15-49 — reported under-fives, annual births, and 1.6M
+    expected under-5 deaths, and never once said how many women it had
+    selected. Roughly fifteen of the fifty-two indicators were affected.
+    """
+
+    def test_a_measure_about_women_reports_women(self, client_in, africa):
+        r = client_in.get(reverse("targeting:selection"), {"indicator": "fp_unmet_need"}).json()
+        assert r["denominator"] == "pop_f_15_49"
+        assert "women" in r["denominator_label"].lower()
+
+    def test_a_measure_about_children_still_reports_children(self, client_in, africa):
+        r = client_in.get(reverse("targeting:selection"), {"indicator": "ors_coverage"}).json()
+        assert r["denominator"] == "pop_u5"
+
+    def test_mortality_reports_the_cohort_it_is_measured_over(self, client_in, africa):
+        """U5MR is per 1,000 LIVE BIRTHS, so births is its denominator."""
+        r = client_in.get(reverse("targeting:selection"), {"indicator": "u5mr"}).json()
+        assert r["denominator"] == "births"
+
+    def test_a_burden_with_no_derived_count_offers_no_gap_label(self, client_in, africa):
+        """Which is what tells the surface to hide the emphasised tile rather
+        than fill it with expected under-5 deaths."""
+        for code in ("stunting", "fp_unmet_need", "open_defecation", "women_anaemia"):
+            r = client_in.get(reverse("targeting:selection"), {"indicator": code}).json()
+            assert r["gap_label"] is None, code
+
+    def test_a_coverage_measure_does_offer_one(self, client_in, africa):
+        r = client_in.get(reverse("targeting:selection"), {"indicator": "improved_water"}).json()
+        assert r["gap_label"] is not None

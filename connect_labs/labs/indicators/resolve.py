@@ -567,6 +567,15 @@ def carried_for(indicator: str, extra: tuple[str, ...] = ()) -> tuple[str, ...]:
     display one.
     """
     wanted: list[str] = [e for e in extra if e in measures.MEASURES]
+
+    # The population this measure is ACTUALLY about. Every headline tile used
+    # to be a child-survival quantity, so a selection on women's anaemia or
+    # unmet need for family planning reported under-fives, births and expected
+    # under-5 deaths and never once said how many women it had selected.
+    m = measures.get(indicator)
+    if m.weight_by and m.weight_by in measures.MEASURES:
+        wanted.append(m.weight_by)
+
     gap = f"{indicator}_gap"
     if gap in measures.MEASURES:
         wanted.append(gap)
