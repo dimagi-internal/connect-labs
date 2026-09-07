@@ -1470,15 +1470,32 @@ function WorkflowUI({
   var nSeries = sN[0],
     setNSeries = sN[1];
 
+  // The DEFINITION id, which is NOT the run id. `definition.id` is not populated in
+  // this render context -- measured live: the panel rendered, fetched nothing, and
+  // reported "no workflow id" -- and instance.id is the RUN. The path carries it, so
+  // fall through to that rather than guessing at another prop shape.
+  function nWorkflowId() {
+    if (definition && definition.id) return definition.id;
+    if (instance && instance.definition_id) return instance.definition_id;
+    var m = String(window.location.pathname).match(/\/workflow\/(\d+)\//);
+    return m ? m[1] : null;
+  }
+
   function loadNSeries() {
-    if (!definition || !definition.id) {
-      setNSeries({ status: 'error', rows: [], error: 'no workflow id' });
+    var wfId = nWorkflowId();
+    if (!wfId) {
+      setNSeries({
+        status: 'error',
+        rows: [],
+        measures: [],
+        error: 'could not determine the workflow id from the page',
+      });
       return;
     }
     setNSeries({ status: 'loading', rows: [], measures: [] });
     fetch(
       '/labs/workflow/api/' +
-        definition.id +
+        wfId +
         '/semantic/?series=N&scopes=programme,opportunity,flw',
     )
       .then(function (res) {
@@ -1500,6 +1517,8 @@ function WorkflowUI({
           status: 'ready',
           rows: data.rows || [],
           measures: data.measures || [],
+          coldCache: data.cold_cache || false,
+          coldHint: data.cold_cache_hint || '',
         });
       })
       .catch(function (err) {
@@ -1527,12 +1546,18 @@ function WorkflowUI({
       return x >= b[0] ? 'green' : x >= b[1] ? 'yellow' : 'red';
     if (m.direction === 'lower')
       return x <= b[0] ? 'green' : x <= b[1] ? 'yellow' : 'red';
-    if (m.direction === 'mid2')
-      return x >= b[0][0] && x <= b[0][1]
-        ? 'green'
-        : x >= b[1][0] && x <= b[1][1]
-        ? 'yellow'
-        : 'red';
+    if (m.direction === 'mid2') {
+      // Two-sided: green inside the inner range, yellow inside the outer, red
+      // beyond EITHER end. Guard the shape -- a one-dimensional band here would
+      // silently read as unbanded, which is the single outcome a two-sided
+      // mortality band exists to prevent (the spec: under ~2% means deaths are
+      // not being recorded, not that babies are surviving).
+      if (!b || !b.length || !b[0] || b[0].length !== 2) return 'unbanded';
+      if (x >= b[0][0] && x <= b[0][1]) return 'green';
+      if (b[1] && b[1].length === 2 && x >= b[1][0] && x <= b[1][1])
+        return 'yellow';
+      return 'red';
+    }
     return 'unbanded';
   }
 
@@ -1653,58 +1678,6 @@ function WorkflowUI({
   var s3 = React.useState(null);
   var selInd = s3[0],
     setSelInd = s3[1];
-  // ══ N-series (Neal's demo compute spec), served by the semantic layer ══════
-  // Everything else on this screen is computed in the browser from pipeline rows.
-  // These come from SQL: the registry compiles to one GROUPING SETS query and runs
-  // server-side, which is the only version where the scopes below cost one pass
-  // instead of three. Fetched ON DEMAND rather than with the page -- it is a real
-  // query against the visit cache, and the other tabs must not pay for it.
-  var sN = React.useState({ status: 'idle', rows: [], measures: [] });
-  var nSeries = sN[0],
-    setNSeries = sN[1];
-
-  function loadNSeries() {
-    if (!definition || !definition.id) {
-      setNSeries({ status: 'error', rows: [], error: 'no workflow id' });
-      return;
-    }
-    setNSeries({ status: 'loading', rows: [], measures: [] });
-    fetch(
-      '/labs/workflow/api/' +
-        definition.id +
-        '/semantic/?series=N&scopes=programme,opportunity,flw',
-    )
-      .then(function (res) {
-        return res.json();
-      })
-      .then(function (data) {
-        if (data.error) {
-          // The message names the missing column or relation -- show it rather
-          // than a generic failure, which is the whole reason it is a 400.
-          setNSeries({
-            status: 'error',
-            rows: [],
-            measures: [],
-            error: data.error,
-          });
-          return;
-        }
-        setNSeries({
-          status: 'ready',
-          rows: data.rows || [],
-          measures: data.measures || [],
-        });
-      })
-      .catch(function (err) {
-        setNSeries({
-          status: 'error',
-          rows: [],
-          measures: [],
-          error: String((err && err.message) || err),
-        });
-      });
-  }
-
   var s5 = React.useState('indicators');
   var tab = s5[0],
     setTab = s5[1];
@@ -2794,6 +2767,95 @@ function WorkflowUI({
                 if (nScope === 'flw') return r.username || '(unassigned)';
                 return 'All opportunities';
               };
+
+              // At PROGRAMME scope there is exactly one row, and a 14-column table
+              // to show a single record puts all the weight on the header and none
+              // on the number -- measured live: the table clipped at the viewport
+              // edge with two thirds of the page empty below it. Cards give the
+              // topline the hierarchy it should have; the table stays for the
+              // scopes that genuinely have many rows.
+              if (nScope === 'programme') {
+                var pr = rows[0];
+                var counts = measures.filter(function (m) {
+                  return m.unit === 'n' && !m.bands;
+                });
+                var rest = measures.filter(function (m) {
+                  return !(m.unit === 'n' && !m.bands);
+                });
+                var TONE = {
+                  green: 'border-green-200 bg-green-50 text-green-900',
+                  yellow: 'border-amber-200 bg-amber-50 text-amber-900',
+                  red: 'border-red-200 bg-red-50 text-red-900',
+                  unbanded: 'border-gray-200 bg-white text-gray-900',
+                  nodata: 'border-gray-200 bg-gray-50 text-gray-400',
+                  insufficient: 'border-gray-200 bg-gray-50 text-gray-400',
+                };
+                var card = function (m, big) {
+                  var c = nCell(m, pr);
+                  var derived =
+                    m.bands_source &&
+                    m.bands_source.indexOf('PROVISIONAL') !== -1;
+                  return (
+                    <div
+                      key={m.id}
+                      className={
+                        'rounded-lg border p-3 ' +
+                        (TONE[c.band] || TONE.unbanded)
+                      }
+                      title={m.bands_source || 'no band defined'}
+                    >
+                      <div
+                        className={
+                          (big ? 'text-3xl' : 'text-2xl') +
+                          ' font-semibold leading-none'
+                        }
+                      >
+                        {c.text}
+                      </div>
+                      <div className="text-xs mt-1.5 leading-snug opacity-80">
+                        {m.title}
+                        {derived ? (
+                          <span
+                            className="text-amber-600"
+                            title="band derived, not stated by the spec"
+                          >
+                            {' *'}
+                          </span>
+                        ) : (
+                          ''
+                        )}
+                      </div>
+                      <div className="text-[11px] mt-1 opacity-50">
+                        {c.den === null || c.den === undefined
+                          ? '\u2014'
+                          : 'n = ' + c.den}
+                      </div>
+                    </div>
+                  );
+                };
+                return (
+                  <div className="p-4">
+                    <div className="grid grid-cols-4 gap-3 mb-3">
+                      {counts.map(function (m) {
+                        return card(m, true);
+                      })}
+                    </div>
+                    <div className="grid grid-cols-5 gap-3">
+                      {rest.map(function (m) {
+                        return card(m, false);
+                      })}
+                    </div>
+                    <div className="mt-4 text-xs text-gray-400">
+                      Across {pr.n_cases} cases in{' '}
+                      {(nSeries.opportunity_ids || []).length || 11}{' '}
+                      opportunities. Hover a card for where its band came from.{' '}
+                      <span className="text-amber-600">*</span> marks a band
+                      DERIVED from the workbook or from the spec's own
+                      expected-answers table rather than stated by the spec.
+                    </div>
+                  </div>
+                );
+              }
               return (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-xs">
@@ -2873,6 +2935,11 @@ function WorkflowUI({
                     </tbody>
                   </table>
                   <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
+                    <span className="text-gray-500">
+                      {rows.length} row{rows.length === 1 ? '' : 's'} · scroll
+                      sideways for the rest of the {measures.length} metrics
+                      &rarr;
+                    </span>{' '}
                     Hover a value for its denominator, or a column for where its
                     band came from. <span className="text-amber-600">*</span>{' '}
                     marks a band DERIVED from the workbook or from the spec's
