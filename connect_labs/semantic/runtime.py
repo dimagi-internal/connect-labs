@@ -70,6 +70,36 @@ def load_registry(name: str = "kmc") -> tuple[dict[str, Any], dict[str, Any]]:
     return props, inds
 
 
+def load_deployment(name: str = "kmc") -> tuple[dict[Any, str], dict[str, dict[Any, bool]]]:
+    """(llo_map, settings) for a registry directory; empty pair when undeclared.
+
+    The compiler needs both and can derive neither. `llo` is not a column on a visit
+    row, so the `llo` scope and every llo-scoped suppression rule are compiled from
+    a CASE over this map; and the workbook's credibility gates are typed human
+    judgements that exist in no table.
+
+    Until this existed the only copy lived in the browser (`LLO_OF`,
+    `MORTALITY_CREDIBLE`, `COMPLETION_CREDIBLE` in kmc_programme_metrics_render.js),
+    which is why `semantic_indicators_api` could not serve the `llo` scope at all and
+    -- silently -- emitted no suppression columns for any scope.
+    """
+    root = REGISTRY_ROOT / name / "deployment.yml"
+    if not root.is_file():
+        return {}, {}
+    try:
+        doc = yaml.safe_load(root.read_text()) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise SemanticRuntimeError(f"deployment facts for {name!r} did not load: {exc}") from exc
+    # Opportunity ids arrive from the query as ints; YAML keys are already ints here,
+    # but a quoted key would read as a str and silently match nothing.
+    llo_map = {int(k): str(v) for k, v in (doc.get("llo_map") or {}).items()}
+    settings = {
+        str(setting): {str(llo): bool(v) for llo, v in (table or {}).items()}
+        for setting, table in (doc.get("settings") or {}).items()
+    }
+    return llo_map, settings
+
+
 def filter_to_series(registry: dict[str, Any], series: str) -> dict[str, Any]:
     """A copy of the registry carrying ONE indicator series and nothing else.
 

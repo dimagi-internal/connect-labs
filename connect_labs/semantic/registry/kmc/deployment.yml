@@ -1,0 +1,80 @@
+# KMC deployment facts — the inputs the registry needs but cannot derive.
+#
+# Two things the compiler asks for and the SQL cannot produce on its own:
+#
+#   llo_map   There is no LLO on a visit row. `llo` is materialised by a CASE over
+#             opportunity_id, so the `llo` scope and every llo-scoped suppression
+#             rule need this map or they cannot be compiled at all.
+#
+#   settings  The workbook's "Targets & settings" tab — typed human judgements about
+#             whether an LLO records a thing credibly. These are GATES, not
+#             decoration: C14 must not publish a mortality figure for an LLO the
+#             workbook says does not record deaths credibly, which would read as a
+#             real red band rather than an absent measurement.
+#
+# Both lived only inside kmc_programme_metrics_render.js (`LLO_OF`,
+# `MORTALITY_CREDIBLE`, `COMPLETION_CREDIBLE`). The endpoint never had them, so
+# `series=C` could not serve the `llo` scope and — worse, silently — emitted no
+# suppression columns at all. Held here as data so both engines read one copy.
+
+version: 1
+
+# opportunity_id -> LLO. The 5xx/1xxx ids are the original opportunities; the
+# 10xxx ids are their synthetic clones, which carry the same LLO.
+llo_map:
+  524: PIPN
+  874: PIPN
+  1487: PIPN
+  2166: PIPN
+  523: NAMA
+  938: NAMA
+  1488: NAMA
+  675: GHI
+  1234: GHI
+  1236: EHA
+  1739: Kikapu
+  1790: BERI
+  10021: PIPN
+  10019: PIPN
+  10015: PIPN
+  10022: NAMA
+  10018: NAMA
+  10014: NAMA
+  10020: GHI
+  10017: GHI
+  10016: EHA
+  10013: Kikapu
+  10042: BERI
+
+# Keyed by the `setting` name each suppression rule in indicators.yml names.
+#
+# ALLOW-LISTS, and deliberately so. The compiler suppresses any LLO not listed
+# true (`credible = [k for k, v in table.items() if v]`, then
+# `llo NOT IN (credible)`), so an absent LLO is suppressed rather than published.
+#
+# The render's tables did NOT share that convention and the difference is not
+# cosmetic. `MORTALITY_CREDIBLE = {PIPN: true, EHA: true}` is already an
+# allow-list and ports as-is. `COMPLETION_CREDIBLE = {GHI: false}` is a DENY-list
+# -- the render reads it as `COMPLETION_CREDIBLE[llo] !== false`, so everyone
+# except GHI is credible. Copied verbatim it would have compiled to an empty
+# credible set and `TRUE AS c18_suppressed`: C18 withheld from all six LLOs
+# instead of one, with nothing on screen to say so. Written out in full here so
+# the convention is the compiler's, not the render's.
+settings:
+  # "only PIPN and EHA record deaths credibly" (source doc). GHI 675 records zero
+  # discharges at all.
+  mortality_recording_credible:
+    PIPN: true
+    EHA: true
+    NAMA: false
+    GHI: false
+    Kikapu: false
+    BERI: false
+  # Every LLO except GHI, spelled out rather than inferred from an absence.
+  completion_recording_credible:
+    PIPN: true
+    NAMA: true
+    EHA: true
+    Kikapu: true
+    BERI: true
+    GHI: false
