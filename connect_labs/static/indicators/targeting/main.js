@@ -66,6 +66,44 @@
     return !still.targets || still.targets === S.indicator ? S.preset : null;
   }
 
+  // "TypeError: Failed to fetch" is what the browser says when nothing
+  // answered. Name that case; pass anything else through unchanged.
+  function describe(err) {
+    var text = String(err && err.message ? err.message : err);
+    return /failed to fetch|networkerror|load failed/i.test(text)
+      ? 'The server did not respond — check your connection and try again.'
+      : text;
+  }
+
+  /* Every figure on screen answered the PREVIOUS question. Leaving them up put
+     "14 areas selected in Liberia" beside a red error for a threshold that
+     never loaded — the stale number reads as the answer, and it is the one a
+     reader would quote. An em-dash says "unknown"; a stale figure says
+     something false. */
+  function showFailure(err) {
+    setDownloadState(false);
+    [
+      'tg-rowcount',
+      'tg-scope',
+      'tg-poptotal',
+      'tg-popu5',
+      'tg-births',
+      'tg-deaths',
+    ].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.textContent = '—';
+    });
+    var rows = document.getElementById('tg-rows');
+    if (rows) {
+      rows.innerHTML =
+        '<tr><td colspan="10" class="px-5 py-8 text-center text-red-600">' +
+        'Could not load the selection, so the figures above are cleared ' +
+        'rather than left showing the previous question. ' +
+        T.util.esc(describe(err)) +
+        '</td></tr>';
+    }
+  }
+
   function syncLinks() {
     var href = api.downloadHref();
     var a = document.getElementById('tg-download');
@@ -187,13 +225,7 @@
       })
       .catch(function (err) {
         if (!state.isCurrent('selection', mine)) return;
-        setDownloadState(false);
-        document.getElementById('tg-births').textContent = 'error';
-        document.getElementById('tg-rows').innerHTML =
-          '<tr><td colspan="10" class="px-5 py-8 text-center text-red-600">' +
-          'Could not load the selection: ' +
-          T.util.esc(String(err)) +
-          '</td></tr>';
+        showFailure(err);
       });
   });
 
@@ -205,7 +237,10 @@
 
   function selectIndicator(code) {
     var S = state.get();
-    if (!code || code === S.indicator) return Promise.resolve();
+    // Re-picking the indicator that failed to load must retry, not be
+    // dismissed as "no change" — that left the page stuck on its own error.
+    if (!code || (code === S.indicator && !state.isStale()))
+      return Promise.resolve();
     // One pass. The threshold follows inside the methods channel, which is
     // the first point at which the new indicator's own scale is known.
     return state.apply({ indicator: code, level: null });
@@ -231,6 +266,12 @@
     T.controls.init();
     T.costing.init();
     guardDownloads();
+    // Any channel that cannot answer reports here. Without this a failure in
+    // an early channel skipped every later one — including the selection
+    // handler that knows how to show an error — so the click looked ignored.
+    state.setErrorHandler(function (err) {
+      showFailure(err);
+    });
     T.controls.renderYearSelect();
     if (S.year) document.getElementById('tg-year').value = String(S.year);
     if (!S.rollup) document.getElementById('tg-rank').checked = true;

@@ -236,3 +236,60 @@ describe('the sentence an empty table shows', () => {
     expect(text).not.toContain('this threshold.');
   });
 });
+
+describe('a channel that cannot answer', () => {
+  function fresh() {
+    globalThis.window = globalThis;
+    delete globalThis.window.Targeting;
+    const fs = require('fs');
+    // eslint-disable-next-line no-eval
+    eval(fs.readFileSync(new URL('./state.js', import.meta.url), 'utf8'));
+    return globalThis.window.Targeting.state;
+  }
+
+  it('reports the failure instead of rejecting the whole chain', async () => {
+    // The chain had no catch, so one failed request skipped every later
+    // channel — including the selection handler, the only thing that knows how
+    // to show an error. A dead server therefore looked like a click that did
+    // nothing at all, plus an unhandled rejection in the console.
+    const state = fresh();
+    const seen = [];
+    const ran = [];
+    state.setErrorHandler((err, channel) => seen.push(channel));
+    state.register('methods', () => Promise.reject(new Error('no server')));
+    ['scope', 'map', 'selection', 'costing'].forEach((c) =>
+      state.register(c, () => ran.push(c)),
+    );
+
+    await state.apply({ indicator: 'nmr' });
+
+    expect(seen).toEqual(['methods']);
+    // Later channels must NOT run: they would paint over a question that was
+    // never answered.
+    expect(ran).toEqual([]);
+  });
+
+  it('re-runs after a failure even when nothing changed', async () => {
+    // S moved but the page was never repainted from it, so re-picking the
+    // indicator that failed counted as "no change" and the page stayed stuck
+    // on its own error message with no way back.
+    const state = fresh();
+    let fail = true;
+    const runs = [];
+    state.setErrorHandler(() => {});
+    state.register('methods', () => {
+      runs.push('methods');
+      return fail ? Promise.reject(new Error('no server')) : null;
+    });
+
+    await state.apply({ indicator: 'nmr' });
+    expect(state.isStale()).toBe(true);
+
+    fail = false;
+    // The same value again — an apply that changes nothing.
+    await state.apply({ indicator: 'nmr' });
+
+    expect(runs).toEqual(['methods', 'methods']);
+    expect(state.isStale()).toBe(false);
+  });
+});

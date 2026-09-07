@@ -117,24 +117,68 @@
         widest = opts.channel;
       }
     }
+    // A page left mid-failure has to be rebuilt from the widest channel, not
+    // from whatever happens to have changed since.
+    if (stale) widest = CHANNELS[0];
     if (widest === null) return Promise.resolve();
 
     var queue = from(widest);
+    var failed = false;
     // Claim only the channels this run will actually execute.
     var mine = {};
     queue.forEach(function (name) {
       mine[name] = ++tokens[name];
     });
 
-    return queue.reduce(function (chain, name) {
-      return chain.then(function () {
-        // Superseded for THIS channel — a newer run of the same channel is
-        // under way, so stop rather than paint an older answer over it.
-        if (mine[name] !== tokens[name]) return null;
-        var fn = handlers[name];
-        return fn ? fn(S) : null;
+    return queue
+      .reduce(function (chain, name) {
+        return chain.then(function () {
+          // Superseded for THIS channel — a newer run of the same channel is
+          // under way, so stop rather than paint an older answer over it.
+          if (mine[name] !== tokens[name]) return null;
+          if (failed) return null;
+          var fn = handlers[name];
+          if (!fn) return null;
+          return Promise.resolve()
+            .then(function () {
+              return fn(S);
+            })
+            .catch(function (err) {
+              // A channel that throws used to reject the whole chain: every
+              // later channel was skipped, including the one that knows how to
+              // show an error, so a failed request looked like a click that did
+              // nothing. Stop the run — later channels would paint over a
+              // question that was never answered — but say so first.
+              failed = true;
+              stale = true;
+              if (onError) onError(err, name);
+              return null;
+            });
+        });
+      }, Promise.resolve())
+      .then(function () {
+        if (!failed) stale = false;
       });
-    }, Promise.resolve());
+  }
+
+  // What to do when a channel cannot answer. One hook, because the remedy is
+  // the same wherever it happens: tell the reader, and do not leave figures up
+  // that belong to a question nobody managed to ask.
+  var onError = null;
+
+  // Set when a run could not finish. The fields moved but the page was never
+  // repainted from them, so S and the screen disagree until something redraws.
+  // Until then every apply must redraw from the top, even one that changes
+  // nothing — otherwise re-picking the value that failed is treated as "no
+  // change" and the page stays stuck on the error.
+  var stale = false;
+
+  function setErrorHandler(fn) {
+    onError = fn;
+  }
+
+  function isStale() {
+    return stale;
   }
 
   function isCurrent(channel, mine) {
@@ -148,6 +192,8 @@
   window.Targeting.state = {
     get: get,
     apply: apply,
+    setErrorHandler: setErrorHandler,
+    isStale: isStale,
     register: register,
     isCurrent: isCurrent,
     ticket: ticket,
