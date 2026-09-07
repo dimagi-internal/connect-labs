@@ -483,6 +483,32 @@
    * through to its own Pulse view; the ones without a workspace have never
    * delivered, so there is nothing there to look at yet and no link.
    */
+
+  /* This page opens Pulse's own partner window. It declares the two things
+   * that module asks for — a URL builder and the label tables — and holds no
+   * store, no polling clock and no filter state, none of which a network view
+   * has any use for.
+   */
+  function configureWindows(labels) {
+    if (!window.PulseWindows) return;
+    var base = (root.dataset.endpoint || '').replace(/\/api\/network\/$/, '');
+    window.PulseWindows.configure({
+      urlFor: function (path, params) {
+        var q = new URLSearchParams(params || {}).toString();
+        return base + path + (q ? '?' + q : '');
+      },
+      labels: function () {
+        return labels || {};
+      },
+    });
+  }
+
+  function openPartnerWindow(slug) {
+    if (!window.PulseWindows || !window.PulseCards) return false;
+    window.PulseWindows.openPartner(slug);
+    return true;
+  }
+
   function partnersRow(country, span) {
     var tr = document.createElement('tr');
     tr.className = 'net-detail-row';
@@ -508,31 +534,58 @@
       return tr;
     }
 
-    var list = document.createElement('div');
-    list.className = 'net-orgs';
+    var list = document.createElement('table');
+    list.className = 'net-orgtable';
+    var body = document.createElement('tbody');
+    list.appendChild(body);
+
     here.forEach(function (p) {
-      var item = document.createElement(p.slug ? 'a' : 'div');
-      item.className = 'net-org' + (p.delivering ? ' net-org-live' : '');
-      if (p.slug) {
-        item.href = PULSE_ORG_URL.replace(
-          '__SLUG__',
-          encodeURIComponent(p.slug),
-        );
-        item.title = 'Open ' + p.name + ' in Pulse';
-      }
-      var name = document.createElement('span');
+      var row = document.createElement('tr');
+      row.className = 'net-org' + (p.delivering ? ' net-org-live' : '');
+
+      var name = document.createElement('td');
       name.className = 'net-org-name';
       name.textContent = p.name;
-      var meta = document.createElement('span');
+      row.appendChild(name);
+
+      var where = document.createElement('td');
+      where.className = 'net-org-where';
+      where.textContent = p.place || '';
+      row.appendChild(where);
+
+      var meta = document.createElement('td');
       meta.className = 'net-org-meta';
       meta.textContent = p.delivering
         ? 'delivering since ' + p.since
         : p.joined
         ? 'joined ' + p.joined
         : '';
-      item.appendChild(name);
-      item.appendChild(meta);
-      list.appendChild(item);
+      row.appendChild(meta);
+
+      var go = document.createElement('td');
+      go.className = 'net-org-go';
+      if (p.slug) {
+        // Opens Pulse's own partner window over this page. Only partners with a
+        // Connect workspace have one to open — the rest have never delivered.
+        row.classList.add('net-org-open');
+        row.tabIndex = 0;
+        go.textContent = 'open ›';
+        var open = function (e) {
+          e.preventDefault();
+          if (!openPartnerWindow(p.slug) && PULSE_ORG_URL) {
+            window.location.href = PULSE_ORG_URL.replace(
+              '__SLUG__',
+              encodeURIComponent(p.slug),
+            );
+          }
+        };
+        row.addEventListener('click', open);
+        row.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') open(e);
+        });
+      }
+      row.appendChild(go);
+      body.appendChild(row);
     });
     td.appendChild(list);
     tr.appendChild(td);
@@ -727,6 +780,7 @@
   function render(data) {
     root.innerHTML = '';
     ALL_POINTS = data.points || [];
+    configureWindows(data.labels);
     var t = data.totals;
 
     var kpis = document.createElement('div');

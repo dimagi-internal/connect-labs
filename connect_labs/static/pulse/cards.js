@@ -319,7 +319,7 @@
     root.addEventListener('click', (e) => {
       const cell = e.target.closest('.t-org[data-org]');
       if (!cell || !cell.dataset.org || !global.PulseWindows) return;
-      global.PulseWindows.openPartner(store, cell.dataset.org);
+      global.PulseWindows.openPartner(cell.dataset.org);
     });
 
     store.on('event', (ev) => {

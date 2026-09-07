@@ -167,8 +167,36 @@
     };
   }
 
-  async function fetchJSON(store, path, params) {
-    const res = await fetch(store._url(path, params));
+  /* The window's entire dependency on the page hosting it, declared in one
+   * place instead of duck-typed off whatever object the caller threads through.
+   *
+   * It used to take the display's `store`, and it only ever read two things off
+   * it: a URL builder and the label tables. That cost twice. A second page
+   * wanting a partner window had to fabricate something store-shaped and hope
+   * it had guessed the right two fields — a shim that keeps working right up
+   * until this module reads a third. And a helper that reached for `store`
+   * without being handed it threw at render time into the catch that reports
+   * "Could not load this partner", so the mistake shipped looking like a data
+   * problem. windows.test.js exists because that happened.
+   *
+   * The defaults below are deliberately working ones: a page that forgets to
+   * configure gets same-origin URLs and empty labels rather than an exception.
+   */
+  let host = {
+    urlFor(path, params) {
+      const q = new URLSearchParams(params || {}).toString();
+      return `${path}${q ? '?' + q : ''}`;
+    },
+    labels: () => ({}),
+  };
+
+  /** Declare what this page provides. Call once, before opening a window. */
+  function configure(next) {
+    host = Object.assign({}, host, next || {});
+  }
+
+  async function fetchJSON(path, params) {
+    const res = await fetch(host.urlFor(path, params));
     if (!res.ok) throw new Error(String(res.status));
     return res.json();
   }
@@ -177,7 +205,7 @@
      from. Rendering a single opportunity as a one-row list is chrome around a
      fact, and rendering ninety-one as a paragraph is unreadable — the partner
      window has to do both, because real partners span that whole range. */
-  function opportunities(store, d, selected) {
+  function opportunities(d, selected) {
     const rows = d.opportunities || [];
     if (!rows.length) return '';
 
@@ -203,10 +231,7 @@
     };
 
     const where = (o) =>
-      [
-        o.service_name,
-        (store.summary?.labels?.countries || {})[o.country] || o.country,
-      ]
+      [o.service_name, (host.labels().countries || {})[o.country] || o.country]
         .filter(Boolean)
         .join(' \u00b7 ');
 
@@ -302,7 +327,7 @@
   }
 
   /* ── partner window ──────────────────────────────────────────────── */
-  function openPartner(store, slug, preselectOpp) {
+  function openPartner(slug, preselectOpp) {
     const depth = 0;
     const win = frame(depth, 'Loading…', '', false);
     stack.push(win);
@@ -350,7 +375,7 @@
           ['Units of work', nf.format(m.works || 0)],
           ['Workers', nf.format(d.worker_count || 0)],
         ]) +
-        opportunities(store, d, d.selected_opportunity ?? selectedOpp) +
+        opportunities(d, d.selected_opportunity ?? selectedOpp) +
         `<div class="pulse-win-sect">
            <span class="pulse-lbl">Delivery, last 26 weeks${
              selectedOpp ? ' · this opportunity' : ''
@@ -460,8 +485,7 @@
         });
       });
 
-      const open = (tr) =>
-        openWorker(store, tr.dataset.w, p.slug, p.name || p.slug);
+      const open = (tr) => openWorker(tr.dataset.w, p.slug, p.name || p.slug);
       win.body
         .querySelectorAll('.pulse-roster tbody tr[data-w]')
         .forEach((tr) => {
@@ -479,7 +503,7 @@
       try {
         const params = { org: slug };
         if (selectedOpp) params.opportunity = selectedOpp;
-        const d = await fetchJSON(store, '/api/partner/', params);
+        const d = await fetchJSON('/api/partner/', params);
         win.last = d;
         paint(d);
       } catch (err) {
@@ -493,7 +517,7 @@
   }
 
   /* ── worker window ───────────────────────────────────────────────── */
-  function openWorker(store, worker, orgSlug, orgName) {
+  function openWorker(worker, orgSlug, orgName) {
     const depth = stack.length;
     const win = frame(depth, worker, '', true);
     stack.push(win);
@@ -515,9 +539,7 @@
         .sort((a, b) => b[1] - a[1])
         .slice(0, 6);
       const flags = Object.entries(d.by_flag || {}).sort((a, b) => b[1] - a[1]);
-      const labels =
-        (store.summary && store.summary.labels && store.summary.labels.flags) ||
-        {};
+      const labels = host.labels().flags || {};
 
       win.body.innerHTML =
         kpis([
@@ -599,7 +621,7 @@
 
     const load = async () => {
       try {
-        const d = await fetchJSON(store, '/api/worker/', {
+        const d = await fetchJSON('/api/worker/', {
           w: worker,
           org: orgSlug,
         });
@@ -627,6 +649,7 @@
   let onChange = null;
 
   global.PulseWindows = {
+    configure,
     openPartner,
     openWorker,
     close: () => close(0),

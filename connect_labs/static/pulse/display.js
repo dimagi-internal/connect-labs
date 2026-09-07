@@ -22,6 +22,16 @@
     token: CFG.token || null,
   });
 
+  /* The drill-down windows need a URL builder and the label tables — not this
+     store. Declaring it here keeps that module from reaching into an object it
+     does not own, and lets any other page open the same window by declaring
+     its own two. Labels are a function because the summary arrives later. */
+  if (window.PulseWindows)
+    window.PulseWindows.configure({
+      urlFor: (path, params) => store._url(path, params),
+      labels: () => (store.summary && store.summary.labels) || {},
+    });
+
   /* ═══ map ═══════════════════════════════════════════════════════
      A real Mapbox dark basemap underneath (coastlines, country borders,
      place names) with our density + ignition layer painted on a transparent
@@ -960,7 +970,7 @@
         card.title = "Click for this partner's full record";
         card.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (window.PulseWindows) window.PulseWindows.openPartner(store, slug);
+          if (window.PulseWindows) window.PulseWindows.openPartner(slug);
         });
         layer.appendChild(tether);
         layer.appendChild(card);
@@ -1466,8 +1476,7 @@
           opp ? Number(opp) : null,
         );
         const worker = q.get('worker');
-        if (worker)
-          window.PulseWindows.openWorker(store, worker, partner, partner);
+        if (worker) window.PulseWindows.openWorker(worker, partner, partner);
       }
 
       // ?opportunity=<id>&fit=60 -- the whole life of one engagement, its

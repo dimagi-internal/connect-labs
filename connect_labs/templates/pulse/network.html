@@ -41,6 +41,15 @@ shows a funder, and the labs navigation bar has no business above it.
   <script>window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";</script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
   <script src="{% static 'maps/connect_map.js' %}"></script>
+  {% comment %}
+  The partner window is Pulse's own: windows.js, its formatting helpers from
+  cards.js, and the town gazetteer those helpers label points with. Loading
+  them here is what lets a partner open in place instead of sending someone to
+  the wall display to see the same thing.
+  {% endcomment %}
+  <script src="{% static 'pulse/towns.js' %}"></script>
+  <script src="{% static 'pulse/cards.js' %}"></script>
+  <script src="{% static 'pulse/windows.js' %}"></script>
   <script src="{% static 'pulse/network.js' %}"></script>
 </body>
 </html>
