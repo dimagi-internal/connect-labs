@@ -2701,7 +2701,15 @@ class PipelineDataAccess(BaseDataAccess):
             app_id_source=data_source_dict.get("app_id_source", ""),
             gs_app_id=data_source_dict.get("gs_app_id", ""),
             experiment_id=data_source_dict.get("experiment_id", ""),
-            api_key=data_source_dict.get("api_key", ""),
+            # Credential comes from CONFIGURATION, never from a stored schema.
+            # A workflow template is version-controlled source and a stored
+            # schema is a database row a user can read; a key written into
+            # either is a key that leaks, and one committed to git stays in
+            # history after it is removed. A schema may still name an explicit
+            # key to reach a NON-default OCS instance; when it does not, use
+            # the configured one. (2026-09-07: the interviews_reporting_v2
+            # template carried a live OCS key inline since 2026-06-30.)
+            api_key=data_source_dict.get("api_key") or settings.OCS_API_KEY,
             endpoint=data_source_dict.get("endpoint", ""),
             case_type=data_source_dict.get("case_type", ""),
             form_lookback_days=data_source_dict.get("form_lookback_days", 0) or 0,
