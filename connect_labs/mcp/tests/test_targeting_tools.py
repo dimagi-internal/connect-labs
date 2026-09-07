@@ -216,6 +216,41 @@ class TestScenario:
         assert by_column["absorbable_usd"] == by_basis["absorbable_usd"] == 6000
 
 
+class TestAdminLevelsSelectability:
+    """`loaded` reports every source; targeting can only select on geoBoundaries.
+
+    That distinction used to live in the last sentence of a note about
+    double-counting, and it is the sentence that decides whether an admin_level
+    can be asked for at all. Six countries — Nigeria, DR Congo, Kenya, Côte
+    d'Ivoire, Mozambique and CAR — carry an ADM2 under a different source and
+    none under geoBoundaries, so `loaded` advertises districts that targeting
+    drops the country for.
+    """
+
+    def test_it_separates_levels_targeting_can_use_from_levels_it_cannot(self):
+        from connect_labs.labs.admin_boundaries.models import AdminBoundary
+        from connect_labs.labs.indicators.tests.test_resolve import _square
+
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        make_boundary("NGA", 1, "Kano", "NGA-1-1", x=2)
+        # An ADM2 that exists, under a source targeting does not select on.
+        AdminBoundary.objects.create(
+            iso_code="NGA",
+            admin_level=2,
+            name="Some LGA",
+            source=AdminBoundary.Source.GEOPODE,
+            boundary_id="NGA-2-geopode-1",
+            geometry=_square(4, 0),
+        )
+
+        got = targeting.targeting_admin_levels(None, iso_codes=["NGA"])
+
+        assert got["selectable_by_targeting"]["NGA"]["levels"] == [0, 1]
+        assert got["selectable_by_targeting"]["NGA"]["levels_only_in_other_sources"] == [2]
+        # ...and the raw view still shows it, so nothing is hidden.
+        assert got["loaded"]["NGA"]["geopode"]["ADM2"] == 1
+
+
 class TestSchemaMatchesImplementation:
     """The schema is the only surface an MCP caller has.
 
@@ -391,6 +426,50 @@ class TestCompareCriteria:
         assert "NOT a finding" in got["advice"]
         # The old sentence must not be reachable in this state.
         assert "selected by every screen" not in got["advice"]
+
+    def test_a_country_with_no_boundary_at_the_pinned_level_is_named_not_dropped(self):
+        """Pinning a level a country lacks used to remove it with no trace.
+
+        Subnational spans levels (1, 2) and there is no ADM0 to fall back to, so
+        a country with no ADM2 produced no units and hit a bare ``continue``. It
+        was not in countries_unsupported (the method CAN answer it) and not in
+        skipped_no_data (that needs units to evaluate), so a level-2 answer
+        quietly excluded it and read as "nothing there qualifies".
+
+        Live: Nigeria and Kenya carry ADM2 in geopode but NOT in geoBoundaries,
+        which is what targeting selects on -- so admin_level=2 returned zero for
+        both, while targeting_admin_levels still advertised 774 and 316 units.
+        """
+        make_boundary("LBR", 0, "Liberia", "LBR-0", x=0)
+        county = make_boundary("LBR", 1, "Bong", "LBR-1-1", x=2)
+        district = make_boundary("LBR", 2, "Jorwah", "LBR-2-1", x=3)
+        set_value(county, "ors_coverage", 30.0, source=Source.DHS)
+        set_value(district, "ors_coverage", 30.0, source=Source.DHS)
+        set_value(district, "pop_u5", 1000, source=Source.WORLDPOP_RASTER)
+        # Nigeria is answerable at ADM1 and has no ADM2 at all.
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=10)
+        state = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=12)
+        set_value(state, "ors_coverage", 30.0, source=Source.DHS)
+        set_value(state, "pop_u5", 5000, source=Source.WORLDPOP_RASTER)
+
+        pinned = targeting.targeting_select(
+            None, indicator="ors_coverage", threshold=50, iso_codes=["LBR", "NGA"], admin_level=2
+        )
+
+        assert "Nigeria" in pinned["countries_missing_level"]
+        assert "Nigeria" not in pinned["countries_unsupported"], "the method can answer Nigeria"
+        assert "Liberia" not in pinned["countries_missing_level"], "Liberia has an ADM2"
+
+    def test_without_a_pinned_level_nothing_is_reported_as_missing(self):
+        """The field describes a pinning decision, not a property of the data."""
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=10)
+        state = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=12)
+        set_value(state, "ors_coverage", 30.0, source=Source.DHS)
+
+        got = targeting.targeting_select(None, indicator="ors_coverage", threshold=50, iso_codes=["NGA"])
+
+        assert got["countries_missing_level"] == []
+        assert got["rows_total"] >= 1, "unpinned, Nigeria answers at ADM1"
 
     def test_a_genuinely_empty_comparison_is_not_marked_unanswerable(self):
         """Answerable screens that simply keep nothing stay a real finding."""

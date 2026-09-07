@@ -218,10 +218,13 @@ def targeting_indicators(user, *, indicator=None):
                 "type": "integer",
                 "description": (
                     "Pin the level selected on: 1 for regions, 2 for districts. Omit to let "
-                    "each row sit at the coarsest unit that is honestly describable. NOTE: "
-                    "indicators resolve to ADM1 at best, so admin_level 2 will usually select "
-                    "nothing and return 'empty_because_unanswerable': true — that is the "
-                    "question being unaskable, not a finding."
+                    "each row sit at the coarsest unit that is honestly describable. Targeting "
+                    "selects on geoBoundaries, and not every country has an ADM2 there — one "
+                    "that does not is DROPPED from a level-2 answer entirely (subnational spans "
+                    "levels 1-2 with no national fallback). Read 'countries_missing_level' "
+                    "before concluding anything from a small level-2 result: Nigeria and Kenya "
+                    "land there, and targeting_admin_levels will still show them an ADM2 under "
+                    "a different source."
                 ),
             },
             "rollup": {
@@ -309,6 +312,11 @@ def targeting_select(
         "countries_partly_above": selection.countries_partly_above,
         "countries_unsupported": selection.countries_unsupported,
         "countries_supported": selection.countries_supported,
+        # Answerable countries dropped only because they have no boundary at the
+        # pinned admin_level. Not "unsupported" (the method can answer them) and
+        # not "no data" (there were no units to evaluate), so without this they
+        # vanished from the answer leaving no trace anywhere.
+        "countries_missing_level": selection.countries_missing_level,
         # Zero rows means one of two opposite things and the caller cannot tell
         # them apart from the numbers: nowhere met the threshold (a finding), or
         # nothing in scope could be asked (not a finding). A model summarising
@@ -555,9 +563,11 @@ def targeting_scenario(
     },
 )
 def targeting_admin_levels(user, *, iso_codes):
+    """Levels loaded per source, and which of them targeting can actually use."""
     from collections import defaultdict
 
     from connect_labs.labs.admin_boundaries.models import AdminBoundary
+    from connect_labs.labs.indicators.boundaries import SOURCE as TARGETING_BOUNDARY_SOURCE
 
     wanted = [c.upper() for c in iso_codes]
     loaded: dict[str, dict] = defaultdict(dict)
@@ -570,12 +580,40 @@ def targeting_admin_levels(user, *, iso_codes):
     for (iso, source, level), n in counts.items():
         loaded[iso].setdefault(source, {})[f"ADM{level}"] = n
 
+    # `loaded` reports every source, and only geoBoundaries is selectable. That
+    # distinction lived in the note's last sentence, and a reader who saw
+    # "NGA geopode ADM2: 774" reasonably concluded districts were available for
+    # Nigeria. They are not: pinning admin_level=2 drops Nigeria from the answer
+    # entirely. So say it per country, in the payload, rather than asking the
+    # reader to cross-reference a caveat against a dict.
+    selectable = {}
+    for iso in wanted:
+        gb = (loaded.get(iso) or {}).get(TARGETING_BOUNDARY_SOURCE) or {}
+        levels = sorted(int(k[3:]) for k in gb)
+        elsewhere = sorted(
+            {
+                int(lvl[3:])
+                for src, by_level in (loaded.get(iso) or {}).items()
+                if src != TARGETING_BOUNDARY_SOURCE
+                for lvl in by_level
+            }
+            - set(levels)
+        )
+        selectable[iso] = {"levels": levels, "levels_only_in_other_sources": elsewhere}
+
     return {
         "loaded": {iso: loaded.get(iso, {}) for iso in wanted},
+        # The answer to "can I ask for districts here?" -- read this, not `loaded`.
+        "selectable_by_targeting": selectable,
         "note": (
             "AdminBoundary is shared across labs apps and holds several sources — they are "
             "alternative tessellations of the same land, not a hierarchy. Never mix two "
-            "sources inside one count or it double-counts. Targeting uses geoBoundaries."
+            "sources inside one count or it double-counts. Targeting selects on "
+            f"{TARGETING_BOUNDARY_SOURCE} ONLY, so read 'selectable_by_targeting' to decide "
+            "what admin_level to ask for: a level listed under "
+            "'levels_only_in_other_sources' exists in the database but targeting cannot "
+            "select on it, and pinning it DROPS that country from the answer rather than "
+            "falling back to a coarser row (it comes back in 'countries_missing_level')."
         ),
     }
 
@@ -820,9 +858,9 @@ def targeting_research_write(
         "agreement figure: a screen that could not be asked in the scope requested keeps "
         "nothing, which silently inflates how much the remaining screens appear to agree. "
         "When every screen is unanswerable the result is NOT a finding that no area "
-        "qualifies — the usual cause is an admin_level finer than the indicator supports, "
-        "since indicators resolve to ADM1 at best even where boundaries and population "
-        "reach ADM2."
+        "qualifies. Also read 'countries_missing_level': targeting selects on geoBoundaries, "
+        "so a country with no ADM2 there is dropped from a level-2 answer entirely rather "
+        "than falling back to a coarser row."
     ),
     input_schema={
         "type": "object",
@@ -847,9 +885,10 @@ def targeting_research_write(
             "admin_level": {
                 "type": "integer",
                 "description": (
-                    "Pin the level compared on: 1 for regions, 2 for districts. Indicators "
-                    "resolve to ADM1 at best, so 2 usually leaves every screen unanswerable "
-                    "-- check 'unanswerable_screens' rather than reading zeros as a finding."
+                    "Pin the level compared on: 1 for regions, 2 for districts. Targeting "
+                    "selects on geoBoundaries; a country with no ADM2 there is dropped from a "
+                    "level-2 answer rather than downgraded, so check 'countries_missing_level' "
+                    "on each screen before reading a small result as a finding."
                 ),
             },
         },
@@ -914,11 +953,13 @@ def targeting_compare_criteria(
                 # comparison run at a level or in a scope the indicator cannot answer
                 # returns zeros that read as a finding -- "nowhere is kept by every
                 # screen" -- when the truth is that the question was never asked. The
-                # common way in is admin_level=2: indicators resolve to ADM1 at best,
-                # while boundaries and population go to ADM2, so the caller has every
-                # reason to think districts are available.
+                # The common way in is a scope the method cannot answer at all. A
+                # pinned admin_level a country lacks is reported separately, in
+                # countries_missing_level -- that country is answerable, it just has
+                # no boundary at the level asked for.
                 "empty_because_unanswerable": bool(not selection.area_count and not selection.countries_supported),
                 "countries_unsupported": selection.countries_unsupported,
+                "countries_missing_level": selection.countries_missing_level,
                 "_kept": kept,
             }
         )
@@ -956,11 +997,11 @@ def targeting_compare_criteria(
             "This comparison could not be run: "
             + ", ".join(repr(lbl) for lbl in unanswerable)
             + " cannot be answered anywhere in the scope requested, so there is nothing to "
-            "compare. This is NOT a finding that no area qualifies. The usual cause is an "
-            "admin_level finer than the indicator supports -- indicators resolve to ADM1 at "
-            "best, even where boundaries and population go to ADM2 -- or a country filter the "
-            "method does not cover. Widen the scope, or call targeting_admin_levels and "
-            "targeting_indicators to see what can be answered."
+            "compare. This is NOT a finding that no area qualifies. The usual cause is a "
+            "country filter the method cannot answer; if you pinned an admin_level, check "
+            "'countries_missing_level' as well -- targeting selects on geoBoundaries and a "
+            "country with no ADM2 there is dropped from a level-2 answer outright. Widen the "
+            "scope, or call targeting_indicators to see what can be answered."
         )
     elif unanswerable:
         advice = (

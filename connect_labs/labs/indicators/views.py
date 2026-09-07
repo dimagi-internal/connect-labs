@@ -458,6 +458,12 @@ class SelectionView(OpenLocallyMixin, View):
                 "countries_fully_above": selection.countries_fully_above,
                 "countries_partly_above": selection.countries_partly_above,
                 "skipped_no_data": selection.skipped_no_data,
+                # Answerable countries with no boundary at the pinned level.
+                # Without this the level-2 view silently omits Nigeria and Kenya
+                # -- neither has an ADM2 in geoBoundaries, which is what
+                # targeting selects on -- and the map reads as though those
+                # countries had simply been screened out.
+                "countries_missing_level": selection.countries_missing_level,
                 "selected_pks": [a.boundary.pk for a in selection.areas],
                 "rows": [
                     {

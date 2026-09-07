@@ -491,6 +491,16 @@ class Selection:
     #: question rather than a differently-shaped one.
     rolled_up: bool = True
     pinned_level: int | None = None
+    #: Countries the METHOD can answer, dropped anyway because they have no
+    #: boundaries at the pinned ``admin_level``. Subnational spans levels (1, 2)
+    #: only -- there is no ADM0 to fall back to -- so pinning a level a country
+    #: lacks removed it from the answer with no trace in any other field:
+    #: not ``countries_unsupported`` (the method CAN answer it) and not
+    #: ``skipped_no_data`` (that needs units to evaluate). Nigeria and Kenya
+    #: carry ADM2 in geopode but not in geoBoundaries, which is what targeting
+    #: selects on, so admin_level=2 silently answered "nothing qualifies" for
+    #: the two largest countries in scope.
+    countries_missing_level: list[str] = field(default_factory=list)
 
     @property
     def area_count(self) -> int:
@@ -706,6 +716,7 @@ def select_above(
     fully: list[str] = []
     partly: list[str] = []
     skipped: list[str] = []
+    missing_level: list[str] = []
 
     for iso in sorted(by_iso):
         adm0 = (by_iso[iso].get(0) or [None])[0]
@@ -750,6 +761,11 @@ def select_above(
 
         units = subs or ([adm0] if adm0 is not None else [])
         if not units:
+            # Nothing to evaluate. When the caller PINNED a level, that is a
+            # fact about our boundary coverage rather than about the country,
+            # and it must not read as "nothing qualified here".
+            if admin_level is not None:
+                missing_level.append(cname)
             continue
 
         evaluated = [(b, r) for b in units if (r := rate_bulk.get(indicator, b)) is not None]
@@ -888,6 +904,7 @@ def select_above(
         resolution=chosen.resolution.value if chosen else "",
         countries_unsupported=unsupported,
         countries_supported=answerable,
+        countries_missing_level=sorted(missing_level),
         projected_to=target_year,
         projected_without_rate=projected_without_rate,
         rolled_up=rollup,
