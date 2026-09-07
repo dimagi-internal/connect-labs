@@ -302,8 +302,33 @@ class ExperimentBulkAssessmentView(LoginRequiredMixin, DetailView):
         session_id = self.kwargs.get("pk")
         data_access = AuditDataAccess(request=self.request)
         try:
-            # Try to find the session across all opportunities the user has access to
-            session = data_access.get_audit_session(session_id)
+            # Hand the ladder the scope our own URL already carries.
+            #
+            # Without it this call is the ONLY session lookup in this module with
+            # no rung-0 hint -- every other one passes _session_opportunity_hint --
+            # and it is the one that can least afford to skip it, because it runs
+            # BEFORE the page exists and so cannot reuse a resolved session. A
+            # PROGRAM-scoped caller misses rung 2 (an *opportunity* scope) by
+            # construction and falls all the way to the bounded sweep, which costs
+            # one upstream request per candidate opportunity.
+            #
+            # Measured 2026-09-07 (#1169): 408-411 upstream calls per page open,
+            # 54-86 s each, 97-98% of it in outbound_ms; 55 loads by one auditor
+            # cost 22,490 calls at production Connect and 49 min of their waiting.
+            # Memoisation does not absorb it -- it is keyed per session id and each
+            # page open is a different session.
+            #
+            # Links into this page set ?opportunity_id= (kmc_flw_flags,
+            # kmc_image_audit, bulk_image_audit); the ones that do not simply get
+            # today's behaviour, since a missing hint falls through to the same
+            # ladder. Untrusted by construction, exactly as for the POST paths: the
+            # fetch still goes out with the caller's own token and the server still
+            # runs its per-user check, so a wrong value costs one request and a
+            # forged one buys nothing.
+            session = data_access.get_audit_session(
+                session_id,
+                opportunity_id=_session_opportunity_hint(self.request, ("storage_opportunity_id", "opportunity_id")),
+            )
             if not session:
                 from django.http import Http404
 
@@ -374,8 +399,14 @@ class ExperimentBulkAssessmentView(LoginRequiredMixin, DetailView):
         return context
 
 
-def _session_opportunity_hint(request) -> int | None:
+def _session_opportunity_hint(request, param_names=("storage_opportunity_id",)) -> int | None:
     """The storage opportunity the client already knows this session lives in.
+
+    ``param_names`` is the ordered list of request parameters to read, first
+    parseable one wins. It defaults to the explicit ``storage_opportunity_id``
+    that the bulk page's own JS attaches to every follow-up call. The PAGE
+    request itself carries the scope under the ordinary ``opportunity_id``
+    name instead -- see ExperimentBulkAssessmentView.get_object.
 
     Locating a session by id costs a request per candidate scope, because the
     export API authorizes on whichever scope it is handed and has no scope-free
@@ -394,11 +425,15 @@ def _session_opportunity_hint(request) -> int | None:
     per-user check, so a wrong value costs one request and a forged one buys
     nothing. Anything unparseable is simply dropped.
     """
-    raw = request.POST.get("storage_opportunity_id") or request.GET.get("storage_opportunity_id")
-    try:
-        return int(raw) if raw else None
-    except (TypeError, ValueError):
-        return None
+    for name in param_names:
+        raw = request.POST.get(name) or request.GET.get(name)
+        if not raw:
+            continue
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 class ExperimentSaveAuditView(LoginRequiredMixin, View):
