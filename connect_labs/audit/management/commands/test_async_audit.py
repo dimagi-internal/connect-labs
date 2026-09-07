@@ -43,7 +43,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--username",
             type=str,
-            help="Override username (e.g., jjackson@dimagi.com) if OAuth introspection returns wrong value",
+            help="Override username (e.g., admin@example.com) if OAuth introspection returns wrong value",
         )
         parser.add_argument(
             "--cleanup",
@@ -253,7 +253,7 @@ class Command(BaseCommand):
                     self.stdout.write(
                         self.style.ERROR(
                             "    [FAIL] No user profile cached and no --username provided\n"
-                            "    Please provide: --username=jjackson@dimagi.com"
+                            "    Please provide: --username=admin@example.com"
                         )
                     )
                     return None, None

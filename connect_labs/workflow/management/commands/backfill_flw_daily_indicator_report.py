@@ -32,10 +32,10 @@ Intended to be invoked once via the run-labs-command.yml GitHub Action
 against production, e.g.:
 
     backfill_flw_daily_indicator_report --definition 8061 --program 176 \\
-        --owner-email wvink@dimagi.com --days 14 --replace-existing
+        --owner-email analyst@example.com --days 14 --replace-existing
 
     backfill_flw_daily_indicator_report --definition 8061 --program 176 \\
-        --owner-email wvink@dimagi.com --days 40 --end-date 2026-07-16
+        --owner-email analyst@example.com --days 40 --end-date 2026-07-16
 """
 
 import json
