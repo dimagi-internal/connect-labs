@@ -82,7 +82,7 @@ region + dropped the action-mark → full-width curve). **EXTERNAL-published via
 `ddd-upload --release-approved`** (external_release gate created+resolved+audited,
 phase→uploaded), narrative v3 (ff96b68a).
 - /ddd package: `https://labs.connect.dimagi.com/canopy/w/connect/ddd/nutrition-demo/nutrition-demo-2026-07-22-003`
-- Clean release page (public, anon-viewable): `https://labs.connect.dimagi.com/canopy/ddd-release/nutrition-demo/nutrition-demo-2026-07-22-003?t=sl5hVRMl16ePd_-wHXFFrvVhzYqr80TB`
+- Clean release page (public, anon-viewable): `https://labs.connect.dimagi.com/canopy/ddd-release/nutrition-demo/nutrition-demo-2026-07-22-003?t=REDACTED-SEE-CANOPY-WEB`
   (narrative already public → publishing auto-minted is_public+share_token; anon
   access confirmed, scene-12 recovery curve renders).
 - Note: the WhyBrief "known gap G1" below is now BUILT (SAM Follow-up Timeline

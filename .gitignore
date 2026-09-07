@@ -406,19 +406,36 @@ scripts/walkthroughs/**/scenes.json
 .claude/settings.local.json
 .superpowers/
 
-# DDD run heavy artifacts (regenerable; keep verdicts/findings/manifest tracked)
+# DDD run artifacts. What we KEEP is the judgment record — verdicts, findings,
+# specs, run_state — because that is why a demo converged and it is not
+# regenerable. What we DROP is everything a re-render reproduces.
+#
+# This block used to be two, added months apart, and they contradicted each
+# other: one said "keep verdicts/findings/manifest tracked", the other said
+# "clips, snapshots and manifests ... are far too large to version". The second
+# was right and was never implemented — manifest.json was 20 files and 23.2 MB,
+# 94% of everything tracked under runs/, while the rules only ever excluded
+# media by extension. Merged into one list so the next person reads one rule
+# and one reason.
+#
+# Extension-based exclusion is also why a credential got published: share
+# tokens live in small YAML, so no size- or media-shaped rule was ever going to
+# catch them. Canopy should not be writing them into tracked files at all —
+# that fix belongs upstream, not here.
 .canopy/ddd/runs/**/*.mp4
 .canopy/ddd/runs/**/*.webm
 .canopy/ddd/runs/**/snapshots/*.png
+.canopy/ddd/runs/*/snapshots/
 # self-contained decks inline their images (multi-MB); published copy lives on canopy-web
 .canopy/ddd/runs/**/*_deck.html
 # per-scene page dumps: machine-generated, 5-19MB each, superseded by the published run package
 .canopy/ddd/runs/**/walkthrough-run-data.json
-
-# DDD run artifacts — clips, snapshots and manifests are regenerated per render
-# and are far too large to version. The recipe + lock are the durable pair.
-.canopy/ddd/runs/*/snapshots/
-.canopy/ddd/runs/*/*.mp4
+# the render input: regenerated every run, 1-1.5 MB each, and named as
+# unversionable by the comment that never ignored it
+.canopy/ddd/runs/**/manifest.json
+# bare pointer files whose only content is a tokened share URL
+.canopy/ddd/runs/**/.clip_url
+.canopy/ddd/runs/**/.deck_url
 
 # Botched redirect target (CLI token accidentally written to "-")
 /-
