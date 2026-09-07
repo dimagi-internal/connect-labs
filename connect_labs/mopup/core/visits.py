@@ -130,13 +130,10 @@ def build_evaluation_rows(work_areas: list[dict], visit_aggregates: dict[str, di
     `aggregate_visits_by_wa`'s per-WA visit aggregates into
     `core.indicators.evaluate_run`'s expected input shape.
 
-    `lat`/`lon` are left `None` — no work-area centroid/geometry source is
-    wired up yet (a real gap, not an oversight: see this function's own
-    module for the caveat). `evaluate_run`'s spatial neighbor graph already
-    degrades gracefully for WAs with no coordinates (they simply never get
-    spatial neighbors), so EVC-shortfall/NCF-inaccessible cluster-aware
-    detection is a no-op until that's wired up; the data-quality metrics'
-    cluster-aware mode (within-FLW portfolio, not spatial) is unaffected."""
+    `lat`/`lon`/`boundary` are left `None`/unset here — `core/candidates.py`'s
+    `build_evaluation_input` merges those in afterwards from
+    `core.geometry.fetch_work_area_geometry` (this function only knows about
+    case data + visit aggregates, not geometry)."""
     zero_agg = {
         "approved_hsd_count": 0,
         "approved_ncf_count": 0,
