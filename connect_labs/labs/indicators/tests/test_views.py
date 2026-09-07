@@ -304,8 +304,8 @@ class TestSourceColumns:
         resp = client_in.get(reverse("targeting:download"), {"threshold": 80, "format": "csv"})
         rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
 
-        assert rows[0]["U5MR source"] == "UN IGME (subnational model)"
-        assert rows[0]["U5MR source link"] == "https://dhsprogram.com/x.cfm"
+        assert rows[0]["Source"] == "UN IGME (subnational model)"
+        assert rows[0]["Source link"] == "https://dhsprogram.com/x.cfm"
 
     def test_csv_names_the_method_that_produced_each_row(self, client_in):
         """The CSV is the copy that leaves the building, without the page beside it.
@@ -334,7 +334,7 @@ class TestSourceColumns:
         )
         rows = {r["Area"]: r for r in csv.DictReader(io.StringIO(resp.content.decode()))}
 
-        assert rows["Haut-Katanga"]["U5MR method"] == "Survey as measured"
+        assert rows["Haut-Katanga"]["Method"] == "Survey as measured"
         assert ineligible.name not in rows
 
     def test_a_legitimately_inherited_row_says_where_it_was_measured(self, client_in):
@@ -357,7 +357,7 @@ class TestSourceColumns:
         rows = {r["Area"]: r for r in csv.DictReader(io.StringIO(resp.content.decode()))}
 
         assert "Borrowing" in rows
-        assert rows["Borrowing"]["U5MR measured at"] == "Tanzania (ADM0)"
+        assert rows["Borrowing"]["Measured at"] == "Tanzania (ADM0)"
 
     def test_row_values_are_escaped_before_reaching_innerHTML(self, client_in):
         """Source text is server data, but the table builds HTML by hand.
@@ -947,3 +947,51 @@ class TestABareLinkLandsSomewhereUsable:
         assert r["methods"]["subnational_igme"]["countries_available"] == 0
         usable = [c for c, m in r["methods"].items() if m["countries_available"]]
         assert "subnational_survey" in usable
+
+
+class TestTheExportNamesTheMeasureItCarries:
+    """The .zip is the copy that leaves the building.
+
+    Every column heading was a literal: an ORS export arrived with a column
+    called "Under-5 mortality (per 1,000)" holding a percentage of treated
+    children, six more headed "U5MR", and a caveats section warning that "a
+    survey's under-5 mortality rate covers several years before fieldwork" —
+    true, and about a different number. The same mistake the map tooltip made,
+    in the artifact a funder reads without the page beside it.
+    """
+
+    def _selection(self, indicator, threshold):
+        from connect_labs.labs.indicators.resolve import select_above
+
+        return select_above(indicator=indicator, threshold=threshold, iso_codes=["NER", "NGA"])
+
+    def test_the_value_column_is_named_after_the_measure(self, africa):
+        from connect_labs.labs.indicators import export
+
+        cols = dict(export.columns_for(self._selection("u5mr", 50)))
+        assert cols["u5mr"] == "Under-5 mortality rate (per 1,000 live births)"
+
+    def test_a_different_measure_gets_a_different_heading(self, africa):
+        from connect_labs.labs.indicators import export
+
+        cols = dict(export.columns_for(self._selection("ors_coverage", 90)))
+        assert cols["u5mr"] == "ORS treatment coverage (% of under-5s with diarrhoea)"
+        assert "mortality" not in cols["u5mr"].lower()
+
+    def test_provenance_columns_are_generic(self, africa):
+        """An export carries one indicator, so "Source" is unambiguous and
+        "ORS treatment coverage source detail" is only longer."""
+        from connect_labs.labs.indicators import export
+
+        cols = dict(export.columns_for(self._selection("ors_coverage", 90)))
+        for key in ("u5mr_method", "u5mr_source", "u5mr_year", "u5mr_measured_at"):
+            assert not cols[key].startswith("U5MR"), cols[key]
+
+    def test_the_caveats_do_not_lecture_about_mortality_for_an_ors_export(self, africa):
+        from connect_labs.labs.indicators import export
+
+        md = export.to_methodology(self._selection("ors_coverage", 90))
+        caveats = md.split("## Caveats worth carrying")[1]
+
+        assert "under-5 mortality rate covers" not in caveats
+        assert "ORS treatment coverage" in caveats

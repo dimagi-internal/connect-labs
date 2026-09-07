@@ -23,16 +23,22 @@ COLUMNS = [
     ("area", "Area"),
     ("level", "Admin level"),
     ("scope", "Row covers"),
+    # The value column and its provenance. The keys stay `u5mr_*` because that
+    # is what `_rows` builds; the HEADINGS come from the selected measure —
+    # see `columns_for`. They used to be literal: an ORS export arrived with a
+    # column called "Under-5 mortality (per 1,000)" holding a percentage of
+    # treated children, and six more headed "U5MR". That is the same mistake
+    # the map tooltip made, in the artifact that leaves the building.
     ("u5mr", "Under-5 mortality (per 1,000)"),
     ("u5mr_ci", "Confidence interval"),
     ("u5mr_within_uncertainty", "Within uncertainty of threshold"),
-    ("u5mr_method", "U5MR method"),
-    ("u5mr_source", "U5MR source"),
-    ("u5mr_source_detail", "U5MR source detail"),
-    ("u5mr_year", "U5MR survey year"),
-    ("u5mr_adjustment", "U5MR adjustment"),
-    ("u5mr_source_url", "U5MR source link"),
-    ("u5mr_measured_at", "U5MR measured at"),
+    ("u5mr_method", "Method"),
+    ("u5mr_source", "Source"),
+    ("u5mr_source_detail", "Source detail"),
+    ("u5mr_year", "Survey year"),
+    ("u5mr_adjustment", "Adjustment"),
+    ("u5mr_source_url", "Source link"),
+    ("u5mr_measured_at", "Measured at"),
     ("expected_deaths", "Est. annual under-5 deaths"),
     ("ors_gap_children", "Children with untreated diarrhoea"),
     # The fortnight figure beside it, over a year. Both travel, because the
@@ -129,10 +135,23 @@ def _rows(selection: Selection):
         }
 
 
+def columns_for(selection: Selection) -> list[tuple[str, str]]:
+    """The columns, with the value column named after the measure selected.
+
+    Everything else is generic on purpose: an export carries one indicator, so
+    "Source" is unambiguous and "ORS treatment coverage source detail" is only
+    longer.
+    """
+    m = measures.get(selection.indicator)
+    heading = f"{m.label} ({m.unit})" if m.unit else m.label
+    return [(k, heading if k == "u5mr" else label) for k, label in COLUMNS]
+
+
 def to_csv(selection: Selection) -> str:
     buf = io.StringIO()
-    w = csv.DictWriter(buf, fieldnames=[k for k, _ in COLUMNS], extrasaction="ignore")
-    w.writerow({k: label for k, label in COLUMNS})
+    cols = columns_for(selection)
+    w = csv.DictWriter(buf, fieldnames=[k for k, _ in cols], extrasaction="ignore")
+    w.writerow({k: label for k, label in cols})
     for row in _rows(selection):
         w.writerow(row)
     return buf.getvalue()
@@ -331,17 +350,28 @@ def to_methodology(selection: Selection, *, alternatives: bool = True) -> str:
             )
 
     add("## Caveats worth carrying\n")
+    # Named for the measure that was actually selected. These read as a
+    # mortality briefing whatever you exported: an ORS selection arrived
+    # warning that "a survey's under-5 mortality rate covers several years
+    # before fieldwork", which is true, and about a different number.
+    measure = measures.get(selection.indicator)
     add(
-        "- **Mortality is measured at ADM1 at best.** Where a region has no survey of "
-        "its own, the national estimate is applied to it; the `U5MR measured at` "
-        "column says so per row. No sub-regional mortality is implied.\n"
-        "- **DHS rates are period estimates.** A survey's under-5 mortality rate covers "
-        "several years before fieldwork, not the survey year alone. It is stored "
-        "against the survey year because that is how people refer to it.\n"
+        f"- **{measure.label} is measured at ADM1 at best.** Where a region has no "
+        "reading of its own it takes a coarser one, and the `Measured at` column says "
+        "so per row. No finer variation is implied than the source can support.\n"
+    )
+    if selection.indicator in measures.LOWER_IS_WORSE or measure.kind is measures.Kind.RATE:
+        add(
+            "- **Survey figures are period estimates.** A survey describes the window it "
+            "asked about, not the year it was published. It is stored against the survey "
+            "year because that is how people refer to it.\n"
+        )
+    add(
         "- **Population is modelled.** WorldPop disaggregates census counts onto a 100 m "
         "grid; totals for small areas carry more uncertainty than national figures.\n"
-        "- **Years are not aligned.** Mortality comes from the most recent survey, which "
-        "differs by country; population is WorldPop 2020. Both years are shown.\n"
+        f"- **Years are not aligned.** {measure.label} comes from the most recent source "
+        "for each country, which differs; population is WorldPop 2020. Both years are "
+        "shown.\n"
     )
 
     non_commercial = [v for v in _sources_used(selection) if v.license_code in NON_COMMERCIAL]
