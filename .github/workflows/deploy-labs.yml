@@ -9,26 +9,63 @@ on:
         required: true
         default: false
 
-# HISTORY, because the reasoning here inverted and the old comment would now
-# mislead. This workflow used to do a HARD CUTOVER: stop every running task, then
-# force a new deployment. That guaranteed ~10s of downtime on every deploy, and
-# two overlapping cutovers could leave 0 healthy tasks behind the ALB — a
-# site-wide 503 (observed 2026-07-01: 3 deploys in ~13 min). The response at the
-# time was to serialise: one lane, never cancel, queue each cutover behind the
-# last.
+# CONCURRENCY LIVES ON THE JOBS, NOT HERE, and the split is the whole point.
 #
-# The cutover was the problem, not the concurrency. Fargate replaces tasks
-# gracefully by itself, so dropping the stop-task loop removes the downtime AND
-# the reason deploys had to run one at a time. See the deploy step below.
-# With the rolling deploy above, overlapping runs are no longer capable of
-# emptying the service, so this group exists to avoid WASTED work rather than to
-# prevent an outage. cancel-in-progress is true: when several merges land close
-# together -- the normal case when several people are shipping through agents --
-# only the newest image is worth deploying, and the superseded run should stop
-# rather than queue behind a 10-minute wait to ship code that is already stale.
-concurrency:
-  group: deploy-labs
-  cancel-in-progress: true
+# HISTORY, because the reasoning has now inverted twice and a stale comment here
+# would mislead. This workflow originally did a HARD CUTOVER: stop every running
+# task, then force a new deployment. That guaranteed ~10s of downtime on every
+# deploy, and two overlapping cutovers could leave 0 healthy tasks behind the ALB
+# — a site-wide 503 (observed 2026-07-01: 3 deploys in ~13 min). The response at
+# the time was to serialise: one lane, never cancel, queue each cutover behind
+# the last.
+#
+# Then the cutover was replaced by a rolling deploy (see "Deploy services"), and
+# the serialisation was dropped with it in favour of one workflow-level group
+# with `cancel-in-progress: true` — on the reasoning that when several merges
+# land close together only the newest image is worth deploying, so a superseded
+# run should stop rather than burn ten minutes shipping stale code.
+#
+# That reasoning is right about the BUILD and wrong about the ROLLOUT, and the
+# single workflow-level group could not tell them apart. Measured over the 27
+# cancelled runs to 2026-09-07:
+#
+#     14  Wait for services to reach steady state   <-- cutover already ISSUED
+#      7  Build and push Docker image
+#      6  everything else (ECR checks, buildx, setup)
+#
+# So the majority case was not "stop a wasted build". It was killing the run
+# DURING an in-flight ECS rollout — which is precisely the thing the steady-state
+# waiter exists to prevent, and its own comment says so: without that block "the
+# next queued deploy could start its own cutover on top of an in-flight one — the
+# overlap that causes the 503". `cancel-in-progress: true` reintroduced that
+# overlap by killing the waiter and releasing the lock early. Two further costs:
+# a rollout cancelled at the waiter is never verified (a crash-looping task or a
+# circuit-breaker rollback reads as "cancelled — superseded, fine"), and nobody,
+# human or agent, can tell from the run whether their code actually shipped. The
+# session transcripts show agents doing git-ancestry archaeology to work it out,
+# five superseded runs in one session.
+#
+# Hence two groups, one per phase:
+#
+#   build   cancel-in-progress: true   — supersede freely. Nothing outside
+#                                        GitHub has been touched yet; the only
+#                                        loss is runner minutes, which is the
+#                                        case the 2026-07 change was right about.
+#   release cancel-in-progress: false  — once migrations or an ECS cutover are
+#                                        in flight, this run finishes. A newer
+#                                        run QUEUES behind it and deploys after.
+#
+# GitHub keeps at most one pending job per group and cancels an older pending
+# one, so "newest wins" still holds — but it is now decided while the superseded
+# run is still PENDING and has touched nothing, instead of mid-rollout. Cancelling
+# a pending job is free; cancelling a rollout is not. That distinction is the
+# entire fix, and collapsing these back into one workflow-level group undoes it.
+#
+# Ordering is monotonic and does not need a separate lock: two builds share the
+# build group, so an older build is cancelled by a newer one and never reaches
+# release. A release only ever runs for a build that was the newest at its own
+# completion. (The "already live" guard in the release job is a tripwire under
+# that argument, not a substitute for it.)
 
 env:
   AWS_REGION: us-east-1
@@ -66,10 +103,18 @@ jobs:
           fi
           echo "ref OK — proceeding to deploy"
 
-  deploy:
-    name: Deploy to Fargate
+  # PHASE 1 — build. Cancellable on purpose: nothing here has touched AWS state
+  # beyond pushing an image, so a superseded run is pure wasted runner time and
+  # stopping it is the right call. Everything that MUTATES the running service
+  # lives in `release` below, which is not cancellable.
+  build:
+    name: Build and push image
     needs: guard
     runs-on: ubuntu-latest
+
+    concurrency:
+      group: deploy-labs-build
+      cancel-in-progress: true
 
     permissions:
       id-token: write
@@ -78,10 +123,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-        with:
-          # Full history so the migration auto-detect step can diff against the
-          # SHA currently deployed (read from the registered task definition).
-          fetch-depth: 0
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
@@ -205,6 +246,83 @@ jobs:
           cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:buildcache
           cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:buildcache,mode=max
 
+  # PHASE 2 — release. NOT cancellable, deliberately. Every step below either
+  # writes to the database or moves the running service, and each one has a
+  # window in which being killed leaves something half-done that nothing reports:
+  #
+  #   Run database migrations      the GitHub job dies but the ECS migrate task
+  #                                keeps running; a superseding run can then start
+  #                                a SECOND concurrent migrate against the same DB
+  #   Deploy services              cancel between the web and worker
+  #                                `update-service` calls and the two are left on
+  #                                different task definitions — new web code, old
+  #                                worker, silently
+  #   Wait for services to be stable  the rollout is never verified, and the lock
+  #                                is released so the next run cuts over on top of
+  #                                an in-flight one (14 of 27 cancelled runs)
+  #
+  # A newer run queues here instead of pre-empting, and deploys once this one is
+  # done. The wait is bounded by the steady-state waiter's own ~10 minute cap.
+  release:
+    name: Migrate and roll out
+    needs: build
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: deploy-labs-release
+      cancel-in-progress: false
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          # Full history so the migration auto-detect step can diff against the
+          # SHA currently deployed (read from the registered task definition).
+          fetch-depth: 0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # A tripwire, not a mechanism. The build group already guarantees an older
+      # run is cancelled before it can reach this job, so this should never fire
+      # — but the failure it guards against is a SILENT one (prod quietly moves
+      # backwards and every step still reports green), and that class is worth
+      # ten lines. Equal SHAs pass: re-deploying the live commit is legitimate.
+      - name: Refuse to deploy behind what is already live
+        run: |
+          SERVICE_TD=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_WEB_SERVICE }} \
+            --query 'services[0].taskDefinition' --output text 2>/dev/null) || true
+          LIVE=""
+          if [ -n "$SERVICE_TD" ] && [ "$SERVICE_TD" != "None" ]; then
+            LIVE_IMAGE=$(aws ecs describe-task-definition \
+              --task-definition "$SERVICE_TD" \
+              --query 'taskDefinition.containerDefinitions[0].image' \
+              --output text 2>/dev/null) || true
+            LIVE="${LIVE_IMAGE##*:}"
+          fi
+          if ! echo "$LIVE" | grep -qE '^[0-9a-f]{40}$' || ! git cat-file -e "$LIVE" 2>/dev/null; then
+            echo "Live tag '${LIVE:-<none>}' is not a commit we can reason about — skipping the check."
+            exit 0
+          fi
+          if [ "$LIVE" = "$GITHUB_SHA" ]; then
+            echo "Re-deploying the live commit ($LIVE) — fine."
+          elif git merge-base --is-ancestor "$GITHUB_SHA" "$LIVE"; then
+            echo "::error::Production is already running $LIVE, which is AHEAD of this run's $GITHUB_SHA."
+            echo "::error::Deploying would move prod backwards. Re-run the workflow on current main."
+            exit 1
+          else
+            echo "This run ($GITHUB_SHA) is ahead of live ($LIVE) — proceeding."
+          fi
+
       - name: Register task definitions from repo
         id: taskdefs
         run: |
@@ -257,6 +375,12 @@ jobs:
           #
           # NB: read the service's task definition, not the latest registered
           # one — the register step above already points that at THIS deploy.
+          #
+          # This diff is only trustworthy because the release job is serialised.
+          # Run concurrently, it samples a service that another run is midway
+          # through moving, so "what is deployed" is a moving target and the
+          # answer is a skipped migration rather than an error. Queueing behind
+          # the previous release means the SHA read here is one that finished.
           if [ "${{ github.event.inputs.run_migrations }}" = "true" ]; then
             echo "Manual override: run_migrations=true"
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -551,6 +675,13 @@ jobs:
           # "success" while ECS is still rolling, releasing the concurrency
           # lock so the next queued deploy could start its own cutover on top
           # of an in-flight one — the overlap that causes the 503.
+          #
+          # That only holds if this waiter is allowed to FINISH, which is why the
+          # release job carries `cancel-in-progress: false`. Under the previous
+          # workflow-level `cancel-in-progress: true` a superseding run killed
+          # this step and took the lock — reproducing the exact overlap the
+          # paragraph above says it prevents, in 14 of 27 cancelled runs to
+          # 2026-09-07.
           #
           # `aws ecs wait services-stable` polls (~15s x 40 = up to 10 min)
           # until runningCount == desiredCount and only the PRIMARY deployment
