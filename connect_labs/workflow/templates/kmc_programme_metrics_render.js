@@ -97,6 +97,19 @@ function WorkflowUI({
     return OPP_LABEL[o] || 'opp ' + o;
   }
 
+  // Case count for a rollup row. A FROZEN run carries the indicator results but
+  // NOT the per-case rows -- a snapshot deliberately drops them -- so reading
+  // `rows.length` there renders a confident 0 next to a Started column reading
+  // 606, which is worse than showing nothing: it looks like a measurement.
+  // C01's denominator IS every case in the group, and it does survive the
+  // snapshot, so fall through to that before giving up.
+  function caseCount(g) {
+    if (g && g.rows && g.rows.length) return g.rows.length;
+    if (g && g.ind && g.ind['C01'] && typeof g.ind['C01'].n === 'number')
+      return g.ind['C01'].n;
+    return '\u2014';
+  }
+
   var MIN_DEN = 25;
 
   // ── App-structure capability map ──────────────────────────────────────────
@@ -1302,6 +1315,26 @@ function WorkflowUI({
   // The audit window is the worker's OWN data range, not a fixed lookback: a
   // frozen run is a snapshot of a past period, and a trailing-30-days window
   // would silently audit nothing on one.
+  // The span a snapshot covers, from its own monthly series. Months are 'YYYY-MM'
+  // keys, so the end is the last day of the last month rather than its first.
+  function frozenSpan() {
+    var ms = ((frozen && frozen.monthly) || [])
+      .map(function (m) {
+        return m.month;
+      })
+      .filter(Boolean)
+      .sort();
+    if (!ms.length) return null;
+    var last = String(ms[ms.length - 1]).slice(0, 7);
+    var endDay = new Date(
+      Date.UTC(Number(last.slice(0, 4)), Number(last.slice(5, 7)), 0),
+    ).getUTCDate();
+    return {
+      start: String(ms[0]).slice(0, 7) + '-01',
+      end: last + '-' + (endDay < 10 ? '0' : '') + endDay,
+    };
+  }
+
   function flwDateRange(f) {
     var ds = (f.rows || [])
       .map(function (r) {
@@ -1309,12 +1342,18 @@ function WorkflowUI({
       })
       .filter(Boolean)
       .sort();
-    return ds.length
-      ? {
-          start: String(ds[0]).slice(0, 10),
-          end: String(ds[ds.length - 1]).slice(0, 10),
-        }
-      : null;
+    if (ds.length)
+      return {
+        start: String(ds[0]).slice(0, 10),
+        end: String(ds[ds.length - 1]).slice(0, 10),
+      };
+    // A FROZEN run keeps the indicator results but drops the per-case rows, so a
+    // worker has no dated visits HERE -- which is not the same as having none.
+    // Refusing the audit was the wrong answer: the worker, the opportunity and
+    // the period are all still known, and the audit takes a date range, so fall
+    // back to the span the snapshot itself covers. Without this the drill dead-
+    // ends on exactly the run the demo opens with.
+    return frozenSpan();
   }
 
   function auditWorker(f) {
@@ -2775,9 +2814,21 @@ function WorkflowUI({
               }
               // One column per metric, one row per entity in the scope. At
               // programme scope that is a single row, which reads as the topline.
+              // FLW usernames are only unique WITHIN an opportunity -- the synthetic
+              // cohort reuses flw_001.. across all eleven -- so the username alone
+              // puts two different people on two rows reading the same name, with
+              // nothing on screen to tell them apart. Measured live: flw_001
+              // appeared twice in the first seven rows. The rollup elsewhere in this
+              // file keys on opp+username for exactly this reason; the label has to
+              // carry the same context or the drill points at the wrong person.
               var labelFor = function (r) {
                 if (nScope === 'opportunity') return oppLabel(r.opportunity_id);
-                if (nScope === 'flw') return r.username || '(unassigned)';
+                if (nScope === 'flw')
+                  return (
+                    (r.username || '(unassigned)') +
+                    ' \u00b7 ' +
+                    oppLabel(r.opportunity_id)
+                  );
                 return 'All opportunities';
               };
 
@@ -3115,7 +3166,7 @@ function WorkflowUI({
                             {l.opps.length}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {l.rows.length}
+                            {caseCount(l)}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {l.ind['C02'].value}
@@ -3234,7 +3285,7 @@ function WorkflowUI({
                             {oppLabel(o.opp)}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {o.rows.length}
+                            {caseCount(o)}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {fmt(IND[4], o.ind['C07'])}
@@ -3401,7 +3452,7 @@ function WorkflowUI({
                                     {f.flw}
                                   </td>
                                   <td className="px-3 py-2 text-right">
-                                    {f.rows.length}
+                                    {caseCount(f)}
                                   </td>
                                   <td className="px-3 py-2 text-right">
                                     {cell('C09')}
