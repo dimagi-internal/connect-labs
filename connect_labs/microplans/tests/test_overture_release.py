@@ -14,9 +14,17 @@ from connect_labs.microplans.core import overture
 
 
 def test_extract_regions_declare_the_release_they_were_cut_from():
-    """A region without a release would be used against any pin, serving stale data."""
+    """A region must state which release it was cut from, or it would be used
+    against any pin and serve stale buildings.
+
+    ``None`` is a legal value and means "declared, never cut" — it still fails
+    the match in covering_region(), so it routes to the live read exactly like a
+    stale one. What it must never be is ABSENT, which would KeyError at the
+    routing decision.
+    """
     for name, meta in overture.EXTRACT_REGIONS.items():
-        assert meta.get("release"), f"{name} extract has no release"
+        assert "release" in meta, f"{name} extract does not declare a release"
+        assert meta["release"] is None or isinstance(meta["release"], str)
         assert meta.get("bbox") and len(meta["bbox"]) == 4
 
 
@@ -99,3 +107,35 @@ def test_verify_release_quietly_does_not_touch_the_network(monkeypatch):
     monkeypatch.setattr(overture, "connect", boom)
     monkeypatch.setattr(overture, "available_releases", boom)
     overture.verify_release_quietly()
+
+
+def test_a_never_cut_region_is_not_reported_as_stale():
+    """Backlog and regression are different problems and must read differently.
+
+    ``stale_extracts()`` drives a warning on every fetch — it means "someone cut
+    this from a release we no longer read, go re-cut it". A country we simply
+    have not extracted yet is a backlog item; folding the two together would bury
+    a real regression under ten countries nobody has got to.
+    """
+    uncut = overture.uncut_regions()
+    stale = overture.stale_extracts()
+    assert not (set(uncut) & set(stale)), "a region cannot be both never-cut and stale"
+    for name in uncut:
+        assert overture.EXTRACT_REGIONS[name]["release"] is None
+
+
+def test_every_declared_region_has_a_usable_bbox():
+    """A bad bbox silently extracts the wrong ground, which no test downstream catches."""
+    for name, meta in overture.EXTRACT_REGIONS.items():
+        minx, miny, maxx, maxy = meta["bbox"]
+        assert minx < maxx and miny < maxy, f"{name} bbox is inverted"
+        assert -180 <= minx <= 180 and -180 <= maxx <= 180, f"{name} longitude out of range"
+        assert -90 <= miny <= 90 and -90 <= maxy <= 90, f"{name} latitude out of range"
+
+
+def test_an_uncut_region_never_routes_to_an_extract():
+    """Until it is cut, a declared region must still take the live read."""
+    for name in overture.uncut_regions():
+        bb = overture.EXTRACT_REGIONS[name]["bbox"]
+        inside = (bb[0] + 0.2, bb[1] + 0.2, bb[0] + 0.3, bb[1] + 0.3)
+        assert overture.covering_region(inside) != name
