@@ -126,3 +126,127 @@ def test_readings_without_a_path_is_refused_at_manifest_load():
 
     with pytest.raises(ValidationError, match="reading_path"):
         ImageConfig(question_path=PHOTO_PATH, corpus="scale", readings=READINGS)
+
+
+# ---------------------------------------------------------------------------
+# Weight-matched selection (#1558)
+#
+# Everything above pins "the entered value must agree with the photo". These pin
+# the other half, which round-robin quietly broke: the value they agree ON must
+# still be the one the COHORT generated. A KMC cohort sets mirror: true precisely
+# to reproduce a per-child weight-vs-age growth curve, and a photo drawn blind
+# and written over that weight turns the curve back into noise while every count
+# reports success.
+# ---------------------------------------------------------------------------
+
+# A pool spread across the birthweight-to-discharge range, so a near match exists
+# for each point on a growth curve rather than only at one weight.
+CURVE_READINGS = {
+    "synth-scale-good-001": 1400.0,
+    "synth-scale-good-002": 1600.0,
+    "synth-scale-good-003": 1800.0,
+    "synth-scale-good-004": 2000.0,
+    "synth-scale-bad-001": 1750.0,
+}
+
+
+def _curve_config(**over):
+    kw = dict(
+        good_image_count=4,
+        bad_image_count=1,
+        readings=CURVE_READINGS,
+        reading_match_tolerance=120.0,
+    )
+    kw.update(over)
+    return _scale_config(**kw)
+
+
+def _curve_visits(weights, username="asha"):
+    return [
+        {
+            "id": f"v{i}",
+            "username": username,
+            "form_json": {"form": {"anthropometric": {"child_weight_visit": w}}},
+        }
+        for i, w in enumerate(weights)
+    ]
+
+
+def _entered(visit):
+    return visit["form_json"]["form"]["anthropometric"]["child_weight_visit"]
+
+
+def test_weight_matching_preserves_the_growth_curve():
+    """The regression gate. A rising series must still rise after photos are attached.
+
+    Under round-robin the same series comes back ordered by the pool's rotation
+    instead, which is the defect: monotonically increasing weights are what the
+    KMC longitudinal view plots.
+    """
+    weights = [1410.0, 1590.0, 1810.0, 1990.0]
+    visits = _curve_visits(weights)
+    stats = assign_visit_images(visits, _curve_config(), random.Random(11))
+
+    assert stats["images_assigned"] == 4
+    assert stats["unmatched_visits"] == 0
+    after = [_entered(v) for v in visits]
+    assert after == sorted(after), f"growth curve was scrambled: {after}"
+    # Each visit kept its own weight to within the tolerance it was matched on.
+    for before, now in zip(weights, after):
+        assert abs(now - before) <= 120.0
+
+
+def test_weight_matching_still_agrees_with_the_photo():
+    """Curve preservation must not cost the AI-review guarantee — the entered value
+    still equals the value visible in the photo that was attached."""
+    visits = _curve_visits([1410.0, 1590.0, 1810.0])
+    assign_visit_images(visits, _curve_config(), random.Random(12))
+    for v in visits:
+        assert _entered(v) == CURVE_READINGS[v["images"][0]["blob_id"]]
+
+
+def test_bad_pool_still_disagrees_under_weight_matching():
+    """A bad-pool visit is still written a value its photo does not show, so an
+    agreement reviewer has something real to catch."""
+    visits = _curve_visits([1740.0, 1760.0], username="fatima")
+    stats = assign_visit_images(visits, _curve_config(flw_bad_rates={"fatima": 1.0}), random.Random(13))
+    assert stats["reading_mismatches"] == 2
+    for v in visits:
+        blob = v["images"][0]["blob_id"]
+        assert blob.startswith("synth-scale-bad-")
+        assert _entered(v) != CURVE_READINGS[blob]
+
+
+def test_a_weight_the_corpus_cannot_show_gets_no_photo():
+    """A thin corpus must surface as a coverage gap, never as rewritten data.
+
+    3200g is far outside a pool topping out at 2000g. The old behaviour attached
+    a photo anyway and moved the visit to whatever that photo read.
+    """
+    visits = _curve_visits([3200.0])
+    stats = assign_visit_images(visits, _curve_config(), random.Random(14))
+
+    assert stats["unmatched_visits"] == 1
+    assert stats["images_assigned"] == 0
+    assert "images" not in visits[0]
+    assert _entered(visits[0]) == 3200.0
+
+
+def test_round_robin_is_unchanged_when_tolerance_is_unset():
+    """MUAC and every existing manifest must not move: no tolerance, old behaviour."""
+    visits = _visits(3)
+    stats = assign_visit_images(visits, _scale_config(), random.Random(15))
+    assert stats["images_assigned"] == 3
+    assert stats["unmatched_visits"] == 0
+    for v in visits:
+        assert _entered(v) == READINGS[v["images"][0]["blob_id"]]
+
+
+def test_tolerance_without_readings_is_refused_at_manifest_load():
+    """A tolerance with nothing to match against would silently fall back to
+    round-robin while the manifest claimed curve preservation."""
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="requires readings"):
+        _scale_config(readings={}, reading_path=None, reading_match_tolerance=50.0)

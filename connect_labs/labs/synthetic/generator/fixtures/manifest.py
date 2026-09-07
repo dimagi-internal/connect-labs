@@ -437,11 +437,38 @@ class ImageConfig(BaseModel):
     # How far a bad-pool visit's entered value is pushed off the photo's true
     # value. Multiplicative, so it scales across birthweights.
     bad_reading_factor: float = Field(gt=0, default=1.35)
+    # ---- weight-matched selection (opt-in) --------------------------------
+    # When set, a photo is no longer drawn round-robin and then written over the
+    # cohort's own value. Instead the pool image whose ``readings`` entry is
+    # CLOSEST to the value the cohort already generated is chosen, and only if it
+    # lands within this tolerance (same unit as the reading, e.g. grams).
+    #
+    # Round-robin plus write-back is correct for a CROSS-SECTIONAL corpus like
+    # MUAC, where each visit's reading stands alone. It is wrong for a
+    # LONGITUDINAL one: the KMC cohort sets ``mirror: true`` specifically to
+    # reproduce a per-child weight-vs-age growth curve (#713, #734), and
+    # overwriting each visit's weight with an unrelated photo's value turns that
+    # curve back into noise while every count still reports success. See #1558.
+    #
+    # Left None, behaviour is byte-for-byte what it was, so no existing manifest
+    # moves. There is deliberately no default value: how many grams still count
+    # as "the same weight" is a property of the corpus and the scale's
+    # granularity, not something this file can guess.
+    reading_match_tolerance: float | None = Field(gt=0, default=None)
 
     @model_validator(mode="after")
     def _check_readings(self):
         if self.readings and not self.reading_path:
             raise ValueError("image_config.readings requires reading_path (where to write the value)")
+        # A tolerance with nothing to match against is a silent no-op: selection
+        # would fall straight back to round-robin and the manifest would look as
+        # though it had opted into curve preservation. Same reasoning as the
+        # readings/reading_path pair above -- fail at config time, not in a
+        # dashboard a week later.
+        if self.reading_match_tolerance is not None and not self.readings:
+            raise ValueError(
+                "image_config.reading_match_tolerance requires readings (the per-blob ground truth to match against)"
+            )
         return self
 
     @property
