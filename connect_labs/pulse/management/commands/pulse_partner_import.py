@@ -38,6 +38,7 @@ from urllib.parse import quote
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
 
 from connect_labs.pulse.hq_location import resolve as resolve_hq
 from connect_labs.pulse.models import PulsePartner, PulsePartnerAlias
@@ -166,6 +167,14 @@ class Command(BaseCommand):
                 PulsePartnerAlias.objects.update_or_create(
                     slug=slug, defaults={"partner": by_name[target], "why": why}
                 )
+            # A partner the directory never dated still belongs on the growth
+            # curve. Stamp the first date we saw them and then leave it alone:
+            # writing it down once, here, is what stops the whole undated cohort
+            # sliding forward every day the beat runs.
+            first_seen = PulsePartner.objects.filter(joined_at__isnull=True).update(joined_at=timezone.localdate())
+            if first_seen:
+                self.stdout.write(f"stamped {first_seen} partners with no EOI date as joining today")
+
             if opts["prune"]:
                 gone = PulsePartner.objects.exclude(name__in=partners).delete()[0]
                 stale = PulsePartnerAlias.objects.exclude(slug__in=aliases).delete()[0]

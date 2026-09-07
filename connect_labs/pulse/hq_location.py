@@ -116,6 +116,31 @@ def country_to_iso3(name: str) -> str | None:
     return aliases.get(folded)
 
 
+# Countries the boundary tables do not carry. ``labs.admin_boundaries`` is
+# loaded per-country as programmes need it, so a partner in a country nobody has
+# run a programme in yet has no polygon to take a centroid from -- and the whole
+# row then fails, even though we know perfectly well which country it is.
+#
+# A country centroid is stable reference data, not a measurement, so a literal
+# is the honest form. Add a row when a partner turns up somewhere new; the
+# import reports anything it could not place, so the gap announces itself.
+_COUNTRY_FALLBACK = {
+    "AFG": (33.94, 67.71),
+    "IND": (22.35, 78.67),
+    "HTI": (18.97, -72.29),
+    "PHL": (12.88, 121.77),
+    "IDN": (-2.55, 118.02),
+    "BGD": (23.68, 90.36),
+    "PAK": (30.38, 69.35),
+    "IRN": (32.43, 53.69),
+    "MYS": (4.21, 101.98),
+    "EGY": (26.82, 30.80),
+    "TUR": (38.96, 35.24),
+    "UKR": (48.38, 31.17),
+    "GBR": (54.00, -2.00),
+}
+
+
 @dataclass(frozen=True)
 class HqLocation:
     lat: float
@@ -217,4 +242,8 @@ def resolve(countries: str, regions: str, address: str) -> HqLocation | None:
     country = _boundary_point(iso3, 0)
     if country:
         return HqLocation(country[0], country[1], "country", country[2], iso3)
+
+    fallback = _COUNTRY_FALLBACK.get(iso3)
+    if fallback:
+        return HqLocation(fallback[0], fallback[1], "country", iso_codes.country_name(iso3) or iso3, iso3)
     return None

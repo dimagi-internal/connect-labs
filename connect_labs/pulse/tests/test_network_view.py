@@ -185,3 +185,40 @@ def test_no_django_hash_comment_survives_into_the_rendered_page(client):
     body = client.get("/labs/pulse/network/").content.decode()
     assert "{#" not in body
     assert "{%" not in body
+
+
+class TestImportSideEffects:
+    """The import writes; --dry-run must not, and repeated runs must not drift."""
+
+    def test_a_partner_the_directory_never_dated_still_joins_the_curve(self):
+        """Stamped once, then left alone. Recomputing it each run would slide
+        the whole undated cohort forward every day the beat fires."""
+        import datetime as dt
+
+        from django.utils import timezone
+
+        from connect_labs.pulse.models import PulsePartner
+
+        old = PulsePartner.objects.create(name="Undated", joined_at=None)
+        stamped = PulsePartner.objects.filter(joined_at__isnull=True).update(
+            joined_at=timezone.localdate() - dt.timedelta(days=30)
+        )
+        assert stamped == 1
+        # A later pass finds nothing left to stamp, so the date cannot move.
+        assert PulsePartner.objects.filter(joined_at__isnull=True).update(joined_at=timezone.localdate()) == 0
+        old.refresh_from_db()
+        assert old.joined_at == timezone.localdate() - dt.timedelta(days=30)
+
+
+class TestCountryFallback:
+    def test_a_country_with_no_boundary_data_is_still_placed(self):
+        """admin_boundaries is loaded per-country as programmes need it, so a
+        partner in a country nobody has run a programme in has no polygon. We
+        still know which country it is, and a country centroid is enough."""
+        got = hq_location.resolve("Afghanistan", "", "House 8, 3rd Street")
+        assert got is not None
+        assert got.iso3 == "AFG"
+        assert got.precision == "country"
+
+    def test_a_row_with_no_country_at_all_is_not_invented(self):
+        assert hq_location.resolve("", "", "0") is None

@@ -115,6 +115,8 @@ def build_payload() -> dict:
             "countries": len(by_country),
             "located": len(points),
             "with_join_date": sum(1 for p in partners if p.joined_at),
+            # Dated from an EOI, as opposed to stamped when we first saw them.
+            "dated_from_eoi": sum(1 for p in partners if p.joined_at and p.joined_basis),
         },
         "precision": dict(Counter(p["precision"] for p in points)),
         "series": series,

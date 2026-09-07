@@ -517,10 +517,11 @@
     gnote.className = 'net-note';
     gnote.textContent =
       'Joining is the date a partner answered an EOI, from the LLO Directory — ' +
-      t.with_join_date +
+      t.dated_from_eoi +
       ' of ' +
       t.partners +
-      ' have one. Delivering is their first verified service on Connect.';
+      ' are dated that way. The rest are shown as joining when we first saw them. ' +
+      'Delivering is their first verified service on Connect.';
     growth.appendChild(gnote);
     root.appendChild(growth);
 
