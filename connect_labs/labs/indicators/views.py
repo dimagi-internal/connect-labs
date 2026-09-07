@@ -274,7 +274,6 @@ class TargetingView(OpenLocallyMixin, TemplateView):
         loaded = (
             boundary_set.owned().filter(iso_code__in=ISO_CODES, admin_level=1).values("iso_code").distinct().count()
         )
-        with_u5mr = IndicatorValue.objects.filter(indicator="u5mr").values("iso_code").distinct().count()
 
         ctx.update(
             {
@@ -284,7 +283,6 @@ class TargetingView(OpenLocallyMixin, TemplateView):
                 "indicator_label": measure.label,
                 "indicator_unit": measure.unit,
                 "countries_with_boundaries": loaded,
-                "countries_with_u5mr": with_u5mr,
                 "africa_total": len(ISO_CODES),
                 "last_runs": list(IngestRun.objects.filter(ok=True)[:5]),
                 "default_method": DEFAULT_METHOD,

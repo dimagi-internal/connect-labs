@@ -330,11 +330,21 @@
 
       <div>
         <h1 class="text-2xl font-semibold text-stone-900">Intervention targeting</h1>
-        <p id="tg-subtitle" class="text-stone-600 mt-1 max-w-3xl"></p>
+        {% comment %}
+          "mortality data for 54" used to sit here on every one of the 52
+          indicators, a few centimetres above a method chip reading "43/55
+          countries" for improved water. Two coverage figures for two different
+          questions, and the wrong one was the larger and the more prominent.
+
+          How many countries can answer depends on the indicator AND the
+          method, so it belongs where it is already computed and already
+          correct — the method panel. What is left here is the one coverage
+          fact that is genuinely page-level: which countries have boundaries
+          loaded at all.
+        {% endcomment %}
         <p class="text-xs text-stone-500 mt-2">
           Boundaries loaded for <span class="tg-num">{{ countries_with_boundaries }}</span> of
           <span class="tg-num">{{ africa_total }}</span> African countries ·
-          mortality data for <span class="tg-num">{{ countries_with_u5mr }}</span> ·
           no IHME data (see source research)
         </p>
       </div>
