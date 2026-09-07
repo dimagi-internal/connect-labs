@@ -98,3 +98,30 @@ describe('state invalidation', () => {
     });
   });
 });
+
+describe('per-channel tickets', () => {
+  const T = loadModule('./state.js');
+  const state = T.state;
+
+  it('gives every channel its own ticket', () => {
+    // One global ticket meant any later apply cancelled any earlier one, even
+    // when they touched nothing in common: nudging the threshold and then
+    // editing the unit cost cancelled the selection fetch still in flight, and
+    // the table went on showing the previous answer under the new slider
+    // value. Fifteen counties where the truth was none, with no error.
+    state.CHANNELS.forEach((c) => {
+      const before = state.ticket(c);
+      expect(typeof before).toBe('number');
+      expect(state.isCurrent(c, before)).toBe(true);
+    });
+  });
+
+  it('does not treat one channel’s ticket as another’s', () => {
+    const sel = state.ticket('selection');
+    const cost = state.ticket('costing');
+    // Distinct counters. If these were the same variable, a costing run would
+    // invalidate a selection run and vice versa — which is the bug.
+    expect(state.isCurrent('selection', sel)).toBe(true);
+    expect(state.isCurrent('costing', cost)).toBe(true);
+  });
+});

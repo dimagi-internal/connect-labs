@@ -1055,3 +1055,40 @@ class TestTheMethodologyPointsAtColumnsThatExist:
         assert cited, "no column references found, so this proves nothing"
         unknown = cited - headings
         assert not unknown, f"methodology cites missing columns {unknown}"
+
+
+class TestBadQueryParametersDegrade:
+    """Every parameter falls back rather than failing.
+
+    A misspelled ISO, an impossible admin level, a year of 1066 and an unknown
+    method all already degraded. The indicator did not: it reached
+    `measures.get()` and raised, so `/api/selection/` returned 500 while
+    `/api/methods/`, `/api/map/` and `/api/scope/` returned 200 for the very
+    same request.
+    """
+
+    BAD = [
+        {"indicator": "NOT_A_REAL_INDICATOR"},
+        {"indicator": "../../etc/passwd"},
+        {"indicator": ""},
+        {"iso": "ZZZ"},
+        {"admin_level": "99"},
+        {"threshold": "abc"},
+        {"target_year": "1066"},
+        {"method": "fake_method"},
+        {"rollup": "maybe"},
+    ]
+
+    @pytest.mark.parametrize("params", BAD)
+    def test_every_endpoint_answers_rather_than_erroring(self, client_in, africa, params):
+        for name in ("selection", "methods", "map_data", "scope", "methodology"):
+            r = client_in.get(reverse(f"targeting:{name}"), params)
+            assert r.status_code == 200, f"{name} returned {r.status_code} for {params}"
+
+    def test_an_unknown_indicator_falls_back_to_the_default(self, client_in, africa):
+        r = client_in.get(reverse("targeting:selection"), {"indicator": "NOT_A_REAL"}).json()
+        assert r["indicator"] == "u5mr"
+
+    def test_a_known_indicator_is_still_honoured(self, client_in, africa):
+        r = client_in.get(reverse("targeting:selection"), {"indicator": "stunting"}).json()
+        assert r["indicator"] == "stunting"

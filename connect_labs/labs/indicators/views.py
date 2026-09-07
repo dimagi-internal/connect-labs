@@ -169,6 +169,22 @@ def _float(request, key, default):
         return default
 
 
+def _indicator(request, default: str = DEFAULT_INDICATOR) -> str:
+    """The requested indicator, or the default if it names nothing.
+
+    Every other query parameter already degrades: a misspelled ISO, an
+    impossible admin level, a year of 1066 all fall back and the page still
+    answers. The indicator did not — `?indicator=NOT_A_REAL_INDICATOR` reached
+    `measures.get()` and raised, so one endpoint returned 500 while the others
+    returned 200 for the same request. Falling back keeps the surface usable
+    and consistent with everything beside it.
+    """
+    code = request.GET.get("indicator")
+    if code and code in measures.MEASURES:
+        return code
+    return default
+
+
 def _iso_codes(request) -> list[str]:
     """The countries in scope, defaulting to the whole continent.
 
@@ -229,7 +245,7 @@ def _selection_for(request):
     hand-assembled parameter lists is how they come to disagree, and how
     ``target_year`` came to reach the download but not the workings.
     """
-    indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
+    indicator = _indicator(request)
     measure = measures.get(indicator)
     return select_above(
         indicator=indicator,
@@ -282,7 +298,7 @@ class MapDataView(OpenLocallyMixin, View):
     """
 
     def get(self, request):
-        indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
+        indicator = _indicator(request)
         year = request.GET.get("year")
         year = int(year) if year and year.isdigit() else None
         simplify = _float(request, "simplify", MAP_SIMPLIFY)
@@ -347,7 +363,7 @@ class SelectionView(OpenLocallyMixin, View):
     """Apply a threshold and return the headline numbers plus the table."""
 
     def get(self, request):
-        indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
+        indicator = _indicator(request)
         measure = measures.get(indicator)
         threshold = _float(request, "threshold", measure.threshold_default)
         scope = _iso_codes(request)
@@ -541,7 +557,7 @@ class MethodsView(OpenLocallyMixin, View):
     """What methods exist, and how much of the continent each can answer for."""
 
     def get(self, request):
-        indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
+        indicator = _indicator(request)
         return JsonResponse(
             {
                 "resolutions": availability.resolutions(),
@@ -593,7 +609,7 @@ class ScopeView(OpenLocallyMixin, View):
     """
 
     def get(self, request):
-        indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
+        indicator = _indicator(request)
         method = methods.get(_method(request, indicator))
         supported = set(availability.countries_supporting(method, indicator))
 
@@ -680,7 +696,7 @@ class ScenarioView(OpenLocallyMixin, View):
                 status=400,
             )
 
-        indicator = request.GET.get("indicator") or (intervention.targets if intervention else DEFAULT_INDICATOR)
+        indicator = _indicator(request, intervention.targets if intervention else DEFAULT_INDICATOR)
         if indicator not in measures.MEASURES:
             return JsonResponse({"error": f"unknown indicator {indicator!r}"}, status=400)
 
@@ -763,7 +779,7 @@ class InterventionsView(OpenLocallyMixin, View):
     """Unit bases and the intervention presets built on them."""
 
     def get(self, request):
-        indicator = request.GET.get("indicator", DEFAULT_INDICATOR)
+        indicator = _indicator(request)
         return JsonResponse(
             {
                 "bases": [

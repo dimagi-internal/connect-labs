@@ -31,12 +31,39 @@
     return wanted;
   }
 
+  // A header-only CSV is indistinguishable from a download that failed, so an
+  // empty selection offers no file at all — and says why.
+  function setDownloadState(hasRows) {
+    ['tg-download', 'tg-download-md'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.classList.toggle('tg-link-off', !hasRows);
+      el.setAttribute('aria-disabled', hasRows ? 'false' : 'true');
+      if (hasRows) el.removeAttribute('title');
+      else el.title = 'Nothing to download — no area meets this threshold.';
+    });
+  }
+
+  // aria-disabled is a label, not a behaviour: an anchor still navigates.
+  function guardDownloads() {
+    ['tg-download', 'tg-download-md'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('click', function (ev) {
+        if (el.getAttribute('aria-disabled') === 'true') ev.preventDefault();
+      });
+    });
+  }
+
   function syncLinks() {
     var href = api.downloadHref();
     var a = document.getElementById('tg-download');
     var b = document.getElementById('tg-download-md');
     if (a) a.href = href;
     if (b) b.href = href;
+    // A fresh href is a fresh question; assume it has an answer until the
+    // selection comes back and says otherwise.
+    setDownloadState(true);
     if (window.history && window.history.replaceState) {
       window.history.replaceState(
         null,
@@ -132,17 +159,19 @@
   state.register('selection', function (S) {
     syncLinks();
     document.getElementById('tg-births').textContent = '…';
-    var mine = state.ticket();
+    var mine = state.ticket('selection');
     return api
       .selection()
       .then(function (data) {
-        if (!state.isCurrent(mine)) return;
+        if (!state.isCurrent('selection', mine)) return;
+        setDownloadState(!!(data.rows && data.rows.length));
         T.table.render(data);
         T.map.applySelection(data.selected_pks);
         T.methodology.refresh();
       })
       .catch(function (err) {
-        if (!state.isCurrent(mine)) return;
+        if (!state.isCurrent('selection', mine)) return;
+        setDownloadState(false);
         document.getElementById('tg-births').textContent = 'error';
         document.getElementById('tg-rows').innerHTML =
           '<tr><td colspan="10" class="px-5 py-8 text-center text-red-600">' +
@@ -172,6 +201,8 @@
     var wanted = readUrl();
     var S = state.get();
 
+    // Validated against the registry once methodInfo arrives, below. Taken on
+    // trust here only so the first request has something to ask about.
     S.indicator = wanted.indicator || window.TG.indicator;
     S.method = wanted.method || window.TG.defaultMethod;
     S.iso = wanted.iso || '';
@@ -183,6 +214,7 @@
     T.menu.init();
     T.controls.init();
     T.costing.init();
+    guardDownloads();
     T.controls.renderYearSelect();
     if (S.year) document.getElementById('tg-year').value = String(S.year);
     if (!S.rollup) document.getElementById('tg-rank').checked = true;
@@ -192,6 +224,13 @@
       .then(function (info) {
         S.methodInfo = info;
         T.menu.index();
+
+        // A name the registry does not know leaves the trigger showing the raw
+        // string and the page showing nothing. The server falls back too, so
+        // without this the surface would disagree with the answer it got.
+        if (!S.indicatorMeta[S.indicator]) {
+          S.indicator = window.TG.indicator;
+        }
 
         // The same correction the methods channel applies when the indicator
         // changes in-page. Without it here, a LINK to an indicator the default
@@ -267,5 +306,6 @@
   window.Targeting.main = {
     selectIndicator: selectIndicator,
     syncLinks: syncLinks,
+    setDownloadState: setDownloadState,
   };
 })();

@@ -72,16 +72,17 @@
 
   function refresh() {
     var S = state.get();
-    if (!S.basis || isNaN(S.unitCost)) return Promise.resolve();
-    var mine = state.ticket();
+    if (!S.basis || S.unitCost === null || isNaN(S.unitCost))
+      return Promise.resolve();
+    var mine = state.ticket('costing');
     return api
       .scenario()
       .then(function (d) {
-        if (!state.isCurrent(mine)) return;
+        if (!state.isCurrent('costing', mine)) return;
         render(d);
       })
       .catch(function () {
-        if (!state.isCurrent(mine)) return;
+        if (!state.isCurrent('costing', mine)) return;
         document.getElementById('tg-absorb-detail').textContent =
           'The costing could not be loaded.';
       });
@@ -129,7 +130,25 @@
     costEl.oninput = function () {
       clearTimeout(window.__costT);
       window.__costT = setTimeout(function () {
-        state.apply({ unitCost: parseFloat(costEl.value) });
+        var v = parseFloat(costEl.value);
+        // A blank or unparseable box used to leave the previous total sitting
+        // beside it — the field empty, "$1,025,768.8B" still on screen, and
+        // nothing saying the two no longer belonged together.
+        if (isNaN(v)) {
+          document.getElementById('tg-absorb').textContent = '—';
+          document.getElementById('tg-absorb-detail').textContent =
+            'Enter a unit cost.';
+          document.getElementById('tg-absorb-caveat').textContent = '';
+          return;
+        }
+        // Negative money is not a price. The input carries min="0", which the
+        // browser does not enforce on typed text, so -5 produced an
+        // "absorbable spend" of minus five million.
+        if (v < 0) {
+          v = 0;
+          costEl.value = '0';
+        }
+        state.apply({ unitCost: v });
       }, 350);
     };
   }

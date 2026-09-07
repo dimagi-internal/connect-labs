@@ -53,6 +53,9 @@
     .tg-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
     .tg-dot + .tg-dot { margin-left: 8px; }
     .tg-dot-burden { background: #b45309; }
+    /* Written by hand rather than as a utility: Tailwind purges classes it
+       only ever sees added from JS. */
+    .tg-link-off { opacity: .45; cursor: not-allowed; }
     .tg-dot-coverage { background: #0f766e; }
 
     /* Explicit flex columns, balanced in JS — NOT CSS multicol.
@@ -201,7 +204,14 @@
               <span class="tg-dot tg-dot-coverage"></span>worse when low
             </span>
           </div>
-          <div id="tg-indicator-cols" class="tg-menu-cols"></div>
+          {% comment %}
+            role=listbox because the buttons inside claim role=option, and an
+            option outside a listbox is ARIA that assistive technology cannot
+            interpret. The column divs are presentational: they are a layout
+            device, not a level of the list.
+          {% endcomment %}
+          <div id="tg-indicator-cols" class="tg-menu-cols" role="listbox"
+               aria-label="Indicators"></div>
           <p id="tg-indicator-empty" class="tg-menu-empty hidden">Nothing matches that.</p>
         </div>
         <div class="tg-pop hidden" id="pop-indicator">
@@ -226,7 +236,15 @@
         <div id="tg-threshold-alt" class="text-xs text-stone-500 tg-num mt-1">
           <span id="tg-threshold-abs"></span>
         </div>
+        {% comment %}
+          The primary control of the page, and it had no accessible name: a
+          screen reader announced an unlabelled slider reading "80". The label
+          and the spoken value are both set from the measure in JS, because
+          both change with it — 80 means per 1,000 live births here and per
+          cent everywhere else.
+        {% endcomment %}
         <input id="tg-threshold" type="range" class="tg-slider w-full mt-2"
+               aria-label="Threshold"
                min="10" max="200" step="5" value="{{ default_threshold|floatformat:0 }}">
         <div class="flex justify-between text-xs text-stone-400 tg-num">
           <span id="tg-scale-min">1%</span><span id="tg-scale-max">20%</span>

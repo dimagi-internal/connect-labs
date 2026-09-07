@@ -36,7 +36,12 @@
     var note = document.getElementById('tg-level-note');
     var depth = S.scopeInfo && S.scopeInfo.depth;
 
-    if (!S.iso || !depth) {
+    // A national method describes whole countries and ignores admin_level
+    // entirely. The control used to stay visible there: clicking "Regions"
+    // wrote admin_level=1 into the URL, changed nothing, and left the note
+    // underneath still saying "Unpinned" — a control that looks like it works
+    // and does not.
+    if (!S.iso || !depth || currentResolution() === 'national') {
       wrap.classList.add('hidden');
       return;
     }
@@ -312,6 +317,20 @@
     document.getElementById('tg-threshold-pct').textContent = meta.per_1000
       ? String(t)
       : t + '%';
+
+    // Announce the value in the measure's own unit. "80" alone is what a
+    // screen reader would otherwise read for a threshold that means eighty per
+    // 1,000 live births here and eighty per cent for most other measures.
+    var slider = document.getElementById('tg-threshold');
+    var name = meta.label || S.indicator;
+    slider.setAttribute('aria-label', name + ' threshold');
+    slider.setAttribute(
+      'aria-valuetext',
+      t +
+        (meta.unit ? ' ' + meta.unit : '') +
+        ', selects ' +
+        (meta.lower_is_worse ? 'below' : 'above'),
+    );
 
     var alt = document.getElementById('tg-threshold-alt');
     if (meta.per_1000) {

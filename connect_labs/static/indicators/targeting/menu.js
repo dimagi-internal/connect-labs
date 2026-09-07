@@ -62,6 +62,9 @@
     for (var c = 0; c < n; c++) {
       var col = document.createElement('div');
       col.className = 'tg-menu-col';
+      // Layout only. Without this the columns sit between the listbox and its
+      // options, which breaks the relationship assistive tech reads.
+      col.setAttribute('role', 'presentation');
       cols.appendChild(col);
       columns.push(col);
       weights.push(0);
@@ -138,6 +141,11 @@
     if (empty) empty.classList.toggle('hidden', shown > 0);
   }
 
+  function options() {
+    var cols = document.getElementById('tg-indicator-cols');
+    return cols ? [].slice.call(cols.querySelectorAll('.tg-opt')) : [];
+  }
+
   function renderTrigger() {
     var S = state.get();
     var meta = S.indicatorMeta[S.indicator] || {};
@@ -167,10 +175,16 @@
   function close() {
     var menu = document.getElementById('tg-indicator-menu');
     if (!menu) return;
+    var trigger = document.getElementById('tg-indicator');
+    // Hiding the element that holds focus strands the caret on <body>, so a
+    // keyboard reader who picks an indicator loses their place on the page.
+    // Hand focus back to the control they opened.
+    var strand = menu.contains(document.activeElement);
     menu.classList.add('hidden');
-    document
-      .getElementById('tg-indicator')
-      .setAttribute('aria-expanded', 'false');
+    if (trigger) {
+      trigger.setAttribute('aria-expanded', 'false');
+      if (strand) trigger.focus();
+    }
     menuOpen = false;
   }
 
@@ -189,13 +203,54 @@
       search.addEventListener('input', function () {
         render(search.value);
       });
-      // Enter takes the first match, which is what a filter box is for.
       search.addEventListener('keydown', function (ev) {
-        if (ev.key !== 'Enter') return;
-        var first = menu.querySelector('.tg-opt');
-        if (first) first.click();
+        // Enter takes the first match, which is what a filter box is for.
+        if (ev.key === 'Enter') {
+          var first = menu.querySelector('.tg-opt');
+          if (first) first.click();
+          return;
+        }
+        // Down from the box steps into the list. The container claims
+        // role=listbox, and a listbox that ignores the arrow keys is a promise
+        // to assistive technology that the page does not keep.
+        if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+          var opts = options();
+          if (!opts.length) return;
+          ev.preventDefault();
+          (ev.key === 'ArrowDown' ? opts[0] : opts[opts.length - 1]).focus();
+        }
       });
     }
+
+    // Arrow keys within the list, in the order the eye reads it: down a column,
+    // then to the top of the next.
+    menu.addEventListener('keydown', function (ev) {
+      if (!ev.target.classList || !ev.target.classList.contains('tg-opt'))
+        return;
+      var opts = options();
+      var i = opts.indexOf(ev.target);
+      if (i === -1) return;
+      if (ev.key === 'ArrowDown') {
+        ev.preventDefault();
+        (opts[i + 1] || opts[0]).focus();
+      } else if (ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        // Up from the first option returns to the filter, which is where the
+        // reader came from.
+        if (i === 0) search.focus();
+        else opts[i - 1].focus();
+      } else if (ev.key === 'Home') {
+        ev.preventDefault();
+        opts[0].focus();
+      } else if (ev.key === 'End') {
+        ev.preventDefault();
+        opts[opts.length - 1].focus();
+      } else if (ev.key.length === 1 && /\S/.test(ev.key)) {
+        // Typing anywhere in the list goes on filtering rather than being
+        // swallowed by whichever option happens to hold focus.
+        search.focus();
+      }
+    });
     menu.addEventListener('click', function (ev) {
       ev.stopPropagation();
     });
@@ -207,6 +262,8 @@
         close();
         trigger.focus();
       }
+      // A menu open behind a Tab is a menu the reader has already left.
+      if (ev.key === 'Tab' && menuOpen && !menu.contains(ev.target)) close();
     });
   }
 

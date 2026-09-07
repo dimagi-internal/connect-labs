@@ -65,7 +65,19 @@
   };
 
   var handlers = {};
-  var token = 0;
+
+  /* One ticket PER CHANNEL, not one for the whole pipeline.
+
+     A single global ticket meant any later apply() cancelled any earlier one,
+     even when they touched nothing in common. Nudge the threshold and then
+     immediately edit the unit cost, and the costing run — which cannot affect
+     the table — cancelled the selection fetch still in flight. The slider read
+     10 and the table went on showing the answer for 90: fifteen counties where
+     the truth was none, with no error anywhere. */
+  var tokens = {};
+  CHANNELS.forEach(function (c) {
+    tokens[c] = 0;
+  });
 
   function register(name, fn) {
     handlers[name] = fn;
@@ -107,24 +119,30 @@
     }
     if (widest === null) return Promise.resolve();
 
-    var mine = ++token;
     var queue = from(widest);
+    // Claim only the channels this run will actually execute.
+    var mine = {};
+    queue.forEach(function (name) {
+      mine[name] = ++tokens[name];
+    });
 
     return queue.reduce(function (chain, name) {
       return chain.then(function () {
-        if (mine !== token) return null;
+        // Superseded for THIS channel — a newer run of the same channel is
+        // under way, so stop rather than paint an older answer over it.
+        if (mine[name] !== tokens[name]) return null;
         var fn = handlers[name];
         return fn ? fn(S) : null;
       });
     }, Promise.resolve());
   }
 
-  function isCurrent(mine) {
-    return mine === token;
+  function isCurrent(channel, mine) {
+    return tokens[channel] === mine;
   }
 
-  function ticket() {
-    return token;
+  function ticket(channel) {
+    return tokens[channel];
   }
 
   window.Targeting.state = {
