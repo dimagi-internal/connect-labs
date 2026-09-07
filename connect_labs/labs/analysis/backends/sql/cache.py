@@ -296,6 +296,103 @@ class SQLCacheManager:
             f"[SQLCache] Stored {len(rows)} raw visits for opp {self.opportunity_id} " f"pipeline {self.pipeline_id}"
         )
 
+    def get_raw_delta_anchor(self):
+        """What an incremental top-up would need, or None when one is unsafe.
+
+        Returns ``(visible_count, max_visit_id, expires_at)``.
+
+        The high-water mark is computed in Python rather than with a SQL ``Max``:
+        ``visit_id`` is a CharField, so the database would order it
+        lexicographically ("9" > "10") and hand back a mark that silently skips
+        rows. Casting instead would raise on the first non-numeric id, in
+        production, inside a request. Scanning one column is cheap next to the
+        40k-row HTTP pagination this exists to avoid, and it gives the
+        all-ids-are-numeric guard for free: anything unparseable returns None and
+        the caller does a normal full rebuild.
+        """
+        rows = list(
+            RawVisitCache.objects.filter(**self._raw_filter(), visit_count__gt=0).values_list(
+                "visit_id", "visit_count", "expires_at"
+            )
+        )
+        if not rows:
+            return None
+
+        visit_ids = [r[0] for r in rows]
+        numeric = [int(v) for v in visit_ids if v is not None and v.lstrip("-").isdigit()]
+        if len(numeric) != len(visit_ids):
+            logger.info(
+                "[SQLCache] opp %s pipeline %s has non-numeric visit ids — no delta anchor",
+                self.opportunity_id,
+                self.pipeline_id,
+            )
+            return None
+
+        counts = {r[1] for r in rows}
+        if len(counts) != 1:
+            # Mixed visit_count means a writer is mid-finalize; a top-up now
+            # could not re-stamp the set coherently.
+            return None
+
+        return counts.pop(), max(numeric), max(r[2] for r in rows)
+
+    def store_raw_visits_append_start(self, expires_at):
+        """Prepare to ADD rows to the existing cache rather than replace it.
+
+        Same sentinel trick as ``store_raw_visits_start`` so the new rows stay
+        invisible until finalize — but the expiry is INHERITED from the rows
+        already there, never refreshed. ``has_valid_raw_cache`` is an
+        ``.exists()``, so one row with a later expiry would make the whole slot
+        look fresh; topping up a busy opportunity would then keep pushing its
+        deadline out and it would never do the full rebuild that is the only
+        thing which picks up status changes on existing visits.
+        """
+        self._pending_visit_count = -random.randint(1, 2**31 - 1)
+        self._pending_expires_at = expires_at
+
+    def store_raw_visits_append_finalize(self, prior_count: int, new_total: int) -> int:
+        """Make the appended rows visible and re-stamp the existing ones to match.
+
+        Both sets must end on the same ``visit_count``: it doubles as the cached
+        count that ``has_valid_raw_cache`` compares against, so a slot left with
+        two different values is neither valid nor invalid coherently.
+
+        Returns the number of rows now visible, or 0 if the previously-visible set
+        was not where we left it — another writer finalized underneath us, whose
+        result is at least as fresh, so this top-up is abandoned rather than
+        merged into it.
+        """
+        with transaction.atomic():
+            promoted_existing = RawVisitCache.objects.filter(
+                **self._raw_filter(),
+                visit_count=prior_count,
+            ).update(visit_count=new_total)
+            if not promoted_existing:
+                RawVisitCache.objects.filter(
+                    **self._raw_filter(),
+                    visit_count=self._pending_visit_count,
+                ).delete()
+                logger.info(
+                    "[SQLCache] append for opp %s pipeline %s abandoned — the base cache moved",
+                    self.opportunity_id,
+                    self.pipeline_id,
+                )
+                return 0
+            promoted_new = RawVisitCache.objects.filter(
+                **self._raw_filter(),
+                visit_count=self._pending_visit_count,
+            ).update(visit_count=new_total)
+
+        logger.info(
+            "[SQLCache] appended %s visits to opp %s pipeline %s (%s -> %s)",
+            promoted_new,
+            self.opportunity_id,
+            self.pipeline_id,
+            prior_count,
+            new_total,
+        )
+        return promoted_existing + promoted_new
+
     def store_raw_visits_start(self, visit_count: int):
         """
         Delete existing raw cache and prepare for batched inserts.
