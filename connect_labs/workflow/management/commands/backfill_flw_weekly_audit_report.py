@@ -23,7 +23,7 @@ Intended to be invoked once via the run-labs-command.yml GitHub Action
 against production, e.g.:
 
     backfill_flw_weekly_audit_report --definition 6621 --program 176 \\
-        --owner-email wvink@dimagi.com --weeks 4 --replace-existing
+        --owner-email analyst@example.com --weeks 4 --replace-existing
 """
 
 import json
