@@ -170,3 +170,18 @@ class TestEntitlement:
 
 def test_the_page_requires_a_session(client):
     assert client.get("/labs/pulse/network/").status_code in (302, 301)
+
+
+def test_no_django_hash_comment_survives_into_the_rendered_page(client):
+    """Django's {# #} comment is SINGLE-LINE ONLY. A multi-line one renders its
+    own text onto the page, which is what shipped here — the map's explanatory
+    comment appeared as a paragraph under the globe in production.
+
+    Asserting on the RENDERED output rather than the template source, because
+    the template source is exactly where it looks fine.
+    """
+    user = get_user_model().objects.create_user(username="reader", password="x")  # noqa: S106
+    client.force_login(user)
+    body = client.get("/labs/pulse/network/").content.decode()
+    assert "{#" not in body
+    assert "{%" not in body

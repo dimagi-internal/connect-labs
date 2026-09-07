@@ -28,9 +28,15 @@ shows a funder, and the labs navigation bar has no business above it.
       <p class="net-loading" id="net-loading">Loading the network…</p>
     </main>
   </div>
-  {# Same map stack as the wall display, so the network reads as the same
-     product: Mapbox GL on the shared ConnectMap helper. Without a token the
-     page falls back to a plain SVG plot rather than showing an empty box. #}
+  {% comment %}
+  Same map stack as the wall display, so the network reads as the same product:
+  Mapbox GL on the shared ConnectMap helper. Without a token the page falls back
+  to a plain SVG plot rather than showing an empty box.
+
+  Django's hash comment is single-line only, so a multi-line one renders its own
+  text onto the page. This block used one, and the explanation appeared as a
+  paragraph under the globe in production. Use this tag for anything over a line.
+  {% endcomment %}
   <script>window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";</script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
   <script src="{% static 'maps/connect_map.js' %}"></script>
