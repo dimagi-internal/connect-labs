@@ -50,14 +50,27 @@ describe('windows.js dependency scope', () => {
     expect(names).toContain('openPartner');
   });
 
-  it('never reaches for `store` without being handed it', () => {
-    // `store` is threaded in from display.js, not held at module scope. A
-    // helper that reaches for it throws at render time and is swallowed by the
-    // window's own error handling.
+  it("never reaches for a caller's object", () => {
+    // The original bug: a helper read `store`, which was threaded into
+    // openPartner/openWorker rather than held at module scope, so it threw at
+    // render time into the catch that reports "Could not load this partner".
+    //
+    // `store` is gone — the module now declares its dependency as `host` — and
+    // this keeps it gone, because reintroducing the pattern reintroduces the
+    // silent failure.
     const leaks = moduleFunctions(SRC)
-      .filter((f) => /\bstore\b/.test(f.body) && !/\bstore\b/.test(f.args))
+      .filter((f) => /\bstore\b/.test(f.body))
       .map((f) => f.name);
     expect(leaks).toEqual([]);
+  });
+
+  it('has working defaults, so a page that forgets to configure degrades', () => {
+    // The window is opened by more than one page now. A host that has to be
+    // configured before the module is safe to load would fail as an exception
+    // inside the same swallowing catch.
+    const flat = SRC.replace(/\s+/g, '');
+    expect(flat).toContain('labels:()=>({})');
+    expect(flat).toMatch(/urlFor\(path,params\)\{/);
   });
 });
 
@@ -135,7 +148,7 @@ describe('windows.js shareable state', () => {
 
   it('accepts a preselected opportunity, so a link can land on one engagement', () => {
     const flat = SRC.replace(/\s+/g, '');
-    expect(flat).toContain('functionopenPartner(store,slug,preselectOpp)');
+    expect(flat).toContain('functionopenPartner(slug,preselectOpp)');
     expect(flat).toContain('selectedOpp=preselectOpp||null');
   });
 

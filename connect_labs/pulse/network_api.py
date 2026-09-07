@@ -32,6 +32,7 @@ from django.views import View
 
 from connect_labs.microplans.core import iso as iso_codes
 from connect_labs.pulse.models import PulseEvent, PulseOpportunity, PulsePartner, PulseWork
+from connect_labs.pulse.normalize import COUNTRY_NAMES, FLAG_LABELS, SERVICE_LABELS
 from connect_labs.pulse.partner_names import resolve as resolve_partner
 
 # Connect bulk-created its completed_works table at this instant.
@@ -184,6 +185,9 @@ def build_payload() -> dict:
     countries = countries_table(set(delivering))
     return {
         "countries": countries,
+        # The partner window formats countries, flags and services through
+        # these. Carried here so opening one costs no extra round trip.
+        "labels": {"countries": COUNTRY_NAMES, "flags": FLAG_LABELS, "services": SERVICE_LABELS},
         "totals": {
             "partners": len(partners),
             "delivering": len(delivering),

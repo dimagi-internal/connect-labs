@@ -2905,38 +2905,49 @@
   color: var(--ink-2);
   font-size: 12.5px;
 }
-.net-orgs {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
-  gap: 6px;
+.net-orgtable {
+  width: 100%;
+  border-collapse: collapse;
 }
-.net-org {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 8px 11px;
-  border: 1px solid var(--rule-soft);
-  border-radius: 5px;
-  background: var(--ground);
-  text-decoration: none;
-  color: inherit;
+.net-org td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: 12.5px;
+  vertical-align: middle;
 }
-a.net-org:hover,
-a.net-org:focus-visible {
-  border-color: var(--brand-cornflower);
-  outline: none;
+.net-org:last-child td {
+  border-bottom: 0;
 }
-/* A partner with a workspace is a link; one without has never delivered, so
-   there is nothing to open. The cursor is the only thing that should differ. */
-a.net-org {
+.net-org-open {
   cursor: pointer;
+}
+.net-org-open:hover,
+.net-org-open:focus-visible {
+  background: var(--panel);
+  outline: none;
 }
 .net-org-name {
   color: var(--ink);
-  font-size: 13px;
+  width: 45%;
 }
 .net-org-live .net-org-name {
   color: var(--brand-marigold);
+}
+.net-org-where {
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.net-org-go {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  width: 1%;
+}
+.net-org-open:hover .net-org-go,
+.net-org-open:focus-visible .net-org-go {
+  color: var(--brand-sky);
 }
 .net-org-meta {
   font-family: var(--mono);
