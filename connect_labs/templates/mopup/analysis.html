@@ -16,6 +16,14 @@
 
   <div id="status" class="text-sm text-gray-500"></div>
 
+  <section id="loading-panel" class="border border-gray-200 rounded p-6 text-center space-y-2">
+    <div class="text-sm font-medium text-gray-700" id="loading-message">Loading work-area, visit, and geometry data for this opportunity…</div>
+    <div class="text-xs text-gray-400">This is a one-time pull per run — every threshold change after this is instant.</div>
+    <button type="button" id="loading-retry" class="button outline-style hidden">Try again</button>
+  </section>
+
+  <div id="analysis-body" class="hidden space-y-6">
+
   <section class="border border-gray-200 rounded p-4 space-y-4">
     <h2 class="text-lg font-semibold text-gray-900">Indicators</h2>
     <table class="w-full text-sm">
@@ -101,6 +109,8 @@
     </div>
     <button type="button" id="create-plan" class="button primary-dark" {% if run.status != "locked" %}disabled{% endif %}>Create mop-up plan</button>
   </section>
+
+  </div>
 </div>
 {% endblock %}
 

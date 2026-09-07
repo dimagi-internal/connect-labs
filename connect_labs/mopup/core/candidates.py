@@ -1,8 +1,16 @@
-"""Phase 2's live "how many work areas would this create" recompute: fetch
-(cache-warmed after the first call — see `core/work_areas.py`/`core/visits.py`
-docstrings) the run's scoped work areas + visits + geometry, evaluate against
-whatever indicator/global config the reviewer currently has set, and return
-candidates + a per-ward summary rollup.
+"""Assembles a run's scoped work areas + visits + geometry into the exact
+per-WA row list `core.indicators.evaluate_run` expects.
+
+**This is the expensive part** — real production opportunities run tens of
+thousands of visits and thousands of work areas (verified this session: a
+synchronous web request pulling this for a whole opportunity reliably
+gateway-times-out). It runs inside `mopup.tasks.fetch_evaluation_data` (a
+Celery task, not a request), which is why every fetch function here takes an
+already-constructed `pipeline` rather than a `request` — a Celery task has
+no HTTP session to derive a token from. `on_stage`, if given, is called with
+a short label between each fetch stage (work areas / visits / geometry) so
+the task can report real progress via `set_task_progress` (see
+`connect_labs.utils.celery`) rather than a bare spinner.
 
 **Known gap, not an oversight**: only WARD scoping is wired up here. A run's
 `date_from`/`date_to` (Phase 1) isn't applied yet — `AnalysisPipelineConfig`'s
@@ -15,6 +23,8 @@ all-time data regardless (§4/§11 of the design brief).
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 from django.http import HttpRequest
 
@@ -37,31 +47,45 @@ def build_evaluation_input(
     selected_wards: list[dict],
     *,
     request: HttpRequest | None = None,
+    pipeline=None,
+    on_stage: Callable[[str], None] | None = None,
 ) -> list[dict]:
     """The full per-WA row list, scoped to `selected_wards` (empty = every
     ward in the opportunity), ready for `core.indicators.evaluate_run`.
 
-    Merges in real centroid (`lat`/`lon`, for §6a's spatial neighbor graph)
-    and boundary geometry (for a locked candidate's Phase 3 hand-off) from
-    `core.geometry.fetch_work_area_geometry` — a work area with no geometry
-    match just keeps `lat`/`lon`/`boundary` at `None` (evaluate_run already
-    degrades gracefully for that)."""
-    work_areas = list_work_areas(opportunity_id, request=request)
+    Pass `pipeline` (an already-constructed `AnalysisPipeline`, e.g. built
+    from a Celery task's resolved tokens) to fetch every stage through the
+    SAME pipeline instance instead of `request`-deriving a fresh one per
+    call. Merges in real centroid (`lat`/`lon`, for §6a's spatial neighbor
+    graph) and boundary geometry (for a locked candidate's Phase 3
+    hand-off) from `core.geometry.fetch_work_area_geometry` — a work area
+    with no geometry match just keeps `lat`/`lon`/`boundary` at `None`
+    (evaluate_run already degrades gracefully for that)."""
+
+    def stage(label: str) -> None:
+        if on_stage:
+            on_stage(label)
+
+    stage("Fetching work areas…")
+    work_areas = list_work_areas(opportunity_id, request=request, pipeline=pipeline)
     scoped = [wa for wa in work_areas if _ward_matches(wa, selected_wards)]
     wa_ids = {wa["case_id"] for wa in scoped}
 
-    visits = list_approved_visits(opportunity_id, request=request)
+    stage("Fetching visit data…")
+    visits = list_approved_visits(opportunity_id, request=request, pipeline=pipeline)
     aggregates = aggregate_visits_by_wa(visits, wa_ids=wa_ids)
 
     rows = build_evaluation_rows(scoped, aggregates)
 
-    geometry = fetch_work_area_geometry(opportunity_id, request=request)
+    stage("Fetching work-area geometry…")
+    geometry = fetch_work_area_geometry(opportunity_id, request=request, pipeline=pipeline)
     for row in rows:
         geo = geometry.get(row["wa_id"], {})
         row["lat"] = geo.get("lat")
         row["lon"] = geo.get("lon")
         row["boundary"] = geo.get("boundary")
 
+    stage("Aggregating…")
     return rows
 
 

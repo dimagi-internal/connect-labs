@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import time
+from unittest import mock
 
 import pytest
 from django.urls import reverse
@@ -324,10 +325,25 @@ def _seed_run(runs, *, target_opportunity_id=2154, thresholds=None):
     return runs[1]
 
 
-def _mock_evaluation_input(monkeypatch, rows):
-    import connect_labs.mopup.views as views_module
+def _mock_ready_data(monkeypatch, run, rows):
+    """Simulate a run whose fetch task has already completed — the common
+    case for testing evaluation/lock behavior without re-testing the
+    dispatch/poll machinery itself (see test_candidates_dispatches_a_fetch_task
+    and test_candidates_polls_a_running_task for that). Patches
+    `celery.result.AsyncResult` at its real import site (a local import
+    inside `_rows_or_progress`, same as `connect_labs.workflow.views`'
+    established test convention)."""
+    run.data["fetch_task_id"] = "task-done-1"
+    mock_result = mock.Mock(state="SUCCESS", info={"rows": rows})
+    monkeypatch.setattr("celery.result.AsyncResult", lambda task_id: mock_result)
 
-    monkeypatch.setattr(views_module, "build_evaluation_input", lambda opp_id, wards, request=None: rows)
+
+def _mock_task_state(monkeypatch, run, *, state, info=None, task_id="task-in-flight-1"):
+    """Simulate a run whose fetch task exists but isn't done (or failed) —
+    for testing the polling/progress-passthrough path itself."""
+    run.data["fetch_task_id"] = task_id
+    mock_result = mock.Mock(state=state, info=info)
+    monkeypatch.setattr("celery.result.AsyncResult", lambda tid: mock_result)
 
 
 def test_candidates_requires_login(client):
@@ -345,9 +361,10 @@ def test_candidates_returns_404_for_missing_run(client, django_user_model, monke
 def test_candidates_uses_default_config_when_none_saved(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
-    _seed_run(runs)
-    _mock_evaluation_input(
+    run = _seed_run(runs)
+    _mock_ready_data(
         monkeypatch,
+        run,
         [
             {
                 "wa_id": "wa-1",
@@ -387,9 +404,10 @@ def test_candidates_uses_default_config_when_none_saved(client, django_user_mode
 def test_candidates_accepts_threshold_override(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
-    _seed_run(runs)
-    _mock_evaluation_input(
+    run = _seed_run(runs)
+    _mock_ready_data(
         monkeypatch,
+        run,
         [
             {
                 "wa_id": "wa-1",
@@ -435,8 +453,8 @@ def test_candidates_accepts_threshold_override(client, django_user_model, monkey
 def test_candidates_persists_thresholds_used(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
-    _seed_run(runs)
-    _mock_evaluation_input(monkeypatch, [])
+    run = _seed_run(runs)
+    _mock_ready_data(monkeypatch, run, [])
     from connect_labs.mopup.core import indicators as ind
 
     custom_configs = {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.4, "granularity": ind.GRANULARITY_WA_ONLY}}
@@ -448,21 +466,59 @@ def test_candidates_persists_thresholds_used(client, django_user_model, monkeypa
     assert runs[1].thresholds["indicator_configs"] == custom_configs
 
 
-def test_candidates_fetch_failure_is_502(client, django_user_model, monkeypatch):
+def test_candidates_dispatches_a_fetch_task_when_none_exists(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
-    _seed_run(runs)
-    import connect_labs.mopup.views as views_module
+    run = _seed_run(runs)
+    assert run.fetch_task_id is None
 
-    def boom(opp_id, wards, request=None):
-        raise RuntimeError("CCHQ auth expired")
+    fake_async_result = mock.Mock(id="fresh-task-id")
+    with mock.patch("connect_labs.mopup.tasks.fetch_evaluation_data.delay", return_value=fake_async_result) as delay:
+        resp = client.post(
+            reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+            content_type="application/json",
+        )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "pending"
+    delay.assert_called_once_with(217, 1, mock.ANY)
+    assert runs[1].fetch_task_id == "fresh-task-id"
 
-    monkeypatch.setattr(views_module, "build_evaluation_input", boom)
+
+def test_candidates_polls_a_running_task(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    _mock_task_state(monkeypatch, run, state="PROGRESS", info={"message": "Fetching visit data…"})
+
     resp = client.post(
         reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
         content_type="application/json",
     )
-    assert resp.status_code == 502
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "running"
+    assert body["message"] == "Fetching visit data…"
+    # still in flight -> not cleared, no re-dispatch on the next poll
+    assert runs[1].fetch_task_id == "task-in-flight-1"
+
+
+def test_candidates_surfaces_a_failed_task_and_clears_it_for_retry(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    _mock_task_state(monkeypatch, run, state="FAILURE", info=RuntimeError("CommCare HQ authorization needed"))
+
+    resp = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "failed"
+    assert "CommCare HQ authorization needed" in body["error"]
+    # cleared -> the NEXT poll re-dispatches automatically, no manual retry needed
+    assert runs[1].fetch_task_id is None
 
 
 def test_candidates_rejects_malformed_body(client, django_user_model, monkeypatch):
@@ -533,8 +589,8 @@ def test_lock_returns_404_for_missing_run(client, django_user_model, monkeypatch
 def test_lock_rejects_when_no_candidates(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
-    _seed_run(runs)
-    _mock_evaluation_input(monkeypatch, [])  # no work areas at all -> no candidates
+    run = _seed_run(runs)
+    _mock_ready_data(monkeypatch, run, [])  # no work areas at all -> no candidates
     resp = client.post(
         reverse("mopup:lock", kwargs={"program_id": 217, "run_id": 1}),
         content_type="application/json",
@@ -546,9 +602,10 @@ def test_lock_rejects_when_no_candidates(client, django_user_model, monkeypatch)
 def test_lock_freezes_candidates_and_sets_status(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
-    _seed_run(runs)
-    _mock_evaluation_input(
+    run = _seed_run(runs)
+    _mock_ready_data(
         monkeypatch,
+        run,
         [
             {
                 "wa_id": "wa-1",
@@ -595,21 +652,22 @@ def test_lock_freezes_candidates_and_sets_status(client, django_user_model, monk
     assert runs[1].candidate_work_areas[0]["wa_id"] == "wa-1"
 
 
-def test_lock_fetch_failure_is_502(client, django_user_model, monkeypatch):
+def test_lock_refuses_while_data_still_loading(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
-    _seed_run(runs)
-    import connect_labs.mopup.views as views_module
+    run = _seed_run(runs)
+    _mock_task_state(monkeypatch, run, state="PROGRESS", info={"message": "Fetching visit data…"})
 
-    def boom(opp_id, wards, request=None):
-        raise RuntimeError("CCHQ auth expired")
-
-    monkeypatch.setattr(views_module, "build_evaluation_input", boom)
     resp = client.post(
         reverse("mopup:lock", kwargs={"program_id": 217, "run_id": 1}),
         content_type="application/json",
     )
-    assert resp.status_code == 502
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "running"
+    from connect_labs.mopup.core.models import STATUS_ANALYSIS
+
+    assert runs[1].status == STATUS_ANALYSIS  # not locked — data wasn't ready
 
 
 # --- MopupCreatePlanView -----------------------------------------------------

@@ -55,7 +55,9 @@ class TestBuildEvaluationInput:
                 },
             ],
         )
-        monkeypatch.setattr(candidates_module, "fetch_work_area_geometry", lambda opportunity_id, request=None: {})
+        monkeypatch.setattr(
+            candidates_module, "fetch_work_area_geometry", lambda opportunity_id, request=None, pipeline=None: {}
+        )
         rows = build_evaluation_input(1, [{"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"}], request=object())
         assert len(rows) == 1
         assert rows[0]["wa_id"] == "wa-1"
@@ -85,7 +87,7 @@ class TestBuildEvaluationInput:
         monkeypatch.setattr(
             candidates_module,
             "fetch_work_area_geometry",
-            lambda opportunity_id, request=None: {
+            lambda opportunity_id, request=None, pipeline=None: {
                 "wa-1": {"lat": 9.74, "lon": 11.18, "boundary": {"type": "Polygon", "coordinates": []}}
             },
         )
@@ -124,7 +126,9 @@ class TestBuildEvaluationInput:
             ],
         )
         monkeypatch.setattr(candidates_module, "list_approved_visits", lambda *a, **k: [])
-        monkeypatch.setattr(candidates_module, "fetch_work_area_geometry", lambda opportunity_id, request=None: {})
+        monkeypatch.setattr(
+            candidates_module, "fetch_work_area_geometry", lambda opportunity_id, request=None, pipeline=None: {}
+        )
         rows = build_evaluation_input(1, [], request=object())
         assert len(rows) == 2
 

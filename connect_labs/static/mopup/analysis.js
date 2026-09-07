@@ -1,7 +1,11 @@
 // Phase 2 analysis screen: per-indicator thresholds/granularity + global
 // cluster settings, recomputed live against a run's already-loaded data via
-// MopupCandidatesView. Nothing here is "locked" — the lock/hand-off action
-// (Phase 2 -> Phase 3) isn't built yet.
+// MopupCandidatesView. The first load (and only the first load) triggers a
+// real, potentially slow Celery fetch server-side (see mopup/tasks.py) —
+// this file polls MopupCandidatesView until it reports the fetch is done,
+// showing the loading panel with real stage messages meanwhile, then
+// reveals the controls. Every "Recompute" after that hits the same
+// endpoint but returns instantly (the fetch never re-runs).
 window.MopupAnalysis = (function () {
   function $(id) {
     return document.getElementById(id);
@@ -155,10 +159,37 @@ window.MopupAnalysis = (function () {
       .join('');
   }
 
-  async function recompute() {
-    indicatorConfigs = collectIndicatorConfigs();
-    globalConfig = collectGlobalConfig();
-    $('status').textContent = 'Recomputing…';
+  let pollTimer = null;
+  let dataReady = false;
+
+  function showLoadingPanel(message) {
+    $('loading-panel').classList.remove('hidden');
+    $('analysis-body').classList.add('hidden');
+    $('loading-message').textContent = message;
+    $('loading-retry').classList.add('hidden');
+  }
+
+  function showLoadingError(message) {
+    $('loading-panel').classList.remove('hidden');
+    $('analysis-body').classList.add('hidden');
+    $('loading-message').textContent = message;
+    $('loading-retry').classList.remove('hidden');
+  }
+
+  function showReady() {
+    $('loading-panel').classList.add('hidden');
+    $('analysis-body').classList.remove('hidden');
+  }
+
+  // The single entry point for both "check whether the initial fetch is
+  // done yet" (called repeatedly while loading) and "recompute against
+  // already-fetched data" (called once loaded, on every threshold tweak).
+  // Same endpoint either way — the response shape says which one happened.
+  async function pollOrEvaluate() {
+    if (dataReady) {
+      indicatorConfigs = collectIndicatorConfigs();
+      globalConfig = collectGlobalConfig();
+    }
     try {
       const resp = await fetch(CFG.candidatesUrl, {
         method: 'POST',
@@ -172,10 +203,20 @@ window.MopupAnalysis = (function () {
         }),
       });
       const data = await resp.json();
-      if (!resp.ok || data.status !== 'ok') {
-        $('status').textContent = data.detail || 'Failed to recompute.';
+
+      if (data.status === 'pending' || data.status === 'running') {
+        showLoadingPanel(data.message || 'Loading…');
+        pollTimer = setTimeout(pollOrEvaluate, 2000);
         return;
       }
+      if (data.status === 'failed' || data.status === 'error') {
+        showLoadingError(data.message || data.detail || 'Failed to load data.');
+        return; // deliberate stop — no auto-retry loop on a persistent error
+      }
+
+      // status === 'ok'
+      dataReady = true;
+      showReady();
       lastCandidates = data.candidates || [];
       $('live-count').textContent = data.candidate_count;
       renderWardSummary(data.ward_summary || []);
@@ -184,8 +225,14 @@ window.MopupAnalysis = (function () {
         'status',
       ).textContent = `${data.total_work_areas} work area(s) evaluated.`;
     } catch (e) {
-      $('status').textContent = 'Failed to recompute.';
+      showLoadingError('Failed to load data.');
     }
+  }
+
+  function retryLoad() {
+    clearTimeout(pollTimer);
+    showLoadingPanel('Retrying…');
+    pollOrEvaluate();
   }
 
   async function lockRun() {
@@ -204,7 +251,8 @@ window.MopupAnalysis = (function () {
       });
       const data = await resp.json();
       if (!resp.ok || data.status !== 'ok') {
-        $('status').textContent = data.detail || 'Failed to lock.';
+        $('status').textContent =
+          data.detail || data.message || 'Failed to lock.';
         return;
       }
       $(
@@ -249,14 +297,18 @@ window.MopupAnalysis = (function () {
     globalConfig = JSON.parse($('global-config-data').textContent);
     renderIndicatorRows();
     renderGlobalConfig();
-    $('recompute').addEventListener('click', recompute);
+    $('recompute').addEventListener('click', pollOrEvaluate);
+    $('loading-retry').addEventListener('click', retryLoad);
     $('sort-severity').addEventListener('click', () => {
       severitySortDesc = !severitySortDesc;
       renderCandidates();
     });
     $('lock-run').addEventListener('click', lockRun);
     $('create-plan').addEventListener('click', createPlan);
-    if (!CFG.locked) recompute();
+    showLoadingPanel(
+      'Loading work-area, visit, and geometry data for this opportunity…',
+    );
+    pollOrEvaluate();
   }
 
   return { init };
