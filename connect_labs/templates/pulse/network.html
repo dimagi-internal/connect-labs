@@ -11,6 +11,7 @@ shows a funder, and the labs navigation bar has no business above it.
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'pulse/pulse.css' %}">
 </head>
 <body class="pulse-body">
@@ -27,6 +28,12 @@ shows a funder, and the labs navigation bar has no business above it.
       <p class="net-loading" id="net-loading">Loading the network…</p>
     </main>
   </div>
+  {# Same map stack as the wall display, so the network reads as the same
+     product: Mapbox GL on the shared ConnectMap helper. Without a token the
+     page falls back to a plain SVG plot rather than showing an empty box. #}
+  <script>window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";</script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+  <script src="{% static 'maps/connect_map.js' %}"></script>
   <script src="{% static 'pulse/network.js' %}"></script>
 </body>
 </html>

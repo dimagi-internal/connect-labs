@@ -428,4 +428,10 @@ class PulseNetworkView(LoginRequiredMixin, View):
     """
 
     def get(self, request):
-        return render(request, "pulse/network.html", {})
+        from django.conf import settings
+
+        return render(
+            request,
+            "pulse/network.html",
+            {"mapbox_token": getattr(settings, "MAPBOX_TOKEN", "") or ""},
+        )

@@ -2734,6 +2734,48 @@
 .net-live {
   fill: var(--brand-marigold);
 }
+/* The globe gets real height: it is the point of the panel, not a strip under
+   the chart, and a sphere needs room to read as one. */
+.net-globe {
+  height: 620px;
+  width: 100%;
+  background: var(--ground);
+}
+.net-globe .mapboxgl-ctrl-group {
+  background: var(--panel-2);
+  border: 1px solid var(--rule);
+}
+.net-globe .mapboxgl-ctrl-group button + button {
+  border-top: 1px solid var(--rule);
+}
+.net-globe .mapboxgl-ctrl-group button span {
+  filter: invert(1) brightness(1.6);
+}
+.net-pop .mapboxgl-popup-content {
+  background: var(--panel-2);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 9px 12px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5);
+}
+.net-pop .mapboxgl-popup-tip {
+  border-top-color: var(--rule);
+  border-bottom-color: var(--rule);
+}
+.net-pop-tier {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+@media (max-width: 720px) {
+  .net-globe {
+    height: 420px;
+  }
+}
 .net-mlab {
   fill: var(--ink-2);
   font-family: var(--mono);

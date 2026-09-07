@@ -44,7 +44,40 @@
       zoom: opts.zoom != null ? opts.zoom : 9,
       attributionControl: true,
       interactive: opts.interactive !== false,
+      // 'globe' draws the world as a sphere with atmosphere. Opt-in, so every
+      // existing caller keeps the flat mercator it was written against.
+      projection: opts.projection || undefined,
     });
+  }
+
+  /* The dark basemap ships place labels at reading brightness, which makes the
+   * geography compete with the data drawn on top of it. Dim what anchors the
+   * eye (country and settlement names) and drop what is only noise at these
+   * zooms (POIs, roads, transit).
+   *
+   * Guarded on source === 'composite' so only Mapbox's own layers are touched,
+   * never ones the page adds afterwards. Call inside a 'load' handler.
+   */
+  function calmBasemap(map, opacity) {
+    try {
+      var layers = map.getStyle().layers || [];
+      for (var i = 0; i < layers.length; i++) {
+        var layer = layers[i];
+        if (layer.type !== 'symbol' || layer.source !== 'composite') continue;
+        if (/poi|road|transit|airport/.test(layer.id)) {
+          map.setLayoutProperty(layer.id, 'visibility', 'none');
+          continue;
+        }
+        map.setPaintProperty(
+          layer.id,
+          'text-opacity',
+          opacity == null ? 0.4 : opacity,
+        );
+      }
+    } catch (err) {
+      // A style that does not carry these layers is not an error worth
+      // breaking the map over.
+    }
   }
 
   // --- bounds ---
@@ -204,6 +237,7 @@
   }
 
   global.ConnectMap = {
+    calmBasemap: calmBasemap,
     ready: ready,
     createMap: createMap,
     bounds: bounds,

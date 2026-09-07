@@ -157,7 +157,9 @@
   /* ---- the map: equirectangular, fitted to the points themselves.
      No basemap. The network draws its own geography, which is also the only
      honest option when a third of the points are country centroids. */
-  function map(points) {
+  /* Fallback plot, used only when there is no Mapbox token: an equirectangular
+     scatter with no basemap. Better than an empty box, worse than the globe. */
+  function flatMap(points) {
     var W = 1000,
       M = 30;
     if (!points.length) {
@@ -335,6 +337,149 @@
     return svg;
   }
 
+  /* The globe. Same stack as the wall display -- Mapbox GL through the shared
+   * ConnectMap helper -- so the network reads as part of Pulse rather than a
+   * different product that happens to plot dots.
+   *
+   * Precision survives the move to a real basemap, which is the whole reason
+   * the payload carries it: a partner located to a town is a filled point, and
+   * one known only to its country is a hollow ring, because the middle of that
+   * country is exactly what we do not know.
+   */
+  function globeMap(container, points) {
+    var map = window.ConnectMap.createMap(container, {
+      center: [22, 4],
+      zoom: 1.7,
+      projection: 'globe',
+      interactive: true,
+    });
+    map.addControl(
+      new window.mapboxgl.NavigationControl({ showCompass: false }),
+      'top-right',
+    );
+    map.scrollZoom.disable(); // a wheel over the page should scroll the page
+    // Mapbox reports style, source and expression failures through this event
+    // rather than by throwing, so without it a broken layer is a blank map and
+    // no explanation.
+    map.on('error', function (e) {
+      console.error(
+        '[pulse:network] map error:',
+        (e && e.error && e.error.message) || e,
+      );
+    });
+
+    var features = points.map(function (p) {
+      return {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+        properties: {
+          name: p.short || p.name,
+          full: p.name,
+          place: p.place || 'location unknown',
+          precision: p.precision,
+          country: p.country || '',
+          delivering: !!p.delivering,
+          since: p.since || '',
+          joined: p.joined || '',
+        },
+      };
+    });
+
+    map.on('load', function () {
+      window.ConnectMap.calmBasemap(map, 0.45);
+      map.setFog({
+        color: '#100a3d',
+        'high-color': '#16006d',
+        'horizon-blend': 0.06,
+        'space-color': '#08042a',
+        'star-intensity': 0.08,
+      });
+      map.addSource('partners', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: features },
+      });
+
+      var LIGHT = '#feaf31';
+      var QUIET = '#a9b3e8';
+      var colour = ['case', ['get', 'delivering'], LIGHT, QUIET];
+      var isCountry = ['==', ['get', 'precision'], 'country'];
+
+      map.addLayer({
+        id: 'partners-glow',
+        type: 'circle',
+        source: 'partners',
+        filter: ['get', 'delivering'],
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 7, 6, 20],
+          'circle-color': LIGHT,
+          'circle-opacity': 0.14,
+          'circle-blur': 0.9,
+        },
+      });
+      map.addLayer({
+        id: 'partners',
+        type: 'circle',
+        source: 'partners',
+        paint: {
+          'circle-radius': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            1,
+            3.4,
+            4,
+            6,
+            8,
+            11,
+          ],
+          'circle-color': colour,
+          // Hollow for country-only: the ring says "somewhere in here".
+          'circle-opacity': [
+            'case',
+            isCountry,
+            0,
+            ['case', ['==', ['get', 'precision'], 'region'], 0.5, 0.85],
+          ],
+          'circle-stroke-color': colour,
+          'circle-stroke-width': ['case', isCountry, 1.4, 0.8],
+          'circle-stroke-opacity': 0.9,
+        },
+      });
+
+      var popup = new window.mapboxgl.Popup({
+        closeButton: false,
+        offset: 10,
+        className: 'net-pop',
+      });
+      map.on('mouseenter', 'partners', function (e) {
+        map.getCanvas().style.cursor = 'pointer';
+        var f = e.features[0].properties;
+        popup
+          .setLngLat(e.features[0].geometry.coordinates.slice())
+          .setHTML(
+            '<b>' +
+              f.full +
+              '</b><br>' +
+              f.place +
+              (f.country ? ', ' + f.country : '') +
+              ' <span class="net-pop-tier">(' +
+              (PRECISION_COPY[f.precision] || f.precision) +
+              ')</span><br>' +
+              (f.delivering === true || f.delivering === 'true'
+                ? 'delivering since ' + f.since
+                : 'not yet delivering') +
+              (f.joined ? '<br>joined ' + f.joined : ''),
+          )
+          .addTo(map);
+      });
+      map.on('mouseleave', 'partners', function () {
+        map.getCanvas().style.cursor = '';
+        popup.remove();
+      });
+    });
+    return map;
+  }
+
   function kpi(n, label) {
     var d = document.createElement('div');
     d.className = 'net-kpi';
@@ -405,9 +550,16 @@
         '<span><i class="sw-country"></i>country only</span><span><i class="sw-live"></i>delivering</span>',
     );
     var mbox = document.createElement('div');
-    mbox.className = 'net-chartbox';
-    mbox.appendChild(map(data.points));
-    geo.appendChild(mbox);
+    var canUseGlobe =
+      window.ConnectMap && window.mapboxgl && window.MAPBOX_TOKEN;
+    if (canUseGlobe) {
+      mbox.className = 'net-globe';
+      geo.appendChild(mbox);
+    } else {
+      mbox.className = 'net-chartbox';
+      mbox.appendChild(flatMap(data.points));
+      geo.appendChild(mbox);
+    }
     var note = document.createElement('p');
     note.className = 'net-note';
     note.textContent =
@@ -422,6 +574,8 @@
       ' could not be placed.';
     geo.appendChild(note);
     root.appendChild(geo);
+    // After the panel is in the document: Mapbox measures its container.
+    if (canUseGlobe) globeMap(mbox, data.points);
   }
 
   fetch(root.dataset.endpoint, { credentials: 'same-origin' })
