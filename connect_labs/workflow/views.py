@@ -2976,24 +2976,57 @@ def semantic_indicators_api(request, definition_id):
         if series:
             reg = filter_to_series(reg, series)
 
-        # A cold visit cache produces a full table of ZEROS, which reads as "this
-        # programme has no babies" rather than "nothing has been cached yet". They are
-        # completely different statements and the numbers cannot tell them apart, so
-        # say which one this is. The cache is populated by running the pipelines (the
-        # dashboard's own data load does it); this endpoint only READS it.
-        cold = bool(rows) and all(not (r.get("n_cases") or 0) for r in rows)
+        # This endpoint only READS the visit cache; the pipelines fill it. So the
+        # answer is only ever about the opportunities actually cached RIGHT NOW,
+        # and there are two ways for that to differ from what was asked for.
+        #
+        # COLD -- nothing cached -- produces a full table of zeros, which reads as
+        # "this programme has no babies" rather than "nothing has been cached yet".
+        #
+        # PARTIAL is the dangerous one, and it used to be silent. Production expires
+        # cached visits after an hour and nothing refills them together, so a
+        # programme total can be computed from 1 of 11 opportunities and still return
+        # HTTP 200 with a confident number. Measured live: 608 cases reported for a
+        # cohort of 8,718, with nothing saying ten opportunities were missing. An
+        # all-zeros check cannot catch it -- the number is not zero, it is wrong.
+        # A number that is quietly 7% of the truth is worse than an obvious zero.
+        from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+
+        requested = [int(o) for o in opportunity_ids]
+        present = set(
+            RawVisitCache.objects.filter(
+                opportunity_id__in=requested,
+                visit_count__gt=0,
+                expires_at__gt=dj_timezone.now(),
+            ).values_list("opportunity_id", flat=True)
+        )
+        with_data = [o for o in requested if o in present]
+        missing = [o for o in requested if o not in present]
+        cold = not with_data
+        partial = bool(with_data) and bool(missing)
 
         return JsonResponse(
             {
                 "rows": rows,
                 "measures": measure_catalog(reg),
                 "cold_cache": cold,
+                "partial_cache": partial,
+                "opportunities_with_data": with_data,
+                "opportunities_missing": missing,
                 "cold_cache_hint": (
                     "No cached visits for these opportunities, so every metric is zero "
                     "rather than genuinely zero. Load the workflow's data once (the "
                     "Indicators tab does this) to populate the cache, then re-run."
                     if cold
-                    else None
+                    else (
+                        f"Computed from {len(with_data)} of {len(requested)} opportunities: "
+                        f"{', '.join(str(o) for o in missing)} "
+                        f"{'has' if len(missing) == 1 else 'have'} no cached visits, so "
+                        "these totals are understated. Re-run the workflow's data load "
+                        "to include them."
+                        if partial
+                        else None
+                    )
                 ),
                 "series": series or "all",
                 "scopes": scopes or ["programme"],

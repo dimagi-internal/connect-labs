@@ -1557,6 +1557,7 @@ function WorkflowUI({
           rows: data.rows || [],
           measures: data.measures || [],
           coldCache: data.cold_cache || false,
+          partialCache: data.partial_cache || false,
           coldHint: data.cold_cache_hint || '',
         });
       })
@@ -2784,18 +2785,23 @@ function WorkflowUI({
             </div>
           )}
 
-          {/* A cold cache returns HTTP 200 with every count at zero, which is
-              indistinguishable on the page from a programme that genuinely has
-              no data. Say which one it is. */}
-          {nSeries.status === 'ready' && nSeries.coldCache && (
-            <div className="px-4 py-3 text-sm bg-amber-50 text-amber-900 border-b border-amber-100">
-              <span className="font-medium">
-                Every metric is zero because nothing is cached &mdash; not
-                because the programme has no data.
-              </span>{' '}
-              {nSeries.coldHint}
-            </div>
-          )}
+          {/* Two different lies the numbers cannot tell you about themselves.
+              COLD: every count is zero, which reads as a programme with no
+              babies. PARTIAL is worse and was silent -- the total is a real
+              number computed over only the opportunities that happen to be
+              cached, so it looks entirely credible while understating the
+              cohort. Neither is visible in the figures. */}
+          {nSeries.status === 'ready' &&
+            (nSeries.coldCache || nSeries.partialCache) && (
+              <div className="px-4 py-3 text-sm bg-amber-50 text-amber-900 border-b border-amber-100">
+                <span className="font-medium">
+                  {nSeries.coldCache
+                    ? 'Every metric is zero because nothing is cached \u2014 not because the programme has no data.'
+                    : 'These totals cover only part of the cohort.'}
+                </span>{' '}
+                {nSeries.coldHint}
+              </div>
+            )}
 
           {nSeries.status === 'ready' &&
             (function () {
