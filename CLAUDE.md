@@ -107,6 +107,7 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 | `pages/`           | Composable card landing-page "surfaces" at `/labs/p/<slug>`, authored via the `pages_*` MCP tools                                                                                                                                      | `data_access.py`, `providers/`, `views.py`                                          |
 | `flags/`           | Flag-type `LocalLabsRecord`s — findings observed on FLWs during workflow runs; API mounted at `/labs/workflow/api/run/<id>/flags/`                                                                                                     | `models.py`, `data_access.py`                                                       |
 | `mcp/`             | The labs remote MCP server (see [MCP Servers](#mcp-servers)): PAT auth, FastMCP ASGI app at `/mcp/`, tool registry + audit log                                                                                                          | `server.py`, `tool_registry.py`, `tools/`, `auth.py`                                |
+| `pulse/`           | Funder-facing service-delivery telemetry at `/labs/pulse/` — wall display, donor reports, and the partner network at `/labs/pulse/network/`. Polls Connect's export API on a beat. See [Connect Pulse](#connect-pulse)                        | `ingest.py`, `api.py`, `network_api.py`, `partner_names.py`, `hq_location.py`       |
 | `labs/synthetic/`  | Registry of "synthetic" opportunities that serve fixture JSON from GDrive instead of prod exports. CRUD UI at `/labs/synthetic/`, SSE-streamed dump flow, strict access scoping by `user_opportunities`. See `docs/SYNTHETIC_OPPS.md`. | `models.py`, `registry.py`, `fixture_store.py`, `gdrive.py`, `dump.py`, `client.py` |
 
 ### Retained Non-Labs Apps (Models + Migrations Only)
@@ -142,6 +143,40 @@ Templates that produce a periodic review with a definite "moment of completion" 
 Use the MCP server's `get_form_json_paths` tool to discover correct field paths when building pipeline schemas.
 
 **Full reference:** [WORKFLOW_REFERENCE.md](connect_labs/workflow/WORKFLOW_REFERENCE.md)
+
+## Connect Pulse
+
+Delivery telemetry at `/labs/pulse/`, polled from Connect's export API. Four
+things about it are expensive to rediscover.
+
+**Partner identity lives in the LLO Directory, not this repo.** Connect publishes
+partner *names* only for the orgs the polling account belongs to — a minority of
+those that deliver. The rest arrive as a slug and are matched against the team's
+directory sheet, loaded into `PulsePartner` by `pulse_partner_import` (daily on
+beat, and runnable by hand). No partner name is written down in source; if the
+board shows slugs instead of names, that import has not run.
+
+Slugs no string rule can reach are resolved by a human on the directory's
+"Connect Org Mapping" tab and carried as `PulsePartnerAlias`. `partner_names.py`
+deliberately refuses to guess — a wrong parent name is worse than a visible slug.
+
+**Two traps when dating anything from the spine.** `completed_works` cannot date
+anything before **2025-01-14**: Connect bulk-created 81k rows at one instant that
+day, so reading `created_ts` naively collapses every partner already active onto
+a single date. And `field_ts` comes off a handset — one partner's earliest visit
+claims 2010 — so the server-assigned `sync_ts` is what to trust, with a sanity
+floor under it. `network_api.py` has both guards and tests pinning them.
+
+**Partner identity is entitled, and fails closed.** The read API is otherwise
+unauthenticated, so `_partner_names_allowed` requires a labs session or a token
+minted to permit names. Any new endpoint carrying partner identity has to gate
+the same way.
+
+**The drill-down window is shared.** `PulseWindows.configure({urlFor, labels})`
+declares its whole dependency; both the wall display and the network page open
+it. Every render path sits inside a catch that reports "Could not load this
+partner", so a missing binding ships looking like a data problem — see
+`windows.test.js`.
 
 ## Deployment
 

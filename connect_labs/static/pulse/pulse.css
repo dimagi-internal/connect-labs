@@ -2661,17 +2661,6 @@
 .sw-live {
   background: var(--brand-marigold);
 }
-.sw-city {
-  background: var(--ink-2);
-}
-.sw-region {
-  background: var(--ink-2);
-  opacity: 0.55;
-}
-.sw-country {
-  background: transparent;
-  border: 1px solid var(--ink-3);
-}
 .net-chartbox {
   padding: 16px 10px 6px;
   overflow-x: auto;
@@ -2971,22 +2960,9 @@
   fill-opacity: 0.75;
   stroke: none;
 }
-.net-dot-region {
-  fill-opacity: 0.42;
-}
-.net-dot-country {
-  fill: none;
-  stroke: var(--ink-3);
-  stroke-width: 1.2;
-}
 .net-dot-live {
   fill: var(--brand-marigold);
   fill-opacity: 0.85;
-}
-.net-dot-live.net-dot-country {
-  fill: none;
-  stroke: var(--brand-marigold);
-  stroke-width: 1.6;
 }
 @media (max-width: 720px) {
   .net-kpis {
