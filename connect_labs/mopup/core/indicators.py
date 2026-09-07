@@ -1,0 +1,350 @@
+"""Phase 2's execution-gap indicators (design brief §5) and cluster-aware
+detection (§6) — pure functions over plain per-work-area dicts, no network/DB,
+so this is the piece that gets real `pytest` coverage against synthetic data
+instead of manual live-browser checks (the brief's core argument for a Django
+rebuild over the old Workflow dashboard).
+
+Expected per-work-area input shape (one dict per WA; upstream data-access
+layers are responsible for populating these — this module only computes):
+
+    {
+        "wa_id": str,
+        "ward": str, "lga": str, "state": str,
+        "flw_username": str,          # owner, for whole-FLW-average + §6b
+        "lat": float, "lon": float,   # centroid, for §6a's neighbor graph
+        "status": str,                # NOT_VISITED/VISITED/EXPECTED_VISIT_REACHED/
+                                       # REQUEST_FOR_INACCESSIBLE/INACCESSIBLE
+        "building_count": int,
+        "expected_visit_count": int,
+        "approved_hsd_count": int,
+        "approved_ncf_count": int,
+        "approved_inaccessible_count": int,
+        "deworming_given": int,       # of approved_hsd_count visits
+        "muac_given": int,
+        "vaccination_given": int,
+    }
+
+Every rate the three data-quality metrics compute shares `approved_hsd_count`
+as its denominator (§5's explicit "share the same denominator" rule); NCF/
+inaccessible shares total visits (HSD+NCF+Inaccessible) as its denominator;
+EVC shortfall's denominator is `expected_visit_count`.
+"""
+
+from __future__ import annotations
+
+import math
+
+# ---------------------------------------------------------------------------
+# Indicator definitions — direction is inherent to what's being measured, not
+# user-configurable (only the threshold VALUE and granularity are, per §6's
+# control inventory).
+# ---------------------------------------------------------------------------
+
+EVC_SHORTFALL = "evc_shortfall"
+NCF_INACCESSIBLE = "ncf_inaccessible_rate"
+DEWORMING = "deworming"
+MUAC = "muac"
+VACCINATION = "vaccination"
+
+ALL_INDICATORS = [EVC_SHORTFALL, NCF_INACCESSIBLE, DEWORMING, MUAC, VACCINATION]
+
+# "below" = flagged when the rate is BELOW threshold (a shortfall);
+# "above" = flagged when the rate is ABOVE threshold (too much of a bad thing).
+_DIRECTION = {
+    EVC_SHORTFALL: "below",
+    NCF_INACCESSIBLE: "above",
+    DEWORMING: "below",
+    MUAC: "below",
+    VACCINATION: "below",
+}
+
+_DQ_INDICATORS = {DEWORMING, MUAC, VACCINATION}
+
+# Concluded statuses for the not-yet-visited EVC exclusion (§5). A WA still
+# NOT_VISITED or with a pending REQUEST_FOR_INACCESSIBLE hasn't necessarily
+# failed — the campaign may just not have reached it yet.
+_CONCLUDED_STATUSES = {"VISITED", "EXPECTED_VISIT_REACHED", "INACCESSIBLE"}
+
+GRANULARITY_WA_ONLY = "wa_only"
+GRANULARITY_CLUSTER_AWARE = "cluster_aware"
+GRANULARITY_FLW_AVERAGE = "flw_average"
+
+
+def _safe_div(numerator: float, denominator: float) -> float | None:
+    if not denominator:
+        return None
+    return numerator / denominator
+
+
+def _dq_given_count(wa: dict, indicator_key: str) -> int:
+    return {
+        DEWORMING: wa.get("deworming_given", 0),
+        MUAC: wa.get("muac_given", 0),
+        VACCINATION: wa.get("vaccination_given", 0),
+    }[indicator_key]
+
+
+def wa_rate(wa: dict, indicator_key: str, global_config: dict) -> float | None:
+    """This WA's own rate for `indicator_key`, or `None` if the indicator
+    doesn't apply / isn't trustworthy for this WA (gated out — never a guess,
+    matching `ward_children_per_building`'s "0.0 is a real answer, None is
+    'can't compute'" convention elsewhere in this app)."""
+    if indicator_key == EVC_SHORTFALL:
+        if wa.get("status") not in _CONCLUDED_STATUSES and not global_config.get("include_not_yet_visited", False):
+            return None
+        return _safe_div(wa.get("approved_hsd_count", 0), wa.get("expected_visit_count", 0))
+
+    if indicator_key == NCF_INACCESSIBLE:
+        min_buildings = global_config.get("min_building_count", 1)
+        if wa.get("building_count", 0) < min_buildings:
+            return None
+        total_visits = (
+            wa.get("approved_hsd_count", 0)
+            + wa.get("approved_ncf_count", 0)
+            + wa.get("approved_inaccessible_count", 0)
+        )
+        return _safe_div(wa.get("approved_ncf_count", 0) + wa.get("approved_inaccessible_count", 0), total_visits)
+
+    if indicator_key in _DQ_INDICATORS:
+        min_hsd = global_config.get("min_hsd_visits_floor", 1)
+        hsd_count = wa.get("approved_hsd_count", 0)
+        if hsd_count < min_hsd:
+            return None
+        return _safe_div(_dq_given_count(wa, indicator_key), hsd_count)
+
+    raise ValueError(f"unknown indicator: {indicator_key!r}")
+
+
+def is_flagged(rate: float | None, threshold: float, indicator_key: str) -> bool:
+    if rate is None:
+        return False
+    direction = _DIRECTION[indicator_key]
+    return rate < threshold if direction == "below" else rate > threshold
+
+
+# ---------------------------------------------------------------------------
+# §6a — spatial neighbor graph (all FLWs, for NCF/inaccessible + EVC-shortfall)
+# ---------------------------------------------------------------------------
+
+_EARTH_RADIUS_M = 6_371_000.0
+
+
+def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * _EARTH_RADIUS_M * math.asin(math.sqrt(a))
+
+
+def build_neighbor_graph(work_areas: list[dict], distance_m: float) -> dict[str, list[str]]:
+    """{wa_id: [neighbor_wa_id, ...]} for every pair of WAs whose centroids
+    are within `distance_m` of each other. O(n^2) — fine at real mop-up scale
+    (a ward's WAs, not a whole opportunity's); revisit with a spatial index if
+    that assumption stops holding."""
+    graph: dict[str, list[str]] = {wa["wa_id"]: [] for wa in work_areas}
+    for i, a in enumerate(work_areas):
+        for b in work_areas[i + 1 :]:
+            if a.get("lat") is None or a.get("lon") is None or b.get("lat") is None or b.get("lon") is None:
+                continue
+            if haversine_distance_m(a["lat"], a["lon"], b["lat"], b["lon"]) <= distance_m:
+                graph[a["wa_id"]].append(b["wa_id"])
+                graph[b["wa_id"]].append(a["wa_id"])
+    return graph
+
+
+def neighborhood_rate(
+    wa: dict,
+    neighbor_ids: list[str],
+    by_id: dict[str, dict],
+    indicator_key: str,
+    global_config: dict,
+    min_neighbors: int,
+) -> float | None:
+    """The average rate among `wa`'s qualifying neighbors (excluding itself).
+    `None` if fewer than `min_neighbors` neighbors have a computable rate —
+    too small a sample to trust (§6a's explicit floor)."""
+    rates = []
+    for nid in neighbor_ids:
+        neighbor = by_id.get(nid)
+        if neighbor is None:
+            continue
+        r = wa_rate(neighbor, indicator_key, global_config)
+        if r is not None:
+            rates.append(r)
+    if len(rates) < min_neighbors:
+        return None
+    return sum(rates) / len(rates)
+
+
+# ---------------------------------------------------------------------------
+# §6b — within-FLW clustering (data-quality metrics only)
+# ---------------------------------------------------------------------------
+
+
+def flw_portfolio_rate(
+    wa: dict,
+    flw_work_areas: list[dict],
+    indicator_key: str,
+    global_config: dict,
+    min_portfolio_size: int,
+) -> float | None:
+    """The rate among this WA's own FLW's OTHER work areas (§6b) — same
+    min-sample-size floor idea as `neighborhood_rate`, just scoped to one
+    FLW's portfolio instead of spatial neighbors."""
+    others = [w for w in flw_work_areas if w["wa_id"] != wa["wa_id"]]
+    rates = [r for r in (wa_rate(w, indicator_key, global_config) for w in others) if r is not None]
+    if len(rates) < min_portfolio_size:
+        return None
+    return sum(rates) / len(rates)
+
+
+# ---------------------------------------------------------------------------
+# §6, whole-FLW-average granularity — blend numerators/denominators once
+# ---------------------------------------------------------------------------
+
+
+def flw_average_rate(flw_work_areas: list[dict], indicator_key: str, global_config: dict) -> float | None:
+    """Sum this FLW's numerators/denominators across ALL their work areas and
+    divide once (the original, simpler view kept available per §6's "three-way
+    view", not the cluster-aware default)."""
+    if indicator_key == EVC_SHORTFALL:
+        include_not_yet_visited = global_config.get("include_not_yet_visited", False)
+        num = sum(
+            w.get("approved_hsd_count", 0)
+            for w in flw_work_areas
+            if w.get("status") in _CONCLUDED_STATUSES or include_not_yet_visited
+        )
+        denom = sum(
+            w.get("expected_visit_count", 0)
+            for w in flw_work_areas
+            if w.get("status") in _CONCLUDED_STATUSES or include_not_yet_visited
+        )
+        return _safe_div(num, denom)
+
+    if indicator_key == NCF_INACCESSIBLE:
+        min_buildings = global_config.get("min_building_count", 1)
+        eligible = [w for w in flw_work_areas if w.get("building_count", 0) >= min_buildings]
+        num = sum(w.get("approved_ncf_count", 0) + w.get("approved_inaccessible_count", 0) for w in eligible)
+        denom = sum(
+            w.get("approved_hsd_count", 0) + w.get("approved_ncf_count", 0) + w.get("approved_inaccessible_count", 0)
+            for w in eligible
+        )
+        return _safe_div(num, denom)
+
+    if indicator_key in _DQ_INDICATORS:
+        min_hsd = global_config.get("min_hsd_visits_floor", 1)
+        eligible = [w for w in flw_work_areas if w.get("approved_hsd_count", 0) >= min_hsd]
+        num = sum(_dq_given_count(w, indicator_key) for w in eligible)
+        denom = sum(w.get("approved_hsd_count", 0) for w in eligible)
+        return _safe_div(num, denom)
+
+    raise ValueError(f"unknown indicator: {indicator_key!r}")
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+DEFAULT_GLOBAL_CONFIG = {
+    "neighbor_distance_m": 200,
+    "min_neighbor_count": 3,
+    "min_neighborhood_size": 3,
+    "min_hsd_visits_floor": 1,
+    "min_building_count": 1,
+    "include_not_yet_visited": False,
+}
+
+
+def evaluate_run(
+    work_areas: list[dict],
+    indicator_configs: dict[str, dict],
+    global_config: dict | None = None,
+) -> list[dict]:
+    """Evaluate every enabled indicator against every work area and return
+    the candidates: work areas triggered by at least one enabled indicator
+    (union/OR, §6's explicit combination rule), each annotated with which
+    indicators triggered and a plain severity count (§6c).
+
+    `indicator_configs`: {indicator_key: {"enabled": bool, "threshold": float,
+    "granularity": "wa_only"|"cluster_aware"|"flw_average"}} — only keys
+    present AND enabled are evaluated; a disabled/absent indicator never
+    contributes to severity or the union.
+    """
+    config = dict(DEFAULT_GLOBAL_CONFIG)
+    config.update(global_config or {})
+
+    by_id = {wa["wa_id"]: wa for wa in work_areas}
+    neighbor_graph = build_neighbor_graph(work_areas, config["neighbor_distance_m"])
+    by_flw: dict[str, list[dict]] = {}
+    for wa in work_areas:
+        by_flw.setdefault(wa.get("flw_username", ""), []).append(wa)
+
+    candidates = []
+    for wa in work_areas:
+        triggered = []
+        detail = {}
+        for indicator_key, ind_cfg in indicator_configs.items():
+            if not ind_cfg.get("enabled"):
+                continue
+            threshold = ind_cfg["threshold"]
+            granularity = ind_cfg.get("granularity", GRANULARITY_CLUSTER_AWARE)
+            own_rate = wa_rate(wa, indicator_key, config)
+
+            if granularity == GRANULARITY_WA_ONLY:
+                flagged = is_flagged(own_rate, threshold, indicator_key)
+                detail[indicator_key] = {"granularity": granularity, "rate": own_rate}
+
+            elif granularity == GRANULARITY_FLW_AVERAGE:
+                blended = flw_average_rate(by_flw.get(wa.get("flw_username", ""), [wa]), indicator_key, config)
+                flagged = is_flagged(blended, threshold, indicator_key)
+                detail[indicator_key] = {"granularity": granularity, "rate": blended}
+
+            elif granularity == GRANULARITY_CLUSTER_AWARE:
+                own_flagged = is_flagged(own_rate, threshold, indicator_key)
+                if indicator_key in _DQ_INDICATORS:
+                    neighborhood = flw_portfolio_rate(
+                        wa,
+                        by_flw.get(wa.get("flw_username", ""), []),
+                        indicator_key,
+                        config,
+                        config["min_neighborhood_size"],
+                    )
+                else:
+                    neighborhood = neighborhood_rate(
+                        wa,
+                        neighbor_graph.get(wa["wa_id"], []),
+                        by_id,
+                        indicator_key,
+                        config,
+                        config["min_neighbor_count"],
+                    )
+                neighborhood_flagged = is_flagged(neighborhood, threshold, indicator_key)
+                flagged = own_flagged and neighborhood_flagged
+                detail[indicator_key] = {
+                    "granularity": granularity,
+                    "rate": own_rate,
+                    "neighborhood_rate": neighborhood,
+                    "is_isolated_outlier": own_flagged and not neighborhood_flagged,
+                }
+            else:
+                raise ValueError(f"unknown granularity: {granularity!r}")
+
+            if flagged:
+                triggered.append(indicator_key)
+
+        if triggered:
+            candidates.append(
+                {
+                    "wa_id": wa["wa_id"],
+                    "ward": wa.get("ward", ""),
+                    "lga": wa.get("lga", ""),
+                    "state": wa.get("state", ""),
+                    "flw_username": wa.get("flw_username", ""),
+                    "triggered_indicators": triggered,
+                    "severity_count": len(triggered),
+                    "detail": detail,
+                }
+            )
+
+    return candidates
