@@ -1354,6 +1354,144 @@ def workflow_patch_render_code(
 
 
 @register(
+    name="workflow_sync_from_deployed_template",
+    description=(
+        "Sync a workflow's render_code from the template file that is DEPLOYED on "
+        "this server — no upload. Use this to bring a live workflow up to what has "
+        "merged and shipped, which is the step that makes merged render work "
+        "actually reach a dashboard. `workflow_sync_from_template_file` is the "
+        "sibling for the other direction (push a LOCAL, unmerged template to a "
+        "preview workflow); this one carries no payload and cannot drift from the "
+        "running code. The template is resolved from the workflow's own "
+        "`template_type`, falling back to name detection, or pass template_key to "
+        "force it. Set dry_run=true to see the size delta without writing. Uses "
+        "expected_version for optimistic concurrency — re-fetch via workflow_get "
+        "on VERSION_CONFLICT."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workflow_id": {"type": "integer"},
+            "opportunity_id": {
+                "type": "integer",
+                "description": "Scope by owning opportunity. Provide this OR program_id.",
+            },
+            "program_id": {
+                "type": "integer",
+                "description": "Scope by owning program (program-owned workflow). Provide this OR opportunity_id.",
+            },
+            "template_key": {
+                "type": "string",
+                "description": "Force a template instead of resolving from the workflow's template_type.",
+            },
+            "expected_version": {"type": "integer"},
+            "dry_run": {"type": "boolean"},
+        },
+        "required": ["workflow_id", "expected_version"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_sync_from_deployed_template(
+    user,
+    workflow_id: int,
+    expected_version: int,
+    opportunity_id: int = None,
+    program_id: int = None,
+    template_key: str = None,
+    dry_run: bool = False,
+):
+    """Pull the deployed template's render_code onto a live workflow.
+
+    The gap this closes: merging a render change and deploying it does NOT update
+    any existing workflow. Every live dashboard keeps serving the render_code saved
+    on it, so shipped work sits inert until something rewrites that row. The only
+    agent-reachable writer was `workflow_update_render_code`, which needs the whole
+    file as an argument -- ~128 KB for kmc_programme_metrics -- and the
+    file-carrying alternative, `workflow_sync_from_template_file`, cannot parse
+    several shipped templates at all. So in practice nothing synced, and workflow
+    5456 was found running a render ~528 lines behind main with a broken N-series
+    tab whose fix had merged hours earlier.
+
+    A Django view (`sync_template_render_code_api`) already did this and was never
+    exposed. It also hardcoded `version=1` on every save, which resets the
+    optimistic-concurrency counter and lets a concurrent writer's check pass
+    against a version that has already moved; this takes `expected_version` and
+    increments, like every other render writer here.
+    """
+    from connect_labs.workflow.templates import detect_template_key_from_name, get_template
+
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+
+    token = require_connect_token(user)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
+    try:
+        definition = wda.get_definition(workflow_id)
+        if not definition:
+            raise MCPToolError("NOT_FOUND", f"No workflow {workflow_id}.")
+
+        # template_type is what the workflow itself records; name detection is the
+        # older heuristic and stays only as a fallback, because a renamed workflow
+        # would otherwise silently resolve to the wrong template -- or to none.
+        key = (
+            template_key
+            or getattr(definition, "template_type", None)
+            or detect_template_key_from_name(definition.name or "")
+        )
+        if not key:
+            raise MCPToolError(
+                "NOT_FOUND",
+                f"Could not resolve a template for workflow {workflow_id}; pass template_key.",
+            )
+        template = get_template(key)
+        if not template:
+            raise MCPToolError("NOT_FOUND", f"Template {key!r} is not registered on this server.")
+
+        deployed = template.get("render_code") or ""
+        if not deployed:
+            raise MCPToolError("NOT_FOUND", f"Template {key!r} ships no render_code.")
+
+        current = wda.get_render_code(workflow_id)
+        if current is None:
+            raise MCPToolError("NOT_FOUND", f"No render_code for workflow {workflow_id}.")
+        if current.version != expected_version:
+            raise MCPToolError(
+                "VERSION_CONFLICT",
+                f"render_code is at version {current.version}, not {expected_version}. "
+                "Call workflow_get to re-read and retry.",
+                details={"server_version": current.version, "expected": expected_version},
+            )
+
+        existing = current.component_code or ""
+        result = {
+            "workflow_id": workflow_id,
+            "template_key": key,
+            "chars_before": len(existing),
+            "chars_after": len(deployed),
+            "identical": existing == deployed,
+            "dry_run": bool(dry_run),
+        }
+        if dry_run or existing == deployed:
+            result["new_version"] = current.version
+            return result
+
+        _validate_render_code(deployed)
+        new_record = wda.save_render_code(
+            definition_id=workflow_id,
+            component_code=deployed,
+            version=expected_version + 1,
+        )
+        result["new_version"] = new_record.version
+        result["_version_before"] = expected_version
+        result["_version_after"] = new_record.version
+        return _attach_render_code_warning(result, deployed)
+    finally:
+        if hasattr(wda, "close"):
+            wda.close()
+
+
+@register(
     name="workflow_delete",
     description=(
         "Delete a workflow definition and its associated render_code + chat "
