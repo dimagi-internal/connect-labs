@@ -288,3 +288,44 @@ def test_all_eight_scopes_compile_in_one_pass(props_doc, registry, deployment):
     assert sets.count("(") == 8, f"expected 8 grouping sets, got {sets.count('(')}"
     for label in ("llo_month", "opportunity_month", "flw_month"):
         assert f"THEN '{label}'" in sql, f"{label} rows would be labelled 'other'"
+
+
+# ── the catalog must carry what the render formats with ──────────────────────
+
+
+def test_the_catalog_distinguishes_counts_from_means():
+    """`unit` alone does not decide how a value is printed.
+
+    C01, C02 and C05 are counts. C06 and C24 share their unit ('n') and are MEANS.
+    The render's old `IND` said so via `kind`; formatting a mean as an integer drops
+    a real decimal and reads as a value rather than a bug.
+
+    Every indicator's own measure is `type: number` — it divides two others — so the
+    distinction lives on its numerator. But only when the indicator IS its numerator:
+    C09's numerator is a `count` too (it counts cases), and C09 is a percentage.
+    """
+    from connect_labs.semantic.runtime import filter_to_series, load_registry, measure_catalog
+
+    _, reg = load_registry()
+    cat = {m["indicator"]: m for m in measure_catalog(filter_to_series(reg, "C"))}
+
+    assert {i: cat[i]["kind"] for i in cat if cat[i]["unit"] == "n"} == {
+        "C01": "count",
+        "C02": "count",
+        "C05": "count",
+        "C06": "mean",
+        "C24": "mean",
+    }
+    for ratio in ("C07", "C09", "C31"):
+        assert cat[ratio]["kind"] is None, f"{ratio} is a rate, not a {cat[ratio]['kind']}"
+
+
+def test_the_catalog_carries_prominence():
+    """The render groups headline indicators from this; without it all 22 read equal."""
+    from connect_labs.semantic.runtime import filter_to_series, load_registry, measure_catalog
+
+    _, reg = load_registry()
+    cat = {m["indicator"]: m for m in measure_catalog(filter_to_series(reg, "C"))}
+    assert cat["C09"]["prominence"] == "Top"
+    assert cat["C06"]["prominence"] == "Lower"
+    assert all(m["prominence"] for m in cat.values()), "every indicator needs a prominence"

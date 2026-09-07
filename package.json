@@ -74,7 +74,7 @@
     "dev": "webpack --mode development --config webpack/base.config.js && npm run build:campaign && npm run build:supply",
     "dev-watch": "concurrently -k -n webpack,campaign,supply \"webpack --mode development --config webpack/base.config.js --watch\" \"npm run watch:campaign\" \"npm run watch:supply\"",
     "test": "vitest run && npm run test:units",
-    "test:units": "node connect_labs/static/labs/context_picker.test.mjs && node connect_labs/static/microplans/shared.test.mjs",
+    "test:units": "node connect_labs/static/labs/context_picker.test.mjs && node connect_labs/static/microplans/shared.test.mjs && node --test connect_labs/workflow/templates/__tests__/kmc_render.test.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {
