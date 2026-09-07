@@ -174,3 +174,36 @@ def test_every_rendered_value_shows_its_denominator():
     """The registry's no-bare-numbers rule, carried through to the screen."""
     src = RENDER.read_text()
     assert "_denominator" in src
+
+
+# ── one declaration per name ─────────────────────────────────────────────────
+
+
+def test_no_top_level_declaration_appears_twice():
+    """A duplicated block is invisible in JS and silently doubles the work.
+
+    `var` redeclaration is legal, so a rebase that re-inserts a region produces no
+    error anywhere: the second assignment simply wins and the first becomes dead.
+    Nothing in Python executes this file, and the browser does not complain either.
+
+    It happened. #1467 re-inserted lines 1415-1501 -- byFLW, programInd,
+    mortalityCredible and the selLLO/selOpp/selInd useState trio -- after the
+    N-series block, byte for byte. Nine duplicated declarations reached main while
+    the deployed workflow (render v5) had exactly one of each, so a sync would have
+    pushed it live.
+
+    The cost is not only tidiness. Those three are React.useMemo and the trio are
+    React.useState: the component allocated three dead state slots, and recomputed
+    `evalAll` over every derived case row twice per render, on a dashboard whose
+    open problem is latency.
+
+    Hook COUNT stayed stable, which is why React never raised -- the duplication is
+    unconditional. A conditional one would crash instead, so this is the quiet half
+    of a rule React normally enforces loudly.
+    """
+    src = RENDER.read_text()
+    # Top-level declarations inside WorkflowUI are indented exactly two spaces;
+    # anything deeper is a nested scope where shadowing is legitimate.
+    names = re.findall(r"^  (?:var|let|const|function)\s+([A-Za-z_$][\w$]*)", src, re.M)
+    dupes = sorted({n for n in names if names.count(n) > 1})
+    assert not dupes, f"declared more than once at the top level of WorkflowUI: {dupes}"
