@@ -98,3 +98,22 @@ test('no top-level declaration appears twice', () => {
   ].sort();
   assert.deepStrictEqual(dupes, []);
 });
+
+test('credibility is never read straight off the _suppressed column', () => {
+  // `<measure>_suppressed` is `(props.llo IS NULL OR props.llo NOT IN (credible))`,
+  // and props.llo is NULL in every grouping set that does not group BY llo —
+  // programme, opportunity, flw, month. So the column reads TRUE there, and trusting
+  // it renders "recording not credible" on the programme card, the one scope
+  // semantic/gates.py says must never be gated.
+  //
+  // The column is only meaningful at the llo scope. cCredibleSet reads it there;
+  // everything else must go through cCredible, which gates a row by its OWN llo.
+  const reads = [...src.matchAll(/_suppressed'\]/g)].length;
+  const inSet = src.includes('function cCredibleSet');
+  assert.ok(inSet, 'cCredibleSet must exist');
+  assert.strictEqual(
+    reads,
+    1,
+    'only cCredibleSet may read _suppressed; every other site must call cCredible',
+  );
+});

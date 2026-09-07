@@ -329,3 +329,27 @@ def test_the_catalog_carries_prominence():
     assert cat["C09"]["prominence"] == "Top"
     assert cat["C06"]["prominence"] == "Lower"
     assert all(m["prominence"] for m in cat.values()), "every indicator needs a prominence"
+
+
+def test_filtering_to_a_series_keeps_the_availability_gates():
+    """The gates are infrastructure, not part of any series.
+
+    The reachability walk cannot find them: they carry no `meta`, so they are not
+    roots, and no indicator's sql references them — they are read ALONGSIDE a value,
+    not inside it. So `series=C` came back with no `anyrec_*` columns at all, and a
+    caller had no way to tell "the app never asked this question" from "the answer
+    is 0". A worker who logged no danger signs has not achieved a 0% danger-sign
+    rate. That distinction was worth 268 of 5,302 per-FLW checks when it was ported.
+    """
+    from connect_labs.semantic.runtime import filter_to_series, load_registry, measure_catalog
+
+    _, reg = load_registry()
+    all_gates = {m["name"] for m in reg["measures"] if m.get("gate")}
+    assert all_gates, "the registry must mark its gates explicitly, not by name prefix"
+
+    for series, expected_indicators in (("C", 22), ("N", 14)):
+        kept = filter_to_series(reg, series)
+        names = {m["name"] for m in kept["measures"]}
+        assert all_gates <= names, f"series={series} dropped gates: {sorted(all_gates - names)}"
+        # and keeping them must not smuggle them into the display contract
+        assert len(measure_catalog(kept)) == expected_indicators
