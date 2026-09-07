@@ -2880,6 +2880,11 @@ def semantic_indicators_api(request, definition_id):
               is an improvement: per-scope calls re-run the whole Layer 1
               extraction each time (28.2s + 31.2s + 27.3s for three, measured).
       as_of   SQL date literal; defaults to CURRENT_DATE.
+      catalog_only
+              return the measure catalog and NO rows, short-circuiting before any
+              pipeline or database work. A frozen run holds its own values but
+              still needs titles, units, directions and bands to render them, and
+              the render no longer keeps a copy of those.
     """
     from connect_labs.semantic.runtime import (
         SemanticRuntimeError,
@@ -2893,6 +2898,31 @@ def semantic_indicators_api(request, definition_id):
     series = (request.GET.get("series") or "").strip() or None
     scopes = [s for s in (request.GET.get("scopes") or "").split(",") if s.strip()]
     as_of = (request.GET.get("as_of") or "").strip() or "CURRENT_DATE"
+    catalog_only = (request.GET.get("catalog_only") or "").strip().lower() in ("1", "true", "yes")
+
+    # The display contract WITHOUT the numbers. A frozen run already holds its own
+    # values in its snapshot, but it still needs titles, units, directions and bands
+    # to render them -- and the render can no longer keep a hand-written copy of
+    # those, which is the duplication the semantic layer exists to end. Running the
+    # full GROUPING SETS query just to read 22 labels would make every frozen
+    # dashboard pay for numbers it is not going to use, so this short-circuits
+    # before any pipeline, definition or database work.
+    if catalog_only:
+        try:
+            _, catalog_registry = load_registry()
+            if series:
+                catalog_registry = filter_to_series(catalog_registry, series)
+        except SemanticRuntimeError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        return JsonResponse(
+            {
+                "rows": [],
+                "measures": measure_catalog(catalog_registry),
+                "catalog_only": True,
+                "series": series or "all",
+                "row_count": 0,
+            }
+        )
 
     data_access = WorkflowDataAccess(request=request)
     try:

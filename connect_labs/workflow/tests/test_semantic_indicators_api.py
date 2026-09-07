@@ -411,3 +411,51 @@ def test_it_supplies_the_deployment_facts_the_compiler_cannot_derive(client, dja
     assert settings, "without settings every suppression gate is silently skipped"
     credible = {k for k, v in settings["mortality_recording_credible"].items() if v}
     assert credible == {"PIPN", "EHA"}, "the workbook's credible pair, not a subset or the whole set"
+
+
+def test_catalog_only_returns_the_display_contract_without_running_anything(client, django_user_model):
+    """A frozen run needs labels, not numbers.
+
+    Its values are already in the snapshot; what it cannot supply is the titles,
+    units, directions and bands to render them with — the render used to keep its
+    own copy of those, and that copy IS the duplication the semantic layer exists
+    to end. Running the full GROUPING SETS query to read 22 labels would make every
+    frozen dashboard pay for numbers it will not use, so this short-circuits before
+    any definition, pipeline or database work: note that no WorkflowDataAccess is
+    patched here, and the request still succeeds.
+    """
+    user = django_user_model.objects.create_user(username="cat1", password="p")
+    client.force_login(user)
+
+    with patch("connect_labs.semantic.runtime.evaluate") as ev:
+        resp = client.get(_url(1), {"series": "C", "catalog_only": "1"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["catalog_only"] is True
+    assert body["rows"] == []
+    assert body["row_count"] == 0
+    ev.assert_not_called(), "catalog_only must not touch the query path"
+
+    inds = {m["indicator"] for m in body["measures"]}
+    assert len(inds) == 22, f"the C-series is 22 indicators, got {len(inds)}"
+    assert "C09" in inds and "C14" in inds
+    assert not any(str(i).startswith("N") for i in inds), "series=C must not leak N-series measures"
+
+    c09 = next(m for m in body["measures"] if m["indicator"] == "C09")
+    assert c09["unit"] == "%"
+    assert c09["direction"] == "higher"
+    # Percent-unit bands, matching the percent-unit value the sql produces.
+    assert c09["bands"] == [60, 40]
+
+
+def test_catalog_only_without_a_series_carries_both(client, django_user_model):
+    user = django_user_model.objects.create_user(username="cat2", password="p")
+    client.force_login(user)
+
+    resp = client.get(_url(1), {"catalog_only": "1"})
+
+    assert resp.status_code == 200
+    inds = {m["indicator"] for m in resp.json()["measures"]}
+    assert any(str(i).startswith("C") for i in inds)
+    assert any(str(i).startswith("N") for i in inds)
