@@ -1371,6 +1371,7 @@ class OpportunitySummaryView(LoginRequiredMixin, TemplateView):
                     "title": a.data.get("title", f"Audit {a.id}"),
                     "status": a.data.get("status", "unknown"),
                     "visit_count": a.data.get("visit_count", 0),
+                    "opportunity_id": a.opportunity_id,
                 }
                 for a in sorted_audits[:5]
             ]
