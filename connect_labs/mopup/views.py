@@ -499,6 +499,41 @@ class MopupDebugGeometryView(LoginRequiredMixin, View):
         except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
             raw_cache_stage = {"error": f"{type(e).__name__}: {e}"}
 
+        # Stage 4 (optional): if ward/lga/state are given, exercise the
+        # planning-gap diff directly — isolates whether "0 planning-gap work
+        # areas added" on a real hand-off is genuine full coverage vs. a
+        # silent failure in the best-effort per-ward try/except in
+        # handoff.py.
+        gap_stage = None
+        ward = request.GET.get("ward")
+        lga = request.GET.get("lga")
+        state = request.GET.get("state")
+        if ward and lga and state:
+            try:
+                from shapely.geometry import shape
+
+                from connect_labs.microplans.core.admin_boundaries import find_ward_boundary_geometry
+                from connect_labs.mopup.core.areas import _area_id
+                from connect_labs.mopup.core.gaps import buildings_not_covered, work_area_boundaries_for_ward
+
+                existing_boundaries = work_area_boundaries_for_ward(
+                    pipeline, opportunity_id, ward, lga, state, request=request
+                )
+                ward_boundary = find_ward_boundary_geometry(state, lga, ward)
+                if ward_boundary is None:
+                    gap_stage = {"error": "no ward boundary found"}
+                else:
+                    all_buildings = buildings_not_covered(shape(ward_boundary), [])
+                    remainder = buildings_not_covered(shape(ward_boundary), existing_boundaries)
+                    gap_stage = {
+                        "area_id": _area_id(state, lga, ward),
+                        "existing_wa_boundary_count": len(existing_boundaries),
+                        "total_buildings_in_ward": len(all_buildings),
+                        "buildings_not_covered_by_any_existing_wa": len(remainder),
+                    }
+            except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
+                gap_stage = {"error": f"{type(e).__name__}: {e}"}
+
         return JsonResponse(
             {
                 "raw_cache_db_stage": raw_cache_stage,
@@ -507,5 +542,6 @@ class MopupDebugGeometryView(LoginRequiredMixin, View):
                 "count": len(geometry),
                 "with_boundary": sum(1 for g in geometry.values() if g.get("boundary")),
                 "sample": [{"wa_case_id": k, "has_boundary": bool(v.get("boundary"))} for k, v in sample],
+                "gap_stage": gap_stage,
             }
         )
