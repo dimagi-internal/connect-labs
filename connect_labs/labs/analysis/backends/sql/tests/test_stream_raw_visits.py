@@ -9,7 +9,7 @@ from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
 @pytest.mark.django_db
 @override_settings(CONNECT_PRODUCTION_URL="https://connect.example.com")
 def test_stream_raw_visits_yields_progress_per_page_and_complete(httpx_mock):
-    """Verifies the producer yields ('progress', rows, total) per page and ('complete', dicts) at the end."""
+    """Verifies the producer yields ('progress', rows, total) per page and ("complete", row_count) at the end."""
     httpx_mock.add_response(
         url="https://connect.example.com/export/opportunity/42/user_visits/?page_size=2500",
         json={
@@ -53,14 +53,21 @@ def test_stream_raw_visits_yields_progress_per_page_and_complete(httpx_mock):
     assert progress_events[1] == ("progress", 2, 2)
 
     assert len(complete_events) == 1
-    slim_dicts = complete_events[0][1]
-    assert len(slim_dicts) == 2
-    # Slim mode: form_json stripped from in-memory dicts
-    assert slim_dicts[0]["form_json"] == {}
-    assert slim_dicts[1]["form_json"] == {}
+    # The payload is a COUNT, not the rows. Nothing downstream reads the rows --
+    # they are read back out of Postgres -- so retaining them only bought memory
+    # proportional to the whole opportunity. See #1575.
+    assert complete_events[0][1] == 2
+    assert not isinstance(complete_events[0][1], list)
 
     # Cache was finalized — rows should be visible to readers
     assert RawVisitCache.objects.filter(opportunity_id=42, visit_count=2).count() == 2
+
+    # ...and form_json must still have been PERSISTED. This is the half that
+    # matters now that nothing is retained in memory: the extraction step reads
+    # form_json from these rows, so a "stream to SQL" that dropped it would be
+    # silently lossy rather than merely leaner.
+    stored = RawVisitCache.objects.filter(opportunity_id=42).order_by("visit_id")
+    assert [r.form_json for r in stored] == [{"id": "xform-1"}, {"id": "xform-2"}]
 
 
 @pytest.mark.django_db

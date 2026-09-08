@@ -455,11 +455,22 @@ class SQLBackend:
         Stream raw visit data with progress events using v2 paginated JSON.
 
         Behavior:
-        - Cache HIT: yield ("cached", slim_dicts) and return.
+        - Cache HIT: yield ("cached", row_count) and return.
         - Cache MISS: paginate the v2 export endpoint, write each page to the
-          SQL cache, strip form_json, accumulate slim dicts. Yield
+          SQL cache, and discard it. Yield
           ("progress", rows_so_far, expected_visit_count) after each page,
-          then ("complete", slim_dicts) at the end.
+          then ("complete", row_count) at the end.
+
+        **The "cached" and "complete" payloads are COUNTS, not rows.** They used
+        to be the whole opportunity's visit dicts, and nothing ever read an
+        element of them: the single consumer (AnalysisPipeline.
+        _consume_raw_visits_stream) takes ``len()``, and ``process_and_cache``
+        documents that ``visit_dicts are only used for len()`` once the rows are
+        already stored — which they always are on this path. So each stream was
+        accumulating, or re-SELECTing, an entire opportunity to compute one
+        integer, and holding it across ``process_and_cache``'s multi-minute
+        aggregation. On a 1-vCPU web task running 22-33 of these concurrently
+        that is what exhausted memory. See dimagi-internal/connect-labs#1575.
         - A completed fetch that comes back suspiciously smaller than what's
           already cached (see RAW_CACHE_SHRINK_THRESHOLD_PCT) is discarded and
           retried up to RAW_CACHE_MAX_ATTEMPTS times. If it's still low after
@@ -481,8 +492,7 @@ class SQLBackend:
             if cache_manager.has_valid_raw_cache(effective_count, tolerance_pct=tolerance_pct):
                 logger.info(f"[SQL] Raw cache HIT for opp {opportunity_id}")
                 self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
-                visit_dicts = self._load_from_cache(cache_manager, skip_form_json=True, filter_visit_ids=None)
-                yield ("cached", visit_dicts)
+                yield ("cached", cache_manager.get_raw_visit_count())
                 return
 
         logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, paginating export API")
@@ -493,7 +503,7 @@ class SQLBackend:
             with claim_raw_rebuild(opportunity_id, pipeline_id) as is_leader:
                 if not is_leader:
                     lent = self._lend_cache_during_peer_rebuild(
-                        cache_manager, opportunity_id, pipeline_id, skip_form_json=True
+                        cache_manager, opportunity_id, pipeline_id, skip_form_json=True, count_only=True
                     )
                     if lent is not None:
                         self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
@@ -509,7 +519,7 @@ class SQLBackend:
                     user=user,
                 ):
                     self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
-                    yield ("cached", self._load_from_cache(cache_manager, skip_form_json=True, filter_visit_ids=None))
+                    yield ("cached", cache_manager.get_raw_visit_count())
                     return
                 yield from self._stream_raw_visits_uncached(
                     opportunity_id,
@@ -564,7 +574,6 @@ class SQLBackend:
             # rows or the still-valid old cache.
             cache_manager.store_raw_visits_start(expected_visit_count or 0)
 
-            slim_dicts: list[dict] = []
             rows_so_far = 0
 
             try:
@@ -580,14 +589,14 @@ class SQLBackend:
                         if not batch:
                             continue
 
-                        # Store the full batch (with form_json) to the SQL cache
+                        # Store the full batch (with form_json) to the SQL cache,
+                        # then let the page go. Nothing downstream reads these rows
+                        # -- the extraction step reads them back out of Postgres --
+                        # so the page is the only thing that needs to be resident,
+                        # and it is bounded by DEFAULT_PAGE_SIZE. This used to strip
+                        # form_json and `slim_dicts.extend(batch)`, which kept every
+                        # visit in the opportunity alive to be counted (#1575).
                         cache_manager.store_raw_visits_batch(batch)
-
-                        # Strip form_json from in-memory dicts to save memory; the
-                        # SQL extraction step reads form_json from the DB.
-                        for v in batch:
-                            v["form_json"] = {}
-                        slim_dicts.extend(batch)
                         rows_so_far += len(batch)
 
                         yield ("progress", rows_so_far, expected_visit_count or 0)
@@ -602,8 +611,8 @@ class SQLBackend:
                 # Atomically finalize cache with the real count
                 cache_manager.store_raw_visits_finalize(rows_so_far)
                 cache_manager.clear_pending_raw_fetch_anomaly()
-                logger.info(f"[SQL] Streamed {rows_so_far} visits to DB, keeping {len(slim_dicts)} slim dicts")
-                yield ("complete", slim_dicts)
+                logger.info(f"[SQL] Streamed {rows_so_far} visits to DB (nothing retained in memory)")
+                yield ("complete", rows_so_far)
                 return
 
             logger.warning(
@@ -635,14 +644,16 @@ class SQLBackend:
         # get_pending_raw_fetch_anomaly's docstring for why extend_raw_cache_ttl
         # alone isn't enough.
         cache_manager.set_pending_raw_fetch_anomaly(self.last_raw_fetch_anomaly, minutes=RAW_CACHE_ANOMALY_TTL_MINUTES)
-        old_visit_dicts = self._load_from_cache(cache_manager, skip_form_json=True, filter_visit_ids=None)
-        if not old_visit_dicts:
+        old_count = cache_manager.get_raw_visit_count()
+        if not old_count:
             # The old cache we were protecting vanished from under us (e.g. a
             # concurrent invalidation raced this guard) -- serving nothing
             # would be worse than serving the low-but-real data we already
-            # streamed. The anomaly flag above still applies.
-            old_visit_dicts = slim_dicts
-        yield ("cached", old_visit_dicts)
+            # streamed. Those rows were never finalized, so they are not
+            # readable as a count; report what we actually streamed. The
+            # anomaly flag above still applies.
+            old_count = rows_so_far
+        yield ("cached", old_count)
 
     def has_valid_raw_cache(
         self,
@@ -776,17 +787,22 @@ class SQLBackend:
         visible = cache_manager.store_raw_visits_append_finalize(prior_count, prior_count + len(new_dicts))
         return bool(visible)
 
-    def _lend_cache_during_peer_rebuild(self, cache_manager, opportunity_id, pipeline_id, *, skip_form_json):
+    def _lend_cache_during_peer_rebuild(
+        self, cache_manager, opportunity_id, pipeline_id, *, skip_form_json, count_only: bool = False
+    ):
         """Serve the existing rows because another connection is already rebuilding.
 
         Returns the loaded dicts, or None when there is nothing to lend — a
         first-ever fetch has no prior rows, and serving nothing would be far worse
         than briefly duplicating a walk, so the caller falls through and rebuilds.
 
-        Same shape as the shrink-anomaly fallback below: push the TTL out, load, and
-        let the caller present it as an ordinary cache hit. It deliberately does NOT
-        set a pending anomaly — that flag means "the data may be wrong", and here it
-        is merely one rebuild old, by design.
+        ``count_only=True`` returns the ROW COUNT (an int) instead, still None when
+        there is nothing to lend. The streaming caller only ever takes ``len()`` of
+        what it gets back, and this is the hottest path there is under the load that
+        motivated it: a burst of concurrent streams on one opportunity makes every
+        non-leader land here, and each was materialising the whole opportunity out of
+        Postgres to be counted and thrown away. ``prior_count`` below is already the
+        COUNT query that answers it. See dimagi-internal/connect-labs#1575.
         """
         prior_count = cache_manager.get_raw_visit_count_ignoring_ttl()
         if not prior_count:
@@ -799,6 +815,22 @@ class SQLBackend:
             return None
 
         cache_manager.extend_raw_cache_ttl(minutes=RAW_CACHE_PEER_REBUILD_TTL_MINUTES)
+
+        if count_only:
+            # Re-read AFTER the TTL bump, so this matches what the list branch below
+            # would have loaded (get_raw_visit_count filters on expires_at).
+            lent_count = cache_manager.get_raw_visit_count()
+            if not lent_count:
+                return None
+            logger.info(
+                "[SingleFlight] opp %s pipeline %s is being rebuilt by another connection — "
+                "serving %s existing visits instead of starting a second walk",
+                opportunity_id,
+                pipeline_id,
+                lent_count,
+            )
+            return lent_count
+
         visit_dicts = self._load_from_cache(cache_manager, skip_form_json=skip_form_json, filter_visit_ids=None)
         if not visit_dicts:
             # Extending the TTL should have made them readable; if they vanished
@@ -1116,8 +1148,9 @@ class SQLBackend:
         request: HttpRequest,
         config: AnalysisPipelineConfig,
         opportunity_id: int,
-        visit_dicts: list[dict],
+        visit_dicts: list[dict] | None,
         skip_raw_store: bool = False,
+        visit_count: int | None = None,
     ) -> FLWAnalysisResult | VisitAnalysisResult | EntityAnalysisResult:
         """
         Process visits using SQL and cache results.
@@ -1141,9 +1174,24 @@ class SQLBackend:
             skip_raw_store: If True, skip storing raw visits (already stored
                 during streaming parse or already in cache from a cache hit).
                 visit_dicts are only used for len() when this is True.
+            visit_count: Pass this INSTEAD of ``visit_dicts`` whenever
+                ``skip_raw_store`` is True. Nothing below this line reads an
+                element of the list -- the three ``_process_*`` branches all take
+                ``visit_count: int`` -- so on the already-stored paths the caller
+                was building (or re-SELECTing) an entire opportunity's visits to
+                compute one integer. Callers that must still hand over rows to be
+                stored (the cchq / ocs / connect-export fetchers, which pass
+                ``skip_raw_store=False``) keep passing ``visit_dicts`` unchanged.
+                See dimagi-internal/connect-labs#1575.
         """
+        if visit_count is None:
+            if visit_dicts is None:
+                raise ValueError("process_and_cache requires either visit_dicts or visit_count")
+            visit_count = len(visit_dicts)
+        if not skip_raw_store and visit_dicts is None:
+            raise ValueError("process_and_cache needs visit_dicts when skip_raw_store is False")
+
         cache_manager = SQLCacheManager(opportunity_id, config)
-        visit_count = len(visit_dicts)
 
         # Step 1: Store raw visits to SQL (skip if already stored during streaming)
         if not skip_raw_store:

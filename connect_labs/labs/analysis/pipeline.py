@@ -440,18 +440,24 @@ class AnalysisPipeline:
 
         Translates backend events (cached/progress/complete) into
         pipeline events (EVENT_STATUS/EVENT_DOWNLOAD). After iteration,
-        self._visit_dicts and self._raw_data_already_stored are set, and
+        self._visit_count and self._raw_data_already_stored are set, and
         self._raw_fetch_anomaly reflects backend.last_raw_fetch_anomaly
         (None unless the backend rejected a suspiciously-small fetch and
         fell back to serving the previous cache — see
         SQLBackend.stream_raw_visits).
 
+        ``self._visit_count`` is an INT, not a list of rows. The backend's
+        "cached" and "complete" events carry a row count — see
+        SQLBackend.stream_raw_visits for why the rows themselves were never
+        needed here. The rows live in Postgres and the extraction step reads
+        them from there; this path only ever took ``len()``. See #1575.
+
         Usage:
             yield from self._consume_raw_visits_stream(opp_id, ...)
-            visit_dicts = self._visit_dicts
+            visit_count = self._visit_count
             raw_data_already_stored = self._raw_data_already_stored
         """
-        self._visit_dicts = None
+        self._visit_count = None
         self._raw_data_already_stored = False
         self._raw_fetch_anomaly = None
 
@@ -467,22 +473,22 @@ class AnalysisPipeline:
         ):
             event_type = event[0]
             if event_type == "cached":
-                self._visit_dicts = event[1]
+                self._visit_count = event[1]
                 self._raw_data_already_stored = True
-                logger.info(f"[Pipeline/{self.backend_name}] Raw data CACHE HIT: {len(self._visit_dicts)} visits")
-                yield (EVENT_STATUS, {"message": f"Using cached raw data ({len(self._visit_dicts)} visits)..."})
+                logger.info(f"[Pipeline/{self.backend_name}] Raw data CACHE HIT: {self._visit_count} visits")
+                yield (EVENT_STATUS, {"message": f"Using cached raw data ({self._visit_count} visits)..."})
             elif event_type == "progress":
                 _, rows_so_far, expected_count = event
                 yield (EVENT_DOWNLOAD, {"rows": rows_so_far, "total": expected_count})
             elif event_type == "complete":
-                self._visit_dicts = event[1]
+                self._visit_count = event[1]
                 self._raw_data_already_stored = True
-                logger.info(f"[Pipeline/{self.backend_name}] Downloaded and parsed {len(self._visit_dicts)} visits")
-                yield (EVENT_STATUS, {"message": f"Downloaded {len(self._visit_dicts)} visits"})
+                logger.info(f"[Pipeline/{self.backend_name}] Downloaded and stored {self._visit_count} visits")
+                yield (EVENT_STATUS, {"message": f"Downloaded {self._visit_count} visits"})
 
         self._raw_fetch_anomaly = getattr(self.backend, "last_raw_fetch_anomaly", None)
 
-        if self._visit_dicts is None:
+        if self._visit_count is None:
             raise RuntimeError("No data received from API")
 
     def stream_analysis(
@@ -629,6 +635,7 @@ class AnalysisPipeline:
                                 opportunity_id=opp_id,
                                 cchq_access_token=self.cchq_access_token,
                             )
+                            visit_count = None
                             raw_data_already_stored = False
                         elif unfiltered_config.data_source.type == "ocs_sessions":
                             from connect_labs.labs.analysis.backends.sql.ocs_fetcher import (
@@ -644,6 +651,7 @@ class AnalysisPipeline:
                                 request=self.request,
                                 data_source=unfiltered_config.data_source,
                             )
+                            visit_count = None
                             raw_data_already_stored = False
                         elif unfiltered_config.data_source.type == "connect_export":
                             from connect_labs.labs.analysis.backends.sql.connect_export_fetcher import (
@@ -661,6 +669,7 @@ class AnalysisPipeline:
                                 access_token=self.access_token,
                                 opportunity_id=opp_id,
                             )
+                            visit_count = None
                             raw_data_already_stored = False
                         elif unfiltered_config.data_source.type == "cchq_cases":
                             from connect_labs.labs.analysis.backends.sql.cchq_cases_fetcher import (
@@ -679,6 +688,7 @@ class AnalysisPipeline:
                                 opportunity_id=opp_id,
                                 cchq_access_token=self.cchq_access_token,
                             )
+                            visit_count = None
                             raw_data_already_stored = False
                         else:
                             yield from self._consume_raw_visits_stream(
@@ -688,17 +698,18 @@ class AnalysisPipeline:
                                 pipeline_id=unfiltered_config.pipeline_id,
                                 accept_low_count=accept_low_count,
                             )
-                            visit_dicts = self._visit_dicts
+                            visit_dicts = None
+                            visit_count = self._visit_count
                             raw_data_already_stored = self._raw_data_already_stored
 
-                        if visit_dicts is None:
+                        if visit_dicts is None and visit_count is None:
                             raise RuntimeError("No data received from API")
+                        n_visits = visit_count if visit_count is not None else len(visit_dicts)
 
                         # Process and cache with UNFILTERED config (critical!)
-                        yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} visits..."})
+                        yield (EVENT_STATUS, {"message": f"Processing {n_visits} visits..."})
                         logger.info(
-                            f"[Pipeline/{self.backend_name}] Processing {len(visit_dicts)} visits "
-                            "with unfiltered config"
+                            f"[Pipeline/{self.backend_name}] Processing {n_visits} visits " "with unfiltered config"
                         )
 
                         self.backend.process_and_cache(
@@ -707,6 +718,7 @@ class AnalysisPipeline:
                             opp_id,
                             visit_dicts,
                             skip_raw_store=raw_data_already_stored,
+                            visit_count=visit_count,
                         )
                         del visit_dicts
 
@@ -763,6 +775,7 @@ class AnalysisPipeline:
                             opportunity_id=opp_id,
                             cchq_access_token=self.cchq_access_token,
                         )
+                        visit_count = None
                         raw_data_already_stored = False
                     elif unfiltered_config.data_source.type == "ocs_sessions":
                         from connect_labs.labs.analysis.backends.sql.ocs_fetcher import (
@@ -778,6 +791,7 @@ class AnalysisPipeline:
                             request=self.request,
                             data_source=unfiltered_config.data_source,
                         )
+                        visit_count = None
                         raw_data_already_stored = False
                     elif unfiltered_config.data_source.type == "connect_export":
                         from connect_labs.labs.analysis.backends.sql.connect_export_fetcher import (
@@ -795,6 +809,7 @@ class AnalysisPipeline:
                             access_token=self.access_token,
                             opportunity_id=opp_id,
                         )
+                        visit_count = None
                         raw_data_already_stored = False
                     elif unfiltered_config.data_source.type == "cchq_cases":
                         from connect_labs.labs.analysis.backends.sql.cchq_cases_fetcher import (
@@ -813,6 +828,7 @@ class AnalysisPipeline:
                             opportunity_id=opp_id,
                             cchq_access_token=self.cchq_access_token,
                         )
+                        visit_count = None
                         raw_data_already_stored = False
                     else:
                         yield from self._consume_raw_visits_stream(
@@ -821,17 +837,17 @@ class AnalysisPipeline:
                             pipeline_id=unfiltered_config.pipeline_id,
                             accept_low_count=accept_low_count,
                         )
-                        visit_dicts = self._visit_dicts
+                        visit_dicts = None
+                        visit_count = self._visit_count
                         raw_data_already_stored = self._raw_data_already_stored
 
-                    if visit_dicts is None:
+                    if visit_dicts is None and visit_count is None:
                         raise RuntimeError("No data received from API")
+                    n_visits = visit_count if visit_count is not None else len(visit_dicts)
 
                     # Process and cache with UNFILTERED config
-                    yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} visits..."})
-                    logger.info(
-                        f"[Pipeline/{self.backend_name}] Processing {len(visit_dicts)} visits with unfiltered config"
-                    )
+                    yield (EVENT_STATUS, {"message": f"Processing {n_visits} visits..."})
+                    logger.info(f"[Pipeline/{self.backend_name}] Processing {n_visits} visits with unfiltered config")
 
                     self.backend.process_and_cache(
                         self.request,
@@ -839,6 +855,7 @@ class AnalysisPipeline:
                         opp_id,
                         visit_dicts,
                         skip_raw_store=raw_data_already_stored,
+                        visit_count=visit_count,
                     )
                     del visit_dicts
 
@@ -921,7 +938,8 @@ class AnalysisPipeline:
                     self.request,
                     config,
                     opp_id,
-                    visit_dicts=[None] * total_stored,
+                    visit_dicts=None,
+                    visit_count=total_stored,
                     skip_raw_store=True,
                 )
                 yield (EVENT_STATUS, {"message": "Complete!"})
@@ -1033,7 +1051,8 @@ class AnalysisPipeline:
                 pipeline_id=config.pipeline_id,
                 accept_low_count=accept_low_count,
             )
-            visit_dicts = self._visit_dicts
+            visit_dicts = None
+            visit_count = self._visit_count
             raw_data_already_stored = self._raw_data_already_stored
 
             # Process with backend.
@@ -1046,7 +1065,9 @@ class AnalysisPipeline:
             # framing, users on minute 5 of "Processing visits..." rightly
             # wonder if it's hung.
             stage_name = _stage_name(terminal_stage)
-            n = len(visit_dicts)
+            if visit_dicts is None and visit_count is None:
+                raise RuntimeError("No data received from API")
+            n = visit_count if visit_count is not None else len(visit_dicts)
             if terminal_stage == CacheStage.AGGREGATED:
                 msg = (
                     f"Aggregating {n:,} visits to per-{stage_name} summaries — "
@@ -1065,6 +1086,7 @@ class AnalysisPipeline:
                 opp_id,
                 visit_dicts,
                 skip_raw_store=raw_data_already_stored,
+                visit_count=visit_count,
             )
             del visit_dicts
 
