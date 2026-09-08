@@ -12,7 +12,7 @@ from .cohort import CohortSpec
 from .dump import _fetch_endpoint
 from .generator.fixtures.engine import generate as _generate
 from .generator.fixtures.fidelity import pool_paths_missing_from_clone, pool_vs_clone_parity
-from .generator.fixtures.manifest import Manifest
+from .generator.fixtures.manifest import ImageConfig, Manifest
 from .generator.fixtures.profiler import profile as _profile
 from .generator.fixtures.schema_loader import parse_form_schema_from_app_json
 from .generator.io.uploader import upload_fixtures
@@ -214,6 +214,7 @@ def generate_opp_from_bundle(
     allowed_domains=None,
     fresh: bool = False,
     target_opportunity_id: int | None = None,
+    image_config: dict | None = None,
 ) -> CloneResult:
     """Generate fixtures and register a labs-only opp from a profile bundle.
 
@@ -261,6 +262,7 @@ def generate_opp_from_bundle(
         allowed_domains=allowed_domains,
         fresh=fresh,
         target_opportunity_id=target_opportunity_id,
+        image_config=image_config,
     )
 
 
@@ -275,6 +277,7 @@ def _generate_one(
     allowed_domains=None,
     fresh: bool = False,
     target_opportunity_id: int | None = None,
+    image_config: dict | None = None,
 ) -> CloneResult:
     """Generate fixtures + register a labs-only opp from an already-read bundle.
 
@@ -302,6 +305,13 @@ def _generate_one(
         )
 
     manifest = Manifest.from_yaml(bundle.manifest_yaml)
+    if image_config:
+        # A CHOICE layered on at replay time, never baked into the bundle. The
+        # bundle is a MEASUREMENT of the source, and the source says nothing
+        # about which photo corpus we want or which demo cases to stage.
+        # Applied here so an existing bundle gains images without re-profiling
+        # production.
+        manifest = manifest.model_copy(update={"image_config": ImageConfig(**image_config)})
     form_schema = parse_form_schema_from_app_json(bundle.app_structure, app_type="deliver")
     fixtures = _generate(
         manifest=manifest,
@@ -385,6 +395,7 @@ def generate_opps_bulk(
     program_id: int | None = None,
     only_source_ids=None,
     progress=NULL_PROGRESS,
+    image_config: dict | None = None,
 ) -> list[CloneResult]:
     """Generate fixtures for every bundle subdirectory under *bundle_root*.
 
@@ -435,6 +446,7 @@ def generate_opps_bulk(
                     program_name=program_name,
                     org_name=org_name,
                     fresh=fresh,
+                    image_config=image_config,
                 )
             )
             outcome = f"generated opportunity {bundle.source_opp_id}"
@@ -447,7 +459,7 @@ def generate_opps_bulk(
     return results
 
 
-def generate_fixtures_only(bundle_root, *, drive) -> list[dict]:
+def generate_fixtures_only(bundle_root, *, drive, image_config: dict | None = None) -> list[dict]:
     """Generate fixtures for every bundle and upload them to GDrive, WITHOUT
     registering any SyntheticOpportunity row (no database write).
 
@@ -466,6 +478,13 @@ def generate_fixtures_only(bundle_root, *, drive) -> list[dict]:
         try:
             bundle = store.read(handle)
             manifest = Manifest.from_yaml(bundle.manifest_yaml)
+            if image_config:
+                # A CHOICE layered on at replay time, never baked into the
+                # bundle. The bundle is a MEASUREMENT of the source, and the
+                # source says nothing about which photo corpus we want or which
+                # demo cases to stage. Applied here so an existing bundle gains
+                # images without re-profiling production.
+                manifest = manifest.model_copy(update={"image_config": ImageConfig(**image_config)})
             form_schema = parse_form_schema_from_app_json(bundle.app_structure, app_type="deliver")
             fixtures = _generate(
                 manifest=manifest,
@@ -540,5 +559,6 @@ def generate_cohort(
         fresh=fresh,
         only_source_ids=spec.opportunity_ids,
         progress=progress,
+        image_config=spec.image_config,
     )
     return spec, results
