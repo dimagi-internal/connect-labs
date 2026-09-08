@@ -2847,6 +2847,58 @@ function WorkflowUI({
 
       {tab === 'indicators' && (
         <>
+          {/* The C-series is fetched now, not computed in this browser, and that
+              introduced a state the old engine never had: in-flight. While the
+              query runs every figure is an em-dash, which is indistinguishable
+              from a programme with no data -- and the query takes ~30s over 8,700
+              cases, so that is not a blink. An error was worse: it rendered the
+              same dashes and said nothing at all.
+
+              Two cache lies get the same treatment the N-series already gives
+              them. COLD: every count is zero, reading as a programme with no
+              babies. PARTIAL: a real number over only the cached opportunities,
+              entirely credible and understated. Neither is visible in the
+              figures themselves. */}
+          {cSeries.status !== 'ready' && (
+            <div
+              className={
+                'px-4 py-3 text-sm border rounded ' +
+                (cSeries.status === 'error'
+                  ? 'bg-red-50 text-red-900 border-red-200'
+                  : 'bg-slate-50 text-slate-700 border-slate-200')
+              }
+            >
+              {cSeries.status === 'error' ? (
+                <span>
+                  <span className="font-medium">
+                    Indicators could not be computed.
+                  </span>{' '}
+                  {cSeries.error}
+                </span>
+              ) : (
+                <span>
+                  <span className="font-medium">
+                    Computing indicators in SQL…
+                  </span>{' '}
+                  one pass over the whole cohort, usually ~30 seconds. Values
+                  below stay blank until it returns.
+                </span>
+              )}
+            </div>
+          )}
+
+          {cSeries.status === 'ready' &&
+            (cSeries.coldCache || cSeries.partialCache) && (
+              <div className="px-4 py-3 text-sm bg-amber-50 text-amber-900 border border-amber-200 rounded">
+                <span className="font-medium">
+                  {cSeries.coldCache
+                    ? 'Every metric is blank because nothing is cached \u2014 not because the programme has no data.'
+                    : 'These totals cover only part of the cohort.'}
+                </span>{' '}
+                {cSeries.coldHint}
+              </div>
+            )}
+
           <div className="flex items-center gap-2 text-sm">
             {crumb.map(function (c, i) {
               var last = i === crumb.length - 1;
@@ -2897,7 +2949,7 @@ function WorkflowUI({
                 <div className="bg-white border border-gray-200 rounded-xl p-4">
                   <div className="text-xs text-gray-500">Total started</div>
                   <div className="text-2xl font-semibold mt-1">
-                    {entryOf(programInd, 'C02').value}
+                    {fmt(indOf('C02'), entryOf(programInd, 'C02'))}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
                     Program row 2 · Started cases (C02) against 25,000 by
@@ -2998,7 +3050,7 @@ function WorkflowUI({
                             {caseCount(l)}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {entryOf(l.ind, 'C02').value}
+                            {fmt(indOf('C02'), entryOf(l.ind, 'C02'))}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {fmt(indOf('C09'), entryOf(l.ind, 'C09'))}
