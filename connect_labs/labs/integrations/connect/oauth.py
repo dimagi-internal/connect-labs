@@ -71,6 +71,30 @@ def refresh_connect_token(request) -> bool:
         return False
 
 
+def is_connect_oauth_active(request) -> bool:
+    """Is the user's stored Connect OAuth session usable right now?
+
+    Attempts a silent refresh via the stored refresh_token before reporting
+    the session dead — mirrors ``is_cchq_oauth_active``/``is_ocs_oauth_active``
+    in the sibling CCHQ/OCS clients. Every "is Connect connected" badge or
+    gate should call this instead of re-checking ``labs_oauth``'s
+    ``expires_at`` directly: a raw timestamp-only check reports a merely
+    time-expired (but refreshable) token as disconnected, forcing a needless
+    re-login. Connect access tokens have historically lived long enough
+    (hours+) that this gap rarely surfaced in practice — unlike the identical
+    gap on the CCHQ side, whose shorter-lived tokens made it visible daily —
+    but the code was equally naive for both, so both get the same fix.
+    """
+    labs_oauth = request.session.get("labs_oauth") or {}
+    if not labs_oauth.get("access_token"):
+        return False
+    from django.utils import timezone
+
+    if timezone.now().timestamp() < labs_oauth.get("expires_at", 0):
+        return True
+    return refresh_connect_token(request)
+
+
 # How long a successful org tree is reused. Production computes this list by
 # annotating every opportunity the caller can see with Count("uservisit") over its
 # largest table, so the cost scales with the caller's access: measured at 0.28-0.37s

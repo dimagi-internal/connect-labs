@@ -965,3 +965,20 @@ class CommCareDataAccess:
             if e.response.status_code == 404:
                 return None
             raise
+
+
+def is_cchq_oauth_active(request: HttpRequest) -> bool:
+    """Is the user's stored CommCare HQ OAuth session usable right now?
+
+    Thin wrapper around ``CommCareDataAccess.check_token_valid()`` (domain-less
+    -- this only asks "is the token itself alive", not "does it have access to
+    a specific domain"). Every CCHQ "connected"/"authorized" badge or gate
+    should call this instead of re-checking ``commcare_oauth``'s ``expires_at``
+    directly: several call sites (the main Labs overview badge, the coverage
+    map pages, the MBW monitoring dashboard) used to each duplicate that raw,
+    no-refresh timestamp check, reporting a merely time-expired (but
+    perfectly refreshable) token as disconnected and forcing a needless
+    re-authorize click — exactly the same shape of bug already fixed for
+    ``workflow_auth_status_api``, just left standing everywhere else.
+    """
+    return CommCareDataAccess(request, "").check_token_valid()

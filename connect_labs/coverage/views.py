@@ -15,6 +15,7 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from connect_labs.coverage.data_access import CoverageDataAccess
+from connect_labs.labs.integrations.commcare.api_client import is_cchq_oauth_active
 
 logger = logging.getLogger(__name__)
 
@@ -28,23 +29,10 @@ class BaseCoverageView(LoginRequiredMixin, TemplateView):
     """
 
     def check_commcare_oauth(self) -> bool:
-        """Check if CommCare OAuth is configured and not expired"""
-        from django.utils import timezone
-
-        commcare_oauth = self.request.session.get("commcare_oauth", {})
-        access_token = commcare_oauth.get("access_token")
-
-        if not access_token:
-            logger.debug("No CommCare OAuth token found in session")
-            return False
-
-        # Check expiration
-        expires_at = commcare_oauth.get("expires_at", 0)
-        if timezone.now().timestamp() >= expires_at:
-            logger.warning(f"CommCare OAuth token expired at {expires_at}")
-            return False
-
-        return True
+        """Check if CommCare OAuth is configured and usable (attempts a
+        silent refresh via the stored refresh_token before reporting the
+        session dead — see is_cchq_oauth_active)."""
+        return is_cchq_oauth_active(self.request)
 
 
 class CoverageMapView(BaseCoverageView):
@@ -200,19 +188,13 @@ class CoverageMapStreamView(LoginRequiredMixin, View):
             return f"data: {json.dumps(event)}\n\n"
 
         try:
-            from django.utils import timezone
-
             from connect_labs.coverage.data_loader import CoverageMapDataLoader
 
-            commcare_oauth = request.session.get("commcare_oauth", {})
-            access_token = commcare_oauth.get("access_token")
-
-            if not access_token:
+            if not request.session.get("commcare_oauth", {}).get("access_token"):
                 yield send_sse("Error", error="CommCare OAuth not configured. Please authorize CommCare access.")
                 return
 
-            expires_at = commcare_oauth.get("expires_at", 0)
-            if timezone.now().timestamp() >= expires_at:
+            if not is_cchq_oauth_active(request):
                 yield send_sse("Error", error="CommCare OAuth token expired. Please re-authorize CommCare access.")
                 return
 

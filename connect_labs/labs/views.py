@@ -8,7 +8,9 @@ from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
 
 from connect_labs.labs.context import clear_context_from_session
-from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data
+from connect_labs.labs.integrations.commcare.api_client import is_cchq_oauth_active
+from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data, is_connect_oauth_active
+from connect_labs.labs.integrations.ocs.api_client import is_ocs_oauth_active
 from connect_labs.utils.feature_access import user_has_feature_access
 
 
@@ -170,30 +172,17 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
     template_name = "labs/overview.html"
 
     def get_context_data(self, **kwargs):
-        from django.utils import timezone
-
         context = super().get_context_data(**kwargs)
 
-        # Connect OAuth status
-        labs_oauth = self.request.session.get("labs_oauth", {})
-        connect_expires_at = labs_oauth.get("expires_at", 0)
-        context["connect_oauth_active"] = bool(
-            labs_oauth.get("access_token") and timezone.now().timestamp() < connect_expires_at
-        )
-
-        # CommCare OAuth status
-        commcare_oauth = self.request.session.get("commcare_oauth", {})
-        commcare_expires_at = commcare_oauth.get("expires_at", 0)
-        context["commcare_oauth_active"] = bool(
-            commcare_oauth.get("access_token") and timezone.now().timestamp() < commcare_expires_at
-        )
-
-        # Open Chat Studio OAuth status
-        ocs_oauth = self.request.session.get("ocs_oauth", {})
-        ocs_expires_at = ocs_oauth.get("expires_at", 0)
-        context["ocs_oauth_active"] = bool(
-            ocs_oauth.get("access_token") and timezone.now().timestamp() < ocs_expires_at
-        )
+        # OAuth status for each provider. Each helper attempts a silent
+        # refresh via the stored refresh_token before reporting the session
+        # dead — a raw expires_at check (what this used to do inline) reports
+        # a merely time-expired token as disconnected even when a refresh
+        # would have worked, forcing a needless re-authorize click on this,
+        # the main Labs landing page.
+        context["connect_oauth_active"] = is_connect_oauth_active(self.request)
+        context["commcare_oauth_active"] = is_cchq_oauth_active(self.request)
+        context["ocs_oauth_active"] = is_ocs_oauth_active(self.request)
 
         # Labs context status
         labs_context = getattr(self.request, "labs_context", {}) or {}
