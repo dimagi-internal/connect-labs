@@ -56,6 +56,13 @@ def fetch_work_area_geometry(
             FieldComputation(name="boundary", path="work_area.boundary", aggregation="first"),
             FieldComputation(name="centroid", path="work_area.centroid", aggregation="first"),
         ],
+        # Real production bug, found live this session: without this, this
+        # ad-hoc config shares ONE raw-visit-cache slot per opportunity with
+        # every other ad-hoc caller in this app — see the identical comment
+        # in core/work_areas.py/core/visits.py for the full explanation.
+        # 12971 is the existing "CHC Work Area Geometry" pipeline definition
+        # for this exact data_source/fields shape.
+        pipeline_id=12971,
     )
     result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
 
