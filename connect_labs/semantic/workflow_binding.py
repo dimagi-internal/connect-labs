@@ -29,6 +29,40 @@ class SemanticBindingError(Exception):
         super().__init__(reason)
 
 
+def resolve_registry_for(definition, registry_access_factory=None, registry_id_override: int | None = None):
+    """Resolve the registry a workflow computes from, and its llo_map + settings.
+
+    A workflow BINDS a registry (`definition.registry_source`), and that binding is the
+    whole point of registries-as-records: indicators become editable without a deploy.
+    Anything that evaluates on a workflow's behalf has to honour it, or it computes
+    from the on-disk copy while the dashboard computes from the record — and the two
+    disagree silently, which is the failure mode a snapshot can least afford.
+
+    `llo_map` and `settings` travel WITH the registry deliberately: without them the
+    `llo` scope cannot compile at all, and `_suppression_columns` returns early on
+    falsy settings, publishing a mortality figure for an LLO the workbook says does
+    not record deaths credibly.
+
+    `registry_id_override` supports reading a CANDIDATE registry against real data
+    before it is bound — the dry run that makes editing indicators live safe.
+    """
+    from connect_labs.semantic.runtime import resolve_registry
+
+    source = dict(getattr(definition, "registry_source", None) or {}) if definition else {}
+    if registry_id_override is not None:
+        source = {"registry_id": int(registry_id_override)}
+
+    access = None
+    if source.get("registry_id") and registry_access_factory is not None:
+        access = registry_access_factory()
+    try:
+        props_doc, full_registry, llo_map, settings = resolve_registry(source, access)
+    finally:
+        if access is not None and hasattr(access, "close"):
+            access.close()
+    return props_doc, full_registry, llo_map, settings, source
+
+
 def build_evaluate_inputs(definition, pipeline_access) -> tuple[Any, dict[str, Any] | None]:
     """Return `(pipeline_config, extra_fields)` for `semantic.runtime.evaluate`.
 

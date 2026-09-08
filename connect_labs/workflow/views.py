@@ -2944,8 +2944,8 @@ def semantic_indicators_api(request, definition_id):
         evaluate,
         filter_to_series,
         measure_catalog,
-        resolve_registry,
     )
+    from connect_labs.semantic.workflow_binding import resolve_registry_for
     from connect_labs.workflow.data_access import SemanticRegistryDataAccess
 
     series = (request.GET.get("series") or "").strip() or None
@@ -2996,35 +2996,25 @@ def semantic_indicators_api(request, definition_id):
         if definition is None and not registry_fallback:
             return JsonResponse({"error": "Workflow not found"}, status=404)
 
-        # Which registry this workflow computes from. `?registry_id=` overrides it
-        # so a candidate registry can be read against real data BEFORE it is bound
-        # -- the dry run that makes editing indicators live a safe thing to do.
-        registry_source = dict(getattr(definition, "registry_source", None) or {}) if definition else {}
+        # Which registry this workflow computes from — resolved by the SAME helper the
+        # template's build_snapshot hook uses, so a saved run and this endpoint cannot
+        # end up on different registries. `?registry_id=` overrides the binding so a
+        # candidate registry can be read against real data BEFORE it is bound: the dry
+        # run that makes editing indicators live a safe thing to do.
+        override = None
         if registry_id_param:
             try:
-                registry_source = {"registry_id": int(registry_id_param)}
+                override = int(registry_id_param)
             except ValueError:
                 return JsonResponse({"error": "registry_id must be an integer"}, status=400)
-
-        # `llo_map` and `settings` come back from the resolver alongside the two
-        # documents. They are the inputs the compiler needs and SQL cannot produce:
-        # without them this endpoint could not serve the `llo` scope at ALL
-        # (RegistryError -> 400, because `llo` is materialised by a CASE over
-        # opportunity_id), and -- the quiet half -- `_suppression_columns` returns
-        # early on falsy settings, so every C-series response was emitted with NO
-        # suppression columns. C14 would have published a mortality figure for an
-        # LLO the workbook says does not record deaths credibly: a real-looking red
-        # band where the right answer is an absent measurement. They travel WITH the
-        # registry now, so a shared registry carries its own gates rather than
-        # silently inheriting whatever the deployment happened to have on disk.
-        registry_access = SemanticRegistryDataAccess(request=request) if registry_source.get("registry_id") else None
         try:
-            props_doc, full_registry, llo_map, reg_settings = resolve_registry(registry_source, registry_access)
+            props_doc, full_registry, llo_map, reg_settings, registry_source = resolve_registry_for(
+                definition,
+                registry_access_factory=lambda: SemanticRegistryDataAccess(request=request),
+                registry_id_override=override,
+            )
         except SemanticRuntimeError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
-        finally:
-            if registry_access is not None:
-                registry_access.close()
 
         # The display contract WITHOUT the numbers, short-circuited before any
         # pipeline or database work. It still resolves the DEFINITION first: the
