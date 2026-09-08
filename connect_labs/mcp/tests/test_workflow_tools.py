@@ -1730,7 +1730,7 @@ class TestRegistrySourceBinding:
     def test_rejects_a_non_dict(self):
         import pytest
 
-        from connect_labs.mcp.errors import MCPToolError
+        from connect_labs.mcp.tool_registry import MCPToolError
         from connect_labs.mcp.tools.workflows import _validate_registry_source
 
         with pytest.raises(MCPToolError):
@@ -1739,7 +1739,7 @@ class TestRegistrySourceBinding:
     def test_rejects_unknown_keys(self):
         import pytest
 
-        from connect_labs.mcp.errors import MCPToolError
+        from connect_labs.mcp.tool_registry import MCPToolError
         from connect_labs.mcp.tools.workflows import _validate_registry_source
 
         with pytest.raises(MCPToolError):
@@ -1748,7 +1748,7 @@ class TestRegistrySourceBinding:
     def test_rejects_name_and_id_together(self):
         import pytest
 
-        from connect_labs.mcp.errors import MCPToolError
+        from connect_labs.mcp.tool_registry import MCPToolError
         from connect_labs.mcp.tools.workflows import _validate_registry_source
 
         with pytest.raises(MCPToolError):
