@@ -398,3 +398,58 @@ def test_a_planted_number_error_lands_outside_a_dial_band():
     # A factor that would land the wrong value squarely inside the band.
     entered = failing_value(midpoint, dial, bands, 1.01)
     assert not (lo <= entered <= hi), f"{entered} is inside the accepted band {bands[dial]}"
+
+
+# ---------------------------------------------------------------------------
+# A misconfigured reading_path is not a thin corpus (#1602).
+#
+# Eligibility matches the FIELD NAME anywhere in the form; the reading is read
+# from an EXACT path. When a cohort names its weight field something else, every
+# visit counts as eligible and is then silently skipped -- and until these two
+# counters were separated, the skip was reported as "widen the corpus", which is
+# advice that cannot work. Opportunity 675 of the KMC set generated 0 photos
+# across 504 eligible visits this way.
+# ---------------------------------------------------------------------------
+
+
+def _visits_naming_the_field_differently(n):
+    """A cohort that writes `child_weight`, not `child_weight_visit`.
+
+    Still ELIGIBLE -- `_has_measurement` matches any leaf whose name contains
+    "weight" -- but there is nothing at the configured reading_path.
+    """
+    return [
+        {
+            "id": f"v{i}",
+            "username": "asha",
+            "form_json": {"form": {"anthropometric": {"child_weight": 1400 + i}}},
+        }
+        for i in range(n)
+    ]
+
+
+def test_a_reading_path_that_resolves_to_nothing_is_not_counted_as_a_corpus_gap():
+    visits = _visits_naming_the_field_differently(5)
+    # Weight-matching must be ON: it is the only mode that reads reading_path.
+    stats = assign_visit_images(visits, _scale_config(reading_match_tolerance=120.0), random.Random(1))
+
+    assert stats["eligible_visits"] == 5, "the name match still finds 'child_weight'"
+    assert stats["images_assigned"] == 0
+    # The whole point: these are NOT unmatched_visits. Widening the corpus would
+    # not place a single photo, because no visit offers a value to match against.
+    assert stats["no_reading_value_visits"] == 5
+    assert stats["unmatched_visits"] == 0
+
+
+def test_a_thin_corpus_still_reports_as_a_coverage_gap():
+    """The control: a real coverage gap must NOT move to the new counter."""
+    visits = _visits(4)
+    for i, v in enumerate(visits):
+        # Far outside every reading in READINGS (1535 / 2010 / 1720).
+        v["form_json"]["form"]["anthropometric"]["child_weight_visit"] = 9000 + i
+    stats = assign_visit_images(visits, _scale_config(reading_match_tolerance=50.0), random.Random(1))
+
+    assert stats["eligible_visits"] == 4
+    assert stats["images_assigned"] == 0
+    assert stats["unmatched_visits"] == 4, "a genuine coverage gap stays a coverage gap"
+    assert stats["no_reading_value_visits"] == 0

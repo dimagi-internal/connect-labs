@@ -130,12 +130,16 @@ def assign_visit_images(
     """Mutate visits in-place: add synthetic image entries to MUAC visits.
 
     Returns ``{"eligible_visits", "images_assigned", "reading_mismatches",
-    "unmatched_visits"}`` so the caller can surface the counts instead of a
-    generation that quietly produced none. ``reading_mismatches`` is how many
+    "unmatched_visits", "no_reading_value_visits", "bad_photo_visits"}`` so the
+    caller can surface the counts instead of a generation that quietly produced
+    none. ``reading_mismatches`` is how many
     visits were given an entered value that disagrees with their photo — the
     population an agreement reviewer should catch. ``unmatched_visits`` is how
-    many were left photo-less because the corpus had nothing near their weight
-    (weight-matched mode only).
+    many were left photo-less because the corpus had nothing near their weight,
+    and ``no_reading_value_visits`` how many had no numeric value at
+    ``reading_path`` at all (both weight-matched mode only). Those two are
+    counted apart on purpose: the first is a thin corpus, the second is a
+    misconfigured path, and only one of them is fixed by adding photos.
 
     Two modes:
 
@@ -161,7 +165,7 @@ def assign_visit_images(
         use_pools and config.reading_match_tolerance is not None and config.readings and config.reading_path
     )
     legacy_count = config.stock_image_count
-    eligible = assigned = mismatched = unmatched = bad_photos = 0
+    eligible = assigned = mismatched = unmatched = bad_photos = no_reading_value = 0
 
     # Per-pool round-robin counters (used in two-pool mode).
     good_index = 0
@@ -225,7 +229,13 @@ def assign_visit_images(
                     # No usable cohort value to match against. Skipping is the
                     # honest outcome: attaching a photo here would reintroduce the
                     # overwrite this mode exists to prevent.
-                    unmatched += 1
+                    #
+                    # Counted SEPARATELY from `unmatched`, which means "the corpus
+                    # has no photo near this weight". This one means "there is no
+                    # weight here at all" -- a config/form-shape problem, not a
+                    # coverage one. Folding them together sent a reader off to
+                    # widen a corpus that was already fine (#1602).
+                    no_reading_value += 1
                     continue
                 if use_bad_pool and rng.random() < config.bad_photo_share:
                     # Fail on the IMAGE. No reading to match, so take the next bad
@@ -337,6 +347,17 @@ def assign_visit_images(
             eligible,
             mismatched,
         )
+    if match_weight and no_reading_value:
+        logger.warning(
+            "[SyntheticImages] %d of %d eligible visit(s) had NO numeric value at reading_path "
+            "%r, so no photo could be matched to them. This is a CONFIG/FORM-SHAPE problem, not "
+            "a corpus one: check that reading_path names the field this cohort actually writes "
+            "its %s into. Widening the corpus will not help.",
+            no_reading_value,
+            eligible,
+            config.reading_path,
+            field_match,
+        )
     if match_weight and unmatched:
         # A coverage gap is the one failure mode weight-matching introduces, so it
         # gets its own line rather than hiding inside a lower assigned count. The
@@ -355,5 +376,6 @@ def assign_visit_images(
         "images_assigned": assigned,
         "reading_mismatches": mismatched,
         "unmatched_visits": unmatched,
+        "no_reading_value_visits": no_reading_value,
         "bad_photo_visits": bad_photos,
     }
