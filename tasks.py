@@ -3,6 +3,7 @@
 This uses the `Invoke` library."""
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -483,14 +484,29 @@ def _resolve_auth_mode(auth: str | None) -> str:
         "auth": "REQUIRED. Auth mode — 'vertex' or 'api-key'. No default: "
         "you must pick explicitly every run so it's always obvious which "
         "governed endpoint your PII is routing through.",
+        "prompt_file": "Run one prepared prompt non-interactively (`claude -p`) "
+        "instead of opening the TUI. Same locked-down settings, same MCP "
+        "surface — this only changes how the prompt gets in. Use it to hand a "
+        "colleague or an agent-prepared task a single command to run under "
+        "their own credentials.",
     }
 )
-def safe_claude(c: Context, auth=None):
+def safe_claude(c: Context, auth=None, prompt_file=None):
     """Launch Claude Code in PII-safe mode against the labs MCP servers.
 
     Usage:
         inv safe-claude --auth=api-key   # Anthropic ZDR key (from 1Password)
         inv safe-claude --auth=vertex    # Google Vertex AI
+
+        # one prepared task, non-interactive, same lockdown:
+        inv safe-claude --auth=vertex --prompt-file=safe-claude/prompts/kmc-over-limit.md
+
+    The prompt-file form exists for the handoff case: an agent that lacks
+    access to some production data prepares the exact task, and the person who
+    DOES have access runs it under their own PAT with one command. No standing
+    credential changes hands, and the tool surface is the same locked one --
+    the prompt cannot widen it, because the deny list is policy at the Claude
+    Code layer rather than instruction in the prompt.
 
     Both modes fetch their secret from 1Password at launch — nothing
     persists on disk. ANTHROPIC_API_KEY from the parent shell is stripped
@@ -510,6 +526,19 @@ def safe_claude(c: Context, auth=None):
     claude_bin = shutil.which("claude")
     if not claude_bin:
         raise Exit("`claude` CLI not found on PATH. Install Claude Code first.", -1)
+
+    # Read the prompt BEFORE any credential work. A typo'd path is a local,
+    # free mistake; discovering it after fetching a secret from 1Password (and,
+    # in Vertex mode, writing a service-account tempfile) makes the cheapest
+    # error cost the most.
+    prompt_text = None
+    if prompt_file is not None:
+        prompt_path = pathlib.Path(prompt_file).expanduser()
+        if not prompt_path.is_file():
+            raise Exit(f"--prompt-file not found: {prompt_path}", -1)
+        prompt_text = prompt_path.read_text().strip()
+        if not prompt_text:
+            raise Exit(f"--prompt-file is empty: {prompt_path}", -1)
 
     mcp_token = os.environ.get("LABS_MCP_TOKEN") or _read_labs_pat_from_user_mcp()
     if not mcp_token:
@@ -619,8 +648,14 @@ def safe_claude(c: Context, auth=None):
             # key routes through the same governed endpoint.
             cmd_argv += ["--model", model_override]
 
-        print(f"Launching Claude Code in safe mode — auth: {auth_desc}")
-        print("Ctrl-D or /exit to quit.")
+        if prompt_text is not None:
+            # -p goes LAST so the prompt is an argument, never mistaken for a flag.
+            cmd_argv += ["-p", prompt_text]
+            print(f"Running one prepared prompt in safe mode — auth: {auth_desc}")
+            print(f"  prompt: {prompt_file}  ({len(prompt_text)} chars)")
+        else:
+            print(f"Launching Claude Code in safe mode — auth: {auth_desc}")
+            print("Ctrl-D or /exit to quit.")
         # subprocess.run (not invoke's c.run) so Claude Code's TUI inherits
         # the parent shell's real TTY directly — no PTY allocation, no
         # terminal-state corruption on exit, and keys like Enter reach the
