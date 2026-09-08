@@ -2937,15 +2937,16 @@ def semantic_indicators_api(request, definition_id):
         SemanticRuntimeError,
         evaluate,
         filter_to_series,
-        load_deployment,
-        load_registry,
         measure_catalog,
+        resolve_registry,
     )
+    from connect_labs.workflow.data_access import SemanticRegistryDataAccess
 
     series = (request.GET.get("series") or "").strip() or None
     scopes = [s for s in (request.GET.get("scopes") or "").split(",") if s.strip()]
     as_of = (request.GET.get("as_of") or "").strip() or "CURRENT_DATE"
     catalog_only = (request.GET.get("catalog_only") or "").strip().lower() in ("1", "true", "yes")
+    registry_id_param = (request.GET.get("registry_id") or "").strip()
 
     # The display contract WITHOUT the numbers. A frozen run already holds its own
     # values in its snapshot, but it still needs titles, units, directions and bands
@@ -2954,28 +2955,95 @@ def semantic_indicators_api(request, definition_id):
     # full GROUPING SETS query just to read 22 labels would make every frozen
     # dashboard pay for numbers it is not going to use, so this short-circuits
     # before any pipeline, definition or database work.
-    if catalog_only:
+    data_access = None
+    try:
+        # catalog_only must keep working for a caller that cannot do database work --
+        # a frozen dashboard holds its own numbers and asks only for the labels, and
+        # that path deliberately predates any definition read. So the binding is read
+        # BEST-EFFORT here and hard everywhere else. The three cases are distinct:
+        #
+        #   definition unreadable      -> the built-in registry, flagged in the
+        #                                 response, which is exactly what this
+        #                                 endpoint did before registries were records
+        #   readable, nothing bound    -> the built-in registry, which is correct
+        #   readable, registry bound   -> resolve it or 400; never quietly serve one
+        #                                 registry's labels for another's numbers
+        definition = None
+        registry_fallback = False
         try:
-            _, catalog_registry = load_registry()
-            if series:
-                catalog_registry = filter_to_series(catalog_registry, series)
+            # Constructing the accessor is itself the thing that needs a token, so it
+            # has to sit INSIDE the guard -- it raises before get_definition is ever
+            # reached, which is how the first version of this still broke the very
+            # callers it was written to protect.
+            data_access = WorkflowDataAccess(request=request)
+            definition = data_access.get_definition(definition_id)
+        except Exception as exc:
+            if not catalog_only:
+                raise
+            logger.warning(
+                "Semantic: catalog_only could not read workflow %s (%s); using the built-in registry",
+                definition_id,
+                type(exc).__name__,
+            )
+            registry_fallback = True
+
+        if definition is None and not registry_fallback:
+            return JsonResponse({"error": "Workflow not found"}, status=404)
+
+        # Which registry this workflow computes from. `?registry_id=` overrides it
+        # so a candidate registry can be read against real data BEFORE it is bound
+        # -- the dry run that makes editing indicators live a safe thing to do.
+        registry_source = dict(getattr(definition, "registry_source", None) or {}) if definition else {}
+        if registry_id_param:
+            try:
+                registry_source = {"registry_id": int(registry_id_param)}
+            except ValueError:
+                return JsonResponse({"error": "registry_id must be an integer"}, status=400)
+
+        # `llo_map` and `settings` come back from the resolver alongside the two
+        # documents. They are the inputs the compiler needs and SQL cannot produce:
+        # without them this endpoint could not serve the `llo` scope at ALL
+        # (RegistryError -> 400, because `llo` is materialised by a CASE over
+        # opportunity_id), and -- the quiet half -- `_suppression_columns` returns
+        # early on falsy settings, so every C-series response was emitted with NO
+        # suppression columns. C14 would have published a mortality figure for an
+        # LLO the workbook says does not record deaths credibly: a real-looking red
+        # band where the right answer is an absent measurement. They travel WITH the
+        # registry now, so a shared registry carries its own gates rather than
+        # silently inheriting whatever the deployment happened to have on disk.
+        registry_access = SemanticRegistryDataAccess(request=request) if registry_source.get("registry_id") else None
+        try:
+            props_doc, full_registry, llo_map, reg_settings = resolve_registry(registry_source, registry_access)
         except SemanticRuntimeError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
-        return JsonResponse(
-            {
-                "rows": [],
-                "measures": measure_catalog(catalog_registry),
-                "catalog_only": True,
-                "series": series or "all",
-                "row_count": 0,
-            }
-        )
+        finally:
+            if registry_access is not None:
+                registry_access.close()
 
-    data_access = WorkflowDataAccess(request=request)
-    try:
-        definition = data_access.get_definition(definition_id)
-        if not definition:
-            return JsonResponse({"error": "Workflow not found"}, status=404)
+        # The display contract WITHOUT the numbers, short-circuited before any
+        # pipeline or database work. It still resolves the DEFINITION first: the
+        # catalog used to come from the built-in registry unconditionally, so a
+        # workflow bound to its own registry would have rendered its values against
+        # someone else's titles, units and bands -- wrong labels on right numbers,
+        # which is worse than an error because it looks fine.
+        if catalog_only:
+            catalog_registry = full_registry
+            if series:
+                try:
+                    catalog_registry = filter_to_series(catalog_registry, series)
+                except SemanticRuntimeError as exc:
+                    return JsonResponse({"error": str(exc)}, status=400)
+            return JsonResponse(
+                {
+                    "rows": [],
+                    "measures": measure_catalog(catalog_registry),
+                    "catalog_only": True,
+                    "series": series or "all",
+                    "registry": registry_source or {"name": "kmc"},
+                    "registry_fallback": registry_fallback,
+                    "row_count": 0,
+                }
+            )
 
         sources = definition.pipeline_sources or []
         # The ENTITY pipeline is the one Layer 1 is generated from -- it carries the
@@ -3059,21 +3127,11 @@ def semantic_indicators_api(request, definition_id):
                 return JsonResponse({"error": "opportunity_id required"}, status=400)
             opportunity_ids = [opp]
 
-        # The two inputs the compiler needs and SQL cannot produce. Without them this
-        # endpoint could not serve the `llo` scope at ALL (RegistryError -> 400,
-        # because `llo` is materialised by a CASE over opportunity_id), and -- the
-        # quiet half -- `_suppression_columns` returns early on falsy settings, so
-        # every C-series response was emitted with NO suppression columns. C14 would
-        # have published a mortality figure for an LLO the workbook says does not
-        # record deaths credibly: a real-looking red band where the right answer is
-        # an absent measurement. Both facts previously existed only inside the
-        # browser render, which is why nothing here could pass them.
-        llo_map, reg_settings = load_deployment()
-
         rows = evaluate(
             pipeline_config,
             [int(o) for o in opportunity_ids],
             extra_fields=extra_fields,
+            registry_documents=(props_doc, full_registry),
             series=series,
             scopes=scopes or None,
             scope=(scopes[0] if scopes else "programme"),
@@ -3084,7 +3142,7 @@ def semantic_indicators_api(request, definition_id):
         # The display contract travels WITH the rows: bands, direction and unit come
         # from the same YAML that produced the numbers, so a threshold cannot drift
         # from the measure it grades.
-        _, reg = load_registry()
+        reg = full_registry
         if series:
             reg = filter_to_series(reg, series)
 
@@ -3163,7 +3221,8 @@ def semantic_indicators_api(request, definition_id):
             status=500,
         )
     finally:
-        data_access.close()
+        if data_access is not None:
+            data_access.close()
 
 
 @login_required

@@ -100,6 +100,73 @@ def load_deployment(name: str = "kmc") -> tuple[dict[Any, str], dict[str, dict[A
     return llo_map, settings
 
 
+def _normalise_deployment(doc: dict[str, Any] | None) -> tuple[dict[Any, str], dict[str, dict[Any, bool]]]:
+    """Coerce deployment facts to the types the compiler compares against.
+
+    Opportunity ids arrive from a query as ints. From YAML they are usually ints
+    already; from a JSON record they are ALWAYS strings, because JSON object keys
+    can only be strings. An llo_map keyed by "10021" silently matches no row and
+    every LLO comes back NULL, so this is not defensive tidying -- it is the
+    difference between the llo scope working and returning nothing.
+    """
+    doc = doc or {}
+    llo_map = {int(k): str(v) for k, v in (doc.get("llo_map") or {}).items()}
+    settings = {
+        str(setting): {str(llo): bool(v) for llo, v in (table or {}).items()}
+        for setting, table in (doc.get("settings") or {}).items()
+    }
+    return llo_map, settings
+
+
+def resolve_registry(
+    source: dict[str, Any] | None = None,
+    registry_access=None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[Any, str], dict[str, dict[Any, bool]]]:
+    """Return (properties, indicators, llo_map, settings) for a registry source.
+
+    One resolver for both worlds, because a caller should not have to care which
+    one it got:
+
+      ``None`` / ``{}``          the built-in on-disk registry ("kmc")
+      ``{"name": "kmc"}``        a named on-disk registry
+      ``{"registry_id": 41}``    a live record, edited without a deploy
+
+    The on-disk registries stay, and stay the default. They are the seed a record
+    is created FROM and the thing that still works when nothing is bound, so
+    adding this took nothing away: a workflow that names no registry behaves
+    exactly as it did.
+    """
+    source = source or {}
+    registry_id = source.get("registry_id")
+
+    if registry_id is None:
+        name = source.get("name") or "kmc"
+        props, inds = load_registry(name)
+        llo_map, settings = load_deployment(name)
+        return props, inds, llo_map, settings
+
+    if registry_access is None:
+        raise SemanticRuntimeError(
+            f"registry_source names registry_id {registry_id!r}, but no registry_access was "
+            f"supplied to read it with. Falling back to the on-disk registry would serve "
+            f"numbers from a DIFFERENT definition than the one the workflow asked for, so "
+            f"this is an error rather than a default."
+        )
+
+    record = registry_access.get_registry(int(registry_id))
+    if record is None:
+        raise SemanticRuntimeError(f"no semantic registry with id {registry_id}")
+
+    props = record.properties_doc
+    inds = record.indicators_doc
+    if not props or not inds:
+        raise SemanticRuntimeError(
+            f"registry {registry_id} is missing its " f"{'properties' if not props else 'indicators'} document"
+        )
+    llo_map, settings = _normalise_deployment(record.deployment)
+    return props, inds, llo_map, settings
+
+
 def filter_to_series(registry: dict[str, Any], series: str) -> dict[str, Any]:
     """A copy of the registry carrying ONE indicator series and nothing else.
 
@@ -237,6 +304,7 @@ def evaluate(
     visit_sql: str | None = None,
     extra_fields: dict[str, Any] | None = None,
     registry_name: str = "kmc",
+    registry_documents: tuple[dict[str, Any], dict[str, Any]] | None = None,
     series: str | None = None,
     scope: str = "programme",
     scopes: list[str] | None = None,
@@ -266,7 +334,15 @@ def evaluate(
     if visit_sql is None and not opportunity_ids:
         raise SemanticRuntimeError("evaluate() needs at least one opportunity id")
 
-    props_doc, registry = load_registry(registry_name)
+    # `registry_documents` is how a DB-backed registry reaches the compiler. Without
+    # it this function could only ever read the files on disk, so binding a workflow
+    # to a live registry would have changed the LABELS the endpoint returns and none
+    # of the numbers underneath them -- the worst possible half-fix, because the two
+    # would disagree silently.
+    if registry_documents is not None:
+        props_doc, registry = registry_documents
+    else:
+        props_doc, registry = load_registry(registry_name)
     if series:
         registry = filter_to_series(registry, series)
 
