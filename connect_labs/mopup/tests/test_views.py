@@ -160,8 +160,21 @@ def test_ward_list_rejects_non_integer_opportunity_id(client, django_user_model)
     assert resp.status_code == 400
 
 
+def _mock_ward_list_tokens(monkeypatch):
+    """`MopupWardListView` resolves tokens via `get_valid_access_token`/
+    `get_valid_cchq_access_token` (silent-refresh helpers, imported locally
+    inside the view — patch the source modules, not `views_module`) rather
+    than `AnalysisPipeline(request=request)`'s un-refreshed session token.
+    See the view's own docstring for the real production bug this avoids."""
+    monkeypatch.setattr("connect_labs.labs.connect_tokens.get_valid_access_token", lambda user: "connect-token")
+    monkeypatch.setattr(
+        "connect_labs.labs.integrations.commcare.cchq_tokens.get_valid_cchq_access_token", lambda user: "cchq-token"
+    )
+
+
 def test_ward_list_returns_summarized_wards(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
+    _mock_ward_list_tokens(monkeypatch)
     import connect_labs.mopup.views as views_module
 
     monkeypatch.setattr(
@@ -197,6 +210,7 @@ def test_ward_list_returns_summarized_wards(client, django_user_model, monkeypat
 
 def test_ward_list_fetch_failure_is_502(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
+    _mock_ward_list_tokens(monkeypatch)
     import connect_labs.mopup.views as views_module
 
     def boom(opportunity_id, request=None, pipeline=None):
@@ -205,6 +219,30 @@ def test_ward_list_fetch_failure_is_502(client, django_user_model, monkeypatch):
     monkeypatch.setattr(views_module, "list_work_areas", boom)
     resp = client.get(reverse("mopup:ward_list", kwargs={"program_id": 217}), {"opportunity_id": "2154"})
     assert resp.status_code == 502
+
+
+def test_ward_list_surfaces_expired_cchq_token_as_401_not_502(client, django_user_model, monkeypatch):
+    # Real bug caught in live browser verification (program 217, opportunity
+    # 2154): the view previously built `AnalysisPipeline(request=request)`,
+    # which reads the CCHQ token straight from the session with no silent
+    # refresh — an expired token then failed fast (~500ms) inside
+    # `list_work_areas`, and the view's broad `except Exception` flattened
+    # that into a generic 502 "Could not load work areas.", indistinguishable
+    # from a real gateway timeout. Resolving tokens up front (mirroring
+    # `mopup.tasks.fetch_evaluation_data`) surfaces this as an explicit,
+    # actionable 401 instead.
+    _login(client, django_user_model)
+    from connect_labs.labs.integrations.commcare.cchq_tokens import CCHQTokenError
+
+    monkeypatch.setattr("connect_labs.labs.connect_tokens.get_valid_access_token", lambda user: "connect-token")
+
+    def boom(user):
+        raise CCHQTokenError("token expired and refresh failed")
+
+    monkeypatch.setattr("connect_labs.labs.integrations.commcare.cchq_tokens.get_valid_cchq_access_token", boom)
+    resp = client.get(reverse("mopup:ward_list", kwargs={"program_id": 217}), {"opportunity_id": "2154"})
+    assert resp.status_code == 401
+    assert "Authorization needed" in resp.json()["detail"]
 
 
 # --- MopupCreateRunView ------------------------------------------------------

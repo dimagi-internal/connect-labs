@@ -126,9 +126,24 @@ class MopupSetupView(LoginRequiredMixin, TemplateView):
 class MopupWardListView(LoginRequiredMixin, View):
     """JSON: work-area-case-derived ward summary for one opportunity — the
     cheap pull (§4). Append ``?refresh=1`` to bypass the pipeline's cache
-    (see core/work_areas.py's module docstring)."""
+    (see core/work_areas.py's module docstring).
+
+    Builds its own `AnalysisPipeline` from explicitly-refreshed tokens
+    (`get_valid_access_token`/`get_valid_cchq_access_token`) rather than
+    `AnalysisPipeline(request=request)` — that request-derived path reads
+    the CCHQ token straight from the session with NO silent refresh (unlike
+    `mopup.tasks.fetch_evaluation_data`'s pattern, which this mirrors), so a
+    stale session token here means a real, fast CommCare HQ auth failure
+    that the broad `except Exception` below was silently flattening into a
+    generic "Could not load work areas." 502 — confirmed live against
+    program 217 opportunity 2154 this session (~500ms failures, too fast to
+    be an actual gateway timeout)."""
 
     def get(self, request, program_id):
+        from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+        from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
+        from connect_labs.labs.integrations.commcare.cchq_tokens import CCHQTokenError, get_valid_cchq_access_token
+
         opportunity_id = request.GET.get("opportunity_id")
         if not opportunity_id:
             return JsonResponse({"status": "error", "detail": "opportunity_id is required"}, status=400)
@@ -138,7 +153,14 @@ class MopupWardListView(LoginRequiredMixin, View):
             return JsonResponse({"status": "error", "detail": "opportunity_id must be an integer"}, status=400)
 
         try:
-            work_areas = list_work_areas(opportunity_id, request=request)
+            access_token = get_valid_access_token(request.user)
+            cchq_access_token = get_valid_cchq_access_token(request.user)
+        except (ConnectTokenError, CCHQTokenError) as e:
+            return JsonResponse({"status": "error", "detail": f"Authorization needed: {e}"}, status=401)
+
+        pipeline = AnalysisPipeline(access_token=access_token, cchq_access_token=cchq_access_token)
+        try:
+            work_areas = list_work_areas(opportunity_id, pipeline=pipeline)
         except Exception:  # noqa: BLE001
             logger.exception(
                 "mopup ward_list: fetching work areas failed (program=%s opportunity=%s)",
