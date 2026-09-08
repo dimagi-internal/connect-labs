@@ -27,6 +27,7 @@ from typing import Any
 
 from . import corpus_manifest as cm
 from .fields import _set_nested
+from .images import failing_value
 from .manifest import ImageConfig, ShowcaseCase
 
 
@@ -97,16 +98,7 @@ def _entered_value(case: ShowcaseCase, true_reading: float, blob_id: str, bands:
     """The value the worker 'typed', given the outcome this case declares."""
     if case.outcome != "fail_number":
         return true_reading
-    wrong = true_reading * factor
-    band = bands.get(blob_id)
-    if band:
-        # A dial photo accepts a RANGE, so a multiplier off the midpoint can land
-        # back INSIDE it and be passed — the case would then read as a planted
-        # error that the reviewer cleared. Push clear of the band's upper edge.
-        lo, hi = band
-        if lo <= wrong <= hi:
-            wrong = hi + max(hi - lo, 1.0) * 0.5
-    return round(wrong, 3)
+    return failing_value(true_reading, blob_id, bands, factor)
 
 
 def _build_case(
