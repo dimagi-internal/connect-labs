@@ -39,7 +39,12 @@ def fetch_work_area_geometry(
     geometry maps to ``{"lat": None, "lon": None, "boundary": None}`` rather
     than being skipped — callers should treat a missing entry the same way
     (this function never raises on a single bad row)."""
-    from connect_labs.labs.analysis.config import AnalysisPipelineConfig, DataSourceConfig, FieldComputation
+    from connect_labs.labs.analysis.config import (
+        AnalysisPipelineConfig,
+        CacheStage,
+        DataSourceConfig,
+        FieldComputation,
+    )
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline
 
     if pipeline is None:
@@ -50,7 +55,17 @@ def fetch_work_area_geometry(
     config = AnalysisPipelineConfig(
         data_source=DataSourceConfig(type="connect_export", endpoint="work_areas"),
         grouping_key="entity_id",
-        terminal_stage="visit_level",
+        # NOT the string "visit_level" — backend.py's process_and_cache
+        # dispatches on `config.terminal_stage == CacheStage.VISIT_LEVEL`
+        # (an enum comparison, not a value match), so a plain string here
+        # silently falls through to _process_flw_level's visit-approval
+        # aggregation instead, which then filters out every one of these
+        # work-area records (they have no real visit_date/approval status)
+        # and returns zero rows. Confirmed live this session: the raw fetch
+        # and RawVisitCache write both succeed with 12937+ rows; only the
+        # processed result comes back empty, and only when terminal_stage
+        # was this bare string.
+        terminal_stage=CacheStage.VISIT_LEVEL,
         fields=[
             FieldComputation(name="wa_case_id", path="work_area.case_id", aggregation="first"),
             FieldComputation(name="boundary", path="work_area.boundary", aggregation="first"),

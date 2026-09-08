@@ -175,12 +175,20 @@ def work_area_ids_for_ward(pipeline, opportunity_id: int, ward: str, lga: str, s
     name matching in microplans/core/admin_boundaries.py doesn't apply here)
     for one opportunity.
     """
-    from connect_labs.labs.analysis.config import AnalysisPipelineConfig, DataSourceConfig, FieldComputation
+    from connect_labs.labs.analysis.config import (
+        AnalysisPipelineConfig,
+        CacheStage,
+        DataSourceConfig,
+        FieldComputation,
+    )
 
     config = AnalysisPipelineConfig(
         data_source=DataSourceConfig(type="cchq_cases", case_type="work-area"),
         grouping_key="entity_id",
-        terminal_stage="visit_level",
+        # See core/geometry.py's identical comment: must be the enum, not the
+        # string "visit_level" — a bare string here silently falls through to
+        # FLW aggregation on process_and_cache's dispatch, on a cache miss.
+        terminal_stage=CacheStage.VISIT_LEVEL,
         fields=[
             FieldComputation(name="ward", path="case.properties.ward", aggregation="first"),
             FieldComputation(name="lga", path="case.properties.lga", aggregation="first"),
@@ -212,12 +220,17 @@ def _hsd_registered_children_count(pipeline, opportunity_id: int, wa_ids: set[st
     work areas as an expected-visit TARGET), where a child re-measured on a
     second visit this round must count once.
     """
-    from connect_labs.labs.analysis.config import AnalysisPipelineConfig, DataSourceConfig, FieldComputation
+    from connect_labs.labs.analysis.config import (
+        AnalysisPipelineConfig,
+        CacheStage,
+        DataSourceConfig,
+        FieldComputation,
+    )
 
     config = AnalysisPipelineConfig(
         data_source=DataSourceConfig(type="connect_csv"),
         grouping_key="entity_id",
-        terminal_stage="visit_level",
+        terminal_stage=CacheStage.VISIT_LEVEL,
         filters={"status": ["approved"]},
         fields=[
             FieldComputation(name="form_name", path=_FORM_NAME_PATH, aggregation="first"),
