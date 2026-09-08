@@ -158,3 +158,33 @@ class TestSummarizeCandidatesByWard:
 
     def test_no_candidates_returns_empty(self):
         assert summarize_candidates_by_ward([], []) == []
+
+    def test_wards_with_zero_candidates_still_appear(self):
+        # Real bug, caught live against program 217/opportunity 2154: with
+        # thousands of work areas evaluated but zero flagged under the
+        # current thresholds, this table was rendering completely empty —
+        # it must show every evaluated ward, not just ones with candidates.
+        all_rows = [
+            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"},
+            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"},
+            {"ward": "Unguwar Arewa", "lga": "Rano", "state": "Kano"},
+        ]
+        summary = summarize_candidates_by_ward([], all_rows)
+        assert summary == [
+            {
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "total_work_areas": 2,
+                "candidate_count": 0,
+                "flagged_by_2_plus": 0,
+            },
+            {
+                "ward": "Unguwar Arewa",
+                "lga": "Rano",
+                "state": "Kano",
+                "total_work_areas": 1,
+                "candidate_count": 0,
+                "flagged_by_2_plus": 0,
+            },
+        ]
