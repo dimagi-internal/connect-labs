@@ -386,6 +386,32 @@ class TaskSpec(BaseModel):
 # ---------- Image config ----------
 
 
+class ShowcaseCase(BaseModel):
+    """One named demo case replaying a corpus trajectory.
+
+    ``trajectory`` names a series in the corpus manifest (``normal_02``,
+    ``slow_03``, ...). Those are real infants' real weight series, so "good
+    gain" and "insufficient gain" are properties of the source data rather than
+    something invented here — pick the bucket that tells the story.
+
+    ``outcome`` is what the AI reviewer should conclude:
+
+    ``pass``
+        the entered value equals the photo's confirmed reading.
+    ``fail_number``
+        a readable photo of the right infant with the wrong value entered —
+        the payment-integrity case the agreement reviewers exist to catch.
+    ``fail_photo``
+        an unusable frame. The weight is left alone; the visit fails on the
+        image, not the arithmetic.
+    """
+
+    name: str = Field(min_length=1)
+    trajectory: str = Field(min_length=1)
+    flw: str = Field(min_length=1)
+    outcome: Literal["pass", "fail_number", "fail_photo"] = "pass"
+
+
 class ImageConfig(BaseModel):
     question_path: str = "form.muac_group.muac_display_group_1.muac_photo"
     # Legacy uncategorized pool — kept so existing opps with `stock_image_count`
@@ -468,6 +494,21 @@ class ImageConfig(BaseModel):
     # Only consulted in weight-matched mode; without a tolerance the historical
     # bad-pool round-robin applies unchanged.
     bad_photo_share: float = Field(ge=0, le=1, default=0.0)
+    # ---- showcase cases (opt-in) -----------------------------------------
+    # Named demo cases, each replaying one corpus trajectory end to end so a
+    # person can OPEN that case and walk its photos.
+    #
+    # The probabilistic knobs above spread images across a cohort, which is the
+    # right shape for "does the audit find anything" and useless for "show me
+    # the faltering-growth case": a spread contains no case you can name, and
+    # mirror mode names its entities `Beneficiary 47`. A showcase case is
+    # designated instead — searchable name, a REAL corpus infant replayed so
+    # every visit has a photo whose confirmed reading IS that visit's weight,
+    # and a declared outcome for the reviewer to reach.
+    #
+    # Pair with `probability: 0.0` to photograph ONLY these and leave the rest
+    # of the cohort untouched.
+    showcase: list[ShowcaseCase] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_readings(self):

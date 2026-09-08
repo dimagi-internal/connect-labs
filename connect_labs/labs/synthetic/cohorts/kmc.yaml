@@ -28,3 +28,40 @@ curate: true
 # cases/FLW, timing, and per-child weight-vs-age growth curve — not just marginals.
 mirror: true
 opportunity_ids: [523, 524, 675, 874, 938, 1234, 1236, 1487, 1488, 1739, 1790]
+# Phase-2 image behaviour. Applied at replay time, never baked into a bundle:
+# a bundle is a MEASUREMENT of the real opp, and the real opp says nothing about
+# which photo corpus we want or which demo cases to stage.
+#
+# probability 0.0 => the cohort's own visits get NO photos. Only the showcase
+# cases below carry images, which is what makes them findable rather than four
+# needles in ~38k visits.
+image_config:
+  corpus: kmc-scale
+  measurement_field_match: weight
+  question_path: form.anthropometric.upload_weight_image
+  reading_path: form.anthropometric.child_weight_visit
+  probability: 0.0
+  good_image_count: 83
+  bad_image_count: 10
+  showcase:
+    # Good vs insufficient gain are REAL: each replays one infant's actual
+    # weight series from the corpus. normal_02 gains 935 g over 4 visits;
+    # slow_03 gains 70 g over 3 and falls on the last one.
+    - name: 'KMC Demo — Steady Gain'
+      trajectory: normal_02
+      flw: flw_001
+      outcome: pass
+    - name: 'KMC Demo — Faltering Growth'
+      trajectory: slow_03
+      flw: flw_001
+      outcome: pass
+    # Same two failure modes the reviewers exist to separate: a wrong NUMBER on
+    # a readable photo (payment integrity) vs an unusable PHOTO.
+    - name: 'KMC Demo — Transcription Error'
+      trajectory: normal_05
+      flw: flw_007
+      outcome: fail_number
+    - name: 'KMC Demo — Unusable Photo'
+      trajectory: slow_10
+      flw: flw_007
+      outcome: fail_photo

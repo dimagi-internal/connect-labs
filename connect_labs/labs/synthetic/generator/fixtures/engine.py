@@ -21,6 +21,7 @@ from .images import assign_visit_images
 from .manifest import Manifest
 from .opportunity import build_opportunity
 from .schema_loader import FormSchema
+from .showcase import build_showcase_visits
 from .status import decide_visit_status
 from .tasks import build_task_records
 from .timeline import expand_visit_schedule
@@ -491,6 +492,22 @@ def _assemble(
     image_stats = None
     if manifest.image_config:
         image_stats = assign_visit_images(visits, manifest.image_config, rng)
+        # Showcase cases are BUILT, not sampled, so they are appended after the
+        # probabilistic pass rather than fed through it — their photo and their
+        # entered value both come straight from the corpus trajectory, and
+        # running them through nearest-match selection could only move them off
+        # the pairing the trajectory already fixed.
+        showcase_visits = build_showcase_visits(
+            manifest.image_config,
+            opportunity_id=manifest.opportunity_id,
+            start_date=manifest.timeline.start_date,
+            deliver_unit_id=_default_deliver_unit(opportunity_detail),
+        )
+        if showcase_visits:
+            visits.extend(showcase_visits)
+            image_stats = dict(image_stats or {})
+            image_stats["showcase_cases"] = len(manifest.image_config.showcase)
+            image_stats["showcase_visits"] = len(showcase_visits)
 
     persona_names = {p.id: p.display_name or p.id for p in personas}
     task_records = build_task_records(

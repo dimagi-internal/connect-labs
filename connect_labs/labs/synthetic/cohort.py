@@ -40,6 +40,16 @@ class CohortSpec:
     # curve (age = visit_date - dob, #734) — not just marginals. Opt-in per cohort
     # (e.g. cohorts/kmc.yaml sets mirror: true); the curve only reproduces under mirror.
     mirror: bool = False
+    # Image behaviour for every clone in the cohort, as a raw ImageConfig dict
+    # (corpus, paths, showcase cases). Applied in PHASE 2, not Phase 1.
+    #
+    # It lives on the spec rather than the profiler because of a distinction the
+    # two phases already draw: the profiler MEASURES the source (over_limit rate,
+    # flag rates, trajectories) while the spec carries our CHOICES (curate,
+    # mirror). Which corpus to photograph with, and which demo cases to stage,
+    # are choices — nothing about them is observable in the real opportunity, and
+    # baking them into a bundle would freeze a demo decision into a measurement.
+    image_config: dict | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> CohortSpec:
@@ -55,6 +65,7 @@ class CohortSpec:
             bundle_root=str(data.get("bundle_root", "gdrive:")),
             curate=bool(data.get("curate", False)),
             mirror=bool(data.get("mirror", False)),
+            image_config=data.get("image_config") or None,
         )
 
     @classmethod
@@ -75,6 +86,7 @@ class CohortSpec:
                 "bundle_root": self.bundle_root,
                 "curate": self.curate,
                 "mirror": self.mirror,
+                **({"image_config": self.image_config} if self.image_config else {}),
                 "opportunity_ids": self.opportunity_ids,
             },
             sort_keys=False,

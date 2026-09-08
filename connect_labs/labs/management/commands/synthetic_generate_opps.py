@@ -58,10 +58,16 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         if opts.get("no_register"):
-            bundle_root = load_cohort_spec(opts["spec"]).bundle_root if opts.get("spec") else opts.get("bundles")
+            # image_config is a Phase-2 CHOICE carried on the spec, so it is only
+            # available when a spec was given. With bare --bundles the caller has
+            # asked to replay bundles and nothing else, and no images are added.
+            spec = load_cohort_spec(opts["spec"]) if opts.get("spec") else None
+            bundle_root = spec.bundle_root if spec else opts.get("bundles")
             if not bundle_root:
                 raise CommandError("--no-register needs --spec or --bundles to locate the bundles.")
-            rows = generate_fixtures_only(bundle_root, drive=DriveClient())
+            rows = generate_fixtures_only(
+                bundle_root, drive=DriveClient(), image_config=spec.image_config if spec else None
+            )
             for r in rows:
                 self.stdout.write(
                     f"  {r['source_opportunity_id']} -> {r['gdrive_folder_id']}  ({r['visit_count']} visits)"
