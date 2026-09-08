@@ -422,3 +422,47 @@ class MopupCreatePlanView(LoginRequiredMixin, View):
 
         resp["status"] = "ok"
         return JsonResponse(resp)
+
+
+class MopupDebugGeometryView(LoginRequiredMixin, View):
+    """TEMPORARY diagnostic — remove once the "None of the locked candidates
+    have boundary geometry" re-investigation is resolved. Calls
+    fetch_work_area_geometry directly, via a HEADLESS pipeline (explicit
+    access_token/cchq_access_token, no request=) matching
+    mopup.tasks.fetch_evaluation_data's exact construction, with the
+    force_refresh=True fix already applied — to isolate whether that fix
+    actually resolves the live symptom in this exact code path."""
+
+    def get(self, request, program_id):
+        from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
+        from connect_labs.labs.integrations.commcare.cchq_tokens import CCHQTokenError, get_valid_cchq_access_token
+        from connect_labs.mopup.core.geometry import fetch_work_area_geometry
+
+        opportunity_id = request.GET.get("opportunity_id")
+        if not opportunity_id:
+            return JsonResponse({"status": "error", "detail": "opportunity_id is required"}, status=400)
+        opportunity_id = int(opportunity_id)
+
+        try:
+            access_token = get_valid_access_token(request.user)
+            cchq_access_token = get_valid_cchq_access_token(request.user)
+        except (ConnectTokenError, CCHQTokenError) as e:
+            return JsonResponse({"status": "error", "detail": f"Authorization needed: {e}"}, status=401)
+
+        try:
+            from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+
+            pipeline = AnalysisPipeline(access_token=access_token, cchq_access_token=cchq_access_token)
+            geometry = fetch_work_area_geometry(opportunity_id, pipeline=pipeline)
+            sample = list(geometry.items())[:5]
+        except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
+            return JsonResponse({"status": "error", "detail": f"{type(e).__name__}: {e}"}, status=502)
+
+        return JsonResponse(
+            {
+                "status": "ok",
+                "count": len(geometry),
+                "with_boundary": sum(1 for g in geometry.values() if g.get("boundary")),
+                "sample": [{"wa_case_id": k, "has_boundary": bool(v.get("boundary"))} for k, v in sample],
+            }
+        )
