@@ -577,7 +577,20 @@ def _suppression_columns(
         credible = [k for k, v in table.items() if v]
         if credible:
             lits = ", ".join("'" + str(k).replace("'", "''") + "'" for k in credible)
-            cols.append(f"(props.{scope_col} IS NULL OR props.{scope_col} NOT IN ({lits})) " f"AS {name}_suppressed")
+            # BOOL_OR, not a bare predicate. The rule is scoped by llo but the QUERY
+            # may be grouped by something else, and `props.llo` is only a legal bare
+            # reference where llo is a grouping column -- so `scopes=programme`,
+            # `opportunity` and `flw` each came back as a raw Postgres "must appear in
+            # the GROUP BY clause" 400 rather than a number. As an aggregate it is
+            # valid at every scope, and at the llo scope every row in a group shares
+            # one llo, so it reduces to exactly the per-llo predicate it replaces.
+            #
+            # The reading it gives elsewhere is the conservative one: a pooled figure
+            # is flagged when ANY contributing LLO does not record the thing credibly.
+            # Pooling a non-credible LLO into a programme number does not launder it.
+            cols.append(
+                f"BOOL_OR(props.{scope_col} IS NULL OR props.{scope_col} NOT IN ({lits})) " f"AS {name}_suppressed"
+            )
         else:
             cols.append(f"TRUE AS {name}_suppressed")
     return ("".join(f"{c},\n    " for c in cols)) if cols else ""

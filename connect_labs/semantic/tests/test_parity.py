@@ -455,6 +455,47 @@ def test_every_declared_scope_actually_executes(conn):
             cur.fetchall()
 
 
+def test_every_scope_executes_with_the_suppression_gates_on(conn):
+    """Every scope must RUN with the shipped settings, not just without them.
+
+    The sibling test above executes every scope but passes no `settings`, so no
+    suppression column is ever emitted and it cannot see this class at all. A
+    suppression rule is scoped by `llo`, and the emitted predicate referenced
+    `props.llo` bare -- legal only where llo is a grouping column. So the moment
+    the deployment facts were actually wired through, `scopes=programme`,
+    `opportunity` and `flw` each returned a raw Postgres "must appear in the GROUP
+    BY clause" 400 instead of a number, while `llo` and any set CONTAINING llo
+    kept working. The dashboard asks for a set containing llo, which is the only
+    reason this was survivable long enough to reach production.
+    """
+    from connect_labs.semantic.compiler import SCOPES
+    from connect_labs.semantic.runtime import load_deployment
+
+    props_doc = yaml.safe_load((REGISTRY / "properties.yml").read_text())
+    registry = yaml.safe_load((REGISTRY / "indicators.yml").read_text())
+    llo_map, settings = load_deployment()
+    _load(conn)
+    cur = conn.cursor()
+
+    for scope in SCOPES:
+        sql = compile_indicator_sql(
+            props_doc,
+            registry,
+            "SELECT * FROM fixture_visits",
+            scope=scope,
+            as_of="(DATE '2026-01-01' + 200)",
+            llo_map=llo_map,
+            settings=settings,
+        )
+        assert "_suppressed" in sql, f"scope {scope!r} emitted no gate at all"
+        try:
+            cur.execute(sql)
+            cur.fetchall()
+        except Exception as exc:  # pragma: no cover - the point is the message
+            conn.rollback()
+            raise AssertionError(f"scope {scope!r} did not run with the gates on: {exc}") from exc
+
+
 def test_suppression_marks_the_non_credible_llo(conn):
     """C14 must come back flagged for an LLO the settings say is not credible.
 
