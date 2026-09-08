@@ -2939,12 +2939,7 @@ def semantic_indicators_api(request, definition_id):
               still needs titles, units, directions and bands to render them, and
               the render no longer keeps a copy of those.
     """
-    from connect_labs.semantic.runtime import (
-        SemanticRuntimeError,
-        evaluate,
-        filter_to_series,
-        measure_catalog,
-    )
+    from connect_labs.semantic.runtime import SemanticRuntimeError, evaluate, filter_to_series, measure_catalog
     from connect_labs.semantic.workflow_binding import resolve_registry_for
     from connect_labs.workflow.data_access import SemanticRegistryDataAccess
 
