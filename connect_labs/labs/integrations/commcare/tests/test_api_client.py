@@ -19,7 +19,7 @@ import httpx
 import pytest
 from django.utils import timezone
 
-from connect_labs.labs.integrations.commcare.api_client import CCHQAuthError, CommCareDataAccess
+from connect_labs.labs.integrations.commcare.api_client import CCHQAuthError, CommCareDataAccess, is_cchq_oauth_active
 
 
 def _fake_request():
@@ -297,3 +297,52 @@ class TestRefreshTokenLocking:
             assert client._refresh_token() is False
 
         mock_lock.assert_not_called()
+
+
+class TestIsCchqOauthActive:
+    """is_cchq_oauth_active() is the shared helper every "is CommCare HQ
+    connected" badge/gate should call instead of re-implementing a raw,
+    no-refresh expires_at check — see its docstring for the incident this
+    fixes (a merely time-expired but refreshable token reported as
+    disconnected, forcing a needless re-authorize)."""
+
+    def test_active_when_not_expired(self):
+        request = MagicMock()
+        request.session = {"commcare_oauth": {"access_token": "tok", "expires_at": timezone.now().timestamp() + 3600}}
+        assert is_cchq_oauth_active(request) is True
+
+    def test_refreshes_and_reports_active_when_expired(self):
+        request = MagicMock()
+        request.session = {
+            "commcare_oauth": {
+                "access_token": "expired-tok",
+                "refresh_token": "refresh-me",
+                "expires_at": timezone.now().timestamp() - 10,
+            }
+        }
+        with patch(
+            "connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess._refresh_token",
+            return_value=True,
+        ) as mock_refresh:
+            assert is_cchq_oauth_active(request) is True
+        mock_refresh.assert_called_once()
+
+    def test_inactive_when_refresh_fails(self):
+        request = MagicMock()
+        request.session = {
+            "commcare_oauth": {
+                "access_token": "expired-tok",
+                "refresh_token": "refresh-me",
+                "expires_at": timezone.now().timestamp() - 10,
+            }
+        }
+        with patch(
+            "connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess._refresh_token",
+            return_value=False,
+        ):
+            assert is_cchq_oauth_active(request) is False
+
+    def test_inactive_when_no_token_at_all(self):
+        request = MagicMock()
+        request.session = {}
+        assert is_cchq_oauth_active(request) is False

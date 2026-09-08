@@ -353,3 +353,15 @@ class OCSDataAccess:
             return data.get("results", [])
         except httpx.HTTPError as e:
             raise OCSAPIError(f"Failed to fetch sessions: {e}") from e
+
+
+def is_ocs_oauth_active(request: HttpRequest) -> bool:
+    """Is the user's stored OCS OAuth session usable right now?
+
+    Thin wrapper around ``OCSDataAccess.check_token_valid()`` — see the
+    CCHQ/Connect equivalents (``is_cchq_oauth_active``/``is_connect_oauth_active``)
+    for why every "connected" badge or gate should use this instead of a raw
+    ``expires_at`` check with no refresh attempt.
+    """
+    with OCSDataAccess(request) as ocs_client:
+        return ocs_client.check_token_valid()
