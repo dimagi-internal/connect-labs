@@ -1754,6 +1754,19 @@ class TestRegistrySourceBinding:
         with pytest.raises(MCPToolError):
             _validate_registry_source({"name": "kmc", "registry_id": 5}, None)
 
+    def test_the_registry_read_is_scoped_like_the_workflow_read(self):
+        """A registry record is owned by an opportunity/program. An unscoped accessor
+        cannot see one that exists, and reports it as "no semantic registry with id N"
+        — indistinguishable from a genuinely bad id. Measured: registry 5500 resolved
+        through the semantic endpoint (which passes opportunity_id) while this refused
+        it."""
+        import inspect
+
+        from connect_labs.mcp.tools.workflows import _validate_registry_source
+
+        params = inspect.signature(_validate_registry_source).parameters
+        assert "opportunity_id" in params and "program_id" in params
+
     def test_a_named_on_disk_registry_needs_no_database_read(self):
         from connect_labs.mcp.tools.workflows import _validate_registry_source
 
