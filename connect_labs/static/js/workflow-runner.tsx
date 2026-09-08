@@ -971,10 +971,19 @@ function WorkflowRunner({
                         label: 'CommCare HQ',
                       }),
                       active: false,
+                      // Prefer the URL refreshAuthStatus already computed
+                      // with next=<this page>. The backend's payload.authorize_url
+                      // here is a generic fallback (it has no notion of which
+                      // page the user is actually on) and previously always won
+                      // this fallback chain since it's practically always truthy
+                      // — which sent users who re-authorized mid-run off to a
+                      // different, unrelated screen instead of back to their run.
                       authorize_url:
-                        payload.authorize_url ||
                         prev.commcare_hq?.authorize_url ||
-                        '/labs/commcare/initiate/',
+                        payload.authorize_url ||
+                        `/labs/commcare/initiate/?next=${encodeURIComponent(
+                          window.location.pathname + window.location.search,
+                        )}`,
                     },
                   }
                 : prev,

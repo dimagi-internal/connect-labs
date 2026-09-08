@@ -707,11 +707,12 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         so every downstream link and the runner JS see a clean integer.
         """
         labs_context = getattr(request, "labs_context", {}) or {}
+        definition_id = self.kwargs.get("definition_id")
         # Program-owned runs resolve by program_id (no owning opportunity), so
         # skip opp recovery entirely when the context is program-scoped.
         program_scoped = bool(labs_context.get("program_id")) and not labs_context.get("opportunity_id")
         if not labs_context.get("opportunity_id") and not program_scoped:
-            recovered = self._recover_opportunity_id(self.kwargs.get("definition_id"))
+            recovered = self._recover_opportunity_id(definition_id)
             # Only redirect when the recovered id differs from whatever raw
             # value is already in the URL — guards against a redirect loop if a
             # future middleware change were to refuse the value.
@@ -719,6 +720,37 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 params = request.GET.copy()
                 params["opportunity_id"] = str(recovered)
                 return HttpResponseRedirect(f"{request.path}?{params.urlencode()}")
+        elif labs_context.get("opportunity_id"):
+            # LabsContextMiddleware stamps whatever context the session last
+            # held onto a bare workflow URL (no opportunity_id/program_id of
+            # its own) — see its "session has context but URL doesn't"
+            # redirect. That ambient value can be completely unrelated to
+            # THIS workflow: e.g. the user was last browsing a per-opportunity
+            # page, then opens a program-owned, multi-opp run (spans several
+            # CCHQ domains, one per opportunity) whose own record carries no
+            # owning opportunity at all. Trusting the stale opportunity_id
+            # here scopes every downstream call (auth-status, pipeline
+            # stream) to the WRONG CCHQ domain, which then reports a
+            # spurious auth failure and re-triggers the OAuth prompt even
+            # though the user's CCHQ session is perfectly valid. Detect that
+            # mismatch and redirect to the workflow's own true scope before
+            # rendering — this also re-seeds the session (see
+            # save_context_to_session in LabsContextMiddleware) so the next
+            # page load doesn't repeat the mistake.
+            try:
+                definition = WorkflowDataAccess(request=self.request).get_definition(definition_id)
+            except Exception:
+                definition = None
+            def_program_id = getattr(definition, "program_id", None) if definition else None
+            def_opportunity_id = getattr(definition, "opportunity_id", None) if definition else None
+            if def_program_id and not def_opportunity_id:
+                # This workflow is program-owned; the ambient opportunity_id
+                # scope is simply wrong for it.
+                if str(labs_context.get("program_id") or "") != str(def_program_id):
+                    params = request.GET.copy()
+                    params.pop("opportunity_id", None)
+                    params["program_id"] = str(def_program_id)
+                    return HttpResponseRedirect(f"{request.path}?{params.urlencode()}")
         # The per-run-page picker landing is deprecated. Run organization —
         # listing past runs and starting new ones — lives on the workflow LIST
         # page. A bare run URL (no run_id and not edit-mode) therefore bounces
@@ -728,7 +760,6 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             from django.urls import reverse
             from django.utils.http import urlencode
 
-            definition_id = self.kwargs.get("definition_id")
             params = {}
             opp_id = labs_context.get("opportunity_id")
             if opp_id:
@@ -1583,6 +1614,22 @@ def workflow_auth_status_api(request):
     cchq_active = _is_active("commcare_oauth")
     cchq_reason: str | None = None
     cchq_domain_for_probe: str | None = None
+
+    # Unlike Connect/OCS above, a merely-expired (not revoked) CCHQ access
+    # token used to go straight to "token_expired" here with no refresh
+    # attempt at all: the real-ping branch below is only reached when
+    # cchq_active is ALREADY True, so a token that expired purely by
+    # timestamp (they're commonly ~1hr, see oauth_views.py) skipped the
+    # refresh-token exchange entirely and forced the user through the full
+    # OAuth screen even though the stored refresh_token was still good.
+    # Mirror the silent-refresh-before-declaring-dead pattern used for
+    # Connect/OCS just above.
+    if not cchq_active and (request.session.get("commcare_oauth") or {}).get("refresh_token"):
+        try:
+            CommCareDataAccess(request, "")._refresh_token()
+        except Exception:
+            logger.exception("CCHQ silent refresh attempt raised")
+        cchq_active = _is_active("commcare_oauth")
 
     if opportunity_id_param and probe_cchq:
         try:
