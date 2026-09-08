@@ -1712,3 +1712,54 @@ def test_sync_from_deployed_template_refuses_a_stale_version(mock_wda_cls, clien
 
     assert data["result"]["isError"] is True, data
     wda.save_render_code.assert_not_called()
+
+
+class TestRegistrySourceBinding:
+    """`registry_source` is the binding that makes indicators editable without a
+    deploy. Nothing could WRITE it until this: it was read from the definition, and
+    `seed_semantic_registry` told a human to go bind it by hand. A capability an agent
+    cannot reach does not exist for an agent — which is how the KMC dashboard sat on
+    the on-disk registry for weeks after record support shipped.
+    """
+
+    def test_registry_source_is_an_allowed_patch_key(self):
+        from connect_labs.mcp.tools.workflows import _DEFINITION_PATCH_ALLOWED
+
+        assert "registry_source" in _DEFINITION_PATCH_ALLOWED
+
+    def test_rejects_a_non_dict(self):
+        import pytest
+
+        from connect_labs.mcp.errors import MCPToolError
+        from connect_labs.mcp.tools.workflows import _validate_registry_source
+
+        with pytest.raises(MCPToolError):
+            _validate_registry_source("kmc", None)
+
+    def test_rejects_unknown_keys(self):
+        import pytest
+
+        from connect_labs.mcp.errors import MCPToolError
+        from connect_labs.mcp.tools.workflows import _validate_registry_source
+
+        with pytest.raises(MCPToolError):
+            _validate_registry_source({"registry": 5}, None)
+
+    def test_rejects_name_and_id_together(self):
+        import pytest
+
+        from connect_labs.mcp.errors import MCPToolError
+        from connect_labs.mcp.tools.workflows import _validate_registry_source
+
+        with pytest.raises(MCPToolError):
+            _validate_registry_source({"name": "kmc", "registry_id": 5}, None)
+
+    def test_a_named_on_disk_registry_needs_no_database_read(self):
+        from connect_labs.mcp.tools.workflows import _validate_registry_source
+
+        _validate_registry_source({"name": "kmc"}, None)
+
+    def test_empty_dict_is_the_builtin_and_is_valid(self):
+        from connect_labs.mcp.tools.workflows import _validate_registry_source
+
+        _validate_registry_source({}, None)
