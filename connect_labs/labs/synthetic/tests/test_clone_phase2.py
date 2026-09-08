@@ -335,3 +335,69 @@ def test_generate_cohort_uses_spec_program_id(settings, monkeypatch):
     assert program_ids == {10010}
     # opp ids sit above the reserved program id (no collision):
     assert all(r.opportunity_id > 10010 for r in results)
+
+
+# ---------------------------------------------------------------------------
+# --no-register must honour spec.opportunity_ids (#1604).
+#
+# It did not, and because image_config is a SINGLE config applied to every
+# bundle in the run, a spec narrowed to one opportunity regenerated all of them
+# through settings chosen for that one. Observed 2026-09-08 on the KMC set: a
+# spec naming only opp 675 replayed all eleven bundles, and the other ten
+# produced zero images each before the run was killed.
+# ---------------------------------------------------------------------------
+
+
+def _bundle_for(tmp_path, opp_id: int):
+    manifest_yaml = (
+        f"opportunity_id: {opp_id}\n"
+        "opportunity_name: KMC\n"
+        "random_seed: 42\n"
+        "timeline: {start_date: 2026-05-04, end_date: 2026-06-01, weeks: 4,"
+        " visit_cadence_per_week_per_flw: {mean: 5, stddev: 1}}\n"
+        "flw_personas: [{id: a, archetype: steady,"
+        " accuracy_distribution: {mean: 0.8, stddev: 0.05},"
+        " completeness_distribution: {mean: 0.8, stddev: 0.05}, flag_rate: 0.1}]\n"
+        "beneficiary_cohorts: [{id: primary, size: 20, progression: flat,"
+        ' field_distributions: {"form.w": {distribution: normal, mean: 12.0, stddev: 2.0}}}]\n'
+        "kpi_config: [{kpi: a, field_path: form.w, aggregation: mean, threshold_underperform: 1.0}]\n"
+    )
+    return write_bundle(
+        tmp_path,
+        opp_id,
+        manifest_yaml=manifest_yaml,
+        app_structure={"learn_app": None, "deliver_app": {"modules": []}},
+        opportunity={"id": opp_id, "name": "KMC"},
+    )
+
+
+def test_generate_fixtures_only_replays_just_the_named_opportunities(tmp_path, settings):
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    for opp_id in (523, 675, 874):
+        _bundle_for(tmp_path, opp_id)
+
+    rows = clone_from_prod.generate_fixtures_only(str(tmp_path), drive=_FakeDrive(), opportunity_ids=[675])
+
+    assert [r["source_opportunity_id"] for r in rows] == [675]
+
+
+def test_generate_fixtures_only_without_a_selection_still_replays_everything(tmp_path, settings):
+    """Bare --bundles has no spec and so no selection: behaviour is unchanged."""
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    for opp_id in (523, 675, 874):
+        _bundle_for(tmp_path, opp_id)
+
+    rows = clone_from_prod.generate_fixtures_only(str(tmp_path), drive=_FakeDrive())
+
+    assert sorted(r["source_opportunity_id"] for r in rows) == [523, 675, 874]
+
+
+def test_a_requested_opportunity_with_no_bundle_is_reported_not_silently_dropped(tmp_path, settings, caplog):
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    _bundle_for(tmp_path, 675)
+
+    with caplog.at_level("WARNING"):
+        rows = clone_from_prod.generate_fixtures_only(str(tmp_path), drive=_FakeDrive(), opportunity_ids=[675, 999])
+
+    assert [r["source_opportunity_id"] for r in rows] == [675]
+    assert "999" in caplog.text, "a requested id with no bundle must be named, not silently skipped"

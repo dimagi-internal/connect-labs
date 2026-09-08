@@ -66,7 +66,14 @@ class Command(BaseCommand):
             if not bundle_root:
                 raise CommandError("--no-register needs --spec or --bundles to locate the bundles.")
             rows = generate_fixtures_only(
-                bundle_root, drive=DriveClient(), image_config=spec.image_config if spec else None
+                bundle_root,
+                drive=DriveClient(),
+                image_config=spec.image_config if spec else None,
+                # A spec that names opportunity_ids means them here too. Ignoring
+                # them replayed every bundle under bundle_root through the spec's
+                # single image_config (#1604). Bare --bundles has no spec and so
+                # no selection: replay everything, as before.
+                opportunity_ids=spec.opportunity_ids if spec else None,
             )
             for r in rows:
                 self.stdout.write(

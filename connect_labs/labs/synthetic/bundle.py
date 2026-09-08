@@ -97,6 +97,9 @@ class BundleStore(Protocol):
     def list_handles(self) -> list[str]:
         ...
 
+    def list_bundles(self) -> list[tuple[int, str]]:
+        ...
+
 
 class LocalBundleStore:
     """Bundles as ``<root>/<source_opp_id>/`` directories on the local filesystem."""
@@ -120,6 +123,20 @@ class LocalBundleStore:
 
     def list_handles(self) -> list[str]:
         return [str(p) for p in sorted(self.root.iterdir()) if p.is_dir()]
+
+    def list_bundles(self) -> list[tuple[int, str]]:
+        """(source_opp_id, handle) pairs, so a caller can select bundles without
+        reading them. Both stores name the bundle after its opp id, which makes
+        the id recoverable for the price of the listing already being done --
+        `read` downloads a multi-MB manifest, so filtering after it defeats the
+        point. Non-numeric names are skipped rather than raising: the root may
+        hold unrelated folders."""
+        out: list[tuple[int, str]] = []
+        for handle in self.list_handles():
+            name = Path(handle).name
+            if name.isdigit():
+                out.append((int(name), handle))
+        return out
 
 
 class GDriveBundleStore:
@@ -148,6 +165,16 @@ class GDriveBundleStore:
 
     def list_handles(self) -> list[str]:
         return list(self.drive.list_folder(self.root_folder_id).values())
+
+    def list_bundles(self) -> list[tuple[int, str]]:
+        """(source_opp_id, handle) pairs -- see LocalBundleStore.list_bundles.
+        The Drive listing is {folder_name: folder_id} and the name IS the opp
+        id, so this costs nothing beyond the listing."""
+        out: list[tuple[int, str]] = []
+        for name, fid in self.drive.list_folder(self.root_folder_id).items():
+            if str(name).isdigit():
+                out.append((int(name), fid))
+        return sorted(out)
 
 
 def make_bundle_store(bundle_root: str, *, drive=None) -> BundleStore:
