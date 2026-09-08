@@ -184,6 +184,7 @@ measures:
         category: Program quality,
         prominence: Top,
         unit: '%',
+        tbd_input: growth_class thresholds are TBD in the workbook,
         direction: higher,
         bands: [70, 50],
         min_denominator: 25,
@@ -209,6 +210,7 @@ measures:
         category: Program quality,
         prominence: Top,
         unit: '%',
+        tbd_input: growth_class thresholds are TBD in the workbook,
         direction: lower,
         bands: [15, 30],
         min_denominator: 25,
@@ -234,6 +236,7 @@ measures:
         category: Program quality,
         prominence: Lower,
         unit: '%',
+        tbd_input: growth_class thresholds are TBD in the workbook,
         direction: mid,
         bands: [15, 30],
         min_denominator: 25,
@@ -284,6 +287,9 @@ measures:
     meta:
       {
         indicator: C14,
+        scope_note: All LLOs pooled,
+        including the four the workbook says do not record deaths credibly. The headline card above is PIPN + EHA only,
+        and reads higher because non-recorders add denominator without deaths.,
         category: Performance,
         prominence: Top,
         unit: '%',
