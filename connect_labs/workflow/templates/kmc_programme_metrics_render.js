@@ -636,8 +636,8 @@ function WorkflowUI({
           ? d.early_g_per_kg_day < PLAUSIBLE_LO
             ? 'slow'
             : d.early_g_per_kg_day > PLAUSIBLE_HI
-              ? 'fast'
-              : 'plausible'
+            ? 'fast'
+            : 'plausible'
           : null;
         d.first_weight_g = ws.length ? Math.round(ws[0].w) : null;
         d.last_weight_g = ws.length ? Math.round(ws[ws.length - 1].w) : null;
@@ -697,8 +697,8 @@ function WorkflowUI({
       snapshot && (snapshot.cMeasures || []).length
         ? 'ready'
         : snapshot
-          ? 'loading'
-          : 'idle',
+        ? 'loading'
+        : 'idle',
     rows: [],
     measures: (snapshot && snapshot.cMeasures) || [],
   });
@@ -1711,10 +1711,10 @@ function WorkflowUI({
         var key = selFLW
           ? 'flw:' + selFLW
           : selOpp
-            ? 'opp:' + selOpp
-            : selLLO
-              ? 'llo:' + selLLO
-              : 'all';
+          ? 'opp:' + selOpp
+          : selLLO
+          ? 'llo:' + selLLO
+          : 'all';
         return (snapshot.monthlyByScope && snapshot.monthlyByScope[key]) || all;
       }
       // monthlyFor IS this computation, and the freeze step already calls it to
@@ -2181,10 +2181,10 @@ function WorkflowUI({
                     ' — ' +
                     oppLabel(selOpp || (selFLW || '').split(FLW_SEP)[0])
                   : selOpp
-                    ? oppLabel(selOpp)
-                    : selLLO
-                      ? selLLO + ' — all opportunities'
-                      : 'Whole programme'}
+                  ? oppLabel(selOpp)
+                  : selLLO
+                  ? selLLO + ' — all opportunities'
+                  : 'Whole programme'}
               </span>
             </div>
             {/* Scope switcher, so you can move between LLOs without hopping tabs. */}
@@ -2587,22 +2587,22 @@ function WorkflowUI({
                 (!derived.length
                   ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
                   : staged
-                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                    : 'border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100')
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                  : 'border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100')
               }
               title={
                 !derived.length
                   ? 'Waiting for case data to load'
                   : staged
-                    ? 'Freeze the prepared snapshot — figures become read-only'
-                    : 'Compute the snapshot from what is on screen'
+                  ? 'Freeze the prepared snapshot — figures become read-only'
+                  : 'Compute the snapshot from what is on screen'
               }
             >
               {!derived.length
                 ? 'Freeze this run (loading…)'
                 : staged
-                  ? 'Freeze this run'
-                  : '1. Prepare snapshot'}
+                ? 'Freeze this run'
+                : '1. Prepare snapshot'}
             </button>
           </div>
         )}
@@ -2663,8 +2663,8 @@ function WorkflowUI({
                 {nSeries.status === 'loading'
                   ? 'Running the query…'
                   : nSeries.status === 'ready'
-                    ? 'Re-run'
-                    : 'Run'}
+                  ? 'Re-run'
+                  : 'Run'}
               </button>
               {nSeries.status === 'ready' &&
                 [
@@ -2850,8 +2850,8 @@ function WorkflowUI({
                           {nScope === 'flw'
                             ? 'Worker'
                             : nScope === 'opportunity'
-                              ? 'Opportunity'
-                              : 'Scope'}
+                            ? 'Opportunity'
+                            : 'Scope'}
                         </th>
                         <th className="px-2 py-2 text-right">Cases</th>
                         {measures.map(function (m) {
