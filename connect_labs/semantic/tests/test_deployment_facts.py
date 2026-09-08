@@ -353,3 +353,61 @@ def test_filtering_to_a_series_keeps_the_availability_gates():
         assert all_gates <= names, f"series={series} dropped gates: {sorted(all_gates - names)}"
         # and keeping them must not smuggle them into the display contract
         assert len(measure_catalog(kept)) == expected_indicators
+
+
+# ── the expression grammar ───────────────────────────────────────────────────
+
+
+def _probe(props_doc, registry, fragment):
+    """validate() a registry with one extra measure carrying `fragment`."""
+    import copy
+
+    from connect_labs.semantic.compiler import validate
+
+    r = copy.deepcopy(registry)
+    r["measures"].append({"name": "probe_x", "type": "number", "sql": fragment})
+    return [p for p in validate(props_doc, r, llo_map={10042: "BERI"}) if p.startswith("probe_x")]
+
+
+def test_the_shipped_registry_passes_its_own_grammar(props_doc, registry):
+    """The allowlist has to describe the registry we actually have.
+
+    First draft rejected 62 fragments in the shipped file — measure references read
+    as brace structs, and it had no room for C17's array-indexed median or N06's
+    ordered-set aggregate. A grammar that fails the corpus it governs is a grammar
+    nobody can turn on.
+    """
+    from connect_labs.semantic.compiler import validate
+
+    assert validate(props_doc, registry, llo_map={10042: "BERI"}) == []
+
+
+def test_a_subquery_is_refused(props_doc, registry):
+    """The hole this closes. `validate()` inspected only the {CUBE} references it
+    could FIND, so a fragment containing none passed untouched — and a measure's sql
+    is interpolated RAW into the compiled query."""
+    assert _probe(props_doc, registry, "(SELECT 1)")
+    problems = _probe(props_doc, registry, "(SELECT count(*) FROM auth_user)")
+    assert problems and "subquery" in problems[0]
+
+
+def test_an_unlisted_function_is_refused(props_doc, registry):
+    problems = _probe(props_doc, registry, "pg_read_file('/etc/passwd')")
+    assert problems and "pg_read_file" in problems[0]
+
+
+def test_legitimate_expressions_still_pass(props_doc, registry):
+    """An allowlist that rejects real measures is worse than none — it gets removed."""
+    for fragment in (
+        "100.0 * {CUBE}.registered",
+        "CASE WHEN {CUBE}.registered THEN 1 ELSE 0 END",
+        "COALESCE({CUBE}.n_weights, 0) > 0",
+        "100.0 * {c09_numerator} / NULLIF({c09_denominator}, 0)",
+    ):
+        assert _probe(props_doc, registry, fragment) == [], fragment
+
+
+def test_an_unknown_column_is_still_caught(props_doc, registry):
+    """The pre-existing check must survive the new one."""
+    problems = _probe(props_doc, registry, "{CUBE}.not_a_real_column")
+    assert problems and "unknown column" in problems[0]

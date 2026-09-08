@@ -194,6 +194,151 @@ def compile_measures(registry: dict[str, Any]) -> dict[str, str]:
     return compiled
 
 
+# ── The expression grammar ───────────────────────────────────────────────────
+#
+# A measure's `sql` is interpolated RAW into the compiled query, so whatever it
+# says, the database runs. Two of the three guardrails were already here -- measure
+# types are restricted to Cube's vocabulary, and `validate()` resolves every
+# {CUBE}.col against the properties the pipeline actually produces. The third was
+# missing: nothing looked at the expression AROUND those references, and validate()
+# only inspects references it can FIND, so a fragment containing none passed
+# trivially. Measured before this existed:
+#
+#     {CUBE}.not_a_real_column          -> caught
+#     (SELECT count(*) FROM auth_user)  -> PASSED
+#     pg_read_file('/etc/passwd')       -> PASSED
+#
+# That is what kept the registry a file: "reviewed in git" was doing security work.
+# With the grammar enforced the trust boundary moves from the file to the check,
+# which is what lets an indicator set become editable data like a pipeline schema.
+#
+# Allowlist, not denylist. A new function is a deliberate addition here, and the
+# failure mode of forgetting one is a rejected registry, not an accepted exploit.
+ALLOWED_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        # aggregates the registry's measure types compile into
+        "Sum",
+        "Count",
+        "Avg",
+        "Min",
+        "Max",
+        "ArrayAgg",
+        # null handling
+        "Nullif",
+        "Coalesce",
+        # conditionals
+        "Case",
+        "If",
+        # numeric
+        "Abs",
+        "Round",
+        "Floor",
+        "Ceil",
+        "Least",
+        "Greatest",
+        # ordering inside ARRAY_AGG(... ORDER BY ...)
+        "Order",
+        "Ordered",
+        # C17 takes the median by indexing a sorted ARRAY_AGG; N06 uses an
+        # ordered-set aggregate. Both are in the shipped registry, so the grammar
+        # has to admit them or it is describing a registry we do not have.
+        "PercentileCont",
+        "PercentileDisc",
+        # casts are needed for ::numeric and friends
+        "Cast",
+    }
+)
+
+# Node types that are structure rather than a function call: operators, literals,
+# columns, boolean logic. Anything not in here and not an allowed function is
+# refused.
+_ALLOWED_NODES: tuple[str, ...] = (
+    "Column",
+    "Identifier",
+    "Literal",
+    "Boolean",
+    "Null",
+    "Star",
+    "Add",
+    "Sub",
+    "Mul",
+    "Div",
+    "Mod",
+    "Neg",
+    "Paren",
+    "EQ",
+    "NEQ",
+    "GT",
+    "GTE",
+    "LT",
+    "LTE",
+    "Is",
+    "In",
+    "Between",
+    "And",
+    "Or",
+    "Not",
+    "Distinct",
+    "Filter",
+    "Where",
+    "DataType",
+    "Bracket",  # array subscript, e.g. (ARRAY_AGG(x ORDER BY x))[n]
+    "WithinGroup",  # percentile_cont(...) WITHIN GROUP (ORDER BY ...)
+    "Alias",
+    "Anonymous",  # Anonymous is inspected by name below
+)
+
+# Never allowed, whatever else is true of the fragment. Named explicitly so the
+# error can say WHY rather than "unsupported node".
+_FORBIDDEN_NODES: dict[str, str] = {
+    "Select": "a subquery",
+    "Subquery": "a subquery",
+    "From": "a FROM clause",
+    "Join": "a join",
+    "Union": "a set operation",
+    "Command": "a statement",
+    "Semicolon": "a statement separator",
+}
+
+
+def _check_expression(fragment: str, measure_name: str) -> list[str]:
+    """Refuse anything outside the grammar. Returns problems, never raises."""
+    import sqlglot
+    from sqlglot import exp
+
+    # `{other_measure}` references are resolved by compile_measures later; here they
+    # only need to parse, so stand each one up as a plain identifier. Without this
+    # sqlglot reads `{c01_numerator}` as a brace struct literal and every real
+    # measure in the registry fails its own grammar.
+    text = _MEASURE_REF.sub(lambda m: m.group(1), _cube_to_props(fragment))
+    try:
+        tree = sqlglot.parse_one(text, read="postgres")
+    except Exception as parse_error:
+        return [f"{measure_name}: sql does not parse ({type(parse_error).__name__}): {fragment!r}"]
+    if tree is None:
+        return [f"{measure_name}: sql is empty"]
+
+    problems: list[str] = []
+    for node in tree.walk():
+        kind = type(node).__name__
+        if kind in _FORBIDDEN_NODES:
+            problems.append(f"{measure_name}: sql may not contain {_FORBIDDEN_NODES[kind]}")
+            continue
+        if kind in ALLOWED_FUNCTIONS or kind in _ALLOWED_NODES:
+            # An Anonymous node is a function sqlglot has no class for -- i.e. one
+            # nobody put on the list. That is exactly the case to refuse.
+            if kind == "Anonymous":
+                name = str(getattr(node, "this", "") or "")
+                if name and name.capitalize() not in ALLOWED_FUNCTIONS:
+                    problems.append(f"{measure_name}: sql calls {name}(), which is not an allowed function")
+            continue
+        if isinstance(node, exp.Func):
+            problems.append(f"{measure_name}: sql calls {kind}, which is not an allowed function")
+        else:
+            problems.append(f"{measure_name}: sql uses {kind}, which the expression grammar does not allow")
+    return problems
+
+
 def validate(
     props_doc: dict[str, Any],
     registry: dict[str, Any],
@@ -219,6 +364,12 @@ def validate(
             for col in _CUBE_REF.findall(frag):
                 if col not in known:
                     problems.append(f"{m['name']}: unknown column {{CUBE}}.{col}")
+            # The column check above only inspects references it can FIND, so a
+            # fragment with no {CUBE} refs at all used to pass untouched -- which is
+            # how `(SELECT count(*) FROM auth_user)` validated cleanly. The grammar
+            # check reads the whole expression.
+            if frag.strip():
+                problems.extend(_check_expression(frag, m["name"]))
     return problems
 
 
