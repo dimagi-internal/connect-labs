@@ -386,6 +386,32 @@ class TaskSpec(BaseModel):
 # ---------- Image config ----------
 
 
+class ShowcaseCase(BaseModel):
+    """One named demo case replaying a corpus trajectory.
+
+    ``trajectory`` names a series in the corpus manifest (``normal_02``,
+    ``slow_03``, ...). Those are real infants' real weight series, so "good
+    gain" and "insufficient gain" are properties of the source data rather than
+    something invented here — pick the bucket that tells the story.
+
+    ``outcome`` is what the AI reviewer should conclude:
+
+    ``pass``
+        the entered value equals the photo's confirmed reading.
+    ``fail_number``
+        a readable photo of the right infant with the wrong value entered —
+        the payment-integrity case the agreement reviewers exist to catch.
+    ``fail_photo``
+        an unusable frame. The weight is left alone; the visit fails on the
+        image, not the arithmetic.
+    """
+
+    name: str = Field(min_length=1)
+    trajectory: str = Field(min_length=1)
+    flw: str = Field(min_length=1)
+    outcome: Literal["pass", "fail_number", "fail_photo"] = "pass"
+
+
 class ImageConfig(BaseModel):
     question_path: str = "form.muac_group.muac_display_group_1.muac_photo"
     # Legacy uncategorized pool — kept so existing opps with `stock_image_count`
@@ -407,7 +433,7 @@ class ImageConfig(BaseModel):
     # resolves (``synth-<corpus>-good-007``) and the stock filename it maps to
     # (``<corpus>_good_007.jpg``). Defaults to "muac" so every existing manifest
     # keeps its exact prior behaviour.
-    corpus: str = Field(default="muac", pattern=r"^[a-z0-9]+$")
+    corpus: str = Field(default="muac", pattern=r"^[a-z0-9][a-z0-9-]*$")
     # Substring identifying the LEAF field whose presence makes a visit eligible
     # for a photo — a visit with no measurement has nothing to photograph.
     # Defaults to the corpus name, which is right for both "muac" and "scale"
@@ -455,6 +481,34 @@ class ImageConfig(BaseModel):
     # as "the same weight" is a property of the corpus and the scale's
     # granularity, not something this file can guess.
     reading_match_tolerance: float | None = Field(gt=0, default=None)
+    # Of the visits a per-FLW bad rate marks as SHOULD FAIL, the share that fail
+    # because the PHOTO is unusable rather than because the NUMBER is wrong.
+    #
+    # These are different defects and a demo usually wants both. The number case is
+    # the payment-integrity one -- a good photo of the right infant with a value that
+    # disagrees with it -- and it is the default because it is what the agreement
+    # reviewers were built to catch. The photo case fails on the image alone and
+    # leaves the cohort's own weight untouched, since a bad-pool frame has no reading
+    # to match against.
+    #
+    # Only consulted in weight-matched mode; without a tolerance the historical
+    # bad-pool round-robin applies unchanged.
+    bad_photo_share: float = Field(ge=0, le=1, default=0.0)
+    # ---- showcase cases (opt-in) -----------------------------------------
+    # Named demo cases, each replaying one corpus trajectory end to end so a
+    # person can OPEN that case and walk its photos.
+    #
+    # The probabilistic knobs above spread images across a cohort, which is the
+    # right shape for "does the audit find anything" and useless for "show me
+    # the faltering-growth case": a spread contains no case you can name, and
+    # mirror mode names its entities `Beneficiary 47`. A showcase case is
+    # designated instead — searchable name, a REAL corpus infant replayed so
+    # every visit has a photo whose confirmed reading IS that visit's weight,
+    # and a declared outcome for the reviewer to reach.
+    #
+    # Pair with `probability: 0.0` to photograph ONLY these and leave the rest
+    # of the cohort untouched.
+    showcase: list[ShowcaseCase] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_readings(self):

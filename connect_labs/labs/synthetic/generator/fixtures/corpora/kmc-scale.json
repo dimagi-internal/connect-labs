@@ -1,0 +1,1769 @@
+{
+  "corpus": "kmc-scale",
+  "manifest_version": 1,
+  "description": "Infant weighing-scale photos from the KMC programme. A visit's photo is compared against the weight the worker typed for that same visit.",
+  "folder": "stock-images/kmc-scale",
+  "measurement": {
+    "what": "infant weight",
+    "unit": "g",
+    "eligibility_field_match": "weight",
+    "note": "A visit is eligible for a photo only if it recorded a weight. The manifest author supplies the form paths; this corpus supplies the values."
+  },
+  "reviewers": {
+    "digital": {
+      "agent_id": "scale_validation",
+      "endpoint": "/predict",
+      "returns": "match only",
+      "match_kind": "point",
+      "resolution_g": 5,
+      "note": "Rejects a reading 5 g off. Verified on a 10-image control at +/-5, +/-10, +/-100 g: 0 false accepts."
+    },
+    "dial": {
+      "agent_id": "scale_dial_read",
+      "endpoint": "/interpret",
+      "returns": "match + processing_factor",
+      "match_kind": "band",
+      "resolution_g": 100,
+      "note": "Accepts a RANGE. A value meant to fail review must fall outside match_band_grams, not merely differ from reading_grams. See #1563."
+    }
+  },
+  "ground_truth": {
+    "kind": "reading_per_image",
+    "method": "vision read, then confirmed against the production classifier; recorded only where it returned match=true",
+    "confirmed_on": "2026-09-07",
+    "vision_reads_rejected_and_corrected": 2,
+    "scope": "Covers the good pool's READINGS only. Those are machine-confirmed per file, so a file/value misalignment cannot survive. Bad-pool category and scale_type are human judgement with no such check \u2014 an earlier set of them was shifted by one and wrong; they were re-derived from filename-stamped images and are inspectable in the review sheet."
+  },
+  "pools": {
+    "good": {
+      "count": 83,
+      "blob_pattern": "synth-kmc-scale-good-<NNN>",
+      "meaning": "readable photo with a confirmed reading; use for visits that should PASS review"
+    },
+    "bad": {
+      "count": 10,
+      "blob_pattern": "synth-kmc-scale-bad-<NNN>",
+      "meaning": "photo defect; carries no reading. Use for visits that should FAIL on the PHOTO. Categorised in images[].category."
+    }
+  },
+  "trajectories": {
+    "count": 20,
+    "note": "Real per-infant weight series, in visit order. Either weight-MATCH against a cohort's own curve, or REPLAY a trajectory onto a synthetic infant. buckets: normal_gain (10), slow_gain (10).",
+    "series": {
+      "normal_01": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_001.jpg",
+          "blob_id": "synth-kmc-scale-good-001",
+          "reading_grams": 1575
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_002.jpg",
+          "blob_id": "synth-kmc-scale-good-002",
+          "reading_grams": 1775
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_003.jpg",
+          "blob_id": "synth-kmc-scale-good-003",
+          "reading_grams": 2130
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_004.jpg",
+          "blob_id": "synth-kmc-scale-good-004",
+          "reading_grams": 2380
+        }
+      ],
+      "normal_02": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_005.jpg",
+          "blob_id": "synth-kmc-scale-good-005",
+          "reading_grams": 1350
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_006.jpg",
+          "blob_id": "synth-kmc-scale-good-006",
+          "reading_grams": 1635
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_007.jpg",
+          "blob_id": "synth-kmc-scale-good-007",
+          "reading_grams": 1915
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_008.jpg",
+          "blob_id": "synth-kmc-scale-good-008",
+          "reading_grams": 2285
+        }
+      ],
+      "normal_03": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_009.jpg",
+          "blob_id": "synth-kmc-scale-good-009",
+          "reading_grams": 1280
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_010.jpg",
+          "blob_id": "synth-kmc-scale-good-010",
+          "reading_grams": 2005
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_011.jpg",
+          "blob_id": "synth-kmc-scale-good-011",
+          "reading_grams": 2240
+        }
+      ],
+      "normal_04": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_012.jpg",
+          "blob_id": "synth-kmc-scale-good-012",
+          "reading_grams": 1135
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_013.jpg",
+          "blob_id": "synth-kmc-scale-good-013",
+          "reading_grams": 2000
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_014.jpg",
+          "blob_id": "synth-kmc-scale-good-014",
+          "reading_grams": 2130
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_015.jpg",
+          "blob_id": "synth-kmc-scale-good-015",
+          "reading_grams": 2730
+        }
+      ],
+      "normal_05": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_016.jpg",
+          "blob_id": "synth-kmc-scale-good-016",
+          "reading_grams": 1415
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_017.jpg",
+          "blob_id": "synth-kmc-scale-good-017",
+          "reading_grams": 1855
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_018.jpg",
+          "blob_id": "synth-kmc-scale-good-018",
+          "reading_grams": 2110
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_019.jpg",
+          "blob_id": "synth-kmc-scale-good-019",
+          "reading_grams": 2365
+        }
+      ],
+      "normal_06": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_020.jpg",
+          "blob_id": "synth-kmc-scale-good-020",
+          "reading_grams": 1910
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_021.jpg",
+          "blob_id": "synth-kmc-scale-good-021",
+          "reading_grams": 2070
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_022.jpg",
+          "blob_id": "synth-kmc-scale-good-022",
+          "reading_grams": 2560
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_023.jpg",
+          "blob_id": "synth-kmc-scale-good-023",
+          "reading_grams": 3105
+        }
+      ],
+      "normal_07": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_024.jpg",
+          "blob_id": "synth-kmc-scale-good-024",
+          "reading_grams": 1580
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_025.jpg",
+          "blob_id": "synth-kmc-scale-good-025",
+          "reading_grams": 2160
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_026.jpg",
+          "blob_id": "synth-kmc-scale-good-026",
+          "reading_grams": 2360
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_027.jpg",
+          "blob_id": "synth-kmc-scale-good-027",
+          "reading_grams": 2655
+        }
+      ],
+      "normal_08": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_028.jpg",
+          "blob_id": "synth-kmc-scale-good-028",
+          "reading_grams": 1875
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_029.jpg",
+          "blob_id": "synth-kmc-scale-good-029",
+          "reading_grams": 2120
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_030.jpg",
+          "blob_id": "synth-kmc-scale-good-030",
+          "reading_grams": 2500
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_031.jpg",
+          "blob_id": "synth-kmc-scale-good-031",
+          "reading_grams": 2905
+        }
+      ],
+      "normal_09": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_032.jpg",
+          "blob_id": "synth-kmc-scale-good-032",
+          "reading_grams": 1340
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_033.jpg",
+          "blob_id": "synth-kmc-scale-good-033",
+          "reading_grams": 1730
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_034.jpg",
+          "blob_id": "synth-kmc-scale-good-034",
+          "reading_grams": 1900
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_035.jpg",
+          "blob_id": "synth-kmc-scale-good-035",
+          "reading_grams": 2140
+        }
+      ],
+      "normal_10": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_036.jpg",
+          "blob_id": "synth-kmc-scale-good-036",
+          "reading_grams": 1965
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_037.jpg",
+          "blob_id": "synth-kmc-scale-good-037",
+          "reading_grams": 2420
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_038.jpg",
+          "blob_id": "synth-kmc-scale-good-038",
+          "reading_grams": 2435
+        }
+      ],
+      "slow_01": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_039.jpg",
+          "blob_id": "synth-kmc-scale-good-039",
+          "reading_grams": 1825
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_040.jpg",
+          "blob_id": "synth-kmc-scale-good-040",
+          "reading_grams": 2130
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_041.jpg",
+          "blob_id": "synth-kmc-scale-good-041",
+          "reading_grams": 2305
+        }
+      ],
+      "slow_02": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_042.jpg",
+          "blob_id": "synth-kmc-scale-good-042",
+          "reading_grams": 1760
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_043.jpg",
+          "blob_id": "synth-kmc-scale-good-043",
+          "reading_grams": 1800
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_044.jpg",
+          "blob_id": "synth-kmc-scale-good-044",
+          "reading_grams": 2130
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_045.jpg",
+          "blob_id": "synth-kmc-scale-good-045",
+          "reading_grams": 2305
+        }
+      ],
+      "slow_03": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_046.jpg",
+          "blob_id": "synth-kmc-scale-good-046",
+          "reading_grams": 1675
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_047.jpg",
+          "blob_id": "synth-kmc-scale-good-047",
+          "reading_grams": 1755
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_048.jpg",
+          "blob_id": "synth-kmc-scale-good-048",
+          "reading_grams": 1745
+        }
+      ],
+      "slow_04": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_049.jpg",
+          "blob_id": "synth-kmc-scale-good-049",
+          "reading_grams": 1775
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_050.jpg",
+          "blob_id": "synth-kmc-scale-good-050",
+          "reading_grams": 1990
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_051.jpg",
+          "blob_id": "synth-kmc-scale-good-051",
+          "reading_grams": 2255
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_052.jpg",
+          "blob_id": "synth-kmc-scale-good-052",
+          "reading_grams": 2330
+        }
+      ],
+      "slow_05": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_053.jpg",
+          "blob_id": "synth-kmc-scale-good-053",
+          "reading_grams": 1685
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_054.jpg",
+          "blob_id": "synth-kmc-scale-good-054",
+          "reading_grams": 1815
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_055.jpg",
+          "blob_id": "synth-kmc-scale-good-055",
+          "reading_grams": 2345
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_056.jpg",
+          "blob_id": "synth-kmc-scale-good-056",
+          "reading_grams": 2580
+        }
+      ],
+      "slow_06": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_057.jpg",
+          "blob_id": "synth-kmc-scale-good-057",
+          "reading_grams": 1525
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_058.jpg",
+          "blob_id": "synth-kmc-scale-good-058",
+          "reading_grams": 1775
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_059.jpg",
+          "blob_id": "synth-kmc-scale-good-059",
+          "reading_grams": 2165
+        }
+      ],
+      "slow_07": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_060.jpg",
+          "blob_id": "synth-kmc-scale-good-060",
+          "reading_grams": 1325
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_061.jpg",
+          "blob_id": "synth-kmc-scale-good-061",
+          "reading_grams": 1525
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_062.jpg",
+          "blob_id": "synth-kmc-scale-good-062",
+          "reading_grams": 1805
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_063.jpg",
+          "blob_id": "synth-kmc-scale-good-063",
+          "reading_grams": 2535
+        }
+      ],
+      "slow_08": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_064.jpg",
+          "blob_id": "synth-kmc-scale-good-064",
+          "reading_grams": 1705
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_065.jpg",
+          "blob_id": "synth-kmc-scale-good-065",
+          "reading_grams": 2190
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_066.jpg",
+          "blob_id": "synth-kmc-scale-good-066",
+          "reading_grams": 2440
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_067.jpg",
+          "blob_id": "synth-kmc-scale-good-067",
+          "reading_grams": 2645
+        }
+      ],
+      "slow_09": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_068.jpg",
+          "blob_id": "synth-kmc-scale-good-068",
+          "reading_grams": 1735
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_069.jpg",
+          "blob_id": "synth-kmc-scale-good-069",
+          "reading_grams": 1820
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_070.jpg",
+          "blob_id": "synth-kmc-scale-good-070",
+          "reading_grams": 2125
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_071.jpg",
+          "blob_id": "synth-kmc-scale-good-071",
+          "reading_grams": 2340
+        }
+      ],
+      "slow_10": [
+        {
+          "visit_seq": 1,
+          "file": "kmc-scale_good_072.jpg",
+          "blob_id": "synth-kmc-scale-good-072",
+          "reading_grams": 1395
+        },
+        {
+          "visit_seq": 2,
+          "file": "kmc-scale_good_073.jpg",
+          "blob_id": "synth-kmc-scale-good-073",
+          "reading_grams": 1475
+        },
+        {
+          "visit_seq": 3,
+          "file": "kmc-scale_good_074.jpg",
+          "blob_id": "synth-kmc-scale-good-074",
+          "reading_grams": 1620
+        },
+        {
+          "visit_seq": 4,
+          "file": "kmc-scale_good_075.jpg",
+          "blob_id": "synth-kmc-scale-good-075",
+          "reading_grams": 1750
+        },
+        {
+          "visit_seq": 5,
+          "file": "kmc-scale_good_076.jpg",
+          "blob_id": "synth-kmc-scale-good-076",
+          "reading_grams": 1850
+        }
+      ]
+    }
+  },
+  "images": {
+    "kmc-scale_bad_001.jpg": {
+      "blob_id": "synth-kmc-scale-bad-001",
+      "pool": "bad",
+      "bucket": "quality_bad",
+      "subject": null,
+      "visit_seq": null,
+      "category": "parallax",
+      "reason": "Salter/UNICEF dial shot off-axis; the needle body lies across the arc it indexes, so the indicated value shifts with viewing angle.",
+      "reading_grams": null,
+      "scale_type": "dial",
+      "ground_truth": "not_applicable_bad_pool",
+      "metadata_source": "human read of a filename-stamped image"
+    },
+    "kmc-scale_bad_002.jpg": {
+      "blob_id": "synth-kmc-scale-bad-002",
+      "pool": "bad",
+      "bucket": "quality_bad",
+      "subject": null,
+      "visit_seq": null,
+      "category": "low_light",
+      "reason": "Digital LCD readable only because it is backlit \u2014 the surrounding frame is black, so nothing corroborates the reading.",
+      "reading_grams": null,
+      "scale_type": "digital",
+      "ground_truth": "not_applicable_bad_pool",
+      "metadata_source": "human read of a filename-stamped image"
+    },
+    "kmc-scale_bad_003.jpg": {
+      "blob_id": "synth-kmc-scale-bad-003",
+      "pool": "bad",
+      "bucket": "quality_bad",
+      "subject": null,
+      "visit_seq": null,
+      "category": "framing",
+      "reason": "Salter/UNICEF dial cropped to the 0-4 kg arc with the needle at the very edge of frame; the pivot and the rest of the face are outside the photo.",
+      "reading_grams": null,
+      "scale_type": "dial",
+      "ground_truth": "not_applicable_bad_pool",
+      "metadata_source": "human read of a filename-stamped image"
+    },
+    "kmc-scale_bad_004.jpg": {
+      "blob_id": "synth-kmc-scale-bad-004",
+      "pool": "bad",
+      "bucket": "quality_bad",
+      "subject": null,
+      "visit_seq": null,
+      "category": "display_unreadable",
+      "reason": "Digital scale photographed with the LCD dark \u2014 the segment digits are not resolvable at all.",
+      "reading_grams": null,
+      "scale_type": "digital",
+      "ground_truth": "not_applicable_bad_pool",
+      "metadata_source": "human read of a filename-stamped image"
+    },
+    "kmc-scale_bad_005.jpg": {
+      "blob_id": "synth-kmc-scale-bad-005",
+      "pool": "bad",
+      "bucket": "quality_bad",
+      "subject": null,
+      "visit_seq": null,
+      "category": "low_light",
+      "reason": "Salter 235 6S dial shot in the dark with flash; grain and the pivot shadow obscure where the needle meets the graduations.",
+      "reading_grams": null,
+      "scale_type": "dial",
+      "ground_truth": "not_applicable_bad_pool",
+      "metadata_source": "human read of a filename-stamped image"
+    },
+    "kmc-scale_bad_006.jpg": {
+      "blob_id": "synth-kmc-scale-bad-006",
+      "pool": "bad",
+      "bucket": "quality_bad",
+      "subject": null,
+      "visit_seq": null,
+      "category": "parallax",
+      "reason": "Salter/UNICEF dial from above and to the side; the needle occludes the arc beneath it.",
+      "reading_grams": null,
+      "scale_type": "dial",
+      "ground_truth": "not_applicable_bad_pool",
+      "metadata_source": "human read of a filename-stamped image"
+    },
+    "kmc-scale_bad_007.jpg": {
+      "blob_id": "synth-kmc-scale-bad-007",
+      "pool": "bad",
+      "bucket": "quality_bad",
+      "subject": null,
+      "visit_seq": null,
+      "category": "glare",
+      "reason": "Salter/UNICEF dial with a specular highlight across the face, erasing the graduations either side of the needle.",
+      "reading_grams": null,
+      "scale_type": "dial",
+      "ground_truth": "not_applicable_bad_pool",
+      "metadata_source": "human read of a filename-stamped image"
+    },
+    "kmc-scale_bad_008.jpg": {
+      "blob_id": "synth-kmc-scale-bad-008",
+      "pool": "bad",
+      "bucket": "quality_bad",
+      "subject": null,
+      "visit_seq": null,
+      "category": "blur",
+      "reason": "Salter/UNICEF dial under heavy blur \u2014 the graduations are soft and no tick can be resolved against the needle.",
+      "reading_grams": null,
+      "scale_type": "dial",
+      "ground_truth": "not_applicable_bad_pool",
+      "metadata_source": "human read of a filename-stamped image"
+    },
+    "kmc-scale_bad_009.jpg": {
+      "blob_id": "synth-kmc-scale-bad-009",
+      "pool": "bad",
+      "bucket": "quality_bad",
+      "subject": null,
+      "visit_seq": null,
+      "category": "framing",
+      "reason": "YRBB-20 pan scale photographed from standing height; the dial occupies a small fraction of the frame and the red needle subtends only a few pixels.",
+      "reading_grams": null,
+      "scale_type": "dial",
+      "ground_truth": "not_applicable_bad_pool",
+      "metadata_source": "human read of a filename-stamped image"
+    },
+    "kmc-scale_bad_010.jpg": {
+      "blob_id": "synth-kmc-scale-bad-010",
+      "pool": "bad",
+      "bucket": "quality_bad",
+      "subject": null,
+      "visit_seq": null,
+      "category": "content_free",
+      "reason": "Digital scale, extreme blur plus a specular blowout over the LCD \u2014 the display is a smear.",
+      "reading_grams": null,
+      "scale_type": "digital",
+      "ground_truth": "not_applicable_bad_pool",
+      "metadata_source": "human read of a filename-stamped image"
+    },
+    "kmc-scale_good_001.jpg": {
+      "blob_id": "synth-kmc-scale-good-001",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_01",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1575,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_002.jpg": {
+      "blob_id": "synth-kmc-scale-good-002",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_01",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 1775,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_003.jpg": {
+      "blob_id": "synth-kmc-scale-good-003",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_01",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2130,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_004.jpg": {
+      "blob_id": "synth-kmc-scale-good-004",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_01",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 2380,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_005.jpg": {
+      "blob_id": "synth-kmc-scale-good-005",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_02",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1350,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_006.jpg": {
+      "blob_id": "synth-kmc-scale-good-006",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_02",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 1635,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_007.jpg": {
+      "blob_id": "synth-kmc-scale-good-007",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_02",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 1915,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_008.jpg": {
+      "blob_id": "synth-kmc-scale-good-008",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_02",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 2285,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_009.jpg": {
+      "blob_id": "synth-kmc-scale-good-009",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_03",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1280,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_010.jpg": {
+      "blob_id": "synth-kmc-scale-good-010",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_03",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 2005,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_011.jpg": {
+      "blob_id": "synth-kmc-scale-good-011",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_03",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2240,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_012.jpg": {
+      "blob_id": "synth-kmc-scale-good-012",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_04",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1135,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_013.jpg": {
+      "blob_id": "synth-kmc-scale-good-013",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_04",
+      "visit_seq": 2,
+      "vision_read_corrected": "1st read 2005 rejected; 2000 confirmed by 61-candidate sweep",
+      "scale_type": "digital",
+      "reading_grams": 2000,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_014.jpg": {
+      "blob_id": "synth-kmc-scale-good-014",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_04",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2130,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_015.jpg": {
+      "blob_id": "synth-kmc-scale-good-015",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_04",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 2730,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_016.jpg": {
+      "blob_id": "synth-kmc-scale-good-016",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_05",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1415,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_017.jpg": {
+      "blob_id": "synth-kmc-scale-good-017",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_05",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 1855,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_018.jpg": {
+      "blob_id": "synth-kmc-scale-good-018",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_05",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2110,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_019.jpg": {
+      "blob_id": "synth-kmc-scale-good-019",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_05",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 2365,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_020.jpg": {
+      "blob_id": "synth-kmc-scale-good-020",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_06",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1910,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_021.jpg": {
+      "blob_id": "synth-kmc-scale-good-021",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_06",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 2070,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_022.jpg": {
+      "blob_id": "synth-kmc-scale-good-022",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_06",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2560,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_023.jpg": {
+      "blob_id": "synth-kmc-scale-good-023",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_06",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 3105,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_024.jpg": {
+      "blob_id": "synth-kmc-scale-good-024",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_07",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1580,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_025.jpg": {
+      "blob_id": "synth-kmc-scale-good-025",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_07",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 2160,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_026.jpg": {
+      "blob_id": "synth-kmc-scale-good-026",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_07",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2360,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_027.jpg": {
+      "blob_id": "synth-kmc-scale-good-027",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_07",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 2655,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_028.jpg": {
+      "blob_id": "synth-kmc-scale-good-028",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_08",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1875,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_029.jpg": {
+      "blob_id": "synth-kmc-scale-good-029",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_08",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 2120,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_030.jpg": {
+      "blob_id": "synth-kmc-scale-good-030",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_08",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2500,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_031.jpg": {
+      "blob_id": "synth-kmc-scale-good-031",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_08",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 2905,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_032.jpg": {
+      "blob_id": "synth-kmc-scale-good-032",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_09",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1340,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_033.jpg": {
+      "blob_id": "synth-kmc-scale-good-033",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_09",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 1730,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_034.jpg": {
+      "blob_id": "synth-kmc-scale-good-034",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_09",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 1900,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_035.jpg": {
+      "blob_id": "synth-kmc-scale-good-035",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_09",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 2140,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_036.jpg": {
+      "blob_id": "synth-kmc-scale-good-036",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_10",
+      "visit_seq": 1,
+      "vision_read_corrected": "1st read 1365 rejected; 1965 confirmed by 560-candidate sweep (a 9 misread as 3)",
+      "scale_type": "digital",
+      "reading_grams": 1965,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_037.jpg": {
+      "blob_id": "synth-kmc-scale-good-037",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_10",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 2420,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_038.jpg": {
+      "blob_id": "synth-kmc-scale-good-038",
+      "pool": "good",
+      "bucket": "normal",
+      "subject": "normal_10",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2435,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_039.jpg": {
+      "blob_id": "synth-kmc-scale-good-039",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_01",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1825,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_040.jpg": {
+      "blob_id": "synth-kmc-scale-good-040",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_01",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 2130,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_041.jpg": {
+      "blob_id": "synth-kmc-scale-good-041",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_01",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2305,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_042.jpg": {
+      "blob_id": "synth-kmc-scale-good-042",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_02",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1760,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_043.jpg": {
+      "blob_id": "synth-kmc-scale-good-043",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_02",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 1800,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_044.jpg": {
+      "blob_id": "synth-kmc-scale-good-044",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_02",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2130,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_045.jpg": {
+      "blob_id": "synth-kmc-scale-good-045",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_02",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 2305,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_046.jpg": {
+      "blob_id": "synth-kmc-scale-good-046",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_03",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1675,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_047.jpg": {
+      "blob_id": "synth-kmc-scale-good-047",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_03",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 1755,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_048.jpg": {
+      "blob_id": "synth-kmc-scale-good-048",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_03",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 1745,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_049.jpg": {
+      "blob_id": "synth-kmc-scale-good-049",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_04",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1775,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_050.jpg": {
+      "blob_id": "synth-kmc-scale-good-050",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_04",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 1990,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_051.jpg": {
+      "blob_id": "synth-kmc-scale-good-051",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_04",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2255,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_052.jpg": {
+      "blob_id": "synth-kmc-scale-good-052",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_04",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 2330,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_053.jpg": {
+      "blob_id": "synth-kmc-scale-good-053",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_05",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1685,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_054.jpg": {
+      "blob_id": "synth-kmc-scale-good-054",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_05",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 1815,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_055.jpg": {
+      "blob_id": "synth-kmc-scale-good-055",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_05",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2345,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_056.jpg": {
+      "blob_id": "synth-kmc-scale-good-056",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_05",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 2580,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_057.jpg": {
+      "blob_id": "synth-kmc-scale-good-057",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_06",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1525,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_058.jpg": {
+      "blob_id": "synth-kmc-scale-good-058",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_06",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 1775,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_059.jpg": {
+      "blob_id": "synth-kmc-scale-good-059",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_06",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2165,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_060.jpg": {
+      "blob_id": "synth-kmc-scale-good-060",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_07",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1325,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_061.jpg": {
+      "blob_id": "synth-kmc-scale-good-061",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_07",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 1525,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_062.jpg": {
+      "blob_id": "synth-kmc-scale-good-062",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_07",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 1805,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_063.jpg": {
+      "blob_id": "synth-kmc-scale-good-063",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_07",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 2535,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_064.jpg": {
+      "blob_id": "synth-kmc-scale-good-064",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_08",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1705,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_065.jpg": {
+      "blob_id": "synth-kmc-scale-good-065",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_08",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 2190,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_066.jpg": {
+      "blob_id": "synth-kmc-scale-good-066",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_08",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2440,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_067.jpg": {
+      "blob_id": "synth-kmc-scale-good-067",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_08",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 2645,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_068.jpg": {
+      "blob_id": "synth-kmc-scale-good-068",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_09",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1735,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_069.jpg": {
+      "blob_id": "synth-kmc-scale-good-069",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_09",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 1820,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_070.jpg": {
+      "blob_id": "synth-kmc-scale-good-070",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_09",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 2125,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_071.jpg": {
+      "blob_id": "synth-kmc-scale-good-071",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_09",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 2340,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_072.jpg": {
+      "blob_id": "synth-kmc-scale-good-072",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_10",
+      "visit_seq": 1,
+      "scale_type": "digital",
+      "reading_grams": 1395,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_073.jpg": {
+      "blob_id": "synth-kmc-scale-good-073",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_10",
+      "visit_seq": 2,
+      "scale_type": "digital",
+      "reading_grams": 1475,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_074.jpg": {
+      "blob_id": "synth-kmc-scale-good-074",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_10",
+      "visit_seq": 3,
+      "scale_type": "digital",
+      "reading_grams": 1620,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_075.jpg": {
+      "blob_id": "synth-kmc-scale-good-075",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_10",
+      "visit_seq": 4,
+      "scale_type": "digital",
+      "reading_grams": 1750,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_076.jpg": {
+      "blob_id": "synth-kmc-scale-good-076",
+      "pool": "good",
+      "bucket": "slow",
+      "subject": "slow_10",
+      "visit_seq": 5,
+      "scale_type": "digital",
+      "reading_grams": 1850,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_077.jpg": {
+      "blob_id": "synth-kmc-scale-good-077",
+      "pool": "good",
+      "bucket": "quality_good",
+      "subject": null,
+      "visit_seq": null,
+      "scale_type": "dial",
+      "reading_grams": 2000,
+      "match_band_grams": [1700, 2300],
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_dial_read /interpret tolerance=strict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_078.jpg": {
+      "blob_id": "synth-kmc-scale-good-078",
+      "pool": "good",
+      "bucket": "quality_good",
+      "subject": null,
+      "visit_seq": null,
+      "scale_type": "dial",
+      "reading_grams": 2750,
+      "match_band_grams": [2500, 3000],
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_dial_read /interpret tolerance=strict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_079.jpg": {
+      "blob_id": "synth-kmc-scale-good-079",
+      "pool": "good",
+      "bucket": "quality_good",
+      "subject": null,
+      "visit_seq": null,
+      "scale_type": "digital",
+      "reading_grams": 1410,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_080.jpg": {
+      "blob_id": "synth-kmc-scale-good-080",
+      "pool": "good",
+      "bucket": "quality_good",
+      "subject": null,
+      "visit_seq": null,
+      "scale_type": "digital",
+      "reading_grams": 1795,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_081.jpg": {
+      "blob_id": "synth-kmc-scale-good-081",
+      "pool": "good",
+      "bucket": "quality_good",
+      "subject": null,
+      "visit_seq": null,
+      "scale_type": "digital",
+      "reading_grams": 1235,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_082.jpg": {
+      "blob_id": "synth-kmc-scale-good-082",
+      "pool": "good",
+      "bucket": "quality_good",
+      "subject": null,
+      "visit_seq": null,
+      "scale_type": "digital",
+      "reading_grams": 2000,
+      "match_band_grams": null,
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_validation /predict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    },
+    "kmc-scale_good_083.jpg": {
+      "blob_id": "synth-kmc-scale-good-083",
+      "pool": "good",
+      "bucket": "quality_good",
+      "subject": null,
+      "visit_seq": null,
+      "scale_type": "dial",
+      "reading_grams": 2200,
+      "match_band_grams": [1900, 2500],
+      "ground_truth": "confirmed",
+      "confirmed_by": "scale_dial_read /interpret tolerance=strict",
+      "metadata_source": "reading and instrument class both attested by the gateway endpoint that accepted it"
+    }
+  },
+  "provenance": {
+    "source": "https://drive.google.com/drive/folders/131JOQlWxi1Gi8TsqORNIkSPRQwpMxnRA",
+    "source_structure": "Normal Weight Gain Images / Slow Weight Gain Images, each holding 10 per-infant folders (SVN 1..10) of '<child name> Visit-N.jpg'; plus Good/Bad Quality Images. Child names were PII and are NOT carried forward \u2014 'subject' is a synthetic label and 'visit_seq' preserves the ordering the filenames encoded.",
+    "privacy": "Source filenames carried real infant names; dropped. subject/visit_seq preserve only their ordering."
+  }
+}
