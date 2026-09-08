@@ -447,6 +447,26 @@ class MopupDebugGeometryView(LoginRequiredMixin, View):
         except ConnectTokenError as e:
             return JsonResponse({"status": "error", "detail": f"Authorization needed: {e}"}, status=401)
 
+        # Stage 1: the raw fetcher directly, bypassing AnalysisPipeline/the SQL
+        # cache backend entirely — isolates whether Connect's own API genuinely
+        # has no data for this endpoint/token, vs. something in the pipeline/
+        # cache layer above it dropping to zero.
+        try:
+            from connect_labs.labs.analysis.backends.sql.connect_export_fetcher import (
+                fetch_connect_export_as_visit_dicts,
+            )
+            from connect_labs.labs.analysis.config import DataSourceConfig
+
+            raw_dicts = fetch_connect_export_as_visit_dicts(
+                request=None,
+                data_source=DataSourceConfig(type="connect_export", endpoint="work_areas"),
+                access_token=access_token,
+                opportunity_id=opportunity_id,
+            )
+            raw_stage = {"count": len(raw_dicts), "sample": raw_dicts[:2]}
+        except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
+            raw_stage = {"error": f"{type(e).__name__}: {e}"}
+
         try:
             from connect_labs.labs.analysis.pipeline import AnalysisPipeline
 
@@ -461,11 +481,14 @@ class MopupDebugGeometryView(LoginRequiredMixin, View):
             geometry = fetch_work_area_geometry(opportunity_id, pipeline=pipeline)
             sample = list(geometry.items())[:5]
         except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
-            return JsonResponse({"status": "error", "detail": f"{type(e).__name__}: {e}"}, status=502)
+            return JsonResponse(
+                {"status": "error", "detail": f"{type(e).__name__}: {e}", "raw_fetch_stage": raw_stage}, status=502
+            )
 
         return JsonResponse(
             {
                 "status": "ok",
+                "raw_fetch_stage": raw_stage,
                 "count": len(geometry),
                 "with_boundary": sum(1 for g in geometry.values() if g.get("boundary")),
                 "sample": [{"wa_case_id": k, "has_boundary": bool(v.get("boundary"))} for k, v in sample],
