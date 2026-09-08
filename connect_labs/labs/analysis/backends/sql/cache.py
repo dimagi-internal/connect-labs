@@ -547,6 +547,7 @@ class SQLCacheManager:
         min_count = int(expected_visit_count * tolerance_pct / 100) if tolerance_pct < 100 else expected_visit_count
         return ComputedVisitCache.objects.filter(
             opportunity_id=self.opportunity_id,
+            pipeline_id=self.pipeline_id,
             config_hash=self.config_hash,
             visit_count__gte=min_count,
             expires_at__gt=timezone.now(),
@@ -569,6 +570,7 @@ class SQLCacheManager:
         rows = [
             ComputedVisitCache(
                 opportunity_id=self.opportunity_id,
+                pipeline_id=self.pipeline_id,
                 config_hash=self.config_hash,
                 visit_count=visit_count,
                 expires_at=expires_at,
@@ -600,6 +602,7 @@ class SQLCacheManager:
             with transaction.atomic():
                 ComputedVisitCache.objects.filter(
                     opportunity_id=self.opportunity_id,
+                    pipeline_id=self.pipeline_id,
                     config_hash=self.config_hash,
                 ).delete()
                 ComputedVisitCache.objects.bulk_create(rows, batch_size=1000)
@@ -621,6 +624,7 @@ class SQLCacheManager:
             return ComputedVisitCache.objects.none()
         return ComputedVisitCache.objects.filter(
             opportunity_id=self.opportunity_id,
+            pipeline_id=self.pipeline_id,
             config_hash=self.config_hash,
             expires_at__gt=timezone.now(),
         )
@@ -636,6 +640,7 @@ class SQLCacheManager:
         min_count = int(expected_visit_count * tolerance_pct / 100) if tolerance_pct < 100 else expected_visit_count
         return ComputedFLWCache.objects.filter(
             opportunity_id=self.opportunity_id,
+            pipeline_id=self.pipeline_id,
             config_hash=self.config_hash,
             visit_count__gte=min_count,
             expires_at__gt=timezone.now(),
@@ -658,6 +663,7 @@ class SQLCacheManager:
         rows = [
             ComputedFLWCache(
                 opportunity_id=self.opportunity_id,
+                pipeline_id=self.pipeline_id,
                 config_hash=self.config_hash,
                 visit_count=visit_count,
                 expires_at=expires_at,
@@ -680,6 +686,7 @@ class SQLCacheManager:
             with transaction.atomic():
                 ComputedFLWCache.objects.filter(
                     opportunity_id=self.opportunity_id,
+                    pipeline_id=self.pipeline_id,
                     config_hash=self.config_hash,
                 ).delete()
                 ComputedFLWCache.objects.bulk_create(rows, batch_size=1000)
@@ -700,6 +707,7 @@ class SQLCacheManager:
             return ComputedFLWCache.objects.none()
         return ComputedFLWCache.objects.filter(
             opportunity_id=self.opportunity_id,
+            pipeline_id=self.pipeline_id,
             config_hash=self.config_hash,
             expires_at__gt=timezone.now(),
         )
@@ -715,6 +723,7 @@ class SQLCacheManager:
         min_count = int(expected_visit_count * tolerance_pct / 100) if tolerance_pct < 100 else expected_visit_count
         return ComputedEntityCache.objects.filter(
             opportunity_id=self.opportunity_id,
+            pipeline_id=self.pipeline_id,
             config_hash=self.config_hash,
             visit_count__gte=min_count,
             expires_at__gt=timezone.now(),
@@ -738,6 +747,7 @@ class SQLCacheManager:
         rows = [
             ComputedEntityCache(
                 opportunity_id=self.opportunity_id,
+                pipeline_id=self.pipeline_id,
                 config_hash=self.config_hash,
                 visit_count=visit_count,
                 expires_at=expires_at,
@@ -758,6 +768,7 @@ class SQLCacheManager:
             with transaction.atomic():
                 ComputedEntityCache.objects.filter(
                     opportunity_id=self.opportunity_id,
+                    pipeline_id=self.pipeline_id,
                     config_hash=self.config_hash,
                 ).delete()
                 ComputedEntityCache.objects.bulk_create(rows, batch_size=1000)
@@ -778,6 +789,7 @@ class SQLCacheManager:
             return ComputedEntityCache.objects.none()
         return ComputedEntityCache.objects.filter(
             opportunity_id=self.opportunity_id,
+            pipeline_id=self.pipeline_id,
             config_hash=self.config_hash,
             expires_at__gt=timezone.now(),
         )

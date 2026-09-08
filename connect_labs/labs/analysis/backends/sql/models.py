@@ -112,6 +112,15 @@ class ComputedVisitCache(models.Model):
 
     # Cache metadata
     opportunity_id = models.IntegerField(db_index=True)
+    # Same pipeline-id discriminator as RawVisitCache (issue #116). This table
+    # never got the #116 fix originally applied to RawVisitCache: rows were
+    # keyed only by (opportunity_id, config_hash), so two different pipelines
+    # for the same opportunity whose configs happened to hash identically
+    # (config_hash excludes pipeline_id/data_source/grouping_key — see
+    # get_config_hash) would silently read and overwrite each other's cached
+    # rows. Nullable so legacy/ad-hoc callers without a pipeline_id keep the
+    # pre-existing shared-slot behavior.
+    pipeline_id = models.IntegerField(null=True, blank=True, db_index=True)
     config_hash = models.CharField(max_length=32, db_index=True, help_text="Hash of analysis config")
     visit_count = models.IntegerField(help_text="Visit count when cached, for invalidation")
     expires_at = models.DateTimeField(db_index=True)
@@ -144,12 +153,12 @@ class ComputedVisitCache(models.Model):
             # raises CacheConcurrencyError → pipeline reports a clear
             # "another run in flight" message and stops.
             models.UniqueConstraint(
-                fields=["opportunity_id", "config_hash", "visit_id"],
-                name="uniq_computed_visit_cache_opp_config_visit",
+                fields=["opportunity_id", "pipeline_id", "config_hash", "visit_id"],
+                name="uniq_computed_visit_cache_opp_pipe_config_visit",
             ),
         ]
         indexes = [
-            models.Index(fields=["opportunity_id", "config_hash", "visit_count"]),
+            models.Index(fields=["opportunity_id", "pipeline_id", "config_hash", "visit_count"]),
         ]
 
     @classmethod
@@ -185,6 +194,9 @@ class ComputedEntityCache(models.Model):
 
     # Cache metadata
     opportunity_id = models.IntegerField(db_index=True)
+    # See ComputedVisitCache.pipeline_id — same #116-style isolation gap, fixed
+    # the same way.
+    pipeline_id = models.IntegerField(null=True, blank=True, db_index=True)
     config_hash = models.CharField(max_length=32, db_index=True, help_text="Hash of analysis config")
     visit_count = models.IntegerField(help_text="Visit count when cached, for invalidation")
     expires_at = models.DateTimeField(db_index=True)
@@ -214,13 +226,13 @@ class ComputedEntityCache(models.Model):
         constraints = [
             # See ComputedVisitCache constraint — same concurrency contract.
             models.UniqueConstraint(
-                fields=["opportunity_id", "config_hash", "entity_id"],
-                name="uniq_computed_entity_cache_opp_config_entity",
+                fields=["opportunity_id", "pipeline_id", "config_hash", "entity_id"],
+                name="uniq_computed_entity_cache_opp_pipe_config_entity",
             ),
         ]
         indexes = [
-            models.Index(fields=["opportunity_id", "config_hash", "visit_count"]),
-            models.Index(fields=["opportunity_id", "config_hash", "username"]),
+            models.Index(fields=["opportunity_id", "pipeline_id", "config_hash", "visit_count"]),
+            models.Index(fields=["opportunity_id", "pipeline_id", "config_hash", "username"]),
         ]
 
     @classmethod
@@ -249,6 +261,9 @@ class ComputedFLWCache(models.Model):
 
     # Cache metadata
     opportunity_id = models.IntegerField(db_index=True)
+    # See ComputedVisitCache.pipeline_id — same #116-style isolation gap, fixed
+    # the same way.
+    pipeline_id = models.IntegerField(null=True, blank=True, db_index=True)
     config_hash = models.CharField(max_length=32, db_index=True, help_text="Hash of analysis config")
     visit_count = models.IntegerField(help_text="Visit count when cached, for invalidation")
     expires_at = models.DateTimeField(db_index=True)
@@ -275,12 +290,12 @@ class ComputedFLWCache(models.Model):
         constraints = [
             # See ComputedVisitCache constraint — same concurrency contract.
             models.UniqueConstraint(
-                fields=["opportunity_id", "config_hash", "username"],
-                name="uniq_computed_flw_cache_opp_config_username",
+                fields=["opportunity_id", "pipeline_id", "config_hash", "username"],
+                name="uniq_computed_flw_cache_opp_pipe_config_username",
             ),
         ]
         indexes = [
-            models.Index(fields=["opportunity_id", "config_hash", "visit_count"]),
+            models.Index(fields=["opportunity_id", "pipeline_id", "config_hash", "visit_count"]),
         ]
 
     @classmethod
