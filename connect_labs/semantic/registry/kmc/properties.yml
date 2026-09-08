@@ -64,6 +64,13 @@ aggregates:
     sql: 'MIN(enrollment_weight_g) FILTER (WHERE enrollment_weight_g IS NOT NULL)'
   - name: days_discharge_to_reg
     sql: 'MIN(days_discharge_to_reg) FILTER (WHERE days_discharge_to_reg IS NOT NULL)'
+  # The RAW discharge date, which Layer 1 extracts and this stage used to drop.
+  # Dropping it forced C16/C17 onto `days_discharge_to_reg` -- a value the FORM
+  # pre-computes (child_age_at_reg_discharge_date) rather than one we derive. Two
+  # apps never populate that field at all, so EHA and GHI scored 0% coverage while
+  # holding real discharge dates for 35% and 46% of their cases.
+  - name: hospital_discharge_date
+    sql: 'MIN(hospital_discharge_date::timestamp) FILTER (WHERE hospital_discharge_date IS NOT NULL)'
   - name: kmc_hours_mean
     sql: 'AVG(kmc_hours_mean)'
   # Counts of visits carrying a positive marker. The pipeline's `count` aggregation
@@ -216,10 +223,27 @@ properties:
   # measures in indicators.yml.
   # -------------------------------------------------------------------------
 
+  - name: days_to_enrolment
+    type: float
+    sql: >-
+      COALESCE(
+        (reg_date::date - hospital_discharge_date::date)::float,
+        days_discharge_to_reg
+      )
+    notes: >-
+      Neal Lesh's compute spec derives this: "enrolled_within_3d = 0 <= (reg_date -
+      hospital_discharge_date in days) <= 3". We instead read the form's own
+      child_age_at_reg_discharge_date, a CALCULATED field two of the six apps never
+      write -- so EHA and GHI reported 0% coverage while carrying discharge dates on
+      35% and 46% of cases, and PIPN computed C16 over the 18% of cases holding the
+      pre-computed field rather than the 51% holding a real date (96.5% against his
+      66%). Computes from the dates first and falls back to the reported value, so
+      coverage is a superset of what either source gives alone.
+
   - name: has_discharge_date
     type: bool
-    sql: 'days_discharge_to_reg IS NOT NULL'
-    notes: 'The denominator condition for the within-3-days metric. days_discharge_to_reg is what Layer 1 carries to entity stage; the raw discharge date is not aggregated there.'
+    sql: 'days_to_enrolment IS NOT NULL'
+    notes: 'The denominator condition for the within-3-days metric.'
 
   - name: birthweight_band
     type: categorical
@@ -294,7 +318,13 @@ properties:
 
   - name: enrolled_within_3d
     type: bool
-    sql: 'CASE WHEN days_discharge_to_reg IS NULL THEN NULL ELSE days_discharge_to_reg <= 3 END'
+    sql: >-
+      CASE WHEN days_to_enrolment IS NULL THEN NULL
+           ELSE days_to_enrolment >= 0 AND days_to_enrolment <= 3 END
+    notes: >-
+      Neal's rule is 0 <= days <= 3. The lower bound was missing, so a case
+      registered BEFORE its recorded discharge -- a data error, not early
+      enrolment -- counted as on time.
 
   - name: enrollment_is_birth_copy
     type: bool

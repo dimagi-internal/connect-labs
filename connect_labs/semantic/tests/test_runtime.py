@@ -95,7 +95,8 @@ def fixture_visits(db):
                 self_referral_yes boolean, ebf_recorded boolean, form_name text,
                 days_discharge_to_reg double precision, birth_weight_g double precision,
                 enrollment_weight_g double precision, kmc_hours_mean double precision,
-                reg_date timestamp, opportunity_id int, username text
+                reg_date timestamp, hospital_discharge_date timestamp,
+                opportunity_id int, username text
             )
             """
         )
@@ -113,7 +114,7 @@ def fixture_visits(db):
             cur.execute(
                 "INSERT INTO rt_fixture_visits VALUES (%s, DATE '2026-01-01' + %s, %s,"
                 " false, false, false, false, true, %s, 1.0, 1500.0, 1500.0, 4.0,"
-                " DATE '2026-01-01', 10042, %s)",
+                " DATE '2026-01-01', DATE '2026-01-01' - 2, 10042, %s)",
                 (baby, off, w, form, "asha" if baby == "b1" else "ravi"),
             )
     yield "SELECT * FROM rt_fixture_visits"
