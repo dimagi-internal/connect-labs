@@ -286,7 +286,7 @@ class TestStreamRawVisitsShrinkGuard:
             )
         )
         assert events[-1][0] == "complete"
-        assert len(events[-1][1]) == 2
+        assert events[-1][1] == 2
         assert backend.last_raw_fetch_anomaly is None
 
     def test_stream_at_or_above_threshold_is_accepted_without_retry(self, httpx_mock):
@@ -300,7 +300,7 @@ class TestStreamRawVisitsShrinkGuard:
             )
         )
         assert events[-1][0] == "complete"
-        assert len(events[-1][1]) == int(threshold)
+        assert events[-1][1] == int(threshold)
         assert backend.last_raw_fetch_anomaly is None
 
     def test_retries_and_succeeds_on_a_later_attempt(self, httpx_mock):
@@ -314,7 +314,7 @@ class TestStreamRawVisitsShrinkGuard:
             )
         )
         assert events[-1][0] == "complete"
-        assert len(events[-1][1]) == 9
+        assert events[-1][1] == 9
         assert backend.last_raw_fetch_anomaly is None
         assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID, visit_count=9).count() == 9
         assert (
@@ -334,7 +334,7 @@ class TestStreamRawVisitsShrinkGuard:
         )
 
         assert events[-1][0] == "cached"
-        assert len(events[-1][1]) == 10
+        assert events[-1][1] == 10
         assert backend.last_raw_fetch_anomaly == {
             "previous_count": 10,
             "attempted_count": 2,
@@ -361,7 +361,7 @@ class TestStreamRawVisitsShrinkGuard:
             )
         )
         assert events[-1][0] == "complete"
-        assert len(events[-1][1]) == 2
+        assert events[-1][1] == 2
         assert backend.last_raw_fetch_anomaly is None
         assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID, visit_count=2).count() == 2
 
@@ -388,7 +388,7 @@ class TestStreamRawVisitsShrinkGuard:
             )
         )
         assert events[-1][0] == "cached"
-        assert len(events[-1][1]) == 10
+        assert events[-1][1] == 10
         assert reload_backend.last_raw_fetch_anomaly == {
             "previous_count": 10,
             "attempted_count": 2,
@@ -434,7 +434,10 @@ class TestStreamRawVisitsShrinkGuard:
         _seed_expired_cache(10)
         for _ in range(RAW_CACHE_MAX_ATTEMPTS):
             httpx_mock.add_response(**_single_page_response(2))
-        monkeypatch.setattr(SQLBackend, "_load_from_cache", lambda self, *a, **k: [])
+        # The stream path reports a COUNT rather than loading the rows (#1575), so
+        # "the old cache vanished under us" is simulated by the count going to zero
+        # rather than by _load_from_cache returning []. Same race, same fallback.
+        monkeypatch.setattr(SQLCacheManager, "get_raw_visit_count", lambda self: 0)
 
         backend = SQLBackend()
         events = list(
@@ -444,7 +447,7 @@ class TestStreamRawVisitsShrinkGuard:
         )
 
         assert events[-1][0] == "cached"
-        assert len(events[-1][1]) == 2  # the low-but-real stream, not an empty list
+        assert events[-1][1] == 2  # the low-but-real stream, not nothing at all
         assert backend.last_raw_fetch_anomaly == {
             "previous_count": 10,
             "attempted_count": 2,
