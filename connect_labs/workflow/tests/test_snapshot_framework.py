@@ -252,6 +252,54 @@ class TestDefaultHookSnapshotInputs:
         )
         assert snap["state"]["frozen"]["meta"]["cases"] == 9011
 
+    def test_require_state_keys_survives_an_older_instance_manifest(self):
+        """The flag must reach workflows created BEFORE it existed.
+
+        Instance manifests are stamped at create-from-template time and never
+        migrate, and `resolve_snapshot_contract` lets the instance win. Measured
+        on live workflow 5456: its stored manifest is
+        `{"workers": False, "pipelines": [], "state_keys": ["frozen"]}` — no
+        `require_state_keys` — so the guard shipped and was inert on the one
+        workflow it was written for.
+
+        `state_keys` / `pipelines` / `workers` stay instance-owned; only the
+        safety flag is inherited.
+        """
+        from connect_labs.workflow.templates import resolve_snapshot_contract
+
+        class _Def:
+            template_type = "kmc_programme_metrics"
+            data = {"snapshot_inputs": {"workers": False, "pipelines": [], "state_keys": ["frozen"]}}
+
+        contract = resolve_snapshot_contract(_Def())
+        assert contract["ok"] and contract["source"] == "definition"
+        assert contract["snapshot_inputs"]["require_state_keys"] is True
+        # instance-owned content is untouched
+        assert contract["snapshot_inputs"]["state_keys"] == ["frozen"]
+        assert contract["snapshot_inputs"]["workers"] is False
+
+    def test_an_instance_may_still_turn_the_flag_off_explicitly(self):
+        """Inheritance fills a GAP; it does not override a deliberate choice."""
+        from connect_labs.workflow.templates import resolve_snapshot_contract
+
+        class _Def:
+            template_type = "kmc_programme_metrics"
+            data = {"snapshot_inputs": {"state_keys": ["frozen"], "require_state_keys": False}}
+
+        contract = resolve_snapshot_contract(_Def())
+        assert contract["snapshot_inputs"]["require_state_keys"] is False
+
+    def test_unknown_template_instance_manifest_is_unchanged(self):
+        """A bespoke workflow with no registered template keeps its manifest verbatim."""
+        from connect_labs.workflow.templates import resolve_snapshot_contract
+
+        class _Def:
+            template_type = None
+            data = {"snapshot_inputs": {"state_keys": ["decisions"]}}
+
+        contract = resolve_snapshot_contract(_Def())
+        assert contract["snapshot_inputs"] == {"state_keys": ["decisions"]}
+
     def test_without_the_opt_in_an_empty_capture_still_completes(self, monkeypatch):
         """The guard is opt-in, and this is the control that proves it.
 
