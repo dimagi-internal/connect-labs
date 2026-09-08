@@ -435,7 +435,6 @@ class MopupDebugGeometryView(LoginRequiredMixin, View):
 
     def get(self, request, program_id):
         from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
-        from connect_labs.labs.integrations.commcare.cchq_tokens import CCHQTokenError, get_valid_cchq_access_token
         from connect_labs.mopup.core.geometry import fetch_work_area_geometry
 
         opportunity_id = request.GET.get("opportunity_id")
@@ -445,14 +444,20 @@ class MopupDebugGeometryView(LoginRequiredMixin, View):
 
         try:
             access_token = get_valid_access_token(request.user)
-            cchq_access_token = get_valid_cchq_access_token(request.user)
-        except (ConnectTokenError, CCHQTokenError) as e:
+        except ConnectTokenError as e:
             return JsonResponse({"status": "error", "detail": f"Authorization needed: {e}"}, status=401)
 
         try:
             from connect_labs.labs.analysis.pipeline import AnalysisPipeline
 
-            pipeline = AnalysisPipeline(access_token=access_token, cchq_access_token=cchq_access_token)
+            # fetch_work_area_geometry's data_source is connect_export, which
+            # only ever reads self.access_token (Connect) — no cchq_access_token
+            # needed. The real mopup.tasks.fetch_evaluation_data Celery task
+            # DOES fetch a CCHQ token upfront too (its OTHER two calls,
+            # list_work_areas/list_approved_visits, are cchq-sourced), but
+            # this diagnostic isolates the geometry call alone, so a CCHQ
+            # re-auth lapse (unrelated to this specific fetch) doesn't block it.
+            pipeline = AnalysisPipeline(access_token=access_token, cchq_access_token=None)
             geometry = fetch_work_area_geometry(opportunity_id, pipeline=pipeline)
             sample = list(geometry.items())[:5]
         except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
