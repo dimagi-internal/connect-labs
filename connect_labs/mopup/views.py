@@ -557,6 +557,29 @@ class MopupDebugRawCaseView(LoginRequiredMixin, View):
         except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
             cursor_stage = {"error": f"{type(e).__name__}: {e}"}
 
+        # Stage 6: run the EXACT full extraction SQL (from stage 4) via a raw
+        # cursor directly, bypassing execute_visit_extraction's Python code
+        # entirely — isolates whether the corruption is in the query/driver
+        # itself (still null here too) or specifically in execute_visit_extraction's
+        # dict-building / _process_visit_level's VisitRow construction (null
+        # there but NOT here).
+        try:
+            from django.db import connection
+
+            full_sql = sql_stage_4.get("visit_extraction_sql", "")
+            full_stage = {}
+            if full_sql:
+                with connection.cursor() as cursor:
+                    cursor.execute(full_sql)
+                    desc = [c[0] for c in cursor.description]
+                    fetched = cursor.fetchmany(3)
+                full_stage["description"] = desc
+                full_stage["sample_rows"] = fetched
+            else:
+                full_stage["skipped"] = "no sql from stage 4"
+        except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
+            full_stage = {"error": f"{type(e).__name__}: {e}"}
+
         return JsonResponse(
             {
                 "status": "ok",
@@ -565,5 +588,6 @@ class MopupDebugRawCaseView(LoginRequiredMixin, View):
                 "raw_cache_db_stage": raw_cache_stage,
                 "sql_preview_stage": sql_stage_4,
                 "cursor_probe_stage": cursor_stage,
+                "full_sql_raw_cursor_stage": full_stage,
             }
         )
