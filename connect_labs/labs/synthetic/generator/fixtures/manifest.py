@@ -461,7 +461,21 @@ class ImageConfig(BaseModel):
     # reviewer has something real to catch).
     readings: dict[str, float] = Field(default_factory=dict)
     # Form path receiving that value. Required whenever ``readings`` is set.
-    reading_path: str | None = None
+    #
+    # Accepts a LIST when one cohort spec spans opportunities whose forms name
+    # the measurement differently -- KMC opp 675 writes
+    # `anthropometric.child_weight` where the other ten write
+    # `anthropometric.child_weight_visit`. Paths are tried in order against each
+    # visit and the FIRST that holds a number wins, so the list is a set of
+    # candidates, not a set of destinations: a visit is read from and written
+    # back to the same path.
+    #
+    # Deliberately NOT resolved by field-name search, which is how eligibility
+    # works. Opp 675's form carries ten leaves whose names contain "weight" --
+    # including `child_weight_difference` (a ~20 g delta), `birth_weight` (a
+    # constant, which would flatten every growth curve), a string label, and the
+    # photo field itself. Only a human knows which one is the measurement.
+    reading_path: str | list[str] | None = None
     # How far a bad-pool visit's entered value is pushed off the photo's true
     # value. Multiplicative, so it scales across birthweights.
     bad_reading_factor: float = Field(gt=0, default=1.35)
@@ -539,6 +553,15 @@ class ImageConfig(BaseModel):
     @property
     def field_match(self) -> str:
         return (self.measurement_field_match or self.corpus).lower()
+
+    @property
+    def reading_paths(self) -> list[str]:
+        """``reading_path`` normalised to a list, empty when unset."""
+        if not self.reading_path:
+            return []
+        if isinstance(self.reading_path, str):
+            return [self.reading_path]
+        return list(self.reading_path)
 
 
 # ---------- Timeline ----------

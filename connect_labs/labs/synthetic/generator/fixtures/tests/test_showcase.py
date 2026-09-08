@@ -147,3 +147,54 @@ def test_the_same_case_gets_a_DIFFERENT_id_in_each_opportunity():
     again = build_showcase_visits(_cfg(showcase=case), opportunity_id=10015, start_date=dt.date(2026, 3, 2))
     assert [v["entity_id"] for v in a] == [v["entity_id"] for v in again]
     assert len({v["xform_id"] for v in a} & {v["xform_id"] for v in b}) == 0, "xform ids must not collide either"
+
+
+# ---------------------------------------------------------------------------
+# Showcase cases must land in the SAME field as the population (#1602).
+#
+# A showcase visit is built from nothing, so it has no existing value to resolve
+# a multi-candidate reading_path against and would default to the first. For a
+# cohort using the second candidate that splits the demo cases into a field the
+# audit does not read -- which is exactly what KMC opp 675 looked like before
+# this: 16 showcase visits at `child_weight_visit`, 489 population visits at
+# `child_weight`.
+# ---------------------------------------------------------------------------
+
+
+def test_showcase_writes_the_path_the_cohort_resolved_to():
+    import datetime as dt
+
+    from connect_labs.labs.synthetic.generator.fixtures.manifest import ImageConfig, ShowcaseCase
+    from connect_labs.labs.synthetic.generator.fixtures.showcase import build_showcase_visits
+
+    cfg = ImageConfig(
+        question_path="form.anthropometric.upload_weight_image",
+        corpus="kmc-scale",
+        measurement_field_match="weight",
+        probability=0.0,
+        good_image_count=83,
+        bad_image_count=10,
+        reading_path=[
+            "form.anthropometric.child_weight_visit",
+            "form.anthropometric.child_weight",
+        ],
+        showcase=[ShowcaseCase(name="Demo", trajectory="normal_02", flw="flw_001", outcome="pass")],
+    )
+
+    followed = build_showcase_visits(
+        cfg,
+        opportunity_id=675,
+        start_date=dt.date(2026, 5, 4),
+        reading_path="form.anthropometric.child_weight",
+    )
+    assert followed, "the case should produce visits"
+    for v in followed:
+        anthro = v["form_json"]["form"]["anthropometric"]
+        assert "child_weight" in anthro
+        assert "child_weight_visit" not in anthro, "must not split off into the unused candidate"
+
+    # Control: with no override it falls back to the first candidate, which is
+    # correct for the ten opportunities that do use it.
+    default = build_showcase_visits(cfg, opportunity_id=874, start_date=dt.date(2026, 5, 4))
+    for v in default:
+        assert "child_weight_visit" in v["form_json"]["form"]["anthropometric"]
