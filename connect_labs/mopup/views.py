@@ -421,3 +421,50 @@ class MopupCreatePlanView(LoginRequiredMixin, View):
 
         resp["status"] = "ok"
         return JsonResponse(resp)
+
+
+class MopupDebugRawCaseView(LoginRequiredMixin, View):
+    """TEMPORARY diagnostic — remove once the entity_id-null investigation is
+    resolved. Calls `fetch_cchq_cases_as_visit_dicts` directly with the exact
+    same explicit-token construction `mopup.tasks.fetch_evaluation_data` uses
+    (get_valid_access_token/get_valid_cchq_access_token, request=None),
+    bypassing AnalysisPipeline's SQL cache/query layers entirely, so we can
+    see the raw normalized case dict exactly as it exists the moment this
+    app's own Celery task would receive it — no cache, no aggregation, no
+    intermediate storage round-trip to obscure where a null might enter."""
+
+    def get(self, request, program_id):
+        from connect_labs.labs.analysis.backends.sql.cchq_cases_fetcher import fetch_cchq_cases_as_visit_dicts
+        from connect_labs.labs.analysis.config import DataSourceConfig
+        from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
+        from connect_labs.labs.integrations.commcare.cchq_tokens import CCHQTokenError, get_valid_cchq_access_token
+
+        opportunity_id = request.GET.get("opportunity_id")
+        if not opportunity_id:
+            return JsonResponse({"status": "error", "detail": "opportunity_id is required"}, status=400)
+        opportunity_id = int(opportunity_id)
+
+        try:
+            access_token = get_valid_access_token(request.user)
+            cchq_access_token = get_valid_cchq_access_token(request.user)
+        except (ConnectTokenError, CCHQTokenError) as e:
+            return JsonResponse({"status": "error", "detail": f"Authorization needed: {e}"}, status=401)
+
+        try:
+            visit_dicts = fetch_cchq_cases_as_visit_dicts(
+                request=None,
+                data_source=DataSourceConfig(type="cchq_cases", case_type="work-area"),
+                access_token=access_token,
+                opportunity_id=opportunity_id,
+                cchq_access_token=cchq_access_token,
+            )
+        except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
+            return JsonResponse({"status": "error", "detail": f"{type(e).__name__}: {e}"}, status=502)
+
+        return JsonResponse(
+            {
+                "status": "ok",
+                "count": len(visit_dicts),
+                "sample": visit_dicts[:3],
+            }
+        )
