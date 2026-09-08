@@ -7,10 +7,32 @@ import random
 import uuid
 from typing import Any
 
+from . import corpus_manifest as cm
 from .fields import _get_nested, _set_nested
 from .manifest import ImageConfig
 
 logger = logging.getLogger(__name__)
+
+
+def failing_value(true_reading: float, blob_id: str, bands: dict, factor: float) -> float:
+    """A value that DISAGREES with the photo -- and stays disagreeing.
+
+    A dial photo is reviewed against a RANGE, not a point, so a multiplier off the
+    recorded midpoint can land back INSIDE the accepted band and be passed. The
+    planted error then reads as a case the reviewer cleared, which is worse than
+    having planted nothing. Push clear of the band's upper edge (#1563).
+
+    Shared with `showcase.py`: both paths plant the same kind of mistake against the
+    same reviewer, and having two copies is how one of them stayed wrong.
+    """
+    wrong = true_reading * factor
+    band = bands.get(blob_id)
+    if band:
+        lo, hi = band
+        if lo <= wrong <= hi:
+            wrong = hi + max(hi - lo, 1.0) * 0.5
+    return round(wrong, 3)
+
 
 # Exact paths this module used to require. Kept only as documentation of the
 # three shapes that were hardcoded here: eligibility is now decided by
@@ -149,6 +171,14 @@ def assign_visit_images(
 
     corpus = config.corpus
     field_match = config.field_match
+    # Only dial images carry one; a point-read digital photo has no band and
+    # falls through to the plain multiplier. Readings can also be supplied by hand
+    # for a corpus that has no manifest of its own, so a missing one is not an
+    # error here -- it just means there are no bands to respect.
+    try:
+        bands = cm.bands_for(corpus) if config.readings else {}
+    except cm.CorpusManifestError:
+        bands = {}
 
     for visit in visits:
         fj = visit.get("form_json") or {}
@@ -253,7 +283,11 @@ def assign_visit_images(
         # every match/no-match verdict is an accident of the round-robin.
         true_reading = None if fails_on_photo else config.readings.get(blob_id)
         if true_reading is not None and config.reading_path:
-            entered = true_reading * config.bad_reading_factor if from_bad_pool else true_reading
+            entered = (
+                failing_value(true_reading, blob_id, bands, config.bad_reading_factor)
+                if from_bad_pool
+                else true_reading
+            )
             _set_nested(visit["form_json"], config.reading_path, round(entered, 3))
             if from_bad_pool:
                 mismatched += 1

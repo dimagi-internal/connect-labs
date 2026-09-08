@@ -17,7 +17,8 @@ equals its photo's value, and a BAD-pool visit's does not.
 
 import random
 
-from connect_labs.labs.synthetic.generator.fixtures.images import assign_visit_images
+from connect_labs.labs.synthetic.generator.fixtures import corpus_manifest as cm
+from connect_labs.labs.synthetic.generator.fixtures.images import assign_visit_images, failing_value
 from connect_labs.labs.synthetic.generator.fixtures.manifest import ImageConfig
 
 WEIGHT_PATH = "form.anthropometric.child_weight_visit"
@@ -348,3 +349,52 @@ def test_probability_zero_WITHOUT_showcase_still_warns(caplog):
     with caplog.at_level(logging.WARNING):
         assign_visit_images(visits, _curve_config(probability=0.0), random.Random(22))
     assert [r for r in caplog.records if "NO images were assigned" in r.message]
+
+
+# ---------------------------------------------------------------------------
+# The corpus supplies its own ground truth
+# ---------------------------------------------------------------------------
+
+
+def test_ground_truth_corpus_populates_readings_without_being_asked():
+    """A config naming a ground-truth corpus must not have to restate its readings.
+
+    Left unwired this failed in two directions at once, both quiet: with a
+    tolerance the config refused to validate, and without one the weight-matched
+    path never engaged and the cohort generated zero paired photos while every
+    count reported success.
+    """
+    config = ImageConfig(
+        corpus="kmc-scale",
+        measurement_field_match="weight",
+        question_path="form.anthropometric.upload_weight_image",
+        reading_path="form.anthropometric.child_weight_visit",
+        good_image_count=83,
+        bad_image_count=10,
+        reading_match_tolerance=120.0,
+    )
+    assert config.readings, "kmc-scale declares reading_per_image ground truth"
+    assert config.readings == cm.readings_for("kmc-scale")
+
+
+def test_corpus_without_ground_truth_stays_empty():
+    """MUAC is judged on the picture alone; inventing readings for it would be wrong."""
+    assert ImageConfig(corpus="muac", reading_path="form.x", good_image_count=5).readings == {}
+
+
+def test_explicit_readings_are_not_overwritten_by_the_corpus():
+    mine = {"synth-kmc-scale-good-001": 1234.0}
+    config = ImageConfig(corpus="kmc-scale", reading_path="form.x", readings=mine, good_image_count=83)
+    assert config.readings == mine
+
+
+def test_a_planted_number_error_lands_outside_a_dial_band():
+    """A dial photo is reviewed against a RANGE, so the multiplier alone can pass."""
+    bands = cm.bands_for("kmc-scale")
+    dial = next((b for b, band in bands.items() if band), None)
+    assert dial, "kmc-scale carries dial images with an accepted band"
+    lo, hi = bands[dial]
+    midpoint = (lo + hi) / 2
+    # A factor that would land the wrong value squarely inside the band.
+    entered = failing_value(midpoint, dial, bands, 1.01)
+    assert not (lo <= entered <= hi), f"{entered} is inside the accepted band {bands[dial]}"
