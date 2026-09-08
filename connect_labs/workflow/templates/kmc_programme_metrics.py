@@ -385,19 +385,46 @@ SNAPSHOT_INPUTS = {
     "require_state_keys": True,
 }
 
+# The framework's word for this is SNAPSHOT — snapshot_inputs, snapshot_schema,
+# build_snapshot, workflow_save_snapshot, run.data["snapshot"]. This template calls
+# its payload `frozen`, and that name is load-bearing rather than stylistic: it is
+# the state key `snapshot_inputs.state_keys` names and the key the render reads
+# (`view.state.frozen`). So it stays, and everything ABOUT it is described in the
+# framework's vocabulary. Renaming the key is a migration of every saved run, which
+# is worth doing on its own and not as a side effect of adding a drill.
 SNAPSHOT_SCHEMA = {
-    "version": 1,
+    "version": 2,
     "keys": {
-        "state.frozen.programInd": "Programme-wide indicator results (C01-C31) at freeze time",
+        "state.frozen.programInd": "Programme-wide indicator results (C01-C31) as published",
         "state.frozen.byLLO": "Per-LLO indicator results, with each LLO's opportunities nested",
         "state.frozen.byOpp": "Per-opportunity indicator results",
-        "state.frozen.byFLW": "Per-FLW indicator results, keyed (opportunity, username)",
+        "state.frozen.byFLW": (
+            "Per-FLW indicator results, keyed (opportunity, username). `rows` carries that "
+            "worker's case records — a saved run has no live pipeline behind it, so an empty "
+            "`rows` would end the drill at the worker"
+        ),
+        "state.frozen.cases": (
+            "Flat index of every case in the snapshot, so the case table and a hand-off to "
+            "the longitudinal view need not walk byFLW. Slim by design: identity, dates, "
+            "weights, visit count. The per-visit weight SERIES is deliberately absent — it "
+            "would not fit the 5 MB cap, and the longitudinal workflow fetches it live for "
+            "the one case a user opens"
+        ),
+        "state.frozen.cMeasures": (
+            "The display contract these values were graded with — titles, units, directions "
+            "and bands as published, so a later threshold change cannot silently re-grade a "
+            "saved run"
+        ),
+        "state.frozen.mortalityCredible": "Which LLOs record deaths credibly, as published",
         "state.frozen.monthly": "Programme monthly trend series",
         "state.frozen.monthlyByScope": (
             "Monthly series precomputed per drill scope (all / llo:<name> / opp:<id>) so a "
-            "frozen run still supports the LLO and opportunity drill without live pipelines"
+            "saved run still supports the LLO and opportunity drill without live pipelines"
         ),
-        "state.frozen.meta": "Cohort size at freeze: cases, visits, opportunities, llos",
+        "state.frozen.nSeries": "The SQL tab's rows when that tab was run; null otherwise",
+        "state.frozen.schema": "Payload version, independent of this manifest's version",
+        "state.frozen.generated_at": "When the snapshot was built",
+        "state.frozen.meta": "Cohort size as published: cases, visits, opportunities, llos",
     },
 }
 
