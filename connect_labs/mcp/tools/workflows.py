@@ -310,9 +310,54 @@ from connect_labs.workflow.templates import (  # noqa: E402
     create_workflow_from_template as _create_workflow_from_template,
 )
 
-_DEFINITION_PATCH_ALLOWED = {"name", "description", "statuses", "config", "snapshot_inputs"}
+_DEFINITION_PATCH_ALLOWED = {"name", "description", "statuses", "config", "snapshot_inputs", "registry_source"}
 
 _SNAPSHOT_INPUTS_ALLOWED_KEYS = {"pipelines", "workers", "state_keys"}
+
+
+def _validate_registry_source(value, wda) -> None:
+    """Validate a registry binding, and prove the registry is actually readable.
+
+    This is the binding that makes indicators editable without a deploy — the whole
+    point of registries-as-records. Until now nothing could WRITE it: `registry_source`
+    was read from the definition, and `seed_semantic_registry` told a human to go bind
+    it by hand. A capability you cannot reach from the API is one that does not exist
+    for an agent, which is how the KMC dashboard sat on the on-disk registry for weeks
+    after the record support shipped.
+
+    Binding a registry that cannot be read would take the dashboard down at the next
+    load with a raw resolver error, and the person who bound it is not the person who
+    sees that. So the id is resolved HERE, on the write path, exactly as the registry
+    write path validates documents.
+    """
+    if not isinstance(value, dict):
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            'registry_source must be a dict: {} for the built-in, {"name": "kmc"} for a '
+            'named on-disk registry, or {"registry_id": <int>} for a live record',
+        )
+    unknown = set(value) - {"name", "registry_id"}
+    if unknown:
+        raise MCPToolError("INVALID_SCHEMA", f"Unknown registry_source keys: {sorted(unknown)}")
+    if "name" in value and "registry_id" in value:
+        raise MCPToolError("INVALID_SCHEMA", "registry_source takes name OR registry_id, not both")
+    if "name" in value and not isinstance(value["name"], str):
+        raise MCPToolError("INVALID_SCHEMA", "registry_source.name must be a string")
+    if "registry_id" in value:
+        try:
+            registry_id = int(value["registry_id"])
+        except (TypeError, ValueError):
+            raise MCPToolError("INVALID_SCHEMA", "registry_source.registry_id must be an integer") from None
+        from connect_labs.semantic.runtime import SemanticRuntimeError, resolve_registry
+        from connect_labs.workflow.data_access import SemanticRegistryDataAccess
+
+        access = SemanticRegistryDataAccess(access_token=getattr(wda, "access_token", None))
+        try:
+            resolve_registry({"registry_id": registry_id}, access)
+        except SemanticRuntimeError as exc:
+            raise MCPToolError("INVALID_SCHEMA", f"registry_id {registry_id} is not usable: {exc}") from exc
+        finally:
+            access.close()
 
 
 def _validate_snapshot_inputs(value) -> None:
@@ -341,7 +386,7 @@ def _validate_snapshot_inputs(value) -> None:
     name="workflow_update_definition",
     description=(
         "Update fields on a workflow definition. Accepts a patch dict. "
-        "Allowed keys: name, description, statuses, config, snapshot_inputs. "
+        "Allowed keys: name, description, statuses, config, snapshot_inputs, registry_source. "
         "`statuses` replaces wholesale; `config` shallow-merges; "
         "`snapshot_inputs` (the instance-owned completion-snapshot manifest: "
         "{pipelines: [aliases]|null, workers: bool, state_keys: [keys]|null}) "
@@ -410,6 +455,14 @@ def workflow_update_definition(
             new_data["description"] = patch["description"]
         if "statuses" in patch:
             new_data["statuses"] = patch["statuses"]  # replace wholesale
+        if "registry_source" in patch:
+            # null reverts to the built-in on-disk registry, the same escape hatch
+            # snapshot_inputs has.
+            if patch["registry_source"] is None:
+                new_data.pop("registry_source", None)
+            else:
+                _validate_registry_source(patch["registry_source"], wda)
+                new_data["registry_source"] = patch["registry_source"]
         if "config" in patch:
             merged_config = dict(new_data.get("config", {}))
             merged_config.update(patch["config"])
