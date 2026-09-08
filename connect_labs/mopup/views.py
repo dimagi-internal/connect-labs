@@ -482,7 +482,7 @@ class MopupDebugRawCaseView(LoginRequiredMixin, View):
                 grouping_key="entity_id",
                 terminal_stage=CacheStage.VISIT_LEVEL,
                 fields=[FieldComputation(name="ward", path="case.properties.ward", aggregation="first")],
-                pipeline_id=777700001,
+                pipeline_id=777700002,
             )
             result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
             sql_stage = {
@@ -502,10 +502,10 @@ class MopupDebugRawCaseView(LoginRequiredMixin, View):
 
             raw_cache_stage = {
                 "db_row_count": RawVisitCache.objects.filter(
-                    opportunity_id=opportunity_id, pipeline_id=777700001
+                    opportunity_id=opportunity_id, pipeline_id=777700002
                 ).count(),
                 "sample_entity_ids": list(
-                    RawVisitCache.objects.filter(opportunity_id=opportunity_id, pipeline_id=777700001).values_list(
+                    RawVisitCache.objects.filter(opportunity_id=opportunity_id, pipeline_id=777700002).values_list(
                         "entity_id", flat=True
                     )[:3]
                 ),
@@ -548,7 +548,7 @@ class MopupDebugRawCaseView(LoginRequiredMixin, View):
                     cursor.execute(
                         "SELECT visit_id, entity_id FROM labs_raw_visit_cache "
                         "WHERE opportunity_id = %s AND pipeline_id = %s AND visit_id = %s",
-                        [opportunity_id, 777700001, known_id],
+                        [opportunity_id, 777700002, known_id],
                     )
                     desc = [c[0] for c in cursor.description]
                     fetched = cursor.fetchall()
