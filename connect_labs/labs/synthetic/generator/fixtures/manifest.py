@@ -23,6 +23,8 @@ from pydantic import (
     model_validator,
 )
 
+from . import corpus_manifest as cm
+
 
 class ManifestValidationError(ValueError):
     """Raised when a manifest fails schema validation."""
@@ -512,6 +514,15 @@ class ImageConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_readings(self):
+        # The CORPUS is the authority on what each of its photos shows, so a config
+        # that names a ground-truth corpus does not restate those numbers -- it gets
+        # them. Left unwired, every caller had to inline the whole reading table by
+        # hand, and forgetting to was silent: `reading_match_tolerance` refused to
+        # validate, and without one the weight-matched path simply never engaged and
+        # the cohort generated zero paired photos while every count reported success.
+        # Explicit-first, so a caller can still override the corpus for a test.
+        if not self.readings and self.reading_path and cm.requires_ground_truth(self.corpus):
+            self.readings = cm.readings_for(self.corpus)
         if self.readings and not self.reading_path:
             raise ValueError("image_config.readings requires reading_path (where to write the value)")
         # A tolerance with nothing to match against is a silent no-op: selection
