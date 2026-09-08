@@ -492,6 +492,37 @@ def resolve_snapshot_opp_scope(run, definition, requested_opportunity_id=None):
     return primary, effective
 
 
+# Instance manifests are stamped at create-from-template time and never migrate, so
+# a template that gains a field later cannot reach the workflows already created
+# from it. That is correct for WHAT to capture — `state_keys`, `pipelines`,
+# `workers` describe what this workflow is doing and the instance owns them.
+#
+# It is wrong for `require_state_keys`, which is not a choice about content: it
+# records that the template computes its snapshot in the RENDER, so an unstaged
+# completion is empty rather than early. That is a property of the template's
+# code, and no instance record can make it untrue.
+#
+# Measured: shipping the flag on kmc_programme_metrics protected nothing, because
+# live workflow 5456 resolves `source: "definition"` from a manifest stamped
+# before the flag existed. The guard was deployed and inert on the one workflow it
+# was written for.
+_INHERITED_SAFETY_FLAGS = ("require_state_keys",)
+
+
+def _with_inherited_safety_flags(instance_inputs: dict, template_key: str | None) -> dict:
+    """Let an instance manifest own its content, but not drop a template safety flag."""
+    template = TEMPLATES.get(template_key) if template_key else None
+    template_inputs = (template or {}).get("snapshot_inputs") or {}
+    missing = {
+        flag: template_inputs[flag]
+        for flag in _INHERITED_SAFETY_FLAGS
+        if flag in template_inputs and flag not in instance_inputs
+    }
+    if not missing:
+        return instance_inputs
+    return {**instance_inputs, **missing}
+
+
 def resolve_snapshot_contract(definition) -> dict:
     """Resolve which snapshot contract governs run completion for a workflow.
 
@@ -523,7 +554,7 @@ def resolve_snapshot_contract(definition) -> dict:
             "ok": True,
             "source": "definition",
             "template_key": definition.template_type or None,
-            "snapshot_inputs": instance_inputs,
+            "snapshot_inputs": _with_inherited_safety_flags(instance_inputs, definition.template_type),
             "recovered_template_key": False,
         }
 
