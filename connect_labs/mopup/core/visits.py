@@ -65,7 +65,10 @@ def list_approved_visits(
     result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
     visits = []
     for row in result.rows:
-        c = row.computed
+        # `row.computed` is `None` (not `{}`) for some real visit forms where
+        # field extraction found nothing to compute — confirmed against real
+        # program-217 data this session.
+        c = row.computed or {}
         form_name = c.get("form_name")
         if form_name not in (HSD_FORM_NAME, NCF_FORM_NAME, INACCESSIBLE_FORM_NAME):
             continue
