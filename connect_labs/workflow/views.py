@@ -3047,15 +3047,14 @@ def semantic_indicators_api(request, definition_id):
         from connect_labs.semantic.workflow_binding import SemanticBindingError, build_evaluate_inputs
         from connect_labs.workflow.data_access import PipelineDataAccess
 
-        pipeline_access = PipelineDataAccess(request=request)
         try:
-            pipeline_config, extra_fields = build_evaluate_inputs(definition, pipeline_access)
+            pipeline_config, extra_fields = build_evaluate_inputs(
+                definition, lambda: PipelineDataAccess(request=request)
+            )
         except SemanticBindingError as exc:
             # Still a reportable 400 naming WHICH pipeline could not be read, not an
             # internal error.
             return JsonResponse({"error": exc.reason}, status=400)
-        finally:
-            pipeline_access.close()
 
         opportunity_ids = definition.opportunity_ids or []
         if not opportunity_ids:

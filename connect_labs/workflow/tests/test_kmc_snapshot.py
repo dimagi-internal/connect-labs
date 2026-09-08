@@ -215,7 +215,7 @@ class TestBuild:
 
     def test_llo_nests_its_opportunities_and_counts_bands(self):
         snap = self._build()
-        ghi = next(l for l in snap["byLLO"] if l["llo"] == "GHI")
+        ghi = next(x for x in snap["byLLO"] if x["llo"] == "GHI")
         assert {o["opp"] for o in ghi["opps"]} == {10017, 10020}
         assert ghi["ind"]["C16"]["band"] == "green"
 
