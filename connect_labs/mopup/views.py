@@ -516,8 +516,15 @@ class MopupDebugGeometryView(LoginRequiredMixin, View):
                 from connect_labs.mopup.core.areas import _area_id
                 from connect_labs.mopup.core.gaps import buildings_not_covered, work_area_boundaries_for_ward
 
+                # Deliberately pipeline=None here (not the headless, CCHQ
+                # -token-less `pipeline` from stage 2 above) — real
+                # create_plan_from_locked_run builds its pipeline the same
+                # way: `AnalysisPipeline(request=request) if request else
+                # None`, which resolves a CCHQ token from the user's own web
+                # session lazily. Passing the headless one would mask
+                # exactly the failure mode this stage exists to catch.
                 existing_boundaries = work_area_boundaries_for_ward(
-                    pipeline, opportunity_id, ward, lga, state, request=request
+                    None, opportunity_id, ward, lga, state, request=request
                 )
                 ward_boundary = find_ward_boundary_geometry(state, lga, ward)
                 if ward_boundary is None:
