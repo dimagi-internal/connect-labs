@@ -6,7 +6,9 @@ complete it over the API. `kmc_programme_metrics` could not: it declared
 thing that could produce a snapshot was its RENDER, in a browser. Completing a run
 any other way froze an empty one (now refused — see SnapshotStateNotStagedError).
 
-So this is the port of `buildFrozen()` from kmc_programme_metrics_render.js. Every
+So this is the server-side port of the render's snapshot builder
+(`buildFrozen()` in kmc_programme_metrics_render.js — the template's own older name
+for it). Every
 number comes from the SAME place the live dashboard reads — `semantic.runtime.evaluate`
 over the registry — so a frozen run and a live run cannot disagree about a value. The
 part that had to be re-implemented rather than reused is the DISPLAY contract: banding,
@@ -162,12 +164,12 @@ _CASE_FIELDS = (
 
 
 def case_rows(pipelines: dict, llo_map: dict[int, str]) -> list[dict]:
-    """Slim per-case records from the entity pipeline, for the frozen drill.
+    """Slim per-case records from the entity pipeline, for the drill in a saved run.
 
-    `buildFrozen()` stores `rows: []` at every level because the LIVE render already
-    holds the case rows in memory and only reads `.length` off the frozen ones. A
-    frozen run has no live pipeline behind it, so a snapshot that copies that shape
-    can show counts and nothing else — the drill dead-ends at the FLW.
+    The render's own builder stores `rows: []` at every level, which is correct there:
+    a LIVE dashboard still holds the case rows in memory and reads only `.length` off
+    the snapshot. A saved run has no live pipeline behind it, so a snapshot that copies
+    that shape shows counts and nothing else — the drill dead-ends at the worker.
     """
     children = ((pipelines or {}).get("children") or {}).get("rows") or []
     out = []
@@ -190,11 +192,16 @@ def build(
     meta: dict | None = None,
     generated_at: str | None = None,
 ) -> dict:
-    """Assemble the `frozen` payload from evaluated semantic rows.
+    """Assemble the snapshot payload from evaluated semantic rows.
 
-    Mirrors buildFrozen()'s shape exactly, including the empty `rows: []` lists —
-    the render reads `frozen.byLLO[].rows` for a length only, and carrying the case
-    rows would multiply the snapshot size for nothing.
+    Returned under the `frozen` state key, which is this template's existing name for
+    its snapshot — load-bearing, not stylistic: `snapshot_inputs.state_keys` names it
+    and the render reads `view.state.frozen`. Renaming it migrates every saved run,
+    which is worth doing on its own rather than as a side effect of adding a drill.
+
+    Shape matches what the render's own builder emits, so a saved run and a live one
+    render identically. The one deliberate difference is `byFLW[].rows`: see
+    `case_rows`.
     """
     by_scope: dict[str, list[dict]] = {}
     for r in rows:

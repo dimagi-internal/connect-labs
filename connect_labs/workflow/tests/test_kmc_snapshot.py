@@ -4,6 +4,10 @@ The risk this file exists for: a snapshot that is subtly different from the live
 is worse than no snapshot, because it is a funder-facing dashboard whose colours
 disagree with the one it was captured from. `cEntry` in the render is ported branch
 for branch in kmc_snapshot.entry(); each branch is pinned here.
+
+("buildFrozen" is the render's older in-template name for its snapshot builder. The
+framework's word is snapshot, and this file uses it except where naming the JS
+function is the clearest way to say which code is being matched.)
 """
 
 from __future__ import annotations
@@ -191,8 +195,9 @@ class TestBuild:
             assert key in snap, f"buildFrozen emits {key} and the port must too"
 
     def test_flw_carries_its_cases_so_the_drill_survives_freezing(self):
-        """buildFrozen stores `rows: []`; the LIVE render still holds the case rows,
-        a frozen run does not. Copying that shape dead-ends the drill at the FLW."""
+        """The render's builder stores `rows: []` — correct there, because a LIVE
+        dashboard still holds the case rows. A saved run does not, so copying that
+        shape dead-ends the drill at the worker."""
         snap = self._build()
         flw = snap["byFLW"][0]
         assert len(flw["rows"]) == 2
@@ -219,3 +224,41 @@ class TestBuild:
         blank = next(o for o in snap["byOpp"] if o["opp"] == 10020)
         assert blank["ind"]["C16"]["band"] in ("notinapp", "unrecorded")
         assert blank["ind"]["C16"]["value"] is None
+
+
+class TestDeclaredSchemaMatchesThePayload:
+    """`snapshot_schema` is the contract `workflow_get` publishes to callers.
+
+    It is not documentation: an agent reads it to know what a saved run will contain
+    before deciding whether to save one. Extending the payload and leaving the
+    manifest behind is how it stops being true — which is exactly what happened when
+    the case drill was added, and is why this test exists rather than a note.
+    """
+
+    def _built_keys(self) -> set[str]:
+        cases = ks.case_rows(
+            {"children": {"rows": [{"entity_id": "c1", "username": "flw_001", "opportunity_id": 10017}]}},
+            LLO_MAP,
+        )
+        snap = ks.build(
+            rows=[{"scope": "programme", "n_cases": 1}],
+            measures=[C16],
+            llo_map=LLO_MAP,
+            credible_sets={},
+            cases=cases,
+        )
+        return set(snap)
+
+    def _declared_keys(self) -> set[str]:
+        from connect_labs.workflow.templates.kmc_programme_metrics import SNAPSHOT_SCHEMA
+
+        prefix = "state.frozen."
+        return {k[len(prefix) :] for k in SNAPSHOT_SCHEMA["keys"] if k.startswith(prefix)}
+
+    def test_every_built_key_is_declared(self):
+        undeclared = self._built_keys() - self._declared_keys()
+        assert not undeclared, f"snapshot emits {sorted(undeclared)} that snapshot_schema does not declare"
+
+    def test_every_declared_key_is_built(self):
+        missing = self._declared_keys() - self._built_keys()
+        assert not missing, f"snapshot_schema promises {sorted(missing)} that the snapshot does not contain"
