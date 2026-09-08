@@ -166,6 +166,7 @@ def test_muac_is_recognised_wherever_the_manifest_puts_it():
         "images_assigned": 2,
         "reading_mismatches": 0,
         "unmatched_visits": 0,
+        "no_reading_value_visits": 0,
         "bad_photo_visits": 0,
     }
 
@@ -202,6 +203,7 @@ def test_zero_assignments_are_reported_not_silent(caplog):
         "images_assigned": 0,
         "reading_mismatches": 0,
         "unmatched_visits": 0,
+        "no_reading_value_visits": 0,
         "bad_photo_visits": 0,
     }
     assert "NO images were assigned" in caplog.text
@@ -221,6 +223,7 @@ def test_eligible_visits_that_all_get_skipped_blame_the_config_not_the_fields(ca
         "images_assigned": 0,
         "reading_mismatches": 0,
         "unmatched_visits": 0,
+        "no_reading_value_visits": 0,
         "bad_photo_visits": 0,
     }
     assert "Check probability=0.0" in caplog.text

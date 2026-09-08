@@ -459,9 +459,53 @@ def generate_opps_bulk(
     return results
 
 
-def generate_fixtures_only(bundle_root, *, drive, image_config: dict | None = None) -> list[dict]:
-    """Generate fixtures for every bundle and upload them to GDrive, WITHOUT
-    registering any SyntheticOpportunity row (no database write).
+def _select_bundles(store, opportunity_ids: list[int] | None) -> list[str]:
+    """Handles to replay, filtered to ``opportunity_ids`` when one is given.
+
+    Says out loud what it skipped and what it could not find. A silent subset is
+    the failure mode this exists to prevent: the caller cannot tell "generated 1
+    of 1 as asked" from "generated 1 of 11 because 10 bundles were missing".
+    """
+    if not opportunity_ids:
+        return list(store.list_handles())
+    wanted = set(opportunity_ids)
+    available = store.list_bundles()
+    selected = [handle for opp_id, handle in available if opp_id in wanted]
+    present = {opp_id for opp_id, _ in available}
+    skipped = sorted(present - wanted)
+    missing = sorted(wanted - present)
+    if skipped:
+        logger.info(
+            "generate_fixtures_only: skipping %d bundle(s) not in opportunity_ids: %s",
+            len(skipped),
+            skipped,
+        )
+    if missing:
+        logger.warning(
+            "generate_fixtures_only: %d requested opportunity_id(s) have no bundle under the "
+            "bundle root and will NOT be generated: %s",
+            len(missing),
+            missing,
+        )
+    return selected
+
+
+def generate_fixtures_only(
+    bundle_root,
+    *,
+    drive,
+    image_config: dict | None = None,
+    opportunity_ids: list[int] | None = None,
+) -> list[dict]:
+    """Generate fixtures for the selected bundles and upload them to GDrive,
+    WITHOUT registering any SyntheticOpportunity row (no database write).
+
+    ``opportunity_ids`` selects which bundles under ``bundle_root`` to replay;
+    None means all of them. Honouring it matters because ``image_config`` is a
+    SINGLE config applied to every bundle in the run: a caller who narrows the
+    spec to one opportunity has usually narrowed the image_config to match, and
+    silently replaying the other bundles through it regenerates them with
+    settings chosen for someone else (dimagi-internal/connect-labs#1604).
 
     This is the local/offline half of generation: the heavy copula work + GDrive
     uploads run wherever this is invoked (e.g. a powerful laptop). The labs-only
@@ -473,8 +517,9 @@ def generate_fixtures_only(bundle_root, *, drive, image_config: dict | None = No
     app_structure_present}``. Per-bundle failures are logged and skipped.
     """
     store = make_bundle_store(bundle_root, drive=drive)
+    selected = _select_bundles(store, opportunity_ids)
     results: list[dict] = []
-    for handle in store.list_handles():
+    for handle in selected:
         try:
             bundle = store.read(handle)
             manifest = Manifest.from_yaml(bundle.manifest_yaml)
