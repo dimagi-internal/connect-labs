@@ -313,6 +313,33 @@ _SNAPSHOT_SIZE_WARN_BYTES = 1 * 1024 * 1024
 _SNAPSHOT_SIZE_HARD_BYTES = 5 * 1024 * 1024
 
 
+class SnapshotStateNotStagedError(Exception):
+    """A declarative snapshot would capture NONE of the state its manifest names.
+
+    `snapshot_inputs.state_keys` is a promise that the run's state carries those
+    keys by completion time. When a template computes them in its RENDER (the
+    browser stages them via onUpdateState, then completes), an API/MCP caller that
+    completes the run without ever opening the page satisfies every other part of
+    the contract and captures `{}` — producing a completed run whose snapshot is
+    empty, which cannot be re-opened and reads as a real published artifact.
+
+    That is silent, permanent and exactly the shape a caller cannot debug: the
+    call returns 200. So refuse instead, and name the fix in the message.
+    """
+
+    def __init__(self, template_key: str, missing: list[str]):
+        self.template_key = template_key
+        self.missing = list(missing)
+        super().__init__(
+            f"snapshot for {template_key!r} declares state_keys {self.missing} but the run's "
+            "state carries none of them, so completing now would freeze an EMPTY snapshot "
+            "onto a run that cannot be re-opened. This template computes its snapshot in the "
+            "render: stage it first via POST /labs/workflow/api/run/<run_id>/state/ with those "
+            "keys, or give the template a server-side `build_snapshot` hook so an API caller "
+            "can complete a run without opening the page."
+        )
+
+
 class SnapshotTooLargeError(Exception):
     """The built snapshot exceeds the hard size cap and must not be persisted."""
 
@@ -328,7 +355,7 @@ class SnapshotTooLargeError(Exception):
 
 
 def _default_snapshot_from_inputs(
-    *, snapshot_inputs: dict, pipelines: dict, state: dict, context: dict, opportunity_id: int
+    *, snapshot_inputs: dict, pipelines: dict, state: dict, context: dict, opportunity_id: int, template_key: str = "instance"
 ) -> dict:
     """Build the default snapshot honoring a template's declarative manifest.
 
@@ -359,7 +386,12 @@ def _default_snapshot_from_inputs(
     if state_keys is None:
         out["state"] = state
     else:
-        out["state"] = {k: state.get(k) for k in state_keys if k in state}
+        captured = {k: state.get(k) for k in state_keys if k in state}
+        # An empty list means "capture no state" and is a legitimate declaration.
+        # A NON-empty list that matches nothing is the lost-snapshot bug: refuse.
+        if state_keys and not any(captured.get(k) for k in state_keys):
+            raise SnapshotStateNotStagedError(template_key, list(state_keys))
+        out["state"] = captured
 
     out["opportunity_ids"] = context.get("opportunity_ids", [opportunity_id])
     return out
@@ -532,6 +564,7 @@ def build_snapshot_for_contract(
             state=state,
             context=context,
             opportunity_id=opportunity_id,
+            template_key=label,
         )
     if isinstance(snapshot, dict):
         _check_snapshot_size(label, snapshot)
@@ -593,6 +626,7 @@ def build_snapshot_for_template(
             state=state,
             context=context,
             opportunity_id=opportunity_id,
+            template_key=template_key,
         )
 
     if isinstance(snapshot, dict):
@@ -850,6 +884,7 @@ __all__ = [
     "resolve_snapshot_contract",
     "resolve_snapshot_opp_scope",
     "build_snapshot_for_contract",
+    "SnapshotStateNotStagedError",
     "SnapshotTooLargeError",
     # Individual template modules
     "performance_review",
