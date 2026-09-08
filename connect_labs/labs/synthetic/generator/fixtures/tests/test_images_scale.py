@@ -318,3 +318,33 @@ def test_a_clean_worker_is_untouched_while_a_failing_one_is_planted():
         assert _entered(v) == CURVE_READINGS[v["images"][0]["blob_id"]]
     for v in dirty:
         assert _entered(v) != CURVE_READINGS[v["images"][0]["blob_id"]]
+
+
+def test_probability_zero_with_showcase_is_not_warned_about(caplog):
+    """`probability: 0.0` + showcase is the supported "only the demo cases" config.
+
+    Warning on it would train the reader to ignore a line that is usually real —
+    the zero-assignment warning exists to catch a manifest that silently produced
+    nothing (#1467), and this manifest produced exactly what it asked for.
+    """
+    import logging
+
+    visits = _curve_visits([1410.0, 1590.0])
+    cfg = _curve_config(
+        probability=0.0,
+        showcase=[{"name": "Demo", "trajectory": "normal_02", "flw": "flw_001"}],
+    )
+    with caplog.at_level(logging.WARNING):
+        assign_visit_images(visits, cfg, random.Random(21))
+    assert not [r for r in caplog.records if "NO images were assigned" in r.message]
+
+
+def test_probability_zero_WITHOUT_showcase_still_warns(caplog):
+    """The original alarm has to survive: images configured, nothing produced,
+    and no showcase to explain it."""
+    import logging
+
+    visits = _curve_visits([1410.0, 1590.0])
+    with caplog.at_level(logging.WARNING):
+        assign_visit_images(visits, _curve_config(probability=0.0), random.Random(22))
+    assert [r for r in caplog.records if "NO images were assigned" in r.message]

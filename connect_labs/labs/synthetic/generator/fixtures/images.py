@@ -271,10 +271,17 @@ def assign_visit_images(
             len(visits),
             field_match,
         )
-    elif not assigned:
+    elif not assigned and not config.showcase:
         # Different cause, so a different message: the visits DO have MUAC
         # readings and every one was still skipped, which points at the config
         # (probability, or an empty pool) rather than the cohort's fields.
+        #
+        # Suppressed when the manifest declares showcase cases, because
+        # `probability: 0.0` + showcase is the SUPPORTED way to photograph only
+        # the named demo cases and leave the cohort alone. Warning on a correct
+        # config is worse than not warning at all: it teaches the reader to skip
+        # a line that is usually real. The `not eligible` branch above still
+        # fires either way, so the genuine silent no-op is still caught.
         logger.warning(
             "[SyntheticImages] image_config is set and %d of %d visit(s) had a '%s' "
             "measurement, but NO images were assigned. Check probability=%s and the "
