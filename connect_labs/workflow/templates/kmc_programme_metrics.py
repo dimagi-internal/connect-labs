@@ -376,6 +376,13 @@ SNAPSHOT_INPUTS = {
     "pipelines": [],
     "workers": False,
     "state_keys": ["frozen"],
+    # `frozen` is not optional here the way `worker_states` is for a performance
+    # review: every number this dashboard publishes lives under it, so a snapshot
+    # without it is not an early snapshot, it is an empty one — and completion
+    # cannot be re-opened. An API/MCP caller that completes a run nobody has
+    # opened would otherwise get a 200 and a permanently blank published run.
+    # Refuse instead, until this template grows a server-side build_snapshot hook.
+    "require_state_keys": True,
 }
 
 SNAPSHOT_SCHEMA = {
