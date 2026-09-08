@@ -1323,6 +1323,108 @@ def synthetic_profile_opp(
 
 
 @register(
+    name="synthetic_profile_opp_async",
+    description=(
+        "PHASE 1 (prod-touching), QUEUED. Same profiling as synthetic_profile_opp, but "
+        "run on a Celery worker and returning a task_id immediately instead of blocking. "
+        "Use this for any large opportunity: the web tier caps a single request at 600s "
+        "(gunicorn --timeout), so an opp that profiles for longer is killed mid-call and "
+        "its finished work discarded — opp 874 (11,581 visits) cannot complete inline at "
+        "all (#1581). A worker has no such cap. Poll with synthetic_profile_status."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "source_opportunity_id": {"type": "integer"},
+            "curate": {"type": "boolean", "default": False},
+            "mirror": {"type": "boolean", "default": False},
+            "out_dir": {
+                "type": "string",
+                "description": (
+                    "Where to write the <opp_id>/ bundle: a local directory path, or "
+                    "'gdrive:<folder_id>' (or bare 'gdrive:' to auto-create a run folder)."
+                ),
+            },
+        },
+        "required": ["source_opportunity_id", "out_dir"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_profile_opp_async(
+    user,
+    *,
+    source_opportunity_id: int,
+    out_dir: str,
+    curate: bool = False,
+    mirror: bool = False,
+) -> dict[str, Any]:
+    import uuid
+
+    from connect_labs.labs.synthetic.tasks import run_synthetic_profile_opp
+
+    # Access is checked HERE, in the request, while we still have the user. The
+    # worker runs with no request and cannot re-derive it, so an unchecked queue
+    # would hand a token to a job nobody authorised.
+    _require_opportunity_access(user, source_opportunity_id)
+    try:
+        token = require_connect_token(user)
+    except MCPToolError:
+        raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
+
+    task_id = str(uuid.uuid4())
+    run_synthetic_profile_opp.apply_async(
+        kwargs={
+            "source_opportunity_id": source_opportunity_id,
+            "out_dir": out_dir,
+            "oauth_token": token,
+            "curate": curate,
+            "mirror": mirror,
+        },
+        task_id=task_id,
+    )
+    return {
+        "task_id": task_id,
+        "source_opportunity_id": source_opportunity_id,
+        "state": "QUEUED",
+        "poll_with": "synthetic_profile_status",
+    }
+
+
+@register(
+    name="synthetic_profile_status",
+    description=(
+        "Poll a queued profiling job started by synthetic_profile_opp_async. Returns "
+        "state (PENDING | PROGRESS | SUCCESS | FAILURE), the last progress message, and "
+        "on success the bundle_dir/bundle_root the inline tool would have returned."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"task_id": {"type": "string"}},
+        "required": ["task_id"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_profile_status(user, *, task_id: str) -> dict[str, Any]:
+    from celery.result import AsyncResult
+
+    from config import celery_app
+
+    res = AsyncResult(task_id, app=celery_app)
+    out: dict[str, Any] = {"task_id": task_id, "state": res.state}
+    if res.state == "PROGRESS" and isinstance(res.info, dict):
+        out.update({k: res.info.get(k) for k in ("current", "total", "message")})
+    elif res.state == "SUCCESS":
+        out["result"] = res.result
+    elif res.state == "FAILURE":
+        # str() rather than the exception object: the caller gets JSON, and a
+        # traceback here would leak worker internals into an agent transcript.
+        out["error"] = str(res.info)
+    return out
+
+
+@register(
     name="synthetic_profile_opps_bulk",
     description=(
         "PHASE 1 (prod-touching). Profile multiple real opportunities into "
