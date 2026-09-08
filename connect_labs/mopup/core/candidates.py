@@ -93,13 +93,31 @@ def summarize_candidates_by_ward(candidates: list[dict], all_rows: list[dict]) -
     """Per-ward rollup for the candidate table (design brief §8): total work
     areas reviewed, how many are candidates, and how many were flagged by 2+
     indicators (§6c) — cheap since severity is already computed per
-    candidate."""
-    totals: dict[tuple[str, str, str], int] = {}
+    candidate.
+
+    Every ward present in `all_rows` gets a row here, even one with zero
+    candidates under the current thresholds — this is a survey of what was
+    evaluated, not just a rollup of what got flagged. (Real bug, caught live
+    against program 217/opportunity 2154: seeding `by_ward` only from
+    `candidates` left this table completely empty whenever thresholds
+    happened to flag nothing, despite thousands of work areas having been
+    evaluated.)"""
+    by_ward: dict[tuple[str, str, str], dict] = {}
     for wa in all_rows:
         key = (wa["state"], wa["lga"], wa["ward"])
-        totals[key] = totals.get(key, 0) + 1
+        row = by_ward.setdefault(
+            key,
+            {
+                "ward": wa["ward"],
+                "lga": wa["lga"],
+                "state": wa["state"],
+                "total_work_areas": 0,
+                "candidate_count": 0,
+                "flagged_by_2_plus": 0,
+            },
+        )
+        row["total_work_areas"] += 1
 
-    by_ward: dict[tuple[str, str, str], dict] = {}
     for c in candidates:
         key = (c["state"], c["lga"], c["ward"])
         row = by_ward.setdefault(
@@ -108,7 +126,7 @@ def summarize_candidates_by_ward(candidates: list[dict], all_rows: list[dict]) -
                 "ward": c["ward"],
                 "lga": c["lga"],
                 "state": c["state"],
-                "total_work_areas": totals.get(key, 0),
+                "total_work_areas": 0,
                 "candidate_count": 0,
                 "flagged_by_2_plus": 0,
             },
