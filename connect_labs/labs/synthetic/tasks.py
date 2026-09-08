@@ -79,3 +79,96 @@ def run_synthetic_profile_opp(
         "bundle_root": resolved,
         "source_opportunity_id": source_opportunity_id,
     }
+
+
+def _progress_reporter(task, **context):
+    """A progress callback that reports through the task's own state.
+
+    Surfaced via AsyncResult.info so a poller shows real movement rather than a
+    spinner. Cheap: the result backend is Redis.
+    """
+
+    def _report(current, total, message=""):
+        task.update_state(
+            state="PROGRESS",
+            meta={"current": current, "total": total, "message": str(message), **context},
+        )
+
+    return _report
+
+
+@celery_app.task(bind=True)
+def run_synthetic_profile_opps_bulk(
+    self,
+    *,
+    source_opportunity_ids: list[int],
+    out_dir: str,
+    oauth_token: str,
+    curate: bool = False,
+    mirror: bool = False,
+) -> dict[str, Any]:
+    """Profile several opportunities into one bundle_root."""
+    from connect_labs.labs.synthetic.clone_from_prod import profile_opps_bulk
+    from connect_labs.labs.synthetic.gdrive import DriveClient
+
+    drive = DriveClient() if str(out_dir).startswith("gdrive:") else None
+    resolved, handles = profile_opps_bulk(
+        source_opportunity_ids,
+        curate=curate,
+        mirror=mirror,
+        base_url=settings.CONNECT_PRODUCTION_URL,
+        oauth_token=oauth_token,
+        bundle_root=out_dir,
+        drive=drive,
+        progress=_progress_reporter(self, opportunity_ids=source_opportunity_ids),
+    )
+    return {
+        "bundle_root": resolved,
+        "bundle_dirs": handles,
+        "succeeded": len(handles),
+        "requested": len(source_opportunity_ids),
+    }
+
+
+@celery_app.task(bind=True)
+def run_synthetic_clone_profile(self, *, spec_yaml: str, oauth_token: str) -> dict[str, Any]:
+    """Phase 1 for a whole cohort spec. The longest of these by far."""
+    from connect_labs.labs.synthetic.clone_from_prod import profile_cohort
+    from connect_labs.labs.synthetic.cohort import CohortSpec
+    from connect_labs.labs.synthetic.gdrive import DriveClient
+
+    spec = CohortSpec.from_yaml(spec_yaml)
+    drive = DriveClient() if str(spec.bundle_root).startswith("gdrive:") else None
+    spec = profile_cohort(
+        spec,
+        base_url=settings.CONNECT_PRODUCTION_URL,
+        oauth_token=oauth_token,
+        drive=drive,
+        progress=_progress_reporter(self, opportunity_ids=spec.opportunity_ids),
+    )
+    return {
+        "spec_yaml": spec.to_yaml(),
+        "bundle_root": spec.bundle_root,
+        "opportunity_ids": spec.opportunity_ids,
+    }
+
+
+@celery_app.task(bind=True)
+def run_synthetic_profile_from_prod(
+    self,
+    *,
+    opportunity_id: int,
+    oauth_token: str,
+    form_json_paths: list[str] | None = None,
+    mirror: bool = False,
+) -> dict[str, Any]:
+    """Profile one opportunity straight to a manifest YAML (no bundle)."""
+    from connect_labs.mcp.tools.synthetic import _profile_from_prod_inner
+
+    return _profile_from_prod_inner(
+        opportunity_id=opportunity_id,
+        token=oauth_token,
+        form_json_paths=form_json_paths,
+        mirror=mirror,
+        progress=_progress_reporter(self, opportunity_id=opportunity_id),
+    )

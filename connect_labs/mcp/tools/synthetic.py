@@ -10,15 +10,8 @@ import httpx
 from django.conf import settings
 
 from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
-from connect_labs.labs.synthetic.bundle import make_bundle_store, read_bundle
-from connect_labs.labs.synthetic.clone_from_prod import (
-    generate_cohort,
-    generate_opp_from_bundle,
-    generate_opps_bulk,
-    profile_cohort,
-    profile_opp_to_bundle,
-    profile_opps_bulk,
-)
+from connect_labs.labs.synthetic.bundle import read_bundle
+from connect_labs.labs.synthetic.clone_from_prod import generate_cohort, generate_opp_from_bundle, generate_opps_bulk
 from connect_labs.labs.synthetic.cohort import CohortSpec
 from connect_labs.labs.synthetic.dump import _fetch_endpoint
 from connect_labs.labs.synthetic.gdrive import DriveClient
@@ -1051,42 +1044,31 @@ def synthetic_set_my_visibility(user, *, enabled: bool) -> dict[str, Any]:
     },
     is_write=False,
 )
-def synthetic_profile_from_prod(
-    user,
-    *,
-    opportunity_id: int,
-    form_json_paths: list[str] | None = None,
-    mirror: bool = False,
+def _profile_from_prod_inner(
+    *, opportunity_id: int, token: str, form_json_paths=None, mirror: bool = False, progress=None
 ) -> dict[str, Any]:
-    _require_opportunity_access(user, opportunity_id)
+    """The prod fetch + profile, with no `user` and no request.
 
-    try:
-        token = require_connect_token(user)
-    except MCPToolError:
-        raise MCPToolError(
-            "PERMISSION_DENIED",
-            "No Connect token available — cannot fetch production data.",
-        )
-
+    Split out so the Celery task can run it: the worker has no request, and
+    permission + token are resolved by the caller before anything is queued.
+    """
     base_url = settings.CONNECT_PRODUCTION_URL
 
-    logger.info("synthetic_profile_from_prod: fetching exports for opp %s", opportunity_id)
+    def _tick(n, total, msg):
+        if progress:
+            progress(n, total, msg)
+
+    logger.info("profile_from_prod: fetching exports for opp %s", opportunity_id)
+    _tick(0, 4, f"fetching exports for opportunity {opportunity_id}")
     detail = _fetch_endpoint(base_url, opportunity_id, "", token)
+    _tick(1, 4, "fetched opportunity detail")
     user_visits = _fetch_endpoint(base_url, opportunity_id, "user_visits", token)
+    _tick(2, 4, f"fetched {len(user_visits) if isinstance(user_visits, list) else 0} visits")
     user_data = _fetch_endpoint(base_url, opportunity_id, "user_data", token)
+    _tick(3, 4, "fetched user data")
 
     if not isinstance(user_visits, list) or not user_visits:
-        raise MCPToolError(
-            "NOT_FOUND",
-            f"No user_visits data for opportunity_id={opportunity_id}",
-        )
-
-    logger.info(
-        "synthetic_profile_from_prod: profiling %d visits, %d users for opp %s",
-        len(user_visits),
-        len(user_data) if isinstance(user_data, list) else 0,
-        opportunity_id,
-    )
+        raise MCPToolError("NOT_FOUND", f"No user_visits data for opportunity_id={opportunity_id}")
 
     manifest_yaml = _profile(
         opportunity_id=opportunity_id,
@@ -1096,13 +1078,49 @@ def synthetic_profile_from_prod(
         form_json_paths=form_json_paths,
         mirror=mirror,
     )
-
+    _tick(4, 4, "built manifest")
     return {
         "manifest_yaml": manifest_yaml,
         "mode": "mirror" if mirror else "marginal",
         "source_visit_count": len(user_visits),
         "source_flw_count": len({v.get("username") for v in user_visits if v.get("username")}),
         "source_entity_count": len({v.get("entity_id") for v in user_visits if v.get("entity_id")}),
+    }
+
+
+def synthetic_profile_from_prod(
+    user,
+    *,
+    opportunity_id: int,
+    form_json_paths: list[str] | None = None,
+    mirror: bool = False,
+) -> dict[str, Any]:
+    """QUEUED. Returns a task_id; poll synthetic_profile_status."""
+    import uuid
+
+    from connect_labs.labs.synthetic.tasks import run_synthetic_profile_from_prod
+
+    _require_opportunity_access(user, opportunity_id)
+    try:
+        token = require_connect_token(user)
+    except MCPToolError:
+        raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
+
+    task_id = str(uuid.uuid4())
+    run_synthetic_profile_from_prod.apply_async(
+        kwargs={
+            "opportunity_id": opportunity_id,
+            "oauth_token": token,
+            "form_json_paths": form_json_paths,
+            "mirror": mirror,
+        },
+        task_id=task_id,
+    )
+    return {
+        "task_id": task_id,
+        "opportunity_id": opportunity_id,
+        "state": "QUEUED",
+        "poll_with": "synthetic_profile_status",
     }
 
 
@@ -1245,92 +1263,16 @@ def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, An
 @register(
     name="synthetic_profile_opp",
     description=(
-        "PHASE 1 (prod-touching). Profile one real opportunity into a self-contained "
-        "profile bundle on disk (manifest.yaml + app_structure.json + scrubbed "
-        "opportunity.json). Reads real exports with the caller's OAuth token and "
+        "PHASE 1 (prod-touching), QUEUED. Profile one real opportunity into a "
+        "self-contained bundle (manifest.yaml + app_structure.json + scrubbed "
+        "opportunity.json) on a Celery worker; returns a task_id immediately. Poll with "
+        "synthetic_profile_status. Reads real exports with the caller's OAuth token and "
         "persists ONLY aggregate stats + program config — no row-level data. "
-        "Run this in safe mode; Phase 2 (synthetic_generate_opp) needs no prod access."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "source_opportunity_id": {"type": "integer"},
-            "curate": {
-                "type": "boolean",
-                "default": False,
-                "description": (
-                    "Floor flag rates and give degenerate clinical categoricals minority mass so "
-                    "derived rates have variance to model (#670). Outcome fields such as child_alive "
-                    "are never curated (#1189)."
-                ),
-            },
-            "mirror": {
-                "type": "boolean",
-                "default": False,
-                "description": (
-                    "High-fidelity close mirror (#713): carry a de-identified per-entity transplant "
-                    "pool so the clone reproduces the source opp's exact visits-per-case, "
-                    "cases-per-FLW, timing and per-entity value trajectories rather than "
-                    "re-sampling from marginals."
-                ),
-            },
-            "out_dir": {
-                "type": "string",
-                "description": (
-                    "Where to write the <opp_id>/ bundle: a local directory path, or "
-                    "'gdrive:<folder_id>' (or bare 'gdrive:' to auto-create a run folder) "
-                    "to persist it durably in Google Drive."
-                ),
-            },
-        },
-        "required": ["source_opportunity_id", "out_dir"],
-        "additionalProperties": False,
-    },
-    is_write=False,
-    wants_progress=True,
-)
-def synthetic_profile_opp(
-    user,
-    *,
-    source_opportunity_id: int,
-    out_dir: str,
-    curate: bool = False,
-    mirror: bool = False,
-    progress=NULL_PROGRESS,
-) -> dict[str, Any]:
-    _require_opportunity_access(user, source_opportunity_id)
-    try:
-        token = require_connect_token(user)
-    except MCPToolError:
-        raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
-    drive = DriveClient() if str(out_dir).startswith("gdrive:") else None
-    store = make_bundle_store(out_dir, drive=drive)
-    handle = profile_opp_to_bundle(
-        source_opportunity_id,
-        curate=curate,
-        mirror=mirror,
-        base_url=settings.CONNECT_PRODUCTION_URL,
-        oauth_token=token,
-        store=store,
-        progress=progress,
-    )
-    resolved = f"gdrive:{store.root_folder_id}" if hasattr(store, "root_folder_id") else str(out_dir)
-    return {
-        "bundle_dir": str(handle),
-        "bundle_root": resolved,
-        "source_opportunity_id": source_opportunity_id,
-    }
-
-
-@register(
-    name="synthetic_profile_opp_async",
-    description=(
-        "PHASE 1 (prod-touching), QUEUED. Same profiling as synthetic_profile_opp, but "
-        "run on a Celery worker and returning a task_id immediately instead of blocking. "
-        "Use this for any large opportunity: the web tier caps a single request at 600s "
-        "(gunicorn --timeout), so an opp that profiles for longer is killed mid-call and "
-        "its finished work discarded — opp 874 (11,581 visits) cannot complete inline at "
-        "all (#1581). A worker has no such cap. Poll with synthetic_profile_status."
+        "Phase 2 (synthetic_generate_opp) needs no prod access.\n\n"
+        "There is no inline variant: the web tier caps one request at 600s total "
+        "(gunicorn --timeout), so an opportunity that profiles for longer is killed "
+        "mid-call and its finished bundles discarded with the cancelled request "
+        "(#1581). Every profile goes through a worker, which has no such cap."
     ),
     input_schema={
         "type": "object",
@@ -1351,7 +1293,7 @@ def synthetic_profile_opp(
     },
     is_write=False,
 )
-def synthetic_profile_opp_async(
+def synthetic_profile_opp(
     user,
     *,
     source_opportunity_id: int,
@@ -1427,7 +1369,8 @@ def synthetic_profile_status(user, *, task_id: str) -> dict[str, Any]:
 @register(
     name="synthetic_profile_opps_bulk",
     description=(
-        "PHASE 1 (prod-touching). Profile multiple real opportunities into "
+        "PHASE 1 (prod-touching), QUEUED. Returns a task_id; poll "
+        "synthetic_profile_status. Profile multiple real opportunities into "
         "self-contained profile bundles. Each opp is profiled independently; "
         "failures are logged and skipped so a single bad opp doesn't abort the rest. "
         "Returns the resolved bundle_root (pass it to synthetic_generate_opps_bulk) "
@@ -1474,7 +1417,6 @@ def synthetic_profile_status(user, *, task_id: str) -> dict[str, Any]:
         "additionalProperties": False,
     },
     is_write=False,
-    wants_progress=True,
 )
 def synthetic_profile_opps_bulk(
     user,
@@ -1483,30 +1425,35 @@ def synthetic_profile_opps_bulk(
     out_dir: str,
     curate: bool = False,
     mirror: bool = False,
-    progress=NULL_PROGRESS,
 ) -> dict[str, Any]:
+    """QUEUED. Returns a task_id; poll synthetic_profile_status."""
+    import uuid
+
+    from connect_labs.labs.synthetic.tasks import run_synthetic_profile_opps_bulk
+
     for opp_id in source_opportunity_ids:
         _require_opportunity_access(user, opp_id)
     try:
         token = require_connect_token(user)
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
-    drive = DriveClient() if str(out_dir).startswith("gdrive:") else None
-    resolved, handles = profile_opps_bulk(
-        source_opportunity_ids,
-        curate=curate,
-        mirror=mirror,
-        base_url=settings.CONNECT_PRODUCTION_URL,
-        oauth_token=token,
-        bundle_root=out_dir,
-        drive=drive,
-        progress=progress,
+
+    task_id = str(uuid.uuid4())
+    run_synthetic_profile_opps_bulk.apply_async(
+        kwargs={
+            "source_opportunity_ids": source_opportunity_ids,
+            "out_dir": out_dir,
+            "oauth_token": token,
+            "curate": curate,
+            "mirror": mirror,
+        },
+        task_id=task_id,
     )
     return {
-        "bundle_root": resolved,
-        "bundle_dirs": handles,
-        "succeeded": len(handles),
+        "task_id": task_id,
         "requested": len(source_opportunity_ids),
+        "state": "QUEUED",
+        "poll_with": "synthetic_profile_status",
     }
 
 
@@ -1815,9 +1762,18 @@ def synthetic_fidelity_report(user, *, bundle_dir: str) -> dict[str, Any]:
         "additionalProperties": False,
     },
     is_write=False,
-    wants_progress=True,
 )
-def synthetic_clone_profile(user, *, spec_yaml: str, progress=NULL_PROGRESS) -> dict[str, Any]:
+def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
+    """QUEUED. Returns a task_id; poll synthetic_profile_status.
+
+    The longest of the profiling calls — a cohort is every opportunity in the
+    spec, one after another — so this is the one that could never have run
+    inline.
+    """
+    import uuid
+
+    from connect_labs.labs.synthetic.tasks import run_synthetic_clone_profile
+
     try:
         spec = CohortSpec.from_yaml(spec_yaml)
     except ValueError as exc:
@@ -1828,14 +1784,14 @@ def synthetic_clone_profile(user, *, spec_yaml: str, progress=NULL_PROGRESS) -> 
         token = require_connect_token(user)
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
-    drive = DriveClient() if str(spec.bundle_root).startswith("gdrive:") else None
-    spec = profile_cohort(
-        spec, base_url=settings.CONNECT_PRODUCTION_URL, oauth_token=token, drive=drive, progress=progress
-    )
+
+    task_id = str(uuid.uuid4())
+    run_synthetic_clone_profile.apply_async(kwargs={"spec_yaml": spec_yaml, "oauth_token": token}, task_id=task_id)
     return {
-        "spec_yaml": spec.to_yaml(),
-        "bundle_root": spec.bundle_root,
+        "task_id": task_id,
         "opportunity_ids": spec.opportunity_ids,
+        "state": "QUEUED",
+        "poll_with": "synthetic_profile_status",
     }
 
 

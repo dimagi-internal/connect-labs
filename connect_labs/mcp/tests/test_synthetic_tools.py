@@ -430,8 +430,13 @@ def test_synthetic_set_my_visibility_flips_user_flag(user):
 # -----------------------------------------------------------------------------
 
 
-def test_profile_opp_tool_invokes_service(tmp_path):
-    """synthetic_profile_opp calls the service with the user's token + base_url."""
+def test_profile_opp_tool_queues_with_the_users_token(tmp_path):
+    """synthetic_profile_opp QUEUES; it does not profile inside the request.
+
+    It used to call profile_opp_to_bundle inline, which cannot complete for a
+    large opportunity: gunicorn caps one request at 600s total (#1581). The
+    token still has to be resolved HERE, in the request — the worker has none.
+    """
     from unittest.mock import patch
 
     from connect_labs.mcp.tools import synthetic as tools
@@ -441,39 +446,61 @@ def test_profile_opp_tool_invokes_service(tmp_path):
 
     with (
         patch.object(tools, "require_connect_token", return_value="tok"),
-        patch.object(tools, "profile_opp_to_bundle", return_value=tmp_path / "523") as svc,
         patch.object(tools, "_require_opportunity_access", return_value=None),
+        patch("connect_labs.labs.synthetic.tasks.run_synthetic_profile_opp.apply_async") as sent,
     ):
         out = tools.synthetic_profile_opp(_User(), source_opportunity_id=523, out_dir=str(tmp_path))
-    assert svc.called
-    assert out["bundle_dir"].endswith("523")
+
+    assert out["state"] == "QUEUED" and out["task_id"]
+    kwargs = sent.call_args.kwargs["kwargs"]
+    assert kwargs["source_opportunity_id"] == 523
+    assert kwargs["oauth_token"] == "tok", "the caller's token must travel with the job"
 
 
-def test_clone_profile_tool_returns_updated_spec():
-    """synthetic_clone_profile parses the spec, profiles, and returns the spec with
-    the resolved bundle_root recorded (ready to hand to synthetic_clone_generate)."""
+def test_clone_profile_tool_queues_the_whole_cohort():
+    """synthetic_clone_profile validates the spec and access, then queues.
+
+    The resolved bundle_root now comes back from the task (poll
+    synthetic_profile_status), not from this call — a cohort is every opportunity
+    in the spec one after another, so it is the profiling call that could never
+    have finished inline.
+    """
     from unittest.mock import patch
 
     from connect_labs.mcp.tools import synthetic as tools
 
     class _User:
         email = "admin@example.com"
-
-    def fake_profile_cohort(spec, *, base_url, oauth_token, drive=None, progress=None):
-        spec.bundle_root = "gdrive:run123"
-        return spec
 
     spec_yaml = "opportunity_ids: [523, 524]\nbundle_root: 'gdrive:'\nprogram_name: KMC\n"
     with (
         patch.object(tools, "require_connect_token", return_value="tok"),
         patch.object(tools, "_require_opportunity_access", return_value=None),
-        patch.object(tools, "DriveClient", return_value=object()),
-        patch.object(tools, "profile_cohort", side_effect=fake_profile_cohort),
+        patch("connect_labs.labs.synthetic.tasks.run_synthetic_clone_profile.apply_async") as sent,
     ):
         out = tools.synthetic_clone_profile(_User(), spec_yaml=spec_yaml)
-    assert out["bundle_root"] == "gdrive:run123"
-    assert "gdrive:run123" in out["spec_yaml"]
+
+    assert out["state"] == "QUEUED" and out["task_id"]
     assert out["opportunity_ids"] == [523, 524]
+    assert sent.call_args.kwargs["kwargs"]["spec_yaml"] == spec_yaml
+
+
+def test_clone_profile_rejects_a_bad_spec_before_queueing():
+    """A malformed spec must fail loudly in the request, not inside a worker where
+    the caller only sees FAILURE with no idea the YAML was the problem."""
+    from unittest.mock import patch
+
+    from connect_labs.mcp.tools import synthetic as tools
+
+    class _User:
+        email = "admin@example.com"
+
+    with (
+        patch("connect_labs.labs.synthetic.tasks.run_synthetic_clone_profile.apply_async") as sent,
+        pytest.raises(MCPToolError),
+    ):
+        tools.synthetic_clone_profile(_User(), spec_yaml="opportunity_ids: []\n")
+    sent.assert_not_called()
 
 
 # -----------------------------------------------------------------------------
@@ -787,34 +814,34 @@ def test_unreachable_production_is_not_a_grant(user, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_profile_tools_accept_curate_and_mirror(user, monkeypatch, tmp_path):
+def test_profile_tools_accept_curate_and_mirror(user, tmp_path):
     """curate/mirror must not be reachable only through the cohort-spec path.
 
     They were exposed solely on synthetic_clone_profile, so when that path is
     unavailable there is no way to produce a high-fidelity mirror bundle at all —
-    which left the KMC clones stuck with curation's invented deaths (connect-labs#1195).
-    The per-opp and bulk profilers now take the same two flags and pass them through.
+    which left the KMC clones stuck with curation's invented deaths
+    (connect-labs#1195). The per-opp profiler takes the same two flags and now
+    passes them to the queued job.
     """
+    from unittest.mock import patch
+
     from connect_labs.mcp.tools import synthetic as syn
 
-    seen = {}
+    with (
+        patch.object(syn, "require_connect_token", lambda u: "tok"),
+        patch("connect_labs.labs.synthetic.tasks.run_synthetic_profile_opp.apply_async") as sent,
+    ):
+        get_tool("synthetic_profile_opp").handler(
+            user=user, source_opportunity_id=523, out_dir=str(tmp_path), curate=True, mirror=True
+        )
+        kw = sent.call_args.kwargs["kwargs"]
+        assert (kw["source_opportunity_id"], kw["curate"], kw["mirror"]) == (523, True, True)
 
-    def _fake_profile(opp_id, **kw):
-        seen.update({"opp": opp_id, "curate": kw.get("curate"), "mirror": kw.get("mirror")})
-        return f"/tmp/bundle/{opp_id}"
-
-    monkeypatch.setattr(syn, "require_connect_token", lambda u: "tok")
-    monkeypatch.setattr(syn, "profile_opp_to_bundle", _fake_profile)
-
-    get_tool("synthetic_profile_opp").handler(
-        user=user, source_opportunity_id=523, out_dir=str(tmp_path), curate=True, mirror=True
-    )
-    assert seen == {"opp": 523, "curate": True, "mirror": True}
-
-    # Defaults stay faithful (no curation, no mirror) when the flags are omitted.
-    seen.clear()
-    get_tool("synthetic_profile_opp").handler(user=user, source_opportunity_id=524, out_dir=str(tmp_path))
-    assert seen == {"opp": 524, "curate": False, "mirror": False}
+        # Defaults stay faithful (no curation, no mirror) when the flags are omitted.
+        sent.reset_mock()
+        get_tool("synthetic_profile_opp").handler(user=user, source_opportunity_id=524, out_dir=str(tmp_path))
+        kw = sent.call_args.kwargs["kwargs"]
+        assert (kw["source_opportunity_id"], kw["curate"], kw["mirror"]) == (524, False, False)
 
 
 # -----------------------------------------------------------------------------
