@@ -139,7 +139,7 @@ def assign_visit_images(
         use_pools and config.reading_match_tolerance is not None and config.readings and config.reading_path
     )
     legacy_count = config.stock_image_count
-    eligible = assigned = mismatched = unmatched = 0
+    eligible = assigned = mismatched = unmatched = bad_photos = 0
 
     # Per-pool round-robin counters (used in two-pool mode).
     good_index = 0
@@ -158,6 +158,7 @@ def assign_visit_images(
         if rng.random() > config.probability:
             continue
 
+        fails_on_photo = False
         if use_pools:
             username = visit.get("username") or ""
             bad_rate = config.flw_bad_rates.get(username, config.default_bad_rate)
@@ -174,9 +175,21 @@ def assign_visit_images(
             if match_weight:
                 # Choose the photo to fit the weight the cohort already generated,
                 # instead of drawing one blind and then writing over that weight.
-                # The coin-flip above still decides WHICH pool, so per-FLW bad
-                # rates behave exactly as before -- only the pick within the pool
-                # changes.
+                #
+                # A FAILING visit fails in one of two ways, and they need different
+                # photos. Matching inside the BAD pool cannot work -- bad-pool images
+                # carry no reading by design -- so routing every failure there made
+                # deliberate mistakes silently vanish: the nearest-match found nothing,
+                # the visit was skipped, and an FLW with bad_rate 1.0 produced a clean
+                # record. The two modes:
+                #
+                #   wrong NUMBER  (default) -- a good, weight-matched photo of the right
+                #       infant, with the entered value pushed off it. This is the
+                #       transcription/fraud case the agreement reviewer exists to catch,
+                #       and the one that maps to payment integrity.
+                #   bad PHOTO (bad_photo_share) -- an unreadable frame from the bad pool.
+                #       Nothing to match on, so the cohort's own weight is left intact;
+                #       the visit fails on the image, not the arithmetic.
                 target = _get_nested(fj, config.reading_path)
                 if not isinstance(target, (int, float)) or isinstance(target, bool):
                     # No usable cohort value to match against. Skipping is the
@@ -184,10 +197,31 @@ def assign_visit_images(
                     # overwrite this mode exists to prevent.
                     unmatched += 1
                     continue
-                blob_id, _matched_reading = _nearest_blob(
-                    float(target), pool_count, pool_tag, corpus, config.readings, config.reading_match_tolerance
-                )
-                if blob_id is None:
+                if use_bad_pool and rng.random() < config.bad_photo_share:
+                    # Fail on the IMAGE. No reading to match, so take the next bad
+                    # frame round-robin and leave the cohort's weight alone.
+                    blob_id = _pool_blob_id(bad_index, config.bad_image_count, "bad", corpus)
+                    bad_index += 1
+                    bad_photos += 1
+                    from_bad_pool = True
+                    fails_on_photo = True
+                    pool_tag, pool_count = "bad", config.bad_image_count
+                    matched = True
+                else:
+                    # Fail (or pass) on the NUMBER: always a good, weight-matched photo.
+                    # from_bad_pool still carries "this visit should fail", which the
+                    # write-back below turns into a value that disagrees with the photo.
+                    pool_tag, pool_count = "good", config.good_image_count
+                    blob_id, _matched_reading = _nearest_blob(
+                        float(target),
+                        pool_count,
+                        pool_tag,
+                        corpus,
+                        config.readings,
+                        config.reading_match_tolerance,
+                    )
+                    matched = blob_id is not None
+                if not matched:
                     # The corpus has no photo showing anything near this weight.
                     # Leave the visit photo-less and count it -- a thin corpus must
                     # surface as a coverage gap, not as silently rewritten data.
@@ -204,6 +238,11 @@ def assign_visit_images(
             legacy_index += 1
             from_bad_pool = False
 
+        # A visit that fails on the IMAGE keeps the weight the cohort generated:
+        # there is nothing to disagree with, and rewriting it would quietly move a
+        # child off its own growth curve to no purpose. Tracked explicitly rather
+        # than inferred from "the bad pool has no reading", which is a property of
+        # the corpus and not something this code should rely on.
         filename = f"{corpus}_photo_{uuid.UUID(int=rng.getrandbits(128)).hex[:12]}.jpg"
         visit["images"] = [{"blob_id": blob_id, "name": filename}]
         _set_nested(visit["form_json"], config.question_path, filename)
@@ -212,7 +251,7 @@ def assign_visit_images(
         # DISAGREE with it (bad pool). Without this the reviewer compares a number
         # from an unrelated image against whatever the cohort happened to draw, and
         # every match/no-match verdict is an accident of the round-robin.
-        true_reading = config.readings.get(blob_id)
+        true_reading = None if fails_on_photo else config.readings.get(blob_id)
         if true_reading is not None and config.reading_path:
             entered = true_reading * config.bad_reading_factor if from_bad_pool else true_reading
             _set_nested(visit["form_json"], config.reading_path, round(entered, 3))
@@ -275,4 +314,5 @@ def assign_visit_images(
         "images_assigned": assigned,
         "reading_mismatches": mismatched,
         "unmatched_visits": unmatched,
+        "bad_photo_visits": bad_photos,
     }

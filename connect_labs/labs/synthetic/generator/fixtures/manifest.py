@@ -407,7 +407,7 @@ class ImageConfig(BaseModel):
     # resolves (``synth-<corpus>-good-007``) and the stock filename it maps to
     # (``<corpus>_good_007.jpg``). Defaults to "muac" so every existing manifest
     # keeps its exact prior behaviour.
-    corpus: str = Field(default="muac", pattern=r"^[a-z0-9]+$")
+    corpus: str = Field(default="muac", pattern=r"^[a-z0-9][a-z0-9-]*$")
     # Substring identifying the LEAF field whose presence makes a visit eligible
     # for a photo — a visit with no measurement has nothing to photograph.
     # Defaults to the corpus name, which is right for both "muac" and "scale"
@@ -455,6 +455,19 @@ class ImageConfig(BaseModel):
     # as "the same weight" is a property of the corpus and the scale's
     # granularity, not something this file can guess.
     reading_match_tolerance: float | None = Field(gt=0, default=None)
+    # Of the visits a per-FLW bad rate marks as SHOULD FAIL, the share that fail
+    # because the PHOTO is unusable rather than because the NUMBER is wrong.
+    #
+    # These are different defects and a demo usually wants both. The number case is
+    # the payment-integrity one -- a good photo of the right infant with a value that
+    # disagrees with it -- and it is the default because it is what the agreement
+    # reviewers were built to catch. The photo case fails on the image alone and
+    # leaves the cohort's own weight untouched, since a bad-pool frame has no reading
+    # to match against.
+    #
+    # Only consulted in weight-matched mode; without a tolerance the historical
+    # bad-pool round-robin applies unchanged.
+    bad_photo_share: float = Field(ge=0, le=1, default=0.0)
 
     @model_validator(mode="after")
     def _check_readings(self):
