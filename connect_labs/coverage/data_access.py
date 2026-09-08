@@ -12,6 +12,7 @@ import httpx
 from django.conf import settings
 
 from connect_labs.coverage.models import FLW, CoverageData, DeliveryUnit, ServiceArea
+from connect_labs.labs.integrations.commcare.api_client import is_cchq_oauth_active
 
 logger = logging.getLogger(__name__)
 
@@ -62,18 +63,20 @@ class CoverageDataAccess:
         if not self.commcare_domain:
             raise ValueError("CommCare domain not found in opportunity data")
 
-        if not self.commcare_access_token:
+        # Attempts a silent refresh via the stored refresh_token before
+        # reporting the token dead — a raw expires_at check (what this used
+        # to do inline) raised on a merely time-expired but refreshable
+        # token, forcing a needless re-authorize.
+        if not is_cchq_oauth_active(self.request):
             raise ValueError(
-                "CommCare OAuth not configured. Please authorize CommCare access at /labs/commcare/initiate/"
+                "CommCare OAuth not configured or expired. "
+                "Please authorize CommCare access at /labs/commcare/initiate/"
             )
-
-        # Check if token is expired
-        from django.utils import timezone
-
-        expires_at = self.commcare_oauth.get("expires_at", 0)
-        if timezone.now().timestamp() >= expires_at:
-            logger.warning(f"CommCare OAuth token expired (expired at {expires_at})")
-            raise ValueError("CommCare OAuth token has expired. Please re-authorize at /labs/commcare/initiate/")
+        # A successful refresh mutates the SESSION in place; our copies below
+        # (captured in __init__) would otherwise still hold the stale,
+        # now-invalid pre-refresh token.
+        self.commcare_oauth = self.request.session.get("commcare_oauth", {})
+        self.commcare_access_token = self.commcare_oauth.get("access_token")
 
         return opp_data
 

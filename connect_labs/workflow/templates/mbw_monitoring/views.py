@@ -33,7 +33,9 @@ from django.views.generic import TemplateView
 from connect_labs.labs.analysis.data_access import fetch_flw_names
 from connect_labs.labs.analysis.pipeline import AnalysisPipeline
 from connect_labs.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, BaseSSEStreamView, send_sse_event
-from connect_labs.labs.integrations.commcare.api_client import CommCareDataAccess
+from connect_labs.labs.integrations.commcare.api_client import CommCareDataAccess, is_cchq_oauth_active
+from connect_labs.labs.integrations.connect.oauth import is_connect_oauth_active
+from connect_labs.labs.integrations.ocs.api_client import is_ocs_oauth_active
 from connect_labs.workflow.data_access import WorkflowDataAccess
 from connect_labs.workflow.templates.mbw_monitoring.data_fetchers import (
     _get_cache_config,
@@ -212,12 +214,11 @@ class MBWMonitoringDashboardView(LoginRequiredMixin, TemplateView):
         labs_oauth = self.request.session.get("labs_oauth", {})
         context["has_oauth"] = bool(labs_oauth.get("access_token"))
 
-        commcare_oauth = self.request.session.get("commcare_oauth", {})
-        commcare_expires_at = commcare_oauth.get("expires_at", 0)
-        commcare_oauth_active = bool(
-            commcare_oauth.get("access_token") and timezone.now().timestamp() < commcare_expires_at
-        )
-        context["commcare_oauth_active"] = commcare_oauth_active
+        # Attempts a silent refresh via the stored refresh_token before
+        # reporting the token dead — a raw expires_at check (what this used
+        # to do inline) reported a merely time-expired but refreshable token
+        # as disconnected, forcing a needless re-authorize banner.
+        context["commcare_oauth_active"] = is_cchq_oauth_active(self.request)
 
         # Build CommCare authorize URL with ?next= pointing back here
         current_path = self.request.get_full_path()
@@ -1380,28 +1381,28 @@ class MBWOAuthStatusView(LoginRequiredMixin, View):
     """Return current OAuth token status for Connect, CommCare HQ, and OCS."""
 
     def get(self, request):
-        now_ts = timezone.now().timestamp()
         next_url = request.GET.get("next", request.get_full_path())
         # Sanitize: only allow safe internal paths
         next_url = (next_url or "").replace("\\", "/")
         if not url_has_allowed_host_and_scheme(next_url, allowed_hosts=None):
             next_url = request.get_full_path()
 
-        labs = request.session.get("labs_oauth", {})
-        cchq = request.session.get("commcare_oauth", {})
-        ocs = request.session.get("ocs_oauth", {})
-
+        # Each *_active check attempts a silent refresh via the stored
+        # refresh_token before reporting the session dead — a raw expires_at
+        # check (what this used to do inline) reported a merely time-expired
+        # but refreshable token as disconnected, forcing a needless
+        # re-authorize banner on this dashboard.
         return JsonResponse(
             {
                 "connect": {
-                    "active": bool(labs.get("access_token") and now_ts < labs.get("expires_at", 0)),
+                    "active": is_connect_oauth_active(request),
                 },
                 "commcare": {
-                    "active": bool(cchq.get("access_token") and now_ts < cchq.get("expires_at", 0)),
+                    "active": is_cchq_oauth_active(request),
                     "authorize_url": reverse("labs:commcare_initiate") + "?" + urlencode({"next": next_url}),
                 },
                 "ocs": {
-                    "active": bool(ocs.get("access_token") and now_ts < ocs.get("expires_at", 0)),
+                    "active": is_ocs_oauth_active(request),
                     "authorize_url": reverse("labs:ocs_initiate") + "?" + urlencode({"next": next_url}),
                 },
             }
