@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import logging
 import random
 import uuid
@@ -122,6 +123,24 @@ def _nearest_blob(
     return best_id, best_reading
 
 
+def resolve_reading_path(form_json: dict, reading_paths: list[str]) -> str | None:
+    """The first configured path this visit actually holds a NUMBER at.
+
+    Returns None when none of them resolve, which is a config/form-shape problem
+    and must not be confused with a thin corpus (#1602). Booleans are rejected
+    explicitly -- `isinstance(True, int)` is True in Python and a checkbox is not
+    a weight.
+
+    Resolution is per-VISIT and the caller writes back to the path it returns, so
+    a cohort is never read from one field and written to another.
+    """
+    for path in reading_paths:
+        value = _get_nested(form_json, path)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return path
+    return None
+
+
 def assign_visit_images(
     visits: list[dict[str, Any]],
     config: ImageConfig,
@@ -162,7 +181,7 @@ def assign_visit_images(
     # pool has no ground truth to match against. Guarded on reading_path too so a
     # partial config degrades to the old behaviour rather than crashing (#1558).
     match_weight = bool(
-        use_pools and config.reading_match_tolerance is not None and config.readings and config.reading_path
+        use_pools and config.reading_match_tolerance is not None and config.readings and config.reading_paths
     )
     legacy_count = config.stock_image_count
     eligible = assigned = mismatched = unmatched = bad_photos = no_reading_value = 0
@@ -184,9 +203,28 @@ def assign_visit_images(
     except cm.CorpusManifestError:
         bands = {}
 
+    reading_paths = config.reading_paths
+    paths_used: collections.Counter[str] = collections.Counter()
     for visit in visits:
         fj = visit.get("form_json") or {}
-        if not _has_measurement(fj, field_match):
+        # When reading paths are configured they ARE the eligibility test: a
+        # visit is photographable exactly when it holds a value to pair a photo
+        # with. Deriving it from the same resolution the reading uses is what
+        # makes "eligible but unreadable" impossible rather than merely reported
+        # (#1602). The field-name match remains for corpora with no ground truth
+        # (MUAC), where there is no value to resolve and the reviewer judges the
+        # picture alone.
+        resolved_path = resolve_reading_path(fj, reading_paths) if reading_paths else None
+        if resolved_path:
+            paths_used[resolved_path] += 1
+        if reading_paths:
+            if resolved_path is None:
+                if _has_measurement(fj, field_match):
+                    # Named like the measurement, but nothing numeric at any
+                    # configured path. Counted so a misconfigured path is loud.
+                    no_reading_value += 1
+                continue
+        elif not _has_measurement(fj, field_match):
             continue
         eligible += 1
         if rng.random() > config.probability:
@@ -224,7 +262,7 @@ def assign_visit_images(
                 #   bad PHOTO (bad_photo_share) -- an unreadable frame from the bad pool.
                 #       Nothing to match on, so the cohort's own weight is left intact;
                 #       the visit fails on the image, not the arithmetic.
-                target = _get_nested(fj, config.reading_path)
+                target = _get_nested(fj, resolved_path) if resolved_path else None
                 if not isinstance(target, (int, float)) or isinstance(target, bool):
                     # No usable cohort value to match against. Skipping is the
                     # honest outcome: attaching a photo here would reintroduce the
@@ -292,13 +330,14 @@ def assign_visit_images(
         # from an unrelated image against whatever the cohort happened to draw, and
         # every match/no-match verdict is an accident of the round-robin.
         true_reading = None if fails_on_photo else config.readings.get(blob_id)
-        if true_reading is not None and config.reading_path:
+        write_path = resolved_path or (reading_paths[0] if reading_paths else None)
+        if true_reading is not None and write_path:
             entered = (
                 failing_value(true_reading, blob_id, bands, config.bad_reading_factor)
                 if from_bad_pool
                 else true_reading
             )
-            _set_nested(visit["form_json"], config.reading_path, round(entered, 3))
+            _set_nested(visit["form_json"], write_path, round(entered, 3))
             if from_bad_pool:
                 mismatched += 1
         assigned += 1
@@ -377,5 +416,11 @@ def assign_visit_images(
         "reading_mismatches": mismatched,
         "unmatched_visits": unmatched,
         "no_reading_value_visits": no_reading_value,
+        # Which path this cohort actually keeps its measurement at. Showcase
+        # visits are BUILT from scratch, so they have nothing to resolve against
+        # and would otherwise default to reading_paths[0] -- which, for a cohort
+        # using the second candidate, puts the demo cases in a different field
+        # from the population an audit reads (#1602).
+        "resolved_reading_path": (paths_used.most_common(1)[0][0] if paths_used else None),
         "bad_photo_visits": bad_photos,
     }
