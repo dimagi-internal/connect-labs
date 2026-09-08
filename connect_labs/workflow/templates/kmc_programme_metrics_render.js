@@ -2364,6 +2364,14 @@ function WorkflowUI({
               generated_at: new Date().toISOString(),
             }
           : null,
+      // The display contract the numbers below were graded with. The render reads
+      // `frozen.cMeasures` and nothing wrote it, so a frozen run fetched the
+      // CURRENT catalog instead -- meaning a later change to a band threshold
+      // would silently re-grade a published snapshot, and a green chip could turn
+      // red with no edit to the run. A snapshot is "the numbers as published",
+      // which has to include what published them. Also makes a frozen run
+      // genuinely zero-query rather than one cheap call away from it.
+      cMeasures: cSeries.measures || [],
       programInd: programInd,
       byLLO: byLLO.map(function (l) {
         return {
