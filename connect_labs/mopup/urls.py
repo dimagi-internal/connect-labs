@@ -29,13 +29,4 @@ urlpatterns = [
         views.MopupCreatePlanView.as_view(),
         name="create_plan",
     ),
-    # TEMPORARY — diagnostic only, remove after the entity_id-null investigation
-    # is resolved. Calls fetch_cchq_cases_as_visit_dicts directly, bypassing the
-    # SQL cache/query layers entirely, so we can see the raw normalized case
-    # dict exactly as this app's own Celery task would receive it.
-    path(
-        "program/<int:program_id>/debug_raw_case/",
-        views.MopupDebugRawCaseView.as_view(),
-        name="debug_raw_case",
-    ),
 ]
