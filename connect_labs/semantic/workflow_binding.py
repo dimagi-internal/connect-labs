@@ -63,7 +63,7 @@ def resolve_registry_for(definition, registry_access_factory=None, registry_id_o
     return props_doc, full_registry, llo_map, settings, source
 
 
-def build_evaluate_inputs(definition, pipeline_access) -> tuple[Any, dict[str, Any] | None]:
+def build_evaluate_inputs(definition, pipeline_access_factory) -> tuple[Any, dict[str, Any] | None]:
     """Return `(pipeline_config, extra_fields)` for `semantic.runtime.evaluate`.
 
     The ENTITY pipeline is the one Layer 1 is generated from — it carries the fallback
@@ -78,17 +78,23 @@ def build_evaluate_inputs(definition, pipeline_access) -> tuple[Any, dict[str, A
     """
     sources = getattr(definition, "pipeline_sources", None) or []
     entity_source = next((s for s in sources if s.get("alias") == "children"), None)
+    # Checked BEFORE any data access is constructed. Constructing one needs an OAuth
+    # token, so doing it first turns "this workflow has no entity pipeline" — a
+    # reportable 400 — into a 500 about credentials.
     if not entity_source:
         raise SemanticBindingError("workflow has no entity pipeline source (alias 'children')")
 
+    pipeline_access = pipeline_access_factory()
     try:
         pipeline_def = pipeline_access.get_definition(entity_source["pipeline_id"])
     except Exception as exc:
+        pipeline_access.close()
         raise SemanticBindingError(
             f"entity pipeline {entity_source['pipeline_id']} could not be read ({type(exc).__name__})"
         ) from exc
 
     if not pipeline_def or not pipeline_def.schema:
+        pipeline_access.close()
         raise SemanticBindingError("entity pipeline has no schema")
 
     try:
@@ -109,5 +115,7 @@ def build_evaluate_inputs(definition, pipeline_access) -> tuple[Any, dict[str, A
         raise
     except Exception as exc:
         raise SemanticBindingError(f"entity pipeline schema is not usable ({type(exc).__name__}): {exc}") from exc
+    finally:
+        pipeline_access.close()
 
     return pipeline_config, extra_fields

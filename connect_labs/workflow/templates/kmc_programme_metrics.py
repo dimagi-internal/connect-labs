@@ -567,11 +567,9 @@ def build_snapshot(*, pipelines, state, opportunity_id, **context):
         if definition is None:
             raise RuntimeError(f"workflow {definition_id} could not be read")
 
-        pipeline_access = PipelineDataAccess(request=request, access_token=access_token)
-        try:
-            pipeline_config, extra_fields = build_evaluate_inputs(definition, pipeline_access)
-        finally:
-            pipeline_access.close()
+        pipeline_config, extra_fields = build_evaluate_inputs(
+            definition, lambda: PipelineDataAccess(request=request, access_token=access_token)
+        )
 
         # The registry this WORKFLOW is bound to, not a hardcoded one. That binding is
         # the point of registries-as-records: indicators become editable without a
