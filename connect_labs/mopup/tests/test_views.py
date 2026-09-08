@@ -123,6 +123,80 @@ def test_program_opportunities_returns_empty_for_unknown_program(monkeypatch):
     assert _program_opportunities(object(), 217) == []
 
 
+# --- MopupProgramHomeView ----------------------------------------------------
+#
+# Real gap, surfaced by the user this session: /mopup/program/<id>/ 404'd
+# (no bare-program route existed — only setup/, ward_list/, create_run/, and
+# run/<id>/...), unlike microplans' ProgramWorkspaceView at the equivalent
+# path. This is the fix: a landing page listing existing runs + a link into
+# Phase 1 for a new one.
+
+
+def test_program_home_requires_login(client):
+    resp = client.get(reverse("mopup:program_home", kwargs={"program_id": 217}))
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_program_home_lists_runs_with_resolved_opportunity_names(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    import connect_labs.mopup.views as views_module
+    from connect_labs.mopup.core.models import STATUS_ANALYSIS, MopupRunRecord
+
+    monkeypatch.setattr(
+        views_module,
+        "_program_opportunities",
+        lambda request, program_id: [{"id": 2154, "name": "CHC - NG - JHF - RCT - AUG 26", "program": 217}],
+    )
+
+    class FakeDA:
+        def __init__(self, program_id, *a, **k):
+            pass
+
+        def list_runs(self):
+            return [
+                MopupRunRecord(
+                    {
+                        "id": 19187,
+                        "experiment": "217",
+                        "type": "mopup_run",
+                        "opportunity_id": None,
+                        "program_id": 217,
+                        "data": {
+                            "status": STATUS_ANALYSIS,
+                            "name": "CHC Mop-up",
+                            "target_opportunity_id": 2154,
+                            "created_at": "2026-09-08T06:00:00+00:00",
+                        },
+                    }
+                )
+            ]
+
+    monkeypatch.setattr(views_module, "MopupRunDataAccess", FakeDA)
+    resp = client.get(reverse("mopup:program_home", kwargs={"program_id": 217}))
+    assert resp.status_code == 200
+    assert b"CHC - NG - JHF - RCT - AUG 26" in resp.content
+    assert b"analysis" in resp.content.lower()
+
+
+def test_program_home_shows_empty_state_with_no_runs(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    import connect_labs.mopup.views as views_module
+
+    monkeypatch.setattr(views_module, "_program_opportunities", lambda request, program_id: [])
+
+    class FakeDA:
+        def __init__(self, program_id, *a, **k):
+            pass
+
+        def list_runs(self):
+            return []
+
+    monkeypatch.setattr(views_module, "MopupRunDataAccess", FakeDA)
+    resp = client.get(reverse("mopup:program_home", kwargs={"program_id": 217}))
+    assert resp.status_code == 200
+    assert b"No mop-up runs yet" in resp.content
+
+
 # --- MopupSetupView ---------------------------------------------------------
 
 
