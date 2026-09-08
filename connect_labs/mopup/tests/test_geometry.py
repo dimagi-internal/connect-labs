@@ -26,8 +26,10 @@ class _FakeResult:
 class _FakePipeline:
     def __init__(self, rows):
         self._rows = rows
+        self.last_config = None
 
     def stream_analysis_ignore_events(self, config, opportunity_id):
+        self.last_config = config
         return _FakeResult(self._rows)
 
 
@@ -35,6 +37,13 @@ class TestFetchWorkAreaGeometry:
     def test_requires_request_or_pipeline(self):
         with pytest.raises(ValueError, match="request.*pipeline"):
             fetch_work_area_geometry(1)
+
+    def test_sets_pipeline_id_for_raw_cache_isolation(self):
+        # See the identical test/comment in test_work_areas.py — same
+        # pipeline_id=None cache-clobbering bug, same fix.
+        pipeline = _FakePipeline([])
+        fetch_work_area_geometry(1, pipeline=pipeline)
+        assert pipeline.last_config.pipeline_id == 12971
 
     def test_row_with_none_computed_does_not_crash(self):
         # A real case hit against production data (program 217, opportunity
