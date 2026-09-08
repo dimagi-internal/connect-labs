@@ -68,6 +68,17 @@ def list_work_areas(
             FieldComputation(name=name, path=path, aggregation="first") for name, path in _CASE_PROPERTY_PATHS.items()
         ]
         + [FieldComputation(name="owner_id", path=_OWNER_ID_PATH, aggregation="first")],
+        # Real production bug, found live this session: leaving this unset
+        # makes this ad-hoc config share ONE raw-visit-cache slot per
+        # opportunity with every other ad-hoc caller (list_approved_visits,
+        # fetch_work_area_geometry included) — each one's wholesale
+        # DELETE+INSERT clobbers whatever the others just wrote, exactly the
+        # `AnalysisPipelineConfig.pipeline_id` docstring's own documented
+        # "issue #116" pattern. 12965 is the existing, already-correct "CHC
+        # Work Areas" pipeline definition for this exact case_type/fields
+        # shape — reusing its id gives this ad-hoc config its own isolated
+        # cache slot without duplicating a saved pipeline record.
+        pipeline_id=12965,
     )
     result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
     work_areas = []

@@ -155,6 +155,10 @@ def _work_area_ids_for_ward(pipeline, opportunity_id: int, ward: str, lga: str, 
             FieldComputation(name="lga", path="case.properties.lga", aggregation="first"),
             FieldComputation(name="state", path="case.properties.state", aggregation="first"),
         ],
+        # Same pipeline_id=None cache-clobbering bug documented in
+        # core/work_areas.py/core/visits.py/core/geometry.py — reuse the
+        # existing "CHC Work Areas" pipeline's id for cache isolation.
+        pipeline_id=12965,
     )
     result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
     n_ward, n_lga, n_state = _norm(ward), _norm(lga), _norm(state)
@@ -189,6 +193,10 @@ def _hsd_registered_children_count(pipeline, opportunity_id: int, wa_ids: set[st
             FieldComputation(name="wa_case_id", paths=WA_CASE_ID_PATHS, aggregation="first"),
             FieldComputation(name="child_case_id", path=_CHILD_CASE_ID_PATH, aggregation="first"),
         ],
+        # Same pipeline_id=None cache-clobbering bug documented in
+        # core/work_areas.py/core/visits.py/core/geometry.py — reuse the
+        # existing "CHC Approved Visits" pipeline's id for cache isolation.
+        pipeline_id=12968,
     )
     result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
     children: set[str] = set()
