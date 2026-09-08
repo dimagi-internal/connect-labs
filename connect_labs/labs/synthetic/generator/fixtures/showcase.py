@@ -34,13 +34,21 @@ class ShowcaseError(Exception):
     """A showcase case names something the corpus does not contain."""
 
 
-def _stable_entity_id(name: str) -> str:
-    """A case id derived from the name, so re-running produces the same case.
+def _stable_entity_id(name: str, opportunity_id: int) -> str:
+    """A case id derived from the name AND the opportunity.
 
-    A random uuid per run would break the one thing a showcase case is for:
-    being able to hand someone a link, or find the case again next week.
+    Stable across runs, so a link handed to someone still resolves next week —
+    that is the whole point of a designated case, and a random uuid per run
+    would defeat it.
+
+    Salted by opportunity because the same showcase block is applied to every
+    clone in a cohort. Keyed on the name alone, one demo case would carry ONE
+    id across all eleven KMC opportunities, and anything grouping by entity_id
+    across the programme — which is exactly what the cross-opp growth-curve
+    work does — would see four infants with ~40 visits spread over ten sites in
+    three countries. That reads as data corruption, not as a demo.
     """
-    digest = hashlib.sha256(name.encode()).digest()[:16]
+    digest = hashlib.sha256(f"{opportunity_id}:{name}".encode()).digest()[:16]
     return str(uuid.UUID(bytes=digest))
 
 
@@ -122,7 +130,7 @@ def _build_case(
             f"which corpus {config.corpus!r} does not carry. Available: {sorted(series)}"
         )
 
-    entity_id = _stable_entity_id(case.name)
+    entity_id = _stable_entity_id(case.name, opportunity_id)
     out: list[dict[str, Any]] = []
 
     for i, point in enumerate(points):
@@ -149,7 +157,7 @@ def _build_case(
         out.append(
             {
                 "id": int.from_bytes(hashlib.sha256(f"{case.name}:{i}".encode()).digest()[:7], "big"),
-                "xform_id": _stable_entity_id(f"{case.name}:xform:{i}"),
+                "xform_id": _stable_entity_id(f"{case.name}:xform:{i}", opportunity_id),
                 "opportunity_id": opportunity_id,
                 "username": case.flw,
                 "deliver_unit": str(deliver_unit_id) if deliver_unit_id is not None else "",
