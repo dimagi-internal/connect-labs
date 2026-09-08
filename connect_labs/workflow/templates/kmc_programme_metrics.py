@@ -495,3 +495,103 @@ TEMPLATE = {
         {"alias": "visits", "name": "KMC Weight Series", "schema": WEIGHT_SERIES_SCHEMA},
     ],
 }
+
+
+def build_snapshot(*, pipelines, state, opportunity_id, **context):
+    """Server-side snapshot, so a saved run needs no browser.
+
+    Before this, the only thing that could produce a KMC snapshot was the render:
+    an agent could create a run over the API and not complete it, which is the
+    opposite of what the workflow framework is for. Numbers come from the same
+    `evaluate()` the live dashboard calls, through the same binding
+    (semantic/workflow_binding.py), so frozen and live cannot disagree about a value.
+
+    Falls back to whatever the render staged into `state["frozen"]` when a live
+    evaluation is not possible — a caller that already has a good snapshot should
+    never be punished for our inability to recompute one.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    staged = (state or {}).get("frozen")
+
+    definition_id = context.get("definition_id")
+    opportunity_ids = [int(o) for o in (context.get("opportunity_ids") or [opportunity_id])]
+    request = context.get("request")
+    access_token = context.get("access_token")
+
+    try:
+        from connect_labs.semantic.runtime import evaluate, filter_to_series, measure_catalog, resolve_registry
+        from connect_labs.semantic.workflow_binding import build_evaluate_inputs
+        from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
+        from connect_labs.workflow.templates import kmc_snapshot
+
+        wda = WorkflowDataAccess(request=request, access_token=access_token)
+        try:
+            definition = wda.get_definition(definition_id)
+        finally:
+            wda.close()
+        if definition is None:
+            raise RuntimeError(f"workflow {definition_id} could not be read")
+
+        pipeline_access = PipelineDataAccess(request=request, access_token=access_token)
+        try:
+            pipeline_config, extra_fields = build_evaluate_inputs(definition, pipeline_access)
+        finally:
+            pipeline_access.close()
+
+        props_doc, full_registry, llo_map, reg_settings = resolve_registry({"name": "kmc"})
+        # Every scope the frozen render can drill to. ONE pass: GROUPING SETS exist
+        # precisely because per-scope calls re-run the whole Layer 1 extraction.
+        scopes = [
+            "programme",
+            "llo",
+            "opportunity",
+            "flw",
+            "month",
+            "llo_month",
+            "opportunity_month",
+        ]
+        rows = evaluate(
+            pipeline_config,
+            opportunity_ids,
+            extra_fields=extra_fields,
+            registry_documents=(props_doc, full_registry),
+            series="C",
+            scopes=scopes,
+            scope=scopes[0],
+            llo_map=llo_map or None,
+            settings=reg_settings or None,
+        )
+        measures = measure_catalog(filter_to_series(full_registry, "C"))
+        llo_by_opp = {int(k): v for k, v in (llo_map or {}).items()}
+        cases = kmc_snapshot.case_rows(pipelines, llo_by_opp)
+        visits = ((pipelines or {}).get("visits") or {}).get("rows") or []
+
+        return {
+            "frozen": kmc_snapshot.build(
+                rows=rows,
+                measures=measures,
+                llo_map=llo_by_opp,
+                credible_sets={
+                    "C14": (reg_settings or {}).get("mortality_recording_credible") or {},
+                    "C18": (reg_settings or {}).get("completion_recording_credible") or {},
+                    "C22": (reg_settings or {}).get("completion_recording_credible") or {},
+                },
+                cases=cases,
+                meta={
+                    "cases": len(cases),
+                    "visits": len(visits),
+                    "opportunities": len(opportunity_ids),
+                    "llos": len({c.get("llo") for c in cases if c.get("llo")}),
+                },
+            )
+        }
+    except Exception:
+        if staged:
+            # The render already computed a good one; recomputing is an optimisation,
+            # not a precondition.
+            logger.warning("kmc_programme_metrics: live snapshot failed; keeping the staged one", exc_info=True)
+            return {"frozen": staged}
+        raise
