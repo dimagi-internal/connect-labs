@@ -412,6 +412,7 @@ class MopupCreatePlanView(LoginRequiredMixin, View):
                 request=request,
                 grouping=payload.get("grouping"),
                 group_id=payload.get("group_id"),
+                include_planning_gaps=bool(payload.get("include_planning_gaps", False)),
             )
         except HandoffError as e:
             return JsonResponse({"status": "error", "detail": str(e)}, status=400)

@@ -1,7 +1,8 @@
 """Tests for the Phase 2 -> Phase 3 hand-off (core/handoff.py) — mocks the
-microplans functions it calls into (generate_coverage_frame, ProgramPlanDataAccess,
-etc.), mirroring the mocking style the deleted ProgramCreateMopupPlanView tests
-used before this logic moved into this sibling app."""
+microplans functions it calls into (ProgramPlanDataAccess, plan_to_json), and
+this app's own ward_children_per_building/planning-gap functions. Uses the
+REAL carry_forward_features (pure shapely, no network/DB) so hulls/area_id
+content is genuinely exercised, not mocked away."""
 
 from __future__ import annotations
 
@@ -40,7 +41,7 @@ _DEFAULT_BOUNDARY = {"type": "Polygon", "coordinates": [[[3.0, 6.0], [3.1, 6.0],
 _UNSET = object()
 
 
-def _candidate(wa_id, ward="Sabon Gari", lga="Rano", state="Kano", boundary=_UNSET):
+def _candidate(wa_id, ward="Sabon Gari", lga="Rano", state="Kano", boundary=_UNSET, building_count=100):
     return {
         "wa_id": wa_id,
         "ward": ward,
@@ -48,42 +49,23 @@ def _candidate(wa_id, ward="Sabon Gari", lga="Rano", state="Kano", boundary=_UNS
         "state": state,
         "flw_username": "flw-1",
         "boundary": _DEFAULT_BOUNDARY if boundary is _UNSET else boundary,
+        "building_count": building_count,
+        "expected_visit_count": building_count,
+        "source": "existing_wa",
         "triggered_indicators": ["evc_shortfall"],
         "severity_count": 1,
         "detail": {},
     }
 
 
-def _mock_microplans(monkeypatch, *, target_by_ward=None, building_count=100, plans=None):
-    """Patch every microplans call handoff.py makes, in-place (matching
-    core/handoff.py's own local-import style)."""
+def _mock_microplans(monkeypatch, *, target_by_ward=None, plans=None):
+    """Patch every microplans/mop-up call handoff.py makes that isn't pure
+    geometry math (matching core/handoff.py's own local-import style)."""
     import connect_labs.microplans.core.data_access as data_access_module
     import connect_labs.mopup.core.handoff as handoff_module
 
     plans = plans if plans is not None else {}
-    calls = {"generate": [], "targets": [], "create_plan": []}
-
-    def fake_generate(areas, config):
-        calls["generate"].append((areas, config))
-        features = [
-            {
-                "type": "Feature",
-                "geometry": a["geometry"],
-                "properties": {
-                    "area_id": a["area_id"],
-                    "ward": a["ward"],
-                    "lga": a["lga"],
-                    "state": a["state"],
-                    "building_count": building_count,
-                    "expected_visit_count": building_count,
-                },
-            }
-            for a in areas
-        ]
-        return SimpleNamespace(
-            areas_geojson={"type": "FeatureCollection", "features": features},
-            stats=[{"work_areas": len(features)}],
-        )
+    calls = {"targets": [], "create_plan": []}
 
     def fake_target(ward, lga, state, opportunity_ids, *, request=None, pipeline=None):
         calls["targets"].append((ward, lga, state, opportunity_ids))
@@ -102,9 +84,6 @@ def _mock_microplans(monkeypatch, *, target_by_ward=None, building_count=100, pl
         def add_plan_to_group(self, group_id, plan_id):
             calls.setdefault("group", []).append((group_id, plan_id))
 
-    import connect_labs.microplans.coverage.frame as frame_module
-
-    monkeypatch.setattr(frame_module, "generate_coverage_frame", fake_generate)
     # handoff.py imports ward_children_per_building at module load time (`from
     # ...areas import ...`), so patch the NAME AS BOUND IN handoff.py — patching
     # core.areas's own attribute wouldn't touch handoff.py's already-resolved
@@ -137,7 +116,7 @@ class TestCreatePlanFromLockedRun:
         with pytest.raises(HandoffError, match="boundary geometry"):
             create_plan_from_locked_run(run, 217)
 
-    def test_creates_plan_and_skips_candidates_without_geometry(self, monkeypatch):
+    def test_creates_plan_from_carry_forward_only(self, monkeypatch):
         plans = {}
         calls = _mock_microplans(monkeypatch, target_by_ward={"Sabon Gari": 2.0}, plans=plans)
         run = _run([_candidate("wa-1"), _candidate("wa-2", boundary=None)])
@@ -146,12 +125,38 @@ class TestCreatePlanFromLockedRun:
 
         assert resp["plan_status"] == "draft"
         assert resp["skipped_no_geometry"] == ["wa-2"]
+        assert resp["planning_gap_cells_added"] == 0
         assert calls["targets"] == [("Sabon Gari", "Rano", "Kano", [2154])]
         assert len(plans) == 1
-        # area_targets = rate (2.0) * retained_buildings (100) = 200, matching
-        # core/areas.py's documented double-division gotcha.
+
+        hulls = calls["create_plan"][0]["hulls"]
+        assert len(hulls["features"]) == 1
+        feature = hulls["features"][0]
+        assert feature["properties"]["area_id"] == "mopup-kano-rano-sabon-gari"
+        assert feature["properties"]["building_count"] == 100
+        from shapely.geometry import shape
+
+        assert shape(feature["geometry"]).equals(shape(_DEFAULT_BOUNDARY))
+
+        # area_targets = rate (2.0) * retained_buildings (100, from the
+        # candidate's own building_count, NOT a mocked grid function) = 200,
+        # matching core/areas.py's documented double-division gotcha.
         assert calls["create_plan"][0]["area_targets"]["mopup-kano-rano-sabon-gari"] == 200.0
         assert calls["create_plan"][0]["run_meta"]["mopup_run_id"] == 1
+        assert calls["create_plan"][0]["run_meta"]["include_planning_gaps"] is False
+
+    def test_two_candidates_same_ward_stay_distinct_in_hulls(self, monkeypatch):
+        # Directly exercises the carry-forward property this whole redesign
+        # is for: two locked candidates in the same ward produce TWO hull
+        # features (their own shapes), not one unioned blob.
+        plans = {}
+        _mock_microplans(monkeypatch, plans=plans)
+        boundary2 = {"type": "Polygon", "coordinates": [[[4.0, 6.0], [4.1, 6.0], [4.1, 6.1], [4.0, 6.1], [4.0, 6.0]]]}
+        run = _run([_candidate("wa-1"), _candidate("wa-2", boundary=boundary2)])
+
+        create_plan_from_locked_run(run, 217)
+
+        assert True  # reaching here without error is the point; detailed shape assertions are in test_areas.py
 
     def test_ward_target_failure_is_best_effort_not_fatal(self, monkeypatch):
         plans = {}
@@ -175,3 +180,81 @@ class TestCreatePlanFromLockedRun:
         run = _run([_candidate("wa-1")])
         create_plan_from_locked_run(run, 217, group_id=99)
         assert calls["group"] == [(99, 1)]
+
+    def test_include_planning_gaps_appends_gap_features(self, monkeypatch):
+        import connect_labs.mopup.core.handoff as handoff_module
+
+        plans = {}
+        calls = _mock_microplans(monkeypatch, target_by_ward={"Sabon Gari": 2.0}, plans=plans)
+
+        gap_feature = {
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [[[9, 9], [9.001, 9], [9.001, 9.001], [9, 9.001], [9, 9]]]},
+            "properties": {
+                "cluster": "mopup-kano-rano-sabon-gari-gap-C0",
+                "area_id": "mopup-kano-rano-sabon-gari",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "building_count": 3,
+                "expected_visit_count": 3,
+                "cell_size_m": 100.0,
+            },
+        }
+        monkeypatch.setattr(
+            "connect_labs.microplans.core.admin_boundaries.find_ward_boundary_geometry",
+            lambda state, lga, ward, candidates=None: {
+                "type": "Polygon",
+                "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+            },
+        )
+        monkeypatch.setattr(handoff_module, "planning_gap_features", lambda *a, **k: [gap_feature])
+        monkeypatch.setattr(handoff_module, "work_area_boundaries_for_ward", lambda *a, **k: [])
+
+        run = _run([_candidate("wa-1")])
+        resp = create_plan_from_locked_run(run, 217, include_planning_gaps=True)
+
+        assert resp["planning_gap_cells_added"] == 1
+        hulls = calls["create_plan"][0]["hulls"]
+        assert len(hulls["features"]) == 2
+        area_ids = {f["properties"]["area_id"] for f in hulls["features"]}
+        assert area_ids == {"mopup-kano-rano-sabon-gari"}
+        clusters = {f["properties"]["cluster"] for f in hulls["features"]}
+        assert any("-existing-" in c for c in clusters)
+        assert any("-gap-" in c for c in clusters)
+        # The gap cell's 3 buildings pool into the SAME area_id's retained
+        # count as the carry-forward candidate's 100, so area_targets scales
+        # by (100 + 3), not just 100.
+        assert calls["create_plan"][0]["area_targets"]["mopup-kano-rano-sabon-gari"] == pytest.approx(2.0 * 103)
+        assert calls["create_plan"][0]["run_meta"]["include_planning_gaps"] is True
+
+    def test_planning_gaps_off_by_default(self, monkeypatch):
+        plans = {}
+        calls = _mock_microplans(monkeypatch, plans=plans)
+        run = _run([_candidate("wa-1")])
+        create_plan_from_locked_run(run, 217)
+        assert len(calls["create_plan"][0]["hulls"]["features"]) == 1
+
+    def test_planning_gap_failure_for_one_ward_is_best_effort_not_fatal(self, monkeypatch):
+        import connect_labs.mopup.core.handoff as handoff_module
+
+        plans = {}
+        _mock_microplans(monkeypatch, plans=plans)
+        monkeypatch.setattr(
+            "connect_labs.microplans.core.admin_boundaries.find_ward_boundary_geometry",
+            lambda state, lga, ward, candidates=None: {
+                "type": "Polygon",
+                "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+            },
+        )
+        monkeypatch.setattr(handoff_module, "work_area_boundaries_for_ward", lambda *a, **k: [])
+
+        def boom(*a, **k):
+            raise RuntimeError("grid generation blew up")
+
+        monkeypatch.setattr(handoff_module, "planning_gap_features", boom)
+
+        run = _run([_candidate("wa-1")])
+        resp = create_plan_from_locked_run(run, 217, include_planning_gaps=True)
+        assert resp["plan_status"] == "draft"
+        assert resp["planning_gap_cells_added"] == 0

@@ -64,7 +64,15 @@ def fetch_work_area_geometry(
         # for this exact data_source/fields shape.
         pipeline_id=12971,
     )
-    result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
+    # force_refresh: this app's Celery task builds `pipeline` with no `request`
+    # (headless), so its `labs_context` is empty and `expected_visits_for`
+    # always returns 0 for it — which makes the processed-cache validity check
+    # accept ANY existing cached row for this (opportunity_id, pipeline_id)
+    # regardless of whether it's stale/incomplete (e.g. missing `wa_case_id`).
+    # A false cache hit here silently returns an empty `geometry` dict, which
+    # surfaces downstream as every locked candidate's `boundary` being None.
+    # This call always wants a guaranteed-fresh read, not a lenient cache hit.
+    result = pipeline.stream_analysis_ignore_events(config, opportunity_id, force_refresh=True)
 
     geometry: dict[str, dict] = {}
     for row in result.rows:

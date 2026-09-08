@@ -355,6 +355,7 @@ class AnalysisPipeline:
         self,
         config: AnalysisPipelineConfig,
         opportunity_id: int | None = None,
+        force_refresh: bool = False,
     ) -> FLWAnalysisResult | VisitAnalysisResult | EntityAnalysisResult:
         """
         Run analysis synchronously, ignoring progress events.
@@ -368,11 +369,17 @@ class AnalysisPipeline:
         Args:
             config: Analysis configuration
             opportunity_id: Opportunity ID (defaults to labs_context)
+            force_refresh: Bypass the processed-result cache. A `request=None`
+                (headless) pipeline has no `?refresh=1` query string to derive
+                this from, so a caller that genuinely needs a guaranteed-fresh
+                read (e.g. one whose `expected_count` validation is otherwise
+                too lenient to catch a stale cache row) must pass this
+                explicitly.
 
         Returns:
             FLWAnalysisResult or VisitAnalysisResult based on config.terminal_stage
         """
-        for event_type, data in self.stream_analysis(config, opportunity_id):
+        for event_type, data in self.stream_analysis(config, opportunity_id, force_refresh=force_refresh):
             if event_type == EVENT_RESULT:
                 return data
             elif event_type == EVENT_ERROR:
@@ -495,6 +502,7 @@ class AnalysisPipeline:
         self,
         config: AnalysisPipelineConfig,
         opportunity_id: int | None = None,
+        force_refresh: bool = False,
     ) -> Generator[tuple[str, Any], None, None]:
         """
         Stream analysis pipeline with progress events.
@@ -518,8 +526,9 @@ class AnalysisPipeline:
         Args:
             config: Analysis configuration
             opportunity_id: Opportunity ID (defaults to labs_context)
+            force_refresh: See `stream_analysis_ignore_events`'s docstring.
         """
-        for event_type, payload in self._stream_analysis_inner(config, opportunity_id):
+        for event_type, payload in self._stream_analysis_inner(config, opportunity_id, force_refresh=force_refresh):
             if event_type == EVENT_RESULT and getattr(self, "_raw_fetch_anomaly", None):
                 payload.metadata["raw_fetch_anomaly"] = self._raw_fetch_anomaly
             yield (event_type, payload)
@@ -528,6 +537,7 @@ class AnalysisPipeline:
         self,
         config: AnalysisPipelineConfig,
         opportunity_id: int | None = None,
+        force_refresh: bool = False,
     ) -> Generator[tuple[str, Any], None, None]:
         """Implementation behind `stream_analysis` — see that method for the
         public contract. Split out only so the wrapper above can attach
@@ -538,7 +548,7 @@ class AnalysisPipeline:
             yield (EVENT_ERROR, {"message": "No opportunity_id provided"})
             return
 
-        force_refresh = self.request is not None and self.request.GET.get("refresh") == "1"
+        force_refresh = force_refresh or (self.request is not None and self.request.GET.get("refresh") == "1")
         accept_low_count = self.request is not None and self.request.GET.get("accept_low_count") == "1"
         terminal_stage = config.terminal_stage
 
