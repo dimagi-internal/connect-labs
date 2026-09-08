@@ -38,6 +38,14 @@ opportunity_ids: [523, 524, 675, 874, 938, 1234, 1236, 1487, 1488, 1739, 1790]
 image_config:
   corpus: kmc-scale
   measurement_field_match: weight
+  # These are the generator's dot paths. The AUDIT names the same fields WITHOUT
+  # the `form.` prefix and with slashes, because extract_images_with_question_ids
+  # unwraps form_json["form"] before building the id, and data_access matches
+  # image_path by exact equality. So an audit over this data is configured with:
+  #   image_path       anthropometric/upload_weight_image
+  #   comparison_field anthropometric/child_weight_visit
+  # A `form/` prefix silently yields an audit with no images and no error.
+  # Pinned by tests/test_showcase_audit_paths.py.
   question_path: form.anthropometric.upload_weight_image
   reading_path: form.anthropometric.child_weight_visit
   probability: 0.0
