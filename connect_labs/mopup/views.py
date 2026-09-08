@@ -513,11 +513,55 @@ class MopupDebugRawCaseView(LoginRequiredMixin, View):
         except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
             raw_cache_stage = {"error": f"{type(e).__name__}: {e}"}
 
+        # Stage 4: the actual generated SQL text for this exact config, so we
+        # can see how many times `entity_id` appears in the SELECT list (a
+        # duplicate alias would let a later NULL-valued column silently
+        # overwrite the correct base-column value when the cursor rows are
+        # zipped into a dict by column name).
+        sql_text = ""
+        try:
+            from connect_labs.labs.analysis.backends.sql.query_builder import generate_sql_preview
+
+            preview = generate_sql_preview(config, opportunity_id)
+            sql_text = preview.get("visit_extraction_sql", "")
+            sql_stage_4 = {
+                "entity_id_occurrences": sql_text.count("entity_id"),
+                "visit_extraction_sql": sql_text,
+            }
+        except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
+            sql_stage_4 = {"error": f"{type(e).__name__}: {e}"}
+
+        # Stage 5: execute the EXACT generated SQL directly via a raw cursor,
+        # for one specific visit_id we already know (from stage 4/raw_cache_db_stage)
+        # has a correctly-stored, non-empty entity_id — bypassing
+        # execute_visit_extraction's dict-building entirely, to see the
+        # cursor's own positional tuple and description for that row.
+        try:
+            from django.db import connection
+
+            known_id = raw_cache_stage.get("sample_entity_ids", [None])[0]
+            cursor_stage = {"probed_visit_id": known_id}
+            if known_id and sql_text:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT visit_id, entity_id FROM labs_raw_visit_cache "
+                        "WHERE opportunity_id = %s AND pipeline_id = %s AND visit_id = %s",
+                        [opportunity_id, 999999999, known_id],
+                    )
+                    desc = [c[0] for c in cursor.description]
+                    fetched = cursor.fetchall()
+                cursor_stage["description"] = desc
+                cursor_stage["rows"] = fetched
+        except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
+            cursor_stage = {"error": f"{type(e).__name__}: {e}"}
+
         return JsonResponse(
             {
                 "status": "ok",
                 "raw_fetch_stage": raw_stage,
                 "sql_roundtrip_stage": sql_stage,
                 "raw_cache_db_stage": raw_cache_stage,
+                "sql_preview_stage": sql_stage_4,
+                "cursor_probe_stage": cursor_stage,
             }
         )
