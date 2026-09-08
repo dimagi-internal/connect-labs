@@ -24,8 +24,10 @@ class _FakeResult:
 class _FakePipeline:
     def __init__(self, rows):
         self._rows = rows
+        self.last_config = None
 
     def stream_analysis_ignore_events(self, config, opportunity_id):
+        self.last_config = config
         return _FakeResult(self._rows)
 
 
@@ -33,6 +35,19 @@ class TestListWorkAreas:
     def test_requires_request_or_pipeline(self):
         with pytest.raises(ValueError, match="request.*pipeline"):
             list_work_areas(1)
+
+    def test_sets_pipeline_id_for_raw_cache_isolation(self):
+        # Real production bug, found live this session: leaving pipeline_id
+        # unset makes every ad-hoc config in this app (this one,
+        # list_approved_visits, fetch_work_area_geometry) share ONE raw-visit
+        # -cache slot per opportunity, so each one's wholesale DELETE+INSERT
+        # clobbers whatever the others just wrote — exactly the
+        # AnalysisPipelineConfig.pipeline_id docstring's documented "issue
+        # #116" pattern. Confirmed live: every work area's case id (wa_id)
+        # came back null once a second ad-hoc fetch had run in between.
+        pipeline = _FakePipeline([])
+        list_work_areas(1, pipeline=pipeline)
+        assert pipeline.last_config.pipeline_id == 12965
 
     def test_row_with_none_computed_does_not_crash(self):
         # A real case hit against production data (program 217, opportunity

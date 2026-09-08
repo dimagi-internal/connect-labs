@@ -99,8 +99,10 @@ class _FakePipeline:
     def __init__(self, work_area_rows_by_opp, visit_rows_by_opp):
         self._wa = work_area_rows_by_opp
         self._visits = visit_rows_by_opp
+        self.last_configs = []
 
     def stream_analysis_ignore_events(self, config, opportunity_id):
+        self.last_configs.append(config)
         if config.data_source.type == "cchq_cases":
             return _FakeResult(self._wa.get(opportunity_id, []))
         return _FakeResult(self._visits.get(opportunity_id, []))
@@ -143,6 +145,15 @@ class TestWardChildrenPerBuilding:
         rate = ward_children_per_building("Sabon Gari", "Rano", "Kano", [1], pipeline=pipeline)
         # 2 distinct children (A, B) / 10 buildings
         assert rate == pytest.approx(0.2)
+
+        # Same pipeline_id=None cache-clobbering bug documented in
+        # core/work_areas.py/core/visits.py/core/geometry.py — the two
+        # internal queries here (work-area lookup, HSD visit lookup) need
+        # their own isolated raw-cache slots too.
+        wa_config = next(c for c in pipeline.last_configs if c.data_source.type == "cchq_cases")
+        visit_config = next(c for c in pipeline.last_configs if c.data_source.type == "connect_csv")
+        assert wa_config.pipeline_id == 12965
+        assert visit_config.pipeline_id == 12968
 
     def test_no_matching_work_areas_contributes_zero_children(self, monkeypatch):
         pipeline = _FakePipeline({1: []}, {1: []})

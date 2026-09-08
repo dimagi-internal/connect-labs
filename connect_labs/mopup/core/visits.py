@@ -61,6 +61,18 @@ def list_approved_visits(
             FieldComputation(name="muac", path=_MUAC_PATH, aggregation="first"),
             FieldComputation(name="vaccination", path=_VACCINATION_PATH, aggregation="first"),
         ],
+        # Real production bug, found live this session: without this, this
+        # ad-hoc config shares ONE raw-visit-cache slot per opportunity with
+        # every other ad-hoc caller in this app (list_work_areas,
+        # fetch_work_area_geometry included) — whichever runs last within
+        # one build_evaluation_input call wholesale-clobbers what the others
+        # just wrote, exactly the `AnalysisPipelineConfig.pipeline_id`
+        # docstring's own documented "issue #116" pattern (confirmed live:
+        # every work area's case id came back null, and concurrent fetches
+        # raised a "Concurrent write to ComputedVisitCache" IntegrityError).
+        # 12968 is the existing "CHC Approved Visits" pipeline definition
+        # for this exact data_source/filter/field shape.
+        pipeline_id=12968,
     )
     result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
     visits = []
