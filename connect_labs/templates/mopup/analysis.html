@@ -148,7 +148,16 @@
       </button>
       <p class="text-xs text-gray-500 mt-1">Freezes the current set — thresholds stop mattering after this <span class="info-icon" tabindex="0" data-tip="Freezes the current candidate set. Nothing past this point re-reads live thresholds.">ⓘ</span></p>
     </div>
-    <button type="button" id="create-plan" class="button primary-dark" {% if run.status != "locked" %}disabled{% endif %}>Create mop-up plan</button>
+    <div>
+      <button type="button" id="create-plan" class="button primary-dark" {% if run.status != "locked" %}disabled{% endif %}>Create mop-up plan</button>
+      <p class="text-xs text-gray-500 mt-1">
+        <label class="inline-flex items-center gap-1 cursor-pointer">
+          <input type="checkbox" id="include-planning-gaps">
+          Include planning gaps (new work areas for uncovered buildings)
+          <span class="info-icon" tabindex="0" data-tip="For each ward in the locked set, also grids buildings never covered by any existing work area into brand-new work areas. Generated automatically, not individually reviewable in this version.">ⓘ</span>
+        </label>
+      </p>
+    </div>
   </section>
 
   </div>

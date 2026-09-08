@@ -27,9 +27,11 @@ class _FakePipeline:
     def __init__(self, rows):
         self._rows = rows
         self.last_config = None
+        self.last_force_refresh = None
 
-    def stream_analysis_ignore_events(self, config, opportunity_id):
+    def stream_analysis_ignore_events(self, config, opportunity_id, force_refresh=False):
         self.last_config = config
+        self.last_force_refresh = force_refresh
         return _FakeResult(self._rows)
 
 
@@ -44,6 +46,16 @@ class TestFetchWorkAreaGeometry:
         pipeline = _FakePipeline([])
         fetch_work_area_geometry(1, pipeline=pipeline)
         assert pipeline.last_config.pipeline_id == 12971
+
+    def test_forces_refresh_to_bypass_lenient_headless_cache_check(self):
+        # A request=None (headless, e.g. Celery-task) pipeline has an empty
+        # labs_context, which makes expected_visits_for always return 0 for
+        # it — making the processed-cache validity check accept ANY existing
+        # cached row regardless of staleness/completeness. force_refresh=True
+        # is this call's only way to guarantee a fresh read.
+        pipeline = _FakePipeline([])
+        fetch_work_area_geometry(1, pipeline=pipeline)
+        assert pipeline.last_force_refresh is True
 
     def test_row_with_none_computed_does_not_crash(self):
         # A real case hit against production data (program 217, opportunity

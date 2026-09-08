@@ -819,7 +819,7 @@ def test_create_plan_calls_handoff_and_returns_its_response(client, django_user_
 
     calls = []
 
-    def fake_handoff(run_arg, program_id, *, request=None, grouping=None, group_id=None):
+    def fake_handoff(run_arg, program_id, *, request=None, grouping=None, group_id=None, include_planning_gaps=False):
         calls.append((run_arg.id, program_id, grouping, group_id))
         return {"plan_id": 42, "plan_status": "draft", "urls": {"review": "/microplans/program/217/plan/42/review/"}}
 
@@ -834,6 +834,40 @@ def test_create_plan_calls_handoff_and_returns_its_response(client, django_user_
     assert body["status"] == "ok"
     assert body["plan_id"] == 42
     assert calls == [(1, 217, None, 7)]
+
+
+def test_create_plan_passes_include_planning_gaps_through(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    from connect_labs.mopup.core.models import STATUS_LOCKED
+
+    run = _seed_run(runs)
+    run.data["status"] = STATUS_LOCKED
+    run.data["candidate_work_areas"] = [{"wa_id": "wa-1"}]
+
+    import connect_labs.mopup.views as views_module
+
+    calls = []
+
+    def fake_handoff(run_arg, program_id, *, request=None, grouping=None, group_id=None, include_planning_gaps=False):
+        calls.append(include_planning_gaps)
+        return {"plan_id": 42, "plan_status": "draft", "urls": {}}
+
+    monkeypatch.setattr(views_module, "create_plan_from_locked_run", fake_handoff)
+
+    client.post(
+        reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"include_planning_gaps": True}),
+        content_type="application/json",
+    )
+    assert calls == [True]
+
+    client.post(
+        reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({}),
+        content_type="application/json",
+    )
+    assert calls == [True, False]
 
 
 def test_create_plan_handoff_error_is_400(client, django_user_model, monkeypatch):

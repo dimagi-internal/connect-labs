@@ -267,6 +267,20 @@ class TestEvaluateRun:
         assert candidates[0]["triggered_indicators"] == [ind.EVC_SHORTFALL]
         assert candidates[0]["severity_count"] == 1
 
+    def test_candidate_carries_building_count_and_source_for_phase_3(self):
+        # Phase 3's carry_forward_features needs building_count/
+        # expected_visit_count/source on every candidate without a second
+        # lookup — see evaluate_run's docstring.
+        was = [_wa("a", approved_hsd_count=1, expected_visit_count=10, building_count=7, boundary={"type": "Point"})]
+        candidates = ind.evaluate_run(
+            was, {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_WA_ONLY}}
+        )
+        assert len(candidates) == 1
+        assert candidates[0]["building_count"] == 7
+        assert candidates[0]["expected_visit_count"] == 10
+        assert candidates[0]["source"] == ind.SOURCE_EXISTING_WA
+        assert candidates[0]["boundary"] == {"type": "Point"}
+
     def test_passing_wa_is_excluded_entirely(self):
         was = [_wa("a", approved_hsd_count=9, expected_visit_count=10)]  # 0.9, not below 0.5
         candidates = ind.evaluate_run(

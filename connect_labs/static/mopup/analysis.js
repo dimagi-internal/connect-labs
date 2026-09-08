@@ -273,14 +273,18 @@ window.MopupAnalysis = (function () {
           'Content-Type': 'application/json',
           'X-CSRFToken': CFG.csrfToken,
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          include_planning_gaps: $('include-planning-gaps').checked,
+        }),
       });
       const data = await resp.json();
       if (!resp.ok || data.status !== 'ok') {
         $('status').textContent = data.detail || 'Failed to create plan.';
         return;
       }
-      $('status').textContent = 'Plan created — opening review…';
+      $('status').textContent = data.planning_gap_cells_added
+        ? `Plan created (${data.planning_gap_cells_added} planning-gap work area(s) added) — opening review…`
+        : 'Plan created — opening review…';
       if (data.urls && data.urls.review)
         window.location.href = data.urls.review;
     } catch (e) {
