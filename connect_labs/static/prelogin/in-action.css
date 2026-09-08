@@ -81,8 +81,8 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
-.on-dark h1 em,
-.on-dark h2 em {
+.cia .on-dark h1 em,
+.cia .on-dark h2 em {
   background: var(--grad-text-on-dark);
   -webkit-background-clip: text;
   background-clip: text;
@@ -93,48 +93,16 @@
   margin: 0 auto;
   padding: 0 clamp(20px, 4vw, 40px);
 }
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-:where(a[href], button):focus-visible {
+.cia :where(a[href], button):focus-visible {
   outline: 2px solid var(--indigo);
   outline-offset: 3px;
   border-radius: 4px;
 }
-.on-dark :where(a[href], button):focus-visible {
+.cia .on-dark :where(a[href], button):focus-visible {
   outline-color: var(--sky);
 }
 
-.eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--indigo);
-  margin: 0 0 20px;
-}
-.eyebrow::before {
-  content: '';
-  width: 26px;
-  height: 1px;
-  background: currentColor;
-}
-.eyebrow.on-dark {
-  color: var(--on-dark-secondary);
-}
-
-.btn {
+.cia .btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -153,20 +121,23 @@
     color 0.2s,
     border-color 0.2s;
 }
-.cia-btn-ghost-on-dark {
+/* Each variant is qualified with .btn so it outranks the base rule on
+   specificity rather than on source order, which the generated stylesheet
+   cannot rely on once every selector is scoped. */
+.btn.cia-btn-ghost-on-dark {
   color: #fff;
   border-color: rgba(255, 255, 255, 0.32);
 }
-.cia-btn-ghost-on-dark:hover {
+.btn.cia-btn-ghost-on-dark:hover {
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.5);
 }
-.cia-btn-white {
+.btn.cia-btn-white {
   background: #fff;
   color: var(--indigo);
   border-color: rgba(255, 255, 255, 0.6);
 }
-.cia-btn-white:hover {
+.btn.cia-btn-white:hover {
   color: var(--indigo-deep);
   transform: translateY(-1px);
   box-shadow: 0 8px 24px rgba(10, 6, 32, 0.18);
@@ -238,7 +209,7 @@
   );
 }
 
-/* ══════════ HERO ══════════ */
+/* &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; HERO &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; */
 .cia-hero {
   position: relative;
   overflow: hidden;
@@ -418,7 +389,7 @@
   }
 }
 
-/* ══════════ LOCATOR, INSET, DESKTOP MOCK ══════════ */
+/* &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; LOCATOR, INSET, DESKTOP MOCK &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; */
 .cia-locator {
   position: relative;
 }
@@ -607,30 +578,46 @@
 }
 .cia-desk-screen {
   position: relative;
-  background: linear-gradient(#33344f, #14152a);
-  border-radius: 16px;
-  padding: 9px 9px 24px;
+  /* Three bands rather than two: a lit top edge, the body, and a chin that
+     catches a little less light, which is what makes an enclosure read as
+     moulded rather than as a filled rectangle. */
+  background: linear-gradient(#3c3d59 0, #23243c 6%, #15162b 82%, #1d1e35 100%);
+  border-radius: 14px;
+  padding: 8px 8px 26px;
   box-shadow:
-    0 32px 62px -34px rgba(4, 2, 26, 0.8),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.55);
+    0 38px 70px -38px rgba(4, 2, 26, 0.82),
+    0 4px 12px -6px rgba(4, 2, 26, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 1px 0 0 rgba(255, 255, 255, 0.07),
+    inset -1px 0 0 rgba(255, 255, 255, 0.07),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
 }
+/* The brand notch on the chin. */
 .cia-desk-screen::after {
   content: '';
   position: absolute;
   left: 50%;
-  bottom: 9px;
+  bottom: 10px;
   transform: translateX(-50%);
-  width: 32px;
-  height: 4px;
+  width: 30px;
+  height: 3px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.3),
+    rgba(255, 255, 255, 0.06)
+  );
 }
+/* The glass is recessed into the bezel, so its edge sits in shadow. */
 .cia-desk-screen > .cia-inner {
   position: relative;
   background: var(--paper-2);
-  border-radius: 5px;
+  border-radius: 4px;
   overflow: hidden;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    inset 0 1px 4px rgba(0, 0, 0, 0.28);
 }
 .cia-desk-screen > .cia-inner::after {
   content: '';
@@ -639,9 +626,9 @@
   pointer-events: none;
   background: linear-gradient(
     112deg,
-    rgba(255, 255, 255, 0.2) 0,
-    rgba(255, 255, 255, 0.07) 26%,
-    rgba(255, 255, 255, 0) 47%
+    rgba(255, 255, 255, 0.16) 0,
+    rgba(255, 255, 255, 0.05) 26%,
+    rgba(255, 255, 255, 0) 46%
   );
 }
 .cia-desk-bar {
@@ -663,6 +650,10 @@
 }
 .cia-desk-bar span {
   margin-left: 8px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--line);
   font-family: var(--mono);
   font-size: 10px;
   color: var(--muted);
@@ -681,18 +672,27 @@
 }
 /* The platform's own screen: brand mark on Connect indigo, nothing else. */
 .cia-desk-brand {
+  position: relative;
   display: grid;
   place-content: center;
   justify-items: center;
   height: clamp(206px, 23vw, 296px);
-  background: linear-gradient(
-    148deg,
-    var(--indigo-deep) 0%,
-    var(--indigo) 58%,
-    #5a65e8 100%
-  );
+  /* A soft light behind the mark, over the brand gradient, so the screen has
+     some depth rather than reading as a flat swatch. */
+  background: radial-gradient(
+      58% 62% at 50% 46%,
+      rgba(255, 255, 255, 0.16) 0,
+      rgba(255, 255, 255, 0) 68%
+    ),
+    linear-gradient(
+      148deg,
+      var(--indigo-deep) 0%,
+      var(--indigo) 58%,
+      #5a65e8 100%
+    );
 }
 .cia-desk-brand svg {
+  position: relative;
   height: clamp(44px, 5.6vw, 82px);
   width: auto;
   color: #fff;
@@ -700,48 +700,64 @@
 /* Without this the caption falls back to the browser default and outsizes
    every other caption on the page. */
 .cia-desk figcaption {
-  padding: 13px 2px 0;
+  padding: 15px 2px 0;
   font-size: 12.5px;
   color: var(--muted);
   line-height: 1.5;
   max-width: 62ch;
+  margin-inline: auto;
+  text-align: center;
+}
+/* The screen settles into its full size as it comes up the page: it arrives a
+   little small and is at its true size by the time it is read. The maximum is
+   its own laid-out box, so it can never reach over what is beside or below it,
+   and the 1600px capture is legible at rest without any hovering. */
+.cia-desk--grow {
+  transform: scale(var(--g, 1));
+  transform-origin: center top;
+  will-change: transform;
 }
 .cia-desk-neck {
-  height: 22px;
-  width: 15%;
+  height: 24px;
+  width: 14%;
   margin: 0 auto;
-  background: linear-gradient(90deg, #c3c7dd, #e9eaf4 42%, #c3c7dd);
-  clip-path: polygon(20% 0, 80% 0, 100% 100%, 0 100%);
+  background: linear-gradient(
+    90deg,
+    #b6bad3 0,
+    #e9eaf4 38%,
+    #f6f7fc 46%,
+    #c3c7dd 100%
+  );
+  clip-path: polygon(22% 0, 78% 0, 100% 100%, 0 100%);
 }
 .cia-desk-foot {
-  height: 10px;
+  position: relative;
+  height: 11px;
   width: 31%;
   margin: 0 auto;
-  background: linear-gradient(#d6d9e8, #f0f1f9);
-  border-radius: 3px 3px 7px 7px;
-  box-shadow: 0 16px 24px -16px rgba(10, 6, 32, 0.55);
+  background: linear-gradient(#d6d9e8, #f2f3fa 55%, #c9cde1);
+  border-radius: 3px 3px 8px 8px;
+}
+/* A contact shadow, so the machine is standing on something. */
+.cia-desk-foot::after {
+  content: '';
+  position: absolute;
+  left: -24%;
+  right: -24%;
+  top: 100%;
+  height: 22px;
+  background: radial-gradient(
+    50% 100% at 50% 0,
+    rgba(10, 6, 32, 0.34) 0,
+    rgba(10, 6, 32, 0) 72%
+  );
 }
 
 /* &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; TIMELINE &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; */
 .cia-timeline {
   background: var(--ground);
-  padding: clamp(58px, 7vw, 104px) 0 clamp(64px, 8vw, 112px);
+  padding: clamp(58px, 7vw, 104px) 0 clamp(46px, 5vw, 76px);
 }
-.cia-tl-head {
-  max-width: 820px;
-  margin: 0 auto clamp(22px, 2.6vw, 36px);
-  text-align: center;
-}
-.cia-tl-head h2 {
-  font-size: var(--fs-h2);
-}
-.cia-tl-head p {
-  font-size: var(--fs-lede);
-  color: var(--ink-3);
-  margin: 22px 0 0;
-  max-width: 60ch;
-}
-
 .cia-tl-layout {
   display: grid;
   grid-template-columns: 132px 1fr;
@@ -831,107 +847,6 @@
   background: var(--c-note);
 }
 
-/* Two sides of the marketplace; Connect is the line between them, not a column */
-/* A legend, not a pair of thumbnails: two named sides with the platform mark
-   between them. Photographs at 46px were unreadable and read as noise. */
-.cia-sides-bar {
-  position: sticky;
-  top: var(--hdr-h);
-  z-index: 30;
-  background: var(--ground);
-  border-bottom: 1px solid var(--line);
-  box-shadow: 0 12px 20px -18px rgba(10, 6, 32, 0.5);
-}
-.cia-sides {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: clamp(12px, 3vw, 44px);
-  padding: 11px 0 10px;
-}
-.cia-side {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  opacity: 0.48;
-  transition: opacity 0.45s ease;
-}
-.cia-side.cia-right {
-  flex-direction: row-reverse;
-  justify-content: flex-start;
-  padding-right: 2px;
-}
-.cia-side .cia-thumb {
-  width: 52px;
-  height: 52px;
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-}
-.cia-side .cia-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-.cia-side .cia-sn {
-  font-family: var(--mono);
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.cia-side.cia-left .cia-sn {
-  color: var(--c-fund);
-}
-.cia-side.cia-right .cia-sn {
-  color: var(--c-front);
-}
-.cia-side.cia-mid {
-  justify-content: center;
-}
-.cia-sides-mark {
-  height: 38px;
-  width: auto;
-  color: var(--c-conn);
-  display: block;
-}
-/* Whichever party the thread has reached steps forward. */
-.cia-sides[data-active='fund'] .cia-side.cia-left,
-.cia-sides[data-active='conn'] .cia-side.cia-mid,
-.cia-sides[data-active='front'] .cia-side.cia-right,
-.cia-sides[data-active='note'] .cia-side.cia-mid {
-  opacity: 1;
-}
-.cia-side .cia-thumb img {
-  filter: grayscale(1);
-  opacity: 0.75;
-  transition:
-    filter 0.45s ease,
-    opacity 0.45s ease;
-}
-.cia-sides[data-active='fund'] .cia-side.cia-left .cia-thumb img,
-.cia-sides[data-active='front'] .cia-side.cia-right .cia-thumb img {
-  filter: none;
-  opacity: 1;
-}
-.cia-sides-mark {
-  filter: grayscale(1);
-  opacity: 0.75;
-  transition:
-    filter 0.45s ease,
-    opacity 0.45s ease;
-}
-.cia-sides[data-active='conn'] .cia-sides-mark,
-.cia-sides[data-active='note'] .cia-sides-mark {
-  filter: none;
-  opacity: 1;
-}
 .cia-tl-body {
   position: relative;
   margin-top: 0;
@@ -963,6 +878,25 @@
   stroke: url(#cia-ribbon-grad);
   stroke-width: 4;
   stroke-linecap: round;
+}
+/* The rail between the three badges: a row of dots rather than a stroke, so it
+   links them without competing with the thread that arrives at Connect. It
+   carries each party's colour at its own end, so the rail itself says who is
+   being connected. The halo underneath keeps the thread from showing through. */
+.cia-tie-halo {
+  fill: none;
+  stroke: var(--ground);
+  stroke-width: 9;
+  stroke-linecap: round;
+  transition: opacity 0.7s ease;
+}
+.cia-tie {
+  fill: none;
+  stroke: var(--c-conn);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-dasharray: 0 10;
+  transition: opacity 0.7s ease;
 }
 #cia-ribbon-head {
   opacity: 0;
@@ -1102,53 +1036,16 @@
 .cia-rows > * {
   min-width: 0;
 }
-[data-row='1'] {
-  grid-row: 1;
-}
-[data-row='2'] {
-  grid-row: 2;
-}
-[data-row='3'] {
-  grid-row: 3;
-}
-[data-row='4'] {
-  grid-row: 4;
-}
-[data-row='5'] {
-  grid-row: 5;
-}
-[data-row='6'] {
-  grid-row: 6;
-}
-[data-row='7'] {
-  grid-row: 7;
-}
-[data-row='8'] {
-  grid-row: 8;
-}
-[data-row='9'] {
-  grid-row: 9;
-}
-[data-row='10'] {
-  grid-row: 10;
-}
-[data-row='11'] {
-  grid-row: 11;
-}
-[data-row='12'] {
-  grid-row: 12;
-}
-[data-row='12'] {
-  grid-row: 12;
-}
-[data-row='13'] {
-  grid-row: 13;
-}
 
 .cia-beat,
 .cia-pair,
 .cia-shot {
   margin-bottom: clamp(74px, 8vw, 148px);
+}
+/* Nothing follows the last block, so the full beat-to-beat gap would just be
+   dead space before the closing band. Leave room for the thread's end mark. */
+.cia-rows > *:last-child {
+  margin-bottom: clamp(34px, 4vw, 64px);
 }
 /* One elevation, used once. The lane reads off the coloured edge rather than a
    badge, so a row is identifiable before any of it is read. */
@@ -1270,9 +1167,6 @@
   position: relative;
   z-index: 2;
 }
-.cia-shot img {
-  border-radius: 10px;
-}
 .cia-shot--ui {
   background: var(--paper-2);
   border: 1px solid var(--line);
@@ -1280,16 +1174,29 @@
   overflow: hidden;
   box-shadow: 0 24px 54px -44px rgba(10, 6, 32, 0.6);
 }
+.cia-shot img {
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
 .cia-shot--ui img {
   border-radius: 0;
 }
-.cia-shot--narrow {
-  max-width: 640px;
-  margin-inline: auto;
-}
+/* The captured strip stops mid-sentence, which reads as a broken image. Fade
+   its foot into the frame so it reads as a page continuing past the crop. */
 .cia-shot--thumb {
-  max-width: 270px;
-  margin-right: auto;
+  position: relative;
+}
+.cia-shot--thumb::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 1px;
+  height: 58px;
+  pointer-events: none;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: linear-gradient(rgba(247, 248, 252, 0), var(--paper-2));
 }
 .cia-shot--thumb figcaption {
   padding: 11px 14px 13px;
@@ -1305,16 +1212,22 @@
 .cia-shot--thumb .cia-shot-bar span {
   font-size: 10px;
 }
-.cia-shot img {
-  width: 100%;
-  height: auto;
-}
 .cia-shot figcaption {
-  padding: 13px 2px 0;
+  padding: 15px 2px 0;
   font-size: 12.5px;
   color: var(--muted);
   line-height: 1.5;
   max-width: 62ch;
+  margin-inline: auto;
+  text-align: center;
+}
+.cia-shot:not(.cia-shot--ui) figcaption {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  padding: 15px 10px 2px;
+  background: var(--ground);
+  border-radius: 8px;
 }
 .cia-shot--ui figcaption {
   padding: 14px 20px 16px;
@@ -1370,31 +1283,18 @@
 }
 /* Top-aligned row: let the photograph take the card's height exactly, so both
    edges line up however long the card's copy runs. */
-.cia-pair--top {
-  align-items: stretch;
+/* The screen carries a dense capture and the card beside it carries the
+   longest copy on the page, so this row gives the screen the larger share and
+   starts both at the same line rather than centring one against the other. */
+/* Three badges and two arcs stand above a hub row, so it needs clear air over
+   it rather than the standard beat-to-beat gap. */
+.cia-rows > [data-bridge] {
+  margin-top: clamp(40px, 5vw, 86px);
 }
-.cia-pair--top > .cia-shot {
-  display: flex;
-  flex-direction: column;
-}
-/* The image is taken out of flow inside a flexible frame, so it contributes no
-   intrinsic height to the grid row. The card alone sets the height and the
-   photograph fills it, leaving no dead space under either one. */
-.cia-pair--top > .cia-shot .cia-fill {
-  position: relative;
-  display: block;
-  flex: 1 1 0;
-  min-height: 240px;
-  border-radius: 10px;
-  overflow: hidden;
-}
-.cia-pair--top > .cia-shot .cia-fill img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 0;
+/* The "meanwhile" aside comments on the block above it rather than following
+   it, so it sits closer than a full beat-to-beat gap. */
+.cia-rows > [data-role='note'] {
+  margin-top: calc(-1 * clamp(28px, 4vw, 60px));
 }
 /* .cia-shot spans the full grid at row level; inside a pair it must take just its
    own half, or it drops onto a line of its own below the card. */
@@ -1402,10 +1302,6 @@
 .cia-pair > .cia-desk,
 .cia-pair > .cia-locator-card {
   grid-column: auto;
-  max-width: none;
-}
-/* ...except the citation thumb, which must stay small inside a pair. */
-.cia-pair > .cia-shot--thumb {
   max-width: none;
 }
 
@@ -1461,249 +1357,173 @@
 }
 .cia-fig-money .cia-for {
   font-size: 15px;
-  color: var(--ink-3);
-  line-height: 1.45;
-}
-.cia-memo {
-  margin: 22px 0 0;
-  padding: 22px 0 0 0;
-  border-top: 1px solid var(--line);
-  display: grid;
-  gap: 13px;
-}
-.cia-memo li {
-  list-style: none;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 12px;
-  align-items: baseline;
-  font-size: 14.5px;
-  color: var(--ink-3);
-  line-height: 1.45;
-}
-.cia-memo li span {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  color: var(--c-conn);
-  padding-top: 2px;
-}
-/* Where the money went. Two quiet lines under the figure, sized to match the
-   group labels in the outcomes card. */
-.cia-allot {
-  margin: 22px 0 0;
-  padding-left: clamp(0px, 2vw, 26px);
-  display: grid;
-  gap: 6px;
-}
-.cia-allot div {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-}
-.cia-allot dt {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
   color: var(--c-fund);
-  font-variant-numeric: tabular-nums;
-  min-width: 3.4ch;
-}
-.cia-allot div:last-child dt {
-  color: var(--muted);
-}
-.cia-allot dd {
-  margin: 0;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
-  line-height: 1.5;
-}
-.cia-chips {
-  display: grid;
-  gap: 10px;
-  margin: 24px 0 0;
-  padding: 0;
-}
-.cia-chips li {
-  list-style: none;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 12px;
-  font-size: 13.5px;
-  color: var(--ink-3);
+  font-weight: 500;
   line-height: 1.45;
+  white-space: nowrap;
+}
+/* The one full-width block on the page: the money, followed left to right from
+   what went in to what came out. It gets the whole measure because both sides
+   of the story arrive at it. */
+.cia-beat--wide {
+  grid-column: 1/-1;
+}
+/* Both sides of the story arrive here, so the card's edge carries all three
+   colours rather than picking one. */
+.cia-beat.cia-beat--wide::before {
+  background: linear-gradient(
+    180deg,
+    var(--c-fund),
+    var(--c-conn) 52%,
+    var(--c-front)
+  );
+}
+/* The only full-width block on the page, over a symmetric row of stages: the
+   head sits centred above it rather than pinned to a long empty line. */
+.cia-wide-head {
+  max-width: 640px;
+  margin-inline: auto;
+  text-align: center;
+}
+/* The money narrowing into an outcome: the stages run across, and each one
+   closes in a little from the top and bottom, so the shape carries the
+   argument even though the last stage is the loudest. */
+.cia-funnel {
+  list-style: none;
+  margin: 30px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1.28fr 1.76fr 1.14fr 1.12fr;
+  gap: 0 28px;
+  align-items: stretch;
+}
+.cia-fstage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  min-width: 0;
   background: var(--paper-warm);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 11px 15px;
+  border-radius: 12px;
+  padding: 18px 18px 20px;
 }
-.cia-chips svg {
-  width: 17px;
-  height: 17px;
-  fill: none;
-  stroke: var(--c-front);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.cia-fstage:nth-child(3) {
+  margin-block: 19px;
 }
-/* A quote set inside a card, distinct from the full dark quote panels. */
-.cia-card-quote {
-  margin: 26px 0 0;
-  padding: 24px 0 0;
-  border-top: 1px solid var(--line);
+.cia-fstage:nth-child(4) {
+  margin-block: 38px;
 }
-.cia-card-quote p {
-  margin: 0;
-  font-size: 15.5px;
-  line-height: 1.6;
-  color: var(--ink-2);
-  font-weight: 300;
-  font-style: italic;
+/* A chevron in the gap, pointing at the next stage. */
+.cia-fstage + .cia-fstage::before {
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  border-right: 2px solid var(--muted);
+  border-top: 2px solid var(--muted);
+  transform: translateY(-50%) rotate(45deg);
 }
-.cia-card-quote p::before {
-  content: '\201C';
-}
-.cia-card-quote p::after {
-  content: '\201D';
-}
-.cia-card-quote cite {
+.cia-fstage .cia-n {
   display: block;
-  margin-top: 14px;
-  font-style: normal;
-  font-size: 12.5px;
-  color: var(--muted);
-  line-height: 1.45;
-}
-.cia-card-quote cite b {
-  display: block;
-  color: var(--ink);
+  font-size: clamp(26px, 2.5vw, 34px);
   font-weight: 600;
-  font-size: 13.5px;
-}
-.cia-live-count {
-  margin: 24px 0 0;
-  padding-top: 22px;
-  border-top: 1px solid var(--line);
-}
-.cia-live-count .cia-n {
-  font-family: var(--mono);
-  font-size: clamp(30px, 2.8vw, 42px);
-  font-weight: 500;
-  color: var(--c-conn);
-  letter-spacing: -0.025em;
+  color: var(--indigo-deep);
+  letter-spacing: -0.035em;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
-.cia-live-count .cia-lb {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-top: 8px;
-}
-.cia-stat-hero {
-  margin: 22px 0 0;
-  padding-top: 20px;
-  border-top: 1px solid var(--line);
-}
-/* The figure the card builds to, so it closes rather than trailing off. */
-.cia-stat-foot {
-  margin: 30px 0 0;
-  padding-top: 28px;
-  border-top: 2px solid var(--indigo-soft);
-}
-.cia-stat-foot .cia-n {
+.cia-fstage .cia-lb {
   display: block;
-  font-size: clamp(52px, 6.6vw, 92px);
-  font-weight: 600;
-  color: var(--indigo-deep);
-  letter-spacing: -0.05em;
-  line-height: 0.92;
-  font-variant-numeric: tabular-nums;
-}
-.cia-stat-foot .cia-lb {
-  display: block;
-  margin-top: 14px;
-  font-size: 16px;
+  margin-top: 9px;
+  font-size: 13.5px;
   color: var(--ink-3);
-  font-weight: 500;
-  line-height: 1.4;
-}
-.cia-stat-hero .cia-n {
-  display: block;
-  font-size: clamp(58px, 7.4vw, 104px);
-  font-weight: 600;
-  color: var(--indigo-deep);
-  letter-spacing: -0.05em;
-  line-height: 0.92;
-  font-variant-numeric: tabular-nums;
-}
-.cia-stat-hero .cia-lb {
-  display: block;
-  margin-top: 14px;
-  font-size: 16px;
-  color: var(--ink-3);
-  font-weight: 500;
-  line-height: 1.4;
-}
-/* One column for the figures so the digits stack, whatever their width. */
-.cia-outcome {
-  list-style: none;
-  margin: 26px 0 0;
-  padding: 24px 0 0;
-  border-top: 1px solid var(--line);
-  display: grid;
-  gap: 20px;
-}
-.cia-outcome li {
-  display: grid;
-  grid-template-columns: 96px 1fr;
-  gap: 2px 18px;
-  align-items: baseline;
-}
-.cia-outcome .cia-n {
-  font-size: clamp(22px, 1.9vw, 27px);
-  font-weight: 600;
-  color: var(--indigo-deep);
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  white-space: nowrap;
-}
-.cia-outcome .cia-lb {
-  font-size: 14px;
-  color: var(--ink-3);
-  line-height: 1.4;
-}
-.cia-outcome .cia-sb {
-  grid-column: 2;
-  font-size: 12.5px;
-  color: var(--muted);
   line-height: 1.45;
 }
-.cia-outcome .cia-sb + .cia-sb {
-  margin-top: 3px;
-}
-.cia-outcome .cia-grp {
-  grid-template-columns: 1fr;
-  margin-top: 4px;
-}
-.cia-outcome .cia-grp + li {
-  margin-top: -4px;
-}
-.cia-outcome .cia-gl {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+.cia-fstage .cia-sub {
+  display: block;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
   color: var(--muted);
+  line-height: 1.5;
+}
+.cia-fstage .cia-sub b {
+  font-weight: 600;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+/* The two ends of the funnel carry the weight: what went in, and what came of
+   it. Both are set larger than the working figures between them. */
+.cia-fstage--in {
+  background: var(--paper-2);
+  border-color: var(--c-fund);
+}
+.cia-fstage--in .cia-n {
+  color: var(--c-fund);
+  font-size: clamp(30px, 3vw, 41px);
+}
+/* How the money split, sitting where the funnel opens: two facts stacked, so
+   neither can wrap into the other. */
+.cia-fstage .cia-split {
+  display: grid;
+  gap: 7px;
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+}
+.cia-fstage .cia-split b {
+  font-weight: 600;
+  color: var(--c-fund);
+  font-variant-numeric: tabular-nums;
+}
+/* The stage that carries the photograph: the packet beside the number it
+   belongs to. */
+.cia-fstage--shot {
+  flex-direction: row;
+  align-items: center;
+  gap: 20px;
+  text-align: left;
+  padding: 16px 18px 16px 16px;
+}
+.cia-fshot {
+  margin: 0;
+  flex: 0 0 auto;
+}
+.cia-fshot img {
+  width: clamp(100px, 8.5vw, 120px);
+  aspect-ratio: 1;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.cia-fshot figcaption {
+  margin-top: 7px;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  text-align: center;
+}
+.cia-fbody {
+  min-width: 0;
+}
+.cia-fstage--out {
+  background: var(--indigo-deep);
+  border-color: transparent;
+  box-shadow: 0 20px 44px -26px rgba(40, 50, 160, 0.62);
+}
+.cia-fstage--out .cia-n {
+  color: #fff;
+  font-size: clamp(34px, 3.4vw, 46px);
+}
+.cia-fstage--out .cia-lb {
+  color: rgba(255, 255, 255, 0.84);
+  font-weight: 500;
+  font-size: 13.5px;
 }
 
 /* Quotes are their own visual: a dark panel against the white timeline */
@@ -1716,12 +1536,6 @@
   color: #ff9a7d;
   background: rgba(252, 95, 54, 0.14);
   border-color: rgba(252, 95, 54, 0.42);
-}
-.cia-beat.cia-quote .cia-q-intro {
-  font-size: 14px;
-  color: var(--on-dark-muted);
-  line-height: 1.55;
-  margin: 0;
 }
 .cia-beat.cia-quote .cia blockquote {
   margin: 0;
@@ -1757,6 +1571,45 @@
   color: #fff;
   font-weight: 600;
   font-size: 15px;
+}
+/* An attributed quote with the speaker's photograph, on the citation line. */
+.cia-beat.cia-quote cite.cia-cite-person {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+.cia-beat.cia-quote cite.cia-cite-person img {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+  border: 2px solid rgba(255, 255, 255, 0.22);
+}
+/* The interventions a single visit covered. */
+.cia-ivs {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 9px;
+}
+.cia-ivs li {
+  position: relative;
+  padding-left: 20px;
+  font-size: 15px;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+.cia-ivs li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.62em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-front);
 }
 
 /* &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; CLOSING &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; */
@@ -1797,9 +1650,6 @@
 .cia-close h2 {
   font-size: var(--fs-h2);
   color: #fff;
-}
-.cia-close .eyebrow.on-dark {
-  color: rgba(255, 255, 255, 0.82);
 }
 .cia-close p {
   font-size: var(--fs-lede);
@@ -1877,17 +1727,10 @@
   }
 }
 @media (max-width: 1000px) {
-  .cia-delay-grid,
-  .cia-close-grid {
-    grid-template-columns: 1fr;
-  }
   /* Stack the opener so the clip gets the full column width on a phone. */
   .cia-hero-grid {
     grid-template-columns: 1fr;
     gap: 28px;
-  }
-  .cia-delay-grid {
-    gap: 44px;
   }
 }
 @media (max-width: 860px) {
@@ -1903,26 +1746,6 @@
   }
   .cia-facts {
     gap: 18px 24px;
-  }
-  /* The active-state growth is sized for a wide bar; cap it on a phone, where
-     it would otherwise push the sticky bar to twice its height. */
-  .cia-sides {
-    gap: 8px;
-    padding: 9px 0 8px;
-  }
-  .cia-side {
-    gap: 7px;
-  }
-  .cia-side .cia-thumb {
-    width: 26px;
-    height: 26px;
-  }
-  .cia-side .cia-sn {
-    font-size: 9px;
-    letter-spacing: 0.08em;
-  }
-  .cia-sides-mark {
-    height: 20px;
   }
   /* One column, with the thread redrawn as a rail down the left margin. */
   .cia-rows {
@@ -1946,9 +1769,6 @@
     width: 13px;
     height: 13px;
     border-width: 3px;
-  }
-  [data-row] {
-    grid-row: auto;
   }
   .cia-beat[data-col='l'],
   .cia-beat[data-col='r'],
@@ -1975,14 +1795,53 @@
   .cia-pair {
     margin-bottom: clamp(38px, 8vw, 66px);
   }
+  .cia-rows > [data-role='note'] {
+    margin-top: calc(-1 * clamp(10px, 3vw, 22px));
+  }
+  /* No arcs to make room for when there is only one lane. */
+  .cia-rows > [data-bridge] {
+    margin-top: 0;
+  }
+  /* Nothing follows the last block, so its gap is dead space. */
+  .cia-rows > *:last-child {
+    margin-bottom: clamp(18px, 4vw, 34px);
+  }
+  .cia-beat--wide {
+    grid-column: 1;
+  }
+  /* Centred copy over eight lines of a phone column is hard to read. */
+  .cia-wide-head {
+    text-align: left;
+  }
+  /* One column, so the funnel goes back to running down the page and the
+     chevrons turn to point at the stage below. */
+  .cia-funnel {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .cia-fstage:nth-child(2),
+  .cia-fstage:nth-child(3),
+  .cia-fstage:nth-child(4) {
+    margin-block: 0;
+  }
+  .cia-fstage + .cia-fstage {
+    margin-top: 26px;
+  }
+  .cia-fstage + .cia-fstage::before {
+    left: 50%;
+    top: -19px;
+    border-top: 0;
+    border-bottom: 2px solid var(--rule);
+    transform: translateX(-50%) rotate(45deg);
+  }
+  .cia-fstage--shot {
+    flex-direction: column;
+    text-align: center;
+    padding: 18px 18px 20px;
+    gap: 14px;
+  }
   .cia-beat {
     padding: 26px 22px 28px;
-  }
-  .cia-shot--narrow {
-    max-width: none;
-  }
-  .cia-shot--thumb {
-    max-width: 300px;
   }
   .cia-shot img[data-wide] {
     min-width: 560px;
@@ -1995,30 +1854,14 @@
   .cia-hdr-label {
     display: none;
   }
-  .cia-side .cia-thumb {
-    width: 26px;
-    height: 26px;
-  }
-  .cia-outcome li {
-    grid-template-columns: 82px 1fr;
-  }
-  .cia-outcome .cia-sb {
-    grid-column: 2;
-  }
-  .cia-versus {
-    gap: 12px 18px;
-  }
-  .cia-versus .cia-arrow {
-    display: none;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
   }
-  *,
-  *::before,
-  *::after {
+  .cia *,
+  .cia *::before,
+  .cia *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
@@ -2026,12 +1869,6 @@
   .js .cia-rv {
     opacity: 1;
     transform: none;
-  }
-  .js .cia-hero-inner > .cia-wrap > * {
-    animation: none;
-  }
-  .cia-hero-media {
-    animation: none;
   }
   .js .cia-locator .cia-ng-outline,
   .js .cia-locator .cia-ng-borno {
