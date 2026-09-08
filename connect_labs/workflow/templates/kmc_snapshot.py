@@ -2,7 +2,7 @@
 
 WHY THIS EXISTS. The workflow framework is built so an agent can create a run and
 complete it over the API. `kmc_programme_metrics` could not: it declared
-`snapshot_inputs.state_keys: ["frozen"]` with no `build_snapshot` hook, so the only
+`snapshot_inputs.state_keys: ["snapshot"]` with no `build_snapshot` hook, so the only
 thing that could produce a snapshot was its RENDER, in a browser. Completing a run
 any other way froze an empty one (now refused — see SnapshotStateNotStagedError).
 
@@ -10,7 +10,7 @@ So this is the server-side port of the render's snapshot builder
 (`buildFrozen()` in kmc_programme_metrics_render.js — the template's own older name
 for it). Every
 number comes from the SAME place the live dashboard reads — `semantic.runtime.evaluate`
-over the registry — so a frozen run and a live run cannot disagree about a value. The
+over the registry — so a saved run and a live one cannot disagree about a value. The
 part that had to be re-implemented rather than reused is the DISPLAY contract: banding,
 the min-denominator rule, the two-reason availability gate, and the C16 thin-coverage
 footnote all lived only in the JS.
@@ -141,9 +141,9 @@ def ind_for(row: dict | None, measures: list[dict], llo_map: dict[int, str], cre
     return {m["indicator"]: entry(m, row, llo_map, credible_sets) for m in measures if m.get("indicator")}
 
 
-# The case fields a frozen run needs to render the FLW -> cases drill and to hand a
+# The case fields a saved run needs to render the FLW -> cases drill and to hand a
 # case off to the longitudinal view. Deliberately SLIM: the per-visit weight series
-# is NOT carried. A frozen snapshot has a 5 MB hard cap, ~9,000 KMC cases fit
+# is NOT carried. A snapshot has a 5 MB hard cap, ~9,000 KMC cases fit
 # comfortably at this width, and the series would not — the longitudinal workflow
 # fetches it live for the one case a user opened, which is the only time it is needed.
 _CASE_FIELDS = (
@@ -194,10 +194,10 @@ def build(
 ) -> dict:
     """Assemble the snapshot payload from evaluated semantic rows.
 
-    Returned under the `frozen` state key, which is this template's existing name for
-    its snapshot — load-bearing, not stylistic: `snapshot_inputs.state_keys` names it
-    and the render reads `view.state.frozen`. Renaming it migrates every saved run,
-    which is worth doing on its own rather than as a side effect of adding a drill.
+    Returned under the `snapshot` state key — the framework's word, matching
+    `snapshot_inputs`, `build_snapshot` and `run.data["snapshot"]`. It was `frozen`,
+    a leftover from when this dashboard computed everything in the browser; that is
+    the thing this module replaces, so the name went with it.
 
     Shape matches what the render's own builder emits, so a saved run and a live one
     render identically. The one deliberate difference is `byFLW[].rows`: see
@@ -270,7 +270,7 @@ def build(
         for r in sorted(by_scope.get("month") or [], key=_month)
     ]
 
-    # Monthly per drill scope, so a frozen run still supports the LLO and
+    # Monthly per drill scope, so a saved run still supports the LLO and
     # opportunity drill with no live pipeline behind it.
     monthly_by_scope: dict[str, list[dict]] = {"all": monthly}
     for key, scope_name, field in (("llo:", "llo_month", "llo"), ("opp:", "opportunity_month", "opportunity_id")):

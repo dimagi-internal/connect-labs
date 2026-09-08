@@ -40,9 +40,9 @@ function WorkflowUI({
   // verbatim capture is the failure mode that OOM-killed a web worker on a 102k-visit
   // opp. So the render computes what it displays and freezes THAT (~300 KB), which is
   // also the thing a reader actually wants preserved: the numbers as published.
-  var frozen =
-    view && view.isCompleted && view.state && view.state.frozen
-      ? view.state.frozen
+  var snapshot =
+    view && view.isCompleted && view.state && view.state.snapshot
+      ? view.state.snapshot
       : null;
 
   // The (opportunity, worker) key separator. Declared UP HERE, above every scope
@@ -677,7 +677,7 @@ function WorkflowUI({
   // UNITS -- the one conversion in this file, and it is deliberate. The registry
   // scales percentages in its own sql (100.0 * num / den), so a row carries 0-100.
   // This render has always carried FRACTIONS internally and multiplied by 100 in
-  // `fmt` -- and, the part that actually forces the decision, every frozen run
+  // `fmt` -- and, the part that actually forces the decision, every snapshot run
   // ever saved stores fractions. Converting once here rather than at fifteen
   // display sites keeps every saved snapshot rendering correctly and untouched.
   // Bands are graded BEFORE the conversion, against the registry's own percent
@@ -689,18 +689,18 @@ function WorkflowUI({
   // the server is the display contract, and `catalog_only` returns exactly that
   // without touching a pipeline or the database.
   var sCS = React.useState({
-    // A frozen run that carries its own catalog needs nothing from the server, so
+    // A snapshot run that carries its own catalog needs nothing from the server, so
     // it is ready immediately. Starting it at 'loading' left the "Computing
     // indicators in SQL…" banner up permanently, because the effect below returns
     // early in exactly that case and never flipped the status.
     status:
-      frozen && (frozen.cMeasures || []).length
+      snapshot && (snapshot.cMeasures || []).length
         ? 'ready'
-        : frozen
+        : snapshot
         ? 'loading'
         : 'idle',
     rows: [],
-    measures: (frozen && frozen.cMeasures) || [],
+    measures: (snapshot && snapshot.cMeasures) || [],
   });
   var cSeries = sCS[0],
     setCSeries = sCS[1];
@@ -711,8 +711,8 @@ function WorkflowUI({
   }
 
   function loadCSeries() {
-    // A frozen run wants labels only; anything else wants the numbers too.
-    var wantRows = !frozen;
+    // A snapshot run wants labels only; anything else wants the numbers too.
+    var wantRows = !snapshot;
     var url = cUrl(
       (wantRows ? 'series=C&scopes=' + C_SCOPES : 'series=C&catalog_only=1') +
         oppParam(),
@@ -761,14 +761,14 @@ function WorkflowUI({
   }
 
   // The C-series IS this dashboard's content, not a side panel, so unlike the
-  // N-series it loads with the page rather than behind a button. A frozen run
+  // N-series it loads with the page rather than behind a button. A snapshot run
   // fetches only the catalog, which runs no query at all.
   React.useEffect(
     function () {
-      if (frozen && (frozen.cMeasures || []).length) return;
+      if (snapshot && (snapshot.cMeasures || []).length) return;
       loadCSeries();
     },
-    [Boolean(frozen)],
+    [Boolean(snapshot)],
   );
 
   // The display contract, normalised into the field names the tables already use.
@@ -779,7 +779,7 @@ function WorkflowUI({
   //
   // `measure` is the registry's own measure name (c09), which is the column prefix
   // in a result row. `id` stays the workbook's indicator id (C09), which is what
-  // every table, selector and frozen snapshot is keyed on.
+  // every table, selector and snapshot snapshot is keyed on.
   var C_LIST = React.useMemo(
     function () {
       return (cSeries.measures || [])
@@ -1142,7 +1142,7 @@ function WorkflowUI({
   // ── Roll up: opp → LLO → program ─────────────────────────────────────────
   var byOpp = React.useMemo(
     function () {
-      if (frozen) return frozen.byOpp || [];
+      if (snapshot) return snapshot.byOpp || [];
       var g = {};
       derived.forEach(function (r) {
         (g[r.opp] = g[r.opp] || []).push(r);
@@ -1157,12 +1157,12 @@ function WorkflowUI({
         };
       });
     },
-    [derived, frozen, cRows, C_LIST],
+    [derived, snapshot, cRows, C_LIST],
   );
 
   var byLLO = React.useMemo(
     function () {
-      if (frozen) return frozen.byLLO || [];
+      if (snapshot) return snapshot.byLLO || [];
       var g = {};
       derived.forEach(function (r) {
         (g[r.llo] = g[r.llo] || []).push(r);
@@ -1191,7 +1191,7 @@ function WorkflowUI({
           };
         });
     },
-    [derived, byOpp, frozen],
+    [derived, byOpp, snapshot],
   );
 
   // Separator for the composite FLW key. NOT '\u0000': a NUL byte is legal in a JS
@@ -1235,12 +1235,12 @@ function WorkflowUI({
   }
 
   // The audit window is the worker's OWN data range, not a fixed lookback: a
-  // frozen run is a snapshot of a past period, and a trailing-30-days window
+  // snapshot run is a snapshot of a past period, and a trailing-30-days window
   // would silently audit nothing on one.
   // The span a snapshot covers, from its own monthly series. Months are 'YYYY-MM'
   // keys, so the end is the last day of the last month rather than its first.
-  function frozenSpan() {
-    var ms = ((frozen && frozen.monthly) || [])
+  function snapshotSpan() {
+    var ms = ((snapshot && snapshot.monthly) || [])
       .map(function (m) {
         return m.month;
       })
@@ -1275,7 +1275,7 @@ function WorkflowUI({
     // the period are all still known, and the audit takes a date range, so fall
     // back to the span the snapshot itself covers. Without this the drill dead-
     // ends on exactly the run the demo opens with.
-    return frozenSpan();
+    return snapshotSpan();
   }
 
   function auditWorker(f) {
@@ -1340,21 +1340,21 @@ function WorkflowUI({
   // server-side, which is the only version where the scopes below cost one pass
   // instead of three. Fetched ON DEMAND rather than with the page -- it is a real
   // query against the visit cache, and the other tabs must not pay for it.
-  // A frozen run serves the N-series from its own snapshot. Every OTHER tab on
-  // this screen already loads from `state.frozen` and is instant; this one was
+  // A snapshot run serves the N-series from its own snapshot. Every OTHER tab on
+  // this screen already loads from `state.snapshot` and is instant; this one was
   // the sole holdout, re-querying the semantic endpoint every time. That made it
-  // the only part of a supposedly-frozen dashboard that could still go wrong --
+  // the only part of a supposedly-snapshot dashboard that could still go wrong --
   // and it did: production expires cached visits after an hour, so a snapshot
   // that "cannot move" sat next to a live tab reading 608 of 8,718 cases.
   // A snapshot is the right place for this. The rows are ~245 KB for 253 rows,
   // comfortably inside the framework's 5 MB cap.
   var sN = React.useState(
-    frozen && frozen.nSeries
+    snapshot && snapshot.nSeries
       ? {
           status: 'ready',
-          rows: frozen.nSeries.rows || [],
-          measures: frozen.nSeries.measures || [],
-          opportunity_ids: frozen.nSeries.opportunity_ids || [],
+          rows: snapshot.nSeries.rows || [],
+          measures: snapshot.nSeries.measures || [],
+          opportunity_ids: snapshot.nSeries.opportunity_ids || [],
           fromSnapshot: true,
         }
       : { status: 'idle', rows: [], measures: [] },
@@ -1429,7 +1429,7 @@ function WorkflowUI({
           rows: data.rows || [],
           measures: data.measures || [],
           // Carried so the snapshot can keep it: the card footer counts the
-          // opportunities from here, and a frozen run has no response to read.
+          // opportunities from here, and a snapshot run has no response to read.
           opportunity_ids: data.opportunity_ids || [],
           coldCache: data.cold_cache || false,
           partialCache: data.partial_cache || false,
@@ -1508,7 +1508,7 @@ function WorkflowUI({
 
   var byFLW = React.useMemo(
     function () {
-      if (frozen) return frozen.byFLW || [];
+      if (snapshot) return snapshot.byFLW || [];
       var g = {};
       derived.forEach(function (r) {
         var k = r.opp + FLW_SEP + (r.flw || '(unassigned)');
@@ -1542,15 +1542,15 @@ function WorkflowUI({
           return b.rows.length - a.rows.length;
         });
     },
-    [derived, frozen, cRows, C_LIST],
+    [derived, snapshot, cRows, C_LIST],
   );
 
   var programInd = React.useMemo(
     function () {
-      if (frozen) return frozen.programInd || {};
+      if (snapshot) return snapshot.programInd || {};
       return cIndFor(cRows.programme);
     },
-    [derived, frozen, cRows, C_LIST],
+    [derived, snapshot, cRows, C_LIST],
   );
 
   // Programme mortality, restricted to the LLOs the workbook accepts as credible
@@ -1561,12 +1561,12 @@ function WorkflowUI({
   var mortalityCredible = React.useMemo(
     function () {
       // Snapshot first, like byOpp / byLLO / byFLW / programInd. This one is newly
-      // frozen-dependent: it used to be computed from `derived` -- pipeline rows a
-      // frozen run still loads -- and now reads the llo-scope SEMANTIC rows, which a
-      // frozen run deliberately never fetches. Without this the headline mortality
-      // card silently degrades to "no credible recorder" the moment a run is frozen,
+      // snapshot-dependent: it used to be computed from `derived` -- pipeline rows a
+      // snapshot run still loads -- and now reads the llo-scope SEMANTIC rows, which a
+      // snapshot run deliberately never fetches. Without this the headline mortality
+      // card silently degrades to "no credible recorder" the moment a run is snapshot,
       // while the LLO table beside it still shows EHA and PIPN reporting deaths.
-      if (frozen && frozen.mortalityCredible) return frozen.mortalityCredible;
+      if (snapshot && snapshot.mortalityCredible) return snapshot.mortalityCredible;
       var credible = cCredibleLloRows('C14');
       var llos = credible
         .map(function (r) {
@@ -1583,7 +1583,7 @@ function WorkflowUI({
         of: byLLO.length,
       };
     },
-    [byLLO, cRows, C_LIST, frozen],
+    [byLLO, cRows, C_LIST, snapshot],
   );
   // ── UI ───────────────────────────────────────────────────────────────────
   var s1 = React.useState(null);
@@ -1704,9 +1704,9 @@ function WorkflowUI({
 
   var monthly = React.useMemo(
     function () {
-      if (frozen) {
-        var all = frozen.monthly || [];
-        // The frozen series is stored per scope key so a drill still works offline.
+      if (snapshot) {
+        var all = snapshot.monthly || [];
+        // The snapshot series is stored per scope key so a drill still works offline.
         var key = selFLW
           ? 'flw:' + selFLW
           : selOpp
@@ -1714,7 +1714,7 @@ function WorkflowUI({
           : selLLO
           ? 'llo:' + selLLO
           : 'all';
-        return (frozen.monthlyByScope && frozen.monthlyByScope[key]) || all;
+        return (snapshot.monthlyByScope && snapshot.monthlyByScope[key]) || all;
       }
       // monthlyFor IS this computation, and the freeze step already calls it to
       // precompute every drill scope. Inlining a second copy here let the two
@@ -1724,7 +1724,7 @@ function WorkflowUI({
       // not of the code.
       return monthlyFor(selLLO, selOpp, selFLW);
     },
-    [derived, wrows, selLLO, selOpp, selFLW, frozen, cRows, C_LIST],
+    [derived, wrows, selLLO, selOpp, selFLW, snapshot, cRows, C_LIST],
   );
 
   var llosRed = byLLO.filter(function (l) {
@@ -2382,14 +2382,14 @@ function WorkflowUI({
     );
   }
 
-  // Build the frozen payload: everything the page DISPLAYS, and nothing it doesn't.
+  // Build the snapshot payload: everything the page DISPLAYS, and nothing it doesn't.
   // Per-case rows are deliberately excluded — 8,656 of them is 7.5 MB on its own, and
   // case-level drill is an investigative tool, not part of a published figure.
-  // Is this run built on synthetic clones rather than real programme data? A frozen
+  // Is this run built on synthetic clones rather than real programme data? A snapshot
   // run reads the flag captured at freeze time; a live run computes it from scope.
   var runIsSynthetic = React.useMemo(
     function () {
-      if (frozen) return !!(frozen.meta && frozen.meta.synthetic);
+      if (snapshot) return !!(snapshot.meta && snapshot.meta.synthetic);
       var seen = {};
       derived.forEach(function (r) {
         seen[r.opp] = true;
@@ -2397,10 +2397,10 @@ function WorkflowUI({
       var opps = Object.keys(seen);
       return opps.length > 0 && opps.every(isSyntheticOpp);
     },
-    [derived, frozen],
+    [derived, snapshot],
   );
 
-  function buildFrozen() {
+  function buildSnapshot() {
     var scopes = { all: monthlyFor(null, null, null) };
     byLLO.forEach(function (l) {
       scopes['llo:' + l.llo] = monthlyFor(l.llo, null, null);
@@ -2411,7 +2411,7 @@ function WorkflowUI({
     return {
       schema: 1,
       generated_at: new Date().toISOString(),
-      // The SQL-computed series, so the frozen run does not have to re-query for
+      // The SQL-computed series, so the snapshot run does not have to re-query for
       // it. Null when the operator never ran the tab -- captured rather than
       // required, because a snapshot without it is still a valid snapshot.
       nSeries:
@@ -2424,11 +2424,11 @@ function WorkflowUI({
             }
           : null,
       // The display contract the numbers below were graded with. The render reads
-      // `frozen.cMeasures` and nothing wrote it, so a frozen run fetched the
+      // `snapshot.cMeasures` and nothing wrote it, so a snapshot run fetched the
       // CURRENT catalog instead -- meaning a later change to a band threshold
       // would silently re-grade a published snapshot, and a green chip could turn
       // red with no edit to the run. A snapshot is "the numbers as published",
-      // which has to include what published them. Also makes a frozen run
+      // which has to include what published them. Also makes a snapshot run
       // genuinely zero-query rather than one cheap call away from it.
       cMeasures: cSeries.measures || [],
       mortalityCredible: mortalityCredible,
@@ -2489,7 +2489,7 @@ function WorkflowUI({
   // still in_progress. `view.state` reflects the persisted write, so its presence is
   // proof the write landed.
   var staged =
-    view && view.state && view.state.frozen ? view.state.frozen : null;
+    view && view.state && view.state.snapshot ? view.state.snapshot : null;
 
   // Freezing is TWO steps on purpose. onUpdateState is fire-and-forget, so pairing it
   // with view.complete() behind one click is a race — and complete() won it, producing
@@ -2517,12 +2517,12 @@ function WorkflowUI({
         !window.confirm(
           'The Demo metrics (SQL) tab has not been run, so it will not be part ' +
             'of this snapshot and will keep querying live (and can go stale). ' +
-            'Run it first for a fully frozen dashboard.\n\nSnapshot anyway?',
+            'Run it first for a fully snapshot dashboard.\n\nSnapshot anyway?',
         )
       )
         return;
     }
-    onUpdateState({ frozen: buildFrozen() });
+    onUpdateState({ snapshot: buildSnapshot() });
   }
 
   function freezeRun() {
@@ -2544,13 +2544,13 @@ function WorkflowUI({
 
   return (
     <div className="p-6 space-y-5">
-      {frozen && (
+      {snapshot && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
           <span className="font-medium">Frozen run.</span> These figures are the
           snapshot taken{' '}
           {view.asOf ? String(view.asOf).slice(0, 16).replace('T', ' ') : ''} —{' '}
-          {(frozen.meta || {}).cases} cases and {(frozen.meta || {}).visits}{' '}
-          visits across {(frozen.meta || {}).opportunities} opportunities. They
+          {(snapshot.meta || {}).cases} cases and {(snapshot.meta || {}).visits}{' '}
+          visits across {(snapshot.meta || {}).opportunities} opportunities. They
           load instantly and cannot move. Per-case detail is not part of a
           snapshot; start a new run for that.
         </div>
@@ -2560,17 +2560,17 @@ function WorkflowUI({
         <div>
           <h1 className="text-2xl font-bold text-gray-900">KMC Indicators</h1>
           {/* "evaluated live" was true when this browser computed the
-              indicators. It no longer does, and on a frozen run the claim sat
+              indicators. It no longer does, and on a snapshot run the claim sat
               directly under a banner saying the figures cannot move. */}
           <p className="text-sm text-gray-500 mt-1">
             The kmc_metrics_framework registry, compiled to SQL and evaluated
-            server-side{frozen ? ' — these figures are from the snapshot' : ''}.
+            server-side{snapshot ? ' — these figures are from the snapshot' : ''}.
             Case properties come from the entity pipeline; only the weight
             series is derived in this browser. Click any row to drill Programme
             → LLO → opportunity → cases.
           </p>
         </div>
-        {!frozen && view && view.complete && (
+        {!snapshot && view && view.complete && (
           <div className="shrink-0 flex items-center gap-2">
             {staged && (
               <span className="text-xs text-gray-500">
@@ -3555,8 +3555,8 @@ function WorkflowUI({
 
                   <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                     <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-                      {frozen ? 'Cases — not captured in a snapshot' : 'Cases '}
-                      {!frozen && selInd
+                      {snapshot ? 'Cases — not captured in a snapshot' : 'Cases '}
+                      {!snapshot && selInd
                         ? '\u2014 in the denominator of ' + selInd
                         : ''}
                       {selFLW

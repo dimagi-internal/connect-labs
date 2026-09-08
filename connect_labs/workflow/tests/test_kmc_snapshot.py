@@ -252,7 +252,7 @@ class TestDeclaredSchemaMatchesThePayload:
     def _declared_keys(self) -> set[str]:
         from connect_labs.workflow.templates.kmc_programme_metrics import SNAPSHOT_SCHEMA
 
-        prefix = "state.frozen."
+        prefix = "state.snapshot."
         return {k[len(prefix) :] for k in SNAPSHOT_SCHEMA["keys"] if k.startswith(prefix)}
 
     def test_every_built_key_is_declared(self):
