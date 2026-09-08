@@ -473,14 +473,14 @@ class MopupDebugRawCaseView(LoginRequiredMixin, View):
         # exactly what list_work_areas does — isolating whether the corruption
         # happens in the SQL storage/query round-trip specifically.
         try:
-            from connect_labs.labs.analysis.config import AnalysisPipelineConfig, FieldComputation
+            from connect_labs.labs.analysis.config import AnalysisPipelineConfig, CacheStage, FieldComputation
             from connect_labs.labs.analysis.pipeline import AnalysisPipeline
 
             pipeline = AnalysisPipeline(access_token=access_token, cchq_access_token=cchq_access_token)
             config = AnalysisPipelineConfig(
                 data_source=DataSourceConfig(type="cchq_cases", case_type="work-area"),
                 grouping_key="entity_id",
-                terminal_stage="visit_level",
+                terminal_stage=CacheStage.VISIT_LEVEL,
                 fields=[FieldComputation(name="ward", path="case.properties.ward", aggregation="first")],
                 pipeline_id=777700001,
             )
