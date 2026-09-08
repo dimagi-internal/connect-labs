@@ -2134,6 +2134,7 @@ def complete_run_api(request, run_id):
     """
     from connect_labs.workflow.templates import (
         SnapshotStateNotStagedError,
+        SnapshotStateNotStagedError,
         SnapshotTooLargeError,
         build_snapshot_for_contract,
         resolve_snapshot_contract,
@@ -2283,6 +2284,11 @@ def complete_run_api(request, run_id):
                 {"error": str(e), "missing_state_keys": e.missing},
                 status=400,
             )
+        except SnapshotStateNotStagedError as e:
+            # The run stays in_progress, which is the whole point: an empty
+            # snapshot on a completed run is unrecoverable, an un-completed run
+            # is not.
+            return JsonResponse({"error": str(e), "missing_state_keys": e.missing}, status=400)
         except SnapshotTooLargeError as e:
             return JsonResponse({"error": str(e)}, status=400)
         if not isinstance(snapshot_payload, dict):

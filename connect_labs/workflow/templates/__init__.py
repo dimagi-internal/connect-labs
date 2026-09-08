@@ -314,7 +314,9 @@ _SNAPSHOT_SIZE_HARD_BYTES = 5 * 1024 * 1024
 
 
 class SnapshotStateNotStagedError(Exception):
-    """A declarative snapshot would capture NONE of the state its manifest names.
+    """A declarative snapshot would capture NONE of the REQUIRED state its manifest names.
+
+    Only raised for templates that set `snapshot_inputs.require_state_keys`.
 
     `snapshot_inputs.state_keys` is a promise that the run's state carries those
     keys by completion time. When a template computes them in its RENDER (the
@@ -355,7 +357,13 @@ class SnapshotTooLargeError(Exception):
 
 
 def _default_snapshot_from_inputs(
-    *, snapshot_inputs: dict, pipelines: dict, state: dict, context: dict, opportunity_id: int, template_key: str = "instance"
+    *,
+    snapshot_inputs: dict,
+    pipelines: dict,
+    state: dict,
+    context: dict,
+    opportunity_id: int,
+    template_key: str = "instance",
 ) -> dict:
     """Build the default snapshot honoring a template's declarative manifest.
 
@@ -365,6 +373,12 @@ def _default_snapshot_from_inputs(
       - `workers`: bool (default True) — capture worker list if present.
       - `state_keys`: list of state keys to capture. None/missing means "all
         of state"; an empty list means "no state."
+      - `require_state_keys`: bool (default False) — when True, completing with
+        NONE of the declared `state_keys` populated raises
+        `SnapshotStateNotStagedError` instead of freezing an empty snapshot.
+        Opt in for templates whose snapshot is computed by their RENDER and
+        staged into run state, where an empty capture is meaningless rather than
+        merely early. Default False, so no existing template changes behaviour.
     Anything not listed is not captured.
     """
     out: dict = {"schema_version": 1}
@@ -387,9 +401,21 @@ def _default_snapshot_from_inputs(
         out["state"] = state
     else:
         captured = {k: state.get(k) for k in state_keys if k in state}
-        # An empty list means "capture no state" and is a legitimate declaration.
-        # A NON-empty list that matches nothing is the lost-snapshot bug: refuse.
-        if state_keys and not any(captured.get(k) for k in state_keys):
+        # Refuse ONLY when the template says these keys are load-bearing.
+        #
+        # An empty capture is legitimate for most templates and is covered by
+        # tests that predate this guard: performance_review completes a run with
+        # no decisions recorded yet ("A run with no decisions yet still produces
+        # a valid snapshot"), and an instance manifest declaring `decisions`
+        # completes at 200 with `state == {}`. Refusing those broke real,
+        # intended behaviour.
+        #
+        # The distinction is per-template intent, not a property the framework
+        # can infer: empty `worker_states` means "nobody decided anything yet",
+        # while empty `frozen` means "this dashboard has no numbers in it". So
+        # the template declares which it is, and the default preserves today's
+        # behaviour exactly.
+        if snapshot_inputs.get("require_state_keys") and state_keys and not any(captured.get(k) for k in state_keys):
             raise SnapshotStateNotStagedError(template_key, list(state_keys))
         out["state"] = captured
 
