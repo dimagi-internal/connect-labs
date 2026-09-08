@@ -72,7 +72,10 @@ def list_work_areas(
     result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
     work_areas = []
     for row in result.rows:
-        c = row.computed
+        # `row.computed` is `None` (not `{}`) for some real cases where field
+        # extraction found nothing to compute — confirmed against real
+        # program-217 data (opportunity 2154, 41,900+ visits) this session.
+        c = row.computed or {}
         work_areas.append(
             {
                 "case_id": row.entity_id,

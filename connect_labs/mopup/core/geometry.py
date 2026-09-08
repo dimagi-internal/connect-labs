@@ -61,7 +61,10 @@ def fetch_work_area_geometry(
 
     geometry: dict[str, dict] = {}
     for row in result.rows:
-        c = row.computed
+        # `row.computed` is `None` (not `{}`) for some real rows where field
+        # extraction found nothing to compute — confirmed against real
+        # program-217 data this session.
+        c = row.computed or {}
         wa_case_id = c.get("wa_case_id")
         if not wa_case_id:
             continue

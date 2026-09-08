@@ -3,6 +3,8 @@ expensive data pull) — mocked AnalysisPipeline, no network/DB."""
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from connect_labs.mopup.core.visits import aggregate_visits_by_wa, build_evaluation_rows, list_approved_visits
@@ -31,6 +33,14 @@ class TestListApprovedVisits:
     def test_requires_request_or_pipeline(self):
         with pytest.raises(ValueError, match="request.*pipeline"):
             list_approved_visits(1)
+
+    def test_row_with_none_computed_does_not_crash(self):
+        # A real case hit against production data (program 217, opportunity
+        # 2154): row.computed is None (not {}) when field extraction found
+        # nothing to compute for that visit.
+        rows = [SimpleNamespace(entity_id="v1", computed=None)]
+        pipeline = _FakePipeline(rows)
+        assert list_approved_visits(1, pipeline=pipeline) == []
 
     def test_filters_to_known_form_types_and_extracts_dq_fields(self):
         rows = [
