@@ -2493,14 +2493,22 @@ function WorkflowUI({
 
   // Freezing is TWO steps on purpose. onUpdateState is fire-and-forget, so pairing it
   // with view.complete() behind one click is a race — and complete() won it, producing
-  // a completed run whose snapshot captured an empty state. There is no un-complete
-  // path, so that artifact is permanent. Waiting for the write to round-trip through
-  // view.state removes the guess entirely.
+  // a completed run whose snapshot captured an empty state. Waiting for the write to
+  // round-trip through view.state removes the guess entirely.
+  //
+  // SCOPE OF "permanent", because this comment has been misread twice: a completed run
+  // cannot be RE-OPENED, and that is all. Freezing is not a one-way door and it is not
+  // a publishing act. A workflow is MEANT to carry many runs — take as many snapshots
+  // as you like — and a bad one is deleted outright via
+  // `DELETE /labs/workflow/api/run/<run_id>/delete/` (workflow/urls.py, api_delete_run).
+  // Read as "irreversible", this sentence has twice stopped an agent from freezing a
+  // run at all and made it ask a human for permission it did not need.
   function stageSnapshot() {
     if (!derived.length) {
       window.alert(
         'No case data has loaded yet — a snapshot taken now would be empty, and a ' +
-          'completed run cannot be reopened. Wait for the indicators to appear.',
+          'completed run cannot be reopened (you would have to delete it and take ' +
+          'another). Wait for the indicators to appear.',
       );
       return;
     }
