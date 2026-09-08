@@ -461,10 +461,41 @@ class MopupDebugRawCaseView(LoginRequiredMixin, View):
         except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
             return JsonResponse({"status": "error", "detail": f"{type(e).__name__}: {e}"}, status=502)
 
+        raw_stage = {
+            "count": len(visit_dicts),
+            "sample_ids": [{"id": v.get("id"), "entity_id": v.get("entity_id")} for v in visit_dicts[:3]],
+        }
+
+        # Stage 2: run the SAME raw data through the FULL AnalysisPipeline SQL
+        # round-trip (store_raw_visits -> execute_visit_extraction -> VisitRow),
+        # via a scratch pipeline_id never used elsewhere, so this stage's cache
+        # can't collide with (or be masked by) any real run's cache. This is
+        # exactly what list_work_areas does — isolating whether the corruption
+        # happens in the SQL storage/query round-trip specifically.
+        try:
+            from connect_labs.labs.analysis.config import AnalysisPipelineConfig, FieldComputation
+            from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+
+            pipeline = AnalysisPipeline(access_token=access_token, cchq_access_token=cchq_access_token)
+            config = AnalysisPipelineConfig(
+                data_source=DataSourceConfig(type="cchq_cases", case_type="work-area"),
+                grouping_key="entity_id",
+                terminal_stage="visit_level",
+                fields=[FieldComputation(name="ward", path="case.properties.ward", aggregation="first")],
+                pipeline_id=999999999,
+            )
+            result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
+            sql_stage = {
+                "count": len(result.rows),
+                "sample_ids": [{"id": r.id, "entity_id": r.entity_id} for r in result.rows[:3]],
+            }
+        except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
+            sql_stage = {"error": f"{type(e).__name__}: {e}"}
+
         return JsonResponse(
             {
                 "status": "ok",
-                "count": len(visit_dicts),
-                "sample": visit_dicts[:3],
+                "raw_fetch_stage": raw_stage,
+                "sql_roundtrip_stage": sql_stage,
             }
         )
