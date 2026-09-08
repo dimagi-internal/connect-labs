@@ -3,6 +3,8 @@ picker source) — mocked AnalysisPipeline, no network/DB."""
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from connect_labs.mopup.core.work_areas import list_work_areas, summarize_wards
@@ -31,6 +33,26 @@ class TestListWorkAreas:
     def test_requires_request_or_pipeline(self):
         with pytest.raises(ValueError, match="request.*pipeline"):
             list_work_areas(1)
+
+    def test_row_with_none_computed_does_not_crash(self):
+        # A real case hit against production data (program 217, opportunity
+        # 2154): row.computed is None (not {}) when field extraction found
+        # nothing to compute for that case.
+        rows = [SimpleNamespace(entity_id="wa-1", computed=None)]
+        pipeline = _FakePipeline(rows)
+        result = list_work_areas(1, pipeline=pipeline)
+        assert result == [
+            {
+                "case_id": "wa-1",
+                "ward": "",
+                "lga": "",
+                "state": "",
+                "building_count": 0,
+                "expected_visit_count": 0,
+                "status": "",
+                "owner_id": "",
+            }
+        ]
 
     def test_projects_and_coerces_fields(self):
         rows = [

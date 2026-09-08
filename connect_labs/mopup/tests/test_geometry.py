@@ -5,6 +5,7 @@ network/DB."""
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -34,6 +35,14 @@ class TestFetchWorkAreaGeometry:
     def test_requires_request_or_pipeline(self):
         with pytest.raises(ValueError, match="request.*pipeline"):
             fetch_work_area_geometry(1)
+
+    def test_row_with_none_computed_does_not_crash(self):
+        # A real case hit against production data (program 217, opportunity
+        # 2154): row.computed is None (not {}) when field extraction found
+        # nothing to compute for that row.
+        rows = [SimpleNamespace(entity_id="103083", computed=None)]
+        pipeline = _FakePipeline(rows)
+        assert fetch_work_area_geometry(1, pipeline=pipeline) == {}
 
     def test_parses_json_string_geometry(self):
         rows = [
