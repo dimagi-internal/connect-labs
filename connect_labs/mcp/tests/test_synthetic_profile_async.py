@@ -113,3 +113,28 @@ def test_a_failure_surfaces_as_a_string_not_a_traceback(status_tool, user):
     assert out["state"] == "FAILURE"
     assert out["error"] == "boom"
     assert isinstance(out["error"], str)
+
+
+def test_profiling_tasks_survive_losing_their_worker():
+    """A lost profiling job must be REDELIVERED, not silently dropped.
+
+    Celery acks on receipt by default, so a worker that dies mid-run takes the job
+    with it: nothing is redelivered and the last update_state sticks, leaving the
+    caller polling PROGRESS forever on a job nobody is running. That is worse than
+    the inline failure this replaced, which at least raised.
+
+    Observed: opp 874's first queued run was received at 13:39:07 and lost when the
+    worker restarted under it at 13:45:40; its status still read PROGRESS 4/6 forty
+    minutes later. These are ten-plus-minute jobs, so they are far likelier than a
+    short task to be in flight across a deploy's rolling restart.
+    """
+    from connect_labs.labs.synthetic import tasks as t
+
+    for task in (
+        t.run_synthetic_profile_opp,
+        t.run_synthetic_profile_opps_bulk,
+        t.run_synthetic_clone_profile,
+        t.run_synthetic_profile_from_prod,
+    ):
+        assert task.acks_late is True, f"{task.name} must not be acked before it runs"
+        assert task.reject_on_worker_lost is True, f"{task.name} must be redelivered if its worker dies"
