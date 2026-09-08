@@ -35,10 +35,6 @@ window.MopupAnalysis = (function () {
     vaccination:
       'Of children served here, the share who received any vaccine during the visit.',
   };
-  const GRANULARITY_TOOLTIP =
-    "How this indicator is evaluated: 'This WA only' flags a single work area on its own number. 'Cluster-aware' (recommended) only flags it if nearby work areas — or, for data-quality metrics, this FLW's other work areas — are also elevated, filtering out one-off noise. 'Whole-FLW average' rolls up all of an FLW's work areas into one number before comparing to the threshold.";
-  const THRESHOLD_TOOLTIP =
-    'The cutoff at which a work area is flagged as a mop-up candidate for this indicator. Set independently per indicator.';
   const SEVERITY_TOOLTIP =
     'How many of the currently-enabled indicators flagged this work area. A plain count, not a weighted score.';
 
@@ -62,15 +58,17 @@ window.MopupAnalysis = (function () {
           <td class="py-2 pr-2"><input type="checkbox" class="ind-enabled" ${
             cfg.enabled ? 'checked' : ''
           }></td>
-          <td class="py-2 pr-2" title="${esc(
+          <td class="py-2 pr-2">${esc(
+            def.label,
+          )} <span class="info-icon" tabindex="0" data-tip="${esc(
             INDICATOR_TOOLTIPS[def.key] || '',
-          )}">${esc(def.label)} ⓘ</td>
-          <td class="py-2 pr-2" title="${esc(THRESHOLD_TOOLTIP)}">
+          )}">ⓘ</span></td>
+          <td class="py-2 pr-2">
             <input type="number" step="0.01" min="0" max="1" class="ind-threshold base-input" style="width:6rem" value="${
               cfg.threshold
             }">
           </td>
-          <td class="py-2 pr-2" title="${esc(GRANULARITY_TOOLTIP)}">
+          <td class="py-2 pr-2">
             <select class="ind-granularity base-input" style="width:10rem">
               <option value="wa_only" ${
                 cfg.granularity === 'wa_only' ? 'selected' : ''

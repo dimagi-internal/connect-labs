@@ -2,6 +2,47 @@
 {% load static %}
 {% block title %}CHC Mop-up — Analysis{% endblock %}
 
+{% block css %}
+{{ block.super }}
+<style>
+  /* Custom info tooltip — a native `title` attribute needs a ~1s hover dwell
+     and is easy to trigger with no visible feedback, which real user
+     testing this session found effectively invisible. This shows instantly
+     on hover/focus instead. */
+  .info-icon {
+    position: relative;
+    display: inline-block;
+    cursor: help;
+  }
+  .info-icon::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1f2937;
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+    text-align: left;
+    white-space: normal;
+    width: max-content;
+    max-width: 260px;
+    z-index: 50;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s ease;
+  }
+  .info-icon:hover::after,
+  .info-icon:focus::after {
+    opacity: 1;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="max-w-6xl mx-auto p-6 space-y-6" x-data>
   <div class="flex items-start justify-between">
@@ -31,8 +72,8 @@
         <tr class="text-left text-gray-500 border-b border-gray-100">
           <th class="pb-2 pr-2">On</th>
           <th class="pb-2 pr-2">Indicator</th>
-          <th class="pb-2 pr-2">Threshold</th>
-          <th class="pb-2 pr-2">Granularity</th>
+          <th class="pb-2 pr-2">Threshold <span class="info-icon" tabindex="0" data-tip="The cutoff at which a work area is flagged as a mop-up candidate for this indicator. Set independently per indicator.">ⓘ</span></th>
+          <th class="pb-2 pr-2">Granularity <span class="info-icon" tabindex="0" data-tip="How this indicator is evaluated: &quot;This WA only&quot; flags a single work area on its own number. &quot;Cluster-aware&quot; (recommended) only flags it if nearby work areas — or, for data-quality metrics, this FLW's other work areas — are also elevated, filtering out one-off noise. &quot;Whole-FLW average&quot; rolls up all of an FLW's work areas into one number before comparing to the threshold.">ⓘ</span></th>
         </tr>
       </thead>
       <tbody id="indicator-rows"></tbody>
@@ -43,28 +84,28 @@
     <h2 class="text-lg font-semibold text-gray-900">Global cluster / gate settings</h2>
     <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
       <label class="space-y-1">
-        <span class="text-gray-600" title="How close two work areas' centroids need to be to count as 'neighbors' for cluster detection.">Neighbor distance (m) ⓘ</span>
+        <span class="text-gray-600">Neighbor distance (m) <span class="info-icon" tabindex="0" data-tip="How close two work areas' centroids need to be to count as 'neighbors' for cluster detection.">ⓘ</span></span>
         <input type="number" id="cfg-neighbor-distance" class="base-input" min="1">
       </label>
       <label class="space-y-1">
-        <span class="text-gray-600" title="The fewest qualifying neighbors a work area needs before its neighborhood's rate is trusted for cluster detection.">Min neighbor count ⓘ</span>
+        <span class="text-gray-600">Min neighbor count <span class="info-icon" tabindex="0" data-tip="The fewest qualifying neighbors a work area needs before its neighborhood's rate is trusted for cluster detection.">ⓘ</span></span>
         <input type="number" id="cfg-min-neighbors" class="base-input" min="1">
       </label>
       <label class="space-y-1">
-        <span class="text-gray-600" title="The within-FLW equivalent of minimum neighbor count — the fewest of an FLW's other work areas needed before their combined rate is trusted.">Min neighborhood size (FLW) ⓘ</span>
+        <span class="text-gray-600">Min neighborhood size (FLW) <span class="info-icon" tabindex="0" data-tip="The within-FLW equivalent of minimum neighbor count — the fewest of an FLW's other work areas needed before their combined rate is trusted.">ⓘ</span></span>
         <input type="number" id="cfg-min-portfolio" class="base-input" min="1">
       </label>
       <label class="space-y-1">
-        <span class="text-gray-600" title="The fewest approved Health Service Delivery visits a work area needs before its deworming/MUAC/vaccination rate is trusted at all.">Min HSD-visits floor ⓘ</span>
+        <span class="text-gray-600">Min HSD-visits floor <span class="info-icon" tabindex="0" data-tip="The fewest approved Health Service Delivery visits a work area needs before its deworming/MUAC/vaccination rate is trusted at all.">ⓘ</span></span>
         <input type="number" id="cfg-min-hsd" class="base-input" min="0">
       </label>
       <label class="space-y-1">
-        <span class="text-gray-600" title="The fewest real buildings a work area needs before an NCF or Inaccessible result there is treated as meaningful.">Min building count (NCF) ⓘ</span>
+        <span class="text-gray-600">Min building count (NCF) <span class="info-icon" tabindex="0" data-tip="The fewest real buildings a work area needs before an NCF or Inaccessible result there is treated as meaningful.">ⓘ</span></span>
         <input type="number" id="cfg-min-buildings" class="base-input" min="0">
       </label>
       <label class="flex items-center gap-2 pt-5">
         <input type="checkbox" id="cfg-include-not-visited">
-        <span class="text-gray-600" title="A work area that's not yet visited (or has a pending inaccessible request) is excluded from EVC-shortfall scoring by default, since the campaign may just not have reached it yet. Check this to score it anyway.">Include not-yet-visited in EVC ⓘ</span>
+        <span class="text-gray-600">Include not-yet-visited in EVC <span class="info-icon" tabindex="0" data-tip="A work area that's not yet visited (or has a pending inaccessible request) is excluded from EVC-shortfall scoring by default, since the campaign may just not have reached it yet. Check this to score it anyway.">ⓘ</span></span>
       </label>
     </div>
     <button type="button" id="recompute" class="button primary-dark">Recompute</button>
@@ -76,7 +117,7 @@
       <thead>
         <tr class="text-left text-gray-500 bg-gray-50">
           <th class="p-2">Ward</th><th class="p-2">LGA</th><th class="p-2">State</th>
-          <th class="p-2">Total WAs</th><th class="p-2">Candidates</th><th class="p-2">Flagged 2+ ⓘ</th>
+          <th class="p-2">Total WAs</th><th class="p-2">Candidates</th><th class="p-2">Flagged 2+ <span class="info-icon" tabindex="0" data-tip="Work areas in this ward flagged by 2 or more of the currently-enabled indicators.">ⓘ</span></th>
         </tr>
       </thead>
       <tbody id="ward-summary-rows"></tbody>
@@ -91,7 +132,7 @@
           <tr class="text-left text-gray-500">
             <th class="p-2">Ward</th><th class="p-2">LGA</th><th class="p-2">State</th>
             <th class="p-2">FLW</th>
-            <th class="p-2 cursor-pointer" id="sort-severity">Severity ⓘ ↕</th>
+            <th class="p-2 cursor-pointer" id="sort-severity">Severity <span class="info-icon" tabindex="0" data-tip="How many of the currently-enabled indicators flagged this work area. A plain count, not a weighted score.">ⓘ</span> ↕</th>
             <th class="p-2">Triggered indicators</th>
           </tr>
         </thead>
@@ -105,7 +146,7 @@
       <button type="button" id="lock-run" class="button outline-style" {% if run.status == "locked" %}disabled{% endif %}>
         {% if run.status == "locked" %}Locked ({{ run.candidate_work_areas|length }} WAs){% else %}Lock candidates{% endif %}
       </button>
-      <p class="text-xs text-gray-500 mt-1" title="Freezes the current candidate set. Nothing past this point re-reads live thresholds.">Freezes the current set — thresholds stop mattering after this ⓘ</p>
+      <p class="text-xs text-gray-500 mt-1">Freezes the current set — thresholds stop mattering after this <span class="info-icon" tabindex="0" data-tip="Freezes the current candidate set. Nothing past this point re-reads live thresholds.">ⓘ</span></p>
     </div>
     <button type="button" id="create-plan" class="button primary-dark" {% if run.status != "locked" %}disabled{% endif %}>Create mop-up plan</button>
   </section>

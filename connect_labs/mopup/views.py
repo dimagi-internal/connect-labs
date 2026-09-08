@@ -106,6 +106,50 @@ def _program_opportunities(request, program_id: int) -> list[dict]:
     return [opp for opp in org_data.get("opportunities", []) if opp.get("program") == program_id]
 
 
+class MopupProgramHomeView(LoginRequiredMixin, TemplateView):
+    """The bare `program/<id>/` landing page — mirrors microplans'
+    `ProgramWorkspaceView` (`connect_labs/microplans/urls.py:48`) so the same
+    URL-guessing convention that works for microplans also works here.
+    Previously missing entirely: `/mopup/program/<id>/` 404'd, and there was
+    no in-app link to mop-up at all (confirmed: no other labs template
+    references the `mopup` app). Lists existing runs (own opportunity name
+    resolved via `_program_opportunities`, same free/no-API-call lookup the
+    setup page already uses) with a link to each run's current step, plus a
+    "Start new mop-up" action into Phase 1."""
+
+    template_name = "mopup/program_home.html"
+
+    def get_context_data(self, **kwargs):
+        from django.urls import reverse
+
+        context = super().get_context_data(**kwargs)
+        program_id = kwargs["program_id"]
+        context["program_id"] = program_id
+        context["setup_url"] = reverse("mopup:setup", args=[program_id])
+
+        da = MopupRunDataAccess(program_id, request=self.request)
+        opps_by_id = {opp["id"]: opp.get("name", "") for opp in _program_opportunities(self.request, program_id)}
+        runs = []
+        for run in da.list_runs():
+            runs.append(
+                {
+                    "id": run.id,
+                    "name": run.name,
+                    "status": run.status,
+                    "created_at": run.created_at,
+                    "opportunity_name": opps_by_id.get(run.target_opportunity_id, ""),
+                    "url": (
+                        reverse("mopup:analysis", args=[program_id, run.id])
+                        if run.status != "setup"
+                        else reverse("mopup:setup", args=[program_id])
+                    ),
+                }
+            )
+        runs.sort(key=lambda r: r["created_at"], reverse=True)
+        context["runs"] = runs
+        return context
+
+
 class MopupSetupView(LoginRequiredMixin, TemplateView):
     """Phase 1: pick opportunity, ward(s), optional date range."""
 

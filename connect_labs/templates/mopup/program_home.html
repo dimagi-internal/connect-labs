@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}CHC Mop-up{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto p-6 space-y-6">
+  <div class="flex items-start justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">CHC Mop-up</h1>
+      <p class="text-sm text-gray-500">Program #{{ program_id }} — review past mop-up runs or start a new one.</p>
+    </div>
+    <a href="{{ setup_url }}" class="button primary-dark">Start new mop-up</a>
+  </div>
+
+  <section class="space-y-2">
+    <h2 class="text-lg font-semibold text-gray-900">Runs</h2>
+    {% if runs %}
+      <table class="w-full text-sm border border-gray-200 rounded">
+        <thead>
+          <tr class="text-left text-gray-500 bg-gray-50">
+            <th class="p-2">Run</th>
+            <th class="p-2">Opportunity</th>
+            <th class="p-2">Status</th>
+            <th class="p-2">Created</th>
+            <th class="p-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in runs %}
+            <tr class="border-t border-gray-100">
+              <td class="p-2">{{ run.name }}</td>
+              <td class="p-2">{{ run.opportunity_name }}</td>
+              <td class="p-2 capitalize">{{ run.status }}</td>
+              <td class="p-2 text-gray-500">{{ run.created_at }}</td>
+              <td class="p-2 text-right"><a href="{{ run.url }}" class="text-indigo-600 hover:text-indigo-700 hover:underline">Open</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-sm text-gray-500">No mop-up runs yet for this program.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
