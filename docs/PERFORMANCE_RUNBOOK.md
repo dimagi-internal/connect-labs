@@ -65,6 +65,20 @@ aws cloudwatch describe-alarms --profile labs --region us-east-1 \
 | `labs-jj-alb-5xx-high` | §3 | ALB cannot get a usable response |
 | nothing | §2 | confirm there is a problem at all before digging |
 
+**Is the alarm itself the problem?** If it has paged repeatedly and each ALARM cleared within
+a few minutes, the pattern is a fact about the *config*, not about the tier — measure it before
+diagnosing anything:
+
+```bash
+python3 tools/alarm_rule_replay.py --metric web-cpu --days 9    # add --json for machine output
+```
+
+It prints the consecutive-run distribution (a duration rule can only separate two populations if
+their run lengths differ) and replays candidate `M-of-N@period` rules over the history the alarm
+actually saw. Read the run lengths first: if the tier emits mostly one-minute spikes, `Maximum`
+over a long `Period` cannot tell a spike from a sustained pin whatever M-of-N you choose, because
+one breaching minute marks the whole bucket. See #1512.
+
 ## 2. Is anything actually wrong?
 
 ```bash
