@@ -40,11 +40,8 @@
   var head = document.getElementById('cia-ribbon-head');
   var endEl = document.getElementById('cia-ribbon-end');
   var grad = document.getElementById('cia-ribbon-grad');
+  var defs = grad.parentNode;
   var railEl = document.getElementById('cia-date-rail');
-  var sidesEl =
-    document.querySelector(
-      '.cia-sides',
-    ); /* removed from the page; kept null-safe */
 
   /* Waypoints are the row-level blocks: side cards, centred Connect cards,
      whole-width photos and screens, and paired rows (where the thread runs
@@ -74,6 +71,24 @@
     railItems = [],
     pathLen = 0,
     bodyH = 0;
+  /* Rows where Connect stands between the two sides: the arcs reaching out from
+     it, the badges they land on, and which waypoints are those hubs. */
+  var bridges = [],
+    hubs = {};
+  /* Half a badge, so an arc can be drawn along the badges' centre line. */
+  var NODE_R = 31;
+
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function tiePath(cls, d) {
+    var el = document.createElementNS(SVGNS, 'path');
+    el.setAttribute('class', cls);
+    el.setAttribute('d', d);
+    svg.insertBefore(
+      el,
+      head,
+    ); /* over the main thread, under the drawing head */
+    return el;
+  }
 
   railEl.innerHTML =
     '<b>Timeline</b>' +
@@ -228,6 +243,134 @@
     endEl.setAttribute('cy', last.y);
     endEl.setAttribute('stroke', ROLE_COLOR[lastRole]);
 
+    /* Where Connect stands between the two sides, all three parties stand on
+       the block: the thread comes down the middle to Connect, and an arc
+       reaches out from there to the funder on one side and the frontline
+       organization on the other. Stacked, there is one lane and no room to
+       reach across, so the arcs are left out. */
+    bridges.forEach(function (b) {
+      b.halo.remove();
+      b.path.remove();
+      b.grad.remove();
+      b.nodes.forEach(function (n) {
+        n.el.remove();
+        n.cap.remove();
+      });
+    });
+    bridges = [];
+    hubs = {};
+    if (!stacked) {
+      Array.prototype.forEach.call(
+        document.querySelectorAll('[data-bridge]'),
+        function (el, k) {
+          var i = stops.indexOf(el.closest('[data-row]'));
+          if (i < 0) return;
+          hubs[i] = true;
+          var hub = cards[i];
+          var cy = hub.top - NODE_R; /* the badges' centre line */
+
+          /* Every party on this block, in the order they stand across it. */
+          var pts = el.dataset.bridge.split(',').map(function (role) {
+            return { role: role, x: laneX(role, hub.x) };
+          });
+          pts.push({ role: hub.role, x: hub.x });
+          pts.sort(function (a, b) {
+            return a.x - b.x;
+          });
+          var x1 = pts[0].x,
+            x2 = pts[pts.length - 1].x;
+
+          var gid = 'in-action-tie-' + k;
+          var g2 = document.createElementNS(SVGNS, 'linearGradient');
+          g2.setAttribute('id', gid);
+          g2.setAttribute('gradientUnits', 'userSpaceOnUse');
+          g2.setAttribute('x1', x1);
+          g2.setAttribute('y1', cy);
+          g2.setAttribute('x2', x2);
+          g2.setAttribute('y2', cy);
+          g2.innerHTML = pts
+            .map(function (pt) {
+              return (
+                '<stop offset="' +
+                (((pt.x - x1) / (x2 - x1)) * 100).toFixed(2) +
+                '%" stop-color="' +
+                ROLE_COLOR[pt.role] +
+                '"/>'
+              );
+            })
+            .join('');
+          defs.appendChild(g2);
+
+          /* A row of dots between the badges, on a softly bent path: a route
+           rather than a pipe. Only the gaps bend, so the badges stay level. */
+          var d2 = '';
+          for (var q = 1; q < pts.length; q++) {
+            var xa = pts[q - 1].x,
+              xb = pts[q].x,
+              m = (xb - xa) * 0.4;
+            d2 +=
+              ' M ' +
+              xa +
+              ' ' +
+              cy +
+              ' C ' +
+              (xa + m) +
+              ' ' +
+              (cy - 13) +
+              ' ' +
+              (xb - m) +
+              ' ' +
+              (cy - 13) +
+              ' ' +
+              xb +
+              ' ' +
+              cy;
+          }
+          d2 = d2.trim();
+          var halo = tiePath('cia-tie-halo', d2),
+            tie = tiePath('cia-tie', d2);
+          tie.setAttribute('stroke', 'url(#' + gid + ')');
+          /* Revealed by fading in, not by drawing: a stroke-dasharray reveal would
+           have to overwrite the dash pattern that makes the dots. */
+          [halo, tie].forEach(function (pp) {
+            pp.style.opacity = '0';
+          });
+
+          var ns = [];
+          pts.forEach(function (pt) {
+            if (pt.role === hub.role)
+              return; /* the hub's own badge comes from the main thread */
+            var node = document.createElement('span');
+            node.className = 'cia-node';
+            node.dataset.role = pt.role;
+            if (ART[pt.role]) node.appendChild(ART[pt.role].cloneNode(true));
+            node.style.left = (pt.x / W) * 100 + '%';
+            node.style.top = hub.top + 'px';
+            body.appendChild(node);
+
+            var cap = document.createElement('span');
+            cap.className = 'cia-node-cap';
+            cap.setAttribute('aria-hidden', 'true');
+            cap.dataset.role = pt.role;
+            cap.textContent = ROLE_NAME[pt.role];
+            cap.style.left = (pt.x / W) * 100 + '%';
+            cap.style.top = hub.top - 92 + 'px';
+            body.appendChild(cap);
+
+            ns.push({ el: node, cap: cap });
+          });
+
+          bridges.push({
+            halo: halo,
+            path: tie,
+            grad: g2,
+            at: sampleAtY(hub.top).len,
+            nodes: ns,
+          });
+        },
+      );
+    }
+
     nodes.forEach(function (n) {
       n.el.remove();
       if (n.cap) n.cap.remove();
@@ -243,11 +386,14 @@
       body.appendChild(el);
 
       var cap = null;
-      if (ROLE_NAME[c.role]) {
+      if (ROLE_NAME[c.role] && !hubs[i]) {
         /* If the previous block sat in the same lane, the thread drops straight
            down through the space above this badge, so the label moves aside. */
         var prevX = i > 0 ? cards[i - 1].x : sx;
-        var aside = Math.abs(prevX - c.x) < 70;
+        /* Except at the hub, where two more badges stand either side of this
+           one: all three are labelled the same way, and the chip's own ground
+           colour masks the thread coming down behind it. */
+        var aside = Math.abs(prevX - c.x) < 70 && !hubs[i];
         cap = document.createElement('span');
         cap.className = 'cia-node-cap' + (aside ? ' cia-aside' : '');
         cap.setAttribute('aria-hidden', 'true');
@@ -255,7 +401,9 @@
         cap.textContent = ROLE_NAME[c.role];
         cap.style.left = (c.x / W) * 100 + '%';
         cap.style.top =
-          c.top - (aside ? (stacked ? 20 : 31) : stacked ? 48 : 72) + 'px';
+          c.top -
+          (aside ? (stacked ? 20 : 31) : stacked ? 48 : hubs[i] ? 92 : 72) +
+          'px';
         body.appendChild(cap);
       }
       return { el: el, cap: cap, len: sampleAtY(c.top).len, role: c.role };
@@ -312,8 +460,19 @@
       }
     });
     head.setAttribute('stroke', ROLE_COLOR[role]);
+
+    /* Each row's rail appears once the main thread has arrived at its hub. */
+    bridges.forEach(function (b) {
+      var out = drawn >= b.at;
+      b.path.style.opacity = out ? '1' : '0';
+      b.halo.style.opacity = out ? '1' : '0';
+      b.nodes.forEach(function (n) {
+        n.el.classList.toggle('cia-on', out);
+        n.cap.classList.toggle('cia-on', out);
+      });
+    });
+
     endEl.style.opacity = drawn >= pathLen - 1 ? '1' : '0';
-    if (sidesEl) sidesEl.dataset.active = role;
 
     var lastLit = -1;
     railItems.forEach(function (r, k) {
@@ -344,6 +503,28 @@
     });
   }
 
+  /* The screen settles into place as it comes up the page. The growth tops out
+     at the element's own laid-out size, so it stays inside its box and can
+     never reach over the block below it. */
+  var grows = Array.prototype.slice.call(
+    document.querySelectorAll('[data-grow]'),
+  );
+  var GROW_FROM = 0.88;
+  function moveGrow() {
+    var vh = window.innerHeight;
+    grows.forEach(function (el) {
+      if (reduce) {
+        el.style.setProperty('--g', '1');
+        return;
+      }
+      var r = el.getBoundingClientRect();
+      /* 0 as its top crosses into view, 1 once it has risen to two-thirds up. */
+      var t = (vh - r.top) / (vh * 0.66);
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      el.style.setProperty('--g', (GROW_FROM + (1 - GROW_FROM) * t).toFixed(4));
+    });
+  }
+
   var progressBar = document.getElementById('cia-progress-bar');
   function moveProgress() {
     var h = document.documentElement.scrollHeight - window.innerHeight;
@@ -361,6 +542,7 @@
         ticking = false;
         draw();
         moveParallax();
+        moveGrow();
         moveProgress();
       });
     },
@@ -373,6 +555,7 @@
     resizeTimer = setTimeout(function () {
       buildRibbon();
       moveParallax();
+      moveGrow();
     }, 160);
   });
 
@@ -442,6 +625,7 @@
   function boot() {
     buildRibbon();
     moveParallax();
+    moveGrow();
     moveProgress();
   }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(boot);
