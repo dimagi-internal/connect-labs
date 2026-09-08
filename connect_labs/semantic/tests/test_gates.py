@@ -86,12 +86,21 @@ class TestAppAsks:
 
         assert any_asks("days_discharge_to_reg", None) is True
 
-    def test_fourteen_of_twentytwo_opportunities_have_a_gap(self):
-        """Guards the generalisation that produced the wrong reason on 369 cells."""
+    def test_ten_of_twentytwo_opportunities_have_a_gap(self):
+        """Guards the generalisation that produced the wrong reason on 369 cells.
+
+        Was 14. Four opportunities (10016/10017/10018/10019) lost their only gap
+        when `days_discharge_to_reg` was corrected to mean "can produce the
+        enrolment interval" rather than "writes the pre-computed field" — their
+        apps carry the DATES, which is what C16/C17 now derive from. The count is
+        still worth pinning: it is the tripwire for someone regenerating this map
+        and flattening it to all-True, which is the failure this test was written
+        for.
+        """
         from connect_labs.semantic.gates import APP_ASKS
 
         with_gap = [o for o, m in APP_ASKS.items() if any(v is False for v in m.values())]
-        assert len(with_gap) == 14, f"expected 14 opportunities with a gap, got {len(with_gap)}"
+        assert len(with_gap) == 10, f"expected 10 opportunities with a gap, got {len(with_gap)}"
 
 
 def test_credibility_has_exactly_one_source():
