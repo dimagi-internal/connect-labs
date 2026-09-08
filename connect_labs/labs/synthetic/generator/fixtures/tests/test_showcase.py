@@ -128,3 +128,22 @@ def test_showcase_visits_are_ordinary_approved_work():
 def test_an_unknown_trajectory_fails_loudly_and_names_what_exists():
     with pytest.raises(ShowcaseError, match="does not carry"):
         _build([{"name": "Nope", "trajectory": "normal_99", "flw": "flw_001"}])
+
+
+def test_the_same_case_gets_a_DIFFERENT_id_in_each_opportunity():
+    """The same showcase block is applied to every clone in a cohort.
+
+    Keyed on the name alone, one demo case carries ONE id across all eleven KMC
+    opportunities, and cross-opp analysis — which is what the growth-curve work
+    exists to do — would see four infants with ~40 visits across ten sites in
+    three countries. That reads as data corruption, not as a demo.
+    """
+    case = [{"name": "KMC Demo — Steady Gain", "trajectory": "normal_02", "flw": "flw_001"}]
+    a = build_showcase_visits(_cfg(showcase=case), opportunity_id=10015, start_date=dt.date(2026, 3, 2))
+    b = build_showcase_visits(_cfg(showcase=case), opportunity_id=10022, start_date=dt.date(2026, 3, 2))
+    assert a[0]["entity_name"] == b[0]["entity_name"], "same case, same name"
+    assert a[0]["entity_id"] != b[0]["entity_id"], "same case, different opp -> different id"
+    # ...and still reproducible within one opportunity
+    again = build_showcase_visits(_cfg(showcase=case), opportunity_id=10015, start_date=dt.date(2026, 3, 2))
+    assert [v["entity_id"] for v in a] == [v["entity_id"] for v in again]
+    assert len({v["xform_id"] for v in a} & {v["xform_id"] for v in b}) == 0, "xform ids must not collide either"
