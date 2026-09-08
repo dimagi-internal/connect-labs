@@ -65,6 +65,37 @@ The task:
 4. Execs `claude --settings safe-claude/settings.json --mcp-config safe-claude/mcp.json --strict-mcp-config --permission-mode dontAsk`.
 5. Deletes any ephemeral Vertex credentials tempfile when the session exits.
 
+## The handoff form (`--prompt-file`)
+
+    inv safe-claude --auth=vertex --prompt-file=safe-claude/prompts/kmc-over-limit.md
+
+Same settings, same MCP surface, same `dontAsk` — the only difference is that
+the prompt arrives as `claude -p <text>` instead of being typed. It exists for
+one recurring situation: **an agent needs an answer that lives behind someone
+else's access.**
+
+ACE's labs PAT deliberately cannot see opportunities outside its own orgs. The
+tempting fix — park a human's PAT where the agent can read it — hands over a
+standing credential to solve a momentary problem, and every later call silently
+runs as that person. Safe mode is the alternative that was already built: the
+human runs one command under their own token, in a session that cannot write
+files, cannot shell out, and cannot spawn a subagent, and the artifact lands
+somewhere both parties can reach (a Drive bundle, a labs record).
+
+What makes it safe to hand someone a prompt written by an agent:
+
+- The deny list is **policy at the Claude Code layer**, not instruction. A
+  prepared prompt cannot widen the tool surface, so reading the one command
+  tells you the blast radius.
+- The prompt file is read and validated **before** any credential is fetched, so
+  a typo'd path costs nothing.
+- The PII rule is the one thing the tool surface cannot enforce — nothing stops a
+  model typing records into its own reply — so every shipped prompt states it
+  explicitly, and a test fails if one doesn't.
+
+Prompts live in `safe-claude/prompts/`. Keep them self-contained: why the run is
+needed, what to call, what to report, and what must not come back.
+
 Verify the lockdown from inside the session:
 
 > "What MCP servers and tools do you have available?"
