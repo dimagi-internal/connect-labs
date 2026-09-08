@@ -86,12 +86,21 @@ class TestAppAsks:
 
         assert any_asks("days_discharge_to_reg", None) is True
 
-    def test_fourteen_of_twentytwo_opportunities_have_a_gap(self):
-        """Guards the generalisation that produced the wrong reason on 369 cells."""
+    def test_ten_of_twentytwo_opportunities_have_a_gap(self):
+        """Guards the generalisation that produced the wrong reason on 369 cells.
+
+        Was 14. Four opportunities (10016/10017/10018/10019) lost their only gap
+        when `days_discharge_to_reg` was corrected to mean "can produce the
+        enrolment interval" rather than "writes the pre-computed field" — their
+        apps carry the DATES, which is what C16/C17 now derive from. The count is
+        still worth pinning: it is the tripwire for someone regenerating this map
+        and flattening it to all-True, which is the failure this test was written
+        for.
+        """
         from connect_labs.semantic.gates import APP_ASKS
 
         with_gap = [o for o, m in APP_ASKS.items() if any(v is False for v in m.values())]
-        assert len(with_gap) == 14, f"expected 14 opportunities with a gap, got {len(with_gap)}"
+        assert len(with_gap) == 10, f"expected 10 opportunities with a gap, got {len(with_gap)}"
 
 
 def test_credibility_has_exactly_one_source():
@@ -142,3 +151,90 @@ def test_programme_scope_is_never_credibility_gated():
 
     assert credible_for("C14", None) is True
     assert credible_for("C18", None) is True
+
+
+def _render_app_asks() -> dict[str, dict[str, bool]]:
+    """Parse APP_ASKS out of the render JS.
+
+    The map is DUPLICATED — once here in Python, once as a JS literal in
+    kmc_programme_metrics_render.js — and the render's copy is the one that
+    actually decides whether a cell reads "not in this app". Drift between them is
+    silent and one-sided: the server can say a field is available while the browser
+    prints n/a over a real number.
+    """
+    import json
+    import re
+    from pathlib import Path
+
+    src = (
+        Path(__file__).resolve().parents[2] / "workflow" / "templates" / "kmc_programme_metrics_render.js"
+    ).read_text()
+    start = src.index("var APP_ASKS = {")
+    end = src.index("\n  };\n", start)
+    literal = src[start + len("var APP_ASKS = ") : end + len("\n  }")]
+    literal = re.sub(r"(\w+):", r'"\1":', literal)  # bare keys -> JSON keys
+    literal = re.sub(r",(\s*[}\]])", r"\1", literal)  # trailing commas
+    return json.loads(literal)
+
+
+def test_app_asks_matches_the_render_copy():
+    """The two copies must agree, field by field."""
+    from connect_labs.semantic.gates import APP_ASKS
+
+    js = _render_app_asks()
+    assert set(js) == set(APP_ASKS), "opportunity sets differ between gates.py and the render"
+    for opp in sorted(APP_ASKS):
+        assert js[opp] == APP_ASKS[opp], f"opp {opp} disagrees: render={js[opp]} gates={APP_ASKS[opp]}"
+
+
+def test_c16_is_not_gated_notinapp_where_the_interval_is_derivable():
+    """C16's input widened; the gate has to have widened with it.
+
+    C16/C17 stopped reading the app's pre-computed `child_age_at_reg_discharge_date`
+    and now derive `days_to_enrolment` from (reg_date - hospital_discharge_date),
+    falling back to the pre-computed value. `APP_ASKS["days_discharge_to_reg"]` kept
+    answering the OLD question, so four opportunities that only ever had the DATES
+    read False — and EHA and GHI, the two LLOs that fix was written for, rendered
+    "not in this app" over a real 72.40% (202/279) and 94.50% (361/382).
+
+    Values are measured, not asserted: per-opportunity C16 denominators read live on
+    2026-09-08 against a warm cache, agreeing across workflows 5476 and 5456.
+    """
+    from connect_labs.semantic.gates import any_asks
+
+    # opp -> C16 denominator observed live
+    OBSERVED = {
+        10013: 28,
+        10014: 651,
+        10015: 954,
+        10016: 279,
+        10017: 382,
+        10018: 139,
+        10019: 1805,
+        10020: 0,
+        10021: 0,
+        10022: 0,
+        10042: 342,
+    }
+    for opp, denominator in OBSERVED.items():
+        asks = any_asks("days_discharge_to_reg", [opp])
+        if denominator > 0:
+            assert asks, f"opp {opp} produced a C16 denominator of {denominator} but the gate says 'not in this app'"
+        else:
+            assert not asks, f"opp {opp} produced no C16 denominator; the gate should say 'not in this app'"
+
+
+def test_c16_gate_holds_at_llo_scope():
+    """The contradiction was visible at LLO scope, which is what the dashboard shows."""
+    from connect_labs.semantic.gates import any_asks
+
+    LLO_OPPS = {
+        "BERI": [10042],
+        "EHA": [10016],
+        "GHI": [10017, 10020],
+        "Kikapu": [10013],
+        "NAMA": [10014, 10018, 10022],
+        "PIPN": [10015, 10019, 10021],
+    }
+    for llo, opps in LLO_OPPS.items():
+        assert any_asks("days_discharge_to_reg", opps), f"{llo} reports a C16 value but would render 'not in this app'"

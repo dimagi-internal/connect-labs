@@ -77,6 +77,23 @@ ASKS_AS = {
 # question, and an app that never asks must read "not in app" rather than
 # "recorded nothing" -- they are different facts about the programme.
 #
+# `days_discharge_to_reg` means "this app can produce the enrolment interval",
+# NOT "this app writes the pre-computed child_age_at_reg_discharge_date". Those
+# were the same question until C16/C17 stopped reading the app's pre-computed
+# field and started deriving from (reg_date - hospital_discharge_date), falling
+# back to the pre-computed value. The gate kept asking the OLD question, so the
+# four opportunities that only ever had the DATES read False, and EHA and GHI --
+# the two LLOs that fix was written for -- rendered "not in this app" over a real
+# 72.40% (202/279) and 94.50% (361/382). The numbers were computed and then
+# hidden behind the wrong reason.
+#
+# Values below are measured, not inferred: per-opportunity C16 denominators read
+# live on 2026-09-08 against a warm cache, agreeing across workflows 5476 and
+# 5456. 10020/10021/10022 stay False and are corroborated from their source
+# bundles' app_structure.json -- opps 675 and 524 do not define
+# `date_hospital_discharge` at all, while 1234 and 1790 (whose clones DO report
+# C16) define it.
+#
 # This was very nearly wrong: reading the first two opportunities suggested every
 # field was true everywhere, and generalising from that produced the right VALUES
 # with the wrong REASON on 369 per-FLW cells. 14 of the 22 opportunities have at
@@ -121,7 +138,7 @@ APP_ASKS: dict[str, dict[str, bool]] = {
     "10016": {
         "birth_weight_g": True,
         "danger_visits": True,
-        "days_discharge_to_reg": False,
+        "days_discharge_to_reg": True,
         "discharge_visits": True,
         "enrollment_weight_g": True,
         "kmc_hours_mean": True,
@@ -133,7 +150,7 @@ APP_ASKS: dict[str, dict[str, bool]] = {
     "10017": {
         "birth_weight_g": True,
         "danger_visits": True,
-        "days_discharge_to_reg": False,
+        "days_discharge_to_reg": True,
         "discharge_visits": True,
         "enrollment_weight_g": True,
         "kmc_hours_mean": True,
@@ -145,7 +162,7 @@ APP_ASKS: dict[str, dict[str, bool]] = {
     "10018": {
         "birth_weight_g": True,
         "danger_visits": True,
-        "days_discharge_to_reg": False,
+        "days_discharge_to_reg": True,
         "discharge_visits": True,
         "enrollment_weight_g": True,
         "kmc_hours_mean": True,
@@ -157,7 +174,7 @@ APP_ASKS: dict[str, dict[str, bool]] = {
     "10019": {
         "birth_weight_g": True,
         "danger_visits": True,
-        "days_discharge_to_reg": False,
+        "days_discharge_to_reg": True,
         "discharge_visits": True,
         "enrollment_weight_g": True,
         "kmc_hours_mean": True,
