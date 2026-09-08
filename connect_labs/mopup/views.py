@@ -492,10 +492,32 @@ class MopupDebugRawCaseView(LoginRequiredMixin, View):
         except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
             sql_stage = {"error": f"{type(e).__name__}: {e}"}
 
+        # Stage 3: bypass the pipeline entirely and count what's ACTUALLY in
+        # RawVisitCache for this scratch pipeline_id via plain Django ORM —
+        # settles whether stage 2's count came from a broken WRITE (storage
+        # never got 12933 rows) or a broken READ (storage is fine, the query
+        # that reads it back is wrong).
+        try:
+            from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+
+            raw_cache_stage = {
+                "db_row_count": RawVisitCache.objects.filter(
+                    opportunity_id=opportunity_id, pipeline_id=999999999
+                ).count(),
+                "sample_entity_ids": list(
+                    RawVisitCache.objects.filter(opportunity_id=opportunity_id, pipeline_id=999999999).values_list(
+                        "entity_id", flat=True
+                    )[:3]
+                ),
+            }
+        except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
+            raw_cache_stage = {"error": f"{type(e).__name__}: {e}"}
+
         return JsonResponse(
             {
                 "status": "ok",
                 "raw_fetch_stage": raw_stage,
                 "sql_roundtrip_stage": sql_stage,
+                "raw_cache_db_stage": raw_cache_stage,
             }
         )
