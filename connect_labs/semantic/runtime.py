@@ -211,6 +211,14 @@ def measure_catalog(registry: dict[str, Any]) -> list[dict[str, Any]]:
                 "bands": meta.get("bands"),
                 "bands_source": meta.get("bands_source"),
                 "min_denominator": meta.get("min_denominator"),
+                # Why a value is unbanded even though it computes. The render shows
+                # it as a warning next to the name; dropping it would quietly turn
+                # "we have no threshold for this yet" into "this looks fine".
+                "tbd_input": meta.get("tbd_input"),
+                # C14's table row pools every LLO while the headline card is gated to
+                # the credible recorders, so the two legitimately differ. Its own
+                # comment in the render put it best: an unlabelled pair reads as a bug.
+                "scope_note": meta.get("scope_note"),
                 "flw_applicable": meta.get("flw_applicable", False),
             }
         )

@@ -702,7 +702,8 @@ function WorkflowUI({
     // A frozen run wants labels only; anything else wants the numbers too.
     var wantRows = !frozen;
     var url = cUrl(
-      wantRows ? 'series=C&scopes=' + C_SCOPES : 'series=C&catalog_only=1',
+      (wantRows ? 'series=C&scopes=' + C_SCOPES : 'series=C&catalog_only=1') +
+        oppParam(),
     );
     if (!url) {
       setCSeries({
@@ -785,6 +786,8 @@ function WorkflowUI({
             dir: m.direction,
             bands: m.bands,
             minDen: m.min_denominator,
+            tbdInput: m.tbd_input,
+            scopeNote: m.scope_note,
           };
         });
     },
@@ -1319,6 +1322,24 @@ function WorkflowUI({
   // this render context -- measured live: the panel rendered, fetched nothing, and
   // reported "no workflow id" -- and instance.id is the RUN. The path carries it, so
   // fall through to that rather than guessing at another prop shape.
+  // The labs context middleware REDIRECTS an api request that carries no
+  // opportunity_id, substituting whatever opp the session last used. fetch()
+  // follows that 302 transparently, so the render got a 200 whose body was the
+  // wrong page: `data.rows` undefined, every indicator an em-dash, and no error
+  // anywhere saying why. The framework's own pipeline-data/stream call has always
+  // passed it; these did not.
+  //
+  // Read from the page URL -- the same place nWorkflowId() reads the definition id
+  // from -- so a request is scoped to the opp you are looking at, not to session
+  // state.
+  function oppParam() {
+    var m = String(window.location.search).match(/[?&]opportunity_id=(\d+)/);
+    if (m) return '&opportunity_id=' + m[1];
+    if (instance && instance.opportunity_id)
+      return '&opportunity_id=' + instance.opportunity_id;
+    return '';
+  }
+
   function nWorkflowId() {
     if (definition && definition.id) return definition.id;
     if (instance && instance.definition_id) return instance.definition_id;
@@ -1341,7 +1362,8 @@ function WorkflowUI({
     fetch(
       '/labs/workflow/api/' +
         wfId +
-        '/semantic/?series=N&scopes=programme,opportunity,flw',
+        '/semantic/?series=N&scopes=programme,opportunity,flw' +
+        oppParam(),
     )
       .then(function (res) {
         return res.json();
@@ -1669,14 +1691,26 @@ function WorkflowUI({
     notinapp: 'bg-slate-100 text-slate-400 italic',
     unrecorded: 'bg-amber-100 text-amber-900',
   };
+  // An indicator's entry for a scope, or a stand-in. This exists because the map is
+  // no longer guaranteed complete: `evalAll` built it from the static `IND` array so
+  // every id was always present, while `cIndFor` builds it from the catalog the
+  // server sends -- which is empty while that request is in flight, and stays empty
+  // if it fails. Fourteen display sites assumed completeness; one undefined entry
+  // took the whole dashboard down with "Cannot read properties of undefined
+  // (reading 'value')", because a React render that throws renders nothing at all.
+  function entryOf(map, id) {
+    return (map && map[id]) || { id: id, n: 0, value: null, band: 'nodata' };
+  }
+
   function fmt(ind, e) {
-    if (e.value === null) return '—';
+    if (!e || e.value === null || e.value === undefined) return '—';
     if (ind.unit === '%') return (100 * e.value).toFixed(1) + '%';
     if (ind.unit === 'n' || ind.unit === '/100')
       return Number(e.value).toFixed(ind.kind === 'count' ? 0 : 1);
     return Number(e.value).toFixed(1);
   }
   function bandLabel(e) {
+    if (!e) return 'no data';
     if (e.band === 'notinapp') return 'not in this app';
     if (e.band === 'unrecorded') return 'no value reaches this row';
     if (e.band === 'notcredible') return 'shown, not credible';
@@ -1703,7 +1737,7 @@ function WorkflowUI({
         </thead>
         <tbody>
           {C_LIST.map(function (i) {
-            var e = ind[i.id];
+            var e = entryOf(ind, i.id);
             return (
               <tr
                 key={i.id}
@@ -2863,7 +2897,7 @@ function WorkflowUI({
                 <div className="bg-white border border-gray-200 rounded-xl p-4">
                   <div className="text-xs text-gray-500">Total started</div>
                   <div className="text-2xl font-semibold mt-1">
-                    {programInd['C02'].value}
+                    {entryOf(programInd, 'C02').value}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
                     Program row 2 · Started cases (C02) against 25,000 by
@@ -2875,7 +2909,7 @@ function WorkflowUI({
                     % weight data sufficient
                   </div>
                   <div className="text-2xl font-semibold mt-1">
-                    {fmt(indOf('C09'), programInd['C09'])}
+                    {fmt(indOf('C09'), entryOf(programInd, 'C09'))}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
                     Program row 3 · % weight data sufficient (C09), pooled
@@ -2964,19 +2998,19 @@ function WorkflowUI({
                             {caseCount(l)}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {l.ind['C02'].value}
+                            {entryOf(l.ind, 'C02').value}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C09'), l.ind['C09'])}
+                            {fmt(indOf('C09'), entryOf(l.ind, 'C09'))}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C13'), l.ind['C13'])}
+                            {fmt(indOf('C13'), entryOf(l.ind, 'C13'))}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C14'), l.ind['C14'])}
+                            {fmt(indOf('C14'), entryOf(l.ind, 'C14'))}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C16'), l.ind['C16'])}
+                            {fmt(indOf('C16'), entryOf(l.ind, 'C16'))}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {l.reds ? (
@@ -3083,19 +3117,19 @@ function WorkflowUI({
                             {caseCount(o)}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C07'), o.ind['C07'])}
+                            {fmt(indOf('C07'), entryOf(o.ind, 'C07'))}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C09'), o.ind['C09'])}
+                            {fmt(indOf('C09'), entryOf(o.ind, 'C09'))}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C13'), o.ind['C13'])}
+                            {fmt(indOf('C13'), entryOf(o.ind, 'C13'))}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C14'), o.ind['C14'])}
+                            {fmt(indOf('C14'), entryOf(o.ind, 'C14'))}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C15'), o.ind['C15'])}
+                            {fmt(indOf('C15'), entryOf(o.ind, 'C15'))}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {reds ? (
