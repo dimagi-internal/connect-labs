@@ -186,7 +186,7 @@ function WorkflowUI({
     10016: {
       birth_weight_g: true,
       danger_visits: true,
-      days_discharge_to_reg: false,
+      days_discharge_to_reg: true,
       discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
@@ -198,7 +198,7 @@ function WorkflowUI({
     10017: {
       birth_weight_g: true,
       danger_visits: true,
-      days_discharge_to_reg: false,
+      days_discharge_to_reg: true,
       discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
@@ -210,7 +210,7 @@ function WorkflowUI({
     10018: {
       birth_weight_g: true,
       danger_visits: true,
-      days_discharge_to_reg: false,
+      days_discharge_to_reg: true,
       discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
@@ -222,7 +222,7 @@ function WorkflowUI({
     10019: {
       birth_weight_g: true,
       danger_visits: true,
-      days_discharge_to_reg: false,
+      days_discharge_to_reg: true,
       discharge_visits: true,
       enrollment_weight_g: true,
       kmc_hours_mean: true,
