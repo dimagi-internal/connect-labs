@@ -366,7 +366,7 @@ WEIGHT_SERIES_SCHEMA = {
 # 34,737 visit rows = 21.6 MB of JSON — four times the framework's 5 MB hard cap, and
 # WORKFLOW_REFERENCE is explicit that verbatim pipeline capture is the failure mode
 # that OOM-killed a web worker on a 102k-visit opp. The render instead computes the
-# aggregates it displays and freezes THOSE into `frozen` (~300 KB) in the
+# aggregates it displays and saves THOSE into `snapshot` (~300 KB) in the
 # onUpdateState write that precedes view.complete().
 #
 # That is also the right thing to preserve: a published figure should be the numbers
@@ -375,8 +375,8 @@ WEIGHT_SERIES_SCHEMA = {
 SNAPSHOT_INPUTS = {
     "pipelines": [],
     "workers": False,
-    "state_keys": ["frozen"],
-    # `frozen` is not optional here the way `worker_states` is for a performance
+    "state_keys": ["snapshot"],
+    # `snapshot` is not optional here the way `worker_states` is for a performance
     # review: every number this dashboard publishes lives under it, so a snapshot
     # without it is not an early snapshot, it is an empty one — and completion
     # cannot be re-opened. An API/MCP caller that completes a run nobody has
@@ -385,19 +385,47 @@ SNAPSHOT_INPUTS = {
     "require_state_keys": True,
 }
 
+# One word throughout: SNAPSHOT — matching snapshot_inputs, snapshot_schema,
+# build_snapshot, workflow_save_snapshot and run.data["snapshot"].
+#
+# This template used to say `frozen`, which was never a second concept: it was a
+# leftover from when the dashboard computed the whole thing in the browser and
+# "froze" what it had in hand. The server builds it now, so the artifact went with
+# the artifact's cause. Runs saved under the old key are not migrated — by decision
+# (Jon, 2026-09-08), there were two and they predate every fix in this file.
 SNAPSHOT_SCHEMA = {
-    "version": 1,
+    "version": 2,
     "keys": {
-        "state.frozen.programInd": "Programme-wide indicator results (C01-C31) at freeze time",
-        "state.frozen.byLLO": "Per-LLO indicator results, with each LLO's opportunities nested",
-        "state.frozen.byOpp": "Per-opportunity indicator results",
-        "state.frozen.byFLW": "Per-FLW indicator results, keyed (opportunity, username)",
-        "state.frozen.monthly": "Programme monthly trend series",
-        "state.frozen.monthlyByScope": (
-            "Monthly series precomputed per drill scope (all / llo:<name> / opp:<id>) so a "
-            "frozen run still supports the LLO and opportunity drill without live pipelines"
+        "state.snapshot.programInd": "Programme-wide indicator results (C01-C31) as published",
+        "state.snapshot.byLLO": "Per-LLO indicator results, with each LLO's opportunities nested",
+        "state.snapshot.byOpp": "Per-opportunity indicator results",
+        "state.snapshot.byFLW": (
+            "Per-FLW indicator results, keyed (opportunity, username). `rows` carries that "
+            "worker's case records — a saved run has no live pipeline behind it, so an empty "
+            "`rows` would end the drill at the worker"
         ),
-        "state.frozen.meta": "Cohort size at freeze: cases, visits, opportunities, llos",
+        "state.snapshot.cases": (
+            "Flat index of every case in the snapshot, so the case table and a hand-off to "
+            "the longitudinal view need not walk byFLW. Slim by design: identity, dates, "
+            "weights, visit count. The per-visit weight SERIES is deliberately absent — it "
+            "would not fit the 5 MB cap, and the longitudinal workflow fetches it live for "
+            "the one case a user opens"
+        ),
+        "state.snapshot.cMeasures": (
+            "The display contract these values were graded with — titles, units, directions "
+            "and bands as published, so a later threshold change cannot silently re-grade a "
+            "saved run"
+        ),
+        "state.snapshot.mortalityCredible": "Which LLOs record deaths credibly, as published",
+        "state.snapshot.monthly": "Programme monthly trend series",
+        "state.snapshot.monthlyByScope": (
+            "Monthly series precomputed per drill scope (all / llo:<name> / opp:<id>) so a "
+            "saved run still supports the LLO and opportunity drill without live pipelines"
+        ),
+        "state.snapshot.nSeries": "The SQL tab's rows when that tab was run; null otherwise",
+        "state.snapshot.schema": "Payload version, independent of this manifest's version",
+        "state.snapshot.generated_at": "When the snapshot was built",
+        "state.snapshot.meta": "Cohort size as published: cases, visits, opportunities, llos",
     },
 }
 
@@ -495,3 +523,113 @@ TEMPLATE = {
         {"alias": "visits", "name": "KMC Weight Series", "schema": WEIGHT_SERIES_SCHEMA},
     ],
 }
+
+
+def build_snapshot(*, pipelines, state, opportunity_id, **context):
+    """Server-side snapshot, so a saved run needs no browser.
+
+    Before this, the only thing that could produce a KMC snapshot was the render:
+    an agent could create a run over the API and not complete it, which is the
+    opposite of what the workflow framework is for. Numbers come from the same
+    `evaluate()` the live dashboard calls, through the same binding
+    (semantic/workflow_binding.py), so a saved run and the live view cannot disagree.
+
+    Falls back to whatever the render staged into `state["snapshot"]` when a live
+    evaluation is not possible — a caller that already has a good snapshot should
+    never be punished for our inability to recompute one.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    staged = (state or {}).get("snapshot")
+
+    definition_id = context.get("definition_id")
+    opportunity_ids = [int(o) for o in (context.get("opportunity_ids") or [opportunity_id])]
+    request = context.get("request")
+    access_token = context.get("access_token")
+
+    try:
+        from connect_labs.semantic.runtime import evaluate, filter_to_series, measure_catalog
+        from connect_labs.semantic.workflow_binding import build_evaluate_inputs, resolve_registry_for
+        from connect_labs.workflow.data_access import (
+            PipelineDataAccess,
+            SemanticRegistryDataAccess,
+            WorkflowDataAccess,
+        )
+        from connect_labs.workflow.templates import kmc_snapshot
+
+        wda = WorkflowDataAccess(request=request, access_token=access_token)
+        try:
+            definition = wda.get_definition(definition_id)
+        finally:
+            wda.close()
+        if definition is None:
+            raise RuntimeError(f"workflow {definition_id} could not be read")
+
+        pipeline_config, extra_fields = build_evaluate_inputs(
+            definition, lambda: PipelineDataAccess(request=request, access_token=access_token)
+        )
+
+        # The registry this WORKFLOW is bound to, not a hardcoded one. That binding is
+        # the point of registries-as-records: indicators become editable without a
+        # deploy. Hardcoding it here would compute a saved run from the on-disk copy
+        # while the dashboard computed from the record — silently, and only once
+        # someone actually made the indicators dynamic.
+        props_doc, full_registry, llo_map, reg_settings, _source = resolve_registry_for(
+            definition,
+            registry_access_factory=lambda: SemanticRegistryDataAccess(request=request, access_token=access_token),
+        )
+        # Every scope a saved run can drill to. ONE pass: GROUPING SETS exist
+        # precisely because per-scope calls re-run the whole Layer 1 extraction.
+        scopes = [
+            "programme",
+            "llo",
+            "opportunity",
+            "flw",
+            "month",
+            "llo_month",
+            "opportunity_month",
+        ]
+        rows = evaluate(
+            pipeline_config,
+            opportunity_ids,
+            extra_fields=extra_fields,
+            registry_documents=(props_doc, full_registry),
+            series="C",
+            scopes=scopes,
+            scope=scopes[0],
+            llo_map=llo_map or None,
+            settings=reg_settings or None,
+        )
+        measures = measure_catalog(filter_to_series(full_registry, "C"))
+        llo_by_opp = {int(k): v for k, v in (llo_map or {}).items()}
+        cases = kmc_snapshot.case_rows(pipelines, llo_by_opp)
+        visits = ((pipelines or {}).get("visits") or {}).get("rows") or []
+
+        return {
+            "snapshot": kmc_snapshot.build(
+                rows=rows,
+                measures=measures,
+                llo_map=llo_by_opp,
+                credible_sets={
+                    "C14": (reg_settings or {}).get("mortality_recording_credible") or {},
+                    "C18": (reg_settings or {}).get("completion_recording_credible") or {},
+                    "C22": (reg_settings or {}).get("completion_recording_credible") or {},
+                },
+                cases=cases,
+                meta={
+                    "cases": len(cases),
+                    "visits": len(visits),
+                    "opportunities": len(opportunity_ids),
+                    "llos": len({c.get("llo") for c in cases if c.get("llo")}),
+                },
+            )
+        }
+    except Exception:
+        if staged:
+            # The render already computed a good one; recomputing is an optimisation,
+            # not a precondition.
+            logger.warning("kmc_programme_metrics: live snapshot failed; keeping the staged one", exc_info=True)
+            return {"snapshot": staged}
+        raise

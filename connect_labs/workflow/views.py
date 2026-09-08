@@ -2939,13 +2939,8 @@ def semantic_indicators_api(request, definition_id):
               still needs titles, units, directions and bands to render them, and
               the render no longer keeps a copy of those.
     """
-    from connect_labs.semantic.runtime import (
-        SemanticRuntimeError,
-        evaluate,
-        filter_to_series,
-        measure_catalog,
-        resolve_registry,
-    )
+    from connect_labs.semantic.runtime import SemanticRuntimeError, evaluate, filter_to_series, measure_catalog
+    from connect_labs.semantic.workflow_binding import resolve_registry_for
     from connect_labs.workflow.data_access import SemanticRegistryDataAccess
 
     series = (request.GET.get("series") or "").strip() or None
@@ -2996,35 +2991,25 @@ def semantic_indicators_api(request, definition_id):
         if definition is None and not registry_fallback:
             return JsonResponse({"error": "Workflow not found"}, status=404)
 
-        # Which registry this workflow computes from. `?registry_id=` overrides it
-        # so a candidate registry can be read against real data BEFORE it is bound
-        # -- the dry run that makes editing indicators live a safe thing to do.
-        registry_source = dict(getattr(definition, "registry_source", None) or {}) if definition else {}
+        # Which registry this workflow computes from — resolved by the SAME helper the
+        # template's build_snapshot hook uses, so a saved run and this endpoint cannot
+        # end up on different registries. `?registry_id=` overrides the binding so a
+        # candidate registry can be read against real data BEFORE it is bound: the dry
+        # run that makes editing indicators live a safe thing to do.
+        override = None
         if registry_id_param:
             try:
-                registry_source = {"registry_id": int(registry_id_param)}
+                override = int(registry_id_param)
             except ValueError:
                 return JsonResponse({"error": "registry_id must be an integer"}, status=400)
-
-        # `llo_map` and `settings` come back from the resolver alongside the two
-        # documents. They are the inputs the compiler needs and SQL cannot produce:
-        # without them this endpoint could not serve the `llo` scope at ALL
-        # (RegistryError -> 400, because `llo` is materialised by a CASE over
-        # opportunity_id), and -- the quiet half -- `_suppression_columns` returns
-        # early on falsy settings, so every C-series response was emitted with NO
-        # suppression columns. C14 would have published a mortality figure for an
-        # LLO the workbook says does not record deaths credibly: a real-looking red
-        # band where the right answer is an absent measurement. They travel WITH the
-        # registry now, so a shared registry carries its own gates rather than
-        # silently inheriting whatever the deployment happened to have on disk.
-        registry_access = SemanticRegistryDataAccess(request=request) if registry_source.get("registry_id") else None
         try:
-            props_doc, full_registry, llo_map, reg_settings = resolve_registry(registry_source, registry_access)
+            props_doc, full_registry, llo_map, reg_settings, registry_source = resolve_registry_for(
+                definition,
+                registry_access_factory=lambda: SemanticRegistryDataAccess(request=request),
+                registry_id_override=override,
+            )
         except SemanticRuntimeError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
-        finally:
-            if registry_access is not None:
-                registry_access.close()
 
         # The display contract WITHOUT the numbers, short-circuited before any
         # pipeline or database work. It still resolves the DEFINITION first: the
@@ -3051,78 +3036,20 @@ def semantic_indicators_api(request, definition_id):
                 }
             )
 
-        sources = definition.pipeline_sources or []
-        # The ENTITY pipeline is the one Layer 1 is generated from -- it carries the
-        # fallback path lists, which are the expensive part and the thing a
-        # hand-written extraction has repeatedly lost.
-        entity_source = next((s for s in sources if s.get("alias") == "children"), None)
-        if not entity_source:
-            return JsonResponse({"error": "workflow has no entity pipeline source (alias 'children')"}, status=400)
-
+        # One place builds these, shared with the template's build_snapshot hook —
+        # see connect_labs/semantic/workflow_binding.py. Two copies is how a frozen
+        # run and the live dashboard come to disagree about a number.
+        from connect_labs.semantic.workflow_binding import SemanticBindingError, build_evaluate_inputs
         from connect_labs.workflow.data_access import PipelineDataAccess
 
-        # Cross-opp pipeline scoping can 404 or raise; that is a reportable condition
-        # rather than an internal error, and saying WHICH pipeline could not be read
-        # is the difference between a fix and a guess.
-        pipeline_access = PipelineDataAccess(request=request)
         try:
-            pipeline_def = pipeline_access.get_definition(entity_source["pipeline_id"])
-        except Exception as exc:
-            logger.warning(
-                "Semantic: entity pipeline %s unreadable for workflow %s",
-                entity_source["pipeline_id"],
-                definition_id,
-                exc_info=True,
+            pipeline_config, extra_fields = build_evaluate_inputs(
+                definition, lambda: PipelineDataAccess(request=request)
             )
-            return JsonResponse(
-                {
-                    "error": (
-                        f"entity pipeline {entity_source['pipeline_id']} could not be read " f"({type(exc).__name__})"
-                    )
-                },
-                status=400,
-            )
-        finally:
-            pipeline_access.close()
-
-        if not pipeline_def or not pipeline_def.schema:
-            return JsonResponse({"error": "entity pipeline has no schema"}, status=400)
-
-        # Layer 1 is generated by the pipeline engine's own query builder, which takes
-        # an AnalysisPipelineConfig rather than the stored schema dict. This is the
-        # same conversion get_pipeline_data runs before executing a pipeline, so the
-        # extraction the semantic layer compiles over is the extraction the dashboard's
-        # own pipeline runs — the entire reason Layer 1 is generated, not hand-written.
-        # The per-visit WEIGHT is not in the entity pipeline. That one carries the
-        # registration fields and the visit markers; the weight series is its own
-        # pipeline, and properties.yml is written against a `weight_g` column. Without
-        # it the compiled SQL fails with `column "weight_g" does not exist`, hinting at
-        # the entity pipeline's list-valued `weights`, which is a different thing.
-        visit_source = next((s for s in sources if s.get("alias") == "visits"), None)
-
-        pipeline_access = PipelineDataAccess(request=request)
-        try:
-            pipeline_config = pipeline_access._schema_to_config(pipeline_def.schema, entity_source["pipeline_id"])
-            extra_fields = None
-            if visit_source:
-                visit_def = pipeline_access.get_definition(visit_source["pipeline_id"])
-                if visit_def and visit_def.schema:
-                    visit_config = pipeline_access._schema_to_config(visit_def.schema, visit_source["pipeline_id"])
-                    # Keyed by the column properties.yml expects, which is also the
-                    # field's own name in that pipeline.
-                    extra_fields = {"weight_g": visit_config}
-        except Exception as exc:
-            logger.warning(
-                "Semantic: could not build a pipeline config for %s",
-                entity_source["pipeline_id"],
-                exc_info=True,
-            )
-            return JsonResponse(
-                {"error": f"entity pipeline schema is not usable ({type(exc).__name__}): {exc}"},
-                status=400,
-            )
-        finally:
-            pipeline_access.close()
+        except SemanticBindingError as exc:
+            # Still a reportable 400 naming WHICH pipeline could not be read, not an
+            # internal error.
+            return JsonResponse({"error": exc.reason}, status=400)
 
         opportunity_ids = definition.opportunity_ids or []
         if not opportunity_ids:
