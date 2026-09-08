@@ -433,9 +433,13 @@ def test_a_reading_path_that_resolves_to_nothing_is_not_counted_as_a_corpus_gap(
     # Weight-matching must be ON: it is the only mode that reads reading_path.
     stats = assign_visit_images(visits, _scale_config(reading_match_tolerance=120.0), random.Random(1))
 
-    assert stats["eligible_visits"] == 5, "the name match still finds 'child_weight'"
+    # With reading paths configured they ARE the eligibility test, so a visit
+    # with no value at any of them is not photographable and never counts as
+    # eligible. That is the point: "eligible but unreadable" is now unreachable
+    # rather than merely reported.
+    assert stats["eligible_visits"] == 0
     assert stats["images_assigned"] == 0
-    # The whole point: these are NOT unmatched_visits. Widening the corpus would
+    # Still surfaced, and still NOT as a corpus gap. Widening the corpus would
     # not place a single photo, because no visit offers a value to match against.
     assert stats["no_reading_value_visits"] == 5
     assert stats["unmatched_visits"] == 0
@@ -453,3 +457,80 @@ def test_a_thin_corpus_still_reports_as_a_coverage_gap():
     assert stats["images_assigned"] == 0
     assert stats["unmatched_visits"] == 4, "a genuine coverage gap stays a coverage gap"
     assert stats["no_reading_value_visits"] == 0
+
+
+# ---------------------------------------------------------------------------
+# One spec, opportunities whose forms name the measurement differently (#1602).
+#
+# KMC opp 675 writes `anthropometric.child_weight`; the other ten write
+# `anthropometric.child_weight_visit`. A single `reading_path` cannot serve both,
+# and resolving by field NAME cannot either -- 675's form carries ten leaves whose
+# names contain "weight", among them `child_weight_difference` (a ~20 g delta),
+# `birth_weight` (constant per child), a string label, and the photo field itself.
+# So the candidates are declared, and the first that holds a number wins.
+# ---------------------------------------------------------------------------
+
+ALT_WEIGHT_PATH = "form.anthropometric.child_weight"
+
+
+def _visits_at(path_leaf, n, start=1400):
+    return [
+        {
+            "id": f"v{i}",
+            "username": "asha",
+            "form_json": {"form": {"anthropometric": {path_leaf: start + i}}},
+        }
+        for i in range(n)
+    ]
+
+
+def test_a_path_list_serves_both_form_shapes_from_one_config():
+    cfg = _scale_config(
+        reading_path=[WEIGHT_PATH, ALT_WEIGHT_PATH],
+        reading_match_tolerance=600.0,
+        default_bad_rate=0.0,
+    )
+    for leaf in ("child_weight_visit", "child_weight"):
+        visits = _visits_at(leaf, 4)
+        stats = assign_visit_images(visits, cfg, random.Random(1))
+        assert stats["eligible_visits"] == 4, f"{leaf} should be eligible"
+        assert stats["images_assigned"] == 4, f"{leaf} should receive photos"
+        assert stats["no_reading_value_visits"] == 0
+
+
+def test_a_visit_is_written_back_to_the_path_it_was_read_from():
+    """The list is candidates, not destinations. Reading one field and writing
+    another would move the cohort's weight into a field nothing reads."""
+    cfg = _scale_config(
+        reading_path=[WEIGHT_PATH, ALT_WEIGHT_PATH],
+        reading_match_tolerance=600.0,
+        default_bad_rate=0.0,
+    )
+    visits = _visits_at("child_weight", 3)
+    assign_visit_images(visits, cfg, random.Random(1))
+    for v in visits:
+        anthro = v["form_json"]["form"]["anthropometric"]
+        blob = v["images"][0]["blob_id"]
+        assert anthro["child_weight"] == READINGS[blob], "written back where it was read"
+        assert "child_weight_visit" not in anthro, "must not leak into the unused candidate"
+
+
+def test_the_resolved_path_is_reported_so_showcase_can_follow_the_cohort():
+    cfg = _scale_config(
+        reading_path=[WEIGHT_PATH, ALT_WEIGHT_PATH],
+        reading_match_tolerance=600.0,
+        default_bad_rate=0.0,
+    )
+    stats = assign_visit_images(_visits_at("child_weight", 3), cfg, random.Random(1))
+    assert stats["resolved_reading_path"] == ALT_WEIGHT_PATH
+
+    stats = assign_visit_images(_visits_at("child_weight_visit", 3), cfg, random.Random(1))
+    assert stats["resolved_reading_path"] == WEIGHT_PATH
+
+
+def test_a_plain_string_reading_path_still_works():
+    """Every existing manifest passes a string; the list is additive."""
+    cfg = _scale_config(reading_match_tolerance=600.0, default_bad_rate=0.0)
+    assert cfg.reading_paths == [WEIGHT_PATH]
+    stats = assign_visit_images(_visits(3), cfg, random.Random(1))
+    assert stats["images_assigned"] == 3

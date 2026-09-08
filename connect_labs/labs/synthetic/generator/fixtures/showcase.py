@@ -60,8 +60,14 @@ def build_showcase_visits(
     start_date: dt.date,
     deliver_unit_id: Any = None,
     visit_gap_days: int = 7,
+    reading_path: str | None = None,
 ) -> list[dict[str, Any]]:
     """Emit the visits for every showcase case declared on ``config``.
+
+    ``reading_path`` overrides which of ``config.reading_paths`` the entered
+    value is written to. The engine passes the path the COHORT was observed to
+    use, so the demo cases land in the same field as everyone else even when the
+    spec lists several candidates (#1602).
 
     Returns visits in the engine's fixture shape, ready to extend the generated
     ``visits`` list before the shared tail assembles the endpoints.
@@ -89,6 +95,7 @@ def build_showcase_visits(
                 start_date=start_date,
                 deliver_unit_id=deliver_unit_id,
                 visit_gap_days=visit_gap_days,
+                reading_path=reading_path,
             )
         )
     return visits
@@ -114,6 +121,7 @@ def _build_case(
     start_date: dt.date,
     deliver_unit_id: Any,
     visit_gap_days: int,
+    reading_path: str | None = None,
 ) -> list[dict[str, Any]]:
     points = series.get(case.trajectory)
     if not points:
@@ -143,8 +151,13 @@ def _build_case(
 
         form_json: dict[str, Any] = {}
         _set_nested(form_json, config.question_path, filename)
-        if config.reading_path:
-            _set_nested(form_json, config.reading_path, entered)
+        # A showcase visit is built from nothing, so unlike a cohort visit there
+        # is no existing value to resolve the path against. Take the path the
+        # cohort was observed to use when the caller supplies it, so the demo
+        # cases land in the SAME field an audit reads for everyone else.
+        write_path = reading_path or (config.reading_paths[0] if config.reading_paths else None)
+        if write_path:
+            _set_nested(form_json, write_path, entered)
 
         out.append(
             {

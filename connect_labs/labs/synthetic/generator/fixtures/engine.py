@@ -502,6 +502,10 @@ def _assemble(
             opportunity_id=manifest.opportunity_id,
             start_date=manifest.timeline.start_date,
             deliver_unit_id=_default_deliver_unit(opportunity_detail),
+            # The path the cohort actually used, so a multi-candidate
+            # reading_path cannot split the demo cases off into a field the
+            # audit does not read (#1602).
+            reading_path=(image_stats or {}).get("resolved_reading_path"),
         )
         if showcase_visits:
             visits.extend(showcase_visits)
