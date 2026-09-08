@@ -518,11 +518,13 @@ class MopupDebugRawCaseView(LoginRequiredMixin, View):
         # duplicate alias would let a later NULL-valued column silently
         # overwrite the correct base-column value when the cursor rows are
         # zipped into a dict by column name).
-        sql_text = ""
         try:
             from connect_labs.labs.analysis.backends.sql.query_builder import generate_sql_preview
+            from connect_labs.labs.analysis.config import CacheStage
 
-            preview = generate_sql_preview(config, opportunity_id)
+            preview_config = config
+            preview_config.terminal_stage = CacheStage.VISIT_LEVEL
+            preview = generate_sql_preview(preview_config, opportunity_id)
             sql_text = preview.get("visit_extraction_sql", "")
             sql_stage_4 = {
                 "entity_id_occurrences": sql_text.count("entity_id"),
@@ -531,17 +533,17 @@ class MopupDebugRawCaseView(LoginRequiredMixin, View):
         except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
             sql_stage_4 = {"error": f"{type(e).__name__}: {e}"}
 
-        # Stage 5: execute the EXACT generated SQL directly via a raw cursor,
-        # for one specific visit_id we already know (from stage 4/raw_cache_db_stage)
-        # has a correctly-stored, non-empty entity_id — bypassing
-        # execute_visit_extraction's dict-building entirely, to see the
-        # cursor's own positional tuple and description for that row.
+        # Stage 5: run a plain, hand-written query for one specific visit_id
+        # we already know (from raw_cache_db_stage) has a correctly-stored,
+        # non-empty entity_id — bypassing execute_visit_extraction's query
+        # builder AND its dict-building entirely, to see the DB driver's own
+        # positional tuple for that row.
         try:
             from django.db import connection
 
             known_id = raw_cache_stage.get("sample_entity_ids", [None])[0]
             cursor_stage = {"probed_visit_id": known_id}
-            if known_id and sql_text:
+            if known_id:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         "SELECT visit_id, entity_id FROM labs_raw_visit_cache "
