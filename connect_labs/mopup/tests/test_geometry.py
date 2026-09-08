@@ -47,6 +47,19 @@ class TestFetchWorkAreaGeometry:
         fetch_work_area_geometry(1, pipeline=pipeline)
         assert pipeline.last_config.pipeline_id == 12971
 
+    def test_terminal_stage_is_the_real_enum_not_a_string(self):
+        # Real production bug, found live this session: backend.py's
+        # process_and_cache dispatches on `terminal_stage == CacheStage.
+        # VISIT_LEVEL` (an enum comparison) — the bare string "visit_level"
+        # silently falls through to FLW aggregation on a cache miss, which
+        # then filters out every one of these non-visit work-area records
+        # and returns zero rows.
+        from connect_labs.labs.analysis.config import CacheStage
+
+        pipeline = _FakePipeline([])
+        fetch_work_area_geometry(1, pipeline=pipeline)
+        assert pipeline.last_config.terminal_stage == CacheStage.VISIT_LEVEL
+
     def test_forces_refresh_to_bypass_lenient_headless_cache_check(self):
         # A request=None (headless, e.g. Celery-task) pipeline has an empty
         # labs_context, which makes expected_visits_for always return 0 for

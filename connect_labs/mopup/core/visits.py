@@ -41,7 +41,12 @@ def list_approved_visits(
     returned list in Python (`aggregate_visits_by_wa` takes a pre-filtered
     `wa_case_id` allowlist for exactly this).
     """
-    from connect_labs.labs.analysis.config import AnalysisPipelineConfig, DataSourceConfig, FieldComputation
+    from connect_labs.labs.analysis.config import (
+        AnalysisPipelineConfig,
+        CacheStage,
+        DataSourceConfig,
+        FieldComputation,
+    )
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline
 
     if pipeline is None:
@@ -52,7 +57,11 @@ def list_approved_visits(
     config = AnalysisPipelineConfig(
         data_source=DataSourceConfig(type="connect_csv"),
         grouping_key="entity_id",
-        terminal_stage="visit_level",
+        # See core/geometry.py's identical comment: must be the enum, not the
+        # string "visit_level" — backend.py's process_and_cache dispatch is
+        # an enum comparison, and a bare string here silently falls through
+        # to FLW aggregation on a cache miss.
+        terminal_stage=CacheStage.VISIT_LEVEL,
         filters={"status": ["approved"]},
         fields=[
             FieldComputation(name="form_name", path=_FORM_NAME_PATH, aggregation="first"),

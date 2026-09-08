@@ -198,6 +198,16 @@ class TestWardChildrenPerBuilding:
         assert wa_config.pipeline_id == 12965
         assert visit_config.pipeline_id == 12968
 
+        # Real production bug, found live this session: backend.py's
+        # process_and_cache dispatches on `terminal_stage == CacheStage.
+        # VISIT_LEVEL` (an enum comparison), so a bare string here silently
+        # falls through to FLW aggregation on a cache miss and returns zero
+        # rows for non-visit data. See core/geometry.py's identical comment.
+        from connect_labs.labs.analysis.config import CacheStage
+
+        assert wa_config.terminal_stage == CacheStage.VISIT_LEVEL
+        assert visit_config.terminal_stage == CacheStage.VISIT_LEVEL
+
     def test_no_matching_work_areas_contributes_zero_children(self, monkeypatch):
         pipeline = _FakePipeline({1: []}, {1: []})
         monkeypatch.setattr(

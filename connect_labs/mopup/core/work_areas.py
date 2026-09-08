@@ -52,7 +52,12 @@ def list_work_areas(
     fields projected. `building_count`/`expected_visit_count` are coerced to
     int (0 on missing/bad data) so callers can sum them directly.
     """
-    from connect_labs.labs.analysis.config import AnalysisPipelineConfig, DataSourceConfig, FieldComputation
+    from connect_labs.labs.analysis.config import (
+        AnalysisPipelineConfig,
+        CacheStage,
+        DataSourceConfig,
+        FieldComputation,
+    )
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline
 
     if pipeline is None:
@@ -63,7 +68,16 @@ def list_work_areas(
     config = AnalysisPipelineConfig(
         data_source=DataSourceConfig(type="cchq_cases", case_type="work-area"),
         grouping_key="entity_id",
-        terminal_stage="visit_level",
+        # NOT the string "visit_level" — backend.py's process_and_cache
+        # dispatches on an enum comparison (`terminal_stage == CacheStage.
+        # VISIT_LEVEL`), so a bare string here silently falls through to the
+        # FLW-aggregation branch on any cache miss. Confirmed elsewhere in
+        # this app (core/geometry.py) that this string form can return zero
+        # rows on a fresh compute — this call site has likely only ever
+        # "worked" because cchq_cases' cache-validity is checked with
+        # expected_count=0 (lenient), so a real cache miss here is rare;
+        # fixed for correctness regardless of whether it's been hit yet.
+        terminal_stage=CacheStage.VISIT_LEVEL,
         fields=[
             FieldComputation(name=name, path=path, aggregation="first") for name, path in _CASE_PROPERTY_PATHS.items()
         ]

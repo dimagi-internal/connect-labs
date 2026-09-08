@@ -43,6 +43,15 @@ class TestListApprovedVisits:
         list_approved_visits(1, pipeline=pipeline)
         assert pipeline.last_config.pipeline_id == 12968
 
+    def test_terminal_stage_is_the_real_enum_not_a_string(self):
+        # See the identical test/comment in test_geometry.py — same
+        # string-vs-enum dispatch bug, same fix.
+        from connect_labs.labs.analysis.config import CacheStage
+
+        pipeline = _FakePipeline([])
+        list_approved_visits(1, pipeline=pipeline)
+        assert pipeline.last_config.terminal_stage == CacheStage.VISIT_LEVEL
+
     def test_row_with_none_computed_does_not_crash(self):
         # A real case hit against production data (program 217, opportunity
         # 2154): row.computed is None (not {}) when field extraction found
