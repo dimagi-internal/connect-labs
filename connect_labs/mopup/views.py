@@ -485,8 +485,23 @@ class MopupDebugGeometryView(LoginRequiredMixin, View):
                 {"status": "error", "detail": f"{type(e).__name__}: {e}", "raw_fetch_stage": raw_stage}, status=502
             )
 
+        # Stage 3: check whether the write into RawVisitCache actually
+        # happened for this (opportunity_id, pipeline_id=12971) despite the
+        # pipeline call above returning zero rows — settles a broken WRITE
+        # (store never ran / ran with 0 rows) vs. a broken READ (storage is
+        # fine, execute_visit_extraction's query/extraction returns nothing).
+        try:
+            from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+
+            raw_cache_stage = {
+                "db_row_count": RawVisitCache.objects.filter(opportunity_id=opportunity_id, pipeline_id=12971).count(),
+            }
+        except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
+            raw_cache_stage = {"error": f"{type(e).__name__}: {e}"}
+
         return JsonResponse(
             {
+                "raw_cache_db_stage": raw_cache_stage,
                 "status": "ok",
                 "raw_fetch_stage": raw_stage,
                 "count": len(geometry),
