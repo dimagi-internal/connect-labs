@@ -2134,7 +2134,6 @@ def complete_run_api(request, run_id):
     """
     from connect_labs.workflow.templates import (
         SnapshotStateNotStagedError,
-        SnapshotStateNotStagedError,
         SnapshotTooLargeError,
         build_snapshot_for_contract,
         resolve_snapshot_contract,
@@ -2275,14 +2274,6 @@ def complete_run_api(request, run_id):
                 definition_id=definition_id,
                 request=request,
                 run_id=run_id,  # NEW: lets a gate hook read the run's audit sessions
-            )
-        except SnapshotStateNotStagedError as e:
-            # The run stays in_progress, which is the whole point: an empty
-            # snapshot on a completed run is unrecoverable, an un-completed run
-            # is not.
-            return JsonResponse(
-                {"error": str(e), "missing_state_keys": e.missing},
-                status=400,
             )
         except SnapshotStateNotStagedError as e:
             # The run stays in_progress, which is the whole point: an empty
