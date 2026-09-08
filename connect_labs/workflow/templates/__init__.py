@@ -313,6 +313,35 @@ _SNAPSHOT_SIZE_WARN_BYTES = 1 * 1024 * 1024
 _SNAPSHOT_SIZE_HARD_BYTES = 5 * 1024 * 1024
 
 
+class SnapshotStateNotStagedError(Exception):
+    """A declarative snapshot would capture NONE of the REQUIRED state its manifest names.
+
+    Only raised for templates that set `snapshot_inputs.require_state_keys`.
+
+    `snapshot_inputs.state_keys` is a promise that the run's state carries those
+    keys by completion time. When a template computes them in its RENDER (the
+    browser stages them via onUpdateState, then completes), an API/MCP caller that
+    completes the run without ever opening the page satisfies every other part of
+    the contract and captures `{}` — producing a completed run whose snapshot is
+    empty, which cannot be re-opened and reads as a real published artifact.
+
+    That is silent, permanent and exactly the shape a caller cannot debug: the
+    call returns 200. So refuse instead, and name the fix in the message.
+    """
+
+    def __init__(self, template_key: str, missing: list[str]):
+        self.template_key = template_key
+        self.missing = list(missing)
+        super().__init__(
+            f"snapshot for {template_key!r} declares state_keys {self.missing} but the run's "
+            "state carries none of them, so completing now would freeze an EMPTY snapshot "
+            "onto a run that cannot be re-opened. This template computes its snapshot in the "
+            "render: stage it first via POST /labs/workflow/api/run/<run_id>/state/ with those "
+            "keys, or give the template a server-side `build_snapshot` hook so an API caller "
+            "can complete a run without opening the page."
+        )
+
+
 class SnapshotTooLargeError(Exception):
     """The built snapshot exceeds the hard size cap and must not be persisted."""
 
@@ -328,7 +357,13 @@ class SnapshotTooLargeError(Exception):
 
 
 def _default_snapshot_from_inputs(
-    *, snapshot_inputs: dict, pipelines: dict, state: dict, context: dict, opportunity_id: int
+    *,
+    snapshot_inputs: dict,
+    pipelines: dict,
+    state: dict,
+    context: dict,
+    opportunity_id: int,
+    template_key: str = "instance",
 ) -> dict:
     """Build the default snapshot honoring a template's declarative manifest.
 
@@ -338,6 +373,12 @@ def _default_snapshot_from_inputs(
       - `workers`: bool (default True) — capture worker list if present.
       - `state_keys`: list of state keys to capture. None/missing means "all
         of state"; an empty list means "no state."
+      - `require_state_keys`: bool (default False) — when True, completing with
+        NONE of the declared `state_keys` populated raises
+        `SnapshotStateNotStagedError` instead of freezing an empty snapshot.
+        Opt in for templates whose snapshot is computed by their RENDER and
+        staged into run state, where an empty capture is meaningless rather than
+        merely early. Default False, so no existing template changes behaviour.
     Anything not listed is not captured.
     """
     out: dict = {"schema_version": 1}
@@ -359,7 +400,24 @@ def _default_snapshot_from_inputs(
     if state_keys is None:
         out["state"] = state
     else:
-        out["state"] = {k: state.get(k) for k in state_keys if k in state}
+        captured = {k: state.get(k) for k in state_keys if k in state}
+        # Refuse ONLY when the template says these keys are load-bearing.
+        #
+        # An empty capture is legitimate for most templates and is covered by
+        # tests that predate this guard: performance_review completes a run with
+        # no decisions recorded yet ("A run with no decisions yet still produces
+        # a valid snapshot"), and an instance manifest declaring `decisions`
+        # completes at 200 with `state == {}`. Refusing those broke real,
+        # intended behaviour.
+        #
+        # The distinction is per-template intent, not a property the framework
+        # can infer: empty `worker_states` means "nobody decided anything yet",
+        # while empty `frozen` means "this dashboard has no numbers in it". So
+        # the template declares which it is, and the default preserves today's
+        # behaviour exactly.
+        if snapshot_inputs.get("require_state_keys") and state_keys and not any(captured.get(k) for k in state_keys):
+            raise SnapshotStateNotStagedError(template_key, list(state_keys))
+        out["state"] = captured
 
     out["opportunity_ids"] = context.get("opportunity_ids", [opportunity_id])
     return out
@@ -532,6 +590,7 @@ def build_snapshot_for_contract(
             state=state,
             context=context,
             opportunity_id=opportunity_id,
+            template_key=label,
         )
     if isinstance(snapshot, dict):
         _check_snapshot_size(label, snapshot)
@@ -593,6 +652,7 @@ def build_snapshot_for_template(
             state=state,
             context=context,
             opportunity_id=opportunity_id,
+            template_key=template_key,
         )
 
     if isinstance(snapshot, dict):
@@ -850,6 +910,7 @@ __all__ = [
     "resolve_snapshot_contract",
     "resolve_snapshot_opp_scope",
     "build_snapshot_for_contract",
+    "SnapshotStateNotStagedError",
     "SnapshotTooLargeError",
     # Individual template modules
     "performance_review",
