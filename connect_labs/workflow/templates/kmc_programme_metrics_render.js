@@ -686,7 +686,16 @@ function WorkflowUI({
   // the server is the display contract, and `catalog_only` returns exactly that
   // without touching a pipeline or the database.
   var sCS = React.useState({
-    status: frozen ? 'loading' : 'idle',
+    // A frozen run that carries its own catalog needs nothing from the server, so
+    // it is ready immediately. Starting it at 'loading' left the "Computing
+    // indicators in SQL…" banner up permanently, because the effect below returns
+    // early in exactly that case and never flipped the status.
+    status:
+      frozen && (frozen.cMeasures || []).length
+        ? 'ready'
+        : frozen
+        ? 'loading'
+        : 'idle',
     rows: [],
     measures: (frozen && frozen.cMeasures) || [],
   });
@@ -1526,6 +1535,13 @@ function WorkflowUI({
   // reality because non-recorders contribute denominator without deaths.
   var mortalityCredible = React.useMemo(
     function () {
+      // Snapshot first, like byOpp / byLLO / byFLW / programInd. This one is newly
+      // frozen-dependent: it used to be computed from `derived` -- pipeline rows a
+      // frozen run still loads -- and now reads the llo-scope SEMANTIC rows, which a
+      // frozen run deliberately never fetches. Without this the headline mortality
+      // card silently degrades to "no credible recorder" the moment a run is frozen,
+      // while the LLO table beside it still shows EHA and PIPN reporting deaths.
+      if (frozen && frozen.mortalityCredible) return frozen.mortalityCredible;
       var credible = cCredibleLloRows('C14');
       var llos = credible
         .map(function (r) {
@@ -1542,7 +1558,7 @@ function WorkflowUI({
         of: byLLO.length,
       };
     },
-    [byLLO, cRows, C_LIST],
+    [byLLO, cRows, C_LIST, frozen],
   );
   // ── UI ───────────────────────────────────────────────────────────────────
   var s1 = React.useState(null);
@@ -2372,6 +2388,7 @@ function WorkflowUI({
       // which has to include what published them. Also makes a frozen run
       // genuinely zero-query rather than one cheap call away from it.
       cMeasures: cSeries.measures || [],
+      mortalityCredible: mortalityCredible,
       programInd: programInd,
       byLLO: byLLO.map(function (l) {
         return {
@@ -2491,11 +2508,15 @@ function WorkflowUI({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">KMC Indicators</h1>
+          {/* "evaluated live" was true when this browser computed the
+              indicators. It no longer does, and on a frozen run the claim sat
+              directly under a banner saying the figures cannot move. */}
           <p className="text-sm text-gray-500 mt-1">
-            The kmc_metrics_framework registry, evaluated live. Case properties
-            are computed in SQL by the entity pipeline; only the weight series
-            is derived here. Click any row to drill Programme → LLO →
-            opportunity → cases.
+            The kmc_metrics_framework registry, compiled to SQL and evaluated
+            server-side{frozen ? ' — these figures are from the snapshot' : ''}.
+            Case properties come from the entity pipeline; only the weight
+            series is derived in this browser. Click any row to drill Programme
+            → LLO → opportunity → cases.
           </p>
         </div>
         {!frozen && view && view.complete && (
