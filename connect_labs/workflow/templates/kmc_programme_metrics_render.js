@@ -968,7 +968,17 @@ function WorkflowUI({
   // value to the fraction this render carries. Shares `nBandOf`, which already
   // implements the workbook's higher / lower / two-sided rules.
   function cBandOf(measure, percentValue) {
-    return nBandOf(measure, percentValue);
+    // nBandOf reads `direction`; a C_LIST entry renames that to `dir` so the
+    // display sites keep the field names the old `IND` used. Passing the entry
+    // straight through therefore matched none of nBandOf's branches and returned
+    // 'unbanded' for EVERY indicator -- which renders as a grey chip and a
+    // truthful-looking "0 of 6 LLOs with a red indicator" while C09 sat at 37.8%
+    // against a red threshold of 40. Bridge the two names here rather than
+    // widening C_LIST, so there is one entry shape and one place that knows both.
+    return nBandOf(
+      { bands: measure.bands, direction: measure.dir, unit: measure.unit },
+      percentValue,
+    );
   }
 
   // Which opportunities a scope row covers -- the input the "not in this app"
@@ -1498,7 +1508,7 @@ function WorkflowUI({
           return b.rows.length - a.rows.length;
         });
     },
-    [derived, frozen],
+    [derived, frozen, cRows, C_LIST],
   );
 
   var programInd = React.useMemo(
@@ -1506,7 +1516,7 @@ function WorkflowUI({
       if (frozen) return frozen.programInd || {};
       return cIndFor(cRows.programme);
     },
-    [derived, frozen],
+    [derived, frozen, cRows, C_LIST],
   );
 
   // Programme mortality, restricted to the LLOs the workbook accepts as credible
