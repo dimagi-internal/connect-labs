@@ -8,10 +8,10 @@ import pytest
 from shapely.geometry import shape
 
 from connect_labs.mopup.core import areas
-from connect_labs.mopup.core.areas import build_mopup_areas, ward_children_per_building
+from connect_labs.mopup.core.areas import carry_forward_features, distinct_wards, ward_children_per_building
 
 # ---------------------------------------------------------------------------
-# build_mopup_areas
+# carry_forward_features / distinct_wards
 # ---------------------------------------------------------------------------
 
 
@@ -19,35 +19,60 @@ def _square(x0, y0, x1, y1):
     return {"type": "Polygon", "coordinates": [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]}
 
 
-class TestBuildMopupAreas:
-    def test_single_ward_single_wa_passthrough(self):
-        wa = {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "geometry": _square(0, 0, 1, 1)}
-        areas_out = build_mopup_areas([wa])
-        assert len(areas_out) == 1
-        area = areas_out[0]
-        assert area["ward"] == "Sabon Gari"
-        assert area["lga"] == "Rano"
-        assert area["state"] == "Kano"
-        assert area["area_id"] == "mopup-kano-rano-sabon-gari"
-        assert shape(area["geometry"]).equals(shape(wa["geometry"]))
+def _candidate(wa_id, ward, lga, state, boundary, **overrides):
+    base = {
+        "wa_id": wa_id,
+        "ward": ward,
+        "lga": lga,
+        "state": state,
+        "boundary": boundary,
+        "building_count": 5,
+        "expected_visit_count": 5,
+    }
+    base.update(overrides)
+    return base
 
-    def test_groups_by_ward_and_unions_geometry(self):
-        # Two adjacent WAs in the same ward -> one unioned area covering both.
-        wa1 = {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "geometry": _square(0, 0, 1, 1)}
-        wa2 = {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "geometry": _square(1, 0, 2, 1)}
-        areas_out = build_mopup_areas([wa1, wa2])
-        assert len(areas_out) == 1
-        union = shape(areas_out[0]["geometry"])
-        assert union.area == pytest.approx(2.0)
-        assert union.contains(shape({"type": "Point", "coordinates": [0.5, 0.5]}))
-        assert union.contains(shape({"type": "Point", "coordinates": [1.5, 0.5]}))
+
+class TestCarryForwardFeatures:
+    def test_single_candidate_passthrough(self):
+        c = _candidate("wa-1", "Sabon Gari", "Rano", "Kano", _square(0, 0, 1, 1))
+        features = carry_forward_features([c])
+        assert len(features) == 1
+        f = features[0]
+        assert f["type"] == "Feature"
+        assert shape(f["geometry"]).equals(shape(c["boundary"]))
+        assert f["properties"]["ward"] == "Sabon Gari"
+        assert f["properties"]["lga"] == "Rano"
+        assert f["properties"]["state"] == "Kano"
+        assert f["properties"]["area_id"] == "mopup-kano-rano-sabon-gari"
+        assert f["properties"]["building_count"] == 5
+        assert f["properties"]["expected_visit_count"] == 5
+
+    def test_same_ward_candidates_stay_distinct_not_unioned(self):
+        # Two adjacent WAs in the same ward -> TWO features, each its own
+        # shape, sharing one area_id (not unioned into one blob — this is
+        # the carry-forward redesign's whole point).
+        c1 = _candidate("wa-1", "Sabon Gari", "Rano", "Kano", _square(0, 0, 1, 1))
+        c2 = _candidate("wa-2", "Sabon Gari", "Rano", "Kano", _square(1, 0, 2, 1))
+        features = carry_forward_features([c1, c2])
+        assert len(features) == 2
+        shapes = [shape(f["geometry"]) for f in features]
+        assert shapes[0].area == pytest.approx(1.0)
+        assert shapes[1].area == pytest.approx(1.0)
+        assert not shapes[0].equals(shapes[1])
+        assert {f["properties"]["area_id"] for f in features} == {"mopup-kano-rano-sabon-gari"}
+        # cluster names must not collide between candidates in the same ward.
+        assert len({f["properties"]["cluster"] for f in features}) == 2
 
     def test_distinct_wards_stay_separate(self):
-        wa1 = {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "geometry": _square(0, 0, 1, 1)}
-        wa2 = {"ward": "Unguwar Arewa", "lga": "Rano", "state": "Kano", "geometry": _square(5, 5, 6, 6)}
-        areas_out = build_mopup_areas([wa1, wa2])
-        assert {a["ward"] for a in areas_out} == {"Sabon Gari", "Unguwar Arewa"}
-        assert {a["area_id"] for a in areas_out} == {"mopup-kano-rano-sabon-gari", "mopup-kano-rano-unguwar-arewa"}
+        c1 = _candidate("wa-1", "Sabon Gari", "Rano", "Kano", _square(0, 0, 1, 1))
+        c2 = _candidate("wa-2", "Unguwar Arewa", "Rano", "Kano", _square(5, 5, 6, 6))
+        features = carry_forward_features([c1, c2])
+        assert {f["properties"]["ward"] for f in features} == {"Sabon Gari", "Unguwar Arewa"}
+        assert {f["properties"]["area_id"] for f in features} == {
+            "mopup-kano-rano-sabon-gari",
+            "mopup-kano-rano-unguwar-arewa",
+        }
 
     def test_same_ward_name_different_lga_not_conflated(self):
         """Two same-named wards in different LGAs must get distinct area_ids —
@@ -55,24 +80,42 @@ class TestBuildMopupAreas:
         microplans/core/frame.py:_area_meta and core/ward_codes.py's module
         docstring for the "Doka"/"Doka Dawa" incident this scenario is modeled
         on)."""
-        wa1 = {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "geometry": _square(0, 0, 1, 1)}
-        wa2 = {"ward": "Sabon Gari", "lga": "Fagge", "state": "Kano", "geometry": _square(5, 5, 6, 6)}
-        areas_out = build_mopup_areas([wa1, wa2])
-        assert len(areas_out) == 2
-        assert len({a["area_id"] for a in areas_out}) == 2
+        c1 = _candidate("wa-1", "Sabon Gari", "Rano", "Kano", _square(0, 0, 1, 1))
+        c2 = _candidate("wa-2", "Sabon Gari", "Fagge", "Kano", _square(5, 5, 6, 6))
+        features = carry_forward_features([c1, c2])
+        assert len({f["properties"]["area_id"] for f in features}) == 2
 
     def test_missing_ward_raises(self):
         with pytest.raises(ValueError, match="ward"):
-            build_mopup_areas([{"lga": "Rano", "state": "Kano", "geometry": _square(0, 0, 1, 1)}])
+            carry_forward_features([_candidate("wa-1", "", "Rano", "Kano", _square(0, 0, 1, 1))])
 
     def test_malformed_geometry_raises(self):
         with pytest.raises(ValueError):
-            build_mopup_areas(
-                [{"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "geometry": {"type": "Nonsense"}}]
-            )
+            carry_forward_features([_candidate("wa-1", "Sabon Gari", "Rano", "Kano", {"type": "Nonsense"})])
 
     def test_empty_input_returns_empty(self):
-        assert build_mopup_areas([]) == []
+        assert carry_forward_features([]) == []
+
+    def test_building_count_never_zero(self):
+        # _make_work_area/_coverage_properties assume a >=1 building_count;
+        # a candidate with 0 (or missing) building_count must not propagate
+        # a zero straight through.
+        c = _candidate("wa-1", "Sabon Gari", "Rano", "Kano", _square(0, 0, 1, 1), building_count=0)
+        features = carry_forward_features([c])
+        assert features[0]["properties"]["building_count"] == 1
+
+
+class TestDistinctWards:
+    def test_one_row_per_distinct_area_id(self):
+        c1 = _candidate("wa-1", "Sabon Gari", "Rano", "Kano", _square(0, 0, 1, 1))
+        c2 = _candidate("wa-2", "Sabon Gari", "Rano", "Kano", _square(1, 0, 2, 1))
+        c3 = _candidate("wa-3", "Unguwar Arewa", "Rano", "Kano", _square(5, 5, 6, 6))
+        wards = distinct_wards(carry_forward_features([c1, c2, c3]))
+        assert len(wards) == 2
+        assert {w["ward"] for w in wards} == {"Sabon Gari", "Unguwar Arewa"}
+
+    def test_empty_input_returns_empty(self):
+        assert distinct_wards([]) == []
 
 
 # ---------------------------------------------------------------------------

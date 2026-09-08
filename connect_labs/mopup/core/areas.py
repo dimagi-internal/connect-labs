@@ -1,23 +1,29 @@
 """The seam between this app's (Phase 2) candidate analysis and the existing
 microplans coverage engine.
 
-Two functions, ported from an earlier Workflow-based attempt's
-`microplans/core/mopup.py` (deleted — that attempt put mop-up-specific logic
-directly inside `microplans`, which this app's design deliberately avoids; see
-`connect_labs/mopup/models.py`'s module docstring). Both functions are
-unchanged in behavior from the ported version:
+`carry_forward_features`/`distinct_wards` and `ward_children_per_building`
+are pure/orchestration adapters — mop-up's own code, deliberately never
+touching microplans' files (see `connect_labs/mopup/models.py`'s module
+docstring):
 
-  build_mopup_areas(candidate_work_areas)
+  carry_forward_features(candidates)
       Turns a flat list of locked candidate work-area dicts (one per WA the
       reviewer locked in Phase 2 — ward/lga/state + a GeoJSON boundary each)
-      into one unioned polygon per ward, in the exact `area_input`-shaped dict
-      `microplans.core.area_input.resolve_area` (and, via it,
-      `microplans.coverage.frame.generate_coverage_frame`) already knows how to
-      consume. This is the only geometry-side adapter this feature needs —
-      everything downstream (grid generation, MAX_WORK_AREAS/MAX_AREA_KM2
-      guards, cell filters, materialize_work_areas, exclude/unexclude,
-      grouping, CSV export) operates on plain geometry/properties and needs no
-      changes at all.
+      into one GeoJSON Feature PER CANDIDATE, each keeping its own boundary
+      as-is — no union, no regridding (an earlier version of this module
+      unioned per ward and re-gridded via `generate_coverage_frame`; that
+      approach is gone, replaced by this one, per the carry-forward redesign).
+      Feature shape matches exactly what
+      `microplans.core.plan._coverage_work_areas`/`_coverage_properties`
+      expect, so the result can sit in a `hulls` FeatureCollection unmodified
+      — everything downstream (`materialize_work_areas`, exclude/unexclude,
+      grouping, CSV export) operates on plain geometry/properties and needs
+      no microplans changes at all.
+
+  distinct_wards(features)
+      One `{area_id, ward, lga, state}` dict per distinct ward present in a
+      list of Features (carry-forward and/or planning-gap) — the per-ward
+      list `handoff.py`'s `area_targets` loop iterates.
 
   ward_children_per_building(ward, lga, state, opportunity_ids, *, request)
       The EVC target RATE for a mop-up ward: ward-wide (every work area in the
@@ -38,8 +44,8 @@ unchanged in behavior from the ported version:
       zero. The Phase 2->3 handoff view is the only caller that feeds this
       into `area_targets` — do that multiplication there.
 
-Both are pure/orchestration functions: `build_mopup_areas` touches no network
-or DB (just shapely), `ward_children_per_building` needs a live Connect (and,
+`carry_forward_features`/`distinct_wards` touch no network or DB (just
+shapely); `ward_children_per_building` needs a live Connect (and,
 for the work-area lookup, CommCare HQ) OAuth token to query real opportunity
 data — see its own docstring for why it takes a `request`/`AnalysisPipeline`.
 
@@ -51,12 +57,10 @@ before relying on it in the Phase 3 handoff.
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 
 from django.http import HttpRequest
 from django.utils.text import slugify
 from shapely.geometry import mapping
-from shapely.ops import unary_union
 
 from connect_labs.microplans.core.area_input import resolve_area
 from connect_labs.microplans.core.footprints import fetch_buildings
@@ -72,50 +76,77 @@ def _ward_key(wa: dict) -> tuple[str, str, str]:
     )
 
 
-def build_mopup_areas(candidate_work_areas: list[dict]) -> list[dict]:
-    """Group candidate work areas by (state, lga, ward), union each ward's
-    polygons into one shape, and emit one `area_input`-shaped dict per ward.
+def _area_id(state: str, lga: str, ward: str) -> str:
+    """Stable per-ward key, shared by every carry-forward AND planning-gap
+    feature in that ward — this is what lets microplans'
+    `recompute_area_visits` (keyed on `properties.area_id`, not the ward name)
+    pool both into ONE target-spread group for that ward. Slugged on the full
+    (state, lga, ward) triple, not the ward name alone — two same-named wards
+    in different LGAs must never collide onto the same area_id (see
+    microplans/coverage/frame.py:_area_meta's identical concern)."""
+    slug = slugify(f"{state}-{lga}-{ward}") or "ward"
+    return f"mopup-{slug}"
 
-    ``candidate_work_areas``: dicts with at least ``ward``/``lga``/``state``
-    and a ``geometry`` GeoJSON field. Each dict is parsed via ``resolve_area``
-    (the same GeoJSON/circle validation every other area-input path already
-    uses) before unioning, so a malformed boundary raises the same
-    ``ValueError`` a hand-drawn area would.
+
+def carry_forward_features(candidates: list[dict]) -> list[dict]:
+    """One GeoJSON Feature per locked existing-WA candidate — its OWN
+    boundary, untouched (no union, no regridding). Feature shape matches
+    exactly what `microplans.core.plan._coverage_work_areas`/
+    `_coverage_properties` expect, so it can sit in a `hulls`
+    FeatureCollection unmodified, alongside gridded planning-gap cells
+    (`core.gaps.planning_gap_features`).
+
+    ``candidates``: locked candidate dicts (``evaluate_run``'s output shape —
+    ``wa_id``/``ward``/``lga``/``state``/``boundary``/``building_count``/
+    ``expected_visit_count``). Each is parsed via ``resolve_area`` (the same
+    GeoJSON/circle validation every other area-input path already uses), so a
+    malformed boundary raises the same ``ValueError`` a hand-drawn area would.
 
     Raises ``ValueError`` if a candidate is missing a ward name (nothing to
-    group it under) or has an unparseable geometry.
-
-    Returns one dict per distinct ward:
-        {"geometry": <GeoJSON>, "ward": ..., "lga": ..., "state": ...,
-         "area_id": "mopup-<state-lga-ward slug>"}
+    attribute it to) or has an unparseable boundary.
     """
-    by_ward: dict[tuple[str, str, str], list] = defaultdict(list)
-    for i, wa in enumerate(candidate_work_areas):
-        state, lga, ward = _ward_key(wa)
+    features: list[dict] = []
+    for i, c in enumerate(candidates):
+        state, lga, ward = _ward_key(c)
         if not ward:
             raise ValueError(f"candidate work area at index {i} has no ward — cannot attribute it to a mop-up area")
-        geom = resolve_area(wa)
-        by_ward[(state, lga, ward)].append(geom)
-
-    areas: list[dict] = []
-    for (state, lga, ward), geoms in by_ward.items():
-        union_geom = unary_union(geoms) if len(geoms) > 1 else geoms[0]
-        # Slug on the full (state, lga, ward) triple, not the ward name alone —
-        # two same-named wards in different LGAs must never collide onto the
-        # same area_id (see microplans/core/frame.py:_area_meta's identical
-        # concern for why area_id, not the ward name, is the thing that must
-        # be unique).
-        slug = slugify(f"{state}-{lga}-{ward}") or f"ward-{len(areas) + 1}"
-        areas.append(
+        geom = resolve_area({**c, "geometry": c.get("boundary")})
+        area_id = _area_id(state, lga, ward)
+        building_count = int(c.get("building_count") or 0) or 1
+        features.append(
             {
-                "geometry": mapping(union_geom),
-                "ward": ward,
-                "lga": lga,
-                "state": state,
-                "area_id": f"mopup-{slug}",
+                "type": "Feature",
+                "geometry": mapping(geom),
+                "properties": {
+                    # "-existing-" namespacing keeps this from ever colliding
+                    # with a gridded gap-fill cell's "{area_id}-gap-C0"-style
+                    # cluster name in the same ward.
+                    "cluster": f"{area_id}-existing-{c.get('wa_id', i)}",
+                    "area_id": area_id,
+                    "ward": ward,
+                    "lga": lga,
+                    "state": state,
+                    "building_count": building_count,
+                    "expected_visit_count": int(c.get("expected_visit_count") or building_count),
+                },
             }
         )
-    return areas
+    return features
+
+
+def distinct_wards(features: list[dict]) -> list[dict]:
+    """One ``{"area_id", "ward", "lga", "state"}`` dict per distinct
+    ``area_id`` found in ``features``'s properties — the per-ward list
+    `handoff.py`'s `area_targets` loop iterates, sourced from whichever
+    carry-forward/planning-gap features actually made it into the plan."""
+    seen: dict[str, dict] = {}
+    for f in features:
+        p = f["properties"]
+        seen.setdefault(
+            p["area_id"],
+            {"area_id": p["area_id"], "ward": p["ward"], "lga": p["lga"], "state": p["state"]},
+        )
+    return list(seen.values())
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +168,7 @@ def _norm(s: str | None) -> str:
     return (s or "").strip().casefold()
 
 
-def _work_area_ids_for_ward(pipeline, opportunity_id: int, ward: str, lga: str, state: str) -> set[str]:
+def work_area_ids_for_ward(pipeline, opportunity_id: int, ward: str, lga: str, state: str) -> set[str]:
     """Every work-area case id in `ward` (matched on ward+lga+state, exact
     normalized match — these come from the same CommCare case data as the
     candidate work areas, not free-typed text, so the fuzzy admin-boundary
@@ -255,7 +286,7 @@ def ward_children_per_building(
 
     total_children = 0
     for opp_id in opportunity_ids:
-        wa_ids = _work_area_ids_for_ward(pipeline, opp_id, ward, lga, state)
+        wa_ids = work_area_ids_for_ward(pipeline, opp_id, ward, lga, state)
         if not wa_ids:
             continue
         total_children += _hsd_registered_children_count(pipeline, opp_id, wa_ids)

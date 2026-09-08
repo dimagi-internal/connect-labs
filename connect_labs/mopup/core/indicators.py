@@ -52,6 +52,12 @@ VACCINATION = "vaccination"
 
 ALL_INDICATORS = [EVC_SHORTFALL, NCF_INACCESSIBLE, DEWORMING, MUAC, VACCINATION]
 
+# Candidate provenance discriminator (Phase 3's carry-forward hand-off keys
+# off this): every candidate `evaluate_run` produces today comes from a
+# flagged EXISTING work area. A future planning-gap candidate type (brief §7,
+# not yet built) would use SOURCE_PLANNING_GAP so both can share one table.
+SOURCE_EXISTING_WA = "existing_wa"
+
 # "below" = flagged when the rate is BELOW threshold (a shortfall);
 # "above" = flagged when the rate is ABOVE threshold (too much of a bad thing).
 _DIRECTION = {
@@ -286,6 +292,12 @@ def evaluate_run(
     "granularity": "wa_only"|"cluster_aware"|"flw_average"}} — only keys
     present AND enabled are evaluated; a disabled/absent indicator never
     contributes to severity or the union.
+
+    Each returned candidate carries `building_count`/`expected_visit_count`
+    (straight copy-through from the input row) and `source` (always
+    `SOURCE_EXISTING_WA` today) alongside `boundary` — Phase 3's
+    `carry_forward_features` needs all three to materialize a WorkArea
+    feature without a second lookup.
     """
     config = dict(DEFAULT_GLOBAL_CONFIG)
     config.update(global_config or {})
@@ -358,9 +370,13 @@ def evaluate_run(
                     "state": wa.get("state", ""),
                     "flw_username": wa.get("flw_username", ""),
                     # Carried through, not computed here, so the map (§6's map
-                    # cue) and Phase 3's lock hand-off (build_mopup_areas needs
-                    # a geometry per candidate) don't need a second lookup.
+                    # cue) and Phase 3's lock hand-off (carry_forward_features
+                    # needs a geometry + building_count per candidate) don't
+                    # need a second lookup.
                     "boundary": wa.get("boundary"),
+                    "building_count": wa.get("building_count", 0),
+                    "expected_visit_count": wa.get("expected_visit_count", 0),
+                    "source": SOURCE_EXISTING_WA,
                     "triggered_indicators": triggered,
                     "severity_count": len(triggered),
                     "detail": detail,

@@ -48,7 +48,7 @@ def list_work_areas(
     "expected_visit_count", "status", "owner_id"}``.
 
     Reuses the same `cchq_cases`/`work-area` pipeline shape as
-    `connect_labs.mopup.core.areas._work_area_ids_for_ward`, just with more
+    `connect_labs.mopup.core.areas.work_area_ids_for_ward`, just with more
     fields projected. `building_count`/`expected_visit_count` are coerced to
     int (0 on missing/bad data) so callers can sum them directly.
     """
