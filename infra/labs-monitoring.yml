@@ -584,7 +584,15 @@ Resources:
         A target behind the ALB is answering with 5xx — the application itself
         returned an error, as opposed to the ALB failing to get a response at
         all (that is labs-jj-alb-5xx-high). The LoadBalancer dimension spans
-        every target group, so this covers the web tier AND the Umami service.
+        every target group, so this covers the web tier AND the Umami service
+        — and therefore CANNOT say which one failed. ATTRIBUTE BEFORE YOU
+        DIAGNOSE: severity differs enormously (web tier = labs is broken for
+        users; /umami/* = lost analytics beacons only, see #1396, and NOT the
+        HIPAA audit trail). Re-query this metric adding a TargetGroup
+        dimension, or split the breaching bucket by path from
+        s3://labs-jj-alb-access-logs. The labs audit trail cannot settle it:
+        it is blind to Umami, and records nothing for a request that failed
+        before the audit middleware ran.
       Namespace: AWS/ApplicationELB
       MetricName: HTTPCode_Target_5XX_Count
       Dimensions:
