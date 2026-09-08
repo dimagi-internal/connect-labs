@@ -29,4 +29,11 @@ urlpatterns = [
         views.MopupCreatePlanView.as_view(),
         name="create_plan",
     ),
+    # TEMPORARY — diagnostic only, remove after the boundary-geometry
+    # re-investigation is resolved.
+    path(
+        "program/<int:program_id>/debug_geometry/",
+        views.MopupDebugGeometryView.as_view(),
+        name="debug_geometry",
+    ),
 ]
