@@ -27,7 +27,7 @@ def user(db):
 
 @pytest.fixture
 def queue_tool():
-    return get_tool("synthetic_profile_opp_async")
+    return get_tool("synthetic_profile_opp")
 
 
 @pytest.fixture

@@ -15,22 +15,46 @@ from connect_labs.mcp.progress import make_thread_safe_reporter
 from connect_labs.mcp.tool_registry import get_tool
 
 
-@pytest.mark.parametrize(
-    "tool_name",
-    ["synthetic_clone_profile", "synthetic_clone_generate", "synthetic_profile_opps_bulk"],
-)
-def test_long_running_cohort_tools_opt_into_progress(tool_name):
-    """These are the tools that iterate per-opportunity for minutes at a time.
+@pytest.mark.parametrize("tool_name", ["synthetic_clone_generate"])
+def test_long_running_inline_tools_opt_into_progress(tool_name):
+    """Tools that still do their work INSIDE the request must report progress.
 
-    An 11-opp `clone_profile` and an 11-opp `clone_generate` were both killed by
-    the client's 300s idle timeout after their work had entirely succeeded; a
-    3-opp `clone_generate` died too, while a 2-opp one returned normally. Silence
-    for the whole run is the defect, so opting in is part of the contract, not a
-    detail of the handler.
+    An 11-opp `clone_generate` was killed by the client's 300s idle timeout after
+    its work had entirely succeeded; a 3-opp one died too, while a 2-opp one
+    returned normally. Silence for the whole run is the defect, so opting in is
+    part of the contract, not a detail of the handler.
+
+    The PROFILING tools used to be in this list. They are not any more — they no
+    longer block (see below), and progress to a caller who is not waiting is
+    noise.
     """
     tool = get_tool(tool_name)
     assert tool is not None, f"{tool_name} is not registered"
     assert tool.wants_progress is True, f"{tool_name} must opt into progress reporting"
+
+
+@pytest.mark.parametrize(
+    "tool_name",
+    ["synthetic_profile_opp", "synthetic_profile_opps_bulk", "synthetic_clone_profile", "synthetic_profile_from_prod"],
+)
+def test_prod_profiling_tools_are_queued_not_inline(tool_name):
+    """Every prod-profiling tool runs on a worker. There is no inline variant.
+
+    Progress could not save these. `docker/start` runs gunicorn with
+    `--timeout 600`, a cap on ONE REQUEST'S TOTAL WALL TIME rather than an idle
+    timer — the worker is killed at 600s whether or not bytes are flowing. Opp
+    874 (11,581 visits) hit it twice at 604s and could not be profiled at all
+    (#1581), and no amount of reporting inside the call changes a duration cap.
+
+    So the invariant is the opposite of the one above: these must NOT declare
+    wants_progress, because declaring it would imply a caller is waiting.
+    """
+    tool = get_tool(tool_name)
+    assert tool is not None, f"{tool_name} is not registered"
+    assert tool.wants_progress is not True, (
+        f"{tool_name} is queued; progress belongs on the task's update_state, "
+        "not on a request nobody is holding open"
+    )
 
 
 def test_short_tools_do_not_opt_into_progress():
