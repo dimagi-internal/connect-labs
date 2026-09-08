@@ -25,8 +25,29 @@ from config import celery_app
 
 logger = logging.getLogger(__name__)
 
+# Every profiling task below is declared acks_late + reject_on_worker_lost.
+#
+# Celery's default acks a task when the worker RECEIVES it, so a worker that dies
+# mid-run takes the job with it: the broker considers it delivered, nothing is
+# redelivered, and the last update_state sticks — the caller polls PROGRESS
+# forever on a job nobody is running. That is worse than the inline failure this
+# module replaced, which at least surfaced an error.
+#
+# Not hypothetical. Opp 874's first queued run was received at 13:39:07 and lost
+# when the worker restarted underneath it at 13:45:40; its status still read
+# "PROGRESS 4/6" forty minutes later. These are ten-plus-minute jobs, so they are
+# far likelier than a short task to be in flight across a deploy's rolling
+# restart.
+#
+# Safe because profiling is idempotent: it reads production and writes a bundle
+# keyed by opportunity id, so a redelivered run overwrites its own output rather
+# than duplicating anything. acks_late buys at-least-once delivery, and
+# at-least-once is only a hazard when re-running has side effects. Here it does
+# not.
+TASK_OPTS = {"acks_late": True, "reject_on_worker_lost": True}
 
-@celery_app.task(bind=True)
+
+@celery_app.task(bind=True, **TASK_OPTS)
 def run_synthetic_profile_opp(
     self,
     *,
@@ -97,7 +118,7 @@ def _progress_reporter(task, **context):
     return _report
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, **TASK_OPTS)
 def run_synthetic_profile_opps_bulk(
     self,
     *,
@@ -130,7 +151,7 @@ def run_synthetic_profile_opps_bulk(
     }
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, **TASK_OPTS)
 def run_synthetic_clone_profile(self, *, spec_yaml: str, oauth_token: str) -> dict[str, Any]:
     """Phase 1 for a whole cohort spec. The longest of these by far."""
     from connect_labs.labs.synthetic.clone_from_prod import profile_cohort
@@ -153,7 +174,7 @@ def run_synthetic_clone_profile(self, *, spec_yaml: str, oauth_token: str) -> di
     }
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, **TASK_OPTS)
 def run_synthetic_profile_from_prod(
     self,
     *,
