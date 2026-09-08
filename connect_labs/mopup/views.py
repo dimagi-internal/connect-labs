@@ -580,6 +580,26 @@ class MopupDebugRawCaseView(LoginRequiredMixin, View):
         except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
             full_stage = {"error": f"{type(e).__name__}: {e}"}
 
+        # Stage 7: call the ACTUAL execute_visit_extraction (the real function
+        # _process_visit_level uses) directly with this exact config, and dump
+        # its raw dict for the same known-good visit_id — pinpoints whether the
+        # corruption is inside execute_visit_extraction's own zip-to-dict loop
+        # or in _process_visit_level's handling downstream of it.
+        try:
+            from connect_labs.labs.analysis.backends.sql.query_builder import execute_visit_extraction
+
+            visit_data, computed_field_names = execute_visit_extraction(config, opportunity_id)
+            known_id = raw_cache_stage.get("sample_entity_ids", [None])[0]
+            match = next((row for row in visit_data if row.get("visit_id") == known_id), None)
+            real_fn_stage = {
+                "computed_field_names": computed_field_names,
+                "row_count": len(visit_data),
+                "matched_row": match,
+                "first_row_keys": list(visit_data[0].keys()) if visit_data else [],
+            }
+        except Exception as e:  # noqa: BLE001 — diagnostic view, surface everything
+            real_fn_stage = {"error": f"{type(e).__name__}: {e}"}
+
         return JsonResponse(
             {
                 "status": "ok",
@@ -587,6 +607,7 @@ class MopupDebugRawCaseView(LoginRequiredMixin, View):
                 "sql_roundtrip_stage": sql_stage,
                 "raw_cache_db_stage": raw_cache_stage,
                 "sql_preview_stage": sql_stage_4,
+                "real_fn_stage": real_fn_stage,
                 "cursor_probe_stage": cursor_stage,
                 "full_sql_raw_cursor_stage": full_stage,
             }
