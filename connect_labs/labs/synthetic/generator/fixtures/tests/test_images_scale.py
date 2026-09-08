@@ -205,15 +205,20 @@ def test_weight_matching_still_agrees_with_the_photo():
         assert _entered(v) == CURVE_READINGS[v["images"][0]["blob_id"]]
 
 
-def test_bad_pool_still_disagrees_under_weight_matching():
-    """A bad-pool visit is still written a value its photo does not show, so an
-    agreement reviewer has something real to catch."""
+def test_a_failing_visit_is_written_a_value_its_photo_does_not_show():
+    """The property that matters: a visit marked to fail disagrees with its photo, so an
+    agreement reviewer has something real to catch.
+
+    It does NOT have to come from the bad pool. Under weight matching the default is a
+    readable, weight-matched photo of the RIGHT infant with the entered value pushed off
+    it — the transcription/fraud case — because matching inside the bad pool cannot work:
+    those frames carry no reading, so every planted mistake was silently skipped."""
     visits = _curve_visits([1740.0, 1760.0], username="fatima")
     stats = assign_visit_images(visits, _curve_config(flw_bad_rates={"fatima": 1.0}), random.Random(13))
     assert stats["reading_mismatches"] == 2
+    assert stats["unmatched_visits"] == 0
     for v in visits:
         blob = v["images"][0]["blob_id"]
-        assert blob.startswith("synth-scale-bad-")
         assert _entered(v) != CURVE_READINGS[blob]
 
 
@@ -250,3 +255,66 @@ def test_tolerance_without_readings_is_refused_at_manifest_load():
 
     with pytest.raises(ValidationError, match="requires readings"):
         _scale_config(readings={}, reading_path=None, reading_match_tolerance=50.0)
+
+
+# ---------------------------------------------------------------------------
+# The two ways a visit is made to fail on purpose.
+#
+# Routing every failure into the BAD pool cannot work under weight matching:
+# bad-pool images carry no reading, so the nearest-match finds nothing and the
+# visit is skipped. An FLW with bad_rate 1.0 then produces a spotless record and
+# the planted mistakes vanish without a word.
+# ---------------------------------------------------------------------------
+
+
+def _fail_config(**over):
+    kw = dict(
+        good_image_count=4,
+        bad_image_count=1,
+        readings=CURVE_READINGS,
+        reading_match_tolerance=120.0,
+        flw_bad_rates={"fatima": 1.0},
+    )
+    kw.update(over)
+    return _scale_config(**kw)
+
+
+def test_a_failing_visit_defaults_to_a_good_photo_with_a_wrong_number():
+    """The payment-integrity case: right infant, readable photo, value that disagrees."""
+    visits = _curve_visits([1410.0, 1590.0, 1810.0], username="fatima")
+    stats = assign_visit_images(visits, _fail_config(bad_photo_share=0.0), random.Random(3))
+
+    assert stats["images_assigned"] == 3
+    assert stats["unmatched_visits"] == 0, "planted mistakes must not vanish as coverage gaps"
+    assert stats["reading_mismatches"] == 3
+    assert stats["bad_photo_visits"] == 0
+    for v in visits:
+        blob = v["images"][0]["blob_id"]
+        assert blob.startswith("synth-scale-good-"), "a wrong NUMBER needs a readable photo"
+        assert _entered(v) != CURVE_READINGS[blob]
+
+
+def test_bad_photo_share_routes_some_failures_to_an_unusable_frame_instead():
+    """The other defect: fails on the IMAGE, so the cohort's own weight is left alone."""
+    weights = [1410.0] * 40
+    visits = _curve_visits(weights, username="fatima")
+    stats = assign_visit_images(visits, _fail_config(bad_photo_share=1.0), random.Random(4))
+
+    assert stats["bad_photo_visits"] == len(visits)
+    assert stats["unmatched_visits"] == 0
+    for v, w in zip(visits, weights):
+        assert v["images"][0]["blob_id"].startswith("synth-scale-bad-")
+        assert _entered(v) == w, "a bad-photo visit must not have its weight rewritten"
+
+
+def test_a_clean_worker_is_untouched_while_a_failing_one_is_planted():
+    """Both in one run — the mix a reviewer demo actually needs."""
+    clean = _curve_visits([1410.0, 1590.0, 1810.0], username="asha")
+    dirty = _curve_visits([1410.0, 1590.0, 1810.0], username="fatima")
+    stats = assign_visit_images(clean + dirty, _fail_config(bad_photo_share=0.0), random.Random(5))
+
+    assert stats["reading_mismatches"] == 3
+    for v in clean:
+        assert _entered(v) == CURVE_READINGS[v["images"][0]["blob_id"]]
+    for v in dirty:
+        assert _entered(v) != CURVE_READINGS[v["images"][0]["blob_id"]]

@@ -1,0 +1,178 @@
+{
+  "corpus": "muac",
+  "manifest_version": 1,
+  "description": "MUAC tape photos. The reviewer judges the PICTURE \u2014 whether the measurement was taken and photographed correctly \u2014 not a number.",
+  "folder": "stock-images/muac",
+  "measurement": {
+    "what": "mid-upper arm circumference",
+    "unit": "cm",
+    "eligibility_field_match": "muac",
+    "note": "A visit is eligible only if it recorded a MUAC reading."
+  },
+  "reviewers": {
+    "photo": {
+      "agent_id": "muac_overzoom",
+      "match_kind": "image_defect",
+      "note": "Judges the photo alone; needs no ground-truth value."
+    }
+  },
+  "ground_truth": {
+    "kind": "none",
+    "why": "Deliberate, not missing. This corpus's reviewer never compares a typed number against the photo, so a per-image reading would be unused. A corpus whose reviewer DOES compare (see scale) must set kind=reading_per_image."
+  },
+  "pools": {
+    "good": {
+      "count": 8,
+      "blob_pattern": "synth-muac-good-<NNN>",
+      "meaning": "clean MUAC measurement; passes review"
+    },
+    "bad": {
+      "count": 13,
+      "blob_pattern": "synth-muac-bad-<NNN>",
+      "meaning": "categorised photo defect; fails review"
+    }
+  },
+  "trajectories": {
+    "count": 0,
+    "note": "Cross-sectional corpus \u2014 no per-subject series. A generator must not weight-match against it."
+  },
+  "bad_categories": {
+    "tape_usage": "MUAC tape is improperly applied \u2014 overflows the framing window, misaligned, or twisted.",
+    "framing": "Photo framing makes the reading impossible to verify \u2014 too zoomed, no arrows visible, or no arm context.",
+    "equipment": "The MUAC strip itself is damaged \u2014 faded arrows, worn edges, lost tick marks.",
+    "misleading": "Photo appears fraudulent \u2014 tape is on a finger, hand, or surface, not a child's arm.",
+    "content_free": "Image is unusable due to motion blur, focus, or obstruction; reading cannot be confirmed."
+  },
+  "images": {
+    "muac_good_001.jpg": {
+      "blob_id": "synth-muac-good-001",
+      "pool": "good",
+      "category": null,
+      "reason": null
+    },
+    "muac_good_002.jpg": {
+      "blob_id": "synth-muac-good-002",
+      "pool": "good",
+      "category": null,
+      "reason": null
+    },
+    "muac_good_003.jpg": {
+      "blob_id": "synth-muac-good-003",
+      "pool": "good",
+      "category": null,
+      "reason": null
+    },
+    "muac_good_004.jpg": {
+      "blob_id": "synth-muac-good-004",
+      "pool": "good",
+      "category": null,
+      "reason": null
+    },
+    "muac_good_005.jpg": {
+      "blob_id": "synth-muac-good-005",
+      "pool": "good",
+      "category": null,
+      "reason": null
+    },
+    "muac_good_006.jpg": {
+      "blob_id": "synth-muac-good-006",
+      "pool": "good",
+      "category": null,
+      "reason": null
+    },
+    "muac_good_007.jpg": {
+      "blob_id": "synth-muac-good-007",
+      "pool": "good",
+      "category": null,
+      "reason": null
+    },
+    "muac_good_008.jpg": {
+      "blob_id": "synth-muac-good-008",
+      "pool": "good",
+      "category": null,
+      "reason": null
+    },
+    "muac_bad_001.jpg": {
+      "blob_id": "synth-muac-bad-001",
+      "pool": "bad",
+      "category": "tape_usage",
+      "reason": "MUAC tape overflows the framing reticle (not threaded back) \u2014 the loose end sticks out below the window."
+    },
+    "muac_bad_002.jpg": {
+      "blob_id": "synth-muac-bad-002",
+      "pool": "bad",
+      "category": "tape_usage",
+      "reason": "Tape is not threaded through the reticle at all; the strip lies flat across the arm so no measurement window is formed."
+    },
+    "muac_bad_003.jpg": {
+      "blob_id": "synth-muac-bad-003",
+      "pool": "bad",
+      "category": "tape_usage",
+      "reason": "Tape is twisted/rotated vertically so the reading window faces sideways and the numbers cannot be read in the normal orientation."
+    },
+    "muac_bad_004.jpg": {
+      "blob_id": "synth-muac-bad-004",
+      "pool": "bad",
+      "category": "framing",
+      "reason": "Extreme zoom \u2014 only the digit '15' is visible, with no arrows, no arm, and no color zone for context."
+    },
+    "muac_bad_005.jpg": {
+      "blob_id": "synth-muac-bad-005",
+      "pool": "bad",
+      "category": "framing",
+      "reason": "Framing is too distant and the reading window is small in the frame; the numbers around the arrows are difficult to read."
+    },
+    "muac_bad_006.jpg": {
+      "blob_id": "synth-muac-bad-006",
+      "pool": "bad",
+      "category": "equipment",
+      "reason": "Tape edges are worn \u2014 tick marks near 16-17-18 cm are scuffed off, reducing precision of the measurement."
+    },
+    "muac_bad_007.jpg": {
+      "blob_id": "synth-muac-bad-007",
+      "pool": "bad",
+      "category": "equipment",
+      "reason": "The red color zone on the strip is heavily scratched/peeling, which would compromise an FLW's ability to triage severe-acute cases by color."
+    },
+    "muac_bad_008.jpg": {
+      "blob_id": "synth-muac-bad-008",
+      "pool": "bad",
+      "category": "equipment",
+      "reason": "Tape is uniformly faded \u2014 arrows, tick marks, and numbers are nearly invisible and the reading cannot be confirmed."
+    },
+    "muac_bad_009.jpg": {
+      "blob_id": "synth-muac-bad-009",
+      "pool": "bad",
+      "category": "misleading",
+      "reason": "Tape is wrapped around the FLW's finger, not a child's arm \u2014 circumference is impossible at this diameter and the photo is fraudulent."
+    },
+    "muac_bad_010.jpg": {
+      "blob_id": "synth-muac-bad-010",
+      "pool": "bad",
+      "category": "misleading",
+      "reason": "Tape is laid flat against the FLW's thumb and palm rather than wrapped around a child's arm."
+    },
+    "muac_bad_011.jpg": {
+      "blob_id": "synth-muac-bad-011",
+      "pool": "bad",
+      "category": "misleading",
+      "reason": "Tape is wrapped around an adult finger \u2014 the diameter is far too small to be a child's mid-upper arm."
+    },
+    "muac_bad_012.jpg": {
+      "blob_id": "synth-muac-bad-012",
+      "pool": "bad",
+      "category": "content_free",
+      "reason": "The MUAC window is visible but the numeric reading is partially occluded and shot at a steep angle that distorts the value."
+    },
+    "muac_bad_013.jpg": {
+      "blob_id": "synth-muac-bad-013",
+      "pool": "bad",
+      "category": "content_free",
+      "reason": "Image is heavily out of focus \u2014 the reading window is a green blur and no digits are legible."
+    }
+  },
+  "provenance": {
+    "source": "https://docs.google.com/document/d/1MTp7Ogx6ywg8e2Lu6I9BUddAMOWIRGZMCAe5Jv7hb84/edit?tab=t.4ekg38rl0ie2",
+    "note": "Mirrors reasons.json in the corpus folder."
+  }
+}
