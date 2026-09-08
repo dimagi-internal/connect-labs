@@ -178,3 +178,61 @@ def test_safe_mode_env_tpl_does_not_source_anthropic_key_locally():
     assert "sk-ant-" not in tpl, (
         ".env.tpl contains a literal Anthropic API key — rotate immediately " "and remove it from the template."
     )
+
+
+# ---------------------------------------------------------------------------
+# `--prompt-file` (the handoff form)
+#
+# An agent that lacks access to some production data prepares the exact task;
+# the person who DOES have access runs it under their own PAT with one command.
+# The whole value depends on the prompt NOT being able to widen anything, so
+# these pin that the non-interactive path is the same locked box.
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_file_does_not_appear_in_the_permission_surface(safe_settings):
+    """A prepared prompt is an argument, not configuration.
+
+    If --prompt-file could reach settings.json the handoff would be worthless:
+    the person running it could not tell, by reading one command, what the
+    session is allowed to do.
+    """
+    allow = safe_settings["permissions"]["allow"]
+    deny = safe_settings["permissions"]["deny"]
+    # unchanged surface: still no shell, no writes, no nested agents
+    for blocked in ("Bash", "Write", "Edit", "Agent", "WebFetch"):
+        assert blocked in deny, f"{blocked} must stay denied on the prompt-file path"
+    assert "mcp__connect_labs__*" in allow
+    assert safe_settings["permissions"]["defaultMode"] == "dontAsk"
+
+
+def test_safe_claude_accepts_a_prompt_file_argument():
+    """The task exposes the flag; without it the handoff has to be pasted by hand."""
+    import inspect
+
+    from tasks import safe_claude
+
+    params = inspect.signature(safe_claude.__wrapped__).parameters
+    assert "prompt_file" in params
+    assert params["prompt_file"].default is None, "prompt-file must be opt-in"
+
+
+def test_shipped_prompts_are_non_empty_and_forbid_pasting_records():
+    """Every committed handoff prompt has to state the PII boundary itself.
+
+    The tool surface already blocks writes and shell, but nothing stops a model
+    from typing beneficiary rows into its own reply — that is a content rule, so
+    it lives in the prompt, and it must actually be there.
+    """
+    import pathlib
+
+    prompts_dir = pathlib.Path(__file__).resolve().parents[3] / "safe-claude" / "prompts"
+    prompts = sorted(prompts_dir.glob("*.md"))
+    assert prompts, "no shipped prompts found"
+    for prompt in prompts:
+        text = prompt.read_text()
+        assert text.strip(), f"{prompt.name} is empty"
+        lowered = text.lower()
+        assert "do not" in lowered and (
+            "pii" in lowered or "beneficiary" in lowered or "row" in lowered
+        ), f"{prompt.name} does not state what must not be pasted back"
