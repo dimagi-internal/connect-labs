@@ -12,10 +12,12 @@ anywhere in the pipeline metadata, even immediately after re-authorizing
 CommCare HQ and forcing a cache-bypassing refresh.
 """
 
+import contextlib
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+from django.utils import timezone
 
 from connect_labs.labs.integrations.commcare.api_client import CCHQAuthError, CommCareDataAccess
 
@@ -194,3 +196,104 @@ class TestFetchCasesRaiseOnHttpError:
             cases = client.fetch_cases(case_type="work-area", raise_on_http_error=True)
 
         assert cases == [{"case_id": "a"}]
+
+
+class TestRefreshTokenLocking:
+    """_refresh_token() serializes per-user via a redis lock — see its
+    docstring. A single page load fires several requests (the auth-status
+    check, the pipeline SSE stream) that can each decide the CCHQ token
+    looks expired at the same moment; without serialization they race to
+    redeem the SAME refresh_token, and CCHQ rejects the loser since refresh
+    tokens are single-use. Reproduced live as a user needing to click
+    "Authorize CommCare HQ" multiple times before it stuck.
+    """
+
+    def _client_with_user(self, refresh_token="old-refresh"):
+        request = MagicMock()
+        request.user.id = 42
+        request.session = {"commcare_oauth": {"access_token": "expired", "refresh_token": refresh_token}}
+        return CommCareDataAccess(request, domain="connect-chc-ng-isodaf")
+
+    def test_loser_reuses_winners_fresh_token_without_a_second_exchange(self):
+        """While this call waited for the lock, a concurrent request already
+        refreshed the session — re-reading it should short-circuit before any
+        network exchange, not race a second redemption of the same
+        (already-consumed) refresh_token."""
+        client = self._client_with_user()
+
+        def fake_lock(key, **kwargs):
+            # Simulate the OTHER request's successful refresh landing in the
+            # session while this caller held/waited on the lock.
+            client.request.session["commcare_oauth"] = {
+                "access_token": "winners-token",
+                "refresh_token": "winners-refresh",
+                "expires_at": timezone.now().timestamp() + 3600,
+            }
+            return contextlib.nullcontext(True)
+
+        with (
+            patch("connect_labs.labs.integrations.commcare.api_client.try_redis_lock", side_effect=fake_lock),
+            patch.object(client, "_exchange_refresh_token") as mock_exchange,
+        ):
+            assert client._refresh_token() is True
+
+        mock_exchange.assert_not_called()
+        assert client.access_token == "winners-token"
+
+    def test_acquires_lock_and_exchanges_when_no_fresh_token_appeared(self):
+        client = self._client_with_user()
+
+        with (
+            patch(
+                "connect_labs.labs.integrations.commcare.api_client.try_redis_lock",
+                return_value=contextlib.nullcontext(True),
+            ),
+            patch.object(client, "_exchange_refresh_token", return_value=True) as mock_exchange,
+        ):
+            assert client._refresh_token() is True
+
+        mock_exchange.assert_called_once_with("old-refresh")
+
+    def test_lock_busy_and_no_fresh_token_fails_without_exchanging(self):
+        """A concurrent refresh is already in flight and hasn't finished by
+        the time our wait times out — don't ALSO race an exchange of the
+        same refresh_token; report failure and let the caller retry."""
+        client = self._client_with_user()
+
+        with (
+            patch(
+                "connect_labs.labs.integrations.commcare.api_client.try_redis_lock",
+                return_value=contextlib.nullcontext(False),
+            ),
+            patch.object(client, "_exchange_refresh_token") as mock_exchange,
+        ):
+            assert client._refresh_token() is False
+
+        mock_exchange.assert_not_called()
+
+    def test_broken_lock_backend_degrades_to_unlocked_exchange(self):
+        """A redis blip or other lock-machinery failure must not turn a
+        graceful 'please reauthorize' outcome into an unhandled 500 — fall
+        back to the old unlocked behavior instead."""
+        client = self._client_with_user()
+
+        with (
+            patch(
+                "connect_labs.labs.integrations.commcare.api_client.try_redis_lock",
+                side_effect=RuntimeError("redis is down"),
+            ),
+            patch.object(client, "_exchange_refresh_token", return_value=True) as mock_exchange,
+        ):
+            assert client._refresh_token() is True
+
+        mock_exchange.assert_called_once_with("old-refresh")
+
+    def test_no_request_context_fails_without_locking(self):
+        client = CommCareDataAccess(None, domain="connect-chc-ng-isodaf", cchq_access_token=None)
+        client.request = None
+        client.commcare_oauth = {"refresh_token": "whatever"}
+
+        with patch("connect_labs.labs.integrations.commcare.api_client.try_redis_lock") as mock_lock:
+            assert client._refresh_token() is False
+
+        mock_lock.assert_not_called()

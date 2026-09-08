@@ -13,6 +13,8 @@ from django.conf import settings
 from django.http import HttpRequest
 from django.utils import timezone
 
+from connect_labs.utils.lock import try_redis_lock
+
 logger = logging.getLogger(__name__)
 
 
@@ -278,10 +280,66 @@ class CommCareDataAccess:
 
         Updates both the instance state and the session so the new token persists.
 
+        Serialized per-user via a redis lock. A single page load fires several
+        independent requests that can each decide the token looks expired at
+        the same moment (the auth-status check and the pipeline SSE stream, at
+        minimum) — without serialization they race to redeem the SAME stored
+        refresh_token. CCHQ rotates refresh tokens on redemption, so exactly
+        one of those concurrent exchanges succeeds and the other(s) get
+        rejected with the now-already-used refresh_token, each independently
+        (and wrongly) concluding "the user needs to re-authorize" even though
+        the session holds a perfectly good token seconds later. Reproduced
+        live as a user having to click "Authorize CommCare HQ" multiple times
+        before it stuck, on a page (program-owned, multi-opp run) that fires
+        exactly this kind of concurrent auth check.
+
         Returns:
-            True if refresh succeeded, False otherwise
+            True if refresh succeeded (or a concurrent request already
+            refreshed it while we waited for the lock), False otherwise
         """
-        refresh_token = self.commcare_oauth.get("refresh_token")
+        if self.request is None:
+            logger.debug("No request context for CommCare OAuth refresh")
+            return False
+
+        user_id = getattr(getattr(self.request, "user", None), "id", None)
+        if not user_id:
+            return self._exchange_refresh_token(self.commcare_oauth.get("refresh_token"))
+
+        lock_key = f"cchq-oauth-refresh:{user_id}"
+        try:
+            with try_redis_lock(lock_key, timeout=15, blocking_timeout=10) as acquired:
+                # Whichever request loses the race to acquire arrives here
+                # AFTER the winner's exchange has landed in the session (the
+                # lock is held for the duration of the exchange below) —
+                # re-read it before doing anything else, so a loser reuses
+                # the winner's fresh token instead of needlessly (and
+                # incorrectly) failing.
+                fresh = self.request.session.get("commcare_oauth", {}) or {}
+                if fresh.get("access_token") and timezone.now().timestamp() < fresh.get("expires_at", 0):
+                    self.access_token = fresh["access_token"]
+                    self.commcare_oauth = fresh
+                    return True
+                if not acquired:
+                    logger.warning(
+                        "CCHQ refresh lock busy for user %s and no fresh token appeared after waiting", user_id
+                    )
+                    return False
+                return self._exchange_refresh_token(
+                    fresh.get("refresh_token") or self.commcare_oauth.get("refresh_token")
+                )
+        except Exception:
+            # The lock is a best-effort guard against the refresh-token race
+            # described above, not a correctness requirement — a broken lock
+            # backend (redis blip, unexpected client error) should degrade to
+            # the old unlocked exchange rather than turn what used to be a
+            # graceful "please reauthorize" outcome into an unhandled 500.
+            logger.exception("CCHQ refresh lock machinery failed; falling back to an unlocked refresh attempt")
+            return self._exchange_refresh_token(self.commcare_oauth.get("refresh_token"))
+
+    def _exchange_refresh_token(self, refresh_token: str | None) -> bool:
+        """The actual CCHQ refresh-token grant exchange. Call via _refresh_token(),
+        which serializes concurrent callers — calling this directly can race.
+        """
         if not refresh_token:
             logger.debug("No refresh token available for CommCare OAuth")
             return False
