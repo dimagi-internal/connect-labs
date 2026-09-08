@@ -315,7 +315,7 @@ _DEFINITION_PATCH_ALLOWED = {"name", "description", "statuses", "config", "snaps
 _SNAPSHOT_INPUTS_ALLOWED_KEYS = {"pipelines", "workers", "state_keys"}
 
 
-def _validate_registry_source(value, wda) -> None:
+def _validate_registry_source(value, wda, *, opportunity_id=None, program_id=None) -> None:
     """Validate a registry binding, and prove the registry is actually readable.
 
     This is the binding that makes indicators editable without a deploy — the whole
@@ -351,7 +351,16 @@ def _validate_registry_source(value, wda) -> None:
         from connect_labs.semantic.runtime import SemanticRuntimeError, resolve_registry
         from connect_labs.workflow.data_access import SemanticRegistryDataAccess
 
-        access = SemanticRegistryDataAccess(access_token=getattr(wda, "access_token", None))
+        # SCOPED the same way the workflow read was. A registry record is owned by an
+        # opportunity/program, so an unscoped accessor cannot see one that exists —
+        # which reads back as "no semantic registry with id N" and is indistinguishable
+        # from a genuinely bad id. Measured: registry 5500 resolved fine through the
+        # semantic endpoint (which passes opportunity_id) while this refused it.
+        access = SemanticRegistryDataAccess(
+            access_token=getattr(wda, "access_token", None),
+            opportunity_id=opportunity_id,
+            program_id=program_id,
+        )
         try:
             resolve_registry({"registry_id": registry_id}, access)
         except SemanticRuntimeError as exc:
@@ -461,7 +470,9 @@ def workflow_update_definition(
             if patch["registry_source"] is None:
                 new_data.pop("registry_source", None)
             else:
-                _validate_registry_source(patch["registry_source"], wda)
+                _validate_registry_source(
+                    patch["registry_source"], wda, opportunity_id=opportunity_id, program_id=program_id
+                )
                 new_data["registry_source"] = patch["registry_source"]
         if "config" in patch:
             merged_config = dict(new_data.get("config", {}))
