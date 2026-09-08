@@ -1,9 +1,15 @@
-"""EXECUTE the compiled SQL and prove it equals the JavaScript implementation.
+"""EXECUTE the compiled SQL and prove it equals an independent implementation.
 
 This is the claim the whole approach rests on: moving Layer 2 and Layer 3 out of
 the browser and into SQL must not move the numbers. So the same fixture cases go
-through both paths -- the compiled SQL against real Postgres, and a faithful port
-of kmc_programme_metrics_render.js -- and every indicator must agree.
+through both paths -- the compiled SQL against real Postgres, and a hand-written
+reference implementation below -- and every indicator must agree.
+
+The reference started as a faithful port of kmc_programme_metrics_render.js.
+Where the registry now deliberately follows Neal Lesh's compute spec instead of
+the JavaScript, the port follows the SPEC and says so at the divergence. The
+JavaScript was never validated against anything; it is the thing being replaced,
+not the authority. Divergences are marked `DELIBERATE DIVERGENCE`.
 
 Skipped when no Postgres is reachable; the structural tests in test_compiler.py
 still run everywhere.
@@ -89,7 +95,30 @@ VISITS = [
     ("b7", 0, 1700, "yes", "no", "no", "Registration", 3.0, 1700.0, 1700.0),
     ("b7", 14, 1850, "yes", "no", "no", "Follow-up", None, None, None),
     ("b7", 31, 2000, "yes", "no", "no", "Follow-up", None, None, None),
+    # b10 -- the two sources DISAGREE. The app's own days_discharge_to_reg says 1
+    # day (within 3); the real interval reg_date - hospital_discharge_date is 6.
+    # Neal derives the interval, so this baby must NOT count as enrolled in 3 days.
+    ("b10", 0, 1450, "yes", "no", "no", "Registration", 1.0, 1450.0, 1.0),
+    ("b10", 15, 1600, "yes", "no", "no", "Follow-up", None, None, None),
+    ("b10", 32, 1750, "yes", "no", "no", "Follow-up", None, None, None),
+    # b11 -- the EHA/GHI shape: a discharge date but NO days_discharge_to_reg,
+    # because those two apps never write the calculated field. Under the old
+    # mapping this baby was invisible to C16; derived, it is enrolled within 3 days.
+    ("b11", 0, 1350, "yes", "no", "no", "Registration", None, 1350.0, 1.0),
+    ("b11", 16, 1500, "yes", "no", "no", "Follow-up", None, None, None),
+    ("b11", 33, 1650, "yes", "no", "no", "Follow-up", None, None, None),
+    # b12 -- registered BEFORE the recorded discharge, so the interval is negative.
+    # Neal's lower bound excludes it. Without the `>= 0` an impossible interval
+    # reads as excellent performance, which is the failure mode worth pinning.
+    ("b12", 0, 1500, "yes", "no", "no", "Registration", None, 1500.0, 1.0),
+    ("b12", 17, 1650, "yes", "no", "no", "Follow-up", None, None, None),
+    ("b12", 34, 1800, "yes", "no", "no", "Follow-up", None, None, None),
 ]
+
+# Days between hospital discharge and registration, per baby. Babies absent from
+# this map have no recorded discharge date -- the sparse real-world shape, where
+# coverage runs 18%-66% across the six LLOs.
+DISCHARGE_TO_REG = {"b10": 6, "b11": 2, "b12": -1}
 
 DDL = """
 DROP TABLE IF EXISTS fixture_visits;
@@ -99,7 +128,8 @@ CREATE TABLE fixture_visits (
     self_referral_yes boolean, ebf_recorded boolean, form_name text,
     days_discharge_to_reg double precision, birth_weight_g double precision,
     enrollment_weight_g double precision, kmc_hours_mean double precision,
-    reg_date timestamp, opportunity_id int, username text
+    reg_date timestamp, hospital_discharge_date timestamp,
+    opportunity_id int, username text
 );
 """
 
@@ -111,8 +141,21 @@ def _load(conn):
     for baby, off, w, alive, danger, ref, form, d2r, bw, ew in VISITS:
         cur.execute(
             "INSERT INTO fixture_visits VALUES (%s, DATE '2026-01-01' + %s, %s, %s, %s, %s,"
-            " false, true, %s, %s, %s, %s, 4.0, DATE '2026-01-01', 1, 'flw1')",
-            (baby, off, w, alive == "no", danger == "yes", ref == "yes", form, d2r, bw, ew),
+            " false, true, %s, %s, %s, %s, 4.0, DATE '2026-01-01',"
+            " DATE '2026-01-01' - %s::int, 1, 'flw1')",
+            (
+                baby,
+                off,
+                w,
+                alive == "no",
+                danger == "yes",
+                ref == "yes",
+                form,
+                d2r,
+                bw,
+                ew,
+                DISCHARGE_TO_REG.get(baby),
+            ),
         )
     conn.commit()
 
@@ -203,7 +246,14 @@ def _js_properties(as_of_offset=200):
         d["ever_danger_sign"] = b["danger"] > 0
         d["referred"] = b["ref"] > 0
         d["num_visits"] = b["visits"]
-        d["enrolled_within_3d"] = None if b["d2r"] is None else b["d2r"] <= 3
+        # DELIBERATE DIVERGENCE from the JavaScript, per Neal Lesh's compute spec:
+        # the interval is DERIVED from the discharge date and only falls back to
+        # the app's calculated field, and the rule carries a lower bound.
+        hdd = DISCHARGE_TO_REG.get(name)
+        dte = float(hdd) if hdd is not None else b["d2r"]
+        d["days_to_enrolment"] = dte
+        d["has_discharge_date"] = dte is not None
+        d["enrolled_within_3d"] = None if dte is None else (0 <= dte <= 3)
         d["days_discharge_to_reg"] = b["d2r"]
         d["enrollment_is_birth_copy"] = None if b["bw"] is None or b["ew"] is None else abs(b["bw"] - b["ew"]) < 1
         out[name] = d
@@ -224,6 +274,13 @@ def _js_indicators(props):
         vals = [v for v in vals if isinstance(v, (int, float))]
         return sum(vals) / len(vals) if vals else None
 
+    def median_days():
+        """Upper median, mirroring the compiled ARRAY_AGG index exactly."""
+        vals = sorted(r["days_to_enrolment"] for r in rows if r["started"] and r["has_discharge_date"])
+        if not vals:
+            return None
+        return float(vals[int(len(vals) // 2)])
+
     return {
         "C01": float(len([r for r in rows if r["registered"]])),
         "C02": float(len([r for r in rows if r["started"]])),
@@ -235,6 +292,8 @@ def _js_indicators(props):
         "C13": mean(lambda r: r["early_g_per_kg_day"], lambda r: r["weight_gain_data_sufficient"]),
         "C14": ratio(lambda r: r["died"], lambda r: r["eligible"] and r["outcome_known"]),
         "C15": ratio(lambda r: not r["outcome_known"], lambda r: r["eligible"]),
+        "C16": ratio(lambda r: r["enrolled_within_3d"], lambda r: r["started"] and r["has_discharge_date"]),
+        "C17": median_days(),
         "C20": ratio(lambda r: r["ever_danger_sign"], lambda r: r["eligible"]),
         "C24": mean(lambda r: r["num_visits"], lambda r: r["started"]),
         "C28": ratio(lambda r: r["enrollment_is_birth_copy"], lambda r: r["enrollment_is_birth_copy"] is not None),
@@ -247,7 +306,7 @@ def _js_indicators(props):
     }
 
 
-def test_sql_matches_the_javascript(conn):
+def test_sql_matches_the_reference_implementation(conn):
     props_doc = yaml.safe_load((REGISTRY / "properties.yml").read_text())
     registry = yaml.safe_load((REGISTRY / "indicators.yml").read_text())
     _load(conn)
@@ -272,10 +331,10 @@ def test_sql_matches_the_javascript(conn):
         if want is None and got is None:
             continue
         if want is None or got is None:
-            mismatches.append(f"{ind}: sql={got!r} js={want!r}")
+            mismatches.append(f"{ind}: sql={got!r} ref={want!r}")
         elif not math.isclose(float(got), float(want), rel_tol=1e-6, abs_tol=1e-6):
-            mismatches.append(f"{ind}: sql={float(got):.6f} js={float(want):.6f}")
-    assert not mismatches, "SQL and JS disagree:\n  " + "\n  ".join(mismatches)
+            mismatches.append(f"{ind}: sql={float(got):.6f} ref={float(want):.6f}")
+    assert not mismatches, "SQL and the reference disagree:\n  " + "\n  ".join(mismatches)
 
 
 def test_denominators_are_reported_alongside_values(conn):

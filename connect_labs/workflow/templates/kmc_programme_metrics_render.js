@@ -117,6 +117,9 @@ function WorkflowUI({
   }
 
   var MIN_DEN = 25;
+  // Neal's spec item 8: below this share of cases carrying a hospital discharge
+  // date, C16's denominator is thin and biased and the figure must be marked.
+  var C16_MIN_COVERAGE = 0.45;
 
   // ── App-structure capability map ──────────────────────────────────────────
   // APP_ASKS is derived from each opportunity's app_structure.json — the app's
@@ -686,7 +689,16 @@ function WorkflowUI({
   // the server is the display contract, and `catalog_only` returns exactly that
   // without touching a pipeline or the database.
   var sCS = React.useState({
-    status: frozen ? 'loading' : 'idle',
+    // A frozen run that carries its own catalog needs nothing from the server, so
+    // it is ready immediately. Starting it at 'loading' left the "Computing
+    // indicators in SQL…" banner up permanently, because the effect below returns
+    // early in exactly that case and never flipped the status.
+    status:
+      frozen && (frozen.cMeasures || []).length
+        ? 'ready'
+        : frozen
+        ? 'loading'
+        : 'idle',
     rows: [],
     measures: (frozen && frozen.cMeasures) || [],
   });
@@ -865,12 +877,16 @@ function WorkflowUI({
     var den = row[measure.measure + '_denominator'];
     out.n = den === null || den === undefined ? 0 : Number(den);
 
-    // Credibility is a GATE, not a band: the workbook says this LLO does not
-    // record the thing credibly, so the figure exists and must not be published.
-    if (!cCredible(measure, row)) {
-      out.band = 'notcredible';
-      return out;
-    }
+    // Credibility marks a figure, it does not erase it. The engine this replaced
+    // computed the value and set band 'notcredible' -- which is why bandLabel reads
+    // "SHOWN, not credible" -- and its comment said why: a blank cell reads as "no
+    // data", which is wrong and actively confusing, because these LLOs DO record
+    // deaths; the workbook only says not credibly. Blanking also HIDES the
+    // under-recording, since pooling every LLO reads lower than the credible
+    // recorders alone. Returning early here regressed that to an em-dash for four
+    // of six LLOs. Neal's spec agrees: his expected table carries a mortality figure
+    // for every LLO with a sufficient denominator.
+    var notCredible = !cCredible(measure, row);
 
     var state = cInputState(id, row, cScopeOpps(row));
     if (state !== 'ok') {
@@ -887,8 +903,26 @@ function WorkflowUI({
       return out;
     }
 
-    out.band = cBandOf(measure, Number(raw));
+    out.band = notCredible ? 'notcredible' : cBandOf(measure, Number(raw));
     out.value = measure.unit === '%' ? Number(raw) / 100 : Number(raw);
+
+    // Neal's spec, item 8: "Parenthesize / footnote for any LLO where <45% of cases
+    // carry a discharge date (thin, biased denominator)." C16's denominator is
+    // `started AND has a discharge date`, so when few cases carry one the rate is
+    // computed over a self-selected minority and reads far too well -- measured on
+    // this cohort, PIPN scores 96.5% off 20% coverage where the full-coverage figure
+    // is 66%.
+    // `id` is the workbook id (C16); `measure` is the registry measure name (c16).
+    if (measure.id === 'C16') {
+      var started = row.c02;
+      if (started) {
+        var coverage = Number(out.n) / Number(started);
+        if (coverage < C16_MIN_COVERAGE) {
+          out.thinDenominator = true;
+          out.coverage = coverage;
+        }
+      }
+    }
     return out;
   }
 
@@ -1526,6 +1560,13 @@ function WorkflowUI({
   // reality because non-recorders contribute denominator without deaths.
   var mortalityCredible = React.useMemo(
     function () {
+      // Snapshot first, like byOpp / byLLO / byFLW / programInd. This one is newly
+      // frozen-dependent: it used to be computed from `derived` -- pipeline rows a
+      // frozen run still loads -- and now reads the llo-scope SEMANTIC rows, which a
+      // frozen run deliberately never fetches. Without this the headline mortality
+      // card silently degrades to "no credible recorder" the moment a run is frozen,
+      // while the LLO table beside it still shows EHA and PIPN reporting deaths.
+      if (frozen && frozen.mortalityCredible) return frozen.mortalityCredible;
       var credible = cCredibleLloRows('C14');
       var llos = credible
         .map(function (r) {
@@ -1542,7 +1583,7 @@ function WorkflowUI({
         of: byLLO.length,
       };
     },
-    [byLLO, cRows, C_LIST],
+    [byLLO, cRows, C_LIST, frozen],
   );
   // ── UI ───────────────────────────────────────────────────────────────────
   var s1 = React.useState(null);
@@ -1710,6 +1751,24 @@ function WorkflowUI({
   // (reading 'value')", because a React render that throws renders nothing at all.
   function entryOf(map, id) {
     return (map && map[id]) || { id: id, n: 0, value: null, band: 'nodata' };
+  }
+
+  // Neal's "parenthesize" for a thin, biased denominator. Rendering it as a value
+  // like any other is the failure he is warning about: 96.5% off 20% coverage looks
+  // like the best performer in the table.
+  function fmtCov(ind, e) {
+    var text = fmt(ind, e);
+    return e && e.thinDenominator && text !== '—' ? '(' + text + ')' : text;
+  }
+
+  function covTitle(e) {
+    if (!e || !e.thinDenominator) return undefined;
+    return (
+      'Thin denominator: only ' +
+      Math.round(100 * (e.coverage || 0)) +
+      '% of started cases carry a hospital discharge date, so this rate is computed ' +
+      'over a self-selected minority and reads better than the programme does.'
+    );
   }
 
   function fmt(ind, e) {
@@ -2372,6 +2431,7 @@ function WorkflowUI({
       // which has to include what published them. Also makes a frozen run
       // genuinely zero-query rather than one cheap call away from it.
       cMeasures: cSeries.measures || [],
+      mortalityCredible: mortalityCredible,
       programInd: programInd,
       byLLO: byLLO.map(function (l) {
         return {
@@ -2491,11 +2551,15 @@ function WorkflowUI({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">KMC Indicators</h1>
+          {/* "evaluated live" was true when this browser computed the
+              indicators. It no longer does, and on a frozen run the claim sat
+              directly under a banner saying the figures cannot move. */}
           <p className="text-sm text-gray-500 mt-1">
-            The kmc_metrics_framework registry, evaluated live. Case properties
-            are computed in SQL by the entity pipeline; only the weight series
-            is derived here. Click any row to drill Programme → LLO →
-            opportunity → cases.
+            The kmc_metrics_framework registry, compiled to SQL and evaluated
+            server-side{frozen ? ' — these figures are from the snapshot' : ''}.
+            Case properties come from the entity pipeline; only the weight
+            series is derived in this browser. Click any row to drill Programme
+            → LLO → opportunity → cases.
           </p>
         </div>
         {!frozen && view && view.complete && (
@@ -3080,7 +3144,9 @@ function WorkflowUI({
                             {fmt(indOf('C14'), entryOf(l.ind, 'C14'))}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C16'), entryOf(l.ind, 'C16'))}
+                            <span title={covTitle(entryOf(l.ind, 'C16'))}>
+                              {fmtCov(indOf('C16'), entryOf(l.ind, 'C16'))}
+                            </span>
                           </td>
                           <td className="px-3 py-2 text-right">
                             {l.reds ? (

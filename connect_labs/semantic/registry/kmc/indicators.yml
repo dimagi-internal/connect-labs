@@ -351,19 +351,18 @@ measures:
     filters:
       [
         { sql: '{CUBE}.enrolled_within_3d' },
-        { sql: '{CUBE}.started AND {CUBE}.days_discharge_to_reg IS NOT NULL' },
+        { sql: '{CUBE}.started AND {CUBE}.has_discharge_date' },
       ]
   - name: c16_denominator
     type: count
-    filters:
-      [{ sql: '{CUBE}.started AND {CUBE}.days_discharge_to_reg IS NOT NULL' }]
+    filters: [{ sql: '{CUBE}.started AND {CUBE}.has_discharge_date' }]
 
   - name: c17
     title: Median days to enrolment
     type: number
     sql: >-
-      (ARRAY_AGG({CUBE}.days_discharge_to_reg ORDER BY {CUBE}.days_discharge_to_reg)
-         FILTER (WHERE {CUBE}.started AND {CUBE}.days_discharge_to_reg IS NOT NULL)
+      (ARRAY_AGG({CUBE}.days_to_enrolment ORDER BY {CUBE}.days_to_enrolment)
+         FILTER (WHERE {CUBE}.started AND {CUBE}.has_discharge_date)
       )[FLOOR({c17_denominator} / 2.0) + 1]
     meta:
       {
@@ -383,8 +382,7 @@ measures:
       }
   - name: c17_denominator
     type: count
-    filters:
-      [{ sql: '{CUBE}.started AND {CUBE}.days_discharge_to_reg IS NOT NULL' }]
+    filters: [{ sql: '{CUBE}.started AND {CUBE}.has_discharge_date' }]
 
   - name: c19
     title: '% of danger-sign cases referred'
@@ -897,7 +895,7 @@ measures:
   - name: anyrec_days_discharge_to_reg
     gate: true
     type: max
-    sql: 'CASE WHEN {CUBE}.days_discharge_to_reg IS NOT NULL THEN 1 ELSE 0 END'
+    sql: 'CASE WHEN {CUBE}.has_discharge_date THEN 1 ELSE 0 END'
   - name: anyrec_referred
     gate: true
     type: max
