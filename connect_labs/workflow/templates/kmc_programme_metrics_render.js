@@ -117,6 +117,9 @@ function WorkflowUI({
   }
 
   var MIN_DEN = 25;
+  // Neal's spec item 8: below this share of cases carrying a hospital discharge
+  // date, C16's denominator is thin and biased and the figure must be marked.
+  var C16_MIN_COVERAGE = 0.45;
 
   // ── App-structure capability map ──────────────────────────────────────────
   // APP_ASKS is derived from each opportunity's app_structure.json — the app's
@@ -874,12 +877,16 @@ function WorkflowUI({
     var den = row[measure.measure + '_denominator'];
     out.n = den === null || den === undefined ? 0 : Number(den);
 
-    // Credibility is a GATE, not a band: the workbook says this LLO does not
-    // record the thing credibly, so the figure exists and must not be published.
-    if (!cCredible(measure, row)) {
-      out.band = 'notcredible';
-      return out;
-    }
+    // Credibility marks a figure, it does not erase it. The engine this replaced
+    // computed the value and set band 'notcredible' -- which is why bandLabel reads
+    // "SHOWN, not credible" -- and its comment said why: a blank cell reads as "no
+    // data", which is wrong and actively confusing, because these LLOs DO record
+    // deaths; the workbook only says not credibly. Blanking also HIDES the
+    // under-recording, since pooling every LLO reads lower than the credible
+    // recorders alone. Returning early here regressed that to an em-dash for four
+    // of six LLOs. Neal's spec agrees: his expected table carries a mortality figure
+    // for every LLO with a sufficient denominator.
+    var notCredible = !cCredible(measure, row);
 
     var state = cInputState(id, row, cScopeOpps(row));
     if (state !== 'ok') {
@@ -896,8 +903,26 @@ function WorkflowUI({
       return out;
     }
 
-    out.band = cBandOf(measure, Number(raw));
+    out.band = notCredible ? 'notcredible' : cBandOf(measure, Number(raw));
     out.value = measure.unit === '%' ? Number(raw) / 100 : Number(raw);
+
+    // Neal's spec, item 8: "Parenthesize / footnote for any LLO where <45% of cases
+    // carry a discharge date (thin, biased denominator)." C16's denominator is
+    // `started AND has a discharge date`, so when few cases carry one the rate is
+    // computed over a self-selected minority and reads far too well -- measured on
+    // this cohort, PIPN scores 96.5% off 20% coverage where the full-coverage figure
+    // is 66%.
+    // `id` is the workbook id (C16); `measure` is the registry measure name (c16).
+    if (measure.id === 'C16') {
+      var started = row.c02;
+      if (started) {
+        var coverage = Number(out.n) / Number(started);
+        if (coverage < C16_MIN_COVERAGE) {
+          out.thinDenominator = true;
+          out.coverage = coverage;
+        }
+      }
+    }
     return out;
   }
 
@@ -1726,6 +1751,24 @@ function WorkflowUI({
   // (reading 'value')", because a React render that throws renders nothing at all.
   function entryOf(map, id) {
     return (map && map[id]) || { id: id, n: 0, value: null, band: 'nodata' };
+  }
+
+  // Neal's "parenthesize" for a thin, biased denominator. Rendering it as a value
+  // like any other is the failure he is warning about: 96.5% off 20% coverage looks
+  // like the best performer in the table.
+  function fmtCov(ind, e) {
+    var text = fmt(ind, e);
+    return e && e.thinDenominator && text !== '—' ? '(' + text + ')' : text;
+  }
+
+  function covTitle(e) {
+    if (!e || !e.thinDenominator) return undefined;
+    return (
+      'Thin denominator: only ' +
+      Math.round(100 * (e.coverage || 0)) +
+      '% of started cases carry a hospital discharge date, so this rate is computed ' +
+      'over a self-selected minority and reads better than the programme does.'
+    );
   }
 
   function fmt(ind, e) {
@@ -3101,7 +3144,9 @@ function WorkflowUI({
                             {fmt(indOf('C14'), entryOf(l.ind, 'C14'))}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C16'), entryOf(l.ind, 'C16'))}
+                            <span title={covTitle(entryOf(l.ind, 'C16'))}>
+                              {fmtCov(indOf('C16'), entryOf(l.ind, 'C16'))}
+                            </span>
                           </td>
                           <td className="px-3 py-2 text-right">
                             {l.reds ? (
