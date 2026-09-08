@@ -51,7 +51,20 @@ def _wda_for_user(user, opportunity_id: int | None = None, program_id: int | Non
         "an exact match, not hierarchical, so a program-owned run is invisible "
         "to an opp-scoped read and vice versa. Same contract as "
         "workflow_create_run, so a run created program-scoped can be concluded "
-        "the same way."
+        "the same way.\n\n"
+        "WHERE THE NUMBERS COME FROM, because it decides whether you can complete "
+        "a run without opening a browser. Check `saved_runs.has_build_snapshot_hook` "
+        "from workflow_get first:\n"
+        "  true  — the template builds its snapshot SERVER-SIDE. Create a run, call "
+        "this, done. No page visit.\n"
+        "  false — the template's snapshot is whatever its RENDER staged into run "
+        "state (see `saved_runs.snapshot_inputs.state_keys`). Those keys are computed "
+        "in the browser, so calling this on a run nobody has opened would freeze an "
+        "EMPTY snapshot onto a run that cannot be re-opened. That is refused with "
+        "INVALID_SCHEMA naming the missing keys — it is not a transient error and "
+        "retrying will not help. Either POST the computed keys to "
+        "/labs/workflow/api/run/<run_id>/state/ yourself, or add a `build_snapshot` "
+        "hook to the template so this path works unattended."
     ),
     input_schema={
         "type": "object",
@@ -78,6 +91,7 @@ def workflow_save_snapshot(
 ) -> dict[str, Any]:
     from connect_labs.workflow.data_access import PipelineCacheMiss
     from connect_labs.workflow.templates import (
+        SnapshotStateNotStagedError,
         SnapshotTooLargeError,
         build_snapshot_for_contract,
         resolve_snapshot_contract,
@@ -200,6 +214,18 @@ def workflow_save_snapshot(
                 definition_id=definition_id,
                 access_token=wda.access_token,
             )
+        except SnapshotStateNotStagedError as e:
+            # Not the caller's mistake to guess at: name the keys, and name both
+            # routes out (stage them, or give the template a build_snapshot hook).
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                str(e),
+                details={
+                    "template_key": e.template_key,
+                    "missing_state_keys": e.missing,
+                    "stage_endpoint": f"/labs/workflow/api/run/{run_id}/state/",
+                },
+            ) from e
         except SnapshotTooLargeError as e:
             raise MCPToolError("INVALID_SCHEMA", str(e)) from e
         if not isinstance(snapshot_payload, dict):

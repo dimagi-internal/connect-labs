@@ -230,6 +230,26 @@ def workflow_get(
         # Whether the snapshot shape is computed (Python hook) vs verbatim
         # capture of the declared inputs.
         saved_runs_meta["has_build_snapshot_hook"] = contract["source"] == "template_hook"
+        # The operational consequence of that flag, spelled out — it is the single
+        # fact that decides whether workflow_save_snapshot works unattended, and
+        # a caller had no way to infer it from the boolean alone.
+        if saved_runs_meta["has_build_snapshot_hook"]:
+            saved_runs_meta["snapshot_via_api"] = "server_side"
+            saved_runs_meta["snapshot_note"] = (
+                "workflow_save_snapshot builds this snapshot server-side: create a run and "
+                "complete it, no page visit needed."
+            )
+        else:
+            declared = list((contract.get("snapshot_inputs") or {}).get("state_keys") or [])
+            saved_runs_meta["snapshot_via_api"] = "requires_staged_state" if declared else "declarative"
+            if declared:
+                saved_runs_meta["snapshot_note"] = (
+                    "This template has NO server-side build_snapshot hook: its snapshot is "
+                    f"whatever its render staged into run state under {declared}. "
+                    "workflow_save_snapshot on a run nobody has opened is refused rather than "
+                    "freezing an empty snapshot. Stage those keys via "
+                    "POST /labs/workflow/api/run/<run_id>/state/ first, or add a build_snapshot hook."
+                )
         out["saved_runs"] = saved_runs_meta
     elif template is not None:
         out["saved_runs"] = {

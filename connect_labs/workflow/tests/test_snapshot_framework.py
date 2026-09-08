@@ -211,6 +211,54 @@ class TestDefaultHookSnapshotInputs:
         )
         assert snap["state"] == {"worker_states": {"a": {}}}
 
+    def test_declared_state_keys_absent_refuses_instead_of_freezing_empty(self, monkeypatch):
+        """The lost-snapshot bug: a template whose snapshot is staged by its RENDER,
+        completed by an API/MCP caller that never opened the page.
+
+        Every other part of the contract is satisfied, so this used to return a
+        completed run carrying `state: {}` — an empty published artifact that
+        cannot be re-opened, from a call that returned 200. Refuse instead.
+        """
+        import pytest
+
+        from connect_labs.workflow.templates import SnapshotStateNotStagedError
+
+        key = self._stub_template(monkeypatch, snapshot_inputs={"state_keys": ["frozen"]})
+        with pytest.raises(SnapshotStateNotStagedError) as exc:
+            build_snapshot_for_template(key, pipelines={}, state={}, opportunity_id=1, workers=[])
+        assert exc.value.missing == ["frozen"]
+        # The message has to carry the way out, not just the refusal.
+        assert "/state/" in str(exc.value)
+        assert "build_snapshot" in str(exc.value)
+
+    def test_declared_state_keys_present_but_empty_is_still_refused(self, monkeypatch):
+        """`{"frozen": None}` and `{"frozen": {}}` are the shapes a half-finished
+        stage leaves behind. Presence of the KEY is not evidence the render wrote
+        anything into it, so key-presence is the wrong test."""
+        import pytest
+
+        from connect_labs.workflow.templates import SnapshotStateNotStagedError
+
+        key = self._stub_template(monkeypatch, snapshot_inputs={"state_keys": ["frozen"]})
+        for empty in ({"frozen": None}, {"frozen": {}}):
+            with pytest.raises(SnapshotStateNotStagedError):
+                build_snapshot_for_template(key, pipelines={}, state=empty, opportunity_id=1, workers=[])
+
+    def test_staged_state_completes_normally(self, monkeypatch):
+        """Positive control — the guard must not block the path it exists to protect."""
+        key = self._stub_template(monkeypatch, snapshot_inputs={"state_keys": ["frozen"]})
+        snap = build_snapshot_for_template(
+            key, pipelines={}, state={"frozen": {"meta": {"cases": 9011}}}, opportunity_id=1, workers=[]
+        )
+        assert snap["state"]["frozen"]["meta"]["cases"] == 9011
+
+    def test_empty_state_keys_list_still_means_capture_no_state(self, monkeypatch):
+        """`state_keys: []` is a legitimate declaration ("capture no state") and is
+        NOT the bug. Only a non-empty declaration that matches nothing is."""
+        key = self._stub_template(monkeypatch, snapshot_inputs={"state_keys": []})
+        snap = build_snapshot_for_template(key, pipelines={}, state={}, opportunity_id=1, workers=[])
+        assert snap["state"] == {}
+
     def test_default_hook_can_omit_workers(self, monkeypatch):
         key = self._stub_template(
             monkeypatch,
