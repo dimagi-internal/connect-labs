@@ -162,6 +162,19 @@ class WorkflowDefinitionRecord(LocalLabsRecord):
         return self.data.get("pipeline_sources", [])
 
     @property
+    def registry_source(self) -> dict:
+        """Which semantic registry this workflow computes indicators from.
+
+        ``{"registry_id": 41}`` binds a live record; ``{"name": "kmc"}`` names one
+        of the on-disk registries; ``{}`` (the default) means the built-in, which
+        is what every workflow written before registries were records still gets.
+        Singular where ``pipeline_sources`` is plural: a workflow draws visit rows
+        from several pipelines, but it computes ONE set of indicators over them --
+        several families inside one registry are what `series` is for.
+        """
+        return self.data.get("registry_source") or {}
+
+    @property
     def opportunity_ids(self) -> list[int]:
         """List of opportunity IDs this workflow pulls data from.
 
@@ -343,6 +356,56 @@ class PipelineDefinitionRecord(LocalLabsRecord):
     def schema(self) -> dict:
         """Get the pipeline schema (fields, grouping, etc.)."""
         return self.data.get("schema", {})
+
+    @property
+    def is_shared(self) -> bool:
+        return self.data.get("is_shared", False)
+
+    @property
+    def shared_scope(self) -> str:
+        return self.data.get("shared_scope", "global")
+
+
+class SemanticRegistryRecord(LocalLabsRecord):
+    """Proxy model for a semantic registry -- Layers 2 and 3 as DATA, not as files.
+
+    A registry is the indicator definitions (`properties` + `indicators`) plus the
+    deployment facts the compiler cannot derive (`deployment`: the llo map and the
+    credibility gates). Held on disk these could only be changed by a merge and a
+    deploy, which is what made "the pipelines are dynamic code" only two-thirds
+    true: the extraction was editable live, the indicators over it were not.
+
+    Same shape as a pipeline definition on purpose -- name, description, version,
+    is_shared/shared_scope -- so a registry is listed, fetched, shared and bound to
+    a workflow through the paths that already exist for pipelines.
+    """
+
+    @property
+    def name(self):
+        return self.data.get("name", "Untitled Registry")
+
+    @property
+    def description(self):
+        return self.data.get("description", "")
+
+    @property
+    def version(self):
+        return self.data.get("version", 1)
+
+    @property
+    def properties_doc(self) -> dict:
+        """Layer 2: the case-level properties the indicators are written against."""
+        return self.data.get("properties") or {}
+
+    @property
+    def indicators_doc(self) -> dict:
+        """Layer 3: the measures, their meta, and the suppression rules."""
+        return self.data.get("indicators") or {}
+
+    @property
+    def deployment(self) -> dict:
+        """What the compiler needs and SQL cannot produce: `llo_map` and `settings`."""
+        return self.data.get("deployment") or {}
 
     @property
     def is_shared(self) -> bool:
@@ -1808,6 +1871,151 @@ class WorkflowDataAccess(BaseDataAccess):
 # =============================================================================
 # Pipeline Data Access
 # =============================================================================
+
+
+class SemanticRegistryDataAccess(BaseDataAccess):
+    """CRUD for semantic registries, with validation on the write path.
+
+    The read path is deliberately dumb and the WRITE path is where the safety is.
+    On disk, a bad registry could not reach production without passing CI; in the
+    database there is no CI, so `create_registry` and `update_registry` refuse
+    anything `validate_registry` rejects. Saving a registry that cannot compile
+    would take the dashboard down at the next load with a raw driver error, and
+    the person who broke it would not be the person who sees it.
+    """
+
+    EXPERIMENT = "semantic"
+    RECORD_TYPE = "semantic_registry"
+
+    def list_registries(self, include_shared: bool = True) -> list[SemanticRegistryRecord]:
+        """Registries this caller owns, plus shared ones.
+
+        Shared defaults ON here where pipelines default it OFF: a registry is the
+        thing you are most likely to want to reuse across programmes rather than
+        re-derive, which is the whole reason it is a shareable record.
+        """
+        records = self.labs_api.get_records(
+            experiment=self.EXPERIMENT,
+            type=self.RECORD_TYPE,
+            model_class=SemanticRegistryRecord,
+        )
+        if include_shared:
+            seen = {r.id for r in records}
+            for r in self.labs_api.get_records(
+                experiment=self.EXPERIMENT,
+                type=self.RECORD_TYPE,
+                model_class=SemanticRegistryRecord,
+                public=True,
+            ):
+                if r.id not in seen:
+                    records.append(r)
+        return records
+
+    def get_registry(self, registry_id: int) -> SemanticRegistryRecord | None:
+        return self.labs_api.get_record_by_id(
+            registry_id,
+            experiment=self.EXPERIMENT,
+            type=self.RECORD_TYPE,
+            model_class=SemanticRegistryRecord,
+        )
+
+    def create_registry(
+        self,
+        name: str,
+        properties: dict,
+        indicators: dict,
+        deployment: dict | None = None,
+        description: str = "",
+        is_shared: bool = False,
+    ) -> SemanticRegistryRecord:
+        from connect_labs.semantic.validation import assert_registry_valid
+
+        assert_registry_valid(properties, indicators, deployment)
+
+        data = {
+            "name": name,
+            "description": description,
+            "version": 1,
+            "properties": properties,
+            "indicators": indicators,
+            "deployment": deployment or {},
+            "is_shared": is_shared,
+            "shared_scope": "global",
+        }
+        result = self.labs_api.create_record(
+            experiment=self.EXPERIMENT,
+            type=self.RECORD_TYPE,
+            data=data,
+        )
+        return SemanticRegistryRecord(
+            {
+                "id": result.id,
+                "experiment": self.EXPERIMENT,
+                "type": self.RECORD_TYPE,
+                "data": data,
+                "opportunity_id": self.opportunity_id,
+            }
+        )
+
+    def update_registry(
+        self,
+        registry_id: int,
+        name: str | None = None,
+        description: str | None = None,
+        properties: dict | None = None,
+        indicators: dict | None = None,
+        deployment: dict | None = None,
+        is_shared: bool | None = None,
+    ) -> SemanticRegistryRecord | None:
+        """Patch a registry. Any change to the DEFINITION bumps the version.
+
+        Validation runs against the MERGED result, never against the fragment that
+        was sent: a change to `properties` alone can invalidate an indicator that
+        references a property it just renamed away, and validating the patch in
+        isolation would wave that through.
+        """
+        from connect_labs.semantic.validation import assert_registry_valid
+
+        existing = self.get_registry(registry_id)
+        if not existing:
+            return None
+
+        data = existing.data.copy()
+        definition_changed = False
+
+        if name is not None:
+            data["name"] = name
+        if description is not None:
+            data["description"] = description
+        if is_shared is not None:
+            data["is_shared"] = is_shared
+        for key, value in (("properties", properties), ("indicators", indicators), ("deployment", deployment)):
+            if value is not None:
+                data[key] = value
+                definition_changed = True
+
+        if definition_changed:
+            assert_registry_valid(data["properties"], data["indicators"], data.get("deployment"))
+            data["version"] = data.get("version", 1) + 1
+
+        self.labs_api.update_record(
+            registry_id,
+            experiment=self.EXPERIMENT,
+            type=self.RECORD_TYPE,
+            data=data,
+        )
+        return SemanticRegistryRecord(
+            {
+                "id": registry_id,
+                "experiment": self.EXPERIMENT,
+                "type": self.RECORD_TYPE,
+                "data": data,
+                "opportunity_id": self.opportunity_id,
+            }
+        )
+
+    def delete_registry(self, registry_id: int) -> None:
+        self.labs_api.delete_record(registry_id)
 
 
 class PipelineDataAccess(BaseDataAccess):
