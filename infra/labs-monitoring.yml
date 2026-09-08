@@ -136,12 +136,20 @@ Parameters:
     Type: Number
     Default: 25
     Description: >-
-      Alarm when the APPLICATION returns this many 5xx in 5 minutes. Mirrors
+      Alarm when the WEB TIER returns this many 5xx in 5 minutes. Mirrors
       Elb5xxThreshold deliberately: the two metrics catch opposite failures and
       neither substitutes for the other. Baseline is essentially zero (08-30: 0,
       09-01: 1 through 14:00Z); the 08-31 Umami outage ran 410 in two hours and
       peaked at 42 in one 5-minute bucket, so 25 fires within ~5 minutes of a
       real burst while staying silent on a normal day.
+      CAVEAT, and it is the open question on this number: 25 was derived from
+      that UMAMI incident, which this alarm no longer watches. It is retained
+      only because it is provably no noisier than today — the alarm now fires
+      on a strict SUBSET of what it fired on before — not because anyone has
+      shown it is right for the web tier, where 5xx are far more serious and a
+      lower number is plausible. Re-derive it from web-target-group history
+      (a `--dimensions … Name=TargetGroup` read over 5 quiet days) before
+      treating this default as calibrated.
 
 Conditions:
   HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
@@ -581,23 +589,24 @@ Resources:
     Properties:
       AlarmName: labs-jj-alb-target-5xx-high
       AlarmDescription: >-
-        A target behind the ALB is answering with 5xx — the application itself
-        returned an error, as opposed to the ALB failing to get a response at
-        all (that is labs-jj-alb-5xx-high). The LoadBalancer dimension spans
-        every target group, so this covers the web tier AND the Umami service
-        — and therefore CANNOT say which one failed. ATTRIBUTE BEFORE YOU
-        DIAGNOSE: severity differs enormously (web tier = labs is broken for
-        users; /umami/* = lost analytics beacons only, see #1396, and NOT the
-        HIPAA audit trail). Re-query this metric adding a TargetGroup
-        dimension, or split the breaching bucket by path from
-        s3://labs-jj-alb-access-logs. The labs audit trail cannot settle it:
-        it is blind to Umami, and records nothing for a request that failed
-        before the audit middleware ran.
+        The WEB TIER is answering with 5xx — the application itself returned an
+        error, as opposed to the ALB failing to get a response at all (that is
+        labs-jj-alb-5xx-high). Scoped to the web target group ON PURPOSE: it
+        used to carry only the LoadBalancer dimension, which spans every target
+        group, so Umami's 5xx paged this alarm too. Umami 5xx cost analytics
+        beacons and NOT the HIPAA audit trail (#1396), so they are not worth a
+        responder — and because this topic pages an agent mailbox, every one of
+        them was a dispatched session. If this fires it is labs itself, and it
+        is worth your time.
       Namespace: AWS/ApplicationELB
       MetricName: HTTPCode_Target_5XX_Count
+      # LoadBalancer + TargetGroup, not LoadBalancer alone — see the description.
+      # The same pair is used by labs-jj-web-no-healthy-targets below.
       Dimensions:
         - Name: LoadBalancer
           Value: !Ref LoadBalancerDimension
+        - Name: TargetGroup
+          Value: !Ref TargetGroupDimension
       Statistic: Sum
       Period: 300
       EvaluationPeriods: 1
