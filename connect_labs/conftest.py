@@ -2,8 +2,14 @@ import pytest
 from django.core.cache import cache
 from rest_framework.test import APIClient, APIRequestFactory
 
+from connect_labs.testing.db_template import django_db_setup_with_template
 from connect_labs.users.models import User
 from connect_labs.users.tests.factories import UserFactory
+
+# Override pytest-django's own django_db_setup: under xdist, migrate once into a
+# template database and clone it per worker instead of migrating N times.
+# See connect_labs/testing/db_template.py for why.
+django_db_setup = pytest.fixture(scope="session")(django_db_setup_with_template)
 
 
 @pytest.fixture(autouse=True)
