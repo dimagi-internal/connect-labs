@@ -48,6 +48,18 @@ Parameters:
     Default: labs-jj-postgres
     Description: RDS instance whose DatabaseConnections metric is alarmed.
 
+  RdsFreeStorageThresholdBytes:
+    Type: Number
+    Default: 21474836480 # 20 GiB = 20% of the 100GB volume
+    Description: >-
+      Alarm when RDS FreeStorageSpace falls below this many bytes for 10
+      minutes. Sized as ~20% of allocated (100GB as of 2026-09-08), not as a
+      round byte count: the visit caches hold ~9GB at peak, so 20GB leaves
+      genuine room to act. Re-derive it if AllocatedStorage changes — a fixed
+      byte threshold silently becomes a cliff-edge alarm on a bigger volume.
+      Origin: 2026-09-08, the instance hit storage-full with no storage alarm
+      of any kind and labs went down.
+
   DbConnectionsThreshold:
     Type: Number
     Default: 90
@@ -316,6 +328,65 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlertTopic]
+
+  # ── RDS free storage ──────────────────────────────────────────────
+  # On 2026-09-08 labs-jj-postgres ran OUT OF DISK and took labs down, and
+  # NOTHING here noticed: this file alarmed on connections and slot
+  # exhaustion but never on space. FreeStorageSpace fell 4.9GB -> 0 over
+  # eleven hours — the slowest, most predictable failure a database has —
+  # and the first signal anyone got was a target-5xx page at 23:03Z, after
+  # the disk was already full.
+  #
+  # It is also SELF-SUSTAINING, which is why it warrants its own alarm
+  # rather than being left to the 5xx page. CELERY_BEAT_SCHEDULER is
+  # django_celery_beat's DatabaseScheduler, so beat persists last_run_at to
+  # Postgres; on a full disk that write fails and beat stops dispatching.
+  # The hourly cleanup_expired_sql_cache — the one job that frees space — is
+  # therefore the first casualty. Measured: its last_run_at froze at exactly
+  # 23:00:00Z, the hour the disk hit zero, and it missed 00:00. A full disk
+  # disables its own remedy, so nothing self-heals and only a human resize
+  # ends it.
+  #
+  # Threshold is a PERCENTAGE of allocated, not a fixed byte count, so it
+  # keeps meaning something as the volume grows (storage autoscaling was
+  # switched on at the same time, max 500GB). 20% of a 100GB volume is 20GB
+  # — comfortably more than the ~9GB the visit caches hold at peak, so this
+  # fires with room to act rather than at the cliff edge.
+  RdsFreeStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-rds-free-storage-low
+      AlarmDescription: >-
+        RDS free storage is running out. A full disk takes labs down AND
+        disables the hourly cache cleanup that would free it (beat's
+        DatabaseScheduler cannot write last_run_at), so this does not
+        recover on its own — it needs a resize. Check what grew:
+        labs_raw_visit_cache holds ~29KB/row of visit form_json and is
+        normally the largest table by far. Storage autoscaling is on
+        (max 500GB), so this should now be a warning rather than an
+        outage; if it fires anyway, autoscaling has hit its ceiling or
+        is growing slower than the workload.
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DbInstanceIdentifier
+      Statistic: Minimum
+      Period: 300
+      # 2-of-3, NOT 2-of-2 — the N-of-N defect fixed file-wide in #1419/#1429.
+      # It matters here: the hourly cleanup_expired_sql_cache frees several GB
+      # at a stroke and the caches then refill, so free space genuinely
+      # oscillates. Under 2-of-2 a single post-cleanup datapoint above the
+      # threshold clears the alarm while the trend is still downward.
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: !Ref RdsFreeStorageThresholdBytes
+      ComparisonOperator: LessThanThreshold
+      # NOT notBreaching: an instance sick enough to stop publishing this
+      # metric is not an instance we should read as healthy.
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
 
   # ══════════════════════════════════════════════════════════════════
   # Performance alarms — added after the 2026-07-29 incident
