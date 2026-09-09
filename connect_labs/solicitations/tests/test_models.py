@@ -258,9 +258,18 @@ class TestResponseRecord:
         rec = self._make()
         assert rec.submitted_by_email == "jane@example.com"
 
-    def test_submission_date(self):
-        rec = self._make()
-        assert rec.submission_date is not None
+    def test_submission_date_parses_the_z_suffix_to_utc(self):
+        """`is not None` was the old assertion, which passed for any truthy
+        return. The property hand-rolls `.replace("Z", "+00:00")` before
+        fromisoformat, so the offset is the part that can silently break."""
+        from datetime import datetime, timezone
+
+        assert self._make().submission_date == datetime(2026, 5, 15, 10, 0, tzinfo=timezone.utc)
+
+    def test_submission_date_is_none_when_unparseable(self):
+        """The property swallows ValueError and returns None — pin that, or a
+        malformed date reads as 'never submitted' with nothing to show why."""
+        assert self._make(data={"submission_date": "not-a-date"}).submission_date is None
 
     def test_response_selected_plan_accessors_default_empty(self):
         rec = self._make()
@@ -319,9 +328,11 @@ class TestReviewRecord:
         rec = self._make()
         assert rec.tags == "experienced,local"
 
-    def test_review_date(self):
-        rec = self._make()
-        assert rec.review_date is not None
+    def test_review_date_parses_the_z_suffix_to_utc(self):
+        """Same shape as ResponseRecord.submission_date — see the note there."""
+        from datetime import datetime, timezone
+
+        assert self._make().review_date == datetime(2026, 5, 20, 14, 0, tzinfo=timezone.utc)
 
     def test_criteria_scores_property(self):
         scores = {"c1": 4, "c2": 5}

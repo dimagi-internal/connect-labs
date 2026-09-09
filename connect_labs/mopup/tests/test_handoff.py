@@ -151,13 +151,28 @@ class TestCreatePlanFromLockedRun:
         # is for: two locked candidates in the same ward produce TWO hull
         # features (their own shapes), not one unioned blob.
         plans = {}
-        _mock_microplans(monkeypatch, plans=plans)
+        calls = _mock_microplans(monkeypatch, plans=plans)
         boundary2 = {"type": "Polygon", "coordinates": [[[4.0, 6.0], [4.1, 6.0], [4.1, 6.1], [4.0, 6.1], [4.0, 6.0]]]}
         run = _run([_candidate("wa-1"), _candidate("wa-2", boundary=boundary2)])
 
         create_plan_from_locked_run(run, 217)
 
-        assert True  # reaching here without error is the point; detailed shape assertions are in test_areas.py
+        # Two features, not one: a union would collapse these to a single
+        # blob and still produce a valid plan, so only the COUNT plus the
+        # distinct geometries can tell the two apart.
+        hulls = calls["create_plan"][0]["hulls"]
+        assert len(hulls["features"]) == 2
+
+        from shapely.geometry import shape
+
+        shapes = [shape(f["geometry"]) for f in hulls["features"]]
+        assert not shapes[0].equals(shapes[1]), "both hulls carry the same shape — they were unioned"
+        assert any(s.equals(shape(_DEFAULT_BOUNDARY)) for s in shapes)
+        assert any(s.equals(shape(boundary2)) for s in shapes)
+
+        # Same ward, so both retain that ward's area_id; the features are
+        # distinguished by their own geometry, not by being re-keyed.
+        assert {f["properties"]["area_id"] for f in hulls["features"]} == {"mopup-kano-rano-sabon-gari"}
 
     def test_ward_target_failure_is_best_effort_not_fatal(self, monkeypatch):
         plans = {}
