@@ -159,6 +159,20 @@ class TestWardVisitsPerBuilding:
         all_rows = [{"ward": "Sabon Gari", "status": "NOT_VISITED", "approved_hsd_count": 0, "building_count": 5}]
         assert gaps.ward_visits_per_building(all_rows, "Sabon Gari") == 0.0
 
+    def test_gates_on_actual_visit_activity_not_the_status_property(self):
+        # Real bug, caught live against program 217/opportunity 2154: a work
+        # area's CommCare HQ case `status` stayed NOT_VISITED even after real
+        # HSD visit forms were submitted for it (the case property and the
+        # visit record don't always move together) -- gating on `status` (as
+        # EVC-shortfall does) made this return a false 0.0 for a ward where
+        # hundreds of approved visits had clearly happened. Gate on
+        # `approved_hsd_count > 0` instead.
+        all_rows = [
+            {"ward": "Sabon Gari", "status": "NOT_VISITED", "approved_hsd_count": 6, "building_count": 3},
+        ]
+        rate = gaps.ward_visits_per_building(all_rows, "Sabon Gari")
+        assert rate == pytest.approx(6 / 3)
+
 
 class _FakeRow:
     def __init__(self, entity_id, **computed):

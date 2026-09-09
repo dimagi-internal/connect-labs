@@ -175,14 +175,25 @@ def work_area_boundaries_for_ward(
 
 def ward_visits_per_building(all_rows: list[dict], ward: str) -> float:
     """This ward's own observed (approved HSD visits) ÷ (buildings), across
-    every CONCLUDED work area Phase 2 evaluated for it — the best available
-    stand-in for a gap-fill cell's expected visit count, since a cell that's
-    never been visited has no history of its own. Computed per ward (never
-    pooled across wards), so a multi-ward mop-up run applies each ward's own
-    rate to its own gap-fill cells. Returns 0.0 (not a ZeroDivisionError) when
-    there's no eligible data for this ward — a genuine zero is a valid
-    answer here, matching `core.areas.ward_children_per_building`'s same
-    convention.
+    every work area in it that has actually recorded at least one approved
+    HSD visit — the best available stand-in for a gap-fill cell's expected
+    visit count, since a cell that's never been visited has no history of
+    its own. Computed per ward (never pooled across wards), so a multi-ward
+    mop-up run applies each ward's own rate to its own gap-fill cells.
+    Returns 0.0 (not a ZeroDivisionError) when there's no eligible data for
+    this ward — a genuine zero is a valid answer here, matching
+    `core.areas.ward_children_per_building`'s same convention.
+
+    Deliberately gates on `approved_hsd_count > 0` rather than the work
+    area's own `status` property (e.g. `_CONCLUDED_STATUSES`, used
+    elsewhere in this app for EVC-shortfall) — confirmed live against real
+    program-217 data that a work area's CommCare HQ case `status` can stay
+    `NOT_VISITED` even after real HSD/NCF visit forms were submitted for it
+    (the case property and the visit-form record apparently don't always
+    move together), which made this return a false 0.0 for a ward where
+    real delivery had clearly happened (hundreds of approved visits).
+    Actual visit activity is the more reliable signal for "has this WA got
+    a real rate to contribute."
 
     Deliberately NOT `ward_children_per_building` (registered-CHILDREN per
     building, from CommCare HQ case data) — that formula still drives the
@@ -190,9 +201,7 @@ def ward_visits_per_building(all_rows: list[dict], ward: str) -> float:
     Phase-2-local estimate (observed VISITS per building, from data Phase 2
     already evaluated) purely for Step 2's preview tables/map, so the
     reviewer isn't staring at an unexplained 0 before locking."""
-    from connect_labs.mopup.core.indicators import _CONCLUDED_STATUSES
-
-    eligible = [r for r in all_rows if r.get("ward") == ward and r.get("status") in _CONCLUDED_STATUSES]
+    eligible = [r for r in all_rows if r.get("ward") == ward and (r.get("approved_hsd_count", 0) or 0) > 0]
     buildings = sum(r.get("building_count", 0) or 0 for r in eligible)
     if not buildings:
         return 0.0
