@@ -74,6 +74,7 @@
           <th class="pb-2 pr-2">Indicator</th>
           <th class="pb-2 pr-2">Threshold <span class="info-icon" tabindex="0" data-tip="The cutoff at which a work area is flagged as a mop-up candidate for this indicator. Set independently per indicator.">ⓘ</span></th>
           <th class="pb-2 pr-2">Granularity <span class="info-icon" tabindex="0" data-tip="How this indicator is evaluated: &quot;This WA only&quot; flags a single work area on its own number. &quot;Cluster-aware&quot; (recommended) only flags it if nearby work areas — or, for data-quality metrics, this FLW's other work areas — are also elevated, filtering out one-off noise. &quot;Whole-FLW average&quot; rolls up all of an FLW's work areas into one number before comparing to the threshold.">ⓘ</span></th>
+          <th class="pb-2 pr-2"># WAs triggered <span class="info-icon" tabindex="0" data-tip="How many work areas this specific indicator flagged, under the current thresholds. Recomputed every time you hit Recompute.">ⓘ</span></th>
         </tr>
       </thead>
       <tbody id="indicator-rows"></tbody>
@@ -117,7 +118,9 @@
       <thead>
         <tr class="text-left text-gray-500 bg-gray-50">
           <th class="p-2">Ward</th><th class="p-2">LGA</th><th class="p-2">State</th>
-          <th class="p-2">Total WAs</th><th class="p-2">Candidates</th><th class="p-2">Flagged 2+ <span class="info-icon" tabindex="0" data-tip="Work areas in this ward flagged by 2 or more of the currently-enabled indicators.">ⓘ</span></th>
+          <th class="p-2">Total WAs</th><th class="p-2">Total buildings</th><th class="p-2">Total EVC</th>
+          <th class="p-2">Candidates</th><th class="p-2">Buildings</th><th class="p-2">EVC</th>
+          <th class="p-2">Flagged 2+ <span class="info-icon" tabindex="0" data-tip="Work areas in this ward flagged by 2 or more of the currently-enabled indicators.">ⓘ</span></th>
         </tr>
       </thead>
       <tbody id="ward-summary-rows"></tbody>
@@ -132,6 +135,7 @@
           <tr class="text-left text-gray-500">
             <th class="p-2">Ward</th><th class="p-2">LGA</th><th class="p-2">State</th>
             <th class="p-2">FLW</th>
+            <th class="p-2">Total buildings</th><th class="p-2">Total EVC</th>
             <th class="p-2 cursor-pointer" id="sort-severity">Severity <span class="info-icon" tabindex="0" data-tip="How many of the currently-enabled indicators flagged this work area. A plain count, not a weighted score.">ⓘ</span> ↕</th>
             <th class="p-2">Triggered indicators</th>
           </tr>

@@ -81,9 +81,18 @@ window.MopupAnalysis = (function () {
               }>Whole-FLW average</option>
             </select>
           </td>
+          <td class="py-2 pr-2 ind-trigger-count">—</td>
         </tr>`;
       })
       .join('');
+  }
+
+  function renderIndicatorCounts(counts) {
+    counts = counts || {};
+    document.querySelectorAll('#indicator-rows tr').forEach((tr) => {
+      const cell = tr.querySelector('.ind-trigger-count');
+      if (cell) cell.textContent = counts[tr.dataset.key] ?? '—';
+    });
   }
 
   function renderGlobalConfig() {
@@ -127,12 +136,40 @@ window.MopupAnalysis = (function () {
           <td class="p-2">${esc(r.ward)}</td><td class="p-2">${esc(
             r.lga,
           )}</td><td class="p-2">${esc(r.state)}</td>
-          <td class="p-2">${r.total_work_areas}</td><td class="p-2">${
-            r.candidate_count
-          }</td><td class="p-2">${r.flagged_by_2_plus}</td>
+          <td class="p-2">${r.total_work_areas}</td>
+          <td class="p-2">${r.total_buildings}</td><td class="p-2">${
+            r.total_evc
+          }</td>
+          <td class="p-2">${r.candidate_count}</td>
+          <td class="p-2">${r.candidate_buildings}</td><td class="p-2">${
+            r.candidate_evc
+          }</td>
+          <td class="p-2">${r.flagged_by_2_plus}</td>
         </tr>`,
       )
       .join('');
+  }
+
+  const INDICATOR_LABELS = {
+    evc_shortfall: 'EVC shortfall',
+    ncf_inaccessible_rate: 'NCF / inaccessible rate',
+    deworming: 'Deworming completion',
+    muac: 'MUAC-recorded rate',
+    vaccination: 'Vaccination-given rate',
+  };
+
+  function triggeredIndicatorDisplay(c) {
+    return c.triggered_indicators
+      .map((key) => {
+        const label = INDICATOR_LABELS[key] || key;
+        const detail = (c.detail || {})[key] || {};
+        const rate = detail.rate;
+        const num = detail.own_numerator;
+        const denom = detail.own_denominator;
+        if (rate == null || num == null || denom == null) return esc(label);
+        return esc(`${label} (${rate.toFixed(2)}; ${num}/${denom})`);
+      })
+      .join(', ');
   }
 
   function renderCandidates() {
@@ -148,10 +185,13 @@ window.MopupAnalysis = (function () {
             c.lga,
           )}</td><td class="p-2">${esc(c.state)}</td>
           <td class="p-2">${esc(c.flw_username)}</td>
+          <td class="p-2">${c.building_count}</td><td class="p-2">${
+            c.expected_visit_count
+          }</td>
           <td class="p-2" title="${esc(SEVERITY_TOOLTIP)}">${
             c.severity_count
           }</td>
-          <td class="p-2">${c.triggered_indicators.map(esc).join(', ')}</td>
+          <td class="p-2">${triggeredIndicatorDisplay(c)}</td>
         </tr>`,
       )
       .join('');
@@ -219,6 +259,7 @@ window.MopupAnalysis = (function () {
       $('live-count').textContent = data.candidate_count;
       renderWardSummary(data.ward_summary || []);
       renderCandidates();
+      renderIndicatorCounts(data.per_indicator_counts);
       $(
         'status',
       ).textContent = `${data.total_work_areas} work area(s) evaluated.`;

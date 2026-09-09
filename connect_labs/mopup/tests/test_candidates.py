@@ -136,13 +136,27 @@ class TestBuildEvaluationInput:
 class TestSummarizeCandidatesByWard:
     def test_rolls_up_totals_and_severity(self):
         all_rows = [
-            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"},
-            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"},
-            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"},
+            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "building_count": 10, "expected_visit_count": 5},
+            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "building_count": 20, "expected_visit_count": 8},
+            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "building_count": 30, "expected_visit_count": 12},
         ]
         candidates = [
-            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "severity_count": 1},
-            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "severity_count": 3},
+            {
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "severity_count": 1,
+                "building_count": 10,
+                "expected_visit_count": 5,
+            },
+            {
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "severity_count": 3,
+                "building_count": 20,
+                "expected_visit_count": 8,
+            },
         ]
         summary = summarize_candidates_by_ward(candidates, all_rows)
         assert summary == [
@@ -151,7 +165,11 @@ class TestSummarizeCandidatesByWard:
                 "lga": "Rano",
                 "state": "Kano",
                 "total_work_areas": 3,
+                "total_buildings": 60,
+                "total_evc": 25,
                 "candidate_count": 2,
+                "candidate_buildings": 30,
+                "candidate_evc": 13,
                 "flagged_by_2_plus": 1,
             }
         ]
@@ -176,7 +194,11 @@ class TestSummarizeCandidatesByWard:
                 "lga": "Rano",
                 "state": "Kano",
                 "total_work_areas": 2,
+                "total_buildings": 0,
+                "total_evc": 0,
                 "candidate_count": 0,
+                "candidate_buildings": 0,
+                "candidate_evc": 0,
                 "flagged_by_2_plus": 0,
             },
             {
@@ -184,7 +206,11 @@ class TestSummarizeCandidatesByWard:
                 "lga": "Rano",
                 "state": "Kano",
                 "total_work_areas": 1,
+                "total_buildings": 0,
+                "total_evc": 0,
                 "candidate_count": 0,
+                "candidate_buildings": 0,
+                "candidate_evc": 0,
                 "flagged_by_2_plus": 0,
             },
         ]

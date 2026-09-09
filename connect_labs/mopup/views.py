@@ -372,6 +372,15 @@ class MopupCandidatesView(LoginRequiredMixin, View):
         ward_summary = summarize_candidates_by_ward(candidates, rows)
         da.update_run(run, thresholds={"indicator_configs": indicator_configs, "global_config": global_config})
 
+        # Per-indicator breakdown of the union candidate count above — how
+        # many work areas each individual indicator flagged, recomputed every
+        # call the same as everything else here (no separate cache/staleness
+        # risk since it's a cheap pass over the already-built candidate list).
+        per_indicator_counts = {key: 0 for key in ind.ALL_INDICATORS}
+        for c in candidates:
+            for key in c["triggered_indicators"]:
+                per_indicator_counts[key] = per_indicator_counts.get(key, 0) + 1
+
         return JsonResponse(
             {
                 "status": "ok",
@@ -379,6 +388,7 @@ class MopupCandidatesView(LoginRequiredMixin, View):
                 "ward_summary": ward_summary,
                 "total_work_areas": len(rows),
                 "candidate_count": len(candidates),
+                "per_indicator_counts": per_indicator_counts,
             }
         )
 

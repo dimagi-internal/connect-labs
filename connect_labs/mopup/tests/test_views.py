@@ -562,6 +562,57 @@ def test_candidates_accepts_threshold_override(client, django_user_model, monkey
     assert resp.json()["candidate_count"] == 1
 
 
+def test_candidates_returns_per_indicator_trigger_counts(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    _mock_ready_data(
+        monkeypatch,
+        run,
+        [
+            {
+                "wa_id": "wa-1",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "flw_username": "flw-1",
+                "lat": None,
+                "lon": None,
+                "status": "VISITED",
+                "building_count": 10,
+                "expected_visit_count": 10,
+                "approved_hsd_count": 1,  # fails EVC shortfall (default threshold 0.5)
+                "approved_ncf_count": 0,
+                "approved_inaccessible_count": 0,
+                "deworming_given": 1,  # passes deworming (default threshold 0.7)
+                "muac_given": 1,
+                "vaccination_given": 1,
+            }
+        ],
+    )
+    from connect_labs.mopup.core import indicators as ind
+
+    resp = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps(
+            {
+                "indicator_configs": {
+                    ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_WA_ONLY},
+                    ind.DEWORMING: {"enabled": True, "threshold": 0.7, "granularity": ind.GRANULARITY_WA_ONLY},
+                }
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    counts = resp.json()["per_indicator_counts"]
+    assert counts[ind.EVC_SHORTFALL] == 1
+    assert counts[ind.DEWORMING] == 0
+    # Every known indicator key is present even at zero, so the UI can render
+    # a count column for every row without a KeyError.
+    assert set(counts) == set(ind.ALL_INDICATORS)
+
+
 def test_candidates_persists_thresholds_used(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)

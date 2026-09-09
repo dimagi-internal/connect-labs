@@ -89,11 +89,26 @@ def build_evaluation_input(
     return rows
 
 
+def _empty_ward_row(ward: str, lga: str, state: str) -> dict:
+    return {
+        "ward": ward,
+        "lga": lga,
+        "state": state,
+        "total_work_areas": 0,
+        "total_buildings": 0,
+        "total_evc": 0,
+        "candidate_count": 0,
+        "candidate_buildings": 0,
+        "candidate_evc": 0,
+        "flagged_by_2_plus": 0,
+    }
+
+
 def summarize_candidates_by_ward(candidates: list[dict], all_rows: list[dict]) -> list[dict]:
     """Per-ward rollup for the candidate table (design brief §8): total work
-    areas reviewed, how many are candidates, and how many were flagged by 2+
-    indicators (§6c) — cheap since severity is already computed per
-    candidate.
+    areas/buildings/EVC reviewed, how many (and how much) are candidates, and
+    how many were flagged by 2+ indicators (§6c) — cheap since severity is
+    already computed per candidate.
 
     Every ward present in `all_rows` gets a row here, even one with zero
     candidates under the current thresholds — this is a survey of what was
@@ -105,33 +120,17 @@ def summarize_candidates_by_ward(candidates: list[dict], all_rows: list[dict]) -
     by_ward: dict[tuple[str, str, str], dict] = {}
     for wa in all_rows:
         key = (wa["state"], wa["lga"], wa["ward"])
-        row = by_ward.setdefault(
-            key,
-            {
-                "ward": wa["ward"],
-                "lga": wa["lga"],
-                "state": wa["state"],
-                "total_work_areas": 0,
-                "candidate_count": 0,
-                "flagged_by_2_plus": 0,
-            },
-        )
+        row = by_ward.setdefault(key, _empty_ward_row(wa["ward"], wa["lga"], wa["state"]))
         row["total_work_areas"] += 1
+        row["total_buildings"] += wa.get("building_count", 0) or 0
+        row["total_evc"] += wa.get("expected_visit_count", 0) or 0
 
     for c in candidates:
         key = (c["state"], c["lga"], c["ward"])
-        row = by_ward.setdefault(
-            key,
-            {
-                "ward": c["ward"],
-                "lga": c["lga"],
-                "state": c["state"],
-                "total_work_areas": 0,
-                "candidate_count": 0,
-                "flagged_by_2_plus": 0,
-            },
-        )
+        row = by_ward.setdefault(key, _empty_ward_row(c["ward"], c["lga"], c["state"]))
         row["candidate_count"] += 1
+        row["candidate_buildings"] += c.get("building_count", 0) or 0
+        row["candidate_evc"] += c.get("expected_visit_count", 0) or 0
         if c["severity_count"] >= 2:
             row["flagged_by_2_plus"] += 1
 
