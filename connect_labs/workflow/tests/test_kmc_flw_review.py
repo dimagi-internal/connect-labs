@@ -88,3 +88,15 @@ def test_photos_come_through_the_frameworks_visit_image_route():
     assert "/visit-images/?visit_ids=" in src
     assert "/audit/image/" in src
     assert "weighings photographed" in src
+
+
+def test_a_worker_and_a_case_are_both_addressable():
+    """A demo or a review note links straight to one baby: `?flw=` picks the
+    worker, `?case=<entity_id>` opens the case once the cases are known, and the
+    URL follows the selection so the address bar is always shareable."""
+    src = RENDER.read_text()
+    assert "qp('flw')" in src and "qp('case')" in src
+    assert "searchParams.set('case'" in src
+    assert "setSelCase(c)" not in src.replace(
+        "function openCase(c) {\n    setSelCase(c);", ""
+    ), "case selection must go through openCase so the URL follows it"
