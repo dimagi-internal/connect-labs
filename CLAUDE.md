@@ -109,6 +109,9 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 | `mcp/`             | The labs remote MCP server (see [MCP Servers](#mcp-servers)): PAT auth, FastMCP ASGI app at `/mcp/`, tool registry + audit log                                                                                                          | `server.py`, `tool_registry.py`, `tools/`, `auth.py`                                |
 | `pulse/`           | Funder-facing service-delivery telemetry at `/labs/pulse/` — wall display, donor reports, and the partner network at `/labs/pulse/network/`. Polls Connect's export API on a beat. See [Connect Pulse](#connect-pulse)                        | `ingest.py`, `api.py`, `network_api.py`, `partner_names.py`, `hq_location.py`       |
 | `labs/synthetic/`  | Registry of "synthetic" opportunities that serve fixture JSON from GDrive instead of prod exports. CRUD UI at `/labs/synthetic/`, SSE-streamed dump flow, strict access scoping by `user_opportunities`. See `docs/SYNTHETIC_OPPS.md`. | `models.py`, `registry.py`, `fixture_store.py`, `gdrive.py`, `dump.py`, `client.py` |
+| `mopup/`           | CHC mop-up at `/mopup/` — program-scoped runs that pick an opportunity/wards/dates, pull visits once, then re-evaluate cluster-aware coverage candidates against tunable thresholds. Hands off by calling microplans' own `create_plan()` and redirecting into its unmodified review page. Run state is a `LocalLabsRecord`, not a Django model.                                     | `core/` (`candidates.py`, `indicators.py`, `geometry.py`, `gaps.py`, `handoff.py`), `tasks.py`, `views.py` |
+| `semantic/`        | SQL semantic layer — the indicator engine behind the KMC programme dashboard. YAML registry compiled to SQL and run in-process over the visit cache; the browser's JS indicator engine was **deleted**, so this is now the only source for the C/N series. Served at `workflow/api/<id>/semantic/`. See `connect_labs/semantic/PARITY.md`.                                          | `registry/kmc/*.yml`, `compiler.py`, `runtime.py`, `snapshot.py`, `gates.py`, `workflow_binding.py`, `validation.py` |
+| `labs/indicators/` | Targeting at `/labs/targeting/` — population/burden primitives for deciding where to deploy: thresholded selection across Africa, reach + cost sizing, and the methodology behind every figure. **Counts sum up the hierarchy; rates must never be summed** — see its README before touching aggregation.                                                                            | `measures.py`, `resolve.py`, `boundaries.py`, `methods.py`, `defence.py`, `export.py`, `README.md` |
 
 ### Retained Non-Labs Apps (Models + Migrations Only)
 
@@ -120,7 +123,7 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 | `program/`      | Program model definitions and migrations                                               |
 | `commcarehq/`   | Minimal — just `HQServer` model + migrations (needed by FKs)                           |
 
-**Cross-app connections:** Workflow can create audits and tasks; flags hang off workflow runs. AI agents modify workflows and solicitations; funder-dashboard AI agents live in `ai/agents/`. `custom_analysis/audit_of_audits` reads audit and organization data. Coverage, microplans, and campaign are standalone.
+**Cross-app connections:** Workflow can create audits and tasks; flags hang off workflow runs. AI agents modify workflows and solicitations; funder-dashboard AI agents live in `ai/agents/`. `custom_analysis/audit_of_audits` reads audit and organization data. `mopup` reads CommCare/Connect data and writes into `microplans`; `semantic` is read by `workflow` — the live dashboard endpoint and the `semantic_snapshot` builder that freezes a saved run. Coverage and campaign are standalone.
 
 ## Prelogin marketing site
 
@@ -136,9 +139,11 @@ Templates can set `multi_opp: True` on their `TEMPLATE` dict to opt into multi-o
 
 Templates that produce a periodic review with a definite "moment of completion" can set `supports_saved_runs: True` to opt into the **in_progress | completed** run lifecycle. They declare what the snapshot captures via `snapshot_inputs` (a manifest of pipelines/workers/state_keys), render code reads run data via the `view` helper (`view.workers`, `view.pipelines.<alias>`, `view.state.<key>`, `view.isCompleted`, `view.asOf`), and triggers completion via `view.complete({confirm})`. The framework atomically builds the snapshot, flips status, stamps `completed_at`, and write-protects the run. Reference: `connect_labs/workflow/templates/performance_review.py`. Full contract: [WORKFLOW_REFERENCE.md §9](connect_labs/workflow/WORKFLOW_REFERENCE.md#9-saved-runs-templates).
 
-**Existing templates** (`*` = multi-opp): `audit_par`\*, `audit_with_ai_review`, `bulk_image_audit`, `chc_audit_history`\*, `chc_nutrition_analysis`, `flw_audit_trend_dashboard`\*, `flw_weekly_audit_report`\*, `interviews_reporting_v2`, `jakusko_chlorine_dispenser`, `kmc_flw_flags`, `kmc_longitudinal`, `kmc_project_metrics`, `llo_weekly_review`, `mbw_auditing_v5`, `muac_picture_audit`\*, `ocs_outreach`, `performance_review`\*, `program_admin_report`\*, `program_audit_creator`\*, `sam_followup`, `verified_monitoring`, `weekly_dual_track_audit`\*
+A saved-runs template can be completed **server-side, with no browser**. Prefer the declarative route: `snapshot_inputs.builder` names a framework builder from `connect_labs/workflow/snapshot_builders.py` (today: `semantic_snapshot`) and the rest of the manifest is that builder's spec. Because the manifest rides on the *definition*, a computed snapshot is patchable via `workflow_update_definition` with no deploy — see `SNAPSHOT_INPUTS` in `connect_labs/workflow/templates/kmc_programme_metrics.py` for a worked example. The older per-template `build_snapshot` Python hook remains as an escape hatch (WORKFLOW_REFERENCE.md, "Escape hatch"), but writing one means a PR + deploy for every change; if you reach for it to grade a semantic registry, extend the builder spec instead. Either way the framework refuses to freeze an unstaged snapshot rather than freezing an empty one.
 
-**Legacy — do NOT use as patterns:** the `mbw_monitoring` package (MBW v1: Python job handler + SSE + in-template React) is **deprecated** and retained only to keep a few pre-existing prod instances renderable. It's flagged `TEMPLATE["deprecated"] = True`, so it's hidden from `list_templates()` / the create menu and can't be instantiated anew (see its `DEPRECATED.md`). The v2/v3 monitoring and v4 auditing templates were already removed. For any MBW or dashboard work, copy from **`mbw_auditing_v5`** (SQL-native, pipeline-pure, saved-runs) — never from `mbw_monitoring`.
+**Existing templates** (27; `*` = multi-opp): `audit_par`\*, `audit_with_ai_review`, `bulk_image_audit`, `chc_audit_history`\*, `chc_nutrition_analysis`, `flw_audit_trend_dashboard`\*, `flw_daily_indicator_report`\*, `flw_daily_indicator_table`\*, `flw_daily_summary_report`\*, `flw_weekly_audit_report`\*, `interviews_reporting_v2`, `jakusko_chlorine_dispenser`, `kmc_flw_flags`, `kmc_image_audit`\*, `kmc_longitudinal`, `kmc_programme_metrics`\*, `kmc_project_metrics`, `llo_weekly_review`, `mbw_auditing_v5`, `muac_picture_audit`\*, `ocs_outreach`, `performance_review`\*, `program_admin_report`\*, `program_audit_creator`\*, `sam_followup`, `verified_monitoring`, `weekly_dual_track_audit`\*
+
+**Legacy — do NOT use as patterns:** the `mbw_monitoring` package (MBW v1: Python job handler + SSE + in-template React) is **deprecated** and retained only to keep a few pre-existing prod instances renderable. It's flagged `TEMPLATE["deprecated"] = True`, so it's hidden from `list_templates()` / the create menu and can't be instantiated anew (see `connect_labs/workflow/templates/mbw_monitoring/DEPRECATED.md`). The v2/v3 monitoring and v4 auditing templates were already removed. For any MBW or dashboard work, copy from **`mbw_auditing_v5`** (SQL-native, pipeline-pure, saved-runs) — never from `mbw_monitoring`.
 
 Use the MCP server's `get_form_json_paths` tool to discover correct field paths when building pipeline schemas.
 
@@ -176,7 +181,7 @@ the same way.
 declares its whole dependency; both the wall display and the network page open
 it. Every render path sits inside a catch that reports "Could not load this
 partner", so a missing binding ships looking like a data problem — see
-`windows.test.js`.
+`connect_labs/static/pulse/windows.test.js`.
 
 ## Deployment
 
@@ -186,6 +191,9 @@ Labs deploys to **AWS ECS Fargate** via `.github/workflows/deploy-labs.yml`.
 - **Gunicorn config:** `docker/start` — serves the ASGI app under `config.uvicorn_worker.LabsUvicornWorker` (NOT gthread; the FastMCP server needs ASGI + lifespan), worker count via `WEB_CONCURRENCY` (default 3). Note the shape that shows up in CPU investigations: 3 worker processes against the task's **1 vCPU** (`deploy/task-definitions/web.json`, `cpu: 1024`)
 - **ECS cluster:** `labs-jj-cluster` in `us-east-1`
 - **Services:** `labs-jj-web` (web), `labs-jj-worker` (celery)
+- **Concurrency valve:** `WEB_LIMIT_CONCURRENCY` (unset = off) bounds uvicorn's in-flight requests via `config/uvicorn_worker.py`. It exists because the web tier had no bound and overload exhausted RDS connection slots (#1152) — read that file before setting it
+- **Infrastructure-as-code:** `infra/` holds CloudFormation stacks — `labs-monitoring.yml` (SNS + RDS/CPU/worker-kill alarms), `labs-access-logs.yml`, `labs-audit-analytics.yml`, `labs-email.yml`. Core RDS/ECS is still click-ops; import into a stack as needed. See `infra/README.md`
+- **Env vars are wiped on deploy** unless pinned in `deploy/task-definitions/*.json` (see `deploy/task-definitions/README.md`)
 
 **Deploy only from `main`.** The workflow has a hard `guard` job that refuses any `--ref` other than `refs/heads/main`. Land changes via PR + merge first, then trigger the deploy with `--ref main`. Branch deploys are not allowed: they make "what's on prod?" ambiguous and let unreviewed code into the labs environment.
 
@@ -205,6 +213,14 @@ Before creating any pull request, read `.github/PULL_REQUEST_TEMPLATE.md` and fo
 - **`## Safety Assurance`** — how you tested it, what automated coverage exists, QA plan.
 
 The `## Product Description` section drives automated documentation updates and the weekly changelog. PRs that skip it or use a different section name (e.g. `## Summary`) are invisible to that automation.
+
+### `main` is behind a merge queue
+
+A GitHub **merge queue** is active on `main` (repo ruleset; `.github/workflows/ci.yml` carries the required `merge_group` trigger). Consequences:
+
+- **Never push to `main`.** It is protected against direct pushes, deletion, and non-fast-forward.
+- `gh pr merge` **enqueues**; it does not land the commit. CI re-runs against the queued merge result (a `gh-readonly-queue/...` ref) and the merge happens when those checks pass. A PR sitting in the queue is normal — do not retry, re-push, or assume the merge failed.
+- Confirm a merge actually landed before deploying: `git fetch origin main && git log origin/main --oneline -5`. "Deploy only from `main`" (above) depends on this.
 
 ## Git Worktrees and Virtualenv
 
@@ -252,6 +268,15 @@ depend on migration-seeded or fixture-created tables can fail locally while
 passing in CI, which builds a fresh database. Before assuming a failure is yours,
 reproduce it on a clean `origin/main` worktree.
 
+Two more ways a red check is not what it looks like:
+
+- **CI runs `pytest connect_labs/ -n auto` and nothing else.** Anything outside
+  that path — `tools/tests/` in particular — can never go red in CI, so a test
+  there passing is not evidence it runs (#1391, #1431). Run it yourself.
+- **`main` can itself fail `pre-commit run --all-files`** (#1520). When it does,
+  every open PR shows a red linter for files nobody on that PR touched. Check
+  whether the failing files are yours before chasing it.
+
 ## Key Commands
 
 ```bash
@@ -265,6 +290,7 @@ pytest connect_labs/audit/      # Run tests for one app
 celery -A config.celery_app worker -l info   # Celery worker (async audit creation, AI tasks)
 pre-commit run --all-files          # Run linters/formatters
 make commit                         # Git commit with correct venv PATH (works in worktrees)
+make manage CMD="migrate"           # manage.py from any worktree (resolves venv + .env)
 ```
 
 ## Browser Verification — use `gstack browse` proactively
@@ -279,12 +305,15 @@ What `gstack browse` gives you: the user is already logged into labs prod in the
 
 **Default to testing yourself before declaring "verification needs the user."** "I can't OAuth into CCHQ as a bot" is a real limit, but "I can't load the runner page" is not — that's gstack browse territory.
 
+Note: `gstack` is often **not on the tool shell's `PATH`** even when it is installed. Invoke the binary directly — `~/.claude/skills/gstack/browse/dist/browse` — rather than concluding it is unavailable.
+
 ## Critical Warnings
 
 - **DO NOT** query Django ORM models (`Opportunity`, `User`, `Organization`) expecting production data — those tables are empty. Use `LabsRecordAPIClient`.
 - **DO NOT** use `config.settings.labs_aws` for local development. Use `config.settings.local` (the default). The `labs_aws` settings are only for the AWS deployment at `labs.connect.dimagi.com`.
 - **DO NOT** call `.save()` on `LocalLabsRecord` — it raises `NotImplementedError`. Use `LabsRecordAPIClient` for persistence.
 - **DO NOT** modify models in the retained non-labs apps (`opportunity/`, `organization/`, `program/`, `users/`). They exist only for migrations and FK references.
+- **THIS REPO IS PUBLIC.** `dimagi-internal/connect-labs` is public on GitHub — every commit, branch, and PR body is world-readable, and history is not erasable by deleting a line later. So: no API keys or credentials in source (use Secrets Manager / `.env`, which is untracked); no colleagues' email addresses; no share tokens, PATs, or signed URLs; no patient-level or PII sample data in fixtures or test files. Two recent PRs exist solely to undo violations of this — treat a secret that reached a public commit as compromised and rotate it, don't just revert it.
 
 ## MCP Servers
 
@@ -313,7 +342,7 @@ Connect OAuth token (`~/.commcare-connect/token.json`).
 A remote MCP server hosted inside the labs Django app (`connect_labs/mcp/`)
 at `https://labs.connect.dimagi.com/mcp/`. The protocol endpoint is a
 FastMCP 3.x Streamable-HTTP ASGI app mounted in `config/asgi.py`; the catalog
-registers **100 tools** (write tools are rate-limited and fully argument-logged
+registers **107 tools** (write tools are rate-limited and fully argument-logged
 to `MCPAuditLog`).
 
 **Auth:** Personal Access Tokens (PAT) — a deliberate permanent design, not a
@@ -337,7 +366,9 @@ Seven repo skills (`.claude/skills/`) help Claude iterate on labs and operate th
 - **`deploy-labs`** — trigger the AWS deploy via GitHub Actions.
 - **`aws-env-update`** — add/update env vars and secrets in the ECS task definitions.
 
-The `connect_labs` remote MCP tool families: **targeting** (`targeting_*` — indicators/select/methodology/scenario/admin_levels: where an indicator crosses a threshold across Africa, who lives there, what it would cost, and the workings), **workflows** (list/get/create/create_from_template/clone/update render code & definition/patch/add_pipeline_source/update_opportunity_ids/set_template_flag/sync_from_template_file/create_run/save_snapshot/delete), **pipelines** (list/get/update_schema/preview/sql/delete), **synthetic data** (`synthetic_*` — envs, profile/generate, clone-from-prod, repoint, fidelity reports, local-record dump/count, image server), **microplans** (`microplans_*` — plans, transitions, work areas, bulk create, study ensure/reset), **pages** (`pages_*`), **solicitations/responses** (incl. `award_response`), **reviews**, **funds** (incl. allocations), plus `campaign_build_national`, `custom_analysis_run`, `labs_context`, `program_admin_demo_seed`, `task_create_synthetic`, `get_sample_ids`, `get_opportunity_apps`, `list_templates`, and `workflow_authoring_guide`.
+The `connect_labs` remote MCP tool families: **targeting** (`targeting_*` — indicators/select/methodology/scenario/admin_levels/compare_criteria/research: where an indicator crosses a threshold across Africa, who lives there, what it would cost, and the workings), **workflows** (list/get/create/create_from_template/clone/update render code & definition/patch/add & remove_pipeline_source/update_opportunity_ids/set_template_flag/sync_from_template_file/**sync_from_deployed_template**/create_run/run_default/resume_dual_track_run/save_snapshot/delete), **pipelines** (list/get/update_schema/preview/sql/delete), **semantic registry** (`semantic_registry_*` — list/get/create/update/validate: the indicator sets behind the KMC dashboard, editable without a deploy), **synthetic data** (`synthetic_*` — envs, profile/generate, clone-from-prod, repoint, fidelity reports, local-record dump/count, image server), **microplans** (`microplans_*` — plans, transitions, work areas, bulk create + status, coverage param schema, study ensure/reset), **pages** (`pages_*`), **solicitations/responses** (incl. `award_response`), **reviews**, **funds** (incl. allocations), plus `campaign_build_national`, `custom_analysis_run`, `labs_context`, `program_admin_demo_seed`, `supply_demo_reseed`, `task_create_synthetic`, `get_sample_ids`, `get_opportunity_apps`, `list_templates`, and `workflow_authoring_guide`.
+
+`workflow_sync_from_deployed_template` is the one worth knowing about: it syncs a live workflow from the template already running on the server, with no file upload — useful when you cannot get a local checkout in front of the instance you need to fix.
 
 ## Deeper Documentation
 
@@ -349,5 +380,10 @@ The `connect_labs` remote MCP tool families: **targeting** (`targeting_*` — in
 - **[docs/WORKFLOW_EDITOR_QUICKSTART.md](docs/WORKFLOW_EDITOR_QUICKSTART.md)** — non-developer onboarding: mint a PAT, run safe-claude
 - **[docs/DOCS_AUTOMATION.md](docs/DOCS_AUTOMATION.md)** — the automation that consumes PR `## Product Description` sections (mkdocs site, Confluence updater, weekly changelog)
 - **[docs/synthetic-kmc-clone-runbook.md](docs/synthetic-kmc-clone-runbook.md)** — two-phase profile→generate runbook for cloning prod opps into labs-only synthetics
+- **[docs/PERFORMANCE_RUNBOOK.md](docs/PERFORMANCE_RUNBOOK.md)** — **written for AI agents.** Labs slow, hanging, or 5xx-ing? Start with `python3 tools/perf_triage.py --hours 3`, which does steps 1–5 and prints a verdict
+- **[docs/multi-site-auth.md](docs/multi-site-auth.md)** — the contract behind the `supply` / `campaign` satellite sites: one Django project, one user table, one session cookie, so **authentication is global but authorization is per-surface**. Read before adding a site or a permission check
+- **[docs/OUTBOUND_EMAIL.md](docs/OUTBOUND_EMAIL.md)** — SES sending, live since 2026-07-29 behind `LABS_EMAIL_ENABLED`
+- **[connect_labs/labs/indicators/README.md](connect_labs/labs/indicators/README.md)** — the targeting app: measures, the counts-sum/rates-never-sum rule, and how a figure is defended
+- **[docs/targeting-data-acquisition.md](docs/targeting-data-acquisition.md)** — the acquisition register behind the targeting dataset (what is held, what was declined, and why)
 - **[pr_guidelines.md](pr_guidelines.md)** — Pull request best practices
 - **[docs/plans/](docs/plans/)**, **[docs/superpowers/specs/](docs/superpowers/specs/)**, **[docs/designs/](docs/designs/)** — Design documents and implementation plans for features built in this environment (most are point-in-time records; check each doc's status banner before treating it as current)

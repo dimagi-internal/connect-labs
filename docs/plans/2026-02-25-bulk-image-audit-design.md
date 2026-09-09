@@ -1,5 +1,7 @@
 # Bulk Image Audit Workflow Template — Design
 
+> **Status (2026-09-08 doc-regen):** shipped — historical design record, not current state. The feature is live as the `bulk_image_audit` workflow template; per-image-type AI reviewers were added later (2026-06-30 design).
+
 **Date:** 2026-02-25
 **Branch:** labs-auditv2
 

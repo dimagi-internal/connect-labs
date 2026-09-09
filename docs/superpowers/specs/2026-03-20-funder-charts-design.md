@@ -1,5 +1,7 @@
 # Funder Dashboard Visualizations Design
 
+> **Status (2026-09-08 doc-regen):** shipped — historical design record for the funder dashboard charts (`connect_labs/funder_dashboard/`).
+
 ## Summary
 
 Add interactive charts and maps to the funder dashboard fund detail page, using the existing pipeline infrastructure (`PipelineDataAccess` + `AnalysisPipeline`) to fetch, cache, and aggregate per-opportunity visit data from the Connect CSV export API.

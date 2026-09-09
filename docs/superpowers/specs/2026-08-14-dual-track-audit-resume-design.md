@@ -1,5 +1,7 @@
 # Resume/checkpoint capability for Weekly Dual-Track Audit jobs killed mid-batch
 
+> **Status (2026-09-08 doc-regen):** SHIPPED — the 'proceeding to implementation' line below is stale. Live via the `workflow_resume_dual_track_run` MCP tool. Historical design record.
+
 **Status:** Approved (design) — proceeding to implementation. User explicitly waived the
 per-section approval gate and the written-spec review gate for this design; self-reviewed only.
 **Date:** 2026-08-14

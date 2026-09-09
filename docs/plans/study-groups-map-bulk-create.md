@@ -1,5 +1,7 @@
 # Map-based multi-boundary bulk-create into a study
 
+> **Status (2026-09-08 doc-regen):** shipped — historical design record. Current state: the `microplans_bulk_create_plans` / `microplans_bulk_create_status` MCP tools.
+
 Status: in build (2026-06-05). Drives the `microplans-study-groups` DDD demo.
 
 ## Why

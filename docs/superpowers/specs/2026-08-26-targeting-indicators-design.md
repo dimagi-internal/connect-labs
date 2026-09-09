@@ -1,5 +1,7 @@
 # Targeting indicators: population and burden primitives
 
+> **Status (2026-09-08 doc-regen):** SHIPPED — the 'implementation in progress' line below is stale. Live at `/labs/targeting/` (`connect_labs/labs/indicators/`) with 8 `targeting_*` MCP tools. Historical design record.
+
 **Status:** design approved 2026-08-26, implementation in progress
 **Branch:** `emdash/targeting-frt31`
 
