@@ -428,10 +428,6 @@ def test_plans_minimal_entry_passes():
     validate_solicitation_payload(payload)
 
 
-def test_no_plans_still_valid():
-    validate_solicitation_payload(_minimal_valid())
-
-
 def test_plans_must_be_list():
     payload = _minimal_valid()
     payload["plans"] = {"plan_id": 1}

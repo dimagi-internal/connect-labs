@@ -250,12 +250,14 @@ class TestSolicitationResponseForm:
         assert "question_q1" in form.errors
 
     def test_optional_field_not_required(self):
-        form = SolicitationResponseForm(
-            questions=self._questions(),
-            data={"question_q1": "We are qualified"},
-        )
-        assert form.is_valid(), form.errors
-        # question_q2 is optional and not provided — should still be valid
+        """This used to be a byte-identical copy of
+        test_valid_with_required_question — same fixture, same single answer,
+        same `assert form.is_valid()` — so it passed whether or not q2 was
+        optional. Assert the optional field itself."""
+        form = SolicitationResponseForm(questions=self._questions())
+
+        assert form.fields["question_q2"].required is False
+        assert form.fields["question_q1"].required is True
 
     def test_text_field_type(self):
         questions = [
