@@ -222,6 +222,159 @@ window.MopupAnalysis = (function () {
       .join('');
   }
 
+  // ---------------------------------------------------------------------
+  // Map — reuses the same shared PlanLayers module microplans' own review
+  // page draws work areas with (static/maps/plan_layers.js), so mopup's map
+  // looks and behaves identically rather than reimplementing layer paint.
+  // ---------------------------------------------------------------------
+
+  const INDICATOR_COLORS = {
+    evc_shortfall: '#ef4444',
+    ncf_inaccessible_rate: '#f97316',
+    deworming: '#eab308',
+    muac: '#8b5cf6',
+    vaccination: '#06b6d4',
+  };
+  const NOT_INCLUDED_LABEL = 'Not included';
+
+  let map = null;
+  let mapReady = false;
+  let mapBoundsFitted = false;
+
+  function extendBboxWithGeometry(bbox, geometry) {
+    if (!geometry) return;
+    const rings =
+      geometry.type === 'Polygon'
+        ? geometry.coordinates
+        : geometry.type === 'MultiPolygon'
+        ? geometry.coordinates.flat()
+        : [];
+    rings.forEach((ring) =>
+      ring.forEach(([lon, lat]) => {
+        if (lon < bbox[0]) bbox[0] = lon;
+        if (lat < bbox[1]) bbox[1] = lat;
+        if (lon > bbox[2]) bbox[2] = lon;
+        if (lat > bbox[3]) bbox[3] = lat;
+      }),
+    );
+  }
+
+  function geojsonBbox(...featureCollections) {
+    const bbox = [Infinity, Infinity, -Infinity, -Infinity];
+    featureCollections.forEach((fc) =>
+      (fc?.features || []).forEach((f) =>
+        extendBboxWithGeometry(bbox, f.geometry),
+      ),
+    );
+    return bbox[0] === Infinity ? null : bbox;
+  }
+
+  function styleMapFeatures(fc) {
+    return {
+      type: 'FeatureCollection',
+      features: (fc?.features || []).map((f) => {
+        const color = f.properties.included
+          ? INDICATOR_COLORS[f.properties.first_indicator] || '#3b82f6'
+          : '#9ca3af';
+        return {
+          ...f,
+          properties: {
+            ...f.properties,
+            fill: color,
+            outline: color,
+            // PlanLayers.workAreas forces a light grey fill/outline whenever
+            // status === 'EXCLUDED' (see plan_layers.js) — reused as-is for
+            // "not included in this mop-up round" rather than duplicating
+            // that paint logic here.
+            status: f.properties.included ? '' : 'EXCLUDED',
+          },
+        };
+      }),
+    };
+  }
+
+  function renderMapLegend(fc) {
+    const present = new Set(
+      (fc?.features || [])
+        .filter((f) => f.properties.included)
+        .map((f) => f.properties.first_indicator),
+    );
+    const swatches = Object.keys(INDICATOR_COLORS)
+      .filter((key) => present.has(key))
+      .map(
+        (key) =>
+          `<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${
+            INDICATOR_COLORS[key]
+          };margin-right:4px;"></span>${esc(
+            INDICATOR_LABELS[key] || key,
+          )}</span>`,
+      );
+    swatches.push(
+      `<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#9ca3af;margin-right:4px;"></span>${esc(
+        NOT_INCLUDED_LABEL,
+      )}</span>`,
+    );
+    $('map-legend').innerHTML = swatches.join('');
+  }
+
+  function renderMap(rawMapFeatures) {
+    if (!map || !mapReady) return;
+    const styled = styleMapFeatures(rawMapFeatures);
+    window.PlanLayers.workAreas(map, { data: styled, promoteId: 'wa_id' });
+    renderMapLegend(rawMapFeatures);
+    if (!mapBoundsFitted) {
+      const bbox = geojsonBbox(styled, wardBoundariesData);
+      if (bbox) {
+        map.fitBounds(
+          [
+            [bbox[0], bbox[1]],
+            [bbox[2], bbox[3]],
+          ],
+          { padding: 24, duration: 0 },
+        );
+        mapBoundsFitted = true;
+      }
+    }
+  }
+
+  let wardBoundariesData = { type: 'FeatureCollection', features: [] };
+
+  function initMap(mapboxToken) {
+    const el = $('analysis-map');
+    if (!el || !window.mapboxgl || !mapboxToken) return;
+    mapboxgl.accessToken = mapboxToken;
+    try {
+      map = new mapboxgl.Map({
+        container: 'analysis-map',
+        style: 'mapbox://styles/mapbox/light-v11',
+        center: [0, 0],
+        zoom: 1,
+      });
+    } catch (e) {
+      return; // headless / no WebGL
+    }
+    map.on('load', () => {
+      mapReady = true;
+      if (wardBoundariesData.features.length) {
+        window.PlanLayers.setSource(
+          map,
+          'mopup-ward-boundaries',
+          wardBoundariesData,
+        );
+        map.addLayer({
+          id: 'mopup-ward-boundary-line',
+          type: 'line',
+          source: 'mopup-ward-boundaries',
+          paint: {
+            'line-color': '#1f2937',
+            'line-width': 1.5,
+            'line-dasharray': [2, 1],
+          },
+        });
+      }
+    });
+  }
+
   let pollTimer = null;
   let dataReady = false;
 
@@ -285,6 +438,7 @@ window.MopupAnalysis = (function () {
       renderWardSummary(data.ward_summary || []);
       renderCandidates();
       renderIndicatorCounts(data.per_indicator_counts);
+      renderMap(data.map_features);
       $(
         'status',
       ).textContent = `${data.total_work_areas} work area(s) evaluated.`;
@@ -389,6 +543,11 @@ window.MopupAnalysis = (function () {
     indicatorDefs = JSON.parse($('indicator-defs-data').textContent);
     indicatorConfigs = JSON.parse($('indicator-configs-data').textContent);
     globalConfig = JSON.parse($('global-config-data').textContent);
+    wardBoundariesData = JSON.parse(
+      $('ward-boundaries-data')?.textContent ||
+        '{"type":"FeatureCollection","features":[]}',
+    );
+    initMap(cfg.mapboxToken);
     renderIndicatorRows();
     renderGlobalConfig();
     $('indicator-rows').addEventListener('change', (e) => {

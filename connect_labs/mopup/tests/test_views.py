@@ -613,6 +613,57 @@ def test_candidates_returns_per_indicator_trigger_counts(client, django_user_mod
     assert set(counts) == set(ind.ALL_INDICATORS)
 
 
+def test_candidates_returns_map_features_for_the_map(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    boundary = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]}
+    _mock_ready_data(
+        monkeypatch,
+        run,
+        [
+            {
+                "wa_id": "wa-1",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "flw_username": "flw-1",
+                "lat": None,
+                "lon": None,
+                "status": "VISITED",
+                "building_count": 10,
+                "expected_visit_count": 10,
+                "approved_hsd_count": 1,
+                "approved_ncf_count": 0,
+                "approved_inaccessible_count": 0,
+                "deworming_given": 0,
+                "muac_given": 0,
+                "vaccination_given": 0,
+                "boundary": boundary,
+            }
+        ],
+    )
+    from connect_labs.mopup.core import indicators as ind
+
+    resp = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps(
+            {
+                "indicator_configs": {
+                    ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_WA_ONLY},
+                }
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    features = resp.json()["map_features"]["features"]
+    assert len(features) == 1
+    assert features[0]["geometry"] == boundary
+    assert features[0]["properties"]["included"] is True
+    assert features[0]["properties"]["first_indicator"] == ind.EVC_SHORTFALL
+
+
 def test_candidates_persists_thresholds_used(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
@@ -732,6 +783,40 @@ def test_analysis_view_falls_back_to_defaults_when_no_thresholds_saved(client, d
     from connect_labs.mopup.core import indicators as ind
 
     assert str(ind.DEFAULT_INDICATOR_CONFIGS[ind.EVC_SHORTFALL]["threshold"]).encode() in resp.content
+
+
+def test_analysis_view_embeds_ward_boundaries_and_mapbox_token(client, django_user_model, monkeypatch, settings):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    run.data["selected_wards"] = [{"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"}]
+
+    boundary = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]}
+    monkeypatch.setattr(
+        "connect_labs.microplans.core.admin_boundaries.find_ward_boundary_geometry",
+        lambda state, lga, ward: boundary,
+    )
+    settings.MAPBOX_TOKEN = "testtoken123"
+
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200
+    assert b"testtoken123" in resp.content
+    assert b"Sabon Gari" in resp.content
+
+
+def test_analysis_view_skips_wards_with_no_boundary_match(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    run.data["selected_wards"] = [{"ward": "Nowhere", "lga": "Rano", "state": "Kano"}]
+
+    monkeypatch.setattr(
+        "connect_labs.microplans.core.admin_boundaries.find_ward_boundary_geometry",
+        lambda state, lga, ward: None,
+    )
+
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200
 
 
 # --- MopupLockView -----------------------------------------------------------

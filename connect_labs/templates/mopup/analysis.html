@@ -4,7 +4,13 @@
 
 {% block css %}
 {{ block.super }}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
 <style>
+  #analysis-map {
+    height: 24rem;
+    width: 100%;
+    border-radius: 0.375rem;
+  }
   /* Custom info tooltip — a native `title` attribute needs a ~1s hover dwell
      and is easy to trigger with no visible feedback, which real user
      testing this session found effectively invisible. This shows instantly
@@ -64,6 +70,12 @@
   </section>
 
   <div id="analysis-body" class="hidden space-y-6">
+
+  <section class="border border-gray-200 rounded p-4 space-y-2">
+    <h2 class="text-lg font-semibold text-gray-900">Map</h2>
+    <div id="analysis-map"></div>
+    <div id="map-legend" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600"></div>
+  </section>
 
   <section class="border border-gray-200 rounded p-4 space-y-4">
     <h2 class="text-lg font-semibold text-gray-900">Indicators</h2>
@@ -177,6 +189,9 @@
 {{ indicator_defs|json_script:"indicator-defs-data" }}
 {{ indicator_configs|json_script:"indicator-configs-data" }}
 {{ global_config|json_script:"global-config-data" }}
+{{ ward_boundaries|json_script:"ward-boundaries-data" }}
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+<script src="{% static 'maps/plan_layers.js' %}"></script>
 <script src="{% static 'mopup/analysis.js' %}"></script>
 <script>
 (function () {
@@ -186,6 +201,7 @@
     createPlanUrl: "{{ create_plan_url }}",
     csrfToken: "{{ csrf_token }}",
     locked: "{{ run.status }}" === "locked",
+    mapboxToken: "{{ mapbox_token|escapejs }}",
   });
 })();
 </script>
