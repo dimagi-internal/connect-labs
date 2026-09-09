@@ -572,11 +572,14 @@ UNVERIFIED_SCALE_LLOS = {"GHI", "Kikapu"} | _CONFLICTING_SCALE_LLOS
 
 
 DEFINITION = {
-    "name": "KMC Programme Metrics (Layer 2 + rollups)",
+    "name": "KMC Programme Metrics",
     "description": (
-        "The kmc_metrics_framework registry evaluated live. Programme topline, per-LLO "
-        "rollup across each LLO's opportunities, per-FLW aggregation, and a per-case table "
-        "carrying every indicator. Indicators an app does not collect render as n/a."
+        "Kangaroo Mother Care programme report, one page per saved weekly run: five headline "
+        "indicators with a week-on-week delta, the 15-metric scorecard by organisation with "
+        "last visit and attention, activity by week and indicator trends across saved reports. "
+        "An organisation opens to its opportunities and workers; a worker opens to the KMC "
+        "Worker Review. Every figure comes off the semantic-snapshot payload; indicators an "
+        "app does not collect render as not in this app."
     ),
     "version": 1,
     "templateType": "kmc_programme_metrics",
@@ -617,7 +620,7 @@ DEFINITION = {
 
 TEMPLATE = {
     "key": "kmc_programme_metrics",
-    "name": "KMC Programme Metrics (Layer 2 + rollups)",
+    "name": "KMC Programme Metrics",
     "description": DEFINITION["description"],
     "icon": "fa-chart-line",
     "color": "indigo",
