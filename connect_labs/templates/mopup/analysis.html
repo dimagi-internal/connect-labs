@@ -46,6 +46,12 @@
   .info-icon:focus::after {
     opacity: 1;
   }
+  /* Ward summary's three column groups (Geography / Connect Data / New
+     Mop-up Data) — a subtle tint plus a left border at each group boundary
+     so the grouping reads at a glance, not just from the labels. */
+  .ward-col-connect { background: #f8fafc; }
+  .ward-col-new { background: #ecfdf5; }
+  .ward-group-start { border-left: 2px solid #d1d5db; }
 </style>
 {% endblock %}
 
@@ -161,11 +167,19 @@
     <h2 class="text-lg font-semibold text-gray-900">Ward summary</h2>
     <table class="w-full text-sm border border-gray-200 rounded">
       <thead>
+        <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 bg-gray-50">
+          <th class="p-2 pb-1" colspan="3">Geography</th>
+          <th class="p-2 pb-1 ward-col-connect ward-group-start" colspan="5">Connect data</th>
+          <th class="p-2 pb-1 ward-col-new ward-group-start" colspan="4">New mop-up data</th>
+        </tr>
         <tr class="text-left text-gray-500 bg-gray-50">
           <th class="p-2">Ward</th><th class="p-2">LGA</th><th class="p-2">State</th>
-          <th class="p-2">Total WAs</th><th class="p-2">Total buildings</th><th class="p-2">Total EVC</th>
-          <th class="p-2">Candidates</th><th class="p-2">Buildings</th><th class="p-2">EVC</th>
-          <th class="p-2">Flagged 2+ <span class="info-icon" tabindex="0" data-tip="Work areas in this ward flagged by 2 or more of the currently-enabled indicators.">ⓘ</span></th>
+          <th class="p-2 ward-col-connect ward-group-start">Total WAs</th>
+          <th class="p-2 ward-col-connect">Total HSD <span class="info-icon" tabindex="0" data-tip="Sum of approved Health Service Delivery visits across every work area evaluated in this ward.">ⓘ</span></th>
+          <th class="p-2 ward-col-connect">Total NCF <span class="info-icon" tabindex="0" data-tip="Sum of NCF (No Children Found) + Inaccessible visits across every work area evaluated in this ward — the same visit counts the NCF/inaccessible indicator itself uses.">ⓘ</span></th>
+          <th class="p-2 ward-col-connect">Total buildings</th><th class="p-2 ward-col-connect">Total EVC</th>
+          <th class="p-2 ward-col-new ward-group-start">Candidate WAs</th><th class="p-2 ward-col-new">Buildings</th><th class="p-2 ward-col-new">EVC</th>
+          <th class="p-2 ward-col-new">Flagged 2+ <span class="info-icon" tabindex="0" data-tip="Work areas in this ward flagged by 2 or more of the currently-enabled indicators.">ⓘ</span></th>
         </tr>
       </thead>
       <tbody id="ward-summary-rows"></tbody>
