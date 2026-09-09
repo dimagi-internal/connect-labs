@@ -92,9 +92,11 @@ alarm's own evaluation offset, not to wall-clock `:00`/`:05`, so a spike straddl
 scored twice by the alarm and once by your reconstruction — and the two then disagree by exactly
 the datapoint that explains the firing.
 
-Worked example, the 06:44:31Z page on 2026-09-09 (alarm then `Maximum` / `Period: 300` /
-`DatapointsToAlarm: 3` of `EvaluationPeriods: 5`; **PR #1647 is changing that**, so treat the
-numbers as as-of, not current):
+Worked example, the 06:44:31Z page on 2026-09-09. **This firing is why the alarm was retuned** —
+it was then `Maximum` / `Period: 300` / `DatapointsToAlarm: 3` of `EvaluationPeriods: 5`, and #1647
+has since shipped and deployed `Period: 60` / **4-of-5** (`Statistic` stays `Maximum`; verified
+against `describe-alarms`, not the stack status). So read the numbers below as the case that
+motivated the change, not as current config:
 
 | | |
 | --- | --- |
@@ -107,7 +109,13 @@ numbers as as-of, not current):
 So two real spike events became three "breaching periods," and a genuine 2-minute pin was reported
 as a 15-minute saturation. A wall-clock reconstruction of the same window finds only **2** buckets
 and makes the firing look impossible rather than mistuned — which is the trap the paragraph above
-is about. Record firings of this shape on #1512.
+is about.
+
+At `Maximum` over a 300s period a "period" was not a duration at all, so the old description's
+"15 of the last 25 minutes" was unproducible by that config — which is the finding behind #1512
+and the reason for #1647. Under the deployed `Period: 60` / 4-of-5 a breaching "period" **is** one
+breaching minute, so the count means what it says; the `evaluatedDatapoints` read above is still
+the right first move on any firing you cannot account for. Record firings of this shape on #1512.
 
 ### A CPU page can be a LAGGING proxy for a memory problem
 
