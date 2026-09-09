@@ -117,3 +117,90 @@ test('credibility is never read straight off the _suppressed column', () => {
     'only cCredibleSet may read _suppressed; every other site must call cCredible',
   );
 });
+
+test('every memo that reads the SERVED registry facts depends on them', () => {
+  // `llo_map`, `app_asks` and `asks_as` used to be literals in this file. They are
+  // now served by the API and land in `servedFacts` state, which means any memo
+  // reading them must list it as a dependency -- otherwise the memo keeps a result
+  // computed BEFORE the facts arrived, forever, with no error.
+  //
+  // That has now happened twice. `byLLO`/`byFLW`/`byOpp` missed it and were saved
+  // only by React batching `setServedFacts` with `setCSeries`; `derived` missed it
+  // and was not saved, so a live run showed LLO names as "opp 10013".."opp 10042"
+  // while the server had delivered 23 llo_map entries and 1,260 semantic rows.
+  //
+  // Reviewing dependency arrays by eye is exactly what failed, so this walks them.
+  const ROOTS = ['LLO_OF', 'APP_ASKS', 'ASKS_AS'];
+  const tree = ast();
+
+  // name -> identifiers its body references, for functions declared in this file.
+  const refs = new Map();
+  traverse(tree, {
+    FunctionDeclaration(path) {
+      const name = path.node.id && path.node.id.name;
+      if (!name) return;
+      const seen = new Set();
+      path.traverse({
+        Identifier(inner) {
+          seen.add(inner.node.name);
+        },
+      });
+      refs.set(name, seen);
+    },
+  });
+
+  // Transitive closure: which helpers end up touching a root fact.
+  const touches = new Set(ROOTS);
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const [name, seen] of refs) {
+      if (touches.has(name)) continue;
+      for (const s of seen) {
+        if (touches.has(s)) {
+          touches.add(name);
+          changed = true;
+          break;
+        }
+      }
+    }
+  }
+
+  const offenders = [];
+  traverse(tree, {
+    CallExpression(path) {
+      const callee = path.node.callee;
+      const isMemo =
+        callee.type === 'MemberExpression' &&
+        callee.object.name === 'React' &&
+        (callee.property.name === 'useMemo' ||
+          callee.property.name === 'useCallback');
+      if (!isMemo) return;
+      const [fn, deps] = path.node.arguments;
+      if (!fn || !deps || deps.type !== 'ArrayExpression') return;
+
+      let reads = null;
+      path.get('arguments.0').traverse({
+        Identifier(inner) {
+          if (!reads && touches.has(inner.node.name)) reads = inner.node.name;
+        },
+      });
+      if (!reads) return;
+
+      const declared = deps.elements.map((e) => (e && e.name) || '');
+      if (!declared.includes('servedFacts')) {
+        offenders.push(
+          `line ${
+            fn.loc ? fn.loc.start.line : '?'
+          }: reads ${reads} but depends on [${declared.join(', ')}]`,
+        );
+      }
+    },
+  });
+
+  assert.deepStrictEqual(
+    offenders,
+    [],
+    'these memos read the served registry facts without depending on servedFacts:\n  ' +
+      offenders.join('\n  '),
+  );
+});

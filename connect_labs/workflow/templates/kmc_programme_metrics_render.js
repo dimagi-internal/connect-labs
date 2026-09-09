@@ -366,7 +366,13 @@ function WorkflowUI({
         return d;
       });
     },
-    [cases, wrows],
+    // `servedFacts` because this memo calls `lloOf`, which reads the SERVED
+    // `llo_map`. Without it every case row keeps the llo assigned before the
+    // registry's facts arrived -- i.e. "opp 10021" -- and `byLLO` then groups the
+    // whole dashboard by opportunity id, permanently, on a warm cache and with no
+    // error. Verified on live run 5507: 1,260 semantic rows and 23 llo_map entries
+    // delivered, and the page still showed opportunity ids 90 seconds later.
+    [cases, wrows, servedFacts],
   );
 
   // ══ The C-series, served by the semantic layer ════════════════════════════
@@ -906,7 +912,7 @@ function WorkflowUI({
           };
         });
     },
-    [derived, byOpp, snapshot],
+    [derived, byOpp, snapshot, servedFacts],
   );
 
   // Separator for the composite FLW key. NOT '\u0000': a NUL byte is legal in a JS
@@ -1333,7 +1339,7 @@ function WorkflowUI({
         of: byLLO.length,
       };
     },
-    [byLLO, cRows, C_LIST, snapshot],
+    [byLLO, cRows, C_LIST, snapshot, servedFacts],
   );
   // ── UI ───────────────────────────────────────────────────────────────────
   var s1 = React.useState(null);
@@ -1474,7 +1480,17 @@ function WorkflowUI({
       // not of the code.
       return monthlyFor(selLLO, selOpp, selFLW);
     },
-    [derived, wrows, selLLO, selOpp, selFLW, snapshot, cRows, C_LIST],
+    [
+      derived,
+      wrows,
+      selLLO,
+      selOpp,
+      selFLW,
+      snapshot,
+      cRows,
+      C_LIST,
+      servedFacts,
+    ],
   );
 
   var llosRed = byLLO.filter(function (l) {
