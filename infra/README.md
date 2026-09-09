@@ -28,12 +28,13 @@ Bringing the core resources under CloudFormation (importing the existing RDS,
 ECS, etc.) is a deliberate later step — "the rest, as needed" — and only worth
 doing if labs proves long-lived enough to justify the import work.
 
-| Template                   | Owns                                                                                                                                                                                                                                   | References (does not own)                                                                           |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `labs-monitoring.yml`      | SNS alert topic + subscriptions, RDS-connection + slot-exhaustion alarms, web-CPU / ALB-latency / ALB-5xx / no-healthy-target alarms, AI-review empty-audit + classifier-saturation alarms, log metric filters, CI log-read IAM policy | RDS instance, ECS cluster + service, ALB + target group, ECS log groups, GitHub Actions deploy role |
-| `labs-audit-analytics.yml` | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies                                                              | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC                       |
-| `labs-access-logs.yml`     | ALB access-log S3 bucket, its delivery policy, and a 90-day retention lifecycle                                                                                                                                                        | The ALB itself (logging is switched on via a CLI attribute — see below)                             |
-| `labs-email.yml`           | SES domain identity + DKIM, `labs-jj-email` configuration set, `labs-jj-email-events` SNS topic + event destination, scoped `ses:SendEmail` managed policy                                                                             | ECS task role (policy attaches by name), the DNS zone, SES production access                        |
+| Template                     | Owns                                                                                                                                                                                                                                                               | References (does not own)                                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `labs-monitoring.yml`        | SNS alert topic + subscriptions, RDS-connection + slot-exhaustion + free-storage alarms, web-CPU / ALB-latency / ALB-5xx / target-5xx / no-healthy-target alarms, AI-review empty-audit + classifier-saturation alarms, log metric filters, CI log-read IAM policy | RDS instance, ECS cluster + service, ALB + target group, ECS log groups, GitHub Actions deploy role |
+| `labs-tenant-monitoring.yml` | canopy-web + ace-web per-target-group application-5xx alarms                                                                                                                                                                                                       | The ALB, both tenant target groups, the alert topic (imported from `labs-monitoring.yml`'s export)  |
+| `labs-audit-analytics.yml`   | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies                                                                                          | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC                       |
+| `labs-access-logs.yml`       | ALB access-log S3 bucket, its delivery policy, and a 90-day retention lifecycle                                                                                                                                                                                    | The ALB itself (logging is switched on via a CLI attribute — see below)                             |
+| `labs-email.yml`             | SES domain identity + DKIM, `labs-jj-email` configuration set, `labs-jj-email-events` SNS topic + event destination, scoped `ses:SendEmail` managed policy                                                                                                         | ECS task role (policy attaches by name), the DNS zone, SES production access                        |
 
 ## Deploy
 
@@ -42,9 +43,22 @@ aws cloudformation deploy \
   --region us-east-1 --profile labs \
   --stack-name labs-jj-monitoring \
   --template-file infra/labs-monitoring.yml \
+  --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides AlarmEmail=you@dimagi.com
 ```
 
+- **This template is at CloudFormation's inline size limit — check
+  `wc -c infra/labs-monitoring.yml` before adding to it.** CloudFormation accepts
+  at most **51,200 bytes** of inline template body (`--template-file` /
+  `--template-body`); after the 2026-09-09 change the file is 51,076. Over the line the deploy
+  fails with `Member must have length less than or equal to 51200`, which reads
+  like a malformed template and is only a size limit. The escape is
+  `--s3-bucket <bucket> --s3-prefix labs-monitoring` (the CLI uploads and passes a
+  URL; limit 1 MB) — which needs a bucket this account does not yet have, so the
+  2026-09-09 tenant alarms went into their own template instead (below). When the
+  file next crosses the line, create the bucket (private, block public access,
+  30-day expiry — it belongs in the bootstrap stack of the labs IaC split,
+  canopy-web #729) and add the flag here.
 - Omit `AlarmEmail` (or pass empty) to create the alarms + SNS topic without an
   email subscription — alarms still fire to the topic; wire Slack/another
   endpoint to the exported `labs-jj-alert-topic-arn` later.
@@ -119,14 +133,16 @@ CPU, sub-ms IO). The added alarms watch the tier that actually failed.
 
 Thresholds come from the measured 5-day distribution, not from feel:
 
-| Alarm                            | Fires when                              | Normal baseline                                        |
-| -------------------------------- | --------------------------------------- | ------------------------------------------------------ |
-| `labs-jj-web-cpu-high`           | **busiest task's** CPU ≥ 90% for 15 min | median **0.8%**                                        |
-| `labs-jj-alb-latency-high`       | ALB **p95** > 10s for 15 min            | median p95 **0.23s**; only 1.7% of buckets exceed 10s  |
-| `labs-jj-alb-5xx-high`           | ALB-generated 5xx > 25 in 5 min         | ~1–5 per 15 min; incident peaked at 84                 |
-| `labs-jj-alb-target-5xx-high`    | **app-generated** 5xx > 25 in 5 min     | ~0/day; 08-31 Umami outage ran 410 in 2h, peak 42      |
-| `labs-jj-web-no-healthy-targets` | healthy hosts < 1 for 3 min             | every task unhealthy at once, so this is a full outage |
-| `labs-jj-rds-connections-high`   | connections > 90 for 10 min             | 5–15; **was 120 and never fired at a 106 peak**        |
+| Alarm                                | Fires when                              | Normal baseline                                                           |
+| ------------------------------------ | --------------------------------------- | ------------------------------------------------------------------------- |
+| `labs-jj-web-cpu-high`               | **busiest task's** CPU ≥ 90% for 15 min | median **0.8%**                                                           |
+| `labs-jj-alb-latency-high`           | ALB **p95** > 10s for 15 min            | median p95 **0.23s**; only 1.7% of buckets exceed 10s                     |
+| `labs-jj-alb-5xx-high`               | ALB-generated 5xx > 25 in 5 min         | ~1–5 per 15 min; incident peaked at 84                                    |
+| `labs-jj-alb-target-5xx-high`        | **labs web tier** 5xx > 10 in 5 min     | 20 non-zero buckets of 1440 over 5 days, max 5; 09-08 outage peaked at 17 |
+| `labs-jj-canopy-web-target-5xx-high` | **canopy-web** 5xx > 10 in 5 min        | one non-zero bucket (3) in 14 days; 09-08 outage 83–373 per bucket        |
+| `labs-jj-ace-web-target-5xx-high`    | **ace-web** 5xx > 10 in 5 min           | 14-day hourly max 4                                                       |
+| `labs-jj-web-no-healthy-targets`     | healthy hosts < 1 for 3 min             | every task unhealthy at once, so this is a full outage                    |
+| `labs-jj-rds-connections-high`       | connections > 90 for 10 min             | 5–15; **was 120 and never fired at a 106 peak**                           |
 
 Latency is alarmed on **p95, not Average** — Average is dragged toward zero by
 health checks and static assets and stayed unremarkable through the whole
@@ -149,6 +165,43 @@ the inverse happened: **410** target 5xx over two hours (all `/umami/api/send`,
 a Prisma `P2002` race) while ELB 5xx peaked at **19** — under the ELB
 threshold, so nothing paged for two hours. Watching either metric alone is
 blind to one of these; watch both.
+
+The target-5xx alarm is **per target group, one per tenant**, because the ALB
+fronts three application tiers (labs, canopy-web at `/canopy/*`, ace-web at
+`/ace/*`) plus Umami, and a LoadBalancer-only alarm names none of them. On
+2026-09-08 the labs RDS instance hit storage-full (#1634) and the ALB counted
+~1,250 target 5xx in 45 minutes: **~1,200 from canopy-web**, 1–17 per bucket
+from labs, 2 from Umami — and the page that fired (#1628) could not say so.
+canopy-web's database is on the same instance, so a labs storage or connection
+failure is always a canopy-web outage too, and canopy-web is the control plane
+that dispatches the responders. The tenant alarms live in
+`labs-tenant-monitoring.yml` (its own stack, `labs-jj-tenant-monitoring`) rather
+than in the tenants' own templates because those deploy through
+`github-actions-labs-deploy`, which has no `cloudwatch:*` grant — an alarm
+resource there 403s and rolls back the deploy — and rather than in
+`labs-monitoring.yml` because that file is at the inline size limit (§ Deploy).
+Move them into the app stacks once the deploy role carries `PutMetricAlarm`
+(canopy-web #729).
+
+### Deploy: tenant alarms
+
+```bash
+aws cloudformation deploy \
+  --region us-east-1 --profile labs \
+  --stack-name labs-jj-tenant-monitoring \
+  --template-file infra/labs-tenant-monitoring.yml
+```
+
+Imports `labs-jj-alert-topic-arn` from `labs-jj-monitoring`, so that stack must
+exist first and cannot be deleted while this one stands. No parameters need
+carrying forward — every default is the live value. Confirm both alarms exist
+and are evaluating after the deploy:
+
+```bash
+aws cloudwatch describe-alarms --profile labs --region us-east-1 \
+  --alarm-names labs-jj-canopy-web-target-5xx-high labs-jj-ace-web-target-5xx-high \
+  --query 'MetricAlarms[].[AlarmName,StateValue,Threshold]' --output table
+```
 
 Note these are deliberately **not** paired with a timeout reduction: long-running
 audit work legitimately needs the 600s gunicorn and ALB idle timeouts. The
