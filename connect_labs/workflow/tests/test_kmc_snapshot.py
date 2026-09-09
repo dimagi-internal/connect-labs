@@ -262,3 +262,43 @@ class TestDeclaredSchemaMatchesThePayload:
     def test_every_declared_key_is_built(self):
         missing = self._declared_keys() - self._built_keys()
         assert not missing, f"snapshot_schema promises {sorted(missing)} that the snapshot does not contain"
+
+
+class TestHookScoping:
+    """A snapshot hook builds its own data accessors, and they must carry the run's
+    scope.
+
+    On the web path `request` supplies it. On the MCP path there is no request — only
+    a token — and a DAO built from a token alone is UNSCOPED, so `get_definition`
+    cannot see the very workflow the hook was called for. Measured live: the first
+    real execution of this hook failed with `RuntimeError: workflow 5456 could not be
+    read` while the same workflow read fine through `workflow_get`.
+
+    This is the third instance of the same defect today (registry-binding validation,
+    then this), which is why the scope is assembled ONCE in the hook rather than at
+    each accessor.
+    """
+
+    def test_the_mcp_path_supplies_program_id_in_context(self):
+        """A program-owned run has no opportunity to scope by, so program_id has to
+        travel or the hook cannot scope at all."""
+        import inspect
+
+        from connect_labs.mcp.tools import workflow_snapshots
+
+        src = inspect.getsource(workflow_snapshots.workflow_save_snapshot)
+        assert "program_id=program_id" in src, "build_snapshot_for_contract must receive program_id"
+        assert "access_token=wda.access_token" in src
+
+    def test_the_hook_scopes_every_accessor_it_builds(self):
+        import inspect
+
+        from connect_labs.workflow.templates import kmc_programme_metrics
+
+        src = inspect.getsource(kmc_programme_metrics.build_snapshot)
+        assert 'scope = {"opportunity_id": opportunity_id, "program_id": program_id}' in src
+        # every accessor the hook constructs takes the scope
+        for dao in ("WorkflowDataAccess(", "PipelineDataAccess(", "SemanticRegistryDataAccess("):
+            idx = src.find(dao)
+            assert idx != -1, f"{dao} not found"
+            assert "**scope" in src[idx : idx + 200], f"{dao} is built without the run's scope"
