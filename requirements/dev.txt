@@ -170,7 +170,7 @@ prompt-toolkit==3.0.52
     # via
     #   -c requirements/base.txt
     #   ipython
-psycopg2-binary==2.9.11
+psycopg2-binary==2.9.12
     # via
     #   -c requirements/base.txt
     #   -r requirements/dev.in
