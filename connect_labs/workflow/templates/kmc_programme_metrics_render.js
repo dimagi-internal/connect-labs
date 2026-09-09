@@ -1553,7 +1553,10 @@ function WorkflowUI({
     if (!e || e.value === null || e.value === undefined) return '—';
     if (ind.unit === '%') return (100 * e.value).toFixed(1) + '%';
     if (ind.unit === 'n' || ind.unit === '/100')
-      return Number(e.value).toFixed(ind.kind === 'count' ? 0 : 1);
+      // A count carries thousands separators; a mean keeps its decimal.
+      return ind.kind === 'count'
+        ? nCount(e.value)
+        : Number(e.value).toFixed(1);
     return Number(e.value).toFixed(1);
   }
   function bandLabel(e) {
@@ -2589,7 +2592,7 @@ function WorkflowUI({
                       <div className="text-[11px] mt-1 opacity-50">
                         {c.den === null || c.den === undefined
                           ? '\u2014'
-                          : 'n = ' + c.den}
+                          : 'n = ' + nCount(c.den)}
                       </div>
                     </div>
                   );
@@ -2682,7 +2685,7 @@ function WorkflowUI({
                                     title={
                                       c.den === null || c.den === undefined
                                         ? 'no denominator'
-                                        : 'n = ' + c.den
+                                        : 'n = ' + nCount(c.den)
                                     }
                                   >
                                     {c.text}
