@@ -389,11 +389,30 @@ def _validate_snapshot_inputs(value) -> None:
     capture forever."""
     if not isinstance(value, dict):
         raise MCPToolError("INVALID_SCHEMA", "snapshot_inputs must be a dict (or null to revert to the template)")
-    unknown = set(value) - _SNAPSHOT_INPUTS_ALLOWED_KEYS
+    # A manifest that names a BUILDER is that builder's spec, so its own keys are
+    # allowed too. Without this the write path refused every spec key and a computed
+    # snapshot could only be configured by editing the template -- i.e. by a deploy,
+    # which is the cost the builder exists to remove. Same shape as `registry_source`
+    # being readable but unwritable: a capability an agent cannot reach does not
+    # exist for an agent.
+    allowed = set(_SNAPSHOT_INPUTS_ALLOWED_KEYS)
+    builder = value.get("builder")
+    if builder is not None:
+        from connect_labs.workflow.snapshot_builders import BUILDER_SPEC_KEYS, BUILDERS
+
+        if builder not in BUILDERS:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                f"snapshot_inputs.builder is {builder!r}, which is not a registered builder. "
+                f"Known: {sorted(BUILDERS)}",
+            )
+        allowed |= {"builder"} | set(BUILDER_SPEC_KEYS.get(builder, ()))
+
+    unknown = set(value) - allowed
     if unknown:
         raise MCPToolError(
             "INVALID_SCHEMA",
-            f"Unknown snapshot_inputs keys: {sorted(unknown)}. Allowed: {sorted(_SNAPSHOT_INPUTS_ALLOWED_KEYS)}",
+            f"Unknown snapshot_inputs keys: {sorted(unknown)}. Allowed: {sorted(allowed)}",
         )
     pipelines = value.get("pipelines")
     if pipelines is not None and not (isinstance(pipelines, list) and all(isinstance(p, str) for p in pipelines)):
@@ -414,8 +433,12 @@ def _validate_snapshot_inputs(value) -> None:
         "`snapshot_inputs` (the instance-owned completion-snapshot manifest: "
         "{pipelines: [aliases]|null, workers: bool, state_keys: [keys]|null}) "
         "replaces wholesale, or pass null to revert the workflow to "
-        "template-registry resolution. Unknown keys rejected with "
-        "INVALID_SCHEMA. Uses expected_version for optimistic concurrency."
+        "template-registry resolution. It may instead name a framework snapshot "
+        "BUILDER ({builder: 'semantic_snapshot', ...spec}), in which case that "
+        "builder owns the payload and its own spec keys are accepted here — which "
+        "is how a COMPUTED snapshot is reconfigured without a deploy. Unknown keys "
+        "rejected with INVALID_SCHEMA. Uses expected_version for optimistic "
+        "concurrency."
     ),
     input_schema={
         "type": "object",

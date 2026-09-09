@@ -1776,3 +1776,80 @@ class TestRegistrySourceBinding:
         from connect_labs.mcp.tools.workflows import _validate_registry_source
 
         _validate_registry_source({}, None)
+
+
+class TestSnapshotInputsAcceptsABuilderSpec:
+    """The write path is what makes a COMPUTED snapshot deploy-free.
+
+    `snapshot_inputs` allowed exactly `pipelines` / `workers` / `state_keys`, which
+    are the keys of the copy-only default builder. A manifest naming a framework
+    builder was refused key by key, so a computed snapshot could only be configured
+    by editing the template — a deploy, which is the cost the builder exists to
+    remove. Exactly the shape `registry_source` had: readable, unwritable, and so
+    unreachable for an agent.
+
+    Strictness is kept. An unrecognised key is still refused, because a typo'd
+    manifest silently changes what every completed run captures, forever.
+    """
+
+    def _validate(self, value):
+        from connect_labs.mcp.tools.workflows import _validate_snapshot_inputs
+
+        return _validate_snapshot_inputs(value)
+
+    def test_a_builder_spec_is_accepted(self):
+        self._validate(
+            {
+                "builder": "semantic_snapshot",
+                "series": "C",
+                "scopes": ["programme", "flw"],
+                "pipelines": ["children", "visits"],
+                "case_index": {"pipeline": "children", "fields": ["entity_id"]},
+                "visits_pipeline": "visits",
+                "credibility": {"C14": "mortality_recording_credible"},
+                "min_denominator_default": 25,
+                "workers": False,
+            }
+        )
+
+    def test_an_unregistered_builder_is_refused_by_name(self):
+        from connect_labs.mcp.tool_registry import MCPToolError
+
+        with pytest.raises(MCPToolError) as exc:
+            self._validate({"builder": "does_not_exist", "series": "C"})
+        assert "not a registered builder" in str(exc.value)
+        assert "semantic_snapshot" in str(exc.value)
+
+    def test_a_typo_in_a_spec_key_is_still_refused(self):
+        from connect_labs.mcp.tool_registry import MCPToolError
+
+        with pytest.raises(MCPToolError) as exc:
+            self._validate({"builder": "semantic_snapshot", "scoeps": ["programme"]})
+        assert "scoeps" in str(exc.value)
+
+    def test_spec_keys_are_not_allowed_without_a_builder(self):
+        """`series` on a copy-only manifest means the author thinks something will
+        compute, and nothing will."""
+        from connect_labs.mcp.tool_registry import MCPToolError
+
+        with pytest.raises(MCPToolError) as exc:
+            self._validate({"series": "C", "scopes": ["programme"]})
+        assert "series" in str(exc.value)
+
+    def test_every_allowed_spec_key_is_actually_consumed(self):
+        """The allow-list must not promise a key nothing reads.
+
+        A key accepted here and read nowhere is worse than a rejected one: the write
+        succeeds, the author believes the setting took effect, and the snapshot is
+        built as if they had never set it. The builder hands the whole spec down to
+        `semantic.snapshot`, so both are scanned.
+        """
+        from pathlib import Path
+
+        from connect_labs.semantic import snapshot as snap
+        from connect_labs.workflow import snapshot_builders
+        from connect_labs.workflow.snapshot_builders import BUILDER_SPEC_KEYS
+
+        src = Path(snapshot_builders.__file__).read_text() + Path(snap.__file__).read_text()
+        for key in BUILDER_SPEC_KEYS["semantic_snapshot"]:
+            assert f'spec.get("{key}")' in src, f"{key} is allowed on the spec but nothing reads spec[{key!r}]"
