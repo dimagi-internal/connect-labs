@@ -94,15 +94,16 @@ def _dq_given_count(wa: dict, indicator_key: str) -> int:
     }[indicator_key]
 
 
-def wa_rate(wa: dict, indicator_key: str, global_config: dict) -> float | None:
-    """This WA's own rate for `indicator_key`, or `None` if the indicator
-    doesn't apply / isn't trustworthy for this WA (gated out — never a guess,
-    matching `ward_children_per_building`'s "0.0 is a real answer, None is
-    'can't compute'" convention elsewhere in this app)."""
+def wa_numerator_denominator(wa: dict, indicator_key: str, global_config: dict) -> tuple[float, float] | None:
+    """This WA's own (numerator, denominator) for `indicator_key`, or `None`
+    if the indicator doesn't apply / isn't trustworthy for this WA (gated
+    out). `wa_rate` derives its ratio from this so the gating logic lives in
+    exactly one place; the raw pair is also what the candidate table shows
+    next to each triggered indicator (e.g. "deworming (0.2; 2/10)")."""
     if indicator_key == EVC_SHORTFALL:
         if wa.get("status") not in _CONCLUDED_STATUSES and not global_config.get("include_not_yet_visited", False):
             return None
-        return _safe_div(wa.get("approved_hsd_count", 0), wa.get("expected_visit_count", 0))
+        return wa.get("approved_hsd_count", 0), wa.get("expected_visit_count", 0)
 
     if indicator_key == NCF_INACCESSIBLE:
         min_buildings = global_config.get("min_building_count", 1)
@@ -113,16 +114,27 @@ def wa_rate(wa: dict, indicator_key: str, global_config: dict) -> float | None:
             + wa.get("approved_ncf_count", 0)
             + wa.get("approved_inaccessible_count", 0)
         )
-        return _safe_div(wa.get("approved_ncf_count", 0) + wa.get("approved_inaccessible_count", 0), total_visits)
+        return wa.get("approved_ncf_count", 0) + wa.get("approved_inaccessible_count", 0), total_visits
 
     if indicator_key in _DQ_INDICATORS:
         min_hsd = global_config.get("min_hsd_visits_floor", 1)
         hsd_count = wa.get("approved_hsd_count", 0)
         if hsd_count < min_hsd:
             return None
-        return _safe_div(_dq_given_count(wa, indicator_key), hsd_count)
+        return _dq_given_count(wa, indicator_key), hsd_count
 
     raise ValueError(f"unknown indicator: {indicator_key!r}")
+
+
+def wa_rate(wa: dict, indicator_key: str, global_config: dict) -> float | None:
+    """This WA's own rate for `indicator_key`, or `None` if the indicator
+    doesn't apply / isn't trustworthy for this WA (gated out — never a guess,
+    matching `ward_children_per_building`'s "0.0 is a real answer, None is
+    'can't compute'" convention elsewhere in this app)."""
+    pair = wa_numerator_denominator(wa, indicator_key, global_config)
+    if pair is None:
+        return None
+    return _safe_div(*pair)
 
 
 def is_flagged(rate: float | None, threshold: float, indicator_key: str) -> bool:
@@ -318,15 +330,33 @@ def evaluate_run(
             threshold = ind_cfg["threshold"]
             granularity = ind_cfg.get("granularity", GRANULARITY_CLUSTER_AWARE)
             own_rate = wa_rate(wa, indicator_key, config)
+            # Always this WA's OWN numerator/denominator, regardless of
+            # granularity — cluster-aware/flw-average change what the rate is
+            # COMPARED against, not what this specific work area's own visit
+            # counts are. Shown next to the indicator name in the candidate
+            # table (e.g. "deworming (0.20; 2/10)").
+            own_pair = wa_numerator_denominator(wa, indicator_key, config)
+            own_numerator, own_denominator = own_pair if own_pair is not None else (None, None)
 
             if granularity == GRANULARITY_WA_ONLY:
                 flagged = is_flagged(own_rate, threshold, indicator_key)
-                detail[indicator_key] = {"granularity": granularity, "rate": own_rate}
+                detail[indicator_key] = {
+                    "granularity": granularity,
+                    "rate": own_rate,
+                    "own_numerator": own_numerator,
+                    "own_denominator": own_denominator,
+                }
 
             elif granularity == GRANULARITY_FLW_AVERAGE:
                 blended = flw_average_rate(by_flw.get(wa.get("flw_username", ""), [wa]), indicator_key, config)
                 flagged = is_flagged(blended, threshold, indicator_key)
-                detail[indicator_key] = {"granularity": granularity, "rate": blended}
+                detail[indicator_key] = {
+                    "granularity": granularity,
+                    "rate": own_rate,
+                    "own_numerator": own_numerator,
+                    "own_denominator": own_denominator,
+                    "blended_rate": blended,
+                }
 
             elif granularity == GRANULARITY_CLUSTER_AWARE:
                 own_flagged = is_flagged(own_rate, threshold, indicator_key)
@@ -352,6 +382,8 @@ def evaluate_run(
                 detail[indicator_key] = {
                     "granularity": granularity,
                     "rate": own_rate,
+                    "own_numerator": own_numerator,
+                    "own_denominator": own_denominator,
                     "neighborhood_rate": neighborhood,
                     "is_isolated_outlier": own_flagged and not neighborhood_flagged,
                 }

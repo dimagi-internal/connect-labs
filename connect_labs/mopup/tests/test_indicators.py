@@ -63,6 +63,27 @@ class TestWaRateEvcShortfall:
         assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {}) == pytest.approx(0.5)
 
 
+class TestWaNumeratorDenominator:
+    """`wa_rate` is now derived from this — same gating, but the raw pair is
+    what the candidate table shows next to each triggered indicator."""
+
+    def test_matches_wa_rate_for_evc_shortfall(self):
+        wa = _wa("wa-1", approved_hsd_count=5, expected_visit_count=10)
+        assert ind.wa_numerator_denominator(wa, ind.EVC_SHORTFALL, {}) == (5, 10)
+
+    def test_gated_out_returns_none_same_as_wa_rate(self):
+        wa = _wa("wa-1", status="NOT_VISITED")
+        assert ind.wa_numerator_denominator(wa, ind.EVC_SHORTFALL, {}) is None
+
+    def test_ncf_pair_is_ncf_plus_inaccessible_over_total_visits(self):
+        wa = _wa("wa-1", approved_hsd_count=8, approved_ncf_count=1, approved_inaccessible_count=1)
+        assert ind.wa_numerator_denominator(wa, ind.NCF_INACCESSIBLE, {}) == (2, 10)
+
+    def test_dq_pair_is_given_over_hsd_count(self):
+        wa = _wa("wa-1", approved_hsd_count=8, deworming_given=3)
+        assert ind.wa_numerator_denominator(wa, ind.DEWORMING, {}) == (3, 8)
+
+
 class TestWaRateNcfInaccessible:
     def test_basic_rate(self):
         wa = _wa("wa-1", approved_hsd_count=7, approved_ncf_count=2, approved_inaccessible_count=1)
@@ -266,6 +287,25 @@ class TestEvaluateRun:
         assert len(candidates) == 1
         assert candidates[0]["triggered_indicators"] == [ind.EVC_SHORTFALL]
         assert candidates[0]["severity_count"] == 1
+
+    def test_detail_carries_own_numerator_denominator_regardless_of_granularity(self):
+        # The candidate table's bracketed "(rate; num/denom)" display needs
+        # this WA's own raw pair even under cluster-aware/flw-average, where
+        # what gets COMPARED against differs but the WA's own counts don't.
+        was = [
+            _wa("a", approved_hsd_count=1, expected_visit_count=10),
+            _wa("b", approved_hsd_count=1, expected_visit_count=10, lat=12.001, lon=8.001),
+        ]
+        for granularity in (ind.GRANULARITY_WA_ONLY, ind.GRANULARITY_CLUSTER_AWARE, ind.GRANULARITY_FLW_AVERAGE):
+            candidates = ind.evaluate_run(
+                was,
+                {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": granularity}},
+                {"min_neighbor_count": 1},
+            )
+            assert candidates, granularity
+            detail = candidates[0]["detail"][ind.EVC_SHORTFALL]
+            assert detail["own_numerator"] == 1, granularity
+            assert detail["own_denominator"] == 10, granularity
 
     def test_candidate_carries_building_count_and_source_for_phase_3(self):
         # Phase 3's carry_forward_features needs building_count/
