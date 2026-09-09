@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Tenant alarms for the two application tiers that share the labs ALB and the
+# labs RDS instance: canopy-web (/canopy/*) and ace-web (/ace/*).
+#
+# Why this exists. Until 2026-09-08 the only application-5xx alarm carried the
+# bare LoadBalancer dimension, so it paged for any tenant and named none. #1631
+# scoped it to the labs web target group — right for Umami, and it silently
+# dropped the other two tenants from coverage entirely. Measured on the
+# 2026-09-08 storage-full outage (labs-jj-postgres hit 0 bytes free; #1634): of
+# ~1,250 target 5xx across the ALB in 45 minutes, canopy-web returned ~1,200
+# (109, 373, 83, 217, 103, 25, 298 per 5-minute bucket), the labs web tier
+# 1–17, Umami 2. canopy-web's database is on the same RDS instance, so every
+# labs storage or connection failure is also a canopy-web outage — and
+# canopy-web is the control plane that dispatches the agents who respond.
+# After #1631, a repeat pages nobody. One alarm per tenant so the page names
+# the service (the whole point of #1628).
+#
+# Why a separate stack, twice over. (1) The tenants' own templates deploy
+# through github-actions-labs-deploy, which has no cloudwatch:* grant; an
+# alarm resource there 403s the next deploy and rolls it back (recorded in
+# canopy-web.cfn.yaml's target-group comment). This stack deploys by hand with
+# an operator profile, like labs-monitoring.yml. (2) labs-monitoring.yml sits
+# at CloudFormation's 51,200-byte inline-template limit, so these could not be
+# added there without moving every deploy onto an S3 upload. Both reasons
+# expire when the labs IaC split lands (canopy-web #729): move these into the
+# app stacks once the deploy role carries cloudwatch:PutMetricAlarm.
+#
+# References, does not own: the ALB, both target groups, and the alert topic
+# (imported from labs-monitoring.yml's labs-jj-alert-topic-arn export — so that
+# stack must exist first, and cannot be deleted while this one stands).
+Description: >-
+  Labs tenant alarms: per-target-group application 5xx for canopy-web and
+  ace-web, publishing to the labs alert topic exported by labs-jj-monitoring.
+  Companion to labs-monitoring.yml; see infra/README.md.
+
+Parameters:
+  LoadBalancerDimension:
+    Type: String
+    Default: app/labs-jj-alb/ffecbe258260c7ee
+    Description: >-
+      CloudWatch LoadBalancer dimension value for the labs ALB (the
+      "app/<name>/<id>" suffix of the ALB ARN). Same value as
+      labs-monitoring.yml's parameter of the same name.
+
+  CanopyWebTargetGroupDimension:
+    Type: String
+    Default: targetgroup/labs-jj-canopy-web-tg/baefe18d4fed35b4
+    Description: >-
+      CloudWatch TargetGroup dimension value for canopy-web, the fleet control
+      plane served at /canopy/*. Owned by the canopy-web CloudFormation stack
+      (deploy/aws/canopy-web.cfn.yaml in that repo); referenced here.
+
+  AceWebTargetGroupDimension:
+    Type: String
+    Default: targetgroup/labs-jj-ace-web-tg/02032962660ab09f
+    Description: >-
+      CloudWatch TargetGroup dimension value for ace-web, served at /ace/*.
+      Owned by the ace-web CloudFormation stack; referenced here.
+
+  TenantTarget5xxThreshold:
+    Type: Number
+    Default: 10
+    Description: >-
+      Alarm when a tenant target group returns this many 5xx in 5 minutes.
+      Matches labs-monitoring.yml's Target5xxThreshold (re-derived 2026-09-09).
+      Measured baselines: canopy-web had ONE non-zero 5-minute bucket (3) in
+      the 14 days to 09-09 outside the 09-08 outage, during which it ran 83–373
+      per bucket; ace-web's 14-day hourly maximum was 4. Both sit far below 10
+      on a normal day, so 10 pages within five minutes of a real burst and on
+      nothing else in the measured window.
+
+Resources:
+  # OKActions on purpose (unlike labs-jj-alb-target-5xx-high): a recovery on a
+  # service nobody is watching in a browser should announce itself, matching
+  # labs-jj-web-no-healthy-targets and labs-jj-rds-free-storage-low. The runner
+  # suppresses the creation-time OK (canopy-web #713), so deploying does not
+  # page.
+  CanopyWebTarget5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-canopy-web-target-5xx-high
+      AlarmDescription: >-
+        canopy-web (the fleet control plane at /canopy/*) is answering with 5xx
+        — the application itself returned an error. Its database is on
+        labs-jj-postgres, so check the RDS alarms first: on 2026-09-08 a full
+        disk showed up here as ~1,200 5xx in 45 minutes while labs' own web
+        tier stayed under 20 per bucket. If RDS is healthy, read
+        /ecs/labs-jj-canopy-web.
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref LoadBalancerDimension
+        - Name: TargetGroup
+          Value: !Ref CanopyWebTargetGroupDimension
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref TenantTarget5xxThreshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue labs-jj-alert-topic-arn]
+      OKActions: [!ImportValue labs-jj-alert-topic-arn]
+
+  AceWebTarget5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-ace-web-target-5xx-high
+      AlarmDescription: >-
+        ace-web (served at /ace/*) is answering with 5xx — the application
+        itself returned an error, as opposed to the ALB failing to reach it.
+        It shares this ALB and the labs RDS instance with labs and canopy-web,
+        so if the RDS or canopy-web alarms fired at the same time, the cause is
+        the shared tier, not ace-web. Otherwise read ace-web's ECS log group.
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref LoadBalancerDimension
+        - Name: TargetGroup
+          Value: !Ref AceWebTargetGroupDimension
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref TenantTarget5xxThreshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue labs-jj-alert-topic-arn]
+      OKActions: [!ImportValue labs-jj-alert-topic-arn]
+
+Outputs:
+  CanopyWebTarget5xxAlarmName:
+    Value: !Ref CanopyWebTarget5xxAlarm
+  AceWebTarget5xxAlarmName:
+    Value: !Ref AceWebTarget5xxAlarm
