@@ -1,5 +1,7 @@
 # Study groups: plan groups as first-class plan management
 
+> **Status (2026-09-08 doc-regen):** shipped — historical design record for microplans study groups. Current state: `connect_labs/microplans/` + the `microplans_study_*` MCP tools.
+
 Status: in build (2026-06). Owner: Maya-flow rooftop study.
 
 ## Why

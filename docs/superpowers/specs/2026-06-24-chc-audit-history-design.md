@@ -1,5 +1,7 @@
 # CHC Audit History — Program 176 Workflow Template
 
+> **Status (2026-09-08 doc-regen):** shipped — historical design record. Live as the `chc_audit_history` multi-opp workflow template.
+
 **Date:** 2026-06-24  
 **Program:** 176 (DIMAGI-CHC-RCT, Nigeria)  
 **Opps:** EHA #1973, JHF #1976, SOLINA #1978, ISODAF #1982

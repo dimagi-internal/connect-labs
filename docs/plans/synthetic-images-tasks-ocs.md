@@ -1,5 +1,7 @@
 # Plan: Synthetic Images, Tasks, and OCS Transcripts
 
+> **Status (2026-09-08 doc-regen):** historical planning note — point-in-time. Verify against `connect_labs/labs/synthetic/` and the `synthetic_*` MCP tools before trusting any detail.
+
 **Goal:** Extend the synthetic data system so that a fully synthetic opp can demonstrate the complete program management loop — not just the dashboard, but the audit drill-down (with MUAC photos), task follow-ups, and OCS coaching transcripts.
 
 **Context:** We built `synthetic_profile_from_prod` and `synthetic_generate_from_manifest` in the prior session. The generator produces visits with MUAC values, gender, and health status fields. But audits show broken images (the image endpoint hits prod, where synthetic blob_ids don't exist), tasks don't exist, and OCS transcripts are empty.

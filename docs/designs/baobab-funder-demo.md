@@ -139,7 +139,7 @@ Estimated total CC time: ~8-10 CC-assisted hours (Claude Code doing implementati
 - Grantee Scorecard / Performance Ranking — good concept but scoring thresholds are program-specific. Needs configurable metrics per program.
 
 ## Terminology Updates Required
-- Update `funder_feature_ideas.md` line 37: change "burn rate" to "delivery pace"
+- Update the funder-dashboard feature backlog: change "burn rate" to "delivery pace" (done; that backlog file was retired in the 2026-09-08 doc-regen)
 - Review all JS rendering code for "burn" language → "delivery pace"
 
 ## Eng Review Decisions (2026-03-22)

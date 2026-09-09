@@ -1,5 +1,7 @@
 # Dual-Track Image Audit: per-path AI classifiers + Duplicate Detection
 
+> **Status (2026-09-08 doc-regen):** shipped — historical design record. Note the in-doc 2026-08-03 update on renamed modules, and that resume/checkpoint landed later (2026-08-14 design).
+
 Status: approved, implementation in progress (2026-07-30). Ships to `main` for a
 Monday 2026-08-03 PR — see "External dependency timing" below.
 

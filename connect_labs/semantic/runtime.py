@@ -18,12 +18,16 @@ its first line that it "uses PostgreSQL tables for caching AND computation", and
 cache is already in this database. All that was missing was something to hand one
 to the other.
 
-WHAT THIS DELIBERATELY DOES NOT DO
+WHAT THIS NOW OWNS
 
-It does not replace the browser's Layer 2/3. The existing dashboard computes the
-C-series in JavaScript and its parity guarantee is stated against that; swapping
-the engine underneath a working dashboard is a separate decision with its own
-risk. This is additive: callers ask for the indicators they want, and get rows.
+This module was originally additive — callers asked for indicators and got rows,
+while the dashboard kept computing the C-series in JavaScript. That is no longer
+true. The browser's indicator engine was DELETED (#1566): the C-series comes from
+here, and the saved-run path grades the same registry through the
+`semantic_snapshot` builder (`workflow/snapshot_builders.py`) rather than a
+hand-ported copy. So this is the single engine, and the parity guarantee in
+PARITY.md is what stands in for the JavaScript it replaced — a change here moves
+the live dashboard and every future snapshot together.
 """
 
 from __future__ import annotations

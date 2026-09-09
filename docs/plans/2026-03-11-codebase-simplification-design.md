@@ -1,5 +1,7 @@
 # Codebase Simplification Design
 
+> **Status (2026-09-08 doc-regen):** shipped 2026-03 — historical record, and the reason this repo looks the way it does (~36K LOC of inherited production Connect code removed). The task-by-task plan that executed it has been deleted; this is the rationale.
+
 **Date:** 2026-03-11
 **Branch:** jj/refactor
 **Goal:** Remove all production Connect code not used by labs to simplify the codebase for labs-only development.
