@@ -85,6 +85,27 @@ window.MopupAnalysis = (function () {
         </tr>`;
       })
       .join('');
+    updateNcfThresholdState();
+  }
+
+  // Cluster-aware NCF/inaccessible compares a raw affected-neighbor COUNT
+  // (against "Min affected neighbors (NCF)") rather than this indicator's own
+  // Threshold value, which has no effect in that mode — grey the Threshold
+  // input out with an explanatory tooltip so it doesn't look like a live
+  // control that's silently ignored.
+  function updateNcfThresholdState() {
+    const row = document.querySelector(
+      '#indicator-rows tr[data-key="ncf_inaccessible_rate"]',
+    );
+    if (!row) return;
+    const thresholdInput = row.querySelector('.ind-threshold');
+    const granularitySelect = row.querySelector('.ind-granularity');
+    const isClusterAware = granularitySelect.value === 'cluster_aware';
+    thresholdInput.disabled = isClusterAware;
+    thresholdInput.title = isClusterAware
+      ? 'Not used under Cluster-aware — see "Min affected neighbors (NCF)" below instead.'
+      : '';
+    thresholdInput.classList.toggle('opacity-40', isClusterAware);
   }
 
   function renderIndicatorCounts(counts) {
@@ -101,6 +122,8 @@ window.MopupAnalysis = (function () {
     $('cfg-min-portfolio').value = globalConfig.min_neighborhood_size;
     $('cfg-min-hsd').value = globalConfig.min_hsd_visits_floor;
     $('cfg-min-buildings').value = globalConfig.min_building_count;
+    $('cfg-min-affected-neighbors-ncf').value =
+      globalConfig.min_affected_neighbors_ncf;
     $('cfg-include-not-visited').checked =
       !!globalConfig.include_not_yet_visited;
   }
@@ -125,6 +148,8 @@ window.MopupAnalysis = (function () {
       min_neighborhood_size: parseInt($('cfg-min-portfolio').value, 10) || 0,
       min_hsd_visits_floor: parseInt($('cfg-min-hsd').value, 10) || 0,
       min_building_count: parseInt($('cfg-min-buildings').value, 10) || 0,
+      min_affected_neighbors_ncf:
+        parseInt($('cfg-min-affected-neighbors-ncf').value, 10) || 0,
       include_not_yet_visited: $('cfg-include-not-visited').checked,
     };
   }
@@ -366,6 +391,10 @@ window.MopupAnalysis = (function () {
     globalConfig = JSON.parse($('global-config-data').textContent);
     renderIndicatorRows();
     renderGlobalConfig();
+    $('indicator-rows').addEventListener('change', (e) => {
+      if (e.target.classList.contains('ind-granularity'))
+        updateNcfThresholdState();
+    });
     $('recompute').addEventListener('click', pollOrEvaluate);
     $('loading-retry').addEventListener('click', retryLoad);
     $('sort-severity').addEventListener('click', () => {
