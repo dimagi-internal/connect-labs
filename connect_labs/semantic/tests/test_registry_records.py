@@ -189,3 +189,63 @@ def test_validation_reports_every_problem_not_only_the_first():
     inds["measures"].insert(1, {"name": "z2", "type": "count", "filters": [{"sql": "{CUBE}.nope_two"}]})
     errors = validate_registry(payload["properties"], inds, payload["deployment"])
     assert any("nope_one" in e for e in errors) and any("nope_two" in e for e in errors)
+
+
+class TestReseedFromDisk:
+    """A record seeded from disk must be able to come FORWARD when the seed grows.
+
+    Its absence was a one-way door, and it bit: `app_asks`, `asks_as` and each
+    measure's `inputs` / `min_input_coverage` moved out of Python into the registry,
+    and workflow 5456 was bound to a record seeded before they existed. The record
+    had none of them, so the availability gate failed open and the thin-coverage
+    footnote could never fire — on a dashboard whose on-disk registry carried every
+    field. Green in the repo, different in production.
+    """
+
+    def test_the_seed_payload_carries_the_fields_the_gates_need(self):
+        """Whatever the on-disk registry declares must survive into the payload the
+        seeder writes — that payload is the only thing a record ever sees."""
+        from connect_labs.semantic.seed import registry_payload
+
+        payload = registry_payload("kmc")
+        dep = payload["deployment"]
+        assert dep.get("app_asks"), "the seed payload carries no app_asks, so a gate cannot fire"
+        assert dep.get("asks_as"), "the seed payload carries no asks_as, so an aliased field fails open"
+        assert dep.get("llo_map"), "the seed payload carries no llo_map"
+        gated = [m for m in payload["indicators"].get("measures", []) if (m.get("meta") or {}).get("inputs")]
+        assert gated, "no measure declares gate inputs, so input_state can never withhold a number"
+
+    def test_refresh_updates_in_place_rather_than_creating_a_second_record(self):
+        from connect_labs.semantic.seed import registry_payload
+
+        access = _store()
+        payload = registry_payload("kmc")
+        # Seed a record deliberately MISSING the newer fields, the way 5500 was.
+        stale_dep = {k: v for k, v in payload["deployment"].items() if k not in ("app_asks", "asks_as")}
+        stale_inds = {
+            **payload["indicators"],
+            "measures": [
+                {**m, "meta": {k: v for k, v in (m.get("meta") or {}).items() if k != "inputs"}}
+                if m.get("meta")
+                else m
+                for m in payload["indicators"]["measures"]
+            ],
+        }
+        record = access.create_registry(
+            name="stale",
+            description="seeded before the gate facts existed",
+            properties=payload["properties"],
+            indicators=stale_inds,
+            deployment=stale_dep,
+        )
+        assert not (record.deployment or {}).get("app_asks")
+
+        refreshed = access.update_registry(
+            record.id,
+            properties=payload["properties"],
+            indicators=payload["indicators"],
+            deployment=payload["deployment"],
+        )
+        assert refreshed.id == record.id, "a refresh must not create a second record"
+        assert (refreshed.deployment or {}).get("app_asks"), "the refresh did not carry app_asks forward"
+        assert any((m.get("meta") or {}).get("inputs") for m in refreshed.indicators_doc["measures"])
