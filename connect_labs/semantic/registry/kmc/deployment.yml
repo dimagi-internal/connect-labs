@@ -78,3 +78,264 @@ settings:
     Kikapu: true
     BERI: true
     GHI: false
+
+# Which opportunities' apps ASK for each field, and the pipeline column each
+# derived property is keyed on. These were static dicts in semantic/gates.py, so a
+# workflow bound to a registry RECORD still read them from the repo -- the same
+# split-brain that `settings` above was unified to end. They live here because they
+# are deployment facts about a cohort of apps, not indicator definitions, and here
+# they travel with the record and are editable without a deploy.
+#
+# Values are measured, not inferred -- see the provenance note that accompanied
+# APP_ASKS in gates.py: per-opportunity C16 denominators read live on 2026-09-08
+# against a warm cache, agreeing across workflows 5476 and 5456, with
+# 10020/10021/10022 corroborated from their source bundles' app_structure.json.
+# 14 of the 22 opportunities have at least one field their app does not ask, so a
+# flattening of this map to all-true is a real regression, not a simplification.
+asks_as:
+  ever_danger_sign: danger_visits
+  referred: referral_visits
+  self_referral_count: self_referral_visits
+app_asks:
+  523:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: false
+    weights: true
+  524:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: false
+    weights: true
+  675:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: false
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: false
+    weights: true
+  874:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  938:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  1234:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  1236:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  1487:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  1488:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  1739:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  1790:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10013:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10014:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10015:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10016:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10017:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10018:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10019:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  10020:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: false
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: false
+    weights: true
+  10021:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: false
+    weights: true
+  10022:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: false
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: false
+    weights: true
+  10042:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true

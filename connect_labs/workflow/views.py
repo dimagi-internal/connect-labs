@@ -2914,6 +2914,23 @@ def get_pipeline_data_api(request, definition_id):
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
+def _deployment_facts_for_render(deployment: dict | None) -> dict:
+    """The subset of the registry's deployment facts a browser needs, JSON-safe.
+
+    `llo_map` is keyed by int for the compiler; JSON object keys are always strings,
+    so it is stringified here rather than leaving the render to discover that its
+    lookups silently miss. `settings` is deliberately NOT included -- credibility
+    reaches the render through the graded cells, and shipping the raw tables would
+    re-create the third copy that `_credibility` was written to eliminate.
+    """
+    deployment = deployment or {}
+    return {
+        "llo_map": {str(k): v for k, v in (deployment.get("llo_map") or {}).items()},
+        "app_asks": deployment.get("app_asks") or {},
+        "asks_as": deployment.get("asks_as") or {},
+    }
+
+
 @login_required
 @require_GET
 def semantic_indicators_api(request, definition_id):
@@ -3003,7 +3020,7 @@ def semantic_indicators_api(request, definition_id):
             except ValueError:
                 return JsonResponse({"error": "registry_id must be an integer"}, status=400)
         try:
-            props_doc, full_registry, llo_map, reg_settings, registry_source = resolve_registry_for(
+            props_doc, full_registry, llo_map, reg_settings, deployment, registry_source = resolve_registry_for(
                 definition,
                 registry_access_factory=lambda: SemanticRegistryDataAccess(request=request),
                 registry_id_override=override,
@@ -3028,6 +3045,7 @@ def semantic_indicators_api(request, definition_id):
                 {
                     "rows": [],
                     "measures": measure_catalog(catalog_registry),
+                    "deployment": _deployment_facts_for_render(deployment),
                     "catalog_only": True,
                     "series": series or "all",
                     "registry": registry_source or {"name": "kmc"},
@@ -3112,6 +3130,13 @@ def semantic_indicators_api(request, definition_id):
             {
                 "rows": rows,
                 "measures": measure_catalog(reg),
+                # The availability facts the render needs to say "not in this app"
+                # rather than "recorded nothing". It used to carry its own hand-kept
+                # `APP_ASKS` literal, which drifted from the server's copy and
+                # decided what a user actually saw -- the render's copy won, so EHA
+                # and GHI read "not in this app" over a real 72.40% and 94.50%.
+                # Served from the bound registry, so there is one copy.
+                "deployment": _deployment_facts_for_render(deployment),
                 "cold_cache": cold,
                 "partial_cache": partial,
                 "opportunities_with_data": with_data,

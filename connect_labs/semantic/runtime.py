@@ -83,46 +83,74 @@ def load_deployment(name: str = "kmc") -> tuple[dict[Any, str], dict[str, dict[A
     which is why `semantic_indicators_api` could not serve the `llo` scope at all and
     -- silently -- emitted no suppression columns for any scope.
     """
+    facts = load_deployment_facts(name)
+    return facts["llo_map"], facts["settings"]
+
+
+def load_deployment_facts(name: str = "kmc") -> dict[str, Any]:
+    """Every deployment fact for an on-disk registry: llo_map, settings, app_asks, asks_as."""
     root = REGISTRY_ROOT / name / "deployment.yml"
     if not root.is_file():
-        return {}, {}
+        return normalise_deployment_facts(None)
     try:
         doc = yaml.safe_load(root.read_text()) or {}
     except (OSError, yaml.YAMLError) as exc:
         raise SemanticRuntimeError(f"deployment facts for {name!r} did not load: {exc}") from exc
-    # Opportunity ids arrive from the query as ints; YAML keys are already ints here,
-    # but a quoted key would read as a str and silently match nothing.
-    llo_map = {int(k): str(v) for k, v in (doc.get("llo_map") or {}).items()}
-    settings = {
-        str(setting): {str(llo): bool(v) for llo, v in (table or {}).items()}
-        for setting, table in (doc.get("settings") or {}).items()
-    }
-    return llo_map, settings
+    return normalise_deployment_facts(doc)
 
 
-def _normalise_deployment(doc: dict[str, Any] | None) -> tuple[dict[Any, str], dict[str, dict[Any, bool]]]:
-    """Coerce deployment facts to the types the compiler compares against.
+def normalise_deployment_facts(doc: dict[str, Any] | None) -> dict[str, Any]:
+    """Coerce deployment facts to the types their consumers compare against.
 
     Opportunity ids arrive from a query as ints. From YAML they are usually ints
     already; from a JSON record they are ALWAYS strings, because JSON object keys
     can only be strings. An llo_map keyed by "10021" silently matches no row and
     every LLO comes back NULL, so this is not defensive tidying -- it is the
     difference between the llo scope working and returning nothing.
+
+    The two directions differ on purpose. `llo_map` is compared against a row's
+    `opportunity_id`, so its keys are INTS. `app_asks` is looked up by an
+    availability gate that has always keyed on `str(opportunity_id)`, so its keys
+    are STRS -- and YAML reads `10021:` as an int, so without this a map moved out
+    of Python would match nothing and every gate would fail open to "asks".
+
+    Returns the whole fact set rather than a pair, because `app_asks` and `asks_as`
+    used to be static dicts in `semantic/gates.py`: a workflow bound to a registry
+    RECORD read its bands from the record and its availability gates from the repo.
+    That is the same split-brain `settings` was unified here to end.
     """
     doc = doc or {}
-    llo_map = {int(k): str(v) for k, v in (doc.get("llo_map") or {}).items()}
-    settings = {
-        str(setting): {str(llo): bool(v) for llo, v in (table or {}).items()}
-        for setting, table in (doc.get("settings") or {}).items()
+    return {
+        "llo_map": {int(k): str(v) for k, v in (doc.get("llo_map") or {}).items()},
+        "settings": {
+            str(setting): {str(llo): bool(v) for llo, v in (table or {}).items()}
+            for setting, table in (doc.get("settings") or {}).items()
+        },
+        "app_asks": {
+            str(opp): {str(field): bool(v) for field, v in (fields or {}).items()}
+            for opp, fields in (doc.get("app_asks") or {}).items()
+        },
+        "asks_as": {str(k): str(v) for k, v in (doc.get("asks_as") or {}).items()},
     }
-    return llo_map, settings
+
+
+def _normalise_deployment(doc: dict[str, Any] | None) -> tuple[dict[Any, str], dict[str, dict[Any, bool]]]:
+    """Back-compat pair for callers that only want the compiler's two inputs."""
+    facts = normalise_deployment_facts(doc)
+    return facts["llo_map"], facts["settings"]
 
 
 def resolve_registry(
     source: dict[str, Any] | None = None,
     registry_access=None,
-) -> tuple[dict[str, Any], dict[str, Any], dict[Any, str], dict[str, dict[Any, bool]]]:
-    """Return (properties, indicators, llo_map, settings) for a registry source.
+) -> tuple[dict[str, Any], dict[str, Any], dict[Any, str], dict[str, dict[Any, bool]], dict[str, Any]]:
+    """Return (properties, indicators, llo_map, settings, deployment) for a source.
+
+    `deployment` is the whole fact set (llo_map, settings, app_asks, asks_as). It is
+    returned alongside the two the compiler needs because the availability gates read
+    `app_asks`, and those used to be static dicts in `semantic/gates.py` -- so a
+    workflow bound to a RECORD took its bands from the record and its gates from the
+    repo, and the two could disagree with nothing to notice.
 
     One resolver for both worlds, because a caller should not have to care which
     one it got:
@@ -142,8 +170,8 @@ def resolve_registry(
     if registry_id is None:
         name = source.get("name") or "kmc"
         props, inds = load_registry(name)
-        llo_map, settings = load_deployment(name)
-        return props, inds, llo_map, settings
+        facts = load_deployment_facts(name)
+        return props, inds, facts["llo_map"], facts["settings"], facts
 
     if registry_access is None:
         raise SemanticRuntimeError(
@@ -163,8 +191,8 @@ def resolve_registry(
         raise SemanticRuntimeError(
             f"registry {registry_id} is missing its " f"{'properties' if not props else 'indicators'} document"
         )
-    llo_map, settings = _normalise_deployment(record.deployment)
-    return props, inds, llo_map, settings
+    facts = normalise_deployment_facts(record.deployment)
+    return props, inds, facts["llo_map"], facts["settings"], facts
 
 
 def filter_to_series(registry: dict[str, Any], series: str) -> dict[str, Any]:
@@ -278,6 +306,15 @@ def measure_catalog(registry: dict[str, Any]) -> list[dict[str, Any]]:
                 "bands": meta.get("bands"),
                 "bands_source": meta.get("bands_source"),
                 "min_denominator": meta.get("min_denominator"),
+                # The derived inputs this indicator needs present in scope, and the
+                # optional thin-coverage rule. Both were hardcoded Python -- a dict
+                # in `gates.IND_INPUTS` and `if ind_id == "C16"` with a 0.45 literal
+                # in the snapshot builder. Serving them here is what lets ONE generic
+                # builder grade any registry, and what lets the render stop keeping
+                # its own copy (see this function's docstring).
+                "inputs": meta.get("inputs") or [],
+                "min_input_coverage": meta.get("min_input_coverage"),
+                "coverage_denominator": meta.get("coverage_denominator"),
                 # Why a value is unbanded even though it computes. The render shows
                 # it as a warning next to the name; dropping it would quietly turn
                 # "we have no threshold for this yet" into "this looks fine".

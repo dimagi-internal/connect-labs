@@ -230,10 +230,24 @@ def workflow_get(
         # Whether the snapshot shape is computed (Python hook) vs verbatim
         # capture of the declared inputs.
         saved_runs_meta["has_build_snapshot_hook"] = contract["source"] == "template_hook"
-        # The operational consequence of that flag, spelled out — it is the single
-        # fact that decides whether workflow_save_snapshot works unattended, and
-        # a caller had no way to infer it from the boolean alone.
-        if saved_runs_meta["has_build_snapshot_hook"]:
+        # A DECLARED BUILDER is also computed server-side, and is the preferred shape:
+        # the spec rides on the definition, so the snapshot can be changed through
+        # workflow_update_definition with no deploy, where a hook cannot.
+        declared_builder = (contract.get("snapshot_inputs") or {}).get("builder")
+        if declared_builder:
+            saved_runs_meta["snapshot_builder"] = declared_builder
+        # The operational consequence, spelled out — it is the single fact that
+        # decides whether workflow_save_snapshot works unattended, and a caller had
+        # no way to infer it from the boolean alone.
+        if declared_builder:
+            saved_runs_meta["snapshot_via_api"] = "server_side"
+            saved_runs_meta["snapshot_note"] = (
+                f"workflow_save_snapshot builds this snapshot server-side via the "
+                f"{declared_builder!r} builder: create a run and complete it, no page visit "
+                "needed. The builder's spec is this workflow's own snapshot_inputs, so it is "
+                "patchable with workflow_update_definition — no deploy."
+            )
+        elif saved_runs_meta["has_build_snapshot_hook"]:
             saved_runs_meta["snapshot_via_api"] = "server_side"
             saved_runs_meta["snapshot_note"] = (
                 "workflow_save_snapshot builds this snapshot server-side: create a run and "

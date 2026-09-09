@@ -51,31 +51,28 @@ function WorkflowUI({
   // -- silently, since that is a perfectly good object key.
   var FLW_SEP = '::';
 
-  var LLO_OF = {
-    524: 'PIPN',
-    874: 'PIPN',
-    1487: 'PIPN',
-    2166: 'PIPN',
-    523: 'NAMA',
-    938: 'NAMA',
-    1488: 'NAMA',
-    675: 'GHI',
-    1234: 'GHI',
-    1236: 'EHA',
-    1739: 'Kikapu',
-    1790: 'BERI',
-    10021: 'PIPN',
-    10019: 'PIPN',
-    10015: 'PIPN',
-    10022: 'NAMA',
-    10018: 'NAMA',
-    10014: 'NAMA',
-    10020: 'GHI',
-    10017: 'GHI',
-    10016: 'EHA',
-    10013: 'Kikapu',
-    10042: 'BERI',
-  };
+  // ══ Deployment facts: SERVED, never declared here ═════════════════════════
+  // `llo_map`, `app_asks` and `asks_as` are registry data. They used to be the
+  // literals `LLO_OF`, `APP_ASKS` and `ASKS_AS` in this file, duplicated against
+  // Python copies -- and THIS copy was the one that decided what a user saw. When
+  // C16's input widened, the server knew EHA and GHI could produce the metric and
+  // this map still said their apps did not ask, so the dashboard printed "not in
+  // this app" over a real 72.40% and 94.50%.
+  //
+  // A saved run carries the facts it was graded with, so an old run keeps
+  // explaining itself after the registry moves on. A live run reads whatever the
+  // bound registry currently says.
+  // ES5 dialect: this file has zero array destructuring on purpose -- no Python
+  // test can execute it, so a modern-syntax slip fails in the browser instead.
+  var _servedFacts = React.useState(null);
+  var servedFacts = _servedFacts[0];
+  var setServedFacts = _servedFacts[1];
+  var DEPLOY_FACTS = (snapshot && snapshot.deployment) ||
+    servedFacts || { llo_map: {}, app_asks: {}, asks_as: {} };
+  var LLO_OF = DEPLOY_FACTS.llo_map || {};
+  var APP_ASKS = DEPLOY_FACTS.app_asks || {};
+  var ASKS_AS = DEPLOY_FACTS.asks_as || {};
+
   var OPP_LABEL = {
     10021: 'PIPN pilot (524)',
     10019: 'PIPN 874',
@@ -117,9 +114,6 @@ function WorkflowUI({
   }
 
   var MIN_DEN = 25;
-  // Neal's spec item 8: below this share of cases carrying a hospital discharge
-  // date, C16's denominator is thin and biased and the figure must be marked.
-  var C16_MIN_COVERAGE = 0.45;
 
   // ── App-structure capability map ──────────────────────────────────────────
   // APP_ASKS is derived from each opportunity's app_structure.json — the app's
@@ -146,272 +140,6 @@ function WorkflowUI({
   // recorded it zero times, and every one of the 11 apps asks for reg_date and
   // kmc discharge and none of them has a single value.
   // Keyed by BOTH real and synthetic-clone opp ids so one map serves both.
-  var APP_ASKS = {
-    10013: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: true,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    10014: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: true,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    10015: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: true,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    10016: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: true,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    10017: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: true,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    10018: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: true,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    10019: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: true,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    10020: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: false,
-      discharge_visits: true,
-      enrollment_weight_g: false,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: false,
-      weights: true,
-    },
-    10021: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: false,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: false,
-      weights: true,
-    },
-    10022: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: false,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: false,
-      weights: true,
-    },
-    10042: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: true,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    1234: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: false,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    1236: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: false,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    1487: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: true,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    1488: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: true,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    1739: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: true,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    1790: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: true,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    523: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: false,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: false,
-      weights: true,
-    },
-    524: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: false,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: false,
-      weights: true,
-    },
-    675: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: false,
-      discharge_visits: true,
-      enrollment_weight_g: false,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: false,
-      weights: true,
-    },
-    874: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: false,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-    938: {
-      birth_weight_g: true,
-      danger_visits: true,
-      days_discharge_to_reg: false,
-      discharge_visits: true,
-      enrollment_weight_g: true,
-      kmc_hours_mean: true,
-      referral_visits: true,
-      reg_date: true,
-      self_referral_visits: true,
-      weights: true,
-    },
-  };
   // Which pipeline field each indicator's numerator/denominator ultimately needs.
   // Which DERIVED case property each indicator ultimately needs. These are the
   // names on the derived row, not the pipeline column — the derivation renames
@@ -419,29 +147,6 @@ function WorkflowUI({
   // self_referral_visits -> self_referral_count). Naming the pipeline column here
   // meant the lookup found nothing and silently blanked C19/C20/C21, which had
   // been reporting 27.1% / 15.5% / 31.3 the day before.
-  var IND_INPUTS = {
-    C07: ['weights'],
-    C08: ['weights'],
-    C09: ['weights'],
-    C10: ['weights'],
-    C11: ['weights'],
-    C12: ['weights'],
-    C13: ['weights'],
-    C31: ['weights'],
-    C16: ['days_discharge_to_reg'],
-    C17: ['days_discharge_to_reg'],
-    C19: ['referred'],
-    C20: ['ever_danger_sign'],
-    C21: ['self_referral_count'],
-    C23: ['kmc_hours_mean'],
-    C28: ['birth_weight_g', 'enrollment_weight_g'],
-  };
-  // derived name -> the pipeline column APP_ASKS is keyed on
-  var ASKS_AS = {
-    referred: 'referral_visits',
-    ever_danger_sign: 'danger_visits',
-    self_referral_count: 'self_referral_visits',
-  };
   // Fields where 0/false means "nothing was recorded" rather than a real zero.
   var ZERO_IS_ABSENT = {
     referred: 1,
@@ -741,6 +446,7 @@ function WorkflowUI({
           });
           return;
         }
+        setServedFacts(data.deployment || null);
         setCSeries({
           status: 'ready',
           rows: data.rows || [],
@@ -798,6 +504,10 @@ function WorkflowUI({
             dir: m.direction,
             bands: m.bands,
             minDen: m.min_denominator,
+            // Gate inputs and the thin-coverage rule, from the registry.
+            inputs: m.inputs,
+            minCoverage: m.min_input_coverage,
+            coverageDen: m.coverage_denominator,
             tbdInput: m.tbd_input,
             scopeNote: m.scope_note,
           };
@@ -888,7 +598,7 @@ function WorkflowUI({
     // for every LLO with a sufficient denominator.
     var notCredible = !cCredible(measure, row);
 
-    var state = cInputState(id, row, cScopeOpps(row));
+    var state = cInputState(measure, row, cScopeOpps(row));
     if (state !== 'ok') {
       out.band = state;
       return out;
@@ -912,12 +622,15 @@ function WorkflowUI({
     // computed over a self-selected minority and reads far too well -- measured on
     // this cohort, PIPN scores 96.5% off 20% coverage where the full-coverage figure
     // is 66%.
-    // `id` is the workbook id (C16); `measure` is the registry measure name (c16).
-    if (measure.id === 'C16') {
-      var started = row.c02;
-      if (started) {
-        var coverage = Number(out.n) / Number(started);
-        if (coverage < C16_MIN_COVERAGE) {
+    // Both the floor and the measure it is a fraction OF are registry data
+    // (`meta.min_input_coverage` / `meta.coverage_denominator`). This was
+    // `measure.id === 'C16'` against a 0.45 literal declared in this file -- a
+    // programme rule in render code, and a second copy of one the server also held.
+    if (measure.minCoverage && measure.coverageDen) {
+      var base = row[measure.coverageDen];
+      if (base) {
+        var coverage = Number(out.n) / Number(base);
+        if (coverage < Number(measure.minCoverage)) {
           out.thinDenominator = true;
           out.coverage = coverage;
         }
@@ -937,9 +650,11 @@ function WorkflowUI({
   // ("not in this app") is a different fact about the programme from one that asks
   // and recorded nothing ("no value reaches this row"). Both render n/a, so the
   // values agree either way -- but reporting the wrong reason misdescribes it.
-  function cInputState(indId, row, opps) {
-    var need = IND_INPUTS[indId];
-    if (!need) return 'ok';
+  function cInputState(measure, row, opps) {
+    // The inputs an indicator needs are part of its registry definition
+    // (`meta.inputs`), so there is no `IND_INPUTS` side table to keep in step.
+    var need = (measure && measure.inputs) || null;
+    if (!need || !need.length) return 'ok';
     for (var i = 0; i < need.length; i++) {
       if (!anyAsks(need[i], opps)) return 'notinapp';
       var gate = row['anyrec_' + need[i]];
@@ -1260,7 +975,7 @@ function WorkflowUI({
   function flwDateRange(f) {
     var ds = (f.rows || [])
       .map(function (r) {
-        // The pipeline (and so both the live rows and the snapshot's case records)
+        // The pipeline (and so both the live rows and a snapshot's case records)
         // emits *_visit_date. `first_visit`/`last_visit` never existed on either
         // shape, so this range silently resolved to nothing on every run.
         return r.first_visit_date || r.last_visit_date;
@@ -1515,18 +1230,16 @@ function WorkflowUI({
         // A snapshot stores each worker's cases as POSITIONS into snapshot.cases,
         // because holding the records here as well as there stored every case twice
         // and pushed the payload past the 5 MB cap. Resolve them once, here, so
-        // `f.rows` is case objects for every consumer below (the drill at the case
-        // table, flwDateRange, the `rows.length` counts) exactly as on a live run.
-        var all = snapshot.cases || [];
+        // `f.rows` is case objects for every consumer below -- the case drill,
+        // flwDateRange, the `rows.length` counts -- exactly as on a live run.
+        var allCases = snapshot.cases || [];
         return (snapshot.byFLW || []).map(function (f) {
           var r = f.rows || [];
-          // Tolerate both shapes: schema 2 stores numbers, and anything that already
-          // holds objects is passed through untouched.
           if (!r.length || typeof r[0] !== 'number') return f;
           return Object.assign({}, f, {
             rows: r
               .map(function (i) {
-                return all[i];
+                return allCases[i];
               })
               .filter(Boolean),
           });
@@ -1589,6 +1302,10 @@ function WorkflowUI({
       // snapshot run deliberately never fetches. Without this the headline mortality
       // card silently degrades to "no credible recorder" the moment a run is snapshot,
       // while the LLO table beside it still shows EHA and PIPN reporting deaths.
+      // Was `snapshot.mortalityCredible`, a key that could only ever carry C14.
+      // The payload now carries every table the spec named, keyed by indicator.
+      if (snapshot && snapshot.credibility && snapshot.credibility.C14)
+        return snapshot.credibility.C14;
       if (snapshot && snapshot.mortalityCredible)
         return snapshot.mortalityCredible;
       var credible = cCredibleLloRows('C14');

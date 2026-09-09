@@ -109,6 +109,7 @@ measures:
     meta:
       {
         indicator: C07,
+        inputs: [weights],
         category: Program quality,
         prominence: Lower,
         unit: '%',
@@ -134,6 +135,7 @@ measures:
     meta:
       {
         indicator: C08,
+        inputs: [weights],
         category: Program quality,
         prominence: Lower,
         unit: '%',
@@ -156,6 +158,7 @@ measures:
     meta:
       {
         indicator: C09,
+        inputs: [weights],
         category: Program quality,
         prominence: Top,
         unit: '%',
@@ -181,6 +184,7 @@ measures:
     meta:
       {
         indicator: C10,
+        inputs: [weights],
         category: Program quality,
         prominence: Top,
         unit: '%',
@@ -207,6 +211,7 @@ measures:
     meta:
       {
         indicator: C11,
+        inputs: [weights],
         category: Program quality,
         prominence: Top,
         unit: '%',
@@ -233,6 +238,7 @@ measures:
     meta:
       {
         indicator: C12,
+        inputs: [weights],
         category: Program quality,
         prominence: Lower,
         unit: '%',
@@ -259,6 +265,7 @@ measures:
     meta:
       {
         indicator: C13,
+        inputs: [weights],
         category: Program quality,
         prominence: Top,
         unit: g/kg/d,
@@ -339,6 +346,9 @@ measures:
     meta:
       {
         indicator: C16,
+        inputs: [days_discharge_to_reg],
+        min_input_coverage: 0.45,
+        coverage_denominator: c02,
         category: Performance,
         prominence: Top,
         unit: '%',
@@ -367,6 +377,7 @@ measures:
     meta:
       {
         indicator: C17,
+        inputs: [days_discharge_to_reg],
         category: Performance,
         prominence: Lower,
         unit: d,
@@ -391,6 +402,7 @@ measures:
     meta:
       {
         indicator: C19,
+        inputs: [referred],
         category: Performance,
         prominence: Top,
         unit: '%',
@@ -416,6 +428,7 @@ measures:
     meta:
       {
         indicator: C20,
+        inputs: [ever_danger_sign],
         category: Performance,
         prominence: Lower,
         unit: '%',
@@ -437,6 +450,7 @@ measures:
     meta:
       {
         indicator: C21,
+        inputs: [self_referral_count],
         category: Performance,
         prominence: Lower,
         unit: '/100',
@@ -459,6 +473,7 @@ measures:
     meta:
       {
         indicator: C23,
+        inputs: [kmc_hours_mean],
         category: Performance,
         prominence: Lower,
         unit: h,
@@ -505,6 +520,7 @@ measures:
     meta:
       {
         indicator: C28,
+        inputs: [birth_weight_g, enrollment_weight_g],
         category: Data quality,
         prominence: Top,
         unit: '%',
@@ -531,6 +547,7 @@ measures:
     meta:
       {
         indicator: C31,
+        inputs: [weights],
         category: Data quality,
         prominence: Top,
         unit: '%',
