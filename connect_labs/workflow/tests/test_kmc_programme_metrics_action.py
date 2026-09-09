@@ -107,83 +107,57 @@ def test_an_llo_running_both_hardware_types_is_marked_unverified():
     assert real_conflicts <= UNVERIFIED_SCALE_LLOS
 
 
-# ── the N-series tab: the semantic layer finally on screen ───────────────────
+# ── the scorecard: the N series off the payload, not a second fetch ──────────
 
 
-def test_the_render_can_load_the_N_series_from_the_semantic_endpoint():
-    """Everything else on this dashboard is computed in the browser from pipeline
-    rows. These come from SQL, through the endpoint the semantic runtime exposes —
-    which is the first time that layer reaches a screen at all."""
+def test_the_scorecard_reads_the_payload_and_fetches_nothing_itself():
+    """The N series used to be a tab that queried the semantic endpoint live, with
+    its own grader in this file. It is now graded by the builder alongside the
+    headline series, from the same rows, into `payload.series.N` -- so a saved run
+    carries it and the live view cannot disagree with it."""
     src = RENDER.read_text()
-    flat = re.sub(r"\s+", "", src)
-    assert "/semantic/?series=N" in flat, "the render must ask for the N series specifically"
-    assert "scopes=programme,opportunity,flw" in flat
+    assert "P.series" in src, "the scorecard must come off the payload"
+    assert "/semantic/" not in src, "the render must not query the semantic endpoint itself"
+    for gone in ("function loadNSeries", "function nBandOf", "function nCell"):
+        assert gone not in src, f"{gone} is the second grader this replaced"
 
 
-def test_the_N_series_is_fetched_on_demand_not_with_the_page():
-    """It is a real query against the visit cache. Firing it on mount would make
-    every OTHER tab pay for a tab the reader may never open.
-
-    This used to be spelled `"React.useEffect" not in src` — a blanket ban, which
-    was a fair proxy while nothing on the page loaded itself. It is too broad now:
-    the C-series IS the Indicators tab's own content, not a side panel, so it does
-    load with the page, and a frozen run's load is `catalog_only` (labels, no
-    query). The claim worth keeping is the one the docstring actually makes, so
-    assert THAT: nothing pulls loadNSeries into an effect, and the button stays.
-    """
+def test_the_scorecard_is_neals_table_column_for_column():
+    """His compute spec's section 5: fifteen columns in this order, with the
+    qualifying-SVN denominator printed as its own column between the first-visit
+    share and the growth-quality shares."""
     src = RENDER.read_text()
-    assert "function loadNSeries" in src
-    assert "onClick={loadNSeries}" in src, "the N-series must stay user-triggered"
-
-    for effect in re.findall(r"React\.useEffect\(([\s\S]*?)\n  \);", src):
-        assert "loadNSeries" not in effect, "an effect must not fire the N-series query"
-
-
-def test_the_endpoints_error_message_is_shown_rather_than_a_generic_failure():
-    """The message names the missing column or relation — that IS the diagnostic,
-    and it is why the endpoint answers 400 with it instead of a 500."""
-    src = RENDER.read_text()
-    assert "nSeries.error" in src
+    block = src[src.index("var SCORECARD = [") : src.index("];", src.index("var SCORECARD = ["))]
+    ids = re.findall(r"id: '(N\d\d)'", block)
+    assert ids == [
+        "N01", "N02", "N03", "N05", "N06", "N07", "N08", "N09", "N09", "N10", "N11", "N12", "N13", "N14", "N15",
+    ]  # fmt: skip
+    assert "denOnly: true" in block, "Qual N is the shared denominator, shown as a count"
 
 
 def test_the_render_does_not_keep_its_own_copy_of_the_registry():
-    """The C-series keeps a hand-maintained copy of its registry in this file, and
-    that duplication is exactly what the semantic layer exists to end. The N-series
-    columns, their bands and their units come from the endpoint's measure catalog —
-    the same YAML that produced the numbers — so a threshold cannot drift from the
-    measure it grades."""
+    """Units and minimum denominators come from the catalog the builder ships in
+    the payload -- the same YAML that produced the numbers -- so a threshold cannot
+    drift from the measure it grades."""
     src = RENDER.read_text()
-    assert "nSeries.measures" in src, "the catalog must drive the columns"
+    assert "SC.measures" in src, "the catalog must drive the cells"
     assert "N_SERIES = [" not in src, "a hardcoded N-series list is the duplication"
-
-
-def test_bands_are_applied_with_the_same_three_directions_the_C_series_uses():
-    src = RENDER.read_text()
-    for d in ("'higher'", "'lower'", "'mid2'"):
-        assert d in src, d
-    assert "function nBandOf" in src
+    assert "m.min_denominator" in src
 
 
 def test_a_value_under_its_minimum_denominator_reads_insufficient_not_a_number():
     """The spec's rule 0.2, and the reason every measure ships a denominator."""
     src = RENDER.read_text()
-    assert "min_denominator" in src
-    assert "'n<'" in src
+    assert "'insufficient'" in src
+    assert "n&lt;" in src
 
 
-def test_a_derived_band_is_marked_as_such_on_screen():
-    """Several N-series ranges are derived from the workbook's counterpart or from
-    the spec's own expected-answers table rather than stated by it. A threshold whose
-    provenance is invisible is one nobody can correct."""
+def test_a_not_credible_figure_is_marked_not_erased():
+    """N13 shares C14's credibility verdict. A non-credible recorder's mortality is
+    shown greyed with the reason, never blanked -- blanking hides under-recording."""
     src = RENDER.read_text()
-    assert "bands_source" in src
-    assert "PROVISIONAL" in src
-
-
-def test_every_rendered_value_shows_its_denominator():
-    """The registry's no-bare-numbers rule, carried through to the screen."""
-    src = RENDER.read_text()
-    assert "_denominator" in src
+    assert "'notcredible'" in src
+    assert "Death recording is not credible" in src
 
 
 # ── one declaration per name ─────────────────────────────────────────────────
