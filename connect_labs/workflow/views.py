@@ -31,12 +31,7 @@ from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 from connect_labs.labs.presentation import is_present_mode
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.utils.feature_access import can_create_from_template, get_allowed_templates
-from connect_labs.workflow.data_access import (
-    PipelineCacheMiss,
-    PipelineDataAccess,
-    WorkflowDataAccess,
-    serialize_pipeline_row,
-)
+from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess, serialize_pipeline_row
 from connect_labs.workflow.templates import MULTI_OPTION_COERCERS, TEMPLATES
 from connect_labs.workflow.templates import create_workflow_from_template as create_from_template
 from connect_labs.workflow.templates import schedule_options_for_definition, template_supports_default_run
@@ -2114,6 +2109,81 @@ def save_worker_result_api(request, run_id):
             data_access.close()
 
 
+def _snapshot_build_error_response(e):
+    """Map a SnapshotBuildError onto this API's HTTP shape."""
+    if e.code == "definition_not_found":
+        return JsonResponse({"error": "Workflow definition not found"}, status=404)
+    if e.code == "cache_miss":
+        return JsonResponse(
+            {
+                "error": (
+                    "The dashboard data is no longer cached, so the snapshot can't capture what "
+                    "you were reviewing. Reload the run page, let the dashboard finish loading, "
+                    "then try again. (" + e.message + ")"
+                ),
+                "code": e.code,
+            },
+            status=409,
+        )
+    if e.code == "not_staged":
+        # The run stays in_progress, which is the whole point: an empty snapshot on
+        # a completed run is unrecoverable, an un-completed run is not.
+        return JsonResponse({"error": e.message, "missing_state_keys": e.missing, "code": e.code}, status=400)
+    if e.code == "non_dict":
+        return JsonResponse({"error": "Snapshot builder returned non-dict; run stays in_progress"}, status=500)
+    return JsonResponse({"error": e.message, "code": e.code}, status=400)
+
+
+@login_required
+@require_GET
+def preview_snapshot_api(request, run_id):
+    """What completing this run WOULD store, built now and not persisted.
+
+    A live run renders from this, and a completed run renders from the stored
+    snapshot -- the same payload from the same builder, so the dashboard is one
+    view over one shape rather than a JavaScript re-implementation for the live
+    case. For a completed run the stored snapshot is returned as-is.
+
+    `cache` says whether the visit cache behind the build was cold or partial:
+    a preview over a cold cache is every metric zero, which reads as a programme
+    with no babies, and the payload cannot say so itself.
+    """
+    from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run, cache_state
+
+    data_access = None
+    try:
+        data_access = WorkflowDataAccess(request=request)
+        run = data_access.get_run(run_id, program_hint=_run_program_hint(request))
+        if not run:
+            return JsonResponse({"error": "Run not found"}, status=404)
+        if run.is_completed and run.snapshot:
+            return JsonResponse({"source": "stored", "snapshot": run.snapshot, "cache": None})
+        try:
+            built = build_snapshot_for_run(
+                data_access,
+                run,
+                request=request,
+                program_id=getattr(data_access, "program_id", None),
+            )
+        except SnapshotBuildError as e:
+            return _snapshot_build_error_response(e)
+        return JsonResponse(
+            {
+                "source": "preview",
+                "snapshot": built["payload"],
+                "opportunity_id": built["opportunity_id"],
+                "opportunity_ids": built["opportunity_ids"],
+                "cache": cache_state(built["opportunity_ids"]),
+            }
+        )
+    except Exception:
+        logger.exception("Failed to preview snapshot for run %s", run_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+    finally:
+        if data_access:
+            data_access.close()
+
+
 @login_required
 @require_POST
 def complete_run_api(request, run_id):
@@ -2132,13 +2202,7 @@ def complete_run_api(request, run_id):
       - 409 if the run is already completed.
       - 400 if no completion contract can be resolved.
     """
-    from connect_labs.workflow.templates import (
-        SnapshotStateNotStagedError,
-        SnapshotTooLargeError,
-        build_snapshot_for_contract,
-        resolve_snapshot_contract,
-        resolve_snapshot_opp_scope,
-    )
+    from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run
 
     data_access = None
     try:
@@ -2152,35 +2216,22 @@ def complete_run_api(request, run_id):
                 status=409,
             )
 
+        # ONE build step, shared with the MCP tool and the live preview. This view
+        # and workflow_save_snapshot each carried their own copy of it, and the two
+        # drifted in the builder context they passed. See snapshot_runtime.
+        try:
+            built = build_snapshot_for_run(
+                data_access,
+                run,
+                request=request,
+                program_id=getattr(data_access, "program_id", None),
+            )
+        except SnapshotBuildError as e:
+            return _snapshot_build_error_response(e)
+        snapshot_payload = built["payload"]
+        contract = built["contract"]
+        definition = built["definition"]
         definition_id = run.data.get("definition_id")
-        if not definition_id:
-            return JsonResponse({"error": "Run has no definition_id"}, status=400)
-
-        definition = data_access.get_definition(definition_id)
-        if not definition:
-            return JsonResponse({"error": "Workflow definition not found"}, status=404)
-
-        contract = resolve_snapshot_contract(definition)
-        if not contract["ok"]:
-            if contract["error"] == "no_contract":
-                message = (
-                    "Workflow has no snapshot_inputs manifest, no template_type, and its "
-                    "name does not match a known template; cannot resolve a completion "
-                    "contract. Set snapshot_inputs on the workflow definition (e.g. via "
-                    "the workflow_update_definition MCP tool) to declare what the "
-                    "snapshot should capture — or set config.templateType to the key of "
-                    "the template this workflow was built from."
-                )
-            elif contract["error"] == "unknown_template":
-                message = f"Unknown template: {contract['template_key']}"
-            else:
-                message = (
-                    f"Template {contract['template_key']!r} does not declare "
-                    "supports_saved_runs=True; this template's runs cannot be marked "
-                    "complete. To opt this workflow in anyway, set snapshot_inputs on "
-                    "its definition."
-                )
-            return JsonResponse({"error": message}, status=400)
 
         if contract["recovered_template_key"] or contract["source"] == "template_inputs":
             # Self-heal: persist what we resolved so future completions read it
@@ -2202,91 +2253,6 @@ def complete_run_api(request, run_id):
                     "Failed to stamp resolved snapshot contract on definition %s",
                     definition_id,
                 )
-
-        # A program-owned multi-opp definition has neither a run-level nor a
-        # definition-level opportunity_id — its opps are in opportunity_ids — so
-        # resolving only the singular fields made such a run impossible to
-        # conclude from this page (#1182).
-        opportunity_id, snapshot_opp_ids = resolve_snapshot_opp_scope(run, definition)
-        if not opportunity_id:
-            return JsonResponse(
-                {"error": "Run has no opportunity: neither the run, the definition, nor its opportunity_ids name one"},
-                status=400,
-            )
-
-        # Snapshot pipelines come from the processed cache the runner page
-        # already populated — never re-executed here. The snapshot's job is to
-        # freeze what the user was looking at when they concluded; re-running
-        # pipelines inside this request both captured the wrong data (whatever
-        # was live at conclude time, not what was reviewed) and turned the
-        # button into a multi-minute batch job on large opps (102k visits =
-        # ~18 minutes + an OOM-killed worker on opp 765). Only the aliases the
-        # resolved contract actually captures are read; hook contracts get all.
-        contract_inputs = contract.get("snapshot_inputs")
-        aliases = None if contract["source"] == "template_hook" else (contract_inputs or {}).get("pipelines")
-        if aliases == []:
-            pipelines = {}
-        else:
-            try:
-                pipelines = data_access.get_cached_pipeline_data(
-                    definition_id,
-                    opportunity_id,
-                    aliases=aliases,
-                    # Period-scope opted-in pipelines to the run's window so each
-                    # saved run freezes its own period, not the all-time
-                    # aggregate (ace#764). No-op when the run has no period.
-                    period_start=run.period_start,
-                    period_end=run.period_end,
-                )
-            except PipelineCacheMiss as e:
-                return JsonResponse(
-                    {
-                        "error": (
-                            f"The dashboard data for pipeline {e.pipeline_name or e.alias!r} is no "
-                            "longer cached, so the snapshot can't capture what you were reviewing. "
-                            "Reload the run page, let the dashboard finish loading, then conclude again."
-                        )
-                    },
-                    status=409,
-                )
-
-        effective_opp_ids = snapshot_opp_ids
-        workers: list[dict] = []
-        for oid in effective_opp_ids:
-            try:
-                for w in data_access.get_workers(oid):
-                    workers.append({**w, "opportunity_id": oid})
-            except Exception:
-                logger.exception("Failed to load workers for opp %s", oid)
-
-        try:
-            snapshot_payload = build_snapshot_for_contract(
-                contract,
-                pipelines=pipelines,
-                state=run.data.get("state", {}),
-                opportunity_id=opportunity_id,
-                workers=workers,
-                opportunity_ids=effective_opp_ids,
-                # Optional context fields that some templates' build_snapshot hooks
-                # accept (definition_id, request). The framework relays via
-                # **context — hooks that don't use these fields just absorb them
-                # into **_.
-                definition_id=definition_id,
-                request=request,
-                run_id=run_id,  # NEW: lets a gate hook read the run's audit sessions
-            )
-        except SnapshotStateNotStagedError as e:
-            # The run stays in_progress, which is the whole point: an empty
-            # snapshot on a completed run is unrecoverable, an un-completed run
-            # is not.
-            return JsonResponse({"error": str(e), "missing_state_keys": e.missing}, status=400)
-        except SnapshotTooLargeError as e:
-            return JsonResponse({"error": str(e)}, status=400)
-        if not isinstance(snapshot_payload, dict):
-            return JsonResponse(
-                {"error": "Snapshot builder returned non-dict; run stays in_progress"},
-                status=500,
-            )
 
         completed_run = data_access.complete_run(run_id, snapshot_payload, run=run)
         if completed_run is None:
