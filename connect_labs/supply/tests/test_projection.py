@@ -149,13 +149,10 @@ def test_the_network_projection_ranks_soonest_dry_first():
     assert net["first_dry_on"] is not None
 
 
-def test_the_command_centre_receives_the_projection(client):
+def test_the_command_centre_receives_the_projection(seeded_world, client):
     """A forecast nobody's screen calls is a forecast that changes no decision."""
     import json as _json
 
-    from django.core.management import call_command
-
-    call_command("seed_supply_demo")
     client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
     body = _json.loads(client.get("/supply/api/bootstrap/").content)
 

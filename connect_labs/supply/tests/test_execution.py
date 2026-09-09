@@ -269,7 +269,7 @@ def test_staff_have_no_token_management(admin_client):
     assert client.get("/supply/api/tokens/").status_code == 403
 
 
-def test_no_consignment_is_dated_before_the_contract_that_paid_for_it():
+def test_no_consignment_is_dated_before_the_contract_that_paid_for_it(seeded_world):
     """An award cannot postdate the deliveries it authorised.
 
     `Award.awarded_at` is `auto_now_add`, so every award is stamped with the
@@ -284,12 +284,9 @@ def test_no_consignment_is_dated_before_the_contract_that_paid_for_it():
     property over the whole world, because the fix reconciles against real dates
     and so has to keep holding as the seed data moves.
     """
-    from django.core.management import call_command
     from django.utils import timezone
 
     from connect_labs.supply.models.execution import Contract
-
-    call_command("seed_supply_demo", "--reset")
 
     def as_date(value):
         return timezone.localtime(value).date() if hasattr(value, "tzinfo") else value
@@ -311,7 +308,7 @@ def test_no_consignment_is_dated_before_the_contract_that_paid_for_it():
     assert offenders == [], "consignments predating their own award:\n  " + "\n  ".join(offenders)
 
 
-def test_nothing_claims_to_have_arrived_on_a_day_that_has_not_happened():
+def test_nothing_claims_to_have_arrived_on_a_day_that_has_not_happened(seeded_world):
     """A future-dated "Delivered" row is a control failure, not a rounding issue.
 
     Savanna Nutrients' 15,000 cartons into Maiduguri showed Jul 31 under a
@@ -324,12 +321,10 @@ def test_nothing_claims_to_have_arrived_on_a_day_that_has_not_happened():
     date was not wrong when it was written, it became wrong as today caught up
     with it, and it will do so again.
     """
-    from django.core.management import call_command
     from django.utils import timezone
 
     from connect_labs.supply.models.execution import Shipment
 
-    call_command("seed_supply_demo", "--reset")
     today = timezone.localdate()
 
     offenders = []
@@ -346,13 +341,10 @@ def test_nothing_claims_to_have_arrived_on_a_day_that_has_not_happened():
     assert offenders == [], "arrivals recorded in the future:\n  " + "\n  ".join(offenders)
 
 
-def test_a_contract_does_not_start_before_it_was_awarded():
-    from django.core.management import call_command
+def test_a_contract_does_not_start_before_it_was_awarded(seeded_world):
     from django.utils import timezone
 
     from connect_labs.supply.models.execution import Contract
-
-    call_command("seed_supply_demo", "--reset")
 
     bad = []
     for contract in Contract.objects.select_related("award"):

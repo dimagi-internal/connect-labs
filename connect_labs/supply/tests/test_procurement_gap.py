@@ -100,13 +100,10 @@ def test_the_summary_leads_with_the_worst_district():
     assert summary["gap_cartons"] == 5000 + 100
 
 
-def test_the_procurement_dashboard_receives_the_gap(client):
+def test_the_procurement_dashboard_receives_the_gap(seeded_world, client):
     """A gap nobody's dashboard shows is a gap no tender will close."""
     import json as _json
 
-    from django.core.management import call_command
-
-    call_command("seed_supply_demo")
     client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
     body = _json.loads(client.get("/supply/api/bootstrap/").content)
 

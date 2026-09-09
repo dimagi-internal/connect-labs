@@ -6,7 +6,6 @@ because it refuses outside DEBUG. That refusal is asserted here rather than
 assumed from a settings file.
 """
 import pytest
-from django.core.management import call_command
 
 pytestmark = pytest.mark.django_db
 
@@ -17,9 +16,8 @@ def test_it_refuses_outside_debug(client, settings):
     assert response.status_code == 403
 
 
-def test_it_logs_in_a_seeded_persona(client, settings):
+def test_it_logs_in_a_seeded_persona(seeded_world, client, settings):
     settings.DEBUG = True
-    call_command("seed_supply_demo")
 
     response = client.get("/supply/dev-login/?persona=zara")
     assert response.status_code == 302
@@ -29,10 +27,9 @@ def test_it_logs_in_a_seeded_persona(client, settings):
     assert body["org"]["legal_name"] == "Komadugu Health Initiative"
 
 
-def test_every_persona_resolves_to_a_seeded_user(client, settings):
+def test_every_persona_resolves_to_a_seeded_user(seeded_world, client, settings):
     """A persona that stops being seeded must stop being reachable."""
     settings.DEBUG = True
-    call_command("seed_supply_demo")
 
     from connect_labs.supply.views_dev_auth import _personas
 

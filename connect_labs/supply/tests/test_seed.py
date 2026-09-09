@@ -35,8 +35,7 @@ def test_seed_is_idempotent_and_deterministic():
     assert _snapshot() == first
 
 
-def test_seed_personas_and_roles():
-    call_command("seed_supply_demo")
+def test_seed_personas_and_roles(seeded_world):
     roles = dict(StaffRole.objects.values_list("user__username", "role"))
     assert roles["oes-lead@oes.example"] == "procurement_admin"
     assert roles["oes-review@oes.example"] == "reviewer"
@@ -49,15 +48,13 @@ def test_seed_personas_and_roles():
     assert member.user.check_password("oes-demo-2026")
 
 
-def test_seed_demo_logins_can_sign_in(client):
-    call_command("seed_supply_demo")
+def test_seed_demo_logins_can_sign_in(seeded_world, client):
     resp = client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
     assert resp.status_code == 302 and resp.url == "/supply/"
     assert client.get("/supply/api/bootstrap/").json()["role"] == "procurement_admin"
 
 
-def test_seed_world_shape():
-    call_command("seed_supply_demo")
+def test_seed_world_shape(seeded_world):
     # 16 suppliers plus Komadugu, the implementing partner — which is an org of
     # a different kind, not a seventeenth supplier.
     assert SupplierOrg.objects.count() == 17
@@ -92,8 +89,7 @@ def test_seed_world_shape():
     assert Award.objects.filter(lot__rfp=awarded).count() == 1
 
 
-def test_seeded_registry_has_expiring_certifications():
-    call_command("seed_supply_demo")
+def test_seeded_registry_has_expiring_certifications(seeded_world):
     from datetime import date, timedelta
 
     from connect_labs.supply.models import Certification
@@ -102,8 +98,7 @@ def test_seeded_registry_has_expiring_certifications():
     assert Certification.objects.filter(expiry_date__lte=soon).exists()
 
 
-def test_seeded_supplier_sees_eligible_solicitations(client):
-    call_command("seed_supply_demo")
+def test_seeded_supplier_sees_eligible_solicitations(seeded_world, client):
     client.post("/supply/login/", {"email": "supplier@savanna.example", "password": "oes-demo-2026"})
     body = client.get("/supply/api/bootstrap/").json()
     assert body["role"] == "supplier"
@@ -112,8 +107,7 @@ def test_seeded_supplier_sees_eligible_solicitations(client):
     assert any(r["title"] == "RUTF Northeast Nigeria Q3 2026" for r in body["eligible_rfps"])
 
 
-def test_seed_execution_world():
-    call_command("seed_supply_demo")
+def test_seed_execution_world(seeded_world):
     from connect_labs.supply.models import Contract, Discrepancy, Shipment, SupplyEvent, SupplyNode
 
     # 29 OES-network nodes plus Komadugu's 11 Borno feeding sites
@@ -143,9 +137,8 @@ def test_seed_execution_world():
     assert Discrepancy.objects.filter(status="open").exists()
 
 
-def test_seeded_shipments_belong_to_a_contract_in_their_own_country():
+def test_seeded_shipments_belong_to_a_contract_in_their_own_country(seeded_world):
     """A Nigerian leg must not hang off an Ethiopian contract."""
-    call_command("seed_supply_demo")
     from connect_labs.supply.models import Shipment
 
     for shipment in Shipment.objects.select_related("contract__org", "origin", "destination"):
@@ -156,8 +149,7 @@ def test_seeded_shipments_belong_to_a_contract_in_their_own_country():
         ), f"{shipment.reference} runs {countries} but belongs to a {contract_country} contract"
 
 
-def test_seeded_nodes_have_valid_gs1_locations():
-    call_command("seed_supply_demo")
+def test_seeded_nodes_have_valid_gs1_locations(seeded_world):
     from connect_labs.supply import gs1
     from connect_labs.supply.models import SupplyNode
 
@@ -166,8 +158,7 @@ def test_seeded_nodes_have_valid_gs1_locations():
         assert node.location is not None
 
 
-def test_seeded_contracts_report_three_distinct_money_stages():
-    call_command("seed_supply_demo")
+def test_seeded_contracts_report_three_distinct_money_stages(seeded_world):
     from connect_labs.supply.models import Contract
 
     contract = Contract.objects.get(reference="OES-C-2026-ET1")
@@ -205,9 +196,8 @@ def test_demo_password_can_be_overridden_by_environment(monkeypatch):
     assert not user.check_password("oes-demo-2026")
 
 
-def test_seeded_routes_follow_corridors_not_straight_lines():
+def test_seeded_routes_follow_corridors_not_straight_lines(seeded_world):
     """A rendered flow must trace the road/sea corridor, not cut across terrain."""
-    call_command("seed_supply_demo")
     from connect_labs.supply.models import Shipment
 
     routed = Shipment.objects.exclude(route=None)
@@ -251,7 +241,7 @@ def test_reseeding_rotates_demo_passwords(monkeypatch):
     assert not user.check_password("oes-demo-2026")
 
 
-def test_seeded_nigeria_coverage_inverts_tonnage():
+def test_seeded_nigeria_coverage_inverts_tonnage(seeded_world):
     """The scene the government view exists for, on the data it actually gets.
 
     Hauwa's page is scoped to Nigeria on the server, so the well-covered
@@ -264,7 +254,6 @@ def test_seeded_nigeria_coverage_inverts_tonnage():
     """
     from connect_labs.supply.services import coverage
 
-    call_command("seed_supply_demo", "--reset")
     rows = {r["adm1_name"]: r for r in coverage.coverage_by_district(country="NG")}
 
     best, worst = rows["Gombe"], rows["Borno"]
@@ -277,7 +266,7 @@ def test_seeded_nigeria_coverage_inverts_tonnage():
     assert 31_000 <= worst["uncovered_children"] < 32_000
 
 
-def test_the_seeded_world_produces_all_four_exception_kinds():
+def test_the_seeded_world_produces_all_four_exception_kinds(seeded_world):
     """The command centre narrates "all four exception kinds" — over three.
 
     Every seeded batch carried a 540-day shelf life, so every expiry landed in
@@ -288,12 +277,11 @@ def test_the_seeded_world_produces_all_four_exception_kinds():
     """
     from connect_labs.supply.services import exceptions
 
-    call_command("seed_supply_demo", "--reset")
     kinds = {r["kind"] for r in exceptions.build_queue()}
     assert kinds == {"Late", "Short receipt", "Partner shortfall", "Expiry risk"}
 
 
-def test_a_late_row_that_harms_nobody_still_says_so_in_children():
+def test_a_late_row_that_harms_nobody_still_says_so_in_children(seeded_world):
     """The queue's best argument for its own ranking, said out loud.
 
     A row with no children behind it fell back to "SHP-2026-0402 is 6 days
@@ -304,7 +292,6 @@ def test_a_late_row_that_harms_nobody_still_says_so_in_children():
     """
     from connect_labs.supply.services import exceptions
 
-    call_command("seed_supply_demo", "--reset")
     rows = exceptions.build_queue()
     zero_risk = [r for r in rows if r["kind"] == "Late" and not r["children_at_risk"]]
     assert zero_risk, "the demo needs a delay that costs nobody a course"
@@ -319,7 +306,7 @@ def test_a_late_row_that_harms_nobody_still_says_so_in_children():
     assert rows.index(worst_late) > rows.index(harmful[-1])
 
 
-def test_a_site_only_distributes_what_it_actually_received():
+def test_a_site_only_distributes_what_it_actually_received(seeded_world):
     """The chain the closing scene follows has to be a real one.
 
     The seeder round-robined the first six ShipmentLines in the database
@@ -330,7 +317,6 @@ def test_a_site_only_distributes_what_it_actually_received():
     """
     from connect_labs.supply.models import DistributionRecord
 
-    call_command("seed_supply_demo", "--reset")
     records = DistributionRecord.objects.select_related("site", "shipment_line__shipment")
     assert records.exists()
 
@@ -348,12 +334,11 @@ def test_a_site_only_distributes_what_it_actually_received():
         assert record.cartons_dispensed <= record.shipment_line.quantity
 
 
-def test_a_site_awaiting_its_first_consignment_has_distributed_nothing():
+def test_a_site_awaiting_its_first_consignment_has_distributed_nothing(seeded_world):
     """Its own cover row says so on the same screen."""
     from connect_labs.supply.models import DistributionRecord, SupplyNode
     from connect_labs.supply.services import cover
 
-    call_command("seed_supply_demo", "--reset")
     awaiting = [r for r in cover.cover_by_node() if r.get("awaiting_first_delivery")]
     assert awaiting, "the demo needs a site with nothing delivered yet"
 
@@ -364,7 +349,7 @@ def test_a_site_awaiting_its_first_consignment_has_distributed_nothing():
         ).exists(), f"{node.name} is awaiting its first consignment and has distribution records"
 
 
-def test_the_queue_ranks_on_who_goes_without_soonest():
+def test_the_queue_ranks_on_who_goes_without_soonest(seeded_world):
     """ "Where, and by when" has to be the ordering, not just the copy.
 
     Ranking on the raw figure put 907 children whose cartons expire in
@@ -374,7 +359,6 @@ def test_the_queue_ranks_on_who_goes_without_soonest():
     """
     from connect_labs.supply.services import exceptions
 
-    call_command("seed_supply_demo", "--reset")
     rows = exceptions.build_queue()
 
     distant = [r for r in rows if r["children_at_risk"] and not r["children_at_risk_soon"]]

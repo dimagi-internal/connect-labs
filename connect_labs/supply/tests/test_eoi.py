@@ -347,16 +347,14 @@ def test_a_qualification_with_no_recorded_reviewer_reports_the_gap(admin_client)
     assert row["qualifications"][0]["source_round"] is None
 
 
-def test_the_seeded_registry_records_a_reviewer_for_every_qualification():
+def test_the_seeded_registry_records_a_reviewer_for_every_qualification(seeded_world):
     """One seeder path created its reviews with reviewer=None, so most of the demo
     roster would have rendered "not recorded" — which reads as the product failing
     to capture the decision-maker rather than as the seeder being lazy."""
-    from django.core.management import call_command
 
     from connect_labs.supply.models import Qualification
     from connect_labs.supply.serializers import qualification_dict
 
-    call_command("seed_supply_demo", "--reset")
     missing = [
         q.org.legal_name
         for q in Qualification.objects.select_related("org", "source_submission")
@@ -365,18 +363,16 @@ def test_the_seeded_registry_records_a_reviewer_for_every_qualification():
     assert missing == [], f"qualifications with no recorded reviewer: {missing}"
 
 
-def test_a_closed_round_reports_what_it_decided():
+def test_a_closed_round_reports_what_it_decided(seeded_world):
     """A closed round rendered a bare em-dash with 14 applications behind it.
 
     The count alone says a round happened; the breakdown says what it decided,
     which is what makes the row something other than a dead end for every
     decision it holds.
     """
-    from django.core.management import call_command
 
     from connect_labs.supply.serializers import round_dict
 
-    call_command("seed_supply_demo", "--reset")
     closed = EOIRound.objects.filter(status=EOIRound.Status.CLOSED).first()
     assert closed is not None, "the seeded world needs a closed round"
 
@@ -389,20 +385,18 @@ def test_a_closed_round_reports_what_it_decided():
     assert breakdown["qualified"] + breakdown["rejected"] > 0
 
 
-def test_the_review_payload_reaches_decided_applications_not_only_pending_ones():
+def test_the_review_payload_reaches_decided_applications_not_only_pending_ones(seeded_world):
     """The rounds table counted 8 applications beside a queue showing 4.
 
     `review_queue` is deliberately a worklist and holds only what awaits a
     decision — true, unstated, and indistinguishable from an inconsistency. The
     surface needs the decided ones too before it can explain the gap.
     """
-    from django.core.management import call_command
 
     from connect_labs.supply.api.bootstrap import _staff_world
     from connect_labs.supply.decorators import Actor
     from connect_labs.supply.models import StaffRole
 
-    call_command("seed_supply_demo", "--reset")
     # Whichever staff role is granted eoi_review — asked of the permission
     # matrix rather than hardcoded, so the test does not pin a role name.
     from connect_labs.supply.rbac import ROLE_PERMS
