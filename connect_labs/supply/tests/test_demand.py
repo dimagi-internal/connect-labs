@@ -8,7 +8,6 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from django.core.management import call_command
 from django.utils import timezone
 
 from connect_labs.supply.models import (
@@ -394,7 +393,7 @@ def test_a_recorded_action_cannot_be_rewritten_or_deleted():
 # --- the partner surface ----------------------------------------------------
 
 
-def test_the_seeded_world_leaves_one_consignment_awaiting_its_count(client):
+def test_the_seeded_world_leaves_one_consignment_awaiting_its_count(seeded_world, client):
     """Scene 4's narrated act needs something left to count.
 
     The Monguno short receipt used to be seeded complete — discrepancy and all —
@@ -402,7 +401,6 @@ def test_the_seeded_world_leaves_one_consignment_awaiting_its_count(client):
     existed before the camera did. The consignment is now delivered and
     uncounted, which is what puts "Record the count" on the row.
     """
-    call_command("seed_supply_demo")
     awaiting = Shipment.objects.get(reference="SHP-2026-0930")
 
     assert awaiting.status == Shipment.Status.DELIVERED
@@ -418,14 +416,13 @@ def test_the_seeded_world_leaves_one_consignment_awaiting_its_count(client):
     assert awaiting.milestones.filter(actual_at__isnull=False).count() == 2
 
 
-def test_recording_the_count_on_camera_raises_the_sixty_carton_discrepancy(client):
+def test_recording_the_count_on_camera_raises_the_sixty_carton_discrepancy(seeded_world, client):
     """The exact act scene 4 performs, through the exact endpoint it drives.
 
     The discrepancy is DERIVED from the count by the app's own reconciliation
     rather than seeded, so this test is what stops the scene silently going back
     to narrating a pre-existing record.
     """
-    call_command("seed_supply_demo")
     client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
     awaiting = Shipment.objects.get(reference="SHP-2026-0930")
     site = awaiting.destination
@@ -460,14 +457,13 @@ def test_recording_the_count_on_camera_raises_the_sixty_carton_discrepancy(clien
     assert "SHP-2026-0930" in refs
 
 
-def test_the_calendar_is_untouched_by_an_uncounted_consignment(client):
+def test_the_calendar_is_untouched_by_an_uncounted_consignment(seeded_world, client):
     """A consignment nobody has counted is not stock anyone can plan against.
 
     It is delivered, so it is not "on the road" either — it must contribute to
     neither side, or the calendar would promise Monguno cartons no record says
     it holds.
     """
-    call_command("seed_supply_demo")
     client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
     body = client.get("/supply/api/bootstrap/").json()
 
@@ -479,8 +475,7 @@ def test_the_calendar_is_untouched_by_an_uncounted_consignment(client):
     assert first["state"] == "covered"
 
 
-def test_a_partner_sees_only_their_own_sites(client):
-    call_command("seed_supply_demo")
+def test_a_partner_sees_only_their_own_sites(seeded_world, client):
     client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
     body = client.get("/supply/api/bootstrap/").json()
 
@@ -494,8 +489,7 @@ def test_a_partner_sees_only_their_own_sites(client):
     assert "Tawila Nutrition Site" not in site_names
 
 
-def test_a_partner_gets_a_calendar_not_a_shipment_list(client):
-    call_command("seed_supply_demo")
+def test_a_partner_gets_a_calendar_not_a_shipment_list(seeded_world, client):
     client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
     body = client.get("/supply/api/bootstrap/").json()
 
@@ -505,8 +499,7 @@ def test_a_partner_gets_a_calendar_not_a_shipment_list(client):
     assert all(p["expected_children"] > 0 for p in plans)
 
 
-def test_a_partner_cannot_reach_procurement_surfaces(client):
-    call_command("seed_supply_demo")
+def test_a_partner_cannot_reach_procurement_surfaces(seeded_world, client):
     client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
     body = client.get("/supply/api/bootstrap/").json()
 
@@ -518,9 +511,8 @@ def test_a_partner_cannot_reach_procurement_surfaces(client):
     assert "eoi" not in body["perms"]
 
 
-def test_the_partner_and_the_centre_report_the_same_cover(client):
+def test_the_partner_and_the_centre_report_the_same_cover(seeded_world, client):
     """The narrative requires the two surfaces to agree on the same node."""
-    call_command("seed_supply_demo")
 
     client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
     partner_cover = {r["node_id"]: r for r in client.get("/supply/api/bootstrap/").json()["cover"]}
@@ -538,14 +530,13 @@ def test_the_partner_and_the_centre_report_the_same_cover(client):
 # --- the seeded world -------------------------------------------------------
 
 
-def test_the_demo_world_contains_a_genuinely_split_award():
+def test_the_demo_world_contains_a_genuinely_split_award(seeded_world):
     """A PRIOR split, on corridors the live tender does not use.
 
     It used to carry the live tender's own two lots verbatim, so the
     solicitations list showed the exact split three scenes build to already
     marked 2/2 Awarded, one row above the tender being awarded on camera.
     """
-    call_command("seed_supply_demo")
     from connect_labs.supply.models import RFP, Award
 
     rfp = RFP.objects.get(title="RUTF Horn and Sahel Corridors Q1 2026")
@@ -558,9 +549,8 @@ def test_the_demo_world_contains_a_genuinely_split_award():
     assert places == {"Gode", "Dori"}
 
 
-def test_the_price_leader_differs_by_lot():
+def test_the_price_leader_differs_by_lot(seeded_world):
     """The information a per-tender comparison would have hidden."""
-    call_command("seed_supply_demo")
     from connect_labs.supply.models import RFP
     from connect_labs.supply.services import rfp_actions
 
@@ -572,7 +562,7 @@ def test_the_price_leader_differs_by_lot():
     assert len(set(leaders)) == 2, f"expected two different price leaders, got {leaders}"
 
 
-def test_the_live_tender_is_won_by_a_different_supplier_on_each_corridor():
+def test_the_live_tender_is_won_by_a_different_supplier_on_each_corridor(seeded_world):
     """Scenes 7 and 8 of oes-supply-base are awarded live, on this tender.
 
     The pre-awarded split tender above proves the property in seeded history.
@@ -582,7 +572,6 @@ def test_the_live_tender_is_won_by_a_different_supplier_on_each_corridor():
     looks arbitrary on screen. It did, once: a single global price ladder made
     the first-listed bidder cheapest on every lot.
     """
-    call_command("seed_supply_demo")
     from connect_labs.supply.models import RFP
     from connect_labs.supply.services import rfp_actions
 
@@ -600,16 +589,15 @@ def test_the_live_tender_is_won_by_a_different_supplier_on_each_corridor():
     assert leaders["Maiduguri"] != leaders["Djibo"], f"one leader on both corridors: {leaders}"
 
 
-def test_the_spoken_maiduguri_deadline_is_the_fifteenth_of_september():
+def test_the_spoken_maiduguri_deadline_is_the_fifteenth_of_september(seeded_world):
     """oes-supply-base scene 6 says the date out loud, so it cannot drift."""
-    call_command("seed_supply_demo")
     from connect_labs.supply.models import Lot
 
     lot = Lot.objects.get(rfp__title="RUTF Northeast Nigeria Q3 2026", delivery_place="Maiduguri", category="rutf")
     assert (lot.delivery_deadline.month, lot.delivery_deadline.day) == (9, 15)
 
 
-def test_a_reallocation_answers_the_exception_it_was_made_against():
+def test_a_reallocation_answers_the_exception_it_was_made_against(seeded_world):
     """The queue's central claim, and it was not true.
 
     A reallocation creates a real consignment with planned milestones, and
@@ -622,7 +610,6 @@ def test_a_reallocation_answers_the_exception_it_was_made_against():
     until the truck arrives. It stops competing with the rows nobody has done
     anything about.
     """
-    call_command("seed_supply_demo")
     from connect_labs.supply.models import SupplyNode
     from connect_labs.supply.services import actions
 
@@ -651,7 +638,7 @@ def test_a_reallocation_answers_the_exception_it_was_made_against():
     assert all(r["answered_by"] for r in ordered[first_answered:])
 
 
-def test_a_consignment_still_on_the_road_can_be_late():
+def test_a_consignment_still_on_the_road_can_be_late(seeded_world):
     """The delay you can still act on is the one worth surfacing.
 
     Milestones were seeded with estimated_at == planned_at, so a leg could only
@@ -661,7 +648,6 @@ def test_a_consignment_still_on_the_road_can_be_late():
     three-timestamp claim undemonstrated, since the middle timestamp never
     moved.
     """
-    call_command("seed_supply_demo")
     from connect_labs.supply.models import Shipment
 
     late = [e for e in exceptions.build_queue() if e["kind"] == "Late"]
@@ -679,14 +665,13 @@ def test_a_consignment_still_on_the_road_can_be_late():
     assert arrival.estimated_at > arrival.planned_at, "the estimate is what moved"
 
 
-def test_a_node_can_only_spare_what_it_does_not_need():
+def test_a_node_can_only_spare_what_it_does_not_need(seeded_world):
     """The queue advises reallocating from surplus; this is what surplus means.
 
     A reallocation that solves one stockout by causing another is not a
     decision anybody would defend afterwards, so a node offers only the cartons
     it can lose while staying above its own threshold.
     """
-    call_command("seed_supply_demo")
     rows = cover.nodes_holding_surplus(min_weeks=6.0)
     assert rows, "the demo world needs somewhere to reallocate from"
 
@@ -702,7 +687,7 @@ def test_a_node_can_only_spare_what_it_does_not_need():
     assert [r["spare_cartons"] for r in rows] == sorted((r["spare_cartons"] for r in rows), reverse=True)
 
 
-def test_a_site_awaiting_its_first_delivery_is_not_reported_as_running_dry():
+def test_a_site_awaiting_its_first_delivery_is_not_reported_as_running_dry(seeded_world):
     """Zero cartons is two different facts and they need opposite actions.
 
     A dozen sites that had never been served rendered identically to a site two
@@ -711,7 +696,6 @@ def test_a_site_awaiting_its_first_delivery_is_not_reported_as_running_dry():
     figure below the fold. A judge reading that frame concluded the join was
     broken. It was not; the two states were simply indistinguishable.
     """
-    call_command("seed_supply_demo")
     rows = cover.cover_by_node()
 
     never_served = [r for r in rows if r["awaiting_first_delivery"]]
@@ -734,8 +718,7 @@ def test_a_site_awaiting_its_first_delivery_is_not_reported_as_running_dry():
     assert rows[0]["weeks_of_cover"] == 0, "a site with nothing on hand has to lead the queue"
 
 
-def test_seeded_caseloads_cover_every_famine_district_with_a_node():
-    call_command("seed_supply_demo")
+def test_seeded_caseloads_cover_every_famine_district_with_a_node(seeded_world):
     from connect_labs.supply.models import CaseloadEstimate
 
     coded = SupplyNode.objects.exclude(adm1_code="").values_list("adm1_code", flat=True)
@@ -743,14 +726,13 @@ def test_seeded_caseloads_cover_every_famine_district_with_a_node():
     assert set(coded) <= with_caseload
 
 
-def test_seeded_outcomes_land_inside_the_sphere_performance_band():
+def test_seeded_outcomes_land_inside_the_sphere_performance_band(seeded_world):
     """Recovery above 75%, defaulting below 15% — a normal programme.
 
     The gap between courses delivered and recoveries recorded is the closing
     beat of the funder narrative, and it is only useful if its size has a
     reason. Seeding to the sector's own thresholds is that reason.
     """
-    call_command("seed_supply_demo")
     # Over DISCHARGED children. The Sphere rates are defined on completed
     # courses, and a child admitted last week has not completed one — counting
     # them in the denominator would report a programme as failing for the crime
@@ -768,9 +750,8 @@ def test_seeded_outcomes_land_inside_the_sphere_performance_band():
     assert ChildOutcome.objects.filter(discharge_status=ChildOutcome.Discharge.IN_TREATMENT).exists()
 
 
-def test_every_seeded_outcome_series_agrees_with_its_discharge_status():
+def test_every_seeded_outcome_series_agrees_with_its_discharge_status(seeded_world):
     """A recovered child's measurements must actually cross the threshold."""
-    call_command("seed_supply_demo")
     from connect_labs.supply.models import MUAC_RECOVERED_MIN_MM
 
     for child in ChildOutcome.objects.filter(discharge_status=ChildOutcome.Discharge.RECOVERED):
@@ -778,8 +759,7 @@ def test_every_seeded_outcome_series_agrees_with_its_discharge_status():
         assert child.admission_muac_mm < MUAC_RECOVERED_MIN_MM, child.anon_id
 
 
-def test_every_distribution_record_traces_to_a_real_delivered_batch():
-    call_command("seed_supply_demo")
+def test_every_distribution_record_traces_to_a_real_delivered_batch(seeded_world):
     from connect_labs.supply.models import DistributionRecord
 
     records = DistributionRecord.objects.select_related("shipment_line__shipment")
@@ -790,9 +770,8 @@ def test_every_distribution_record_traces_to_a_real_delivered_batch():
         assert record.shipment_line.shipment.status in ("delivered", "confirmed")
 
 
-def test_the_seeded_world_has_a_partner_raised_exception_waiting(client):
+def test_the_seeded_world_has_a_partner_raised_exception_waiting(seeded_world, client):
     """Scene 7 of oes-command-centre needs a real signal from the ground."""
-    call_command("seed_supply_demo")
     client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
     body = client.get("/supply/api/bootstrap/").json()
 
@@ -804,8 +783,7 @@ def test_the_seeded_world_has_a_partner_raised_exception_waiting(client):
 # --- the loop: a partner signals, the centre answers ------------------------
 
 
-def test_a_partner_raises_a_shortfall_and_the_centre_sees_it(client):
-    call_command("seed_supply_demo")
+def test_a_partner_raises_a_shortfall_and_the_centre_sees_it(seeded_world, client):
     client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
     site_id = client.get("/supply/api/bootstrap/").json()["sites"][0]["id"]
 
@@ -828,8 +806,7 @@ def test_a_partner_raises_a_shortfall_and_the_centre_sees_it(client):
     assert mine, "the centre must see the signal the partner just raised"
 
 
-def test_a_partner_cannot_raise_a_shortfall_at_someone_elses_site(client):
-    call_command("seed_supply_demo")
+def test_a_partner_cannot_raise_a_shortfall_at_someone_elses_site(seeded_world, client):
     client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
     foreign = SupplyNode.objects.get(name="Tawila Nutrition Site")
 
@@ -841,8 +818,7 @@ def test_a_partner_cannot_raise_a_shortfall_at_someone_elses_site(client):
     assert response.status_code == 400
 
 
-def test_a_supplier_cannot_raise_a_shortfall_at_all(client):
-    call_command("seed_supply_demo")
+def test_a_supplier_cannot_raise_a_shortfall_at_all(seeded_world, client):
     client.post("/supply/login/", {"email": "supplier@savanna.example", "password": "oes-demo-2026"})
     response = client.post(
         "/supply/api/signals/raise/",
@@ -927,9 +903,8 @@ def test_a_reallocation_without_a_reason_is_refused():
         actions.reallocate(actor="ada", source_node=a, target_node=b, quantity=10, rationale="   ")
 
 
-def test_resolving_a_signal_ties_it_to_the_action_that_resolved_it(client):
+def test_resolving_a_signal_ties_it_to_the_action_that_resolved_it(seeded_world, client):
     """The decision and the evidence that prompted it become one record."""
-    call_command("seed_supply_demo")
     signal = ShortfallSignal.objects.filter(status=ShortfallSignal.Status.OPEN).first()
     assert signal is not None
 
@@ -971,8 +946,7 @@ def test_resolving_a_signal_ties_it_to_the_action_that_resolved_it(client):
     assert closed["resolved_by"]["rationale"].startswith("Kukawa reported a shortfall")
 
 
-def test_a_partner_cannot_reallocate(client):
-    call_command("seed_supply_demo")
+def test_a_partner_cannot_reallocate(seeded_world, client):
     client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
     response = client.post(
         "/supply/api/actions/reallocate/",
@@ -985,14 +959,12 @@ def test_a_partner_cannot_reallocate(client):
 # --- the batch drill --------------------------------------------------------
 
 
-def test_a_delivered_batch_drills_to_a_child_who_recovered(client):
+def test_a_delivered_batch_drills_to_a_child_who_recovered(seeded_world, client):
     """The closing beat of both the partner and the funder narratives."""
-    from connect_labs.supply.models import MUAC_RECOVERED_MIN_MM
-
-    call_command("seed_supply_demo")
     # A batch whose children have outcomes recorded. Not every distribution has
     # any — one handed out three days ago legitimately does not yet — and the
     # funder's drill only offers the ones that do.
+    from connect_labs.supply.models import MUAC_RECOVERED_MIN_MM
     from connect_labs.supply.models import ChildOutcome as _CO
 
     batch = _CO.objects.exclude(batch_lot="").values_list("batch_lot", flat=True).first()
@@ -1015,8 +987,7 @@ def test_a_delivered_batch_drills_to_a_child_who_recovered(client):
     assert all(o["synthetic"] for o in body["outcomes"])
 
 
-def test_a_supplier_cannot_drill_into_child_outcomes(client):
-    call_command("seed_supply_demo")
+def test_a_supplier_cannot_drill_into_child_outcomes(seeded_world, client):
     from connect_labs.supply.models import DistributionRecord
 
     batch = DistributionRecord.objects.first().batch_lot
@@ -1104,7 +1075,7 @@ def test_over_supply_is_reported_rather_than_clamped():
     assert row["surplus_children"] == 1_500
 
 
-def test_the_partner_calendar_shows_all_three_cover_states():
+def test_the_partner_calendar_shows_all_three_cover_states(seeded_world):
     """A calendar where every row reads the same teaches nothing.
 
     The first render of this surface showed eleven sites at zero cover and all
@@ -1112,7 +1083,6 @@ def test_the_partner_calendar_shows_all_three_cover_states():
     delivered to a partner site. Stock is derived from the event log and from
     nothing else, so the fix was to actually move goods there.
     """
-    call_command("seed_supply_demo")
     from connect_labs.supply.api.bootstrap import build_bootstrap
 
     class _Req:
@@ -1132,7 +1102,7 @@ def test_the_partner_calendar_shows_all_three_cover_states():
     assert weeks[-1] >= 4, "and one has to be comfortable"
 
 
-def test_the_calendar_depletes_stock_across_successive_distributions():
+def test_the_calendar_depletes_stock_across_successive_distributions(seeded_world):
     """Cartons are spent when they are distributed.
 
     Scoring every planned day against the same opening stock let one site's 329
@@ -1141,7 +1111,6 @@ def test_the_calendar_depletes_stock_across_successive_distributions():
     would already be dry for. Three independent judges caught the contradiction
     before any human did.
     """
-    call_command("seed_supply_demo")
     from connect_labs.supply.api.bootstrap import build_bootstrap
 
     class _Req:
@@ -1173,14 +1142,13 @@ def test_the_calendar_depletes_stock_across_successive_distributions():
     assert fell, "at least one site must visibly draw down"
 
 
-def test_a_consignment_arriving_later_does_not_cover_an_earlier_day():
+def test_a_consignment_arriving_later_does_not_cover_an_earlier_day(seeded_world):
     """A truck arriving on Friday does not cover Tuesday.
 
     Counting everything still on the road as available flattened every row to
     'covered' — including a site holding nothing on the day it was due to
     distribute.
     """
-    call_command("seed_supply_demo")
     from connect_labs.supply.api.bootstrap import build_bootstrap
 
     class _Req:
@@ -1200,9 +1168,8 @@ def test_a_consignment_arriving_later_does_not_cover_an_earlier_day():
             )
 
 
-def test_the_site_that_raised_the_shortfall_is_actually_short():
+def test_the_site_that_raised_the_shortfall_is_actually_short(seeded_world):
     """The signal has to be justified by the cover, not merely accompany it."""
-    call_command("seed_supply_demo")
     from connect_labs.supply.models import ShortfallSignal
     from connect_labs.supply.services import cover as cover_service
 
@@ -1269,7 +1236,7 @@ def test_a_resolved_signal_closes_on_the_queue_rather_than_vanishing():
     )
 
 
-def test_an_expiry_row_names_the_node_the_cartons_must_LEAVE():
+def test_an_expiry_row_names_the_node_the_cartons_must_LEAVE(seeded_world):
     """The one exception kind whose subject is holding too much, not too little.
 
     Every other row names a node that needs cartons, so the queue's reallocate
@@ -1284,7 +1251,6 @@ def test_an_expiry_row_names_the_node_the_cartons_must_LEAVE():
     """
     from connect_labs.supply.services import exceptions
 
-    call_command("seed_supply_demo", "--reset")
     rows = {r["kind"]: r for r in exceptions.build_queue()}
 
     expiry = rows.get("Expiry risk")
@@ -1357,14 +1323,11 @@ def test_cover_state_ignores_cartons_still_in_transit():
     assert distribution_plan_dict(_Plan(), inbound_cartons=500, on_hand=103)["state"] == "covered"
 
 
-def test_no_plan_is_covered_by_stock_that_has_not_arrived():
+def test_no_plan_is_covered_by_stock_that_has_not_arrived(seeded_world):
     """The invariant, stated as one property over the whole seeded world."""
-    from django.core.management import call_command
 
     from connect_labs.supply.models.demand import DistributionPlan  # noqa: F401
     from connect_labs.supply.serializers.demand import distribution_plan_dict
-
-    call_command("seed_supply_demo", "--reset")
 
     class _S:
         name = "x"
@@ -1387,7 +1350,7 @@ def test_no_plan_is_covered_by_stock_that_has_not_arrived():
         )
 
 
-def test_discharge_breakdown_separates_discharged_from_still_in_treatment():
+def test_discharge_breakdown_separates_discharged_from_still_in_treatment(seeded_world):
     """`children_observed` is the DISCHARGED population, so only discharged
     outcomes may be expressed as a share of it.
 
@@ -1402,9 +1365,7 @@ def test_discharge_breakdown_separates_discharged_from_still_in_treatment():
     Pinned server-side because the fix is in the UI and the UI needs the
     population boundary to be a stated, stable property.
     """
-    from django.core.management import call_command
 
-    call_command("seed_supply_demo", "--reset")
     summary = coverage.courses_versus_recoveries()
     breakdown = summary["discharge_breakdown"]
     observed = summary["children_observed"]
@@ -1463,11 +1424,9 @@ def test_coverage_reports_supply_positioned_and_reached_separately():
     assert row["dispensed_percent"] == pytest.approx(20.0, abs=0.5)
 
 
-def test_reached_never_exceeds_positioned_in_the_seeded_world():
+def test_reached_never_exceeds_positioned_in_the_seeded_world(seeded_world):
     """A sanity property: you cannot hand out more than arrived."""
-    from django.core.management import call_command
 
-    call_command("seed_supply_demo", "--reset")
     for row in coverage.coverage_by_district():
         assert row["courses_dispensed"] <= row["courses_delivered"], (
             f"{row['adm1_name']} dispensed {row['courses_dispensed']} of " f"{row['courses_delivered']} positioned"
