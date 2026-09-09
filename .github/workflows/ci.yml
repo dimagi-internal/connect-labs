@@ -183,8 +183,8 @@ jobs:
             # mismatch on ANY of them fails `apt-get update` outright -- twice on
             # one PR from dl.google.com alone (#1664). They are not ours to
             # depend on, so they are dropped before the update, which also retries.
-            sudo rm -f /etc/apt/sources.list.d/google-chrome*.list \
-              /etc/apt/sources.list.d/microsoft-edge*.list
+            sudo grep -lE 'dl\.google\.com|packages\.microsoft\.com' \
+              /etc/apt/sources.list.d/* 2>/dev/null | xargs -r sudo rm -f
             sudo apt-get update -o Acquire::Retries=3
             # apt refuses to use an archives dir without a `partial` inside it.
             sudo rm -rf /tmp/geo-debs && mkdir -p /tmp/geo-debs/partial
