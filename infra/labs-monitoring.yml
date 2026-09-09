@@ -14,10 +14,11 @@ AWSTemplateFormatVersion: '2010-09-09'
 # for the deploy command.
 Description: >-
   Labs operational guardrails (monitoring): SNS alert topic plus CloudWatch
-  alarms over RDS (connections, slot exhaustion), the web tier (CPU, ALB p95
-  latency, ELB 5xx, healthy targets) and AI image-audit runs (empty audits,
-  classifier saturation). Standalone stack that references (does not own) the
-  existing RDS instance, ECS services and log groups. See PR #765.
+  alarms over RDS (connections, slot exhaustion, free storage), the web tier
+  (CPU, ALB p95 latency, ELB 5xx, target 5xx, healthy targets) and AI
+  image-audit runs (empty audits, classifier saturation). Standalone stack that
+  references (does not own) the existing RDS instance, ECS services and log
+  groups. Tenant alarms: labs-tenant-monitoring.yml. See PR #765.
 
 Parameters:
   AlarmEmail:
@@ -146,22 +147,17 @@ Parameters:
 
   Target5xxThreshold:
     Type: Number
-    Default: 25
+    Default: 10
     Description: >-
-      Alarm when the WEB TIER returns this many 5xx in 5 minutes. Mirrors
-      Elb5xxThreshold deliberately: the two metrics catch opposite failures and
-      neither substitutes for the other. Baseline is essentially zero (08-30: 0,
-      09-01: 1 through 14:00Z); the 08-31 Umami outage ran 410 in two hours and
-      peaked at 42 in one 5-minute bucket, so 25 fires within ~5 minutes of a
-      real burst while staying silent on a normal day.
-      CAVEAT, and it is the open question on this number: 25 was derived from
-      that UMAMI incident, which this alarm no longer watches. It is retained
-      only because it is provably no noisier than today — the alarm now fires
-      on a strict SUBSET of what it fired on before — not because anyone has
-      shown it is right for the web tier, where 5xx are far more serious and a
-      lower number is plausible. Re-derive it from web-target-group history
-      (a `--dimensions … Name=TargetGroup` read over 5 quiet days) before
-      treating this default as calibrated.
+      Alarm when the WEB TIER returns this many 5xx in 5 minutes. Pairs with
+      Elb5xxThreshold: opposite failures, neither substitutes. Was 25, derived
+      from the 08-31 UMAMI incident this alarm no longer watches, with a caveat
+      to re-derive it from web-target-group history. Re-derived 2026-09-09:
+      over the 5 days to 09-09 15:00Z the web target group had 20 non-zero
+      5-minute buckets of 1440, max 5; 14-day hourly max outside an incident 7.
+      In the 2026-09-08 storage-full outage (#1634) it peaked at 17 per bucket
+      (17, 13, 17) — at 25 this alarm would NOT have paged for labs' share of
+      that outage; at 10 it fires on all three buckets and zero baseline ones.
 
 Conditions:
   HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
@@ -707,6 +703,10 @@ Resources:
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlertTopic]
+      # canopy-web and ace-web share this ALB and this RDS instance; their
+      # per-target-group 5xx alarms are in labs-tenant-monitoring.yml, which
+      # imports AlertTopicArn. Not here: this file is at CloudFormation's
+      # 51,200-byte inline-template limit (README § Deploy).
 
   # ── No healthy target at all ───────────────────────────────────────
   # Fires only when EVERY task is unhealthy: HealthyHostCount is a count, not a
