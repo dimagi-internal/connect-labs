@@ -86,6 +86,79 @@ class TestPlanningGapFeatures:
         features = gaps.planning_gap_features("Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), [])
         assert features == []
 
+    def test_min_buildings_per_cell_drops_small_cells(self, monkeypatch):
+        # One isolated building (its own cell, n_buildings=1) plus two close
+        # together (share a cell, n_buildings=2).
+        buildings = _buildings_df([(0.009, 0.009), (0.0001, 0.0001), (0.00011, 0.00011)])
+        monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: buildings)
+        features = gaps.planning_gap_features(
+            "Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), [], min_buildings_per_cell=2
+        )
+        assert len(features) == 1
+        assert features[0]["properties"]["building_count"] == 2
+
+    def test_min_confidence_and_sources_are_forwarded_to_fetch_buildings(self, monkeypatch):
+        seen = {}
+
+        def fake_fetch_buildings(area, **kw):
+            seen.update(kw)
+            return _buildings_df([(0.001, 0.001)])
+
+        monkeypatch.setattr(gaps, "fetch_buildings", fake_fetch_buildings)
+        gaps.planning_gap_features(
+            "Sabon Gari",
+            "Rano",
+            "Kano",
+            "mopup-kano-rano-sabon-gari",
+            object(),
+            [],
+            min_confidence=0.75,
+            sources=["Google Open Buildings"],
+        )
+        assert seen["min_confidence"] == 0.75
+        assert seen["sources"] == ["Google Open Buildings"]
+
+    def test_visits_per_building_sets_expected_visit_count_estimate(self, monkeypatch):
+        buildings = _buildings_df([(0.0, 0.0), (0.0001, 0.0001), (0.0002, 0.0002)])
+        monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: buildings)
+        features = gaps.planning_gap_features(
+            "Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), [], visits_per_building=2.5
+        )
+        assert len(features) == 1
+        assert features[0]["properties"]["building_count"] == 3
+        assert features[0]["properties"]["expected_visit_count"] == round(2.5 * 3)
+
+    def test_no_visits_per_building_keeps_building_count_placeholder(self, monkeypatch):
+        buildings = _buildings_df([(0.0, 0.0), (0.0001, 0.0001)])
+        monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: buildings)
+        features = gaps.planning_gap_features("Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), [])
+        assert features[0]["properties"]["expected_visit_count"] == features[0]["properties"]["building_count"]
+
+
+class TestWardVisitsPerBuilding:
+    def test_computes_ratio_over_concluded_work_areas_in_the_ward(self):
+        all_rows = [
+            {"ward": "Sabon Gari", "status": "VISITED", "approved_hsd_count": 8, "building_count": 4},
+            {"ward": "Sabon Gari", "status": "EXPECTED_VISIT_REACHED", "approved_hsd_count": 2, "building_count": 2},
+            # Different ward -- must not pollute Sabon Gari's rate.
+            {"ward": "Unguwar Arewa", "status": "VISITED", "approved_hsd_count": 100, "building_count": 1},
+        ]
+        rate = gaps.ward_visits_per_building(all_rows, "Sabon Gari")
+        assert rate == pytest.approx((8 + 2) / (4 + 2))
+
+    def test_excludes_not_yet_visited_work_areas(self):
+        all_rows = [
+            {"ward": "Sabon Gari", "status": "NOT_VISITED", "approved_hsd_count": 0, "building_count": 10},
+            {"ward": "Sabon Gari", "status": "VISITED", "approved_hsd_count": 4, "building_count": 2},
+        ]
+        rate = gaps.ward_visits_per_building(all_rows, "Sabon Gari")
+        assert rate == pytest.approx(4 / 2)
+
+    def test_returns_zero_not_zerodivision_when_no_eligible_data(self):
+        assert gaps.ward_visits_per_building([], "Sabon Gari") == 0.0
+        all_rows = [{"ward": "Sabon Gari", "status": "NOT_VISITED", "approved_hsd_count": 0, "building_count": 5}]
+        assert gaps.ward_visits_per_building(all_rows, "Sabon Gari") == 0.0
+
 
 class _FakeRow:
     def __init__(self, entity_id, **computed):

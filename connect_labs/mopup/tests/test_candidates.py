@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from connect_labs.mopup.core.candidates import build_evaluation_input, build_map_features, summarize_candidates_by_ward
+from connect_labs.mopup.core.candidates import (
+    build_evaluation_input,
+    build_map_features,
+    gap_feature_to_candidate_row,
+    summarize_candidates_by_ward,
+)
 
 
 class TestBuildEvaluationInput:
@@ -229,7 +234,27 @@ class TestBuildMapFeatures:
         fc = build_map_features(all_rows, [])
         assert len(fc["features"]) == 1
         props = fc["features"][0]["properties"]
-        assert props == {"wa_id": "wa-1", "ward": "Sabon Gari", "included": False, "first_indicator": None}
+        assert props == {
+            "wa_id": "wa-1",
+            "ward": "Sabon Gari",
+            "included": False,
+            "first_indicator": None,
+            "source": "existing_wa",
+        }
+
+    def test_gap_features_appended_with_their_own_source(self):
+        gap_feature = {
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [[[2, 2], [3, 2], [3, 3], [2, 3], [2, 2]]]},
+            "properties": {"cluster": "mopup-x-gap-C0", "ward": "Sabon Gari", "building_count": 3},
+        }
+        fc = build_map_features([], [], gap_features=[gap_feature])
+        assert len(fc["features"]) == 1
+        props = fc["features"][0]["properties"]
+        assert props["source"] == "planning_gap"
+        assert props["included"] is True
+        assert props["wa_id"] == "mopup-x-gap-C0"
+        assert fc["features"][0]["geometry"] == gap_feature["geometry"]
 
     def test_candidate_marked_included_with_first_triggered_indicator(self):
         all_rows = [{"wa_id": "wa-1", "ward": "Sabon Gari", "boundary": self._BOUNDARY}]
@@ -243,3 +268,35 @@ class TestBuildMapFeatures:
         all_rows = [{"wa_id": "wa-1", "ward": "Sabon Gari", "boundary": self._BOUNDARY}]
         fc = build_map_features(all_rows, [])
         assert fc["features"][0]["geometry"] == self._BOUNDARY
+
+
+class TestGapFeatureToCandidateRow:
+    def test_adapts_a_gap_feature_into_candidate_shape(self):
+        boundary = {"type": "Polygon", "coordinates": [[[2, 2], [3, 2], [3, 3], [2, 3], [2, 2]]]}
+        feature = {
+            "type": "Feature",
+            "geometry": boundary,
+            "properties": {
+                "cluster": "mopup-kano-rano-sabon-gari-gap-C0",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "building_count": 3,
+                "expected_visit_count": 7,
+            },
+        }
+        row = gap_feature_to_candidate_row(feature)
+        assert row == {
+            "wa_id": "mopup-kano-rano-sabon-gari-gap-C0",
+            "ward": "Sabon Gari",
+            "lga": "Rano",
+            "state": "Kano",
+            "flw_username": "",
+            "boundary": boundary,
+            "building_count": 3,
+            "expected_visit_count": 7,
+            "source": "planning_gap",
+            "triggered_indicators": ["planning_gap"],
+            "severity_count": 0,
+            "detail": {},
+        }

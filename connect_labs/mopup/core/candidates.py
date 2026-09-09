@@ -137,7 +137,7 @@ def summarize_candidates_by_ward(candidates: list[dict], all_rows: list[dict]) -
     return sorted(by_ward.values(), key=lambda r: (r["state"], r["lga"], r["ward"]))
 
 
-def build_map_features(all_rows: list[dict], candidates: list[dict]) -> dict:
+def build_map_features(all_rows: list[dict], candidates: list[dict], gap_features: list[dict] | None = None) -> dict:
     """One GeoJSON Feature per evaluated work area that has boundary
     geometry, for Phase 2's map — a work area with no geometry match is
     skipped (nothing to draw), same "never guess a shape" rule
@@ -147,7 +147,12 @@ def build_map_features(all_rows: list[dict], candidates: list[dict]) -> dict:
     needs to color a feature (see `analysis.js`'s `mapFeatureStyle`) — grey
     for `included: false`, one fixed color per indicator otherwise, using
     only the FIRST triggered indicator when a work area was flagged by
-    several (candidate table shows the rest)."""
+    several (candidate table shows the rest).
+
+    `gap_features`, if given (Step 2's already-computed
+    `run.planning_gap_features`), are appended as-is with
+    `properties.source = "planning_gap"` added — their own distinct map
+    color, separate from the execution-gap candidates above."""
     candidates_by_id = {c["wa_id"]: c for c in candidates}
     features = []
     for wa in all_rows:
@@ -165,7 +170,46 @@ def build_map_features(all_rows: list[dict], candidates: list[dict]) -> dict:
                     "ward": wa.get("ward", ""),
                     "included": candidate is not None,
                     "first_indicator": triggered[0] if triggered else None,
+                    "source": "existing_wa",
+                },
+            }
+        )
+    for gap in gap_features or []:
+        props = gap.get("properties", {}) or {}
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": gap.get("geometry"),
+                "properties": {
+                    "wa_id": props.get("cluster", ""),
+                    "ward": props.get("ward", ""),
+                    "included": True,
+                    "first_indicator": None,
+                    "source": "planning_gap",
                 },
             }
         )
     return {"type": "FeatureCollection", "features": features}
+
+
+def gap_feature_to_candidate_row(feature: dict) -> dict:
+    """Adapts one Step 2 planning-gap GeoJSON Feature into the same shape
+    `core.indicators.evaluate_run`'s candidates use, so the candidate table
+    can render both with the same code — `severity_count`/
+    `triggered_indicators` are placeholders (a gap-fill cell isn't "flagged"
+    by an indicator, it's new ground nothing ever covered)."""
+    props = feature.get("properties", {}) or {}
+    return {
+        "wa_id": props.get("cluster", ""),
+        "ward": props.get("ward", ""),
+        "lga": props.get("lga", ""),
+        "state": props.get("state", ""),
+        "flw_username": "",
+        "boundary": feature.get("geometry"),
+        "building_count": props.get("building_count", 0),
+        "expected_visit_count": props.get("expected_visit_count", 0),
+        "source": "planning_gap",
+        "triggered_indicators": ["planning_gap"],
+        "severity_count": 0,
+        "detail": {},
+    }

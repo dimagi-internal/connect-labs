@@ -85,10 +85,10 @@ class MopupRunRecord(LocalLabsRecord):
     @property
     def create_plan_task_id(self) -> str | None:
         """The Celery task id (if any) for `mopup.tasks.create_mopup_plan` —
-        Phase 3's hand-off, offloaded the same way as `fetch_task_id` since
-        `include_planning_gaps` can mean fetching + diffing buildings across
-        every locked ward, not just one (confirmed slow enough to risk a
-        gateway timeout on a single real ward this session). Unlike
+        Phase 3's hand-off, offloaded the same way as `fetch_task_id` since a
+        real multi-ward hand-off is worth guarding against a gateway timeout
+        even though (since planning-gap computation moved to Phase 2's Step
+        2 — see `planning_gap_features`) it's typically fast now. Unlike
         `fetch_task_id` (a run's ONE-TIME data pull), this is cleared as soon
         as a terminal state (success or failure) is read back — each
         "Create mop-up plan" click is its own attempt, not a single
@@ -97,6 +97,40 @@ class MopupRunRecord(LocalLabsRecord):
         `MopupCreatePlanView`/`_create_plan_result_or_progress` for how this
         is read back via `AsyncResult`."""
         return self.data.get("create_plan_task_id")
+
+    @property
+    def planning_gap_task_id(self) -> str | None:
+        """The Celery task id (if any) for `mopup.tasks.preview_planning_gaps`
+        — Phase 2's Step 2 (locked-run-only) planning-gap preview. Cleared on
+        any terminal state the same way `create_plan_task_id` is, since each
+        "Recompute" click in Step 2 is its own attempt with its own config."""
+        return self.data.get("planning_gap_task_id")
+
+    @property
+    def planning_gap_features(self) -> list[dict]:
+        """The gap-fill WorkArea features from the LATEST successful Step 2
+        preview (empty until Step 2 has run at least once) — GeoJSON
+        Features in the same shape `core.gaps.planning_gap_features`
+        produces. Phase 3's hand-off (`core.handoff.create_plan_from_locked_run`)
+        carries these forward as-is; it does not recompute them."""
+        return self.data.get("planning_gap_features", [])
+
+    @property
+    def planning_gap_config(self) -> dict:
+        """The building-source/confidence/min-buildings/cell-size settings
+        used to produce `planning_gap_features`, for redisplaying Step 2's
+        form with whatever was last used rather than always resetting to
+        defaults."""
+        return self.data.get("planning_gap_config", {})
+
+    @property
+    def planning_gap_warnings(self) -> dict:
+        """{ward: reason} for any ward whose Step 2 gap computation failed on
+        the latest run (e.g. an expired CommCare HQ session) — surfaced so a
+        failure never looks identical to "this ward has no gaps." See
+        `core.gaps.planning_gap_features`'s docstring for the failure mode
+        this exists to catch (found live this session)."""
+        return self.data.get("planning_gap_warnings", {})
 
     @property
     def created_at(self) -> str:

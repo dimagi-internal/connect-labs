@@ -29,7 +29,11 @@ from django.views.generic import TemplateView
 
 from connect_labs.labs.context import get_org_data
 from connect_labs.mopup.core import indicators as ind
-from connect_labs.mopup.core.candidates import build_map_features, summarize_candidates_by_ward
+from connect_labs.mopup.core.candidates import (
+    build_map_features,
+    gap_feature_to_candidate_row,
+    summarize_candidates_by_ward,
+)
 from connect_labs.mopup.core.data_access import MopupRunDataAccess
 from connect_labs.mopup.core.models import STATUS_LOCKED
 from connect_labs.mopup.core.work_areas import list_work_areas, summarize_wards
@@ -114,7 +118,6 @@ def _create_plan_result_or_progress(da, run, request, program_id, payload) -> tu
             request.user.id,
             grouping=payload.get("grouping"),
             group_id=payload.get("group_id"),
-            include_planning_gaps=bool(payload.get("include_planning_gaps", False)),
         )
         da.update_run(run, create_plan_task_id=result.id)
         return None, build_task_progress("PENDING", None)
@@ -127,6 +130,52 @@ def _create_plan_result_or_progress(da, run, request, program_id, payload) -> tu
         return progress["result"], None
     if progress["status"] == "failed":
         da.update_run(run, create_plan_task_id=None)
+        return None, progress
+    return None, progress
+
+
+def _planning_gaps_result_or_progress(da, run, request, program_id, payload) -> tuple[dict | None, dict | None]:
+    """Same dispatch-once/poll pattern as `_create_plan_result_or_progress`,
+    for `mopup.tasks.preview_planning_gaps`. On a completed run, the result
+    is PERSISTED onto the run (`planning_gap_features`/`planning_gap_config`/
+    `planning_gap_warnings`) before being returned — Step 2 has no separate
+    "lock" gesture; whatever the latest successful Recompute produced is
+    what Phase 3's hand-off carries forward. Re-running Step 2 with
+    different settings simply overwrites what's stored."""
+    from celery.result import AsyncResult
+
+    from connect_labs.labs.analysis.sse_streaming import build_task_progress
+    from connect_labs.mopup.tasks import preview_planning_gaps
+
+    task_id = run.planning_gap_task_id
+    if not task_id:
+        result = preview_planning_gaps.delay(
+            program_id,
+            run.id,
+            request.user.id,
+            building_sources=payload.get("building_sources"),
+            min_confidence=payload.get("min_confidence"),
+            min_buildings_per_cell=int(payload.get("min_buildings_per_cell") or 1),
+            cell_size_m=float(payload.get("cell_size_m") or 100.0),
+        )
+        da.update_run(run, planning_gap_task_id=result.id)
+        return None, build_task_progress("PENDING", None)
+
+    task = AsyncResult(task_id)
+    progress = build_task_progress(task.state, task.info)
+
+    if progress["status"] == "completed":
+        resp = progress["result"]
+        da.update_run(
+            run,
+            planning_gap_task_id=None,
+            planning_gap_features=resp.get("features", []),
+            planning_gap_config=resp.get("config", {}),
+            planning_gap_warnings=resp.get("warnings", {}),
+        )
+        return resp, None
+    if progress["status"] == "failed":
+        da.update_run(run, planning_gap_task_id=None)
         return None, progress
     return None, progress
 
@@ -326,6 +375,7 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         context["candidates_url"] = reverse("mopup:candidates", args=[program_id, run_id])
         context["lock_url"] = reverse("mopup:lock", args=[program_id, run_id])
         context["create_plan_url"] = reverse("mopup:create_plan", args=[program_id, run_id])
+        context["planning_gaps_url"] = reverse("mopup:planning_gaps", args=[program_id, run_id])
         context["indicator_configs"] = run.thresholds.get("indicator_configs") or ind.DEFAULT_INDICATOR_CONFIGS
         context["global_config"] = run.thresholds.get("global_config") or ind.DEFAULT_GLOBAL_CONFIG
         context["indicator_defs"] = [
@@ -408,15 +458,19 @@ class MopupCandidatesView(LoginRequiredMixin, View):
             for key in c["triggered_indicators"]:
                 per_indicator_counts[key] = per_indicator_counts.get(key, 0) + 1
 
+        gap_features = run.planning_gap_features
+        gap_candidates = [gap_feature_to_candidate_row(f) for f in gap_features]
+
         return JsonResponse(
             {
                 "status": "ok",
                 "candidates": candidates,
+                "gap_candidates": gap_candidates,
                 "ward_summary": ward_summary,
                 "total_work_areas": len(rows),
                 "candidate_count": len(candidates),
                 "per_indicator_counts": per_indicator_counts,
-                "map_features": build_map_features(rows, candidates),
+                "map_features": build_map_features(rows, candidates, gap_features),
             }
         )
 
@@ -467,17 +521,18 @@ class MopupLockView(LoginRequiredMixin, View):
 
 
 class MopupCreatePlanView(LoginRequiredMixin, View):
-    """Phase 3: hand a locked run's candidate set to the existing microplans
-    coverage engine. Only acts on `run.candidate_work_areas` (frozen at lock
-    time) — never re-reads thresholds.
+    """Phase 3: hand a locked run's candidate set (plus whatever planning-gap
+    features Phase 2's Step 2 already computed — `run.planning_gap_features`)
+    to the existing microplans coverage engine. Only acts on
+    `run.candidate_work_areas`/`run.planning_gap_features` (both frozen
+    before this point) — never re-reads live thresholds or recomputes gaps.
 
     Offloaded to Celery (`mopup.tasks.create_mopup_plan`) the same way
-    Phase 2's data pull is — a real `include_planning_gaps=True` hand-off
-    (fetching + diffing thousands of Overture buildings, per ward) took well
-    over a minute synchronously against real program-217 data this session,
-    and mop-up is expected to run against several wards' candidates at once.
-    See `_create_plan_result_or_progress` for the dispatch/poll mechanics,
-    and core/handoff.py for the actual microplans calls."""
+    Phase 2's data pull is — a real hand-off can still be slow with several
+    wards' candidates at once, even though the expensive building-fetch part
+    moved to Step 2. See `_create_plan_result_or_progress` for the
+    dispatch/poll mechanics, and core/handoff.py for the actual microplans
+    calls."""
 
     def post(self, request, program_id, run_id):
         da = MopupRunDataAccess(program_id, request=request)
@@ -493,6 +548,36 @@ class MopupCreatePlanView(LoginRequiredMixin, View):
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
         resp, progress = _create_plan_result_or_progress(da, run, request, program_id, payload)
+        if resp is None:
+            return JsonResponse(progress)
+        return JsonResponse(resp)
+
+
+class MopupPlanningGapsView(LoginRequiredMixin, View):
+    """Phase 2 Step 2 (locked runs only): compute — and persist onto the
+    run — the planning-gap work areas for every distinct ward among the
+    locked candidates, per `mopup.tasks.preview_planning_gaps`. Each
+    Recompute click here is its own attempt: whatever the LATEST successful
+    one produced is what `MopupCreatePlanView`/`core.handoff` carries
+    forward at hand-off, with no separate lock step of its own. See
+    `_planning_gaps_result_or_progress` for the dispatch/poll mechanics."""
+
+    def post(self, request, program_id, run_id):
+        da = MopupRunDataAccess(program_id, request=request)
+        run = da.get_run(run_id)
+        if run is None:
+            return JsonResponse({"status": "error", "detail": "Run not found."}, status=404)
+        if run.status != STATUS_LOCKED:
+            return JsonResponse(
+                {"status": "error", "detail": "Lock the run before previewing planning gaps."}, status=400
+            )
+
+        try:
+            payload = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        resp, progress = _planning_gaps_result_or_progress(da, run, request, program_id, payload)
         if resp is None:
             return JsonResponse(progress)
         return JsonResponse(resp)
