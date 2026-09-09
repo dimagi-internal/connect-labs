@@ -127,6 +127,12 @@ def semantic_snapshot(
     cases = snap.case_rows(pipelines, spec, {int(k): v for k, v in (llo_map or {}).items()})
     visits_alias = spec.get("visits_pipeline")
     visits = ((pipelines or {}).get(visits_alias) or {}).get("rows") or [] if visits_alias else []
+    # The pipeline cache is all-time, so the case index and the visit rows must be
+    # cut at the same date the evaluation was. Without this a run for a past week
+    # reported today's case and visit counts in its banner and let the drill open
+    # babies who had not been registered yet.
+    cases = cut_as_of(cases, ("reg_date", "first_visit_date"), as_of_date)
+    visits = cut_as_of(visits, ("visit_date",), as_of_date)
 
     meta = {
         "cases": len(cases),
@@ -159,6 +165,22 @@ def semantic_snapshot(
 
 
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+
+
+def cut_as_of(rows: list[dict], date_fields: tuple[str, ...], as_of: str | None) -> list[dict]:
+    """Rows whose first present date field is on or before `as_of` (ISO date).
+
+    A row with none of the fields is kept: an undated case is a data-quality fact
+    to show, not a reason to hide it. No `as_of` means no cut.
+    """
+    if not as_of:
+        return rows
+    out = []
+    for r in rows:
+        d = next((str(r.get(f))[:10] for f in date_fields if r.get(f)), None)
+        if d is None or d <= as_of:
+            out.append(r)
+    return out
 
 
 def as_of_iso(period_end) -> str | None:
