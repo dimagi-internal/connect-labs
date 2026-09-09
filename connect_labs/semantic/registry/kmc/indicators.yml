@@ -660,12 +660,25 @@ measures:
     filters: [{ sql: '{CUBE}.started' }]
   - name: n04_denominator
     type: count
-  # N05 (median gestational age) is DEFERRED, not dropped. It needs a Layer 1 field
-  # the pipeline has never carried — gestational_age_at_birth_lmp — which is added to
-  # the pipeline template in this change but only reaches the data on the next
-  # extraction. Declaring the measure before its column exists compiles cleanly and
-  # then fails at execution, which is exactly the class test_every_declared_scope
-  # _actually_executes exists to catch. It lands with the pipeline migration.
+  - name: n05
+    title: Median gestational age (wks)
+    type: number
+    sql: '{n05_numerator}'
+    meta:
+      {
+        indicator: N05,
+        category: Case mix,
+        prominence: Top,
+        unit: wks,
+        direction: none,
+        min_denominator: 20,
+      }
+  - name: n05_numerator
+    type: number
+    sql: 'PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {CUBE}.gestational_age_plausible)'
+  - name: n05_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.gestational_age_plausible IS NOT NULL' }]
   - name: n06
     title: Median birthweight (g)
     type: number

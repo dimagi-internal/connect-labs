@@ -225,9 +225,11 @@ class TestReseedFromDisk:
         stale_inds = {
             **payload["indicators"],
             "measures": [
-                {**m, "meta": {k: v for k, v in (m.get("meta") or {}).items() if k != "inputs"}}
-                if m.get("meta")
-                else m
+                (
+                    {**m, "meta": {k: v for k, v in (m.get("meta") or {}).items() if k != "inputs"}}
+                    if m.get("meta")
+                    else m
+                )
                 for m in payload["indicators"]["measures"]
             ],
         }

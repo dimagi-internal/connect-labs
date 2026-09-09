@@ -857,3 +857,57 @@ class TestMonthlyTrendPoints:
         jan = {m["month"]: m for m in self._build()["monthly"]}["2026-01"]
         assert "C14" in jan["ind"]
         assert jan["n"] == 3
+
+
+N06 = {"id": "n06", "indicator": "N06", "unit": "g", "direction": "none", "min_denominator": 20, "inputs": []}
+
+
+class TestFurtherSeriesRideTheSameRows:
+    """A second indicator family is graded from the SAME evaluation into
+    `payload.series[<name>]`, with the same gates and the same credibility -- so a
+    scorecard registry needs neither a second query nor a second grader, and cannot
+    disagree with the headline series about a denominator."""
+
+    ROWS = [
+        {"scope": "programme", "n_cases": 40, "n06": 1900.0, "n06_denominator": 40},
+        {"scope": "llo", "llo": "GHI", "n_cases": 30, "n06": 1850.0, "n06_denominator": 30},
+        {"scope": "llo", "llo": "EHA", "n_cases": 10, "n06": 2100.0, "n06_denominator": 10},
+        {"scope": "opportunity", "opportunity_id": 10017, "n_cases": 30, "n06": 1850.0, "n06_denominator": 30},
+        {
+            "scope": "flw",
+            "opportunity_id": 10017,
+            "username": "flw_001",
+            "n_cases": 30,
+            "n06": 1850.0,
+            "n06_denominator": 30,
+        },
+    ]
+
+    def _build(self, extra=None):
+        return snap.build(spec=SPEC, rows=self.ROWS, measures=[C16], deployment=DEPLOY, cases=[], extra_series=extra)
+
+    def test_absent_means_an_empty_map_not_a_missing_key(self):
+        assert self._build()["series"] == {}
+
+    def test_each_series_carries_its_catalog_and_every_scope(self):
+        n = self._build({"N": [N06]})["series"]["N"]
+        assert [m["indicator"] for m in n["measures"]] == ["N06"]
+        assert n["programme"]["N06"]["value"] == 1900.0
+        assert {r["llo"]: r["n"] for r in n["byLLO"]} == {"GHI": 30, "EHA": 10}
+        assert next(r for r in n["byLLO"] if r["llo"] == "GHI")["ind"]["N06"]["value"] == 1850.0
+        assert n["byOpp"][0]["opp"] == 10017 and n["byOpp"][0]["llo"] == "GHI"
+
+    def test_the_headline_series_is_not_polluted(self):
+        payload = self._build({"N": [N06]})
+        assert "N06" not in payload["programInd"]
+        assert [m["indicator"] for m in payload["cMeasures"]] == ["C16"]
+
+    def test_the_same_gates_apply(self):
+        """n<20 is the scorecard's own floor, read off its measure, not the headline default."""
+        n = self._build({"N": [N06]})["series"]["N"]
+        assert next(r for r in n["byLLO"] if r["llo"] == "EHA")["ind"]["N06"]["band"] == "insufficient"
+
+    def test_worker_keys_match_the_headline_series(self):
+        """The render joins scorecard worker cells onto the headline worker table by key."""
+        payload = self._build({"N": [N06]})
+        assert [f["key"] for f in payload["series"]["N"]["byFLW"]] == [f["key"] for f in payload["byFLW"]]
