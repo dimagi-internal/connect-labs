@@ -158,3 +158,22 @@ def _is_synthetic(opportunity_ids: list[int]) -> bool | None:
 
 
 BUILDERS = {"semantic_snapshot": semantic_snapshot}
+
+# The spec keys each builder accepts, declared BESIDE the builder so the two cannot
+# drift. `workflow_update_definition` validates an instance manifest against this,
+# which is what lets a builder spec be written to a definition at all -- and so what
+# makes a computed snapshot editable without a deploy.
+#
+# Strictness is kept on purpose: an unrecognised key is refused rather than ignored,
+# because a typo'd manifest would otherwise silently change what every completed run
+# captures, forever. Widening the allowed set is a deliberate act, here.
+BUILDER_SPEC_KEYS = {
+    "semantic_snapshot": {
+        "series",
+        "scopes",
+        "case_index",
+        "visits_pipeline",
+        "credibility",
+        "min_denominator_default",
+    },
+}
