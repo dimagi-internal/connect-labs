@@ -11,6 +11,12 @@ Recompute button now does that work up front, with the result stored on the
 run (`MopupRunRecord.planning_gap_features`) and carried forward as-is by
 `core.handoff.create_plan_from_locked_run` — no recomputation at hand-off.
 
+Step 2 also supports a third building source alongside Overture/OSM/Microsoft:
+a user-uploaded CSV (`buildings_from_upload`), for when the reviewer has
+better local building data than any of the automated providers carry. Either
+way, the buildings feed the SAME `buildings_not_covered`/`grid_clusters`
+pipeline below — only where the DataFrame comes from differs.
+
 Deliberately not built on top of `microplans.coverage.frame.generate_coverage_frame`
 — that function always calls `fetch_buildings` itself with no seam to inject
 a pre-filtered building set, and adding one would be a microplans-file change
@@ -43,6 +49,7 @@ def buildings_not_covered(
     *,
     min_confidence: float | None = None,
     sources: list[str] | None = None,
+    buildings: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Buildings inside `ward_boundary` whose centroid does NOT fall inside
     the union of `existing_wa_boundaries` — the "never covered by any
@@ -56,15 +63,78 @@ def buildings_not_covered(
     candidate being revisited is itself an existing WA and its footprint is
     already covered.
 
-    Raises `ValueError` (the same `MAX_AREA_KM2` guard) via `fetch_buildings`.
+    ``buildings``, if given, is used AS-IS instead of calling
+    `fetch_buildings` — the seam Step 2's "upload your own building data"
+    mode uses (see `buildings_from_upload`): the exclusion/clipping logic
+    below is identical regardless of where the buildings came from, only
+    the source of the DataFrame differs. `min_confidence`/`sources` are
+    ignored when `buildings` is given (they're `fetch_buildings`-specific
+    filters with no meaning for an already-built frame).
+
+    Raises `ValueError` (the same `MAX_AREA_KM2` guard) via `fetch_buildings`
+    — only when `buildings` is not given.
     """
-    buildings = fetch_buildings(ward_boundary, min_confidence=min_confidence, sources=sources)
+    if buildings is None:
+        buildings = fetch_buildings(ward_boundary, min_confidence=min_confidence, sources=sources)
     if not existing_wa_boundaries or buildings.empty:
         return buildings
 
     covered = prep(unary_union([shape(g) for g in existing_wa_boundaries]))
     keep = [not covered.contains(Point(lon, lat)) for lon, lat in zip(buildings["lon"], buildings["lat"])]
     return buildings[pd.Series(keep, index=buildings.index)]
+
+
+def _normalize_name(s: str | None) -> str:
+    return " ".join(str(s or "").strip().casefold().split())
+
+
+def buildings_from_upload(df: pd.DataFrame, ward: str, lga: str, state: str) -> pd.DataFrame:
+    """Filters a user-uploaded building CSV down to this ward's rows, and
+    reshapes them into the same `lon`/`lat`/`area_m2`/`confidence`/`dataset`
+    frame `fetch_buildings` produces, ready for `buildings_not_covered`.
+
+    Expected input columns (confirmed against a real sample this session):
+    `latitude`, `longitude`, `wardname`, `lganame`, `statename` (required),
+    plus optional `area_in_meters`/`confidence` (kept if present, `None`
+    otherwise — same "OSM/Microsoft have no confidence" convention
+    `fetch_buildings` already follows). Any other column (e.g. an RCT `wardcode`/
+    `treatment` label) is ignored — this app only needs building positions.
+
+    Matching is an EXACT match on ward/LGA/state name, case/whitespace-
+    normalized only — deliberately not fuzzy, since fuzzy ward-name
+    matching is the exact mechanism behind this app's own ward-boundary
+    mismatch problem (see `MopupAnalysisView._ward_boundaries_geojson`).
+    A row whose ward isn't part of this run's selected wards is simply
+    never matched here (not an error) — the upload is allowed to cover
+    wards outside this mop-up round; only the ones actually being
+    reviewed get their gap cells computed.
+
+    Raises `KeyError` if a required column is missing — surfaced to the
+    caller as a per-ward warning (see `tasks.preview_planning_gaps`), same
+    as any other per-ward failure in that loop.
+    """
+    required = ("latitude", "longitude", "wardname", "lganame", "statename")
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise KeyError(f"uploaded file is missing required column(s): {', '.join(missing)}")
+
+    mask = (
+        (df["wardname"].map(_normalize_name) == _normalize_name(ward))
+        & (df["lganame"].map(_normalize_name) == _normalize_name(lga))
+        & (df["statename"].map(_normalize_name) == _normalize_name(state))
+    )
+    matched = df[mask]
+    return pd.DataFrame(
+        {
+            "lon": matched["longitude"].astype(float).to_numpy(),
+            "lat": matched["latitude"].astype(float).to_numpy(),
+            "area_m2": (
+                matched["area_in_meters"].astype(float).to_numpy() if "area_in_meters" in matched.columns else None
+            ),
+            "confidence": (matched["confidence"].to_numpy() if "confidence" in matched.columns else None),
+            "dataset": "uploaded",
+        }
+    )
 
 
 def planning_gap_features(
@@ -80,6 +150,7 @@ def planning_gap_features(
     sources: list[str] | None = None,
     min_buildings_per_cell: int = 1,
     visits_per_building: float | None = None,
+    buildings: pd.DataFrame | None = None,
 ) -> list[dict]:
     """Grid the buildings-minus-existing-footprint remainder for one ward
     into the SAME Feature shape `generate_coverage_frame` produces (`cluster`,
@@ -91,7 +162,9 @@ def planning_gap_features(
     target-spread group for the ward.
 
     `min_confidence`/`sources` are Phase 2 Step 2's building-source controls,
-    passed straight through to `buildings_not_covered`/`fetch_buildings`.
+    passed straight through to `buildings_not_covered`/`fetch_buildings` —
+    ignored when `buildings` is given (Step 2's "upload your own" mode
+    already has its buildings; see `buildings_from_upload`).
     `min_buildings_per_cell` drops any occupied grid cell with fewer
     buildings than this before it becomes a candidate work area — `grid_clusters`
     itself has no such floor (every occupied cell is a cluster).
@@ -106,7 +179,7 @@ def planning_gap_features(
     from connect_labs.microplans.core import clustering
 
     remainder = buildings_not_covered(
-        ward_boundary, existing_wa_boundaries, min_confidence=min_confidence, sources=sources
+        ward_boundary, existing_wa_boundaries, min_confidence=min_confidence, sources=sources, buildings=buildings
     )
     out = clustering.grid_clusters(remainder, cell_size_m=cell_size_m)
     features = []

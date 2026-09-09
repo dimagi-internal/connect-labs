@@ -679,8 +679,29 @@ window.MopupAnalysis = (function () {
 
   let planningGapsPollTimer = null;
 
+  function selectedGapMode() {
+    const checked = document.querySelector('.gap-mode-radio:checked');
+    return checked ? checked.value : 'overture';
+  }
+
+  // Step 2's three modes show different controls: Overture's source/
+  // confidence pickers, the upload form, or (for "skip") none of the
+  // building-source config at all — there's nothing to configure when no
+  // new work areas will be added.
+  function updateGapModeVisibility() {
+    const mode = selectedGapMode();
+    $('gap-mode-overture-controls').classList.toggle(
+      'hidden',
+      mode !== 'overture',
+    );
+    $('gap-mode-upload-controls').classList.toggle('hidden', mode !== 'upload');
+    $('gap-mode-shared-controls').classList.toggle('hidden', mode === 'skip');
+    $('planning-gaps-recompute').classList.toggle('hidden', mode === 'skip');
+  }
+
   function collectPlanningGapsConfig() {
     return {
+      mode: selectedGapMode(),
       building_sources: [
         ...document.querySelectorAll('.gap-src-cb:checked'),
       ].map((cb) => cb.value),
@@ -700,6 +721,7 @@ window.MopupAnalysis = (function () {
   // server-side onto the run by MopupPlanningGapsView — no separate lock
   // step for Step 2).
   async function previewPlanningGaps() {
+    if (selectedGapMode() === 'skip') return;
     $('planning-gaps-recompute').disabled = true;
     $('planning-gaps-status').textContent = 'Checking planning gaps…';
     try {
@@ -746,6 +768,42 @@ window.MopupAnalysis = (function () {
     }
   }
 
+  // Step 2's "upload your own" mode: POSTs the file as multipart form data
+  // (not JSON, unlike every other endpoint on this page) so Django's
+  // request.FILES sees it. Stores the file server-side; Recompute (a
+  // separate click, same as Overture mode) is what actually reads it and
+  // computes gap cells.
+  async function uploadBuildingsFile() {
+    const input = $('gap-upload-file');
+    const file = input.files[0];
+    if (!file) {
+      $('gap-upload-status').textContent = 'Choose a CSV file first.';
+      return;
+    }
+    $('gap-upload-button').disabled = true;
+    $('gap-upload-status').textContent = 'Uploading…';
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const resp = await fetch(CFG.uploadBuildingsUrl, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': CFG.csrfToken },
+        body,
+      });
+      const data = await resp.json();
+      $('gap-upload-button').disabled = false;
+      if (data.status !== 'ok') {
+        $('gap-upload-status').textContent =
+          data.detail || 'Failed to upload file.';
+        return;
+      }
+      $('gap-upload-status').textContent = `Uploaded: ${data.filename}`;
+    } catch (e) {
+      $('gap-upload-button').disabled = false;
+      $('gap-upload-status').textContent = 'Failed to upload file.';
+    }
+  }
+
   function init(cfg) {
     CFG = cfg;
     indicatorDefs = JSON.parse($('indicator-defs-data').textContent);
@@ -771,6 +829,11 @@ window.MopupAnalysis = (function () {
     $('lock-run').addEventListener('click', lockRun);
     $('create-plan').addEventListener('click', createPlan);
     $('planning-gaps-recompute').addEventListener('click', previewPlanningGaps);
+    document
+      .querySelectorAll('.gap-mode-radio')
+      .forEach((r) => r.addEventListener('change', updateGapModeVisibility));
+    updateGapModeVisibility();
+    $('gap-upload-button').addEventListener('click', uploadBuildingsFile);
     showLoadingPanel(
       'Loading work-area, visit, and geometry data for this opportunity…',
     );

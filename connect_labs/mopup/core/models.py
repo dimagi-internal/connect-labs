@@ -117,11 +117,27 @@ class MopupRunRecord(LocalLabsRecord):
 
     @property
     def planning_gap_config(self) -> dict:
-        """The building-source/confidence/min-buildings/cell-size settings
-        used to produce `planning_gap_features`, for redisplaying Step 2's
-        form with whatever was last used rather than always resetting to
-        defaults."""
+        """The mode ("skip"/"overture"/"upload")/building-source/confidence/
+        min-buildings/cell-size settings used to produce
+        `planning_gap_features`, for redisplaying Step 2's form with
+        whatever was last used rather than always resetting to defaults."""
         return self.data.get("planning_gap_config", {})
+
+    @property
+    def uploaded_buildings_key(self) -> str | None:
+        """Storage key (under `default_storage`, e.g. `MediaRootS3Boto3Storage`
+        in production) for the raw CSV last uploaded via
+        `MopupUploadBuildingsView` — read back by
+        `mopup.tasks.preview_planning_gaps` when Step 2's mode is "upload".
+        `None` until a file has been uploaded for this run."""
+        return self.data.get("uploaded_buildings_key")
+
+    @property
+    def uploaded_buildings_filename(self) -> str | None:
+        """The original filename of the last uploaded buildings CSV, purely
+        for redisplaying "X uploaded" on Step 2's form — never used to
+        resolve the actual stored file (that's `uploaded_buildings_key`)."""
+        return self.data.get("uploaded_buildings_filename")
 
     @property
     def planning_gap_warnings(self) -> dict:

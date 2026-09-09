@@ -55,6 +55,95 @@ class TestBuildingsNotCovered:
         result = gaps.buildings_not_covered(object(), [_square(0.0, 0.0, 0.002, 0.002)])
         assert result.empty
 
+    def test_pre_built_buildings_skip_fetch_buildings_entirely(self, monkeypatch):
+        def boom(*a, **k):
+            raise AssertionError("fetch_buildings should not be called when buildings= is given")
+
+        monkeypatch.setattr(gaps, "fetch_buildings", boom)
+        buildings = _buildings_df([(0.001, 0.001), (0.008, 0.008)])
+        existing = [_square(0.0, 0.0, 0.002, 0.002)]
+        result = gaps.buildings_not_covered(object(), existing, buildings=buildings)
+        assert len(result) == 1
+        assert result.iloc[0]["lon"] == pytest.approx(0.008)
+
+
+class TestBuildingsFromUpload:
+    def _df(self, rows):
+        """rows: list of dicts with latitude/longitude/wardname/lganame/statename
+        (+ optional area_in_meters/confidence), mirroring the real CSV shape."""
+        return pd.DataFrame(rows)
+
+    def test_filters_to_the_matching_ward_only(self):
+        df = self._df(
+            [
+                {
+                    "latitude": 11.09,
+                    "longitude": 11.33,
+                    "wardname": "Nafada Central",
+                    "lganame": "Nafada",
+                    "statename": "Gombe",
+                    "area_in_meters": 14.35,
+                    "confidence": 0.66,
+                },
+                {
+                    "latitude": 10.80,
+                    "longitude": 11.34,
+                    "wardname": "Birin Bolawa",
+                    "lganame": "Nafada",
+                    "statename": "Gombe",
+                    "area_in_meters": 28.95,
+                    "confidence": 0.79,
+                },
+            ]
+        )
+        result = gaps.buildings_from_upload(df, "Nafada Central", "Nafada", "Gombe")
+        assert len(result) == 1
+        assert result.iloc[0]["lat"] == pytest.approx(11.09)
+        assert result.iloc[0]["lon"] == pytest.approx(11.33)
+        assert result.iloc[0]["area_m2"] == pytest.approx(14.35)
+        assert result.iloc[0]["confidence"] == pytest.approx(0.66)
+        assert result.iloc[0]["dataset"] == "uploaded"
+
+    def test_matching_is_exact_not_fuzzy_but_normalizes_case_and_whitespace(self):
+        df = self._df(
+            [
+                {
+                    "latitude": 1.0,
+                    "longitude": 2.0,
+                    "wardname": "  nafada central  ",
+                    "lganame": "NAFADA",
+                    "statename": "gombe",
+                },
+                {
+                    "latitude": 3.0,
+                    "longitude": 4.0,
+                    "wardname": "Nafada Centrall",  # deliberately NOT a match
+                    "lganame": "Nafada",
+                    "statename": "Gombe",
+                },
+            ]
+        )
+        result = gaps.buildings_from_upload(df, "Nafada Central", "Nafada", "Gombe")
+        assert len(result) == 1
+        assert result.iloc[0]["lat"] == pytest.approx(1.0)
+
+    def test_rows_for_other_wards_are_never_matched(self):
+        df = self._df([{"latitude": 1.0, "longitude": 2.0, "wardname": "Elsewhere", "lganame": "X", "statename": "Y"}])
+        result = gaps.buildings_from_upload(df, "Nafada Central", "Nafada", "Gombe")
+        assert result.empty
+
+    def test_missing_optional_columns_default_to_none(self):
+        df = self._df([{"latitude": 1.0, "longitude": 2.0, "wardname": "W", "lganame": "L", "statename": "S"}])
+        result = gaps.buildings_from_upload(df, "W", "L", "S")
+        assert len(result) == 1
+        assert result.iloc[0]["area_m2"] is None
+        assert result.iloc[0]["confidence"] is None
+
+    def test_missing_required_column_raises_keyerror(self):
+        df = self._df([{"latitude": 1.0, "longitude": 2.0, "wardname": "W", "lganame": "L"}])  # no statename
+        with pytest.raises(KeyError, match="statename"):
+            gaps.buildings_from_upload(df, "W", "L", "S")
+
 
 class TestPlanningGapFeatures:
     def test_grids_remainder_into_tagged_features(self, monkeypatch):
