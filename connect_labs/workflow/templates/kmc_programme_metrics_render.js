@@ -904,7 +904,15 @@ function WorkflowUI({
   var setHistory = historyState[1];
   React.useEffect(
     function () {
-      var defId = definition && definition.id;
+      // The definition prop has not always carried `id`; the run knows its
+      // definition, and so does the URL (/labs/workflow/<id>/run/).
+      var pathMatch = String(window.location.pathname || '').match(
+        /\/workflow\/(\d+)\//,
+      );
+      var defId =
+        (definition && (definition.id || definition.definition_id)) ||
+        (instance && instance.definition_id) ||
+        (pathMatch && Number(pathMatch[1]));
       if (!defId) return;
       var cancelled = false;
       // Paths are under the snapshot's own state key (`state.snapshot.*`), and
@@ -938,7 +946,7 @@ function WorkflowUI({
         cancelled = true;
       };
     },
-    [definition && definition.id],
+    [definition && definition.id, instance && instance.definition_id],
   );
   // One point per as-of date: the graded cells for the current drill scope, taken
   // from each saved run's own snapshot. The run being viewed is a point too -- a
