@@ -326,6 +326,63 @@ function WorkflowUI({
     },
     [selCase, visitRows],
   );
+  // The weighing photos. Visit rows carry the visit id; the framework's
+  // visit-images endpoint returns each visit's images (blob ids), and the audit
+  // image route serves them -- the same route the audit review pages use.
+  var sImages = React.useState({});
+  var imagesByVisit = sImages[0],
+    setImagesByVisit = sImages[1];
+  React.useEffect(
+    function () {
+      if (!selCase) return;
+      var ids = caseVisits
+        .map(function (v) {
+          return v.id;
+        })
+        .filter(Boolean)
+        .slice(0, 100);
+      if (!ids.length) {
+        setImagesByVisit({});
+        return;
+      }
+      var cancelled = false;
+      fetch(
+        '/labs/workflow/api/' +
+          selCase.opportunity_id +
+          '/visit-images/?visit_ids=' +
+          ids.join(','),
+        { credentials: 'same-origin' },
+      )
+        .then(function (r) {
+          return r.ok ? r.json() : { visit_images: {} };
+        })
+        .then(function (j) {
+          if (!cancelled) setImagesByVisit(j.visit_images || {});
+        })
+        .catch(function () {
+          if (!cancelled) setImagesByVisit({});
+        });
+      return function () {
+        cancelled = true;
+      };
+    },
+    [selCase, caseVisits],
+  );
+  function photoUrl(v) {
+    var imgs = imagesByVisit[String(v.id)] || [];
+    // Prefer the weight photo; fall back to whatever the visit carries.
+    var pick =
+      imgs.filter(function (i) {
+        return /weight/i.test(String(i.question_id || i.name || ''));
+      })[0] || imgs[0];
+    return pick && pick.blob_id
+      ? '/audit/image/' +
+          selCase.opportunity_id +
+          '/' +
+          encodeURIComponent(pick.blob_id) +
+          '/'
+      : null;
+  }
 
   // ── Audit of recent images ───────────────────────────────────────────────────
   // The same action the programme page offers, with the window fixed to the
@@ -397,55 +454,67 @@ function WorkflowUI({
   }
 
   // ── Growth chart ─────────────────────────────────────────────────────────────
-  // Weight against age (days since birth where the date of birth is known, else
-  // since the first weighing), every recorded weighing as a point, and a dashed
-  // reference of 15 g/kg/day compounding from the first weight -- the early
-  // growth target the C13 indicator is graded against.
-  function GrowthChart(props) {
-    var visits = props.visits.filter(function (v) {
+  // Weight against age: postmenstrual age when gestational age is known (the axis
+  // a preterm standard uses), else days since birth, else days since the first
+  // weighing. Every weighing is a point with its value; the dashed line is the
+  // 15 g/kg/day target C13 is graded against, compounding from the first weight.
+  // A loss inside the first week is called out as expected, not painted red.
+  function weighingPoints(visits, c) {
+    var weighed = visits.filter(function (v) {
       return (
         v.weight_g !== null &&
         v.weight_g !== undefined &&
         !isNaN(Number(v.weight_g))
       );
     });
-    var origin = props.dob || (visits[0] && visits[0].visit_date);
-    if (!visits.length || !origin)
-      return (
-        <div className="text-xs text-gray-400 py-10 text-center">
-          No weights recorded for this case.
-        </div>
-      );
-    var pts = visits
+    var origin = (c && c.dob) || (weighed[0] && weighed[0].visit_date);
+    if (!origin) return { pts: [], origin: null, dob: false };
+    var pts = weighed
       .map(function (v) {
         return {
           x: daysBetween(origin, v.visit_date),
           y: Number(v.weight_g),
           date: dateOnly(v.visit_date),
+          v: v,
         };
       })
       .filter(function (p) {
         return p.x !== null;
       });
-    if (props.birthWeight && props.dob)
+    if (c && c.birth_weight_g && c.dob)
       pts.unshift({
         x: 0,
-        y: Number(props.birthWeight),
-        date: dateOnly(props.dob),
+        y: Number(c.birth_weight_g),
+        date: dateOnly(c.dob),
         birth: true,
       });
+    // Velocity since the previous point, g/kg/day.
+    for (var i = 1; i < pts.length; i++) {
+      var d = pts[i].x - pts[i - 1].x;
+      pts[i].vel =
+        d > 0 && pts[i - 1].y > 0
+          ? (pts[i].y - pts[i - 1].y) / ((pts[i - 1].y / 1000) * d)
+          : null;
+      pts[i].days = d;
+    }
+    return { pts: pts, origin: origin, dob: !!(c && c.dob) };
+  }
+  function GrowthChart(props) {
+    var pts = props.pts;
+    var gaDays = props.gaWks ? Math.round(Number(props.gaWks) * 7) : null;
+    var pma = !!(gaDays && props.dob);
     if (!pts.length)
       return (
         <div className="text-xs text-gray-400 py-10 text-center">
           No dated weights for this case.
         </div>
       );
-    var W = 720,
-      H = 270,
-      PL = 54,
-      PR = 18,
-      PT = 18,
-      PB = 38;
+    var W = 900,
+      H = 320,
+      PL = 56,
+      PR = 64,
+      PT = 22,
+      PB = 40;
     var xs = pts.map(function (p) {
       return p.x;
     });
@@ -453,11 +522,11 @@ function WorkflowUI({
       return p.y;
     });
     var xmin = Math.min(0, Math.min.apply(null, xs));
-    var xmax = Math.max(28, Math.max.apply(null, xs));
+    var xmax = Math.max(28, Math.max.apply(null, xs) + 3);
     var w0 = pts[0].y,
       x0 = pts[0].x;
     var ref = [];
-    var stepDays = Math.max(1, Math.ceil((xmax - x0) / 60));
+    var stepDays = Math.max(1, Math.ceil((xmax - x0) / 80));
     for (var d = x0; d <= xmax; d += stepDays)
       ref.push({ x: d, y: w0 * Math.pow(1.015, d - x0) });
     var ymax =
@@ -468,8 +537,8 @@ function WorkflowUI({
             return p.y;
           }),
         ),
-      ) * 1.06;
-    var ymin = Math.max(0, Math.min.apply(null, ys) * 0.9);
+      ) * 1.08;
+    var ymin = Math.max(0, Math.min.apply(null, ys) * 0.88);
     function X(x) {
       return PL + ((x - xmin) / (xmax - xmin || 1)) * (W - PL - PR);
     }
@@ -482,6 +551,14 @@ function WorkflowUI({
     var xticks = [];
     for (var t = Math.ceil(xmin / xstep) * xstep; t <= xmax; t += xstep)
       xticks.push(t);
+    function xlabel(dayN) {
+      if (!pma) return 'day ' + dayN;
+      var total = gaDays + dayN;
+      return Math.floor(total / 7) + 'w' + (total % 7 ? '+' + (total % 7) : '');
+    }
+    var early = pts.filter(function (p) {
+      return !p.birth && p.vel !== null && p.vel < 0 && p.x <= 7;
+    })[0];
     return (
       <svg
         viewBox={'0 0 ' + W + ' ' + H}
@@ -493,13 +570,13 @@ function WorkflowUI({
             <g key={'y' + i}>
               <line x1={PL} x2={W - PR} y1={Y(v)} y2={Y(v)} stroke="#f1f5f9" />
               <text
-                x={PL - 6}
+                x={PL - 8}
                 y={Y(v) + 3}
-                fontSize="9"
+                fontSize="10"
                 fill="#94a3b8"
                 textAnchor="end"
               >
-                {(v / 1000).toFixed(2)} kg
+                {(v / 1000).toFixed(1)} kg
               </text>
             </g>
           );
@@ -510,17 +587,27 @@ function WorkflowUI({
             <text
               key={'x' + v}
               x={X(v)}
-              y={H - PB + 14}
-              fontSize="9"
+              y={H - PB + 16}
+              fontSize="10"
               fill="#94a3b8"
               textAnchor="middle"
             >
-              {'day ' + v}
+              {xlabel(v)}
             </text>
           );
         })}
-        <text x={W - PR} y={H - 4} fontSize="9" fill="#94a3b8" textAnchor="end">
-          {props.dob ? 'days since birth' : 'days since first weighing'}
+        <text
+          x={W - PR}
+          y={H - 6}
+          fontSize="10"
+          fill="#94a3b8"
+          textAnchor="end"
+        >
+          {pma
+            ? 'postmenstrual age (' + Math.floor(gaDays / 7) + 'w at birth)'
+            : props.dob
+            ? 'days since birth'
+            : 'days since first weighing'}
         </text>
         <polyline
           fill="none"
@@ -534,18 +621,17 @@ function WorkflowUI({
             .join(' ')}
         />
         <text
-          x={X(ref[ref.length - 1].x) - 4}
-          y={Y(ref[ref.length - 1].y) - 6}
-          fontSize="9"
+          x={X(ref[ref.length - 1].x) + 4}
+          y={Y(ref[ref.length - 1].y) + 3}
+          fontSize="10"
           fill="#94a3b8"
-          textAnchor="end"
         >
           15 g/kg/day
         </text>
         <polyline
           fill="none"
           stroke="#4f46e5"
-          strokeWidth="2.25"
+          strokeWidth="2.5"
           strokeLinejoin="round"
           points={pts
             .filter(function (p) {
@@ -557,23 +643,67 @@ function WorkflowUI({
             .join(' ')}
         />
         {pts.map(function (p, i) {
+          var last = i === pts.length - 1;
           return (
             <g key={i}>
+              {last && (
+                <circle
+                  cx={X(p.x)}
+                  cy={Y(p.y)}
+                  r="10"
+                  fill="none"
+                  stroke="#4f46e5"
+                  strokeWidth="1"
+                  opacity="0.45"
+                />
+              )}
               <circle
                 cx={X(p.x)}
                 cy={Y(p.y)}
-                r={p.birth ? 4 : 3.5}
+                r={p.birth ? 4.5 : 4}
                 fill={p.birth ? '#ffffff' : '#4f46e5'}
                 stroke="#4f46e5"
                 strokeWidth="2"
               >
                 <title>
-                  {(p.birth ? 'birth ' : '') + p.date + ' · ' + p.y + ' g'}
+                  {(p.birth ? 'birth · ' : '') + p.date + ' · ' + p.y + ' g'}
                 </title>
               </circle>
+              <text
+                x={X(p.x)}
+                y={Y(p.y) - 11}
+                fontSize="10"
+                fontWeight="500"
+                fill={p === early ? '#b42318' : '#4f46e5'}
+                textAnchor="middle"
+              >
+                {nCount(p.y)}
+              </text>
             </g>
           );
         })}
+        {early && (
+          <g>
+            <line
+              x1={X(early.x)}
+              x2={X(early.x)}
+              y1={Y(early.y) + 8}
+              y2={Y(early.y) + 30}
+              stroke="#b42318"
+              strokeWidth="1"
+            />
+            <text
+              x={X(early.x)}
+              y={Y(early.y) + 42}
+              fontSize="10"
+              fill="#b42318"
+              textAnchor="middle"
+            >
+              {nCount(early.y - pts[pts.indexOf(early) - 1].y) +
+                ' g · expected loss'}
+            </text>
+          </g>
+        )}
       </svg>
     );
   }
@@ -664,45 +794,73 @@ function WorkflowUI({
 
   function CaseDetail(props) {
     var c = props.c;
-    var visits = caseVisits;
-    var weighed = visits.filter(function (v) {
-      return v.weight_g !== null && v.weight_g !== undefined;
+    var built = weighingPoints(caseVisits, c);
+    var pts = built.pts;
+    var weighed = pts.filter(function (p) {
+      return !p.birth;
     });
-    var rows = weighed.map(function (v, i) {
-      var prev = weighed[i - 1];
-      var vel = null;
-      if (prev) {
-        var days = daysBetween(prev.visit_date, v.visit_date);
-        if (days > 0 && Number(prev.weight_g) > 0)
-          vel =
-            (Number(v.weight_g) - Number(prev.weight_g)) /
-            ((Number(prev.weight_g) / 1000) * days);
-      }
-      return {
-        v: v,
-        vel: vel,
-        days: prev ? daysBetween(prev.visit_date, v.visit_date) : null,
-      };
+    var idx = cases.indexOf(c);
+    var prev = idx > 0 ? cases[idx - 1] : null;
+    var next = idx >= 0 && idx < cases.length - 1 ? cases[idx + 1] : null;
+    // Early growth: the velocity across the weighings inside the first 42 days
+    // after the first weighing -- the window C13 uses.
+    var first = weighed[0];
+    var earlyEnd = weighed.filter(function (p) {
+      return first && p.x - first.x <= 42;
     });
+    var earlyLast = earlyEnd[earlyEnd.length - 1];
+    var earlyVel =
+      first &&
+      earlyLast &&
+      earlyLast !== first &&
+      first.y > 0 &&
+      earlyLast.x > first.x
+        ? (earlyLast.y - first.y) / ((first.y / 1000) * (earlyLast.x - first.x))
+        : null;
+    var gain =
+      first && weighed.length > 1
+        ? weighed[weighed.length - 1].y - first.y
+        : null;
+    var span =
+      first && weighed.length > 1
+        ? weighed[weighed.length - 1].x - first.x
+        : null;
+    var rounded = weighed.filter(function (p) {
+      return p.y % 100 === 0;
+    }).length;
+    var implausible = weighed.filter(function (p) {
+      return p.vel !== null && (p.vel > 50 || (p.vel < 0 && p.x > 7));
+    });
+    var earlyLoss = weighed.filter(function (p) {
+      return p.vel !== null && p.vel < 0 && p.x <= 7;
+    })[0];
+    var photos = weighed.filter(function (p) {
+      return photoUrl(p.v);
+    }).length;
     var facts = [
-      ['Registered', dateOnly(c.reg_date)],
-      ['Date of birth', dateOnly(c.dob)],
-      ['Sex', c.gender || '—'],
       [
-        'Gestational age',
-        c.gestational_age_wks ? c.gestational_age_wks + ' wks' : '—',
+        'Born',
+        dateOnly(c.dob) +
+          (c.gestational_age_wks ? ' · ' + c.gestational_age_wks + ' wks' : ''),
       ],
       [
         'Birth weight',
         c.birth_weight_g ? nCount(c.birth_weight_g) + ' g' : '—',
       ],
-      ['Hospital discharge', dateOnly(c.hospital_discharge_date)],
-      ['Visits', c.total_visits || visits.length || '—'],
-      ['Last visit', dateOnly(c.last_visit_date)],
+      ['Sex', c.gender || '—'],
+      ['Discharged', dateOnly(c.hospital_discharge_date)],
+      ['Registered', dateOnly(c.reg_date)],
+      null,
       ['KMC status', c.last_kmc_status || '—'],
       [
-        'Danger-sign visits',
-        c.danger_visits === undefined ? '—' : c.danger_visits,
+        'Skin-to-skin',
+        c.kmc_hours_mean ? Number(c.kmc_hours_mean).toFixed(1) + ' h/day' : '—',
+      ],
+      [
+        'Danger signs',
+        c.danger_visits === undefined
+          ? '—'
+          : c.danger_visits + (c.danger_visits === 1 ? ' visit' : ' visits'),
       ],
       ['Referrals', c.referral_visits === undefined ? '—' : c.referral_visits],
       [
@@ -711,128 +869,287 @@ function WorkflowUI({
           ? '—'
           : String(c.alive_last),
       ],
+      [
+        'Visits',
+        (c.total_visits || caseVisits.length || '—') +
+          ' · last ' +
+          dateOnly(c.last_visit_date),
+      ],
     ];
+    function velChip(p) {
+      if (p.vel === null || p.vel === undefined) return null;
+      var cls =
+        p.vel < 0 && p.x <= 7
+          ? 'bg-amber-100 text-amber-800'
+          : p.vel < 0 || p.vel > 50
+          ? 'bg-red-100 text-red-800'
+          : p.vel >= 10
+          ? 'bg-green-100 text-green-800'
+          : 'bg-gray-100 text-gray-600';
+      return (
+        <span
+          className={'px-1.5 py-0.5 rounded text-[10px] font-semibold ' + cls}
+          title="g/kg/day since the previous weighing"
+        >
+          {(p.vel > 0 ? '+' : '') + p.vel.toFixed(1)}
+        </span>
+      );
+    }
     return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-baseline justify-between gap-3 flex-wrap">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-sm">
+            <button
+              type="button"
+              className="text-indigo-600 hover:underline"
+              onClick={function () {
+                setSelCase(null);
+              }}
+            >
+              ← all cases
+            </button>
+            <span className="text-gray-300 mx-2">·</span>
+            <span className="font-medium text-gray-900">
+              Case {String(c.entity_id).slice(0, 8)}
+            </span>
+            <span className="text-gray-400 ml-2 text-xs font-mono">
+              {c.entity_id}
+            </span>
+            <span className="text-gray-400 ml-2 text-xs">
+              {oppLabel(c.opportunity_id)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!prev}
+              className={
+                'px-2.5 py-1 rounded text-xs border ' +
+                (prev
+                  ? 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                  : 'border-gray-100 text-gray-300')
+              }
+              onClick={function () {
+                if (prev) setSelCase(prev);
+              }}
+            >
+              ← Previous
+            </button>
+            <button
+              type="button"
+              disabled={!next}
+              className={
+                'px-2.5 py-1 rounded text-xs border ' +
+                (next
+                  ? 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                  : 'border-gray-100 text-gray-300')
+              }
+              onClick={function () {
+                if (next) setSelCase(next);
+              }}
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px]">
           <div>
-            <div className="font-medium text-gray-900">
-              Case {c.entity_id}
-              <span className="ml-2 text-xs font-normal text-gray-400">
-                {oppLabel(c.opportunity_id)}
-              </span>
+            <div className="px-4 pt-4">
+              <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+                <div className="text-sm font-medium text-gray-900">
+                  {built.dob && c.gestational_age_wks
+                    ? 'Weight for postmenstrual age'
+                    : 'Weight for age'}
+                </div>
+                <div className="flex gap-4 text-[11px] text-gray-500">
+                  <span>
+                    <i className="inline-block w-3 border-t-2 border-indigo-600 align-middle mr-1"></i>
+                    weighings
+                  </span>
+                  <span>
+                    <i className="inline-block w-3 border-t-2 border-dashed border-gray-400 align-middle mr-1"></i>
+                    15 g/kg/day
+                  </span>
+                </div>
+              </div>
+              {pipelinesLoaded ? (
+                <GrowthChart
+                  pts={pts}
+                  gaWks={c.gestational_age_wks}
+                  dob={built.dob}
+                />
+              ) : (
+                <div className="text-xs text-gray-400 py-10 text-center">
+                  Loading the weight series…
+                </div>
+              )}
             </div>
-            <div className="text-xs text-gray-500">
-              {weighed.length} weighings
-              {c.first_weight_g && c.last_weight_g
-                ? ' · ' +
-                  nCount(c.first_weight_g) +
-                  ' g → ' +
-                  nCount(c.last_weight_g) +
-                  ' g'
-                : ''}
+            <div className="px-4 pb-2">
+              <div className="text-xs text-gray-500 mb-2">
+                Photos
+                <span className="text-gray-400">
+                  {' · ' +
+                    photos +
+                    ' of ' +
+                    weighed.length +
+                    ' weighings photographed'}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                {weighed.map(function (p, i) {
+                  var url = photoUrl(p.v);
+                  return (
+                    <div
+                      key={i}
+                      className="bg-gray-50 border border-gray-200 rounded-lg p-1.5"
+                    >
+                      {url ? (
+                        <a href={url} target="_blank" rel="noopener">
+                          <img
+                            src={url}
+                            alt={'weighing ' + p.date}
+                            loading="lazy"
+                            className="w-full aspect-square object-cover rounded"
+                          />
+                        </a>
+                      ) : (
+                        <div className="w-full aspect-square rounded bg-gray-100 flex items-center justify-center text-[10px] text-gray-400">
+                          no photo
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between mt-1 text-[11px]">
+                        <span className="text-gray-500">day {p.x}</span>
+                        <span className="font-semibold text-gray-900">
+                          {nCount(p.y)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-gray-400">
+                        <span>{p.date.slice(5)}</span>
+                        {velChip(p)}
+                      </div>
+                    </div>
+                  );
+                })}
+                {!weighed.length && (
+                  <div className="col-span-6 text-xs text-gray-400 py-4 text-center">
+                    {pipelinesLoaded ? 'No weighings recorded.' : 'Loading…'}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 px-4 pb-4 pt-2">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-gray-400">
+                  Early growth
+                </div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {earlyVel === null ? '—' : earlyVel.toFixed(1) + ' g/kg/day'}
+                </div>
+                <div className="text-[10px] text-gray-400">
+                  {first && earlyLast && earlyLast !== first
+                    ? 'days ' + first.x + '–' + earlyLast.x + ' · target 15'
+                    : 'needs two weighings'}
+                </div>
+              </div>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-gray-400">
+                  Gain
+                </div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {gain === null
+                    ? '—'
+                    : (gain > 0 ? '+' : '') + nCount(gain) + ' g'}
+                </div>
+                <div className="text-[10px] text-gray-400">
+                  {span === null ? '' : 'over ' + span + ' days'}
+                </div>
+              </div>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-gray-400">
+                  Rounded
+                </div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {weighed.length ? rounded + ' / ' + weighed.length : '—'}
+                </div>
+                <div className="text-[10px] text-gray-400">
+                  readings ending in 00
+                </div>
+              </div>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-gray-400">
+                  Implausible
+                </div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {weighed.length ? implausible.length : '—'}
+                </div>
+                <div className="text-[10px] text-gray-400">
+                  losses after day 7 or &gt;50 g/kg/day
+                </div>
+              </div>
             </div>
           </div>
-          <button
-            type="button"
-            className="text-xs text-indigo-600 hover:underline"
-            onClick={function () {
-              setSelCase(null);
-            }}
-          >
-            ← all cases
-          </button>
-        </div>
-        <div className="p-4">
-          <div className="text-sm font-medium text-gray-900 mb-1">Growth</div>
-          {pipelinesLoaded ? (
-            <GrowthChart
-              visits={visits}
-              dob={c.dob}
-              birthWeight={c.birth_weight_g}
-            />
-          ) : (
-            <div className="text-xs text-gray-400 py-10 text-center">
-              Loading the weight series…
-            </div>
-          )}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 px-4 pb-4">
-          <div>
-            <div className="text-sm font-medium text-gray-900 mb-1">
-              Case record
+          <div className="border-t xl:border-t-0 xl:border-l border-gray-100 p-4">
+            {earlyLoss && (
+              <div className="border-l-4 border-amber-400 bg-amber-50 rounded-r-lg px-3 py-2 text-xs text-amber-900 mb-3">
+                <b>Day {earlyLoss.x}:</b>{' '}
+                {nCount(earlyLoss.y - pts[pts.indexOf(earlyLoss) - 1].y)} g in{' '}
+                {earlyLoss.days} days ({earlyLoss.vel.toFixed(1)} g/kg/day).
+                Loss in the first week is expected after birth.
+              </div>
+            )}
+            {implausible.length > 0 && (
+              <div className="border-l-4 border-red-500 bg-red-50 rounded-r-lg px-3 py-2 text-xs text-red-900 mb-3">
+                <b>Check the readings:</b>{' '}
+                {implausible
+                  .map(function (p) {
+                    return (
+                      'day ' +
+                      p.x +
+                      ' (' +
+                      (p.vel > 0 ? '+' : '') +
+                      p.vel.toFixed(1) +
+                      ' g/kg/day)'
+                    );
+                  })
+                  .join(', ')}
+                . A loss after the first week or a gain above 50 g/kg/day is
+                usually a mis-read scale.
+              </div>
+            )}
+            <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+              Record
             </div>
             <table className="min-w-full text-sm">
               <tbody>
-                {facts.map(function (f) {
-                  return (
-                    <tr key={f[0]} className="border-t border-gray-100">
-                      <td className="py-1.5 pr-3 text-gray-500">{f[0]}</td>
-                      <td className="py-1.5 text-gray-900">{f[1]}</td>
+                {facts.map(function (f, i) {
+                  return f ? (
+                    <tr key={i} className="border-t border-gray-100">
+                      <td className="py-1.5 pr-3 text-gray-500 align-top">
+                        {f[0]}
+                      </td>
+                      <td className="py-1.5 text-gray-900 text-right">
+                        {f[1]}
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={i}>
+                      <td colSpan="2" className="py-1"></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-          </div>
-          <div>
-            <div className="text-sm font-medium text-gray-900 mb-1">
-              Weighings
+            <div className="text-[10px] uppercase tracking-wide text-gray-400 mt-4 mb-1">
+              Worker
             </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 text-gray-500">
-                  <tr>
-                    <th className="px-2 py-1.5 text-left">Date</th>
-                    <th className="px-2 py-1.5 text-right">Weight</th>
-                    <th className="px-2 py-1.5 text-right">Days</th>
-                    <th
-                      className="px-2 py-1.5 text-right"
-                      title="g/kg/day since the previous weighing"
-                    >
-                      g/kg/day
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map(function (r, i) {
-                    var flag = r.vel !== null && (r.vel < 0 || r.vel > 50);
-                    return (
-                      <tr key={i} className="border-t border-gray-100">
-                        <td className="px-2 py-1.5">
-                          {dateOnly(r.v.visit_date)}
-                        </td>
-                        <td className="px-2 py-1.5 text-right">
-                          {nCount(r.v.weight_g)} g
-                        </td>
-                        <td className="px-2 py-1.5 text-right text-gray-400">
-                          {r.days === null ? '' : r.days}
-                        </td>
-                        <td
-                          className={
-                            'px-2 py-1.5 text-right ' +
-                            (flag ? 'text-red-600 font-medium' : '')
-                          }
-                        >
-                          {r.vel === null ? '' : r.vel.toFixed(1)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!rows.length && (
-                    <tr>
-                      <td
-                        colSpan="4"
-                        className="px-2 py-4 text-center text-xs text-gray-400"
-                      >
-                        {pipelinesLoaded
-                          ? 'No weighings recorded.'
-                          : 'Loading…'}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            <div className="text-sm text-gray-900">
+              {flw.flw || '(unassigned)'}
+              <span className="text-gray-400"> · {flw.n} cases</span>
+              {flw.reds ? (
+                <span className="ml-2 px-2 py-0.5 rounded text-xs bg-red-100 text-red-800">
+                  {flw.reds} red
+                </span>
+              ) : null}
             </div>
           </div>
         </div>
@@ -967,6 +1284,8 @@ function WorkflowUI({
         </div>
       )}
 
+      {selCase && <CaseDetail c={selCase} />}
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
@@ -1024,9 +1343,7 @@ function WorkflowUI({
         </div>
 
         <div className="space-y-4">
-          {selCase ? (
-            <CaseDetail c={selCase} />
-          ) : (
+          {
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
                 Cases
@@ -1053,9 +1370,17 @@ function WorkflowUI({
                       return (
                         <tr
                           key={c.opportunity_id + '|' + c.entity_id}
-                          className="border-t border-gray-100 cursor-pointer hover:bg-indigo-50"
+                          className={
+                            'border-t border-gray-100 cursor-pointer hover:bg-indigo-50 ' +
+                            (selCase === c ? 'bg-indigo-50' : '')
+                          }
                           onClick={function () {
                             setSelCase(c);
+                            try {
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            } catch (e) {
+                              window.scrollTo(0, 0);
+                            }
                           }}
                         >
                           <td className="px-3 py-2 font-mono text-xs text-gray-700">
@@ -1100,7 +1425,7 @@ function WorkflowUI({
                 </table>
               </div>
             </div>
-          )}
+          }
         </div>
       </div>
     </div>
