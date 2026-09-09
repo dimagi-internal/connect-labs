@@ -290,6 +290,7 @@ class TestPreviewPlanningGaps:
         assert result["cells_added"] == 1
         assert result["warnings"] == {}
         assert result["config"] == {
+            "mode": "overture",
             "building_sources": ["Google Open Buildings"],
             "min_confidence": 0.6,
             "min_buildings_per_cell": 2,
@@ -378,3 +379,96 @@ class TestPreviewPlanningGaps:
 
         with pytest.raises(RuntimeError, match="boundary geometry"):
             tasks.preview_planning_gaps.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
+
+    def test_skip_mode_returns_immediately_with_no_features(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        run = _locked_run_with_geometry()
+        monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
+        monkeypatch.setattr(tasks, "get_valid_access_token", lambda u: "connect-token")
+        monkeypatch.setattr(tasks, "get_valid_cchq_access_token", lambda u: "cchq-token")
+        _patch_da(monkeypatch, run)
+
+        def boom(*a, **k):
+            raise AssertionError("skip mode should never reach the per-ward gap computation")
+
+        monkeypatch.setattr("connect_labs.mopup.core.candidates.build_evaluation_input", boom)
+
+        result = tasks.preview_planning_gaps.apply(
+            kwargs={"program_id": 217, "run_id": 1, "user_id": user.id, "mode": "skip"}
+        ).get()
+        assert result == {
+            "status": "ok",
+            "features": [],
+            "cells_added": 0,
+            "warnings": {},
+            "config": {
+                "mode": "skip",
+                "building_sources": None,
+                "min_confidence": None,
+                "min_buildings_per_cell": 1,
+                "cell_size_m": 100.0,
+            },
+        }
+
+    def test_upload_mode_reads_the_stored_csv_and_filters_per_ward(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        run = _locked_run_with_geometry()
+        self._mock_common(monkeypatch, run)
+
+        import pandas as pd
+
+        uploaded_df = pd.DataFrame(
+            [
+                {
+                    "latitude": 1.0,
+                    "longitude": 2.0,
+                    "wardname": "Sabon Gari",
+                    "lganame": "Rano",
+                    "statename": "Kano",
+                },
+                {  # a different ward -- must never leak into Sabon Gari's cells
+                    "latitude": 3.0,
+                    "longitude": 4.0,
+                    "wardname": "Somewhere Else",
+                    "lganame": "Rano",
+                    "statename": "Kano",
+                },
+            ]
+        )
+        monkeypatch.setattr(tasks, "_read_uploaded_buildings_csv", lambda key: uploaded_df)
+
+        seen_buildings = {}
+
+        def fake_planning_gap_features(ward, lga, state, area_id, ward_boundary, existing, **kw):
+            seen_buildings["buildings"] = kw.get("buildings")
+            return []
+
+        monkeypatch.setattr("connect_labs.mopup.core.gaps.planning_gap_features", fake_planning_gap_features)
+
+        result = tasks.preview_planning_gaps.apply(
+            kwargs={
+                "program_id": 217,
+                "run_id": 1,
+                "user_id": user.id,
+                "mode": "upload",
+                "csv_storage_key": "mopup/uploads/run-1/abc.csv",
+            }
+        ).get()
+        assert result["status"] == "ok"
+        assert result["config"]["mode"] == "upload"
+        matched = seen_buildings["buildings"]
+        assert len(matched) == 1
+        assert matched.iloc[0]["lat"] == pytest.approx(1.0)
+
+    def test_upload_mode_without_a_stored_key_raises(self, django_user_model, monkeypatch):
+        # Defensive only -- MopupPlanningGapsView already rejects this
+        # synchronously (400) before ever dispatching the task, so this
+        # path is a belt-and-suspenders guard, not a normal-flow warning.
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        run = _locked_run_with_geometry()
+        self._mock_common(monkeypatch, run)
+
+        with pytest.raises(RuntimeError, match="Upload a building-data file"):
+            tasks.preview_planning_gaps.apply(
+                kwargs={"program_id": 217, "run_id": 1, "user_id": user.id, "mode": "upload", "csv_storage_key": None}
+            ).get()

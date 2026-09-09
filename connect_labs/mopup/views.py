@@ -150,14 +150,17 @@ def _planning_gaps_result_or_progress(da, run, request, program_id, payload) -> 
 
     task_id = run.planning_gap_task_id
     if not task_id:
+        mode = payload.get("mode") or "overture"
         result = preview_planning_gaps.delay(
             program_id,
             run.id,
             request.user.id,
+            mode=mode,
             building_sources=payload.get("building_sources"),
             min_confidence=payload.get("min_confidence"),
             min_buildings_per_cell=int(payload.get("min_buildings_per_cell") or 1),
             cell_size_m=float(payload.get("cell_size_m") or 100.0),
+            csv_storage_key=run.uploaded_buildings_key if mode == "upload" else None,
         )
         da.update_run(run, planning_gap_task_id=result.id)
         return None, build_task_progress("PENDING", None)
@@ -377,6 +380,9 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         context["lock_url"] = reverse("mopup:lock", args=[program_id, run_id])
         context["create_plan_url"] = reverse("mopup:create_plan", args=[program_id, run_id])
         context["planning_gaps_url"] = reverse("mopup:planning_gaps", args=[program_id, run_id])
+        context["upload_buildings_url"] = reverse("mopup:upload_buildings", args=[program_id, run_id])
+        context["planning_gap_config"] = run.planning_gap_config
+        context["uploaded_buildings_filename"] = run.uploaded_buildings_filename
         context["indicator_configs"] = run.thresholds.get("indicator_configs") or ind.DEFAULT_INDICATOR_CONFIGS
         context["global_config"] = run.thresholds.get("global_config") or ind.DEFAULT_GLOBAL_CONFIG
         context["indicator_defs"] = [
@@ -603,7 +609,73 @@ class MopupPlanningGapsView(LoginRequiredMixin, View):
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
+        if (payload.get("mode") or "overture") == "upload" and not run.uploaded_buildings_key:
+            return JsonResponse(
+                {"status": "error", "detail": "Upload a building-data file before recomputing."}, status=400
+            )
+
         resp, progress = _planning_gaps_result_or_progress(da, run, request, program_id, payload)
         if resp is None:
             return JsonResponse(progress)
         return JsonResponse(resp)
+
+
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # the confirmed real sample was ~28MB
+_REQUIRED_UPLOAD_COLUMNS = {"latitude", "longitude", "wardname", "lganame", "statename"}
+
+
+class MopupUploadBuildingsView(LoginRequiredMixin, View):
+    """Phase 2 Step 2's "upload your own building data" mode (locked runs
+    only): accepts a multipart CSV, validates it's a plausible building
+    file (extension, size, required columns), and stores the raw bytes via
+    `default_storage` (S3 in production, `MEDIA_ROOT` locally/in tests) —
+    the storage key (not the file itself) is persisted onto the run as
+    `uploaded_buildings_key`, read back by
+    `mopup.tasks.preview_planning_gaps` the next time Step 2's Recompute
+    runs in "upload" mode. Re-uploading simply overwrites the stored key —
+    same "latest wins, no separate lock" convention Step 2 already has for
+    its Overture-mode settings."""
+
+    def post(self, request, program_id, run_id):
+        da = MopupRunDataAccess(program_id, request=request)
+        run = da.get_run(run_id)
+        if run is None:
+            return JsonResponse({"status": "error", "detail": "Run not found."}, status=404)
+        if run.status != STATUS_LOCKED:
+            return JsonResponse(
+                {"status": "error", "detail": "Lock the run before uploading building data."}, status=400
+            )
+
+        upload = request.FILES.get("file")
+        if upload is None:
+            return JsonResponse({"status": "error", "detail": "No file provided."}, status=400)
+        if not upload.name.lower().endswith(".csv"):
+            return JsonResponse({"status": "error", "detail": "File must be a CSV (.csv)."}, status=400)
+        if upload.size > _MAX_UPLOAD_BYTES:
+            return JsonResponse(
+                {"status": "error", "detail": f"File is too large (max {_MAX_UPLOAD_BYTES // (1024 * 1024)}MB)."},
+                status=400,
+            )
+
+        try:
+            header_line = upload.readline().decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return JsonResponse({"status": "error", "detail": "File must be UTF-8 text."}, status=400)
+        finally:
+            upload.seek(0)
+        header_cols = {c.strip() for c in header_line.strip().split(",")}
+        missing = _REQUIRED_UPLOAD_COLUMNS - header_cols
+        if missing:
+            return JsonResponse(
+                {"status": "error", "detail": f"CSV is missing required column(s): {', '.join(sorted(missing))}."},
+                status=400,
+            )
+
+        from uuid import uuid4
+
+        from django.core.files.storage import default_storage
+
+        key = default_storage.save(f"mopup/uploads/run-{run_id}/{uuid4().hex}.csv", upload)
+        da.update_run(run, uploaded_buildings_key=key, uploaded_buildings_filename=upload.name)
+
+        return JsonResponse({"status": "ok", "filename": upload.name})

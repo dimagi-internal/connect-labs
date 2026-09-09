@@ -190,8 +190,18 @@
   </section>
 
   <section id="planning-gaps-section" class="border border-gray-200 rounded p-4 space-y-3 {% if run.status != "locked" %}hidden{% endif %}">
-    <h2 class="text-lg font-semibold text-gray-900">Step 2 — Planning gaps <span class="info-icon" tabindex="0" data-tip="For each locked ward, fetches buildings never covered by any existing work area and grids them into new candidate work areas. Only fetches building data the first time you hit Recompute below.">ⓘ</span></h2>
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+    <h2 class="text-lg font-semibold text-gray-900">Step 2 — Planning gaps <span class="info-icon" tabindex="0" data-tip="For each locked ward, finds buildings never covered by any existing work area and grids them into new candidate work areas. Only fetches/reads building data the first time you hit Recompute below.">ⓘ</span></h2>
+
+    <div class="space-y-1">
+      <span class="text-gray-600">New work areas for uncovered buildings</span>
+      <div class="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+        <label class="flex items-center gap-1"><input type="radio" name="gap-mode" class="gap-mode-radio" value="skip" {% if planning_gap_config.mode == "skip" %}checked{% endif %}> Skip — don't add any new work areas</label>
+        <label class="flex items-center gap-1"><input type="radio" name="gap-mode" class="gap-mode-radio" value="overture" {% if planning_gap_config.mode != "skip" and planning_gap_config.mode != "upload" %}checked{% endif %}> Use Overture / OpenStreetMap / Microsoft building data</label>
+        <label class="flex items-center gap-1"><input type="radio" name="gap-mode" class="gap-mode-radio" value="upload" {% if planning_gap_config.mode == "upload" %}checked{% endif %}> Upload my own building data</label>
+      </div>
+    </div>
+
+    <div id="gap-mode-overture-controls" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
       <div class="space-y-1">
         <span class="text-gray-600">Building source</span>
         <div class="space-y-1">
@@ -204,6 +214,18 @@
         <span class="text-gray-600">Min Google confidence <span class="info-icon" tabindex="0" data-tip="Drops Google Open Buildings footprints below this confidence score (0-1). Only applies to that source.">ⓘ</span></span>
         <input type="number" id="gap-cfg-min-confidence" class="base-input" min="0" max="1" step="0.05" value="0.6">
       </label>
+    </div>
+
+    <div id="gap-mode-upload-controls" class="space-y-2 text-sm">
+      <label class="block space-y-1">
+        <span class="text-gray-600">Building data file (CSV) <span class="info-icon" tabindex="0" data-tip="Needs latitude, longitude, wardname, lganame, statename columns (area_in_meters/confidence optional, kept if present). Rows for wards outside this mop-up round are fine to include -- only the wards actually being reviewed here get gap cells computed from them.">ⓘ</span></span>
+        <input type="file" id="gap-upload-file" accept=".csv" class="base-input">
+      </label>
+      <button type="button" id="gap-upload-button" class="button outline-style">Upload</button>
+      <p id="gap-upload-status" class="text-xs text-gray-500">{% if uploaded_buildings_filename %}Uploaded: {{ uploaded_buildings_filename }}{% endif %}</p>
+    </div>
+
+    <div id="gap-mode-shared-controls" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
       <label class="space-y-1">
         <span class="text-gray-600">Min buildings per work area <span class="info-icon" tabindex="0" data-tip="A gridded cell with fewer uncovered buildings than this is dropped rather than offered as a new candidate work area.">ⓘ</span></span>
         <input type="number" id="gap-cfg-min-buildings" class="base-input" min="1" value="1">
@@ -216,6 +238,7 @@
         </select>
       </label>
     </div>
+
     <button type="button" id="planning-gaps-recompute" class="button outline-style">Recompute</button>
     <p id="planning-gaps-status" class="text-xs text-gray-500"></p>
   </section>
@@ -244,6 +267,7 @@
     lockUrl: "{{ lock_url }}",
     createPlanUrl: "{{ create_plan_url }}",
     planningGapsUrl: "{{ planning_gaps_url }}",
+    uploadBuildingsUrl: "{{ upload_buildings_url }}",
     csrfToken: "{{ csrf_token }}",
     locked: "{{ run.status }}" === "locked",
     mapboxToken: "{{ mapbox_token|escapejs }}",
