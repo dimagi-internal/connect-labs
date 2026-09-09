@@ -50,6 +50,9 @@ urlpatterns = [
     # What completing the run WOULD store, built now and not persisted. A live run
     # renders from this so it shares one payload shape with a saved one.
     path("api/run/<int:run_id>/snapshot/preview/", views.preview_snapshot_api, name="api_preview_snapshot"),
+    # Completed runs of a definition with a projection of each saved snapshot:
+    # the series behind a dashboard's trend, one point per saved run.
+    path("api/<int:definition_id>/runs/history/", views.run_history_api, name="api_run_history"),
     # Explicit run creation — replaces the implicit auto-create that fired on every
     # visit to /workflow/<def>/run/ with no run_id.
     path("api/<int:definition_id>/run/start/", views.start_run_api, name="api_start_run"),
