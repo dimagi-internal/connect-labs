@@ -429,53 +429,6 @@ function WorkflowUI({
     [cases, wrows, payload],
   );
 
-  // Declared in the workbook but not computable from what these programmes collect today.
-  var NOT_COMPUTABLE = [
-    {
-      id: 'C03',
-      name: 'Cases started per month',
-      why: 'now computed \u2014 see the Trend tab, which cohorts on each baby\u2019s actual registration date',
-    },
-    { id: 'C04', name: 'Visits per month', why: 'available on the Trend tab' },
-    {
-      id: 'C18',
-      name: 'KMC completion rate',
-      why: 'the discharge data is now present in these rows; what is missing is the DEFINITION \u2014 the workbook leaves the completion gate TBD, so there is no rule yet for when a baby counts as completed',
-    },
-    {
-      id: 'C22',
-      name: '% EBF at completion',
-      why: 'depends on C18, so it is blocked on the same missing definition rather than on missing data',
-    },
-    { id: 'C25', name: '% thin', why: 'needs per-reading flag_thin' },
-    {
-      id: 'C26',
-      name: '% inconsistent',
-      why: 'needs per-reading flag_inconsistent',
-    },
-    {
-      id: 'C27',
-      name: '% impossible',
-      why: 'needs per-reading flag_impossible',
-    },
-    {
-      id: 'C29',
-      name: '% enrollment_weight_credible',
-      why: 'needs the credibility rule from Targets & settings',
-    },
-    { id: 'C30', name: '% expected dip', why: 'depends on C29' },
-    {
-      id: 'C32',
-      name: 'GPS mismatch rate',
-      why: 'needs visit-pair GPS comparison',
-    },
-    {
-      id: 'C33',
-      name: 'Repeat vitals rate',
-      why: 'needs visit-pair vitals comparison',
-    },
-  ];
-
   // ══ Drill-to-action ═══════════════════════════════════════════════════════
   // The drill ended here: a worker reading red, and nothing to do about it but
   // carry the name by hand into a separate workflow. This opens an audit on that
@@ -509,10 +462,6 @@ function WorkflowUI({
       (instance && instance.id)
     );
   }
-
-  var sNScope = React.useState('programme');
-  var nScope = sNScope[0],
-    setNScope = sNScope[1];
 
   var sAudit = React.useState({});
   var auditState = sAudit[0],
@@ -860,51 +809,17 @@ function WorkflowUI({
   var s3 = React.useState(null);
   var selInd = s3[0],
     setSelInd = s3[1];
-  var s5 = React.useState('indicators');
-  var tab = s5[0],
-    setTab = s5[1];
+  // The organisation drill filters its worker table by opportunity; this is
+  // that filter, distinct from selOpp, which names the worker panel's opp.
+  var s5 = React.useState(null);
+  var oppFilter = s5[0],
+    setOppFilter = s5[1];
+  var s7 = React.useState(false);
+  var showAllFLW = s7[0],
+    setShowAllFLW = s7[1];
   var s4 = React.useState(null);
   var selFLW = s4[0],
     setSelFLW = s4[1];
-
-  // ── Monthly trend ─────────────────────────────────────────────────────────
-  // Precomputed per drill scope by the builder, so the drill works with no live
-  // pipeline behind it. Each point carries the graded indicators, the cohort
-  // size, the visit count for the month the visits HAPPENED in, and the
-  // credible-recorder pool; the trend tab reads it in the shape below.
-  var monthly = React.useMemo(
-    function () {
-      var all = P.monthly || [];
-      var key = selFLW
-        ? 'flw:' + selFLW
-        : selOpp
-        ? 'opp:' + selOpp
-        : selLLO
-        ? 'llo:' + selLLO
-        : 'all';
-      var series = (P.monthlyByScope && P.monthlyByScope[key]) || all;
-      return series.map(function (m) {
-        var ind = m.ind || {};
-        var count = function (id) {
-          var e = ind[id];
-          return e && e.value !== null && e.value !== undefined
-            ? Number(e.value)
-            : 0;
-        };
-        return {
-          month: m.month,
-          started: count('C02'),
-          registered: count('C01'),
-          visits: m.visits || 0,
-          c09: ind['C09'],
-          c13: ind['C13'],
-          c15: ind['C15'],
-          mortality: (m.pooled && m.pooled['C14']) || null,
-        };
-      });
-    },
-    [payload, selLLO, selOpp, selFLW],
-  );
 
   // ── Weekly trend ───────────────────────────────────────────────────────────
   // Two halves. ACTIVITY (visits, registrations) by week comes off this payload,
@@ -912,7 +827,11 @@ function WorkflowUI({
   // series of SAVED RUNS: each is computed as of its own period end by the same
   // builder, so the line is one point per saved report -- a weekly report, saved
   // weekly, is the time series. Nothing here re-grades anything.
-  var trendKey = selOpp ? 'opp:' + selOpp : selLLO ? 'llo:' + selLLO : 'all';
+  var trendKey = oppFilter
+    ? 'opp:' + oppFilter
+    : selLLO
+    ? 'llo:' + selLLO
+    : 'all';
   var weekly = React.useMemo(
     function () {
       var w = (P.weekly && P.weekly[trendKey]) || [];
@@ -976,9 +895,9 @@ function WorkflowUI({
     function () {
       function cellsOf(st) {
         if (!st) return null;
-        if (selOpp) {
+        if (oppFilter) {
           var o = (st.byOpp || []).filter(function (x) {
-            return String(x.opp) === String(selOpp);
+            return String(x.opp) === String(oppFilter);
           })[0];
           return o ? o.ind : null;
         }
@@ -1044,7 +963,7 @@ function WorkflowUI({
           return byDate[d];
         });
     },
-    [history, payload, selLLO, selOpp],
+    [history, payload, selLLO, oppFilter],
   );
 
   var llosRed = byLLO.filter(function (l) {
@@ -1194,553 +1113,6 @@ function WorkflowUI({
 
   var crumb = ['Programme'];
   if (selLLO) crumb.push(selLLO);
-  if (selOpp) crumb.push(oppLabel(selOpp));
-
-  // ── Trend charts ──────────────────────────────────────────────────────────
-  // Time on the X axis. A month-per-row table is a ledger, not a trend — the shape
-  // of a programme (quality climbing, mortality falling, follow-up tightening) is
-  // only legible as a line.
-  var CHART_W = 720,
-    CHART_H = 150,
-    PAD_L = 44,
-    PAD_R = 14,
-    PAD_T = 12,
-    PAD_B = 26;
-
-  function Axis(props) {
-    var months = props.months;
-    var innerW = CHART_W - PAD_L - PAD_R;
-    var step = months.length > 1 ? innerW / (months.length - 1) : 0;
-    // With ~16 months, label every other one so they don't collide.
-    var every = months.length > 10 ? 2 : 1;
-    return (
-      <g>
-        <line
-          x1={PAD_L}
-          y1={CHART_H - PAD_B}
-          x2={CHART_W - PAD_R}
-          y2={CHART_H - PAD_B}
-          stroke="#e5e7eb"
-        />
-        {months.map(function (m, i) {
-          if (i % every !== 0) return null;
-          return (
-            <text
-              key={m}
-              x={PAD_L + i * step}
-              y={CHART_H - PAD_B + 14}
-              fontSize="9"
-              fill="#9ca3af"
-              textAnchor="middle"
-            >
-              {m.slice(2)}
-            </text>
-          );
-        })}
-      </g>
-    );
-  }
-
-  function LineChart(props) {
-    var months = props.months,
-      values = props.values,
-      color = props.color,
-      pct = props.pct,
-      target = props.target;
-    var innerW = CHART_W - PAD_L - PAD_R;
-    var innerH = CHART_H - PAD_T - PAD_B;
-    var step = months.length > 1 ? innerW / (months.length - 1) : 0;
-    var real = values.filter(function (v) {
-      return typeof v === 'number';
-    });
-    if (!real.length) {
-      return (
-        <div className="text-xs text-gray-400 py-8 text-center">
-          no point has enough data to score
-        </div>
-      );
-    }
-    var hi = Math.max.apply(null, real);
-    var lo = Math.min.apply(null, real);
-    if (target !== undefined && target !== null) {
-      hi = Math.max(hi, target);
-      lo = Math.min(lo, target);
-    }
-    if (pct) {
-      lo = 0;
-      hi = Math.max(hi, 0.01);
-    } else {
-      var padv = (hi - lo) * 0.15 || 1;
-      hi = hi + padv;
-      lo = Math.max(0, lo - padv);
-    }
-    var span = hi - lo || 1;
-    function y(v) {
-      return PAD_T + innerH - ((v - lo) / span) * innerH;
-    }
-    function x(i) {
-      return PAD_L + i * step;
-    }
-    // Break the line wherever a month could not be scored, rather than drawing
-    // through the gap and implying data we do not have.
-    var segments = [];
-    var cur = [];
-    values.forEach(function (v, i) {
-      if (typeof v === 'number') cur.push([x(i), y(v)]);
-      else if (cur.length) {
-        segments.push(cur);
-        cur = [];
-      }
-    });
-    if (cur.length) segments.push(cur);
-    var ticks = [lo, lo + span / 2, hi];
-    return (
-      <svg
-        viewBox={'0 0 ' + CHART_W + ' ' + CHART_H}
-        className="w-full"
-        style={{ height: 'auto' }}
-      >
-        {ticks.map(function (t, i) {
-          return (
-            <g key={i}>
-              <line
-                x1={PAD_L}
-                y1={y(t)}
-                x2={CHART_W - PAD_R}
-                y2={y(t)}
-                stroke="#f3f4f6"
-              />
-              <text
-                x={PAD_L - 6}
-                y={y(t) + 3}
-                fontSize="9"
-                fill="#9ca3af"
-                textAnchor="end"
-              >
-                {pct ? Math.round(t * 100) + '%' : Math.round(t * 10) / 10}
-              </text>
-            </g>
-          );
-        })}
-        {target !== undefined && target !== null && (
-          <g>
-            <line
-              x1={PAD_L}
-              y1={y(target)}
-              x2={CHART_W - PAD_R}
-              y2={y(target)}
-              stroke="#94a3b8"
-              strokeDasharray="4 3"
-            />
-            <text
-              x={CHART_W - PAD_R}
-              y={y(target) - 4}
-              fontSize="9"
-              fill="#94a3b8"
-              textAnchor="end"
-            >
-              target
-            </text>
-          </g>
-        )}
-        <Axis months={months} />
-        {segments.map(function (seg, i) {
-          return (
-            <polyline
-              key={i}
-              fill="none"
-              stroke={color}
-              strokeWidth="2"
-              strokeLinejoin="round"
-              points={seg
-                .map(function (p) {
-                  return p[0] + ',' + p[1];
-                })
-                .join(' ')}
-            />
-          );
-        })}
-        {values.map(function (v, i) {
-          if (typeof v !== 'number') return null;
-          return <circle key={i} cx={x(i)} cy={y(v)} r="2.5" fill={color} />;
-        })}
-      </svg>
-    );
-  }
-
-  function VolumeChart(props) {
-    var months = props.months,
-      started = props.started,
-      visits = props.visits;
-    var innerW = CHART_W - PAD_L - PAD_R;
-    var innerH = CHART_H - PAD_T - PAD_B;
-    var step = months.length ? innerW / months.length : 0;
-    var maxS = Math.max.apply(null, started.concat([1]));
-    var maxV = Math.max.apply(null, visits.concat([1]));
-    return (
-      <svg
-        viewBox={'0 0 ' + CHART_W + ' ' + CHART_H}
-        className="w-full"
-        style={{ height: 'auto' }}
-      >
-        <Axis months={months} />
-        {started.map(function (v, i) {
-          var h = (v / maxS) * innerH;
-          return (
-            <rect
-              key={i}
-              x={PAD_L + i * step + step * 0.2}
-              y={PAD_T + innerH - h}
-              width={step * 0.6}
-              height={h}
-              fill="#6366f1"
-              opacity="0.85"
-            />
-          );
-        })}
-        <polyline
-          fill="none"
-          stroke="#0ea5e9"
-          strokeWidth="2"
-          points={visits
-            .map(function (v, i) {
-              return (
-                PAD_L +
-                i * step +
-                step / 2 +
-                ',' +
-                (PAD_T + innerH - (v / maxV) * innerH)
-              );
-            })
-            .join(' ')}
-        />
-        <text x={PAD_L} y={PAD_T - 2} fontSize="9" fill="#6366f1">
-          bars = babies registered (max {maxS})
-        </text>
-        <text
-          x={CHART_W - PAD_R}
-          y={PAD_T - 2}
-          fontSize="9"
-          fill="#0ea5e9"
-          textAnchor="end"
-        >
-          line = visits (max {maxV})
-        </text>
-      </svg>
-    );
-  }
-
-  function TrendView() {
-    var scopeLabel = selOpp ? oppLabel(selOpp) : selLLO ? selLLO : 'Programme';
-    var dates = historyPoints.map(function (p) {
-      return p.date;
-    });
-    function series(id) {
-      return historyPoints.map(function (p) {
-        var e = p.ind && p.ind[id];
-        // An unscored point (n below the minimum denominator) is a GAP, not a zero.
-        if (!e || e.value === null || e.value === undefined) return null;
-        if (e.band === 'insufficient' || e.band === 'notcredible') return null;
-        return e.value;
-      });
-    }
-    var charts = [
-      {
-        id: 'C09',
-        title: 'C09 \u00b7 % weight data sufficient',
-        values: series('C09'),
-        color: '#0d9488',
-        pct: true,
-        target: 0.6,
-      },
-      {
-        id: 'C14',
-        title: 'C14 \u00b7 Mortality',
-        note: selLLO || selOpp ? '' : 'pooled over the credible recorders',
-        values: series('C14'),
-        color: '#dc2626',
-        pct: true,
-        target: 0.04,
-      },
-      {
-        id: 'C15',
-        title: 'C15 \u00b7 Loss to follow-up by day 28',
-        values: series('C15'),
-        color: '#d97706',
-        pct: true,
-        target: 0.1,
-      },
-      {
-        id: 'C13',
-        title: 'C13 \u00b7 Mean early growth rate',
-        note: 'g/kg/day \u2014 target 15',
-        values: series('C13'),
-        color: '#4f46e5',
-        pct: false,
-        target: 15,
-      },
-    ];
-    var weeks = weekly.map(function (w) {
-      return w.week;
-    });
-    var savedCount = historyPoints.filter(function (p) {
-      return !p.current;
-    }).length;
-    return (
-      <div className="space-y-5">
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="flex items-baseline justify-between gap-4 flex-wrap">
-            <div className="font-medium text-gray-900">
-              Weekly trend
-              <span className="ml-2 text-sm font-normal text-gray-500">
-                {scopeLabel}
-              </span>
-            </div>
-            {(selLLO || selOpp) && (
-              <button
-                className="text-xs text-indigo-600 hover:underline"
-                onClick={function () {
-                  setSelLLO(null);
-                  setSelOpp(null);
-                  setSelFLW(null);
-                }}
-              >
-                Programme-wide
-              </button>
-            )}
-          </div>
-          <p className="text-xs text-gray-500 mt-1">
-            Activity is counted in the week it happened. Each indicator point is
-            the figure as of a saved weekly report, computed the same way as the
-            headline; a gap is a week with too few cases to score, not a zero.
-            Dashed line = target.
-          </p>
-        </div>
-
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="text-sm font-medium text-gray-900 mb-1">
-            Registrations &amp; visits by week
-            <span className="ml-2 text-xs font-normal text-gray-400">
-              last {weeks.length} weeks
-              {P.meta && P.meta.as_of ? ' to ' + P.meta.as_of : ''}
-            </span>
-          </div>
-          {weeks.length ? (
-            <VolumeChart
-              months={weeks}
-              started={weekly.map(function (w) {
-                return w.registered;
-              })}
-              visits={weekly.map(function (w) {
-                return w.visits;
-              })}
-            />
-          ) : (
-            <div className="text-xs text-gray-400 py-8 text-center">
-              No dated visits in this scope.
-            </div>
-          )}
-        </div>
-
-        {historyPoints.length < 2 ? (
-          <div className="bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-600">
-            <div className="font-medium text-gray-900 mb-1">
-              Indicators over time
-            </div>
-            {savedCount
-              ? 'One saved report so far. '
-              : 'No saved reports yet. '}
-            Each saved report adds a point as of its date; save this report
-            weekly and the indicator lines build from here.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {charts.map(function (c) {
-              return (
-                <div
-                  key={c.id}
-                  className="bg-white border border-gray-200 rounded-xl p-4"
-                >
-                  <div className="text-sm font-medium text-gray-900">
-                    {c.title}
-                  </div>
-                  <div className="text-xs text-gray-400 mb-1">
-                    {c.note || '\u00a0'}
-                  </div>
-                  <LineChart
-                    months={dates}
-                    values={c.values}
-                    color={c.color}
-                    pct={c.pct}
-                    target={c.target}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {historyPoints.length > 0 && (
-          <details className="bg-white border border-gray-200 rounded-xl">
-            <summary className="px-4 py-3 text-sm font-medium text-gray-900 cursor-pointer">
-              Weekly figures (table)
-            </summary>
-            <div className="overflow-x-auto border-t border-gray-100">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 text-gray-500">
-                  <tr>
-                    <th className="px-3 py-2 text-left">As of</th>
-                    <th className="px-3 py-2 text-right">Cases</th>
-                    {['C09', 'C13', 'C14', 'C15'].map(function (id) {
-                      var ind = C_LIST.filter(function (i) {
-                        return i.id === id;
-                      })[0];
-                      return (
-                        <th key={id} className="px-3 py-2 text-right">
-                          {ind ? ind.title : id}
-                          <div className="text-[10px] font-normal text-gray-400">
-                            {id}
-                          </div>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {historyPoints.map(function (p) {
-                    return (
-                      <tr key={p.date} className="border-t border-gray-100">
-                        <td className="px-3 py-2 font-medium text-gray-900">
-                          {p.date}
-                          {p.current ? (
-                            <span className="ml-2 text-[10px] text-gray-400">
-                              this report
-                            </span>
-                          ) : null}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {p.n ? nCount(p.n) : '\u2014'}
-                        </td>
-                        {['C09', 'C13', 'C14', 'C15'].map(function (id) {
-                          var ind = C_LIST.filter(function (i) {
-                            return i.id === id;
-                          })[0];
-                          var e = p.ind && p.ind[id];
-                          return (
-                            <td key={id} className="px-3 py-2 text-right">
-                              {!e ||
-                              e.value === null ||
-                              e.value === undefined ? (
-                                <span className="text-gray-300">&mdash;</span>
-                              ) : e.band === 'insufficient' ? (
-                                <span className="text-gray-400">
-                                  n&lt;{(ind && ind.min_denominator) || MIN_DEN}
-                                </span>
-                              ) : (
-                                fmt(ind, e)
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </details>
-        )}
-
-        {monthly.length > 0 && (
-          <details className="bg-white border border-gray-200 rounded-xl">
-            <summary className="px-4 py-3 text-sm font-medium text-gray-900 cursor-pointer">
-              Intake cohorts by month (table)
-            </summary>
-            <div className="px-4 pt-2 text-xs text-gray-500">
-              Babies grouped by the month they were registered; each row
-              describes that cohort as of this report. Recent cohorts are still
-              maturing into the 28- and 42-day gates, so their figures are not
-              yet comparable.
-            </div>
-            <div className="overflow-x-auto border-t border-gray-100 mt-2">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 text-gray-500">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Month</th>
-                    <th className="px-3 py-2 text-right">Registered</th>
-                    <th className="px-3 py-2 text-right">Started</th>
-                    <th className="px-3 py-2 text-right">Visits</th>
-                    <th className="px-3 py-2 text-right">
-                      % weight data sufficient
-                      <div className="text-[10px] font-normal text-gray-400">
-                        C09
-                      </div>
-                    </th>
-                    <th className="px-3 py-2 text-right">
-                      Mean early growth rate
-                      <div className="text-[10px] font-normal text-gray-400">
-                        C13
-                      </div>
-                    </th>
-                    <th className="px-3 py-2 text-right">
-                      Mortality
-                      <div className="text-[10px] font-normal text-gray-400">
-                        C14
-                      </div>
-                    </th>
-                    <th className="px-3 py-2 text-right">
-                      Loss to follow-up
-                      <div className="text-[10px] font-normal text-gray-400">
-                        C15
-                      </div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthly.map(function (m) {
-                    function cell(e, id) {
-                      var ind = C_LIST.filter(function (i) {
-                        return i.id === id;
-                      })[0];
-                      if (!e || e.value === null)
-                        return <span className="text-gray-300">&mdash;</span>;
-                      if (e.band === 'insufficient')
-                        return (
-                          <span className="text-gray-400">n&lt;{MIN_DEN}</span>
-                        );
-                      return fmt(ind, e);
-                    }
-                    return (
-                      <tr key={m.month} className="border-t border-gray-100">
-                        <td className="px-3 py-2 font-medium text-gray-900">
-                          {m.month}
-                        </td>
-                        <td className="px-3 py-2 text-right">{m.registered}</td>
-                        <td className="px-3 py-2 text-right">{m.started}</td>
-                        <td className="px-3 py-2 text-right">{m.visits}</td>
-                        <td className="px-3 py-2 text-right">
-                          {cell(m.c09, 'C09')}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {cell(m.c13, 'C13')}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {cell(m.mortality, 'C14')}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {cell(m.c15, 'C15')}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </details>
-        )}
-      </div>
-    );
-  }
 
   // Saving a run persists the payload this page is already showing: the server
   // builds it again with the same builder and stores it. One step, because
@@ -1762,43 +1134,1386 @@ function WorkflowUI({
     });
   }
 
-  return (
-    <div className="p-6 space-y-5">
-      {snapshot && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          <span className="font-medium">
-            Reporting period to{' '}
-            {(P.meta && P.meta.as_of) ||
-              (view.asOf ? String(view.asOf).slice(0, 10) : '')}
-            .
-          </span>{' '}
-          {nCount((snapshot.meta || {}).cases)} cases and{' '}
-          {nCount((snapshot.meta || {}).visits)} visits across{' '}
-          {(snapshot.meta || {}).opportunities} opportunities. Figures are final
-          for this period; individual case records are available in the current
-          reporting period.
-        </div>
-      )}
+  // ══ The report ══════════════════════════════════════════════════════════════
+  // One page, one table. The headline tiles carry a week-on-week delta, the
+  // organisations table is Neal's scorecard with last-visit and attention
+  // columns, and the charts sit under it: activity by week off this payload,
+  // indicators over time off the saved-run history. The full C-series is a
+  // collapsed panel, not a second table. One level down, the same shape
+  // repeats for an organisation with its workers as the one table.
 
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">KMC Indicators</h1>
-          {/* "evaluated live" was true when this browser computed the
-              indicators. It no longer does, and on a snapshot run the claim sat
-              directly under a banner saying the figures cannot move. */}
-          <p className="text-sm text-gray-500 mt-1">
-            Kangaroo Mother Care programme performance across all participating
-            organisations. Click any row to drill from Programme to
-            organisation, opportunity and individual cases.
-          </p>
+  var MONTHS = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  function dateLbl(s) {
+    if (!s) return '';
+    var p = String(s).slice(0, 10).split('-');
+    if (p.length < 3) return String(s);
+    return Number(p[2]) + ' ' + (MONTHS[Number(p[1]) - 1] || p[1]);
+  }
+  function daysBetween(a, b) {
+    var da = new Date(String(a).slice(0, 10) + 'T00:00:00Z');
+    var db = new Date(String(b).slice(0, 10) + 'T00:00:00Z');
+    if (isNaN(da.getTime()) || isNaN(db.getTime())) return null;
+    return Math.round((db - da) / 86400000);
+  }
+  var asOf =
+    (P.meta && P.meta.as_of) ||
+    (view && view.asOf ? String(view.asOf).slice(0, 10) : '') ||
+    new Date().toISOString().slice(0, 10);
+
+  var BAND_WORD = { green: 'On target', yellow: 'Watch', red: 'Off target' };
+  var BAND_TEXT = {
+    green: 'text-green-700',
+    yellow: 'text-amber-700',
+    red: 'text-red-700',
+  };
+  var CELL_TINT = {
+    red: 'bg-red-50 text-red-700 font-semibold',
+    yellow: 'bg-amber-50 text-amber-800 font-semibold',
+  };
+  function tintFor(e) {
+    return (e && CELL_TINT[e.band]) || '';
+  }
+
+  // ── Scope: programme, or one organisation (optionally one opportunity) ────
+  var scopeLLO = selLLO
+    ? byLLO.filter(function (l) {
+        return l.llo === selLLO;
+      })[0] || null
+    : null;
+  var scopeOppRow = oppFilter
+    ? byOpp.filter(function (o) {
+        return String(o.opp) === String(oppFilter);
+      })[0] || null
+    : null;
+  var scopeInd = scopeOppRow
+    ? scopeOppRow.ind
+    : scopeLLO
+    ? scopeLLO.ind
+    : programInd;
+  var scopeName = scopeOppRow
+    ? oppLabel(oppFilter)
+    : scopeLLO
+    ? scopeLLO.llo
+    : 'Programme';
+
+  // Workers per organisation, for the table's row meta. byFLW is keyed by
+  // (opportunity, username); an organisation is the union over its opps.
+  var flwCountByLLO = React.useMemo(
+    function () {
+      var oppLLO = {};
+      byLLO.forEach(function (l) {
+        (l.opps || []).forEach(function (o) {
+          oppLLO[String(o.opp)] = l.llo;
+        });
+      });
+      var out = {};
+      byFLW.forEach(function (f) {
+        var llo = oppLLO[String(f.opp)];
+        if (!llo) return;
+        out[llo] = (out[llo] || 0) + 1;
+      });
+      return out;
+    },
+    [payload, byFLW],
+  );
+
+  // ── Headline tiles ────────────────────────────────────────────────────────
+  // Value from this payload for the scope in hand; delta against the previous
+  // saved report in the same scope, off the history the charts already use.
+  var TILES = [
+    { id: 'C02', label: 'Started cases', count: true, sub: '' },
+    {
+      id: 'C09',
+      label: 'Weight data sufficient',
+      pct: true,
+      target: 0.6,
+      sub: 'target 60%',
+    },
+    {
+      id: 'C13',
+      label: 'Early growth rate',
+      unit: 'g/kg/day',
+      target: 15,
+      sub: 'target 15',
+    },
+    { id: 'C14', label: 'Mortality', pct: true, target: 0.04, sub: '' },
+    {
+      id: 'C15',
+      label: 'Lost by day 28',
+      pct: true,
+      target: 0.1,
+      sub: 'target 10%',
+    },
+  ];
+  function tileEntry(id) {
+    if (id === 'C14' && !selLLO && !oppFilter) return mortalityCredible.ind;
+    return entryOf(scopeInd, id);
+  }
+  function tileValue(t, e) {
+    if (!e || e.value === null || e.value === undefined) return '—';
+    if (e.band === 'insufficient') return 'n<' + MIN_DEN;
+    if (t.count) return nCount(e.value);
+    if (t.pct) return (100 * e.value).toFixed(1) + '%';
+    return Number(e.value).toFixed(1);
+  }
+  function tileDelta(t) {
+    if (historyPoints.length < 2) return '';
+    var prev = historyPoints[historyPoints.length - 2];
+    var cur = historyPoints[historyPoints.length - 1];
+    var a = prev.ind && prev.ind[t.id],
+      b = cur.ind && cur.ind[t.id];
+    if (
+      !a ||
+      !b ||
+      a.value === null ||
+      a.value === undefined ||
+      b.value === null ||
+      b.value === undefined
+    )
+      return '';
+    var d = Number(b.value) - Number(a.value);
+    var since = ' since ' + dateLbl(prev.date);
+    if (t.pct) {
+      if (Math.abs(d) < 0.0005) return 'Unchanged' + since;
+      return (
+        (d > 0 ? '+' : '−') + (100 * Math.abs(d)).toFixed(1) + ' pt' + since
+      );
+    }
+    if (Math.abs(d) < 0.05) return 'Unchanged' + since;
+    var s = t.count ? nCount(Math.abs(d)) : Math.abs(d).toFixed(1);
+    return (d > 0 ? '+' : '−') + s + since;
+  }
+  function Tiles() {
+    var started = entryOf(scopeInd, 'C02');
+    var pctOfTarget =
+      !selLLO && started.value
+        ? Math.min(100, (started.value / 25000) * 100)
+        : null;
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {TILES.map(function (t) {
+          var e = tileEntry(t.id);
+          var band = e && BAND_WORD[e.band] ? e.band : null;
+          var sub = t.sub;
+          if (t.id === 'C14')
+            sub =
+              selLLO || oppFilter
+                ? 'two-sided'
+                : mortalityCredible.llos && mortalityCredible.llos.length
+                ? mortalityCredible.llos.join(' + ') + ' only'
+                : 'no credible recorder';
+          if (t.id === 'C02' && pctOfTarget !== null)
+            sub = 'of 25,000 target by Q1 2027';
+          return (
+            <div
+              key={t.id}
+              className="bg-white border border-gray-200 rounded-xl px-4 pt-3 pb-3"
+            >
+              <div className="flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <span className="truncate">{t.label}</span>
+                <span className="font-mono font-normal normal-case tracking-normal text-gray-300">
+                  {t.id}
+                </span>
+              </div>
+              <div className="mt-1 text-2xl font-bold text-gray-900 tabular-nums">
+                {tileValue(t, e)}
+                {t.unit ? (
+                  <span className="ml-2 text-xs font-medium text-gray-400">
+                    {t.unit}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-1 flex items-center justify-between gap-2 text-xs text-gray-600 whitespace-nowrap">
+                <span className="truncate" title={sub}>
+                  {sub}
+                </span>
+                {band ? (
+                  <span className={'font-semibold ' + BAND_TEXT[band]}>
+                    {BAND_WORD[band]}
+                  </span>
+                ) : null}
+              </div>
+              {pctOfTarget !== null && t.id === 'C02' ? (
+                <div className="mt-2 h-1.5 rounded bg-gray-100 overflow-hidden">
+                  <div
+                    className="h-full rounded bg-indigo-600"
+                    style={{ width: pctOfTarget.toFixed(1) + '%' }}
+                  />
+                </div>
+              ) : null}
+              <div className="mt-1 text-xs text-gray-400 whitespace-nowrap truncate">
+                {tileDelta(t) || ' '}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ── Activity by week: bars = babies registered, line = visits, ONE scale ──
+  function ActivityChart(props) {
+    var weeks = props.weeks || [];
+    var W = 720,
+      H = 200,
+      L = 42,
+      R = 12,
+      T = 14,
+      B = 28;
+    if (!weeks.length)
+      return (
+        <div className="text-xs text-gray-400 py-10 text-center">
+          No dated visits in this scope.
         </div>
-        {!snapshot && view && view.complete && (
-          <div className="shrink-0 flex items-center gap-2">
+      );
+    var max = 1;
+    weeks.forEach(function (w) {
+      max = Math.max(max, w.visits || 0, w.registered || 0);
+    });
+    var step = Math.pow(10, Math.floor(Math.log(max) / Math.LN10));
+    var top = Math.ceil(max / step) * step;
+    var iw = W - L - R,
+      ih = H - T - B;
+    var bw = iw / weeks.length;
+    function y(v) {
+      return T + ih - (v / top) * ih;
+    }
+    var ticks = [0, top / 2, top];
+    var path = weeks
+      .map(function (w, i) {
+        return (
+          (i ? 'L' : 'M') +
+          (L + i * bw + bw / 2).toFixed(1) +
+          ' ' +
+          y(w.visits || 0).toFixed(1)
+        );
+      })
+      .join(' ');
+    return (
+      <svg
+        viewBox={'0 0 ' + W + ' ' + H}
+        className="w-full h-auto block"
+        role="img"
+        aria-label="Registrations and visits by week"
+      >
+        {ticks.map(function (t) {
+          return (
+            <g key={t}>
+              <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#eeeef4" />
+              <text
+                x={L - 6}
+                y={y(t) + 4}
+                fontSize="10"
+                fill="#9ca3af"
+                textAnchor="end"
+              >
+                {nCount(t)}
+              </text>
+            </g>
+          );
+        })}
+        {weeks.map(function (w, i) {
+          var x = L + i * bw;
+          var h = ih - (y(w.registered || 0) - T);
+          return (
+            <g key={w.week}>
+              <rect
+                x={(x + bw * 0.2).toFixed(1)}
+                y={y(w.registered || 0).toFixed(1)}
+                width={(bw * 0.6).toFixed(1)}
+                height={h.toFixed(1)}
+                rx="2"
+                fill="#a5b4fc"
+              >
+                <title>
+                  {'Week of ' +
+                    dateLbl(w.week) +
+                    ': ' +
+                    nCount(w.registered) +
+                    ' registered, ' +
+                    nCount(w.visits) +
+                    ' visits'}
+                </title>
+              </rect>
+              {i % 4 === 0 || i === weeks.length - 1 ? (
+                <text
+                  x={x + bw / 2}
+                  y={H - 8}
+                  fontSize="10"
+                  fill="#9ca3af"
+                  textAnchor="middle"
+                >
+                  {dateLbl(w.week)}
+                </text>
+              ) : null}
+            </g>
+          );
+        })}
+        <path
+          d={path}
+          fill="none"
+          stroke="#4f46e5"
+          strokeWidth="2"
+          strokeLinejoin="round"
+        />
+        {weeks.map(function (w, i) {
+          return (
+            <circle
+              key={'v' + w.week}
+              cx={L + i * bw + bw / 2}
+              cy={y(w.visits || 0)}
+              r={i === weeks.length - 1 ? 4 : 2.5}
+              fill="#4f46e5"
+              stroke="#fff"
+              strokeWidth="1.5"
+            >
+              <title>
+                {'Week of ' +
+                  dateLbl(w.week) +
+                  ': ' +
+                  nCount(w.visits) +
+                  ' visits, ' +
+                  nCount(w.registered) +
+                  ' registered'}
+              </title>
+            </circle>
+          );
+        })}
+      </svg>
+    );
+  }
+
+  // ── One indicator over the saved reports, small-multiple sized ────────────
+  function SmallTrend(props) {
+    var id = props.id,
+      label = props.label,
+      pct = props.pct,
+      target = props.target;
+    var ind = indOf(id);
+    var pts = historyPoints.map(function (p) {
+      var e = p.ind && p.ind[id];
+      if (!e || e.value === null || e.value === undefined) return null;
+      if (e.band === 'insufficient' || e.band === 'notcredible') return null;
+      return { v: Number(e.value), e: e, date: p.date, n: e.n };
+    });
+    var W = 260,
+      H = 130,
+      L = 36,
+      R = 10,
+      T = 12,
+      B = 22;
+    var n = pts.length;
+    var real = pts.filter(Boolean);
+    var cur = real.length ? real[real.length - 1].e : null;
+    var body;
+    if (real.length < 2) {
+      body = (
+        <div className="text-xs text-gray-400 py-8 text-center">
+          {real.length
+            ? 'One report so far — the line builds as reports are saved weekly.'
+            : 'No report has enough cases to score this yet.'}
+        </div>
+      );
+    } else {
+      var lo = target,
+        hi = target;
+      real.forEach(function (p) {
+        lo = Math.min(lo, p.v);
+        hi = Math.max(hi, p.v);
+      });
+      if (pct) {
+        lo = Math.max(0, Math.floor((lo - 0.05) * 10) / 10);
+        hi = Math.min(1, Math.ceil((hi + 0.05) * 10) / 10);
+      } else {
+        lo = Math.floor(lo - 1);
+        hi = Math.ceil(hi + 1);
+      }
+      if (hi <= lo) hi = lo + 1;
+      var iw = W - L - R,
+        ih = H - T - B;
+      function x(i) {
+        return L + (n > 1 ? (i * iw) / (n - 1) : iw / 2);
+      }
+      function y(v) {
+        return T + ih - ((v - lo) / (hi - lo)) * ih;
+      }
+      function f(v) {
+        return pct ? Math.round(v * 100) + '%' : Number(v).toFixed(0);
+      }
+      var d = '';
+      var pen = false;
+      pts.forEach(function (p, i) {
+        if (!p) {
+          pen = false;
+          return;
+        }
+        d +=
+          (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.v).toFixed(1) + ' ';
+        pen = true;
+      });
+      var last = real[real.length - 1];
+      var lastIdx = pts.lastIndexOf(last);
+      var yTicks = [lo, (lo + hi) / 2, hi];
+      var xTicks = [0, Math.floor((n - 1) / 2), n - 1];
+      var dotColor =
+        last.e.band === 'red'
+          ? '#dc2626'
+          : last.e.band === 'yellow'
+          ? '#d97706'
+          : last.e.band === 'green'
+          ? '#15803d'
+          : '#4f46e5';
+      body = (
+        <svg
+          viewBox={'0 0 ' + W + ' ' + H}
+          className="w-full h-auto block"
+          role="img"
+          aria-label={label}
+        >
+          {yTicks.map(function (t) {
+            return (
+              <g key={t}>
+                <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#eeeef4" />
+                <text
+                  x={L - 5}
+                  y={y(t) + 3.5}
+                  fontSize="9.5"
+                  fill="#9ca3af"
+                  textAnchor="end"
+                >
+                  {f(t)}
+                </text>
+              </g>
+            );
+          })}
+          <line
+            x1={L}
+            x2={W - R}
+            y1={y(target)}
+            y2={y(target)}
+            stroke="#c3c6d3"
+            strokeDasharray="3 3"
+          />
+          <text
+            x={W - R}
+            y={y(target) - 3}
+            fontSize="9"
+            fill="#9ca3af"
+            textAnchor="end"
+          >
+            {'target ' + f(target)}
+          </text>
+          <path
+            d={d}
+            fill="none"
+            stroke="#4f46e5"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+          {pts.map(function (p, i) {
+            if (!p) return null;
+            var isLast = i === lastIdx;
+            return (
+              <circle
+                key={p.date}
+                cx={x(i)}
+                cy={y(p.v)}
+                r={isLast ? 4.5 : 3}
+                fill={isLast ? dotColor : '#4f46e5'}
+                stroke="#fff"
+                strokeWidth="1.5"
+              >
+                <title>
+                  {'As of ' +
+                    dateLbl(p.date) +
+                    ': ' +
+                    fmt(ind, p.e) +
+                    ' (n = ' +
+                    nCount(p.n) +
+                    ')'}
+                </title>
+              </circle>
+            );
+          })}
+          {xTicks.map(function (i) {
+            return (
+              <text
+                key={'x' + i}
+                x={x(i)}
+                y={H - 7}
+                fontSize="9.5"
+                fill="#9ca3af"
+                textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}
+              >
+                {dateLbl(historyPoints[i].date)}
+              </text>
+            );
+          })}
+        </svg>
+      );
+    }
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl px-4 pt-3 pb-2">
+        <div className="flex items-baseline justify-between gap-2">
+          <div
+            className="text-sm font-semibold text-gray-900 whitespace-nowrap"
+            title={ind.name + ' (' + id + ')'}
+          >
+            {label}
+          </div>
+          {cur && BAND_WORD[cur.band] ? (
+            <span className={'text-xs font-semibold ' + BAND_TEXT[cur.band]}>
+              {BAND_WORD[cur.band]}
+            </span>
+          ) : null}
+        </div>
+        {body}
+      </div>
+    );
+  }
+
+  function ChartsRow() {
+    var savedCount = historyPoints.filter(function (p) {
+      return !p.current;
+    }).length;
+    return (
+      <div>
+        <div className="grid grid-cols-1 lg:grid-cols-6 gap-3">
+          <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl px-4 pt-3 pb-2">
+            <div className="flex items-baseline justify-between gap-2 flex-wrap">
+              <div className="text-sm font-semibold text-gray-900">
+                Registrations and visits by week
+              </div>
+              <div className="flex items-center gap-3 text-xs text-gray-500">
+                <span>
+                  <span
+                    className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle"
+                    style={{ background: '#a5b4fc' }}
+                  />
+                  Babies registered
+                </span>
+                <span>
+                  <span
+                    className="inline-block w-3 h-0.5 mr-1 align-middle"
+                    style={{ background: '#4f46e5' }}
+                  />
+                  Visits
+                </span>
+              </div>
+            </div>
+            <ActivityChart weeks={weekly} />
+          </div>
+          <SmallTrend id="C09" label="Weight data" pct={true} target={0.6} />
+          <SmallTrend id="C13" label="Growth rate" pct={false} target={15} />
+          <SmallTrend id="C14" label="Mortality" pct={true} target={0.04} />
+          <SmallTrend id="C15" label="Lost by d28" pct={true} target={0.1} />
+        </div>
+        <p className="mt-2 text-xs text-gray-400">
+          Activity is counted in the week it happened, to {dateLbl(asOf)}. Each
+          indicator point is the figure as of a saved report
+          {savedCount ? ' (' + savedCount + ' saved)' : ''}; a gap is a report
+          with too few cases to score, not a zero. Dashed line = target.
+        </p>
+      </div>
+    );
+  }
+
+  // ── The organisations table: Neal's scorecard, plus last visit and attention ──
+  function OrgTable() {
+    if (!SC) return null;
+    function th(c, i) {
+      return (
+        <th
+          key={i}
+          className="px-1.5 py-2 text-right whitespace-nowrap font-semibold text-gray-600"
+          title={c.title}
+        >
+          {c.label}
+          <div className="font-mono text-[10px] font-normal text-gray-300">
+            {c.id}
+          </div>
+        </th>
+      );
+    }
+    function cells(ind) {
+      return SCORECARD.map(function (c, i) {
+        var e = ind && ind[c.id];
+        var tint = c.denOnly ? '' : tintFor(e);
+        return (
+          <td key={i} className={'px-1.5 py-2 text-right tabular-nums ' + tint}>
+            {scoreCell(c, ind)}
+          </td>
+        );
+      });
+    }
+    var rows = byLLO.slice().sort(function (a, b) {
+      return (entryOf(b.ind, 'C01').n || 0) - (entryOf(a.ind, 'C01').n || 0);
+    });
+    var nByLLO = {};
+    (SC.byLLO || []).forEach(function (r) {
+      nByLLO[r.llo] = r.ind;
+    });
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 flex items-baseline justify-between gap-3 flex-wrap">
+          <div className="font-semibold text-gray-900">Organisations</div>
+          <div className="text-xs text-gray-400">
+            15-metric scorecard · as of {dateLbl(asOf)} · click a row to open
+            the organisation
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-xs">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wide text-gray-400 border-b border-gray-200">
+                <th className="px-3 py-1 text-left"></th>
+                <th className="px-1.5 py-1 text-center" colSpan={3}>
+                  Scale
+                </th>
+                <th className="px-1.5 py-1 text-center" colSpan={2}>
+                  Cohort
+                </th>
+                <th className="px-1.5 py-1 text-center" colSpan={3}>
+                  Enrolment &amp; visits
+                </th>
+                <th className="px-1.5 py-1 text-center" colSpan={4}>
+                  Growth quality (of Qual N)
+                </th>
+                <th className="px-1.5 py-1 text-center">Outcome</th>
+                <th className="px-1.5 py-1 text-center" colSpan={2}>
+                  Data quality
+                </th>
+                <th className="px-1.5 py-1"></th>
+                <th className="px-1.5 py-1"></th>
+              </tr>
+              <tr className="text-xs text-gray-500 border-b border-gray-100">
+                <th className="px-3 py-2 text-left font-semibold text-gray-600">
+                  Organisation
+                </th>
+                {SCORECARD.map(th)}
+                <th className="px-1.5 py-2 text-right font-semibold text-gray-600">
+                  Last visit
+                </th>
+                <th className="px-1.5 py-2 text-right font-semibold text-gray-600">
+                  Attention
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(function (l) {
+                var lv = lastVisitByLLO[l.llo];
+                var gap = lv ? daysBetween(lv, asOf) : null;
+                var stale = gap !== null && gap > 14;
+                return (
+                  <tr
+                    key={l.llo}
+                    className="border-t border-gray-100 cursor-pointer hover:bg-indigo-50"
+                    onClick={function () {
+                      setSelLLO(l.llo);
+                      setOppFilter(null);
+                      setSelOpp(null);
+                      setSelFLW(null);
+                    }}
+                  >
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <div className="font-semibold text-indigo-700">
+                        {l.llo}
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {l.opps.length +
+                          (l.opps.length === 1
+                            ? ' opportunity'
+                            : ' opportunities') +
+                          ' · ' +
+                          (flwCountByLLO[l.llo] || 0) +
+                          ' workers'}
+                      </div>
+                    </td>
+                    {cells(nByLLO[l.llo])}
+                    <td
+                      className={
+                        'px-1.5 py-2 text-right whitespace-nowrap tabular-nums ' +
+                        (stale ? 'text-red-700 font-semibold' : 'text-gray-600')
+                      }
+                      title={
+                        stale ? 'No visits for ' + gap + ' days' : undefined
+                      }
+                    >
+                      {lv ? dateLbl(lv) : '—'}
+                    </td>
+                    <td className="px-1.5 py-2 text-right">
+                      {l.reds ? (
+                        <span
+                          className="inline-block px-1.5 py-0.5 rounded-md text-xs font-semibold bg-red-100 text-red-800 text-center"
+                          title={
+                            l.reds + ' off target · ' + l.yellows + ' to watch'
+                          }
+                        >
+                          {l.reds}
+                        </span>
+                      ) : l.yellows ? (
+                        <span
+                          className="inline-block px-1.5 py-0.5 rounded-md text-xs font-semibold bg-amber-100 text-amber-800 text-center"
+                          title={l.yellows + ' to watch'}
+                        >
+                          {l.yellows}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">0</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <div className="text-gray-900">All organisations</div>
+                  <div className="text-xs font-normal text-gray-400">
+                    {byLLO.length +
+                      ' organisations · ' +
+                      ((P.meta && P.meta.opportunities) || byOpp.length) +
+                      ' opportunities'}
+                  </div>
+                </td>
+                {cells(SC.programme)}
+                <td className="px-1.5 py-2"></td>
+                <td className="px-1.5 py-2"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100 flex items-center gap-4 flex-wrap">
+          <span>
+            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-400 mr-1 align-middle" />
+            Off target
+          </span>
+          <span>
+            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-400 mr-1 align-middle" />
+            Watch
+          </span>
+          <span>n&lt;20 = below the minimum denominator</span>
+          <span className="ml-auto">Hover a column for its definition</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ── One organisation: its opportunities as filter chips, its workers as the table ──
+  function OppChips() {
+    if (!scopeLLO) return null;
+    function chip(label, value, reds, count) {
+      var on = (oppFilter || null) === value;
+      return (
+        <button
+          key={String(value)}
+          type="button"
+          onClick={function () {
+            setOppFilter(value);
+            setSelFLW(null);
+            setSelOpp(null);
+          }}
+          className={
+            'px-3 py-1 rounded-full text-xs font-medium border ' +
+            (on
+              ? 'bg-indigo-600 border-indigo-600 text-white'
+              : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50')
+          }
+        >
+          {label}
+          {count !== null ? ' · ' + nCount(count) + ' babies' : ''}
+          {reds ? (
+            <span className={on ? ' text-red-100' : ' text-red-700'}>
+              {' · ' + reds + ' off target'}
+            </span>
+          ) : null}
+        </button>
+      );
+    }
+    return (
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-gray-400 mr-1">Opportunities</span>
+        {chip('All ' + scopeLLO.opps.length, null, 0, null)}
+        {scopeLLO.opps.map(function (o) {
+          var reds = Object.keys(o.ind || {}).filter(function (k) {
+            return o.ind[k].band === 'red';
+          }).length;
+          return chip(oppLabel(o.opp), o.opp, reds, entryOf(o.ind, 'C01').n);
+        })}
+      </div>
+    );
+  }
+
+  var FLW_COLS = [
+    { id: 'N07', label: 'Visits/case', src: 'N' },
+    { id: 'N08', label: '1st visit ≤3d', src: 'N' },
+    { id: 'C15', label: 'Lost by d28', src: 'C' },
+    { id: 'C09', label: 'Weight data', src: 'C' },
+    { id: 'N10', label: 'Healthy growth', src: 'N' },
+    { id: 'C13', label: 'Growth rate', src: 'C' },
+    { id: 'C28', label: 'Birth-copy', src: 'C' },
+    { id: 'C31', label: 'Rounded wts', src: 'C' },
+    { id: 'N15', label: 'Impossible Δ', src: 'N' },
+  ];
+  function flwCell(col, f) {
+    var e;
+    if (col.src === 'N') {
+      var nf = nByFLW[f.key];
+      e = nf && nf.ind && nf.ind[col.id];
+      var text = scoreCell(
+        { id: col.id, label: col.label, title: col.label },
+        nf && nf.ind,
+      );
+      return (
+        <td
+          key={col.id}
+          className={'px-2 py-2 text-right tabular-nums ' + tintFor(e)}
+        >
+          {text}
+        </td>
+      );
+    }
+    e = entryOf(f.ind, col.id);
+    var body =
+      e.band === 'insufficient' ? (
+        <span className="text-gray-400">n&lt;{MIN_DEN}</span>
+      ) : (
+        fmt(indOf(col.id), e)
+      );
+    return (
+      <td
+        key={col.id}
+        className={'px-2 py-2 text-right tabular-nums ' + tintFor(e)}
+      >
+        {body}
+      </td>
+    );
+  }
+  function FLWTable() {
+    if (!scopeLLO) return null;
+    var oppSet = {};
+    scopeLLO.opps.forEach(function (o) {
+      oppSet[String(o.opp)] = true;
+    });
+    var all = byFLW.filter(function (f) {
+      if (oppFilter) return String(f.opp) === String(oppFilter);
+      return oppSet[String(f.opp)];
+    });
+    var CAP = 25;
+    var rows = showAllFLW ? all : all.slice(0, CAP);
+    var sel = selFLW
+      ? byFLW.filter(function (x) {
+          return x.key === selFLW;
+        })[0]
+      : null;
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 flex items-baseline justify-between gap-3 flex-wrap">
+          <div className="font-semibold text-gray-900">Frontline workers</div>
+          <div className="text-xs text-gray-400">
+            {(showAllFLW || all.length <= CAP
+              ? all.length + ' workers'
+              : 'busiest ' + rows.length + ' of ' + all.length + ' workers') +
+              (oppFilter
+                ? ' in ' + oppLabel(oppFilter)
+                : ' across ' + scopeLLO.opps.length + ' opportunities') +
+              ' · click a worker for their indicators, cases and review'}
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wide text-gray-400 border-b border-gray-200">
+                <th className="px-3 py-1"></th>
+                <th className="px-2 py-1"></th>
+                <th className="px-2 py-1 text-center" colSpan={2}>
+                  Scale
+                </th>
+                <th className="px-2 py-1 text-center" colSpan={2}>
+                  Enrolment &amp; visits
+                </th>
+                <th className="px-2 py-1 text-center" colSpan={3}>
+                  Growth
+                </th>
+                <th className="px-2 py-1 text-center" colSpan={3}>
+                  Data quality
+                </th>
+                <th className="px-2 py-1"></th>
+                <th className="px-2 py-1"></th>
+              </tr>
+              <tr className="text-xs text-gray-500 border-b border-gray-100">
+                <th className="px-3 py-2 text-left font-semibold text-gray-600">
+                  Worker
+                </th>
+                <th className="px-2 py-2 text-left font-semibold text-gray-600">
+                  Opportunity
+                </th>
+                <th className="px-2 py-2 text-right font-semibold text-gray-600">
+                  Cases
+                </th>
+                {FLW_COLS.map(function (c) {
+                  return (
+                    <th
+                      key={c.id}
+                      className="px-2 py-2 text-right whitespace-nowrap font-semibold text-gray-600"
+                    >
+                      {c.label}
+                      <div className="font-mono text-[10px] font-normal text-gray-300">
+                        {c.id}
+                      </div>
+                    </th>
+                  );
+                })}
+                <th className="px-2 py-2 text-right font-semibold text-gray-600">
+                  Attention
+                </th>
+                <th className="px-2 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(function (f) {
+                var on = selFLW === f.key;
+                var reviewUrl = flwReviewUrl(f);
+                return (
+                  <tr
+                    key={f.key}
+                    className={
+                      'border-t border-gray-100 cursor-pointer hover:bg-indigo-50 ' +
+                      (on ? 'bg-indigo-50' : '')
+                    }
+                    onClick={function () {
+                      setSelFLW(on ? null : f.key);
+                      setSelOpp(on ? null : f.opp);
+                    }}
+                  >
+                    <td className="px-3 py-2 font-semibold text-indigo-700 whitespace-nowrap">
+                      {f.flw}
+                    </td>
+                    <td className="px-2 py-2 text-gray-600 whitespace-nowrap">
+                      {oppLabel(f.opp)}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {caseCount(f)}
+                    </td>
+                    {FLW_COLS.map(function (c) {
+                      return flwCell(c, f);
+                    })}
+                    <td className="px-2 py-2 text-right">
+                      {f.reds ? (
+                        <span className="inline-block px-1.5 py-0.5 rounded-md text-xs font-semibold bg-red-100 text-red-800 text-center">
+                          {f.reds}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">0</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap">
+                      {reviewUrl ? (
+                        <a
+                          className="inline-block px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 text-indigo-700 hover:bg-indigo-50 bg-white"
+                          href={reviewUrl}
+                          onClick={function (ev) {
+                            ev.stopPropagation();
+                          }}
+                        >
+                          Review →
+                        </a>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {all.length > CAP ? (
+          <div className="px-4 py-2 border-t border-gray-100 text-xs">
+            <button
+              type="button"
+              className="text-indigo-600 hover:underline"
+              onClick={function () {
+                setShowAllFLW(!showAllFLW);
+              }}
+            >
+              {showAllFLW
+                ? 'Show the busiest ' + CAP
+                : 'Show all ' + all.length + ' workers'}
+            </button>
+          </div>
+        ) : null}
+        <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100 flex items-center gap-4 flex-wrap">
+          <span>
+            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-400 mr-1 align-middle" />
+            Off target
+          </span>
+          <span>
+            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-400 mr-1 align-middle" />
+            Watch
+          </span>
+          <span>n&lt;{MIN_DEN} = too few cases to score</span>
+          <span className="ml-auto">
+            Review opens the worker's own page: stats, cases, growth charts,
+            image audit
+          </span>
+        </div>
+        {sel ? <FLWPanel f={sel} /> : null}
+      </div>
+    );
+  }
+
+  // ── The selected worker: their full indicator set, the review link, the audit, their cases ──
+  function FLWPanel(props) {
+    var f = props.f;
+    var st = auditState[f.key] || {};
+    var agent = AGENT_BY_LLO[f.llo];
+    var unverified = UNVERIFIED_SCALE.indexOf(f.llo) !== -1;
+    var reviewUrl = flwReviewUrl(f);
+    var RECENT = 8;
+    var caseRows = casesForDrill(f.opp, f.key);
+    var recentCases = caseRows
+      .slice()
+      .sort(function (a, b) {
+        return String(b.last_visit || '') < String(a.last_visit || '') ? -1 : 1;
+      })
+      .slice(0, RECENT);
+    return (
+      <div className="border-t-2 border-indigo-100">
+        <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap bg-indigo-50">
+          <div>
+            <span className="font-semibold text-gray-900">{f.flw}</span>
+            <span className="ml-2 text-xs text-gray-500">
+              {oppLabel(f.opp)} · {caseCount(f)} cases ·{' '}
+              {f.reds
+                ? f.reds +
+                  ' indicator' +
+                  (f.reds === 1 ? '' : 's') +
+                  ' off target'
+                : 'no indicator off target'}
+              {agent
+                ? ' · ' +
+                  (agent === 'scale_dial_read' ? 'dial' : 'digital') +
+                  ' scale reader'
+                : ' · no scale reader for this LLO'}
+              {unverified ? ' (hardware unconfirmed)' : ''}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {reviewUrl ? (
+              <a
+                className="inline-block px-3 py-1.5 rounded-md text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700"
+                href={reviewUrl}
+              >
+                Open worker review →
+              </a>
+            ) : null}
+            {AUDIT_ENABLED ? (
+              <button
+                type="button"
+                disabled={st.status === 'running'}
+                onClick={function () {
+                  auditWorker(f);
+                }}
+                className={
+                  'px-3 py-1.5 rounded-md text-sm font-medium border ' +
+                  (st.status === 'running'
+                    ? 'bg-gray-100 border-gray-200 text-gray-400'
+                    : 'bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-100')
+                }
+              >
+                {st.status === 'running'
+                  ? 'Opening audit…'
+                  : 'Audit recent images'}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="text-xs text-gray-500 hover:text-gray-800"
+              onClick={function () {
+                setSelFLW(null);
+                setSelOpp(null);
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+        {st.status === 'created' && (
+          <div className="px-4 py-2 text-xs text-green-700 bg-green-50 border-t border-green-100">
+            Audit queued for {f.flw}. It appears under Audits for{' '}
+            {oppLabel(f.opp)} once the sessions finish building.
+          </div>
+        )}
+        {st.status === 'error' && (
+          <div className="px-4 py-2 text-xs text-red-700 bg-red-50 border-t border-red-100">
+            Could not open the audit: {st.message}
+          </div>
+        )}
+        <div className="grid grid-cols-1 lg:grid-cols-2">
+          <div className="border-t border-gray-100 px-4 py-3">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              Indicators
+              <span className="ml-2 font-normal normal-case tracking-normal text-gray-400">
+                this worker, as of {dateLbl(asOf)}
+              </span>
+            </div>
+            <IndicatorChips ind={f.ind} />
+          </div>
+          <div className="border-t border-gray-100">
+            <div className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              Recent cases
+              <span className="ml-2 font-normal normal-case tracking-normal text-gray-400">
+                {caseRows.length > RECENT
+                  ? 'latest ' + RECENT + ' of ' + caseRows.length
+                  : caseRows.length +
+                    (caseRows.length === 1 ? ' case' : ' cases')}
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <CaseTable rows={recentCases} />
+            </div>
+            {reviewUrl ? (
+              <div className="px-4 py-2 text-xs border-t border-gray-100">
+                <a className="text-indigo-600 hover:underline" href={reviewUrl}>
+                  {'All ' +
+                    caseRows.length +
+                    ' cases, growth charts and the image audit in the worker review →'}
+                </a>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // The worker's indicator set as chips: only rows that carry a value, the band
+  // on the left edge, the full title and n on hover. Twenty-two rows of table
+  // was the wrong shape for a panel that sits under a table.
+  function IndicatorChips(props) {
+    var ind = props.ind || {};
+    var EDGE = {
+      green: '#15803d',
+      yellow: '#d97706',
+      red: '#dc2626',
+    };
+    var items = C_LIST.filter(function (i) {
+      var e = ind[i.id];
+      return e && e.value !== null && e.value !== undefined;
+    });
+    if (!items.length)
+      return (
+        <div className="text-xs text-gray-400">
+          No scored indicators for this worker.
+        </div>
+      );
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {items.map(function (i) {
+          var e = ind[i.id];
+          var ins = e.band === 'insufficient';
+          return (
+            <span
+              key={i.id}
+              className="inline-flex items-center gap-1.5 border border-gray-200 rounded-md pl-2 pr-2 py-1 text-xs bg-white"
+              style={{
+                borderLeft: '3px solid ' + (EDGE[e.band] || '#c3c6d3'),
+              }}
+              title={i.id + ' · ' + i.name + ' · n = ' + nCount(e.n)}
+            >
+              <span className="text-gray-600 whitespace-nowrap">{i.name}</span>
+              <span
+                className={
+                  'font-semibold whitespace-nowrap ' +
+                  (ins ? 'text-gray-400' : BAND_TEXT[e.band] || 'text-gray-900')
+                }
+              >
+                {ins ? 'n<' + MIN_DEN : fmt(i, e)}
+              </span>
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function CaseTable(props) {
+    var rows = props.rows || [];
+    return (
+      <table className="min-w-full text-xs">
+        <thead className="bg-gray-50 text-gray-500">
+          <tr>
+            <th className="px-3 py-2 text-left">Baby</th>
+            <th className="px-2 py-2 text-right">Visits</th>
+            <th className="px-2 py-2 text-left">First visit</th>
+            <th className="px-2 py-2 text-left">Last visit</th>
+            <th className="px-2 py-2 text-right">Birth wt</th>
+            <th className="px-2 py-2 text-right">Weight, first → last</th>
+            <th className="px-2 py-2 text-left">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(function (r) {
+            var fw = r.first_weight_g,
+              lw = r.last_weight_g;
+            return (
+              <tr key={r.entity_id} className="border-t border-gray-100">
+                <td className="px-3 py-1.5 font-mono text-gray-600 whitespace-nowrap">
+                  {String(r.name || r.entity_id || '').slice(0, 8)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {r.num_visits}
+                </td>
+                <td className="px-2 py-1.5 whitespace-nowrap">
+                  {r.first_visit ? dateLbl(r.first_visit) : '—'}
+                </td>
+                <td className="px-2 py-1.5 whitespace-nowrap">
+                  {r.last_visit ? dateLbl(r.last_visit) : '—'}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
+                  {r.birth_weight_g ? nCount(r.birth_weight_g) + ' g' : '—'}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
+                  {fw && lw ? nCount(fw) + ' → ' + nCount(lw) + ' g' : '—'}
+                </td>
+                <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">
+                  {String(r.last_kmc_status || '—').replace(/_/g, ' ')}
+                </td>
+              </tr>
+            );
+          })}
+          {!rows.length ? (
+            <tr>
+              <td className="px-3 py-4 text-center text-gray-400" colSpan={7}>
+                No cases for this worker in the report.
+              </td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    );
+  }
+
+  function AllIndicators() {
+    return (
+      <details className="bg-white border border-gray-200 rounded-xl">
+        <summary className="px-4 py-3 text-sm font-semibold text-gray-700 cursor-pointer flex items-center justify-between">
+          <span>All programme indicators · {scopeName}</span>
+          <span className="text-xs font-normal text-gray-400">
+            value, n and band for the full C-series
+          </span>
+        </summary>
+        <div className="overflow-x-auto border-t border-gray-100">
+          <IndicatorTable ind={scopeInd} />
+        </div>
+      </details>
+    );
+  }
+
+  var headline = selLLO ? selLLO : 'Kangaroo Mother Care programme';
+  var meta = P.meta || {};
+  function subline() {
+    if (!selLLO)
+      return (
+        <span>
+          <b className="font-semibold text-gray-900">{nCount(meta.cases)}</b>{' '}
+          babies ·{' '}
+          <b className="font-semibold text-gray-900">{nCount(meta.visits)}</b>{' '}
+          visits · <b className="font-semibold text-gray-900">{byLLO.length}</b>{' '}
+          organisations ·{' '}
+          <b className="font-semibold text-gray-900">
+            {meta.opportunities || byOpp.length}
+          </b>{' '}
+          opportunities · figures as of {dateLbl(asOf)}
+        </span>
+      );
+    var lv = lastVisitByLLO[selLLO];
+    return (
+      <span>
+        <b className="font-semibold text-gray-900">
+          {nCount(entryOf(scopeLLO && scopeLLO.ind, 'C01').n)}
+        </b>{' '}
+        babies ·{' '}
+        <b className="font-semibold text-gray-900">
+          {flwCountByLLO[selLLO] || 0}
+        </b>{' '}
+        workers ·{' '}
+        <b className="font-semibold text-gray-900">
+          {scopeLLO ? scopeLLO.opps.length : 0}
+        </b>{' '}
+        opportunities{lv ? ' · last visit ' + dateLbl(lv) : ''} · figures as of{' '}
+        {dateLbl(asOf)}
+      </span>
+    );
+  }
+
+  return (
+    <div className="p-6 space-y-4">
+      <div className="flex items-center gap-2 text-sm">
+        {crumb.map(function (c, i) {
+          var last = i === crumb.length - 1;
+          return (
+            <span key={i} className="flex items-center gap-2">
+              <button
+                onClick={function () {
+                  if (i === 0) {
+                    setSelLLO(null);
+                    setOppFilter(null);
+                    setSelOpp(null);
+                    setSelFLW(null);
+                  }
+                }}
+                className={
+                  last
+                    ? 'font-semibold text-gray-900'
+                    : 'text-indigo-600 hover:underline'
+                }
+              >
+                {c}
+              </button>
+              {!last && <span className="text-gray-300">›</span>}
+            </span>
+          );
+        })}
+      </div>
+
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{headline}</h1>
+          <p className="text-sm text-gray-600 mt-1">{subline()}</p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center border border-gray-200 bg-white rounded-lg px-3 py-1.5 text-sm font-semibold text-gray-800 whitespace-nowrap">
+            Report of {dateLbl(asOf)}
+          </span>
+          {snapshot ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-600" />
+              Final report
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+              {live.status === 'ready' ? 'Current period' : 'Computing…'}
+            </span>
+          )}
+          {!snapshot && view && view.complete && (
             <button
               onClick={saveRun}
               disabled={live.status !== 'ready'}
               className={
-                'px-3 py-2 rounded-lg text-sm border ' +
+                'px-3 py-1.5 rounded-lg text-sm border ' +
                 (live.status !== 'ready'
                   ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
                   : 'border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100')
@@ -1806,1041 +2521,73 @@ function WorkflowUI({
               title={
                 live.status !== 'ready'
                   ? 'Waiting for the figures to load'
-                  : 'Save this run — its figures become final'
+                  : 'Save this report — its figures become final'
               }
             >
-              {live.status === 'ready'
-                ? 'Save this run'
-                : 'Save this run (loading…)'}
+              Save this report
             </button>
+          )}
+        </div>
+      </div>
+
+      {!snapshot && live.status !== 'ready' && (
+        <div
+          className={
+            'px-4 py-3 text-sm border rounded-xl ' +
+            (live.status === 'error'
+              ? 'bg-red-50 text-red-900 border-red-200'
+              : 'bg-slate-50 text-slate-700 border-slate-200')
+          }
+        >
+          {live.status === 'error' ? (
+            <span>
+              <span className="font-medium">
+                Indicators could not be computed.
+              </span>{' '}
+              {live.error}
+            </span>
+          ) : (
+            <span>
+              <span className="font-medium">Computing indicators…</span> one
+              pass over the whole cohort, usually under a minute. Figures below
+              stay blank until it returns.
+            </span>
+          )}
+        </div>
+      )}
+
+      {!snapshot &&
+        live.status === 'ready' &&
+        live.cache &&
+        (live.cache.cold_cache || live.cache.partial_cache) && (
+          <div className="px-4 py-3 text-sm bg-amber-50 text-amber-900 border border-amber-200 rounded-xl">
+            <span className="font-medium">
+              {live.cache.cold_cache
+                ? 'Every metric is blank because nothing is cached — not because the programme has no data.'
+                : 'These totals cover only part of the cohort.'}
+            </span>{' '}
+            {live.cache.cold_cache_hint}
           </div>
         )}
-      </div>
 
-      <div className="flex items-center gap-1 border-b border-gray-200">
-        {[
-          ['indicators', 'Indicators'],
-          ['trends', 'Weekly trend'],
-        ].map(function (t) {
-          var on = tab === t[0];
-          return (
-            <button
-              key={t[0]}
-              onClick={function () {
-                setTab(t[0]);
-              }}
-              className={
-                'px-4 py-2 text-sm -mb-px border-b-2 ' +
-                (on
-                  ? 'border-indigo-600 text-indigo-700 font-medium'
-                  : 'border-transparent text-gray-500 hover:text-gray-700')
-              }
-            >
-              {t[1]}
-            </button>
-          );
-        })}
-      </div>
+      {selLLO ? <OppChips /> : null}
 
-      {tab === 'trends' && <TrendView />}
+      <Tiles />
 
-      {tab === 'indicators' && (
-        <>
-          {/* The C-series is fetched now, not computed in this browser, and that
-              introduced a state the old engine never had: in-flight. While the
-              query runs every figure is an em-dash, which is indistinguishable
-              from a programme with no data -- and the query takes ~30s over 8,700
-              cases, so that is not a blink. An error was worse: it rendered the
-              same dashes and said nothing at all.
+      {selLLO ? <FLWTable /> : <OrgTable />}
 
-              Two cache lies get the same treatment the N-series already gives
-              them. COLD: every count is zero, reading as a programme with no
-              babies. PARTIAL: a real number over only the cached opportunities,
-              entirely credible and understated. Neither is visible in the
-              figures themselves. */}
-          {!snapshot && live.status !== 'ready' && (
-            <div
-              className={
-                'px-4 py-3 text-sm border rounded ' +
-                (live.status === 'error'
-                  ? 'bg-red-50 text-red-900 border-red-200'
-                  : 'bg-slate-50 text-slate-700 border-slate-200')
-              }
-            >
-              {live.status === 'error' ? (
-                <span>
-                  <span className="font-medium">
-                    Indicators could not be computed.
-                  </span>{' '}
-                  {live.error}
-                </span>
-              ) : (
-                <span>
-                  <span className="font-medium">Computing indicators…</span> one
-                  pass over the whole cohort, usually under a minute. Values
-                  below stay blank until it returns.
-                </span>
-              )}
-            </div>
-          )}
+      <ChartsRow />
 
-          {!snapshot &&
-            live.status === 'ready' &&
-            live.cache &&
-            (live.cache.cold_cache || live.cache.partial_cache) && (
-              <div className="px-4 py-3 text-sm bg-amber-50 text-amber-900 border border-amber-200 rounded">
-                <span className="font-medium">
-                  {live.cache.cold_cache
-                    ? 'Every metric is blank because nothing is cached \u2014 not because the programme has no data.'
-                    : 'These totals cover only part of the cohort.'}
-                </span>{' '}
-                {live.cache.cold_cache_hint}
-              </div>
-            )}
+      <AllIndicators />
 
-          <div className="flex items-center gap-2 text-sm">
-            {crumb.map(function (c, i) {
-              var last = i === crumb.length - 1;
-              return (
-                <span key={i} className="flex items-center gap-2">
-                  <button
-                    onClick={function () {
-                      if (i === 0) {
-                        setSelLLO(null);
-                        setSelOpp(null);
-                        setSelInd(null);
-                      }
-                      if (i === 1) {
-                        setSelOpp(null);
-                      }
-                    }}
-                    className={
-                      last
-                        ? 'font-semibold text-gray-900'
-                        : 'text-indigo-600 hover:underline'
-                    }
-                  >
-                    {c}
-                  </button>
-                  {!last && <span className="text-gray-300">›</span>}
-                </span>
-              );
-            })}
-          </div>
-
-          {!selLLO && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="bg-white border border-gray-200 rounded-xl p-4">
-                  <div className="text-xs text-gray-500">
-                    LLOs with a red indicator
-                  </div>
-                  <div className="text-2xl font-semibold mt-1">
-                    {llosRed}{' '}
-                    <span className="text-base text-gray-400">
-                      of {byLLO.length}
-                    </span>
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    Organisations with at least one indicator in the red band
-                  </div>
-                </div>
-                <div className="bg-white border border-gray-200 rounded-xl p-4">
-                  <div className="text-xs text-gray-500">Total started</div>
-                  <div className="text-2xl font-semibold mt-1">
-                    {fmt(indOf('C02'), entryOf(programInd, 'C02'))}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    Started cases (C02) against the 25,000 target by Q1-2027
-                  </div>
-                </div>
-                <div className="bg-white border border-gray-200 rounded-xl p-4">
-                  <div className="text-xs text-gray-500">
-                    % weight data sufficient
-                  </div>
-                  <div className="text-2xl font-semibold mt-1">
-                    {fmt(indOf('C09'), entryOf(programInd, 'C09'))}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    Weight data sufficient (C09), pooled across all cases
-                  </div>
-                </div>
-                <div className="bg-white border border-gray-200 rounded-xl p-4">
-                  <div className="text-xs text-gray-500">Mortality</div>
-                  <div className="text-2xl font-semibold mt-1">
-                    {mortalityCredible.ind
-                      ? fmt(indOf('C14'), mortalityCredible.ind)
-                      : '\u2014'}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    Mortality (C14), two-sided ·{' '}
-                    {mortalityCredible.llos.length
-                      ? mortalityCredible.llos.join(' + ') +
-                        ' only (' +
-                        mortalityCredible.llos.length +
-                        ' of ' +
-                        mortalityCredible.of +
-                        ' LLOs record deaths credibly)'
-                      : 'no credible recorder'}
-                  </div>
-                </div>
-              </div>
-
-              {SC && (
-                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                  <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-                    Programme scorecard{' '}
-                    <span className="text-xs font-normal text-gray-400 ml-2">
-                      15 headline metrics by organisation
-                      {P.meta && P.meta.as_of
-                        ? ' \u00b7 as of ' + P.meta.as_of
-                        : ''}
-                    </span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead className="bg-gray-50 text-gray-500">
-                        <tr>
-                          <th className="px-3 py-2 text-left">LLO</th>
-                          {SCORECARD.map(function (c, i) {
-                            return (
-                              <th
-                                key={i}
-                                className="px-2 py-2 text-right whitespace-nowrap"
-                                title={c.title}
-                              >
-                                {c.label}
-                                <div className="text-[10px] font-normal text-gray-400">
-                                  {c.id}
-                                </div>
-                              </th>
-                            );
-                          })}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(SC.byLLO || []).map(function (r) {
-                          return (
-                            <tr
-                              key={r.llo}
-                              className="border-t border-gray-100"
-                            >
-                              <td className="px-3 py-2 font-medium text-gray-900">
-                                {r.llo}
-                              </td>
-                              {SCORECARD.map(function (c, i) {
-                                return (
-                                  <td key={i} className="px-2 py-2 text-right">
-                                    {scoreCell(c, r.ind)}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          );
-                        })}
-                        <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                          <td className="px-3 py-2">Programme</td>
-                          {SCORECARD.map(function (c, i) {
-                            return (
-                              <td key={i} className="px-2 py-2 text-right">
-                                {scoreCell(c, SC.programme)}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
-                    %slow + %healthy + %fast + %incompl = 100 per row. n&lt;20 =
-                    below the minimum denominator. Hover a column for its
-                    definition.
-                  </div>
-                </div>
-              )}
-
-              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-                  LLOs{' '}
-                  <span className="text-xs font-normal text-gray-400 ml-2">
-                    click to drill into an LLO's opportunities
-                  </span>
-                </div>
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-500">
-                    <tr>
-                      <th className="px-3 py-2 text-left">LLO</th>
-                      <th className="px-3 py-2 text-right">Opps</th>
-                      <th className="px-3 py-2 text-right">Cases</th>
-                      <th className="px-3 py-2 text-right">Started</th>
-                      <th className="px-3 py-2 text-right">
-                        % weight data sufficient
-                        <div className="text-[10px] font-normal text-gray-400">
-                          C09
-                        </div>
-                      </th>
-                      <th className="px-3 py-2 text-right">
-                        Mean early growth rate
-                        <div className="text-[10px] font-normal text-gray-400">
-                          C13 · g/kg/day
-                        </div>
-                      </th>
-                      <th className="px-3 py-2 text-right">
-                        Mortality
-                        <div className="text-[10px] font-normal text-gray-400">
-                          C14
-                        </div>
-                      </th>
-                      <th className="px-3 py-2 text-right">
-                        % enrolled within 3 days
-                        <div className="text-[10px] font-normal text-gray-400">
-                          C16
-                        </div>
-                      </th>
-                      <th className="px-3 py-2 text-right">Last visit</th>
-                      <th className="px-3 py-2 text-right">Red</th>
-                      <th className="px-3 py-2 text-right">Yellow</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {byLLO.map(function (l) {
-                      return (
-                        <tr
-                          key={l.llo}
-                          className="border-t border-gray-100 cursor-pointer hover:bg-indigo-50"
-                          onClick={function () {
-                            setSelLLO(l.llo);
-                          }}
-                        >
-                          <td className="px-3 py-2 font-medium text-indigo-700">
-                            {l.llo}
-                          </td>
-                          <td className="px-3 py-2 text-right text-gray-500">
-                            {l.opps.length}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {caseCount(l)}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C02'), entryOf(l.ind, 'C02'))}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C09'), entryOf(l.ind, 'C09'))}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C13'), entryOf(l.ind, 'C13'))}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C14'), entryOf(l.ind, 'C14'))}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <span title={covTitle(entryOf(l.ind, 'C16'))}>
-                              {fmtCov(indOf('C16'), entryOf(l.ind, 'C16'))}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-right text-gray-500 whitespace-nowrap">
-                            {lastVisitByLLO[l.llo] || '\u2014'}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {l.reds ? (
-                              <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-800">
-                                {l.reds}
-                              </span>
-                            ) : (
-                              '0'
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-right text-gray-500">
-                            {l.yellows}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-                  Programme-wide indicators{' '}
-                  <span className="text-xs font-normal text-gray-400 ml-2">
-                    all cases pooled
-                  </span>
-                </div>
-                <div className="overflow-x-auto">
-                  <IndicatorTable ind={programInd} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {selLLO && !selOpp && (
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-                {selLLO} — opportunities
-                <span className="text-xs font-normal text-gray-400 ml-2">
-                  one LLO can have a good opp and a bad one; this is where that
-                  shows
-                </span>
-              </div>
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 text-gray-500">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Opportunity</th>
-                    <th className="px-3 py-2 text-right">Cases</th>
-                    <th className="px-3 py-2 text-right">
-                      % weight data computable
-                      <div className="text-[10px] font-normal text-gray-400">
-                        C07
-                      </div>
-                    </th>
-                    <th className="px-3 py-2 text-right">
-                      % weight data sufficient
-                      <div className="text-[10px] font-normal text-gray-400">
-                        C09
-                      </div>
-                    </th>
-                    <th className="px-3 py-2 text-right">
-                      Mean early growth rate
-                      <div className="text-[10px] font-normal text-gray-400">
-                        C13 · g/kg/day
-                      </div>
-                    </th>
-                    <th className="px-3 py-2 text-right">
-                      Mortality
-                      <div className="text-[10px] font-normal text-gray-400">
-                        C14
-                      </div>
-                    </th>
-                    <th className="px-3 py-2 text-right">
-                      Loss to follow-up by day 28
-                      <div className="text-[10px] font-normal text-gray-400">
-                        C15
-                      </div>
-                    </th>
-                    <th className="px-3 py-2 text-right">Red</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {byLLO
-                    .filter(function (l) {
-                      return l.llo === selLLO;
-                    })[0]
-                    .opps.map(function (o) {
-                      var reds = Object.keys(o.ind).filter(function (k) {
-                        return o.ind[k].band === 'red';
-                      }).length;
-                      return (
-                        <tr
-                          key={o.opp}
-                          className="border-t border-gray-100 cursor-pointer hover:bg-indigo-50"
-                          onClick={function () {
-                            setSelOpp(o.opp);
-                            setSelFLW(null);
-                          }}
-                        >
-                          <td className="px-3 py-2 font-medium text-indigo-700">
-                            {oppLabel(o.opp)}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {caseCount(o)}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C07'), entryOf(o.ind, 'C07'))}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C09'), entryOf(o.ind, 'C09'))}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C13'), entryOf(o.ind, 'C13'))}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C14'), entryOf(o.ind, 'C14'))}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {fmt(indOf('C15'), entryOf(o.ind, 'C15'))}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {reds ? (
-                              <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-800">
-                                {reds}
-                              </span>
-                            ) : (
-                              '0'
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-              <div className="px-4 py-3 border-t border-gray-100">
-                <div className="text-sm font-medium text-gray-900 mb-2">
-                  {selLLO} — all indicators (pooled across its opportunities)
-                </div>
-                <div className="overflow-x-auto">
-                  <IndicatorTable
-                    ind={
-                      byLLO.filter(function (l) {
-                        return l.llo === selLLO;
-                      })[0].ind
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {selOpp &&
-            (function () {
-              var CASE_CAP = 300;
-              var caseRows = casesForDrill(selOpp, selFLW);
-              return (
-                <div className="space-y-5">
-                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                    <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-                      {oppLabel(selOpp)} — indicators
-                    </div>
-                    <div className="overflow-x-auto">
-                      <IndicatorTable
-                        ind={
-                          byOpp.filter(function (o) {
-                            return o.opp === selOpp;
-                          })[0].ind
-                        }
-                      />
-                    </div>
-                  </div>
-
-                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                    <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-                      Frontline workers
-                      <span className="text-xs font-normal text-gray-400 ml-2">
-                        click an FLW for their full indicator set and to filter
-                        the case list
-                      </span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full text-sm">
-                        <thead className="bg-gray-50 text-gray-500">
-                          <tr>
-                            <th className="px-3 py-2 text-left">FLW</th>
-                            <th className="px-3 py-2 text-right">Cases</th>
-                            <th className="px-3 py-2 text-right">
-                              % weight data sufficient
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C09
-                              </div>
-                            </th>
-                            <th className="px-3 py-2 text-right">
-                              Mean early growth rate
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C13 · g/kg/day
-                              </div>
-                            </th>
-                            <th className="px-3 py-2 text-right">
-                              Loss to follow-up by day 28
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C15
-                              </div>
-                            </th>
-                            <th className="px-3 py-2 text-right">
-                              Mean visits per started case
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C24
-                              </div>
-                            </th>
-                            <th className="px-3 py-2 text-right">
-                              Birth-copy rate
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C28
-                              </div>
-                            </th>
-                            <th className="px-3 py-2 text-right">
-                              Weight rounding rate
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C31
-                              </div>
-                            </th>
-                            <th
-                              className="px-3 py-2 text-right"
-                              title="Mean visits per case (scorecard)"
-                            >
-                              Visits/case
-                              <div className="text-[10px] font-normal text-gray-400">
-                                N07
-                              </div>
-                            </th>
-                            <th
-                              className="px-3 py-2 text-right"
-                              title="% impossible weight changes (scorecard)"
-                            >
-                              %imposs
-                              <div className="text-[10px] font-normal text-gray-400">
-                                N15
-                              </div>
-                            </th>
-                            <th className="px-3 py-2 text-right">Red</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {byFLW
-                            .filter(function (f) {
-                              return f.opp === selOpp;
-                            })
-                            .map(function (f) {
-                              function cell(id) {
-                                var i = C_LIST.filter(function (x) {
-                                  return x.id === id;
-                                })[0];
-                                return fmt(i, f.ind[id]);
-                              }
-                              return (
-                                <tr
-                                  key={f.key}
-                                  className={
-                                    'border-t border-gray-100 cursor-pointer hover:bg-indigo-50 ' +
-                                    (selFLW === f.key ? 'bg-indigo-50' : '')
-                                  }
-                                  onClick={function () {
-                                    setSelFLW(selFLW === f.key ? null : f.key);
-                                  }}
-                                >
-                                  <td className="px-3 py-2 font-medium text-indigo-700">
-                                    {f.flw}
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    {caseCount(f)}
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    {cell('C09')}
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    {cell('C13')}
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    {cell('C15')}
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    {cell('C24')}
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    {cell('C28')}
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    {cell('C31')}
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    {scoreCell(
-                                      SCORECARD[5],
-                                      (nByFLW[f.key] || {}).ind,
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    {scoreCell(
-                                      SCORECARD[14],
-                                      (nByFLW[f.key] || {}).ind,
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    {f.reds ? (
-                                      <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-800">
-                                        {f.reds}
-                                      </span>
-                                    ) : (
-                                      '0'
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                        </tbody>
-                      </table>
-                    </div>
-                    {selFLW &&
-                      byFLW.filter(function (f) {
-                        return f.key === selFLW;
-                      })[0] && (
-                        <div className="px-4 py-3 border-t border-gray-100">
-                          <div className="text-sm font-medium text-gray-900 mb-2">
-                            {
-                              byFLW.filter(function (f) {
-                                return f.key === selFLW;
-                              })[0].flw
-                            }{' '}
-                            — all indicators
-                            <span className="text-xs font-normal text-gray-400 ml-2">
-                              n is small per FLW, so most rows will read n&lt;
-                              {MIN_DEN}
-                            </span>
-                          </div>
-                          <div className="overflow-x-auto">
-                            <IndicatorTable
-                              ind={
-                                byFLW.filter(function (f) {
-                                  return f.key === selFLW;
-                                })[0].ind
-                              }
-                            />
-                          </div>
-                          {flwReviewUrl(
-                            byFLW.filter(function (x) {
-                              return x.key === selFLW;
-                            })[0],
-                          ) && (
-                            <div className="mt-3">
-                              <a
-                                className="inline-block px-3 py-1.5 rounded text-sm font-medium bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                                href={flwReviewUrl(
-                                  byFLW.filter(function (x) {
-                                    return x.key === selFLW;
-                                  })[0],
-                                )}
-                              >
-                                Open worker review →
-                              </a>
-                              <span className="ml-2 text-xs text-gray-500">
-                                cases, growth charts and an image audit for this
-                                worker
-                              </span>
-                            </div>
-                          )}
-                          {AUDIT_ENABLED &&
-                            (function () {
-                              var f = byFLW.filter(function (x) {
-                                return x.key === selFLW;
-                              })[0];
-                              var st = auditState[f.key] || {};
-                              var agent = AGENT_BY_LLO[f.llo];
-                              var unverified =
-                                UNVERIFIED_SCALE.indexOf(f.llo) !== -1;
-                              return (
-                                <div className="mt-3 pt-3 border-t border-gray-100">
-                                  <div className="flex items-center gap-3 flex-wrap">
-                                    <button
-                                      type="button"
-                                      disabled={st.status === 'running'}
-                                      onClick={function () {
-                                        auditWorker(f);
-                                      }}
-                                      className={
-                                        'px-3 py-1.5 rounded text-sm font-medium ' +
-                                        (st.status === 'running'
-                                          ? 'bg-gray-200 text-gray-500'
-                                          : 'bg-indigo-600 text-white hover:bg-indigo-700')
-                                      }
-                                    >
-                                      {st.status === 'running'
-                                        ? 'Opening audit…'
-                                        : 'Review this worker'}
-                                    </button>
-                                    <span className="text-xs text-gray-500">
-                                      {f.reds
-                                        ? f.reds +
-                                          ' indicator' +
-                                          (f.reds === 1 ? '' : 's') +
-                                          ' reading red'
-                                        : 'no red indicators'}
-                                      {agent
-                                        ? ' · ' +
-                                          (agent === 'scale_dial_read'
-                                            ? 'dial'
-                                            : 'digital') +
-                                          ' scale reader'
-                                        : ' · no scale reader for this LLO'}
-                                      {unverified
-                                        ? ' (hardware unconfirmed)'
-                                        : ''}
-                                    </span>
-                                  </div>
-                                  {st.status === 'created' && (
-                                    <div className="mt-2 text-xs text-green-700">
-                                      Audit queued for {f.flw}. It appears under
-                                      Audits for {oppLabel(f.opp)} once the
-                                      sessions finish building.
-                                    </div>
-                                  )}
-                                  {st.status === 'error' && (
-                                    <div className="mt-2 text-xs text-red-700">
-                                      Could not open the audit: {st.message}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                        </div>
-                      )}
-                  </div>
-
-                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                    <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-                      {'Cases '}
-                      {selFLW
-                        ? ' \u2014 ' +
-                          (
-                            byFLW.filter(function (f) {
-                              return f.key === selFLW;
-                            })[0] || {}
-                          ).flw
-                        : ''}
-                      <span className="text-xs font-normal text-gray-400 ml-2">
-                        {caseRows.length > CASE_CAP
-                          ? 'showing first ' +
-                            CASE_CAP +
-                            ' of ' +
-                            caseRows.length +
-                            ' \u2014 narrow by FLW or indicator to see the rest'
-                          : caseRows.length +
-                            ' case' +
-                            (caseRows.length === 1 ? '' : 's') +
-                            (derived.length
-                              ? ''
-                              : ' \u2014 per-visit detail is shown on the current reporting period')}
-                      </span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full text-xs">
-                        <thead className="bg-gray-50 text-gray-500">
-                          <tr>
-                            <th className="px-2 py-2 text-left">Baby</th>
-                            <th className="px-2 py-2 text-left">FLW</th>
-                            <th className="px-2 py-2 text-right">
-                              Visits
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C06/C24
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-left">First visit</th>
-                            <th className="px-2 py-2 text-center">
-                              Started
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C02
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-center">Eligible</th>
-                            <th className="px-2 py-2 text-center">
-                              Outcome known
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C15
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-center">
-                              Died
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C14
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-right">
-                              Weight readings
-                            </th>
-                            <th className="px-2 py-2 text-center">
-                              Weight computable
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C07
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-center">
-                              Weight consistent
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C08
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-center">
-                              Weight sufficient
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C09
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-right">
-                              First &rarr; last weight (g)
-                            </th>
-                            <th className="px-2 py-2 text-right">
-                              Early growth rate
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C13
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-left">
-                              Growth
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C10-12
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-right">
-                              Days discharge to enrolment
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C17
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-center">
-                              &le;3d
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C16
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-center">
-                              Danger sign
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C20
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-center">
-                              Referred
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C19
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-right">
-                              Self-referrals
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C21
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-right">
-                              Skin-to-skin hours
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C23
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-center">
-                              Enrolment wt = birth wt
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C28
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 text-right">
-                              Weights rounded to 100g
-                              <div className="text-[10px] font-normal text-gray-400">
-                                C31
-                              </div>
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(function () {
-                            var rows = caseRows;
-                            function tick(b) {
-                              return b ? '\u2713' : '';
-                            }
-                            function num(x, dp) {
-                              return typeof x === 'number' && !isNaN(x)
-                                ? x.toFixed(dp || 0)
-                                : '\u2014';
-                            }
-                            return rows.slice(0, CASE_CAP).map(function (r) {
-                              return (
-                                <tr
-                                  key={r.entity_id}
-                                  className="border-t border-gray-100"
-                                >
-                                  <td className="px-2 py-1.5">{r.name}</td>
-                                  <td className="px-2 py-1.5">{r.flw}</td>
-                                  <td className="px-2 py-1.5 text-right">
-                                    {r.num_visits}
-                                  </td>
-                                  <td className="px-2 py-1.5">
-                                    {r.first_visit || '\u2014'}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-center">
-                                    {tick(r.started)}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-center">
-                                    {tick(r.eligible)}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-center">
-                                    {tick(r.outcome_known)}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-center">
-                                    {r.died ? '\u2715' : ''}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-right">
-                                    {r.n_weight_readings}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-center">
-                                    {tick(r.weight_computable)}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-center">
-                                    {tick(r.weight_consistent)}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-center">
-                                    {tick(r.weight_gain_data_sufficient)}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-right">
-                                    {r.first_weight_g
-                                      ? r.first_weight_g +
-                                        '\u2192' +
-                                        r.last_weight_g
-                                      : '\u2014'}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-right">
-                                    {num(r.early_g_per_kg_day, 1)}
-                                  </td>
-                                  <td className="px-2 py-1.5">
-                                    {r.growth_class || '\u2014'}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-right">
-                                    {num(r.days_discharge_to_reg)}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-center">
-                                    {tick(r.enrolled_within_3d)}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-center">
-                                    {tick(r.ever_danger_sign)}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-center">
-                                    {tick(r.referred)}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-right">
-                                    {r.self_referral_count || 0}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-right">
-                                    {num(r.kmc_hours_mean, 1)}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-center">
-                                    {r.enrollment_is_birth_copy === null
-                                      ? '\u2014'
-                                      : tick(r.enrollment_is_birth_copy)}
-                                  </td>
-                                  <td className="px-2 py-1.5 text-right">
-                                    {r.n_weights_round_100}
-                                  </td>
-                                </tr>
-                              );
-                            });
-                          })()}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <div className="font-medium text-gray-900 mb-2 text-sm">
-              Declared in the workbook, not computable yet
-            </div>
-            {runIsSynthetic && (
-              <div className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-                Prepared on a synthetic copy of the programme data. Personal
-                identifiers &mdash; names, phone numbers, addresses, GPS and
-                free text &mdash; are never reproduced, so any measure derived
-                from them is shown as unavailable rather than as zero.
-              </div>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 text-xs text-gray-500">
-              {NOT_COMPUTABLE.map(function (n) {
-                return (
-                  <div key={n.id}>
-                    <span className="font-mono text-gray-400">{n.id}</span>{' '}
-                    {n.name} — {n.why}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
+      {runIsSynthetic ? (
+        <p className="text-xs text-gray-400 max-w-3xl">
+          Prepared on a synthetic copy of the programme data. Personal
+          identifiers — names, phone numbers, addresses, GPS and free text — are
+          never reproduced, so any measure derived from them is shown as
+          unavailable rather than as zero.
+        </p>
+      ) : null}
     </div>
   );
 }
