@@ -1209,12 +1209,24 @@ function WorkflowUI({
     insufficient: 'bg-gray-100 text-gray-500',
   };
 
+  // Counts in a published report carry thousands separators; 37853 reads as a
+  // typo next to 37,853.
+  function nCount(value) {
+    if (value === null || value === undefined) return 'n/a';
+    var num = Number(value);
+    if (isNaN(num)) return String(value);
+    return Math.round(num).toLocaleString('en-US');
+  }
+
   function nFmt(value, unit) {
     if (value === null || value === undefined) return 'n/a';
     var num = Number(value);
     if (isNaN(num)) return String(value);
     if (unit === '%') return num.toFixed(1) + '%';
-    if (unit === 'g') return Math.round(num) + ' g';
+    if (unit === 'g') return nCount(num) + ' g';
+    // Counts read as counts; a mean keeps its decimal.
+    if (unit === 'n' && Math.abs(num) >= 1000 && Math.round(num) === num)
+      return nCount(num);
     return Math.round(num * 10) / 10;
   }
 
@@ -2281,7 +2293,7 @@ function WorkflowUI({
     if (!(nSeries.status === 'ready' && nSeries.rows.length)) {
       if (
         !window.confirm(
-          'The Demo metrics (SQL) tab has not been run, so it will not be part ' +
+          'The Extended metrics tab has not been run, so it will not be part ' +
             'of this snapshot and will keep querying live (and can go stale). ' +
             'Run it first for a fully snapshot dashboard.\n\nSnapshot anyway?',
         )
@@ -2312,13 +2324,15 @@ function WorkflowUI({
     <div className="p-6 space-y-5">
       {snapshot && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          <span className="font-medium">Frozen run.</span> These figures are the
-          snapshot taken{' '}
-          {view.asOf ? String(view.asOf).slice(0, 16).replace('T', ' ') : ''} —{' '}
-          {(snapshot.meta || {}).cases} cases and {(snapshot.meta || {}).visits}{' '}
-          visits across {(snapshot.meta || {}).opportunities} opportunities.
-          They load instantly and cannot move. Per-case detail is not part of a
-          snapshot; start a new run for that.
+          <span className="font-medium">
+            Reporting period to{' '}
+            {view.asOf ? String(view.asOf).slice(0, 10) : ''}.
+          </span>{' '}
+          {nCount((snapshot.meta || {}).cases)} cases and{' '}
+          {nCount((snapshot.meta || {}).visits)} visits across{' '}
+          {(snapshot.meta || {}).opportunities} opportunities. Figures are final
+          for this period; individual case records are available in the current
+          reporting period.
         </div>
       )}
 
@@ -2329,12 +2343,9 @@ function WorkflowUI({
               indicators. It no longer does, and on a snapshot run the claim sat
               directly under a banner saying the figures cannot move. */}
           <p className="text-sm text-gray-500 mt-1">
-            The kmc_metrics_framework registry, compiled to SQL and evaluated
-            server-side
-            {snapshot ? ' — these figures are from the snapshot' : ''}. Case
-            properties come from the entity pipeline; only the weight series is
-            derived in this browser. Click any row to drill Programme → LLO →
-            opportunity → cases.
+            Kangaroo Mother Care programme performance across all participating
+            organisations. Click any row to drill from Programme to
+            organisation, opportunity and individual cases.
           </p>
         </div>
         {!snapshot && view && view.complete && (
@@ -2377,7 +2388,7 @@ function WorkflowUI({
         {[
           ['indicators', 'Indicators'],
           ['trends', 'Monthly trend'],
-          ['nseries', 'Demo metrics (SQL)'],
+          ['nseries', 'Extended metrics'],
         ].map(function (t) {
           var on = tab === t[0];
           return (
@@ -2800,7 +2811,7 @@ function WorkflowUI({
                     </span>
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
-                    Program row 8 — LLOs with any red indicator
+                    Organisations with at least one indicator in the red band
                   </div>
                 </div>
                 <div className="bg-white border border-gray-200 rounded-xl p-4">
@@ -2809,8 +2820,7 @@ function WorkflowUI({
                     {fmt(indOf('C02'), entryOf(programInd, 'C02'))}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
-                    Program row 2 · Started cases (C02) against 25,000 by
-                    Q1-2027
+                    Started cases (C02) against the 25,000 target by Q1-2027
                   </div>
                 </div>
                 <div className="bg-white border border-gray-200 rounded-xl p-4">
@@ -2821,7 +2831,7 @@ function WorkflowUI({
                     {fmt(indOf('C09'), entryOf(programInd, 'C09'))}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
-                    Program row 3 · % weight data sufficient (C09), pooled
+                    Weight data sufficient (C09), pooled across all cases
                   </div>
                 </div>
                 <div className="bg-white border border-gray-200 rounded-xl p-4">
@@ -2832,7 +2842,7 @@ function WorkflowUI({
                       : '\u2014'}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
-                    Program row 5 · Mortality (C14), two-sided ·{' '}
+                    Mortality (C14), two-sided ·{' '}
                     {mortalityCredible.llos.length
                       ? mortalityCredible.llos.join(' + ') +
                         ' only (' +
@@ -3575,14 +3585,10 @@ function WorkflowUI({
             </div>
             {runIsSynthetic && (
               <div className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-                This run is built on synthetic clones. The clone now carries the
-                form&rsquo;s hidden calculated fields, so an indicator that
-                reads one is no longer blank here for that reason. Identifiers
-                &mdash; names, phones, addresses, GPS, free text &mdash; are
-                deliberately never reproduced, so anything derived from those
-                still reads empty. Confirm against a run on live data before
-                treating any blank below as something the real programmes fail
-                to collect.
+                Prepared on a synthetic copy of the programme data. Personal
+                identifiers &mdash; names, phone numbers, addresses, GPS and
+                free text &mdash; are never reproduced, so any measure derived
+                from them is shown as unavailable rather than as zero.
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 text-xs text-gray-500">

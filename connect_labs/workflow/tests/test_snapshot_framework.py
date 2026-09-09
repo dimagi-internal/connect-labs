@@ -665,6 +665,23 @@ class TestTheSnapshotShapeTheRunnerActuallyReads:
             "this contract moved, and wrap_for_runner must move with it"
         )
 
+    def test_a_completed_run_does_not_stream_pipelines_it_will_discard(self):
+        """A saved run must load from its snapshot, not rebuild the extraction.
+
+        `view.pipelines` reads `snapshot.pipelines`, and `{}` is not nullish, so a
+        streamed result is discarded. Streaming it anyway recomputed the whole
+        extraction the run was saved to avoid -- measured on KMC, 31 MB and ~5.5
+        minutes on a cold cache -- and left the page on "Connecting to pipeline
+        stream..." under a banner promising figures that load instantly.
+        """
+        from pathlib import Path
+
+        src = Path(self.RUNNER).read_text()
+        assert "snapshotCarriesPipelines" in src, "the completed-run stream guard is gone"
+        assert (
+            "if (snapshotCarriesPipelines) return;" in src
+        ), "the guard exists but no longer short-circuits the pipeline stream effect"
+
     def test_a_graded_payload_is_wrapped_under_state(self):
         from connect_labs.workflow.snapshot_builders import wrap_for_runner
 

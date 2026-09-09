@@ -103,7 +103,7 @@ measures:
 
   # ── Program quality ──────────────────────────────────────────────────────
   - name: c07
-    title: '% weight_gain_data_computable'
+    title: '% with computable weight gain'
     type: number
     sql: '100.0 * {c07_numerator} / NULLIF({c07_denominator}, 0)'
     meta:
@@ -129,7 +129,7 @@ measures:
     filters: [{ sql: '{CUBE}.eligible AND NOT {CUBE}.early_exit' }]
 
   - name: c08
-    title: '% weight_gain_data_consistent'
+    title: '% with consistent weight gain'
     type: number
     sql: '100.0 * {c08_numerator} / NULLIF({c08_denominator}, 0)'
     meta:
@@ -152,7 +152,7 @@ measures:
     filters: [{ sql: '{CUBE}.weight_computable' }]
 
   - name: c09
-    title: '% weight_gain_data_sufficient'
+    title: '% with sufficient weight data'
     type: number
     sql: '100.0 * {c09_numerator} / NULLIF({c09_denominator}, 0)'
     meta:
