@@ -952,7 +952,10 @@ function WorkflowUI({
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px]">
+        <div
+          className="grid"
+          style={{ gridTemplateColumns: 'minmax(0, 1fr) 300px' }}
+        >
           <div>
             <div className="px-4 pt-4">
               <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
@@ -995,7 +998,12 @@ function WorkflowUI({
                     ' weighings photographed'}
                 </span>
               </div>
-              <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+              <div
+                className="grid gap-2"
+                style={{
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+                }}
+              >
                 {weighed.map(function (p, i) {
                   var url = photoUrl(p.v);
                   return (
@@ -1037,7 +1045,12 @@ function WorkflowUI({
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 px-4 pb-4 pt-2">
+            <div
+              className="grid gap-2 px-4 pb-4 pt-2"
+              style={{
+                gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+              }}
+            >
               <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                 <div className="text-[10px] uppercase tracking-wide text-gray-400">
                   Early growth
@@ -1088,7 +1101,7 @@ function WorkflowUI({
               </div>
             </div>
           </div>
-          <div className="border-t xl:border-t-0 xl:border-l border-gray-100 p-4">
+          <div className="border-l border-gray-100 p-4">
             {earlyLoss && (
               <div className="border-l-4 border-amber-400 bg-amber-50 rounded-r-lg px-3 py-2 text-xs text-amber-900 mb-3">
                 <b>Day {earlyLoss.x}:</b>{' '}
@@ -1259,7 +1272,12 @@ function WorkflowUI({
               the 15 headline metrics, this worker
             </span>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-gray-100">
+          <div
+            className="grid gap-px bg-gray-100"
+            style={{
+              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            }}
+          >
             {N_LIST.map(function (m) {
               var e = entryOf(nFLW.ind, m.id);
               return (
@@ -1286,7 +1304,10 @@ function WorkflowUI({
 
       {selCase && <CaseDetail c={selCase} />}
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div
+        className="grid gap-4"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(460px, 1fr))' }}
+      >
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
             Indicators
