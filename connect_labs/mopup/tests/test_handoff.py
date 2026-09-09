@@ -72,7 +72,7 @@ def _mock_microplans(monkeypatch, *, target_by_ward=None, plans=None):
         return (target_by_ward or {}).get(ward, 1.5)
 
     class FakeProgramPlanDataAccess:
-        def __init__(self, program_id, request=None):
+        def __init__(self, program_id, request=None, access_token=None):
             self.program_id = program_id
 
         def create_plan(self, **kwargs):
@@ -126,6 +126,7 @@ class TestCreatePlanFromLockedRun:
         assert resp["plan_status"] == "draft"
         assert resp["skipped_no_geometry"] == ["wa-2"]
         assert resp["planning_gap_cells_added"] == 0
+        assert resp["planning_gap_warnings"] == {}
         assert calls["targets"] == [("Sabon Gari", "Rano", "Kano", [2154])]
         assert len(plans) == 1
 
@@ -215,6 +216,7 @@ class TestCreatePlanFromLockedRun:
         resp = create_plan_from_locked_run(run, 217, include_planning_gaps=True)
 
         assert resp["planning_gap_cells_added"] == 1
+        assert resp["planning_gap_warnings"] == {}
         hulls = calls["create_plan"][0]["hulls"]
         assert len(hulls["features"]) == 2
         area_ids = {f["properties"]["area_id"] for f in hulls["features"]}
@@ -258,3 +260,34 @@ class TestCreatePlanFromLockedRun:
         resp = create_plan_from_locked_run(run, 217, include_planning_gaps=True)
         assert resp["plan_status"] == "draft"
         assert resp["planning_gap_cells_added"] == 0
+        # The failure must be VISIBLE, not just logged — a silently-swallowed
+        # failure here is indistinguishable from "this ward genuinely has no
+        # uncovered buildings" (confirmed live this session: an expired CCHQ
+        # token produced exactly this false "0 gaps" reading).
+        assert resp["planning_gap_warnings"] == {"Sabon Gari": "grid generation blew up"}
+
+    def test_planning_gap_missing_ward_boundary_is_reported_as_a_warning(self, monkeypatch):
+        import connect_labs.mopup.core.handoff as handoff_module
+
+        plans = {}
+        _mock_microplans(monkeypatch, plans=plans)
+        monkeypatch.setattr(
+            "connect_labs.microplans.core.admin_boundaries.find_ward_boundary_geometry",
+            lambda state, lga, ward, candidates=None: None,
+        )
+        monkeypatch.setattr(handoff_module, "work_area_boundaries_for_ward", lambda *a, **k: [])
+
+        run = _run([_candidate("wa-1")])
+        resp = create_plan_from_locked_run(run, 217, include_planning_gaps=True)
+        assert resp["plan_status"] == "draft"
+        assert resp["planning_gap_cells_added"] == 0
+        assert resp["planning_gap_warnings"] == {"Sabon Gari": "no ward boundary match — skipped"}
+
+    def test_on_stage_reports_progress_through_the_hand_off(self, monkeypatch):
+        plans = {}
+        _mock_microplans(monkeypatch, plans=plans)
+        run = _run([_candidate("wa-1")])
+        stages = []
+        create_plan_from_locked_run(run, 217, on_stage=stages.append)
+        assert "Preparing candidate work areas…" in stages
+        assert "Creating the plan…" in stages
