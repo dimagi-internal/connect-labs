@@ -732,3 +732,128 @@ class TestPooledOverCredibleRecorders:
             cases=[],
         )
         assert payload["pooledOverCredible"] == {}
+
+
+class TestMonthlyTrendPoints:
+    """Each trend point carries what the render's trend tab reads.
+
+    The tab draws "babies started" (a cohort-month measure, from the semantic rows)
+    against "visits" (activity that HAPPENED that month, from the visit rows), plus
+    the credible-recorder pool for gated indicators. The first two are different
+    groupings on purpose, and the second is only derivable in the builder. A point
+    that carried only `{month, ind, n}` drew every bar as NaN and every line as
+    "no month has enough data to score" on a run whose 17 months were all present.
+    """
+
+    C14 = {
+        "id": "c14",
+        "indicator": "C14",
+        "unit": "%",
+        "direction": "mid2",
+        "bands": [[2, 12], [1, 20]],
+        "inputs": [],
+        "min_denominator": 25,
+    }
+    SPEC = {**SPEC, "credibility": {"C14": "mortality_recording_credible"}}
+    LLO_MAP = {10017: "GHI", 10016: "EHA"}
+    DEPLOY = {
+        "llo_map": LLO_MAP,
+        "settings": {"mortality_recording_credible": {"EHA": True, "GHI": False}},
+        "app_asks": {},
+        "asks_as": {},
+    }
+
+    def _rows(self):
+        return [
+            {"scope": "programme", "n_cases": 5},
+            {
+                "scope": "month",
+                "cohort_month": "2026-01-01",
+                "n_cases": 3,
+                "c14": 2.0,
+                "c14_numerator": 2,
+                "c14_denominator": 100,
+            },
+            {"scope": "month", "cohort_month": "2026-02-01", "n_cases": 2},
+            {
+                "scope": "llo_month",
+                "llo": "EHA",
+                "cohort_month": "2026-01-01",
+                "n_cases": 2,
+                "c14": 5.0,
+                "c14_numerator": 5,
+                "c14_denominator": 100,
+            },
+            {
+                "scope": "llo_month",
+                "llo": "GHI",
+                "cohort_month": "2026-01-01",
+                "n_cases": 1,
+                "c14": 0.0,
+                "c14_numerator": 0,
+                "c14_denominator": 400,
+            },
+            {
+                "scope": "opportunity_month",
+                "opportunity_id": 10016,
+                "cohort_month": "2026-01-01",
+                "n_cases": 2,
+                "c14": 5.0,
+                "c14_numerator": 5,
+                "c14_denominator": 100,
+            },
+        ]
+
+    def _visits(self):
+        return [
+            {"visit_date": "2026-01-03T00:00:00", "opportunity_id": 10016},
+            {"visit_date": "2026-01-09T00:00:00", "opportunity_id": 10017},
+            {"visit_date": "2026-02-11T00:00:00", "opportunity_id": 10016},
+            # A month with visits but no cohort row must still appear.
+            {"visit_date": "2026-03-01T00:00:00", "opportunity_id": 10016},
+        ]
+
+    def _build(self):
+        return snap.build(
+            spec=self.SPEC,
+            rows=self._rows(),
+            measures=[self.C14],
+            deployment=self.DEPLOY,
+            cases=[],
+            visit_rows=self._visits(),
+        )
+
+    def test_visits_are_counted_by_the_month_they_happened(self):
+        by_month = {m["month"]: m for m in self._build()["monthly"]}
+        assert by_month["2026-01"]["visits"] == 2
+        assert by_month["2026-02"]["visits"] == 1
+
+    def test_a_visit_only_month_still_appears(self):
+        by_month = {m["month"]: m for m in self._build()["monthly"]}
+        assert "2026-03" in by_month
+        assert by_month["2026-03"]["visits"] == 1
+        assert by_month["2026-03"]["n"] == 0
+
+    def test_visits_follow_the_drill(self):
+        scoped = self._build()["monthlyByScope"]
+        assert {m["month"]: m["visits"] for m in scoped["llo:EHA"]} == {"2026-01": 1, "2026-02": 1, "2026-03": 1}
+        assert {m["month"]: m["visits"] for m in scoped["opp:10016"]} == {"2026-01": 1, "2026-02": 1, "2026-03": 1}
+
+    def test_the_pool_spans_only_credible_recorders_undrilled(self):
+        jan = {m["month"]: m for m in self._build()["monthly"]}["2026-01"]
+        pooled = jan["pooled"]["C14"]
+        # EHA is credible (5/100); GHI is not, and its 0/400 must NOT dilute the pool.
+        assert pooled["n"] == 100
+        assert abs(pooled["value"] - 0.05) < 1e-9
+
+    def test_a_drilled_pool_is_the_scopes_own_row_only_if_credible(self):
+        scoped = self._build()["monthlyByScope"]
+        eha = {m["month"]: m for m in scoped["llo:EHA"]}["2026-01"]
+        ghi = {m["month"]: m for m in scoped["llo:GHI"]}["2026-01"]
+        assert eha["pooled"]["C14"]["n"] == 100
+        assert ghi["pooled"]["C14"] is None, "a non-credible LLO's drill must not show a mortality figure"
+
+    def test_points_still_carry_the_graded_indicators(self):
+        jan = {m["month"]: m for m in self._build()["monthly"]}["2026-01"]
+        assert "C14" in jan["ind"]
+        assert jan["n"] == 3

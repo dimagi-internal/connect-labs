@@ -493,7 +493,13 @@ SNAPSHOT_SCHEMA = {
             "A saved run cannot rebuild this from its graded cells: a row banded "
             "'insufficient' still contributes to the pool while storing no value"
         ),
-        "state.snapshot.monthly": "Programme monthly trend series",
+        "state.snapshot.monthly": (
+            "Programme monthly trend series: per cohort month, the graded indicators, cohort "
+            "size, the count of visits that HAPPENED that month (activity, from the visit rows "
+            "— a different grouping from the cohort month, so not derivable from the "
+            "indicators) and, per credibility-gated indicator, the figure pooled over that "
+            "month's credible recorders"
+        ),
         "state.snapshot.monthlyByScope": (
             "Monthly series precomputed per drill scope (all / llo:<name> / opp:<id>) so a "
             "saved run still supports the LLO and opportunity drill without live pipelines"

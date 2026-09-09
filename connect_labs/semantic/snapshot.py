@@ -260,8 +260,15 @@ def build(
     cases: list[dict] | None = None,
     meta: dict | None = None,
     generated_at: str | None = None,
+    visit_rows: list[dict] | None = None,
 ) -> dict:
-    """Assemble the saved-run payload from evaluated semantic rows."""
+    """Assemble the saved-run payload from evaluated semantic rows.
+
+    `visit_rows` are the visit-level pipeline rows (spec `visits_pipeline`). The
+    monthly trend counts them by VISIT month -- activity -- which is a different
+    grouping from the cohort month the semantic rows are built on, so it cannot
+    come out of `evaluate()` and is counted here instead.
+    """
     llo_map = deployment.get("llo_map") or {}
     settings = deployment.get("settings") or {}
     credibility = resolve_credibility(spec, settings)
@@ -375,26 +382,93 @@ def build(
     def _month(r: dict) -> str:
         return str(r.get("cohort_month") or "")[:7]
 
-    def _series(scope_rows):
-        return [
-            {"month": _month(r), "ind": grade_all(r, measures, **grade_kw), "n": int(float(r.get("n_cases") or 0))}
-            for r in sorted(scope_rows, key=_month)
-        ]
+    def _int(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
 
-    monthly = _series(by_scope.get("month") or [])
+    # Visits counted by the month they HAPPENED in, per drill scope. The render's
+    # trend tab draws "babies started" (a cohort-month measure, from the semantic
+    # rows) against "visits" (activity that month, from the visit rows); the two
+    # are different groupings on purpose, and the second one is only derivable here.
+    visit_rows = visit_rows or []
+    llo_month_rows = by_scope.get("llo_month") or []
+
+    def _visits_by_month(pred) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for v in visit_rows:
+            if not pred(v):
+                continue
+            k = str(v.get("visit_date") or "")[:7]
+            if k:
+                out[k] = out.get(k, 0) + 1
+        return out
+
+    def _series(scope_rows, visits_pred, drilled_llo=None, drilled=False):
+        """One trend point per month for one drill scope.
+
+        Each point carries the graded indicators, the cohort size, the visit
+        count, and -- for every credibility-gated indicator -- the figure pooled
+        over the credible recorders that month. The pool cannot be rebuilt from
+        the graded cells (see `pool`), and undrilled it spans the credible LLOs'
+        rows for the month while drilled it is the scope's own row, if the
+        registry does not suppress it there. Months present only in the visit
+        rows still appear, as the live path's union does.
+        """
+        by_month: dict[str, dict] = {}
+        for r in scope_rows:
+            by_month.setdefault(_month(r), r)
+        vcounts = _visits_by_month(visits_pred)
+        out = []
+        for k in sorted(k for k in set(by_month) | set(vcounts) if k):
+            r = by_month.get(k)
+            pooled: dict[str, dict | None] = {}
+            for m in measures:
+                table = credibility.get(m["indicator"])
+                if table is None:
+                    continue
+                if not drilled:
+                    rows = [
+                        x for x in llo_month_rows if _month(x) == k and (not table or table.get(x.get("llo")) is True)
+                    ]
+                else:
+                    ok = r is not None and (not table or bool(drilled_llo and table.get(drilled_llo) is True))
+                    rows = [r] if ok else []
+                pooled[m["indicator"]] = (
+                    pool(m, rows, min_denominator_default=spec.get("min_denominator_default")) if rows else None
+                )
+            out.append(
+                {
+                    "month": k,
+                    "ind": grade_all(r, measures, **grade_kw),
+                    "n": int(float((r or {}).get("n_cases") or 0)),
+                    "visits": vcounts.get(k, 0),
+                    "pooled": pooled,
+                }
+            )
+        return out
+
+    monthly = _series(by_scope.get("month") or [], lambda v: True)
     # Monthly per drill scope, so a saved run still supports the LLO and opportunity
     # drill with no live pipeline behind it. Which scopes exist is spec-driven; the
     # `<prefix>:<ident>` keying is the render's contract.
     monthly_by_scope: dict[str, list[dict]] = {"all": monthly}
     for prefix, scope_name, field in (("llo:", "llo_month", "llo"), ("opp:", "opportunity_month", "opportunity_id")):
-        grouped: dict[str, list[dict]] = {}
+        grouped: dict = {}
         for r in by_scope.get(scope_name) or []:
             ident = r.get(field)
             if ident is None:
                 continue
-            grouped.setdefault(f"{prefix}{ident}", []).append(r)
-        for k, v in grouped.items():
-            monthly_by_scope[k] = _series(v)
+            grouped.setdefault(ident, []).append(r)
+        for ident, rows in grouped.items():
+            if field == "llo":
+                pred = lambda v, i=ident: llo_map.get(_int(v.get("opportunity_id"))) == i  # noqa: E731
+                drilled_llo = ident
+            else:
+                pred = lambda v, i=_int(ident): _int(v.get("opportunity_id")) == i  # noqa: E731
+                drilled_llo = llo_map.get(_int(ident))
+            monthly_by_scope[f"{prefix}{ident}"] = _series(rows, pred, drilled_llo=drilled_llo, drilled=True)
 
     return {
         # 3: `byFLW[].rows` carries positions into `cases`; `credibility` replaces the
