@@ -125,7 +125,34 @@ def semantic_snapshot(
         # disclaimer silently absent.
         meta["synthetic"] = synthetic
 
-    return snap.build(spec=spec, rows=rows, measures=measures, deployment=deployment, cases=cases, meta=meta)
+    payload = snap.build(spec=spec, rows=rows, measures=measures, deployment=deployment, cases=cases, meta=meta)
+    return wrap_for_runner(payload, spec.get("state_key"))
+
+
+def wrap_for_runner(payload: dict, state_key: str | None = None) -> dict:
+    """Put a graded payload where a completed run's VIEW will find it.
+
+    This is not the same shape as the payload. `workflow-runner.tsx` builds a
+    completed run's view from `instance.snapshot` as `{workers?, pipelines?,
+    state?}` and sets `state: snapshot.state ?? instanceState` (:1591), so render
+    code reading `view.state.<key>` only resolves if the stored snapshot carries
+    `state`.
+
+    Returning the graded payload bare puts every key one level too high: `state` is
+    undefined, the view falls back to the run's own (empty) state, the render sees no
+    snapshot and silently renders its LIVE path instead. On a completed run that
+    means LLO names reading "opp 10021" and every indicator an em-dash, with no error
+    anywhere -- which is exactly what the first saved run of this dashboard did, and
+    why this is verified by opening the page rather than by the write returning 200.
+
+    The template's predecessor hook had the same defect: it returned
+    `{"snapshot": ...}`, also missing `state`. Nothing caught it because no saved run
+    had ever been rendered.
+
+    `state_key` is spec-driven so a template names its own key rather than the
+    framework assuming one.
+    """
+    return {"state": {state_key or "snapshot": payload}, "pipelines": {}, "workers": []}
 
 
 def _is_synthetic(opportunity_ids: list[int]) -> bool | None:
@@ -175,5 +202,6 @@ BUILDER_SPEC_KEYS = {
         "visits_pipeline",
         "credibility",
         "min_denominator_default",
+        "state_key",
     },
 }
