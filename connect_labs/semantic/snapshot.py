@@ -82,6 +82,47 @@ def band_of(direction: str | None, bands: Any, value: Any) -> str:
     return "unbanded"
 
 
+def pool(
+    measure: dict,
+    rows: list[dict],
+    *,
+    min_denominator_default: int | None = None,
+) -> dict:
+    """One entry pooled ACROSS scope rows: sum the numerators, sum the denominators.
+
+    Not the mean of the rates -- a mean would weight a 20-case LLO like a
+    2,000-case one. Ports the render's `cPooled`.
+
+    This cannot be reconstructed from a saved run's graded cells, which is why the
+    builder computes it rather than leaving it to the render: a row whose own band
+    is `insufficient` or `notinapp` still CONTRIBUTES its numerator and denominator
+    here, but stores `value: null`. Pooling from stored values would silently drop
+    exactly those rows and move the headline figure.
+    """
+    mid = measure["id"]
+    out: dict[str, Any] = {"id": measure["indicator"], "n": 0, "value": None, "band": _NODATA}
+    num = den = 0.0
+    any_row = False
+    for r in rows:
+        nu, de = r.get(f"{mid}_numerator"), r.get(f"{mid}_denominator")
+        if nu is None or de is None:
+            continue
+        any_row = True
+        num += float(nu)
+        den += float(de)
+    if not any_row or not den:
+        return out
+    out["n"] = int(den)
+    pct = 100.0 * num / den
+    min_den = measure.get("min_denominator") or min_denominator_default or _MIN_DEN_FALLBACK
+    if min_den and den < min_den:
+        out["band"] = "insufficient"
+        return out
+    out["band"] = band_of(measure.get("direction"), measure.get("bands"), pct)
+    out["value"] = pct / 100 if measure.get("unit") == "%" else pct
+    return out
+
+
 def scope_opps(row: dict, llo_map: dict[int, str]) -> list[int] | None:
     """Which opportunities a scope row covers, for the availability gate."""
     scope = row.get("scope")
@@ -307,6 +348,30 @@ def build(
             }
         )
 
+    # For every credibility-gated indicator, the figure pooled over the recorders
+    # the workbook accepts. The programme-wide row pools EVERY LLO, so on an
+    # indicator like mortality it reads lower than reality -- non-recorders
+    # contribute denominator without deaths. The headline card must therefore show
+    # the credible-recorder pool, and a saved run cannot rebuild it (see `pool`).
+    llo_rows = by_scope.get("llo") or []
+    pooled_over_credible = {}
+    for m in measures:
+        ind_id = m["indicator"]
+        table = credibility.get(ind_id)
+        if table is None:
+            continue
+        # An absent table means "no basis to gate", matching the render's
+        # `credible === null` branch: pool everything rather than withhold it all.
+        credible_rows = [r for r in llo_rows if not table or table.get(r.get("llo")) is True]
+        names = [r.get("llo") for r in credible_rows if r.get("llo")]
+        pooled_over_credible[ind_id] = {
+            "ind": pool(m, credible_rows, min_denominator_default=spec.get("min_denominator_default"))
+            if credible_rows
+            else None,
+            "llos": names,
+            "of": len(llo_rows),
+        }
+
     def _month(r: dict) -> str:
         return str(r.get("cohort_month") or "")[:7]
 
@@ -344,6 +409,12 @@ def build(
         # Every credibility table the spec named, not just mortality's. The render
         # reads these instead of keeping its own copy.
         "credibility": credibility,
+        # indicator -> {ind, llos, of}: the figure pooled over credible recorders,
+        # the LLOs it pooled, and how many there were in total. The render's
+        # headline card reads this; it cannot pool from the graded cells because a
+        # row banded `insufficient` still contributes to the pool while storing no
+        # value. Shaped as the render's own memo returns it.
+        "pooledOverCredible": pooled_over_credible,
         "programInd": grade_all(programme, measures, **grade_kw),
         "byLLO": by_llo,
         "byOpp": by_opp,
