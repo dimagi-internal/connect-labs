@@ -176,6 +176,37 @@ class TestBuildNeighborGraph:
         assert graph == {"a": [], "b": []}
 
 
+class TestNcfAffected:
+    def test_true_when_any_ncf_or_inaccessible_visit(self):
+        wa = _wa("a", building_count=10, approved_ncf_count=1, approved_inaccessible_count=0)
+        assert ind._ncf_affected(wa, {"min_building_count": 1}) is True
+
+    def test_false_when_neither(self):
+        wa = _wa("a", building_count=10, approved_ncf_count=0, approved_inaccessible_count=0)
+        assert ind._ncf_affected(wa, {"min_building_count": 1}) is False
+
+    def test_none_when_gated_out_by_min_building_count(self):
+        wa = _wa("a", building_count=0, approved_ncf_count=1)
+        assert ind._ncf_affected(wa, {"min_building_count": 1}) is None
+
+
+class TestNcfNeighborAffectedCount:
+    def test_counts_only_affected_neighbors(self):
+        by_id = {
+            "b": _wa("b", building_count=10, approved_ncf_count=1, approved_inaccessible_count=0),  # affected
+            "c": _wa("c", building_count=10, approved_ncf_count=0, approved_inaccessible_count=0),  # not affected
+            "d": _wa(
+                "d", building_count=0, approved_ncf_count=1, approved_inaccessible_count=0
+            ),  # gated out, doesn't count
+        }
+        count = ind.ncf_neighbor_affected_count(_wa("a"), ["b", "c", "d"], by_id, {"min_building_count": 1})
+        assert count == 1
+
+    def test_missing_neighbor_id_ignored(self):
+        count = ind.ncf_neighbor_affected_count(_wa("a"), ["ghost"], {}, {"min_building_count": 1})
+        assert count == 0
+
+
 class TestNeighborhoodRate:
     def test_averages_qualifying_neighbors(self):
         by_id = {
@@ -247,13 +278,23 @@ class TestFlwAverageRate:
         rate = ind.flw_average_rate(flw_was, ind.EVC_SHORTFALL, {"include_not_yet_visited": True})
         assert rate == pytest.approx(5 / 20)
 
-    def test_ncf_excludes_wa_below_min_building_count(self):
+    def test_ncf_is_share_of_affected_work_areas_not_share_of_visits(self):
+        # A work area logs at most ONE NCF-or-Inaccessible visit ever (see
+        # core/indicators.py's module docstring) -- flw_average's NCF/
+        # inaccessible rate is "how many of this FLW's work areas were ever
+        # affected," not a visit-mix ratio blended across all their visits.
         flw_was = [
-            _wa("a", building_count=10, approved_hsd_count=7, approved_ncf_count=2, approved_inaccessible_count=1),
-            _wa("b", building_count=0, approved_hsd_count=0, approved_ncf_count=5, approved_inaccessible_count=0),
+            _wa("a", building_count=10, approved_hsd_count=7, approved_ncf_count=1, approved_inaccessible_count=0),
+            _wa("b", building_count=10, approved_hsd_count=9, approved_ncf_count=0, approved_inaccessible_count=0),
+            # Excluded by min_building_count -- doesn't count toward either side.
+            _wa("c", building_count=0, approved_hsd_count=0, approved_ncf_count=5, approved_inaccessible_count=0),
         ]
         rate = ind.flw_average_rate(flw_was, ind.NCF_INACCESSIBLE, {"min_building_count": 1})
-        assert rate == pytest.approx(0.3)  # only "a" counted
+        assert rate == pytest.approx(0.5)  # 1 of 2 eligible WAs ("a") affected
+
+    def test_ncf_returns_none_when_no_wa_is_eligible(self):
+        flw_was = [_wa("a", building_count=0, approved_ncf_count=1)]
+        assert ind.flw_average_rate(flw_was, ind.NCF_INACCESSIBLE, {"min_building_count": 1}) is None
 
     def test_dq_excludes_wa_below_min_hsd_floor(self):
         flw_was = [
@@ -271,6 +312,72 @@ class TestFlwAverageRate:
 # ---------------------------------------------------------------------------
 # evaluate_run — the main entry point
 # ---------------------------------------------------------------------------
+
+
+class TestEvaluateRunNcfClusterAware:
+    """Cluster-aware NCF/inaccessible: own-check is a boolean (presence, not
+    a ratio) AND'd with a raw affected-neighbor COUNT vs. a separate setting
+    (min_affected_neighbors_ncf) -- not the indicator's own rate threshold."""
+
+    def _ncf_config(self, threshold=0.3):
+        return {
+            ind.NCF_INACCESSIBLE: {
+                "enabled": True,
+                "threshold": threshold,
+                "granularity": ind.GRANULARITY_CLUSTER_AWARE,
+            }
+        }
+
+    def test_flags_when_own_affected_and_enough_neighbors_affected(self):
+        was = [
+            _wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),
+            _wa("b", lat=12.0005, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),  # ~55m away
+        ]
+        candidates = ind.evaluate_run(was, self._ncf_config(), {"min_affected_neighbors_ncf": 1})
+        assert {c["wa_id"] for c in candidates} == {"a", "b"}
+
+    def test_not_flagged_when_own_wa_unaffected_even_if_neighbors_are(self):
+        was = [
+            _wa("a", lat=12.0, lon=8.0, approved_ncf_count=0, approved_inaccessible_count=0),
+            _wa("b", lat=12.0005, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),
+        ]
+        candidates = ind.evaluate_run(was, self._ncf_config(), {"min_affected_neighbors_ncf": 1})
+        assert {c["wa_id"] for c in candidates} == set()
+
+    def test_not_flagged_when_not_enough_affected_neighbors(self):
+        was = [
+            _wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),
+            _wa("b", lat=12.0005, lon=8.0, approved_ncf_count=0, approved_inaccessible_count=0),
+        ]
+        candidates = ind.evaluate_run(was, self._ncf_config(), {"min_affected_neighbors_ncf": 1})
+        assert {c["wa_id"] for c in candidates} == set()
+
+    def test_detail_reports_own_affected_and_neighbor_count(self):
+        was = [
+            _wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),
+            _wa("b", lat=12.0005, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),
+        ]
+        candidates = ind.evaluate_run(was, self._ncf_config(), {"min_affected_neighbors_ncf": 1})
+        detail = next(c for c in candidates if c["wa_id"] == "a")["detail"][ind.NCF_INACCESSIBLE]
+        assert detail["own_affected"] is True
+        assert detail["affected_neighbor_count"] == 1
+        assert detail["is_isolated_outlier"] is False
+
+    def test_wa_only_and_flw_average_still_use_the_original_ratio(self):
+        # Sanity check that this special-case is scoped to cluster_aware
+        # only -- wa_only keeps the original visit-mix ratio unchanged.
+        was = [_wa("a", approved_hsd_count=7, approved_ncf_count=2, approved_inaccessible_count=1)]
+        candidates = ind.evaluate_run(
+            was,
+            {
+                ind.NCF_INACCESSIBLE: {
+                    "enabled": True,
+                    "threshold": 0.2,
+                    "granularity": ind.GRANULARITY_WA_ONLY,
+                }
+            },
+        )
+        assert candidates[0]["detail"][ind.NCF_INACCESSIBLE]["rate"] == pytest.approx(0.3)
 
 
 class TestEvaluateRun:

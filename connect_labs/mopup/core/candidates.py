@@ -135,3 +135,37 @@ def summarize_candidates_by_ward(candidates: list[dict], all_rows: list[dict]) -
             row["flagged_by_2_plus"] += 1
 
     return sorted(by_ward.values(), key=lambda r: (r["state"], r["lga"], r["ward"]))
+
+
+def build_map_features(all_rows: list[dict], candidates: list[dict]) -> dict:
+    """One GeoJSON Feature per evaluated work area that has boundary
+    geometry, for Phase 2's map — a work area with no geometry match is
+    skipped (nothing to draw), same "never guess a shape" rule
+    `evaluate_run` already follows for missing data.
+
+    `properties.included`/`properties.first_indicator` are all the frontend
+    needs to color a feature (see `analysis.js`'s `mapFeatureStyle`) — grey
+    for `included: false`, one fixed color per indicator otherwise, using
+    only the FIRST triggered indicator when a work area was flagged by
+    several (candidate table shows the rest)."""
+    candidates_by_id = {c["wa_id"]: c for c in candidates}
+    features = []
+    for wa in all_rows:
+        boundary = wa.get("boundary")
+        if not boundary:
+            continue
+        candidate = candidates_by_id.get(wa["wa_id"])
+        triggered = candidate["triggered_indicators"] if candidate else []
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": boundary,
+                "properties": {
+                    "wa_id": wa["wa_id"],
+                    "ward": wa.get("ward", ""),
+                    "included": candidate is not None,
+                    "first_indicator": triggered[0] if triggered else None,
+                },
+            }
+        )
+    return {"type": "FeatureCollection", "features": features}

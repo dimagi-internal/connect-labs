@@ -32,6 +32,15 @@ Every rate the three data-quality metrics compute shares `approved_hsd_count`
 as its denominator (§5's explicit "share the same denominator" rule); NCF/
 inaccessible shares total visits (HSD+NCF+Inaccessible) as its denominator;
 EVC shortfall's denominator is `expected_visit_count`.
+
+NCF/inaccessible is special-cased under `cluster_aware`/`flw_average` (see
+`_ncf_affected`/`flw_average_rate`/`evaluate_run`): a work area only ever logs
+ONE NCF-or-Inaccessible visit, never a mix and never more than one, so a
+visit-mix RATIO isn't the right unit to corroborate across a population of
+work areas the way it is for `wa_only`. Those two granularities instead work
+in terms of "is/was this work area affected at all" (a WA-count-based
+fraction or count), not "what fraction of this WA's own visits were bad."
+`wa_only` keeps the original ratio unchanged.
 """
 
 from __future__ import annotations
@@ -144,6 +153,37 @@ def is_flagged(rate: float | None, threshold: float, indicator_key: str) -> bool
     return rate < threshold if direction == "below" else rate > threshold
 
 
+def _ncf_visit_total(wa: dict) -> int:
+    return wa.get("approved_ncf_count", 0) + wa.get("approved_inaccessible_count", 0)
+
+
+def _ncf_affected(wa: dict, global_config: dict) -> bool | None:
+    """Does this WA have any NCF-or-Inaccessible visit at all? `None` if
+    gated out by `min_building_count` (same gate `wa_rate`'s NCF branch uses)
+    — never a guess. This is the unit `cluster_aware`/`flw_average` corroborate
+    for NCF/inaccessible (see the module docstring): a WA logs at most ONE
+    such visit ever, so presence/absence is the natural signal, not a ratio."""
+    min_buildings = global_config.get("min_building_count", 1)
+    if wa.get("building_count", 0) < min_buildings:
+        return None
+    return _ncf_visit_total(wa) > 0
+
+
+def ncf_neighbor_affected_count(wa: dict, neighbor_ids: list[str], by_id: dict[str, dict], global_config: dict) -> int:
+    """How many of `wa`'s spatial neighbors are themselves NCF/inaccessible
+    -affected (per `_ncf_affected`) — compared against a raw count setting
+    (`min_affected_neighbors_ncf`), not a rate, per the cluster-aware NCF
+    redesign. A gated-out neighbor (`None`) simply doesn't count either way."""
+    count = 0
+    for nid in neighbor_ids:
+        neighbor = by_id.get(nid)
+        if neighbor is None:
+            continue
+        if _ncf_affected(neighbor, global_config) is True:
+            count += 1
+    return count
+
+
 # ---------------------------------------------------------------------------
 # §6a — spatial neighbor graph (all FLWs, for NCF/inaccessible + EVC-shortfall)
 # ---------------------------------------------------------------------------
@@ -245,14 +285,17 @@ def flw_average_rate(flw_work_areas: list[dict], indicator_key: str, global_conf
         return _safe_div(num, denom)
 
     if indicator_key == NCF_INACCESSIBLE:
+        # WA-count-based, not visit-count-based — see the module docstring's
+        # note on why NCF/inaccessible can't use a visit-mix ratio here: a
+        # work area logs at most ONE NCF-or-Inaccessible visit ever, so
+        # "share of THIS FLW's work areas that were ever affected" is the
+        # right unit, not "share of this FLW's total visits."
         min_buildings = global_config.get("min_building_count", 1)
         eligible = [w for w in flw_work_areas if w.get("building_count", 0) >= min_buildings]
-        num = sum(w.get("approved_ncf_count", 0) + w.get("approved_inaccessible_count", 0) for w in eligible)
-        denom = sum(
-            w.get("approved_hsd_count", 0) + w.get("approved_ncf_count", 0) + w.get("approved_inaccessible_count", 0)
-            for w in eligible
-        )
-        return _safe_div(num, denom)
+        if not eligible:
+            return None
+        affected = sum(1 for w in eligible if _ncf_visit_total(w) > 0)
+        return _safe_div(affected, len(eligible))
 
     if indicator_key in _DQ_INDICATORS:
         min_hsd = global_config.get("min_hsd_visits_floor", 1)
@@ -275,6 +318,10 @@ DEFAULT_GLOBAL_CONFIG = {
     "min_hsd_visits_floor": 1,
     "min_building_count": 1,
     "include_not_yet_visited": False,
+    # Cluster-aware NCF/inaccessible only (see _ncf_affected/
+    # ncf_neighbor_affected_count) — a raw count of affected neighbors, not a
+    # rate, so it's independent of NCF's own rate-threshold.
+    "min_affected_neighbors_ncf": 1,
 }
 
 # Starting-point thresholds — every one of these is meant to be reviewer-
@@ -359,6 +406,33 @@ def evaluate_run(
                 }
 
             elif granularity == GRANULARITY_CLUSTER_AWARE:
+                if indicator_key == NCF_INACCESSIBLE:
+                    # See the module docstring / _ncf_affected: presence, not
+                    # a ratio, is the unit here — own_flagged is a boolean
+                    # "was this WA itself affected," and the neighbor side is
+                    # a raw affected-neighbor COUNT compared against
+                    # min_affected_neighbors_ncf, not against `threshold`
+                    # (which has no meaning for a boolean own-check).
+                    own_affected = _ncf_affected(wa, config)
+                    own_flagged = own_affected is True
+                    neighbor_count = ncf_neighbor_affected_count(
+                        wa, neighbor_graph.get(wa["wa_id"], []), by_id, config
+                    )
+                    neighborhood_flagged = neighbor_count >= config["min_affected_neighbors_ncf"]
+                    flagged = own_flagged and neighborhood_flagged
+                    detail[indicator_key] = {
+                        "granularity": granularity,
+                        "rate": own_rate,
+                        "own_numerator": own_numerator,
+                        "own_denominator": own_denominator,
+                        "own_affected": own_affected,
+                        "affected_neighbor_count": neighbor_count,
+                        "is_isolated_outlier": own_flagged and not neighborhood_flagged,
+                    }
+                    if flagged:
+                        triggered.append(indicator_key)
+                    continue
+
                 own_flagged = is_flagged(own_rate, threshold, indicator_key)
                 if indicator_key in _DQ_INDICATORS:
                     neighborhood = flw_portfolio_rate(

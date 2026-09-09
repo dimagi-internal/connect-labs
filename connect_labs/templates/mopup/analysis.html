@@ -4,7 +4,13 @@
 
 {% block css %}
 {{ block.super }}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
 <style>
+  #analysis-map {
+    height: 24rem;
+    width: 100%;
+    border-radius: 0.375rem;
+  }
   /* Custom info tooltip — a native `title` attribute needs a ~1s hover dwell
      and is easy to trigger with no visible feedback, which real user
      testing this session found effectively invisible. This shows instantly
@@ -65,6 +71,12 @@
 
   <div id="analysis-body" class="hidden space-y-6">
 
+  <section class="border border-gray-200 rounded p-4 space-y-2">
+    <h2 class="text-lg font-semibold text-gray-900">Map</h2>
+    <div id="analysis-map"></div>
+    <div id="map-legend" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600"></div>
+  </section>
+
   <section class="border border-gray-200 rounded p-4 space-y-4">
     <h2 class="text-lg font-semibold text-gray-900">Indicators</h2>
     <table class="w-full text-sm">
@@ -73,7 +85,7 @@
           <th class="pb-2 pr-2">On</th>
           <th class="pb-2 pr-2">Indicator</th>
           <th class="pb-2 pr-2">Threshold <span class="info-icon" tabindex="0" data-tip="The cutoff at which a work area is flagged as a mop-up candidate for this indicator. Set independently per indicator.">ⓘ</span></th>
-          <th class="pb-2 pr-2">Granularity <span class="info-icon" tabindex="0" data-tip="How this indicator is evaluated: &quot;This WA only&quot; flags a single work area on its own number. &quot;Cluster-aware&quot; (recommended) only flags it if nearby work areas — or, for data-quality metrics, this FLW's other work areas — are also elevated, filtering out one-off noise. &quot;Whole-FLW average&quot; rolls up all of an FLW's work areas into one number before comparing to the threshold.">ⓘ</span></th>
+          <th class="pb-2 pr-2">Comparison scope <span class="info-icon" tabindex="0" data-tip="What this indicator's own number is compared against before flagging: &quot;This WA only&quot; flags a single work area on its own number, alone. &quot;Cluster-aware&quot; (recommended) only flags it if nearby work areas — or, for data-quality metrics, this FLW's other work areas — are ALSO elevated, filtering out one-off noise. &quot;Whole-FLW average&quot; discards the work area's own number and judges the FLW's whole portfolio instead.">ⓘ</span></th>
           <th class="pb-2 pr-2"># WAs triggered <span class="info-icon" tabindex="0" data-tip="How many work areas this specific indicator flagged, under the current thresholds. Recomputed every time you hit Recompute.">ⓘ</span></th>
         </tr>
       </thead>
@@ -103,6 +115,10 @@
       <label class="space-y-1">
         <span class="text-gray-600">Min building count (NCF) <span class="info-icon" tabindex="0" data-tip="The fewest real buildings a work area needs before an NCF or Inaccessible result there is treated as meaningful.">ⓘ</span></span>
         <input type="number" id="cfg-min-buildings" class="base-input" min="0">
+      </label>
+      <label class="space-y-1">
+        <span class="text-gray-600">Min affected neighbors (NCF) <span class="info-icon" tabindex="0" data-tip="Cluster-aware NCF/inaccessible only: a work area can only ever log ONE NCF-or-Inaccessible visit, so instead of averaging a rate across neighbors, this counts how many spatially-nearby work areas were ALSO affected. At least this many must be affected to corroborate — separate from NCF's own Threshold value, which cluster-aware ignores.">ⓘ</span></span>
+        <input type="number" id="cfg-min-affected-neighbors-ncf" class="base-input" min="0">
       </label>
       <label class="flex items-center gap-2 pt-5">
         <input type="checkbox" id="cfg-include-not-visited">
@@ -173,6 +189,9 @@
 {{ indicator_defs|json_script:"indicator-defs-data" }}
 {{ indicator_configs|json_script:"indicator-configs-data" }}
 {{ global_config|json_script:"global-config-data" }}
+{{ ward_boundaries|json_script:"ward-boundaries-data" }}
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+<script src="{% static 'maps/plan_layers.js' %}"></script>
 <script src="{% static 'mopup/analysis.js' %}"></script>
 <script>
 (function () {
@@ -182,6 +201,7 @@
     createPlanUrl: "{{ create_plan_url }}",
     csrfToken: "{{ csrf_token }}",
     locked: "{{ run.status }}" === "locked",
+    mapboxToken: "{{ mapbox_token|escapejs }}",
   });
 })();
 </script>

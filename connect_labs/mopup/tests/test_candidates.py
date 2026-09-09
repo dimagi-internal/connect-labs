@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from connect_labs.mopup.core.candidates import build_evaluation_input, summarize_candidates_by_ward
+from connect_labs.mopup.core.candidates import build_evaluation_input, build_map_features, summarize_candidates_by_ward
 
 
 class TestBuildEvaluationInput:
@@ -214,3 +214,32 @@ class TestSummarizeCandidatesByWard:
                 "flagged_by_2_plus": 0,
             },
         ]
+
+
+class TestBuildMapFeatures:
+    _BOUNDARY = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]}
+
+    def test_skips_work_areas_without_boundary(self):
+        all_rows = [{"wa_id": "wa-1", "ward": "Sabon Gari", "boundary": None}]
+        fc = build_map_features(all_rows, [])
+        assert fc["features"] == []
+
+    def test_non_candidate_marked_not_included_with_no_indicator(self):
+        all_rows = [{"wa_id": "wa-1", "ward": "Sabon Gari", "boundary": self._BOUNDARY}]
+        fc = build_map_features(all_rows, [])
+        assert len(fc["features"]) == 1
+        props = fc["features"][0]["properties"]
+        assert props == {"wa_id": "wa-1", "ward": "Sabon Gari", "included": False, "first_indicator": None}
+
+    def test_candidate_marked_included_with_first_triggered_indicator(self):
+        all_rows = [{"wa_id": "wa-1", "ward": "Sabon Gari", "boundary": self._BOUNDARY}]
+        candidates = [{"wa_id": "wa-1", "triggered_indicators": ["deworming", "muac"]}]
+        fc = build_map_features(all_rows, candidates)
+        props = fc["features"][0]["properties"]
+        assert props["included"] is True
+        assert props["first_indicator"] == "deworming"
+
+    def test_feature_geometry_matches_boundary(self):
+        all_rows = [{"wa_id": "wa-1", "ward": "Sabon Gari", "boundary": self._BOUNDARY}]
+        fc = build_map_features(all_rows, [])
+        assert fc["features"][0]["geometry"] == self._BOUNDARY

@@ -29,7 +29,7 @@ from django.views.generic import TemplateView
 
 from connect_labs.labs.context import get_org_data
 from connect_labs.mopup.core import indicators as ind
-from connect_labs.mopup.core.candidates import summarize_candidates_by_ward
+from connect_labs.mopup.core.candidates import build_map_features, summarize_candidates_by_ward
 from connect_labs.mopup.core.data_access import MopupRunDataAccess
 from connect_labs.mopup.core.models import STATUS_LOCKED
 from connect_labs.mopup.core.work_areas import list_work_areas, summarize_wards
@@ -312,6 +312,7 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
+        from django.conf import settings
         from django.urls import reverse
 
         context = super().get_context_data(**kwargs)
@@ -334,7 +335,33 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
             {"key": ind.MUAC, "label": "MUAC-recorded rate", "direction": "below"},
             {"key": ind.VACCINATION, "label": "Vaccination-given rate", "direction": "below"},
         ]
+        context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+        context["ward_boundaries"] = self._ward_boundaries_geojson(run.selected_wards)
         return context
+
+    @staticmethod
+    def _ward_boundaries_geojson(selected_wards: list[dict]) -> dict:
+        """Static, fetched once at page load (mopup's wards are fixed by
+        Phase 1's picker, not viewport-panned like microplans' own admin
+        boundary layer) — one Feature per selected ward, skipping any that
+        don't resolve. Empty `selected_wards` (no wards, i.e. "every ward in
+        the opportunity") intentionally yields no boundaries — resolving
+        every ward's boundary just for the map isn't worth the cost."""
+        from connect_labs.microplans.core.admin_boundaries import find_ward_boundary_geometry
+
+        features = []
+        for sw in selected_wards:
+            geom = find_ward_boundary_geometry(sw.get("state", ""), sw.get("lga", ""), sw.get("ward", ""))
+            if geom is None:
+                continue
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": geom,
+                    "properties": {"ward": sw.get("ward", ""), "lga": sw.get("lga", ""), "state": sw.get("state", "")},
+                }
+            )
+        return {"type": "FeatureCollection", "features": features}
 
 
 class MopupCandidatesView(LoginRequiredMixin, View):
@@ -389,6 +416,7 @@ class MopupCandidatesView(LoginRequiredMixin, View):
                 "total_work_areas": len(rows),
                 "candidate_count": len(candidates),
                 "per_indicator_counts": per_indicator_counts,
+                "map_features": build_map_features(rows, candidates),
             }
         )
 
