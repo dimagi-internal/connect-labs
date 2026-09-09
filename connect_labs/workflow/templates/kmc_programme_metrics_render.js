@@ -489,6 +489,27 @@ function WorkflowUI({
   var WEIGHT_VALUE_PATH =
     cfgAudit.weight_value_path || 'anthropometric/child_weight_visit';
 
+  // The drill's second workflow. A worker row is a LINK to the KMC Worker
+  // Review run named in config, carrying the worker key and THIS run, so that
+  // page reads the very payload this one shows.
+  var FLW_REVIEW = cfgAudit.flw_review || null;
+  function flwReviewUrl(f) {
+    if (!FLW_REVIEW || !FLW_REVIEW.workflow_id || !FLW_REVIEW.run_id || !f)
+      return null;
+    var sp = scopeParams();
+    return (
+      '/labs/workflow/' +
+      FLW_REVIEW.workflow_id +
+      '/run/?run_id=' +
+      FLW_REVIEW.run_id +
+      (sp ? '&' + sp.slice(1) : '') +
+      '&flw=' +
+      encodeURIComponent(f.key) +
+      '&source_run=' +
+      (instance && instance.id)
+    );
+  }
+
   var sNScope = React.useState('programme');
   var nScope = sNScope[0],
     setNScope = sNScope[1];
@@ -2462,6 +2483,28 @@ function WorkflowUI({
                               }
                             />
                           </div>
+                          {flwReviewUrl(
+                            byFLW.filter(function (x) {
+                              return x.key === selFLW;
+                            })[0],
+                          ) && (
+                            <div className="mt-3">
+                              <a
+                                className="inline-block px-3 py-1.5 rounded text-sm font-medium bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                                href={flwReviewUrl(
+                                  byFLW.filter(function (x) {
+                                    return x.key === selFLW;
+                                  })[0],
+                                )}
+                              >
+                                Open worker review →
+                              </a>
+                              <span className="ml-2 text-xs text-gray-500">
+                                cases, growth charts and an image audit for this
+                                worker
+                              </span>
+                            </div>
+                          )}
                           {AUDIT_ENABLED &&
                             (function () {
                               var f = byFLW.filter(function (x) {
