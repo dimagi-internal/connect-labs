@@ -92,14 +92,33 @@ def _assert_update_record_kwargs(mock_api, task):
 
 
 class TestAddEvent:
-    def test_calls_update_record_with_correct_kwargs(self, task_data_access):
+    def test_every_mutator_persists_through_the_same_update_record_contract(self, task_data_access):
+        """One test for the persistence plumbing shared by all five mutators.
+
+        There used to be five of these — one per class, identically named, each
+        calling a different method and then asserting the SAME
+        `_assert_update_record_kwargs` helper: record_id/experiment/type/data,
+        identical whichever method ran. What each method actually DOES is
+        covered by its own sibling (e.g. test_event_is_added_to_task_data), so
+        the other four proved nothing this one did not. Looping here means a
+        sixth mutator is one line, not a sixth copy.
+        """
         tda, mock_api = task_data_access
-        task = _make_task_record()
-        mock_api.update_record.return_value = _make_update_return_value(task)
+        mutators = [
+            lambda t: tda.add_event(t, event_type="note", actor="Admin", description="A note"),
+            lambda t: tda.add_comment(t, actor="Admin", content="This is a comment"),
+            lambda t: tda.update_status(t, new_status="closed", actor="Admin"),
+            lambda t: tda.add_ai_session(t, actor="Admin", session_params={"identifier": "f", "platform": "t"}),
+            lambda t: tda.assign_task(t, assigned_to_name="M", assigned_to_type="network_manager", actor="Admin"),
+        ]
+        for mutate in mutators:
+            mock_api.reset_mock()
+            task = _make_task_record()
+            mock_api.update_record.return_value = _make_update_return_value(task)
 
-        tda.add_event(task, event_type="note", actor="Admin", description="A note")
+            mutate(task)
 
-        _assert_update_record_kwargs(mock_api, task)
+            _assert_update_record_kwargs(mock_api, task)
 
     def test_event_is_added_to_task_data(self, task_data_access):
         tda, mock_api = task_data_access
@@ -115,15 +134,6 @@ class TestAddEvent:
 
 
 class TestAddComment:
-    def test_calls_update_record_with_correct_kwargs(self, task_data_access):
-        tda, mock_api = task_data_access
-        task = _make_task_record()
-        mock_api.update_record.return_value = _make_update_return_value(task)
-
-        tda.add_comment(task, actor="Admin", content="This is a comment")
-
-        _assert_update_record_kwargs(mock_api, task)
-
     def test_comment_is_added_as_event(self, task_data_access):
         tda, mock_api = task_data_access
         task = _make_task_record()
@@ -138,15 +148,6 @@ class TestAddComment:
 
 
 class TestUpdateStatus:
-    def test_calls_update_record_with_correct_kwargs(self, task_data_access):
-        tda, mock_api = task_data_access
-        task = _make_task_record(status="investigating")
-        mock_api.update_record.return_value = _make_update_return_value(task)
-
-        tda.update_status(task, new_status="closed", actor="Admin")
-
-        _assert_update_record_kwargs(mock_api, task)
-
     def test_status_is_changed_in_data(self, task_data_access):
         tda, mock_api = task_data_access
         task = _make_task_record(status="investigating")
@@ -171,32 +172,42 @@ class TestUpdateStatus:
 
 
 class TestAddAiSession:
-    def test_calls_update_record_with_correct_kwargs(self, task_data_access):
+    def test_ai_session_event_records_who_it_was_triggered_for(self, task_data_access):
+        """This class previously held ONLY the shared-plumbing test, so
+        add_ai_session had no coverage of what it actually writes — the gap
+        surfaced when that plumbing test was collapsed into TestAddEvent.
+        The identifier is what a reviewer reads off the timeline to know which
+        FLW the session was about, and it defaults to "FLW" when absent."""
         tda, mock_api = task_data_access
         task = _make_task_record()
         mock_api.update_record.return_value = _make_update_return_value(task)
 
-        session_params = {"identifier": "test-flw", "platform": "test"}
-        tda.add_ai_session(task, actor="Admin", session_params=session_params)
+        tda.add_ai_session(
+            task,
+            actor="Admin",
+            session_params={"identifier": "flw-217", "platform": "ocs"},
+            session_id="ocs-abc",
+        )
 
-        _assert_update_record_kwargs(mock_api, task)
+        (event,) = task.data["events"]
+        assert event["event_type"] == "ai_session"
+        assert "flw-217" in event["description"]
+        assert event["session_id"] == "ocs-abc"
+        assert event["status"] == "initiated"
+        assert event["session_params"]["platform"] == "ocs"
+
+    def test_ai_session_falls_back_to_a_generic_identifier(self, task_data_access):
+        """No identifier must still produce a readable timeline line, not a KeyError."""
+        tda, mock_api = task_data_access
+        task = _make_task_record()
+        mock_api.update_record.return_value = _make_update_return_value(task)
+
+        tda.add_ai_session(task, actor="Admin", session_params={"platform": "ocs"})
+
+        assert "FLW" in task.data["events"][0]["description"]
 
 
 class TestAssignTask:
-    def test_calls_update_record_with_correct_kwargs(self, task_data_access):
-        tda, mock_api = task_data_access
-        task = _make_task_record()
-        mock_api.update_record.return_value = _make_update_return_value(task)
-
-        tda.assign_task(
-            task,
-            assigned_to_name="Manager",
-            assigned_to_type="network_manager",
-            actor="Admin",
-        )
-
-        _assert_update_record_kwargs(mock_api, task)
-
     def test_assignment_fields_are_updated(self, task_data_access):
         tda, mock_api = task_data_access
         task = _make_task_record()
