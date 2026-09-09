@@ -907,10 +907,22 @@ function WorkflowUI({
       var defId = definition && definition.id;
       if (!defId) return;
       var cancelled = false;
+      // Paths are under the snapshot's own state key (`state.snapshot.*`), and
+      // the page's scope travels the same way the preview fetch sends it.
+      var keys = ['programInd', 'byLLO', 'byOpp', 'pooledOverCredible', 'meta']
+        .map(function (k) {
+          return 'snapshot.' + k;
+        })
+        .join(',');
+      var sp = scopeParams();
       fetch(
         '/labs/workflow/api/' +
           defId +
-          '/runs/history/?keys=programInd,byLLO,byOpp,pooledOverCredible,meta',
+          '/runs/history/' +
+          sp +
+          (sp ? '&' : '?') +
+          'keys=' +
+          keys,
         { credentials: 'same-origin' },
       )
         .then(function (r) {
@@ -958,12 +970,18 @@ function WorkflowUI({
       }
       var byDate = {};
       (history || []).forEach(function (r) {
-        var st = r.state || {};
+        // Unprefix the projection so the same reader serves history and this run.
+        var st = {};
+        Object.keys(r.state || {}).forEach(function (k) {
+          st[k.replace(/^snapshot\./, '')] = r.state[k];
+        });
         var d =
           (st.meta && st.meta.as_of) || String(r.period_end || '').slice(0, 10);
         if (!d) return;
         var ind = cellsOf(st);
-        if (!ind) return;
+        // A run saved before this payload shape carries none of these cells; it
+        // is not a point.
+        if (!ind || !Object.keys(ind).length) return;
         byDate[d] = {
           date: d,
           ind: ind,
