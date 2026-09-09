@@ -485,6 +485,14 @@ SNAPSHOT_SCHEMA = {
             "run can explain WHY a cell reads 'not in this app' without the repo it was built "
             "from. These were static dicts in semantic/gates.py and are now registry data"
         ),
+        "state.snapshot.pooledOverCredible": (
+            "indicator -> {ind, llos, of}: for each credibility-gated indicator, the figure "
+            "POOLED over the recorders the workbook accepts, which LLOs those were, and how "
+            "many there were in total. The programme row pools every LLO, so on mortality it "
+            "reads lower than reality — non-recorders contribute denominator without deaths. "
+            "A saved run cannot rebuild this from its graded cells: a row banded "
+            "'insufficient' still contributes to the pool while storing no value"
+        ),
         "state.snapshot.monthly": "Programme monthly trend series",
         "state.snapshot.monthlyByScope": (
             "Monthly series precomputed per drill scope (all / llo:<name> / opp:<id>) so a "

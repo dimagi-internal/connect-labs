@@ -1302,10 +1302,19 @@ function WorkflowUI({
       // snapshot run deliberately never fetches. Without this the headline mortality
       // card silently degrades to "no credible recorder" the moment a run is snapshot,
       // while the LLO table beside it still shows EHA and PIPN reporting deaths.
-      // Was `snapshot.mortalityCredible`, a key that could only ever carry C14.
-      // The payload now carries every table the spec named, keyed by indicator.
-      if (snapshot && snapshot.credibility && snapshot.credibility.C14)
-        return snapshot.credibility.C14;
+      // Was `snapshot.mortalityCredible`. The builder now emits this shape for
+      // EVERY credibility-gated indicator, keyed by indicator, under
+      // `pooledOverCredible` -- and it emits the POOLED entry, not the raw
+      // credibility table. Reading the table here instead crashed on
+      // `.llos.length`: it has no `llos`. Both the hook that preceded the
+      // framework builder and this render's first read of it had that mismatch,
+      // and only opening the page showed it.
+      if (
+        snapshot &&
+        snapshot.pooledOverCredible &&
+        snapshot.pooledOverCredible.C14
+      )
+        return snapshot.pooledOverCredible.C14;
       if (snapshot && snapshot.mortalityCredible)
         return snapshot.mortalityCredible;
       var credible = cCredibleLloRows('C14');

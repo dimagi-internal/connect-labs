@@ -619,3 +619,116 @@ class TestTheTemplateShipsNoSnapshotCode:
         code = re.sub(r'"""(?:.|\n)*?"""', "", src)
         code = "\n".join(line.split("#", 1)[0] for line in code.splitlines())
         assert not re.findall(r"\bC\d{2}\b", code), re.findall(r"\bC\d{2}\b", code)
+
+
+class TestPooledOverCredibleRecorders:
+    """The headline figure for a credibility-gated indicator, and why the builder
+    must compute it rather than the render.
+
+    The programme row pools EVERY LLO, so on mortality it reads lower than reality
+    — non-recorders contribute denominator without deaths. The card therefore shows
+    the credible-recorder pool. A saved run cannot rebuild that from its graded
+    cells: a row banded `insufficient` still contributes its numerator and
+    denominator to the pool while storing `value: null`, so pooling from stored
+    values silently drops exactly those rows and moves the number.
+
+    The shape matters as much as the value. The render's memo returns
+    `{ind, llos, of}` and its consumers read `.llos.length`; the predecessor hook
+    stored the raw credibility table there instead, which has no `llos` — a
+    TypeError on the rendered page, and invisible to every test that stopped at the
+    stored payload.
+    """
+
+    C14 = {
+        "id": "c14",
+        "indicator": "C14",
+        "unit": "%",
+        "direction": "mid2",
+        "bands": [[2, 12], [1, 20]],
+        "inputs": [],
+        "min_denominator": 25,
+    }
+    SPEC = {**SPEC, "credibility": {"C14": "mortality_recording_credible"}}
+
+    def _rows(self):
+        return [
+            {"scope": "programme", "n_cases": 4},
+            # PIPN and EHA record deaths credibly; GHI does not.
+            {"scope": "llo", "llo": "PIPN", "n_cases": 2, "c14": 5.0, "c14_numerator": 5, "c14_denominator": 100},
+            {"scope": "llo", "llo": "EHA", "n_cases": 1, "c14": 3.0, "c14_numerator": 3, "c14_denominator": 100},
+            {"scope": "llo", "llo": "GHI", "n_cases": 1, "c14": 0.0, "c14_numerator": 0, "c14_denominator": 400},
+        ]
+
+    def _build(self, settings):
+        return snap.build(
+            spec=self.SPEC,
+            rows=self._rows(),
+            measures=[self.C14],
+            deployment={**DEPLOY, "settings": settings},
+            cases=[],
+        )
+
+    def test_it_pools_only_the_credible_recorders(self):
+        payload = self._build({"mortality_recording_credible": {"PIPN": True, "EHA": True, "GHI": False}})
+        block = payload["pooledOverCredible"]["C14"]
+        assert sorted(block["llos"]) == ["EHA", "PIPN"]
+        assert block["of"] == 3
+        # (5 + 3) / (100 + 100) = 4.0%, not (5+3+0)/(100+100+400) = 1.33%
+        assert abs(block["ind"]["value"] - 0.04) < 1e-9
+        assert block["ind"]["n"] == 200
+
+    def test_the_shape_is_the_one_the_render_reads(self):
+        payload = self._build({"mortality_recording_credible": {"PIPN": True}})
+        block = payload["pooledOverCredible"]["C14"]
+        assert set(block) == {"ind", "llos", "of"}, "the render's memo returns {ind, llos, of}"
+        assert isinstance(block["llos"], list), "consumers read .llos.length"
+
+    def test_it_sums_rather_than_averaging_the_rates(self):
+        """A mean would weight a 100-case LLO like a 10,000-case one."""
+        rows = [
+            {"scope": "programme", "n_cases": 2},
+            {"scope": "llo", "llo": "A", "c14": 10.0, "c14_numerator": 10, "c14_denominator": 100},
+            {"scope": "llo", "llo": "B", "c14": 1.0, "c14_numerator": 100, "c14_denominator": 10000},
+        ]
+        payload = snap.build(
+            spec=self.SPEC,
+            rows=rows,
+            measures=[self.C14],
+            deployment={**DEPLOY, "settings": {"mortality_recording_credible": {"A": True, "B": True}}},
+            cases=[],
+        )
+        pooled = payload["pooledOverCredible"]["C14"]["ind"]["value"]
+        assert abs(pooled - 110 / 10100) < 1e-9, "pooled must be sum/sum, not the mean of 10% and 1%"
+
+    def test_a_row_below_its_min_denominator_still_contributes(self):
+        """The reason this cannot be rebuilt from graded cells: such a row stores no
+        value of its own, but its numerator and denominator belong in the pool."""
+        rows = [
+            {"scope": "programme", "n_cases": 2},
+            {"scope": "llo", "llo": "A", "c14": 5.0, "c14_numerator": 5, "c14_denominator": 100},
+            {"scope": "llo", "llo": "B", "c14": 50.0, "c14_numerator": 5, "c14_denominator": 10},
+        ]
+        settings = {"mortality_recording_credible": {"A": True, "B": True}}
+        payload = snap.build(
+            spec=self.SPEC, rows=rows, measures=[self.C14], deployment={**DEPLOY, "settings": settings}, cases=[]
+        )
+        by_llo = {x["llo"]: x for x in payload["byLLO"]}
+        assert by_llo["B"]["ind"]["C14"]["band"] == "insufficient"
+        assert by_llo["B"]["ind"]["C14"]["value"] is None, "so it cannot be pooled from stored values"
+        assert payload["pooledOverCredible"]["C14"]["ind"]["n"] == 110, "yet it belongs in the denominator"
+
+    def test_an_absent_table_pools_everything_rather_than_withholding_it(self):
+        """Matches the render's `credible === null` branch: no basis to gate is not
+        a reason to blank every number."""
+        payload = self._build({})
+        assert sorted(payload["pooledOverCredible"]["C14"]["llos"]) == ["EHA", "GHI", "PIPN"]
+
+    def test_indicators_the_spec_does_not_gate_get_no_block(self):
+        payload = snap.build(
+            spec={**SPEC, "credibility": {}},
+            rows=self._rows(),
+            measures=[self.C14],
+            deployment=DEPLOY,
+            cases=[],
+        )
+        assert payload["pooledOverCredible"] == {}
