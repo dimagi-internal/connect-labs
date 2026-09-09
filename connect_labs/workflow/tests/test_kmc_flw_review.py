@@ -53,6 +53,8 @@ def test_cases_get_a_growth_chart_and_the_audit_is_scoped_to_the_worker():
     src = RENDER.read_text()
     assert "function GrowthChart" in src
     assert "15 g/kg/day" in src, "the reference line is the C13 target"
+    assert "postmenstrual age" in src, "with gestational age known, the axis a preterm standard uses"
+    assert "expected loss" in src, "a first-week loss is explained, not painted red"
     flat = re.sub(r"\s+", "", src)
     assert "actions.createAudit(" in flat
     assert "selected_flw_user_ids" in src and "granularity: 'per_flw'" in src
@@ -76,3 +78,13 @@ def test_the_audit_routing_is_the_programme_pages_routing():
     derived from the same source as the programme page's."""
     for key in ("scale_agent_by_llo", "scale_unverified_llos", "weight_image_path", "weight_value_path"):
         assert DEFINITION["config"][key] == METRICS_DEFINITION["config"][key], key
+
+
+def test_photos_come_through_the_frameworks_visit_image_route():
+    """No pipeline change and no new endpoint: the visit rows carry the visit id,
+    the workflow visit-images API returns each visit's blob ids, and the audit
+    image route serves them -- the same path the audit review pages use."""
+    src = RENDER.read_text()
+    assert "/visit-images/?visit_ids=" in src
+    assert "/audit/image/" in src
+    assert "weighings photographed" in src
