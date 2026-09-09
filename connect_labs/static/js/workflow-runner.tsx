@@ -1069,12 +1069,32 @@ function WorkflowRunner({
     definition.pipeline_sources,
   ]);
 
+  // Whether this run is finished AND its snapshot carries the pipeline results the
+  // render will read. Both halves matter -- see the effect below.
+  const snapshotCarriesPipelines = useMemo(() => {
+    const inst = initialData.instance;
+    if (inst.status !== 'completed') return false;
+    const snap = inst.snapshot as { pipelines?: unknown } | null | undefined;
+    return !!(snap && snap.pipelines);
+  }, [initialData.instance]);
+
   // Load pipeline data on mount via SSE streaming.
   // Gated on the framework auth check passing — no point hammering CCHQ
   // pipelines if the user's CCHQ token is rejected; surfacing the
   // "Authorize" gate at the top is faster and clearer.
   useEffect(() => {
     if (authChecking || missingAuth.length > 0) return;
+    // A COMPLETED run whose snapshot carries its own pipelines never uses live
+    // pipeline data: the view reads `snapshot.pipelines`, and `{}` is not nullish,
+    // so the streamed result is discarded. Streaming it anyway recomputes the whole
+    // extraction the run was saved to avoid -- measured on KMC, 31 MB and ~5.5
+    // minutes on a cold cache -- and blocks the page on "Connecting to pipeline
+    // stream..." while a banner promises figures that load instantly.
+    //
+    // Gated on the snapshot actually CARRYING pipelines, because a template whose
+    // hook emits no `pipelines` key still falls through to the live data and would
+    // otherwise lose it.
+    if (snapshotCarriesPipelines) return;
     if (
       definition.pipeline_sources?.length &&
       !Object.keys(pipelineData).length
@@ -1083,6 +1103,7 @@ function WorkflowRunner({
       return cleanup;
     }
   }, [
+    snapshotCarriesPipelines,
     definition.pipeline_sources,
     pipelineData,
     streamPipelineData,
