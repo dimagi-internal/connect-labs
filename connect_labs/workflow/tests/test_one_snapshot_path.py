@@ -226,3 +226,27 @@ class TestRunHistoryIsAProjection:
         src = (REPO / "workflow" / "templates" / "kmc_programme_metrics_render.js").read_text()
         assert "/runs/history/" in src, "the trend does not read the saved-run history"
         assert "P.weekly" in src, "the activity chart does not read the builder's weekly series"
+
+
+class TestTheCaseIndexIsAsOfToo:
+    """The evaluation is cut at as_of; the pipeline cache behind the case index and
+    the visit rows is all-time. A run for a past week must not carry today's counts
+    in its banner or babies registered after its date in its drill."""
+
+    def test_rows_after_the_date_are_dropped_and_undated_rows_kept(self):
+        from connect_labs.workflow.snapshot_builders import cut_as_of
+
+        rows = [
+            {"reg_date": "2026-07-01"},
+            {"reg_date": "2026-07-06"},
+            {"first_visit_date": "2026-07-05T10:00:00"},
+            {"weights": []},
+        ]
+        got = cut_as_of(rows, ("reg_date", "first_visit_date"), "2026-07-05")
+        assert got == [{"reg_date": "2026-07-01"}, {"first_visit_date": "2026-07-05T10:00:00"}, {"weights": []}]
+
+    def test_no_as_of_means_no_cut(self):
+        from connect_labs.workflow.snapshot_builders import cut_as_of
+
+        rows = [{"reg_date": "2999-01-01"}]
+        assert cut_as_of(rows, ("reg_date",), None) == rows
