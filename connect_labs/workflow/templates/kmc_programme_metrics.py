@@ -400,16 +400,20 @@ SNAPSHOT_SCHEMA = {
         "state.snapshot.byLLO": "Per-LLO indicator results, with each LLO's opportunities nested",
         "state.snapshot.byOpp": "Per-opportunity indicator results",
         "state.snapshot.byFLW": (
-            "Per-FLW indicator results, keyed (opportunity, username). `rows` carries that "
-            "worker's case records — a saved run has no live pipeline behind it, so an empty "
-            "`rows` would end the drill at the worker"
+            "Per-FLW indicator results, keyed (opportunity, username) — `key` is that pair "
+            "joined by '::' and is the render's selection identity. `rows` carries INTEGER "
+            "POSITIONS into `state.snapshot.cases`, not case records: a saved run has no "
+            "live pipeline behind it, so an empty `rows` would end the drill at the worker, "
+            "but storing the records here as well as in `cases` stored every case twice and "
+            "put the payload over the 5 MB cap. The render rehydrates on load"
         ),
         "state.snapshot.cases": (
-            "Flat index of every case in the snapshot, so the case table and a hand-off to "
-            "the longitudinal view need not walk byFLW. Slim by design: identity, dates, "
-            "weights, visit count. The per-visit weight SERIES is deliberately absent — it "
-            "would not fit the 5 MB cap, and the longitudinal workflow fetches it live for "
-            "the one case a user opens"
+            "Flat index of every case in the snapshot, and the ONLY copy of the case "
+            "records — `byFLW[].rows` indexes into it. Referenced by position rather than "
+            "`entity_id` because the synthetic cohort reuses entity ids across cloned "
+            "opportunities. Slim by design: identity, dates, weights, visit count. The "
+            "per-visit weight SERIES is deliberately absent — it would not fit the 5 MB "
+            "cap, and the longitudinal workflow fetches it live for the one case a user opens"
         ),
         "state.snapshot.cMeasures": (
             "The display contract these values were graded with — titles, units, directions "
@@ -425,7 +429,12 @@ SNAPSHOT_SCHEMA = {
         "state.snapshot.nSeries": "The SQL tab's rows when that tab was run; null otherwise",
         "state.snapshot.schema": "Payload version, independent of this manifest's version",
         "state.snapshot.generated_at": "When the snapshot was built",
-        "state.snapshot.meta": "Cohort size as published: cases, visits, opportunities, llos",
+        "state.snapshot.meta": (
+            "Cohort size as published: cases, visits, opportunities, llos — plus "
+            "`synthetic`, which the render reads to show the 'built on synthetic clones' "
+            "disclaimer. A saved run can only know what was captured, so an absent flag "
+            "publishes a synthetic cohort with no disclaimer at all"
+        ),
     },
 }
 
@@ -614,6 +623,21 @@ def build_snapshot(*, pipelines, state, opportunity_id, **context):
             settings=reg_settings or None,
         )
         measures = measure_catalog(filter_to_series(full_registry, "C"))
+        # Is this cohort synthetic? The render decides with `Number(opp) >= 10000`, a
+        # threshold that happens to match LABS_ONLY_OPP_ID_FLOOR. Server-side the
+        # registry that OWNS the answer is right here, so ask it rather than port the
+        # heuristic — a real opp above the floor would read as synthetic, and a
+        # fixture-backed real opp below it (labs_only=False) would read as real.
+        from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+        synthetic_ids = set(
+            SyntheticOpportunity.objects.filter(opportunity_id__in=opportunity_ids, enabled=True).values_list(
+                "opportunity_id", flat=True
+            )
+        )
+        # ALL of them, matching the render's `opps.every(isSyntheticOpp)`: a mixed
+        # cohort is not "synthetic data" and must not carry the disclaimer.
+        is_synthetic = bool(opportunity_ids) and all(int(o) in synthetic_ids for o in opportunity_ids)
         llo_by_opp = {int(k): v for k, v in (llo_map or {}).items()}
         cases = kmc_snapshot.case_rows(pipelines, llo_by_opp)
         visits = ((pipelines or {}).get("visits") or {}).get("rows") or []
@@ -629,6 +653,7 @@ def build_snapshot(*, pipelines, state, opportunity_id, **context):
                     "C22": (reg_settings or {}).get("completion_recording_credible") or {},
                 },
                 cases=cases,
+                synthetic=is_synthetic,
                 meta={
                     "cases": len(cases),
                     "visits": len(visits),

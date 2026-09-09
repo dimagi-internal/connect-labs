@@ -1260,7 +1260,10 @@ function WorkflowUI({
   function flwDateRange(f) {
     var ds = (f.rows || [])
       .map(function (r) {
-        return r.first_visit || r.last_visit;
+        // The pipeline (and so both the live rows and the snapshot's case records)
+        // emits *_visit_date. `first_visit`/`last_visit` never existed on either
+        // shape, so this range silently resolved to nothing on every run.
+        return r.first_visit_date || r.last_visit_date;
       })
       .filter(Boolean)
       .sort();
@@ -1508,7 +1511,27 @@ function WorkflowUI({
 
   var byFLW = React.useMemo(
     function () {
-      if (snapshot) return snapshot.byFLW || [];
+      if (snapshot) {
+        // A snapshot stores each worker's cases as POSITIONS into snapshot.cases,
+        // because holding the records here as well as there stored every case twice
+        // and pushed the payload past the 5 MB cap. Resolve them once, here, so
+        // `f.rows` is case objects for every consumer below (the drill at the case
+        // table, flwDateRange, the `rows.length` counts) exactly as on a live run.
+        var all = snapshot.cases || [];
+        return (snapshot.byFLW || []).map(function (f) {
+          var r = f.rows || [];
+          // Tolerate both shapes: schema 2 stores numbers, and anything that already
+          // holds objects is passed through untouched.
+          if (!r.length || typeof r[0] !== 'number') return f;
+          return Object.assign({}, f, {
+            rows: r
+              .map(function (i) {
+                return all[i];
+              })
+              .filter(Boolean),
+          });
+        });
+      }
       var g = {};
       derived.forEach(function (r) {
         var k = r.opp + FLW_SEP + (r.flw || '(unassigned)');
