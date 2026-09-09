@@ -14,12 +14,22 @@ Green in the repo, different in production, and nothing in between to notice.
 
 `--registry-id` refreshes in place. The payload is validated first either way, so a
 seed that does not compile cannot reach a dashboard.
+
+Reads the registry from the SERVER's own disk, which is the point: bringing a record
+forward by hand means re-typing whole documents through the API, and a transcription
+slip in a 22-opportunity availability map fails open and silently. Invoke against
+production via run-labs-command.yml with `--owner-email`, e.g.
+
+    seed_semantic_registry --registry-id 5500 --opportunity-id 10042 \
+        --owner-email ace@dimagi-ai.com
 """
 
 from django.core.management.base import BaseCommand, CommandError
 
+from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
 from connect_labs.semantic.seed import registry_payload
 from connect_labs.semantic.validation import RegistryInvalid
+from connect_labs.users.models import User
 from connect_labs.workflow.data_access import SemanticRegistryDataAccess
 
 
@@ -31,6 +41,16 @@ class Command(BaseCommand):
         parser.add_argument("--opportunity-id", type=int, default=None)
         parser.add_argument("--program-id", type=int, default=None)
         parser.add_argument("--access-token", default=None)
+        parser.add_argument(
+            "--owner-email",
+            default=None,
+            help=(
+                "mint the Connect token from this user's persisted UserConnectToken, "
+                "the same mechanism run_scheduled_workflow uses. Use this instead of "
+                "--access-token when invoking via run-labs-command.yml, so no token "
+                "appears in the dispatch input."
+            ),
+        )
         parser.add_argument("--shared", action="store_true", help="mark the record shared on creation")
         parser.add_argument(
             "--registry-id",
@@ -47,10 +67,21 @@ class Command(BaseCommand):
                 "the on-disk registry does not validate, so it will not be seeded:\n  " + "\n  ".join(exc.errors)
             ) from exc
 
+        access_token = options["access_token"]
+        if not access_token and options["owner_email"]:
+            try:
+                owner = User.objects.get(email=options["owner_email"])
+            except User.DoesNotExist:
+                raise CommandError(f"No user with email {options['owner_email']!r}")
+            try:
+                access_token = get_valid_access_token(owner)
+            except ConnectTokenError as exc:
+                raise CommandError(str(exc)) from exc
+
         access = SemanticRegistryDataAccess(
             opportunity_id=options["opportunity_id"],
             program_id=options["program_id"],
-            access_token=options["access_token"],
+            access_token=access_token,
         )
         registry_id = options["registry_id"]
         try:
