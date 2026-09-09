@@ -95,7 +95,7 @@ def test_a_supplier_serving_elsewhere_is_absent_from_its_own_country_when_it_sai
     assert eoi_actions.live_qualifications(country="ET") == []
 
 
-def test_the_seeded_world_puts_suppliers_where_they_actually_are():
+def test_the_seeded_world_puts_suppliers_where_they_actually_are(seeded_world):
     """A supplier serves its own country, whatever else it reaches.
 
     Every seeded commitment was written with a hardcoded lookup, so all fourteen
@@ -105,11 +105,8 @@ def test_the_seeded_world_puts_suppliers_where_they_actually_are():
     surfacing regions and a Burkina Faso search came back empty with a Burkinabé
     plant sitting in the registry.
     """
-    from django.core.management import call_command
 
     from connect_labs.supply.models import Qualification
-
-    call_command("seed_supply_demo")
 
     checked = 0
     for qual in Qualification.objects.select_related("org", "source_submission"):
@@ -123,13 +120,11 @@ def test_the_seeded_world_puts_suppliers_where_they_actually_are():
     assert checked >= 10, "the seeded world must carry commitments to check"
 
 
-def test_every_seeded_country_is_reachable_through_the_registry():
+def test_every_seeded_country_is_reachable_through_the_registry(seeded_world):
     """A country with a plant in it must not return an empty search."""
-    from django.core.management import call_command
 
     from connect_labs.supply.models import SupplierOrg
 
-    call_command("seed_supply_demo")
     countries = {o.country for o in SupplierOrg.objects.all() if o.country}
     for country in sorted(countries):
         found = eoi_actions.live_qualifications(country=country)

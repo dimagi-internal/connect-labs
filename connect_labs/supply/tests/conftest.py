@@ -7,6 +7,8 @@ import pytest
 from django.test import Client
 
 from . import factories as f
+from .world import _supply_world_snapshot  # noqa: F401  (fixture, imported for discovery)
+from .world import seeded_world  # noqa: F401  (fixture, imported for discovery)
 
 
 @pytest.fixture

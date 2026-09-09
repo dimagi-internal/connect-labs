@@ -172,7 +172,7 @@ def test_delivery_history_is_the_evidence_behind_the_rate():
     assert late["planned_at"] and late["actual_at"]
 
 
-def test_the_award_screen_receives_every_bidder_s_record(admin_client):
+def test_the_award_screen_receives_every_bidder_s_record(seeded_world, admin_client):
     """The loop is only closed if the figure reaches the screen that decides.
 
     A service nobody's award view calls is a service that changes no decision,
@@ -180,12 +180,9 @@ def test_the_award_screen_receives_every_bidder_s_record(admin_client):
     """
     import json as _json
 
-    from django.core.management import call_command
-
     from connect_labs.supply.models import RFP
 
     client, _user = admin_client
-    call_command("seed_supply_demo")
     rfp = RFP.objects.filter(status=RFP.Status.PUBLISHED, lots__lot_bids__isnull=False).distinct().first()
     assert rfp is not None, "the seeded world must carry a published tender with bids"
 

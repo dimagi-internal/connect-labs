@@ -297,8 +297,21 @@ page down.
 
 ## Testing
 
-124 tests, self-contained: own factories and `conftest.py`, **zero labs
+288 tests, self-contained: own factories and `conftest.py`, **zero labs
 fixtures**, so the suite travels with the app if it is ever split out.
+
+> **Paused in CI.** `pyproject.toml` carries
+> `--ignore=connect_labs/supply/tests`, so these do **not** run on a normal
+> `pytest` or in CI. They are green, not broken — this app is the most
+> expensive package in the repo and nobody is working on it, so it is not worth
+> paying for on every PR. **Before touching anything under `connect_labs/supply/`,
+> delete that one `--ignore` and leave it deleted.** Nothing else is needed.
+>
+> To run them once without turning them back on:
+>
+> ```bash
+> make test ARGS="connect_labs/supply -n 4 --override-ini=addopts='--ds=config.settings.test --reuse-db'"
+> ```
 
 ```bash
 DATABASE_URL=postgis://postgres:postgres@localhost:5432/connect_labs \
@@ -306,6 +319,12 @@ DATABASE_URL=postgis://postgres:postgres@localhost:5432/connect_labs \
   GEOS_LIBRARY_PATH=/opt/homebrew/lib/libgeos_c.dylib \
   pytest connect_labs/supply/
 ```
+
+**The demo world is a fixture, not a command call.** A test that needs the
+seeded world asks for `seeded_world` (see `tests/world.py`); it is built once
+per session and replayed per test, ~70x cheaper than
+`call_command("seed_supply_demo")`. Only tests of the _seeder itself_ —
+idempotency, `--reset`, password rotation — call the command.
 
 What each file is defending:
 

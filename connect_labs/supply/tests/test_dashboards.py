@@ -205,18 +205,16 @@ def test_eta_delta_surfaces_lateness(admin_client, network):
     assert body["eta_delta_days"] == pytest.approx(3.0, abs=0.1)
 
 
-def test_disbursement_never_exceeds_obligation(admin_client):
+def test_disbursement_never_exceeds_obligation(seeded_world, admin_client):
     """A funder view that shows more paid than committed is not credible.
 
     Regression guard: the Sudan corridor contract was once priced per
     truck-month while its shipments were counted in cartons, which reported a
     nine-figure disbursement against a six-figure obligation.
     """
-    from django.core.management import call_command
 
     from connect_labs.supply.models import Contract
 
-    call_command("seed_supply_demo", "--reset")
     for contract in Contract.objects.all():
         assert contract.disbursed_value <= contract.obligated_value, (
             f"{contract.reference} disbursed {contract.disbursed_value} against "
