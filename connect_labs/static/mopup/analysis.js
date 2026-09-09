@@ -155,24 +155,48 @@ window.MopupAnalysis = (function () {
     };
   }
 
-  function renderWardSummary(rows) {
+  function wardRowKey(r) {
+    return `${r.state}|${r.lga}|${r.ward}`;
+  }
+
+  function renderWardSummary(rows, gapSummaryByWard) {
+    gapSummaryByWard = gapSummaryByWard || {};
     $('ward-summary-rows').innerHTML = rows
-      .map(
-        (r) => `<tr class="border-b border-gray-50">
+      .map((r) => {
+        const gap = gapSummaryByWard[wardRowKey(r)];
+        const mainRow = `<tr class="border-b border-gray-50">
           <td class="p-2">${esc(r.ward)}</td><td class="p-2">${esc(
             r.lga,
           )}</td><td class="p-2">${esc(r.state)}</td>
-          <td class="p-2">${r.total_work_areas}</td>
-          <td class="p-2">${r.total_buildings}</td><td class="p-2">${
-            r.total_evc
+          <td class="p-2 ward-col-connect ward-group-start">${
+            r.total_work_areas
           }</td>
-          <td class="p-2">${r.candidate_count}</td>
-          <td class="p-2">${r.candidate_buildings}</td><td class="p-2">${
-            r.candidate_evc
+          <td class="p-2 ward-col-connect">${r.total_hsd}</td>
+          <td class="p-2 ward-col-connect">${r.total_ncf}</td>
+          <td class="p-2 ward-col-connect">${
+            r.total_buildings
+          }</td><td class="p-2 ward-col-connect">${r.total_evc}</td>
+          <td class="p-2 ward-col-new ward-group-start">${
+            r.candidate_count
           }</td>
-          <td class="p-2">${r.flagged_by_2_plus}</td>
-        </tr>`,
-      )
+          <td class="p-2 ward-col-new">${
+            r.candidate_buildings
+          }</td><td class="p-2 ward-col-new">${r.candidate_evc}</td>
+          <td class="p-2 ward-col-new">${r.flagged_by_2_plus}</td>
+        </tr>`;
+        if (!gap) return mainRow;
+        // A distinct, muted sub-row directly under the ward's own row rather
+        // than more columns — Step 2's new work areas are additional to,
+        // not part of, the Connect-sourced totals above.
+        const gapRow = `<tr class="border-b border-gray-100 bg-emerald-50 text-emerald-800 text-xs">
+          <td class="p-2 pl-2" colspan="7">+ Planning gaps (new)</td>
+          <td class="p-2 ward-col-new ward-group-start">${gap.gap_wa_count}</td>
+          <td class="p-2 ward-col-new">${gap.gap_buildings}</td>
+          <td class="p-2 ward-col-new">${gap.gap_evc}</td>
+          <td class="p-2 ward-col-new">—</td>
+        </tr>`;
+        return mainRow + gapRow;
+      })
       .join('');
   }
 
@@ -462,7 +486,7 @@ window.MopupAnalysis = (function () {
       lastCandidates = data.candidates || [];
       lastGapCandidates = data.gap_candidates || [];
       $('live-count').textContent = data.candidate_count;
-      renderWardSummary(data.ward_summary || []);
+      renderWardSummary(data.ward_summary || [], data.gap_summary_by_ward);
       renderCandidates();
       renderIndicatorCounts(data.per_indicator_counts);
       renderMap(data.map_features);

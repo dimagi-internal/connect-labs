@@ -6,6 +6,7 @@ from connect_labs.mopup.core.candidates import (
     build_evaluation_input,
     build_map_features,
     gap_feature_to_candidate_row,
+    gap_summary_by_ward,
     summarize_candidates_by_ward,
 )
 
@@ -141,9 +142,36 @@ class TestBuildEvaluationInput:
 class TestSummarizeCandidatesByWard:
     def test_rolls_up_totals_and_severity(self):
         all_rows = [
-            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "building_count": 10, "expected_visit_count": 5},
-            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "building_count": 20, "expected_visit_count": 8},
-            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano", "building_count": 30, "expected_visit_count": 12},
+            {
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "building_count": 10,
+                "expected_visit_count": 5,
+                "approved_hsd_count": 4,
+                "approved_ncf_count": 1,
+                "approved_inaccessible_count": 0,
+            },
+            {
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "building_count": 20,
+                "expected_visit_count": 8,
+                "approved_hsd_count": 6,
+                "approved_ncf_count": 0,
+                "approved_inaccessible_count": 1,
+            },
+            {
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "building_count": 30,
+                "expected_visit_count": 12,
+                "approved_hsd_count": 9,
+                "approved_ncf_count": 0,
+                "approved_inaccessible_count": 0,
+            },
         ]
         candidates = [
             {
@@ -170,6 +198,8 @@ class TestSummarizeCandidatesByWard:
                 "lga": "Rano",
                 "state": "Kano",
                 "total_work_areas": 3,
+                "total_hsd": 19,
+                "total_ncf": 2,
                 "total_buildings": 60,
                 "total_evc": 25,
                 "candidate_count": 2,
@@ -199,6 +229,8 @@ class TestSummarizeCandidatesByWard:
                 "lga": "Rano",
                 "state": "Kano",
                 "total_work_areas": 2,
+                "total_hsd": 0,
+                "total_ncf": 0,
                 "total_buildings": 0,
                 "total_evc": 0,
                 "candidate_count": 0,
@@ -211,6 +243,8 @@ class TestSummarizeCandidatesByWard:
                 "lga": "Rano",
                 "state": "Kano",
                 "total_work_areas": 1,
+                "total_hsd": 0,
+                "total_ncf": 0,
                 "total_buildings": 0,
                 "total_evc": 0,
                 "candidate_count": 0,
@@ -219,6 +253,61 @@ class TestSummarizeCandidatesByWard:
                 "flagged_by_2_plus": 0,
             },
         ]
+
+
+class TestGapSummaryByWard:
+    def test_rolls_up_gap_features_per_ward(self):
+        features = [
+            {
+                "properties": {
+                    "ward": "Sabon Gari",
+                    "lga": "Rano",
+                    "state": "Kano",
+                    "building_count": 3,
+                    "expected_visit_count": 5,
+                }
+            },
+            {
+                "properties": {
+                    "ward": "Sabon Gari",
+                    "lga": "Rano",
+                    "state": "Kano",
+                    "building_count": 2,
+                    "expected_visit_count": 4,
+                }
+            },
+            {
+                "properties": {
+                    "ward": "Unguwar Arewa",
+                    "lga": "Rano",
+                    "state": "Kano",
+                    "building_count": 1,
+                    "expected_visit_count": 2,
+                }
+            },
+        ]
+        summary = gap_summary_by_ward(features)
+        assert summary == {
+            "Kano|Rano|Sabon Gari": {
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "gap_wa_count": 2,
+                "gap_buildings": 5,
+                "gap_evc": 9,
+            },
+            "Kano|Rano|Unguwar Arewa": {
+                "ward": "Unguwar Arewa",
+                "lga": "Rano",
+                "state": "Kano",
+                "gap_wa_count": 1,
+                "gap_buildings": 1,
+                "gap_evc": 2,
+            },
+        }
+
+    def test_no_features_returns_empty(self):
+        assert gap_summary_by_ward([]) == {}
 
 
 class TestBuildMapFeatures:
