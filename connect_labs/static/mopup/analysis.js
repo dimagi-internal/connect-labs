@@ -46,6 +46,51 @@ window.MopupAnalysis = (function () {
   let lastGapCandidates = [];
   let severitySortDesc = true;
 
+  // Per-indicator gate settings that used to live in one shared "Global
+  // cluster / gate settings" panel, unlabeled as to which indicator each one
+  // actually affected — real feedback this session was that the grouping
+  // there (by WHAT the setting does, not WHICH indicator uses it) read as
+  // confusing. These render as a compact settings sub-row directly under
+  // the one indicator each setting actually gates; only genuinely
+  // cross-indicator settings remain in the "Shared settings" panel
+  // (see analysis.html).
+  function indicatorSettingsRowHtml(def) {
+    if (def.key === 'evc_shortfall') {
+      return `<tr class="ind-subrow bg-gray-50 text-xs border-b border-gray-50" data-key="evc_shortfall_settings">
+        <td class="py-1 pl-8 pr-2 text-gray-600" colspan="5">
+          <label class="inline-flex items-center gap-1 mr-4">
+            <input type="checkbox" id="cfg-include-not-visited">
+            Include not-yet-visited in EVC <span class="info-icon" tabindex="0" data-tip="A work area that's not yet visited (or has a pending inaccessible request) is excluded from EVC-shortfall scoring by default, since the campaign may just not have reached it yet. Check this to score it anyway.">ⓘ</span>
+          </label>
+          <span class="inline-flex items-center gap-1">
+            Min neighbor count
+            <input type="number" id="cfg-min-neighbors" class="base-input" style="width:4rem" min="1">
+            <span class="info-icon" tabindex="0" data-tip="The fewest qualifying neighbors a work area needs before its neighborhood's rate is trusted for cluster detection.">ⓘ</span>
+            <span class="info-icon evc-min-neighbors-note hidden" tabindex="0" data-tip="Only used under Cluster-aware.">ⓘ</span>
+          </span>
+        </td>
+      </tr>`;
+    }
+    if (def.key === 'ncf_inaccessible_rate') {
+      return `<tr class="ind-subrow bg-gray-50 text-xs border-b border-gray-50" data-key="ncf_inaccessible_rate_settings">
+        <td class="py-1 pl-8 pr-2 text-gray-600" colspan="5">
+          <span class="inline-flex items-center gap-1 mr-4">
+            Min building count
+            <input type="number" id="cfg-min-buildings" class="base-input" style="width:4rem" min="0">
+            <span class="info-icon" tabindex="0" data-tip="The fewest real buildings a work area needs before an NCF or Inaccessible result there is treated as meaningful.">ⓘ</span>
+          </span>
+          <span class="inline-flex items-center gap-1">
+            Min affected neighbors (NCF)
+            <input type="number" id="cfg-min-affected-neighbors-ncf" class="base-input" style="width:4rem" min="0">
+            <span class="info-icon" tabindex="0" data-tip="Cluster-aware only: a work area can only ever log ONE NCF-or-Inaccessible visit, so instead of averaging a rate across neighbors, this counts how many spatially-nearby work areas were ALSO affected. At least this many must be affected to corroborate.">ⓘ</span>
+            <span class="info-icon ncf-min-affected-note hidden" tabindex="0" data-tip="Only used under Cluster-aware.">ⓘ</span>
+          </span>
+        </td>
+      </tr>`;
+    }
+    return '';
+  }
+
   function renderIndicatorRows() {
     const tb = $('indicator-rows');
     tb.innerHTML = indicatorDefs
@@ -55,7 +100,7 @@ window.MopupAnalysis = (function () {
           threshold: 0.5,
           granularity: 'cluster_aware',
         };
-        return `<tr class="border-b border-gray-50" data-key="${def.key}">
+        const row = `<tr class="border-b border-gray-50" data-key="${def.key}">
           <td class="py-2 pr-2"><input type="checkbox" class="ind-enabled" ${
             cfg.enabled ? 'checked' : ''
           }></td>
@@ -88,32 +133,57 @@ window.MopupAnalysis = (function () {
           </td>
           <td class="py-2 pr-2 ind-trigger-count">—</td>
         </tr>`;
+        return row + indicatorSettingsRowHtml(def);
       })
       .join('');
-    updateNcfThresholdState();
+    updateInlineSettingsState();
   }
 
-  // Cluster-aware NCF/inaccessible compares a raw affected-neighbor COUNT
-  // (against "Min affected neighbors (NCF)") rather than this indicator's own
-  // Threshold value, which has no effect in that mode — grey the Threshold
-  // input out with an explanatory tooltip so it doesn't look like a live
-  // control that's silently ignored.
-  function updateNcfThresholdState() {
-    const row = document.querySelector(
+  // Some inline settings only apply under one Comparison scope, per
+  // indicator — greyed out with a visible tooltip otherwise (never just a
+  // native `title`, which needs a ~1s hover dwell and is easy to miss
+  // entirely; the whole reason the .info-icon tooltip exists on this page).
+  function updateInlineSettingsState() {
+    const ncfRow = document.querySelector(
       '#indicator-rows tr[data-key="ncf_inaccessible_rate"]',
     );
-    if (!row) return;
-    const thresholdInput = row.querySelector('.ind-threshold');
-    const note = row.querySelector('.ncf-threshold-note');
-    const granularitySelect = row.querySelector('.ind-granularity');
-    const isClusterAware = granularitySelect.value === 'cluster_aware';
-    thresholdInput.disabled = isClusterAware;
-    thresholdInput.classList.toggle('opacity-40', isClusterAware);
-    // A native `title` attribute needs a ~1s hover dwell and is easy to miss
-    // entirely — real testing this session already flagged that pattern as
-    // invisible (see analysis.html's .info-icon comment). Use the same
-    // always-hoverable tooltip everything else on this page uses instead.
-    if (note) note.classList.toggle('hidden', !isClusterAware);
+    if (ncfRow) {
+      const isClusterAware =
+        ncfRow.querySelector('.ind-granularity').value === 'cluster_aware';
+      const thresholdInput = ncfRow.querySelector('.ind-threshold');
+      const thresholdNote = ncfRow.querySelector('.ncf-threshold-note');
+      thresholdInput.disabled = isClusterAware;
+      thresholdInput.classList.toggle('opacity-40', isClusterAware);
+      if (thresholdNote)
+        thresholdNote.classList.toggle('hidden', !isClusterAware);
+
+      const minAffectedInput = $('cfg-min-affected-neighbors-ncf');
+      const minAffectedNote = document.querySelector('.ncf-min-affected-note');
+      if (minAffectedInput) {
+        minAffectedInput.disabled = !isClusterAware;
+        minAffectedInput.classList.toggle('opacity-40', !isClusterAware);
+      }
+      if (minAffectedNote)
+        minAffectedNote.classList.toggle('hidden', isClusterAware);
+    }
+
+    const evcRow = document.querySelector(
+      '#indicator-rows tr[data-key="evc_shortfall"]',
+    );
+    if (evcRow) {
+      const isClusterAware =
+        evcRow.querySelector('.ind-granularity').value === 'cluster_aware';
+      const minNeighborsInput = $('cfg-min-neighbors');
+      const minNeighborsNote = document.querySelector(
+        '.evc-min-neighbors-note',
+      );
+      if (minNeighborsInput) {
+        minNeighborsInput.disabled = !isClusterAware;
+        minNeighborsInput.classList.toggle('opacity-40', !isClusterAware);
+      }
+      if (minNeighborsNote)
+        minNeighborsNote.classList.toggle('hidden', isClusterAware);
+    }
   }
 
   function renderIndicatorCounts(counts) {
@@ -690,7 +760,7 @@ window.MopupAnalysis = (function () {
     renderGlobalConfig();
     $('indicator-rows').addEventListener('change', (e) => {
       if (e.target.classList.contains('ind-granularity'))
-        updateNcfThresholdState();
+        updateInlineSettingsState();
     });
     $('recompute').addEventListener('click', pollOrEvaluate);
     $('loading-retry').addEventListener('click', retryLoad);
