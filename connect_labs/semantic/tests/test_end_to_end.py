@@ -68,6 +68,7 @@ ENTITY_SCHEMA = {
             "transform": "kg_to_g",
             "aggregation": "first",
         },
+        {"name": "gestational_age_wks", "paths": ["form.ga_wks"], "transform": "float", "aggregation": "first"},
         {"name": "days_discharge_to_reg", "paths": ["form.days_to_reg"], "transform": "float", "aggregation": "first"},
         {
             "name": "death_visits",
@@ -168,6 +169,7 @@ def visit_cache(db):
                         "weight": str(wkg),
                         "birth_weight": "1.5",
                         "enrol_weight": "1.5",
+                        "ga_wks": "34",
                         "reg_date": date,
                         "discharge_date": date,
                         "days_to_reg": "1",

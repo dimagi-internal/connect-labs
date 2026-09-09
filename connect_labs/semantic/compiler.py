@@ -450,8 +450,17 @@ def _build_ctes(
     compiled = compile_measures(registry)
     llo_col = f",\n           {_llo_case_sql(llo_map)} AS llo" if llo_map else ""
 
-    ctes = f"""WITH visits AS (
+    ctes = f"""WITH visits_all AS (
 {visit_sql}
+),
+visits AS (
+    -- AS-OF: nothing after the report date exists. Every maturity gate already
+    -- measures against :as_of, but the visit SET still ran to today -- so a run
+    -- for a past week counted visits that had not happened yet, and "as of
+    -- 6 Sep" quietly meant "eligibility as of 6 Sep, activity as of now".
+    -- `< date + 1` keeps the whole of the as-of day, midnight included.
+    SELECT * FROM visits_all
+    WHERE visit_date < ((({as_of}))::date + 1)::timestamp
 ),
 weight_days AS (
     -- The baby key is (opportunity, case), NOT the case id alone. 829 case ids in

@@ -62,6 +62,8 @@ aggregates:
     sql: 'MIN(birth_weight_g) FILTER (WHERE birth_weight_g IS NOT NULL)'
   - name: enrollment_weight_g
     sql: 'MIN(enrollment_weight_g) FILTER (WHERE enrollment_weight_g IS NOT NULL)'
+  - name: gestational_age_wks
+    sql: 'MIN(gestational_age_wks) FILTER (WHERE gestational_age_wks IS NOT NULL)'
   - name: days_discharge_to_reg
     sql: 'MIN(days_discharge_to_reg) FILTER (WHERE days_discharge_to_reg IS NOT NULL)'
   # The RAW discharge date, which Layer 1 extracts and this stage used to drop.
@@ -245,6 +247,12 @@ properties:
     sql: 'days_to_enrolment IS NOT NULL'
     notes: 'The denominator condition for the within-3-days metric.'
 
+  - name: gestational_age_plausible
+    sql: 'CASE WHEN gestational_age_wks BETWEEN :GA_MIN AND :GA_MAX THEN gestational_age_wks END'
+    notes: >-
+      Gestational age at birth in weeks, null outside the plausible window (spec
+      section 2: 20-45). N05 takes its median. Layer 1 has carried the raw column
+      since the pipeline migration; the metric had no input before that.
   - name: birthweight_band
     type: categorical
     sql: >-

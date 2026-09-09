@@ -347,7 +347,7 @@ def test_filtering_to_a_series_keeps_the_availability_gates():
     all_gates = {m["name"] for m in reg["measures"] if m.get("gate")}
     assert all_gates, "the registry must mark its gates explicitly, not by name prefix"
 
-    for series, expected_indicators in (("C", 22), ("N", 14)):
+    for series, expected_indicators in (("C", 22), ("N", 15)):
         kept = filter_to_series(reg, series)
         names = {m["name"] for m in kept["measures"]}
         assert all_gates <= names, f"series={series} dropped gates: {sorted(all_gates - names)}"

@@ -28,6 +28,7 @@ spec instead.
 from __future__ import annotations
 
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -90,23 +91,39 @@ def semantic_snapshot(
         ),
     )
 
-    series = spec.get("series") or "C"
+    # `series` is one family or several. The FIRST is the primary -- it drives
+    # programInd / byLLO / byOpp / byFLW / the trend -- and every further one is
+    # graded from the SAME rows into `payload.series[<name>]`, so a template can
+    # carry its headline registry and a scorecard registry from one evaluation.
+    declared = spec.get("series") or "C"
+    series_list = [str(x).upper() for x in (declared if isinstance(declared, list) else [declared])]
+    primary = series_list[0]
+
+    # AS OF the run's period end. Every maturity gate and, since the compiler
+    # change that came with this, the visit set itself are cut at that date -- so
+    # a run saved for a past week reports that week, not the day it was saved.
+    as_of_date = as_of_iso(context.get("period_end"))
+    as_of = f"DATE '{as_of_date}'" if as_of_date else "CURRENT_DATE"
+
     # ONE pass over every scope a saved run can drill to. GROUPING SETS exist
-    # precisely because per-scope calls re-run the whole Layer 1 extraction.
+    # precisely because per-scope calls re-run the whole Layer 1 extraction, and
+    # evaluating with no series filter returns every family in that one pass.
     scopes = list(spec.get("scopes") or ["programme"])
     rows = evaluate(
         pipeline_config,
         opportunity_ids,
         extra_fields=extra_fields,
         registry_documents=(props_doc, full_registry),
-        series=series,
+        series=primary if len(series_list) == 1 else None,
         scopes=scopes,
         scope=scopes[0],
+        as_of=as_of,
         llo_map=llo_map or None,
         settings=reg_settings or None,
     )
 
-    measures = measure_catalog(filter_to_series(full_registry, series))
+    measures = measure_catalog(filter_to_series(full_registry, primary))
+    extra_series = {name: measure_catalog(filter_to_series(full_registry, name)) for name in series_list[1:]}
     cases = snap.case_rows(pipelines, spec, {int(k): v for k, v in (llo_map or {}).items()})
     visits_alias = spec.get("visits_pipeline")
     visits = ((pipelines or {}).get(visits_alias) or {}).get("rows") or [] if visits_alias else []
@@ -116,6 +133,8 @@ def semantic_snapshot(
         "visits": len(visits),
         "opportunities": len(opportunity_ids),
         "llos": len({c.get("llo") for c in cases if c.get("llo")}),
+        # The date every figure is AS OF. None means "the day it was built".
+        "as_of": as_of_date,
     }
     synthetic = _is_synthetic(opportunity_ids)
     if synthetic is not None:
@@ -126,9 +145,33 @@ def semantic_snapshot(
         meta["synthetic"] = synthetic
 
     payload = snap.build(
-        spec=spec, rows=rows, measures=measures, deployment=deployment, cases=cases, meta=meta, visit_rows=visits
+        spec=spec,
+        rows=rows,
+        measures=measures,
+        deployment=deployment,
+        cases=cases,
+        meta=meta,
+        visit_rows=visits,
+        extra_series=extra_series,
     )
     return wrap_for_runner(payload, spec.get("state_key"))
+
+
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+
+
+def as_of_iso(period_end) -> str | None:
+    """The ISO date a run reports AS OF, or None for "today".
+
+    Accepts a date, a datetime, or their ISO strings, and returns only the
+    `YYYY-MM-DD` prefix -- the value is spliced into SQL as a `DATE '...'`
+    literal, so anything that is not exactly a date is refused rather than
+    passed through.
+    """
+    if not period_end:
+        return None
+    s = str(period_end)[:10]
+    return s if _ISO_DATE.match(s) else None
 
 
 def wrap_for_runner(payload: dict, state_key: str | None = None) -> dict:

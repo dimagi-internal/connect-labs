@@ -616,157 +616,6 @@ function WorkflowUI({
       });
   }
 
-  // ══ N-series (Neal's demo compute spec), served by the semantic layer ══════
-  // Everything else on this screen is computed in the browser from pipeline rows.
-  // These come from SQL: the registry compiles to one GROUPING SETS query and runs
-  // server-side, which is the only version where the scopes below cost one pass
-  // instead of three. Fetched ON DEMAND rather than with the page -- it is a real
-  // query against the visit cache, and the other tabs must not pay for it.
-  // A snapshot run serves the N-series from its own snapshot. Every OTHER tab on
-  // this screen already loads from `state.snapshot` and is instant; this one was
-  // the sole holdout, re-querying the semantic endpoint every time. That made it
-  // the only part of a supposedly-snapshot dashboard that could still go wrong --
-  // and it did: production expires cached visits after an hour, so a snapshot
-  // that "cannot move" sat next to a live tab reading 608 of 8,718 cases.
-  // A snapshot is the right place for this. The rows are ~245 KB for 253 rows,
-  // comfortably inside the framework's 5 MB cap.
-  var sN = React.useState(
-    snapshot && snapshot.nSeries
-      ? {
-          status: 'ready',
-          rows: snapshot.nSeries.rows || [],
-          measures: snapshot.nSeries.measures || [],
-          opportunity_ids: snapshot.nSeries.opportunity_ids || [],
-          fromSnapshot: true,
-        }
-      : { status: 'idle', rows: [], measures: [] },
-  );
-  var nSeries = sN[0],
-    setNSeries = sN[1];
-
-  // The DEFINITION id, which is NOT the run id. `definition.id` is not populated in
-  // this render context -- measured live: the panel rendered, fetched nothing, and
-  // reported "no workflow id" -- and instance.id is the RUN. The path carries it, so
-  // fall through to that rather than guessing at another prop shape.
-  // The labs context middleware REDIRECTS an api request that carries no
-  // opportunity_id, substituting whatever opp the session last used. fetch()
-  // follows that 302 transparently, so the render got a 200 whose body was the
-  // wrong page: `data.rows` undefined, every indicator an em-dash, and no error
-  // anywhere saying why. The framework's own pipeline-data/stream call has always
-  // passed it; these did not.
-  //
-  // Read from the page URL -- the same place nWorkflowId() reads the definition id
-  // from -- so a request is scoped to the opp you are looking at, not to session
-  // state.
-  function oppParam() {
-    var m = String(window.location.search).match(/[?&]opportunity_id=(\d+)/);
-    if (m) return '&opportunity_id=' + m[1];
-    if (instance && instance.opportunity_id)
-      return '&opportunity_id=' + instance.opportunity_id;
-    return '';
-  }
-
-  function nWorkflowId() {
-    if (definition && definition.id) return definition.id;
-    if (instance && instance.definition_id) return instance.definition_id;
-    var m = String(window.location.pathname).match(/\/workflow\/(\d+)\//);
-    return m ? m[1] : null;
-  }
-
-  function loadNSeries() {
-    var wfId = nWorkflowId();
-    if (!wfId) {
-      setNSeries({
-        status: 'error',
-        rows: [],
-        measures: [],
-        error: 'could not determine the workflow id from the page',
-      });
-      return;
-    }
-    setNSeries({ status: 'loading', rows: [], measures: [] });
-    fetch(
-      '/labs/workflow/api/' +
-        wfId +
-        '/semantic/?series=N&scopes=programme,opportunity,flw' +
-        oppParam(),
-    )
-      .then(function (res) {
-        return res.json();
-      })
-      .then(function (data) {
-        if (data.error) {
-          // The message names the missing column or relation -- show it rather
-          // than a generic failure, which is the whole reason it is a 400.
-          setNSeries({
-            status: 'error',
-            rows: [],
-            measures: [],
-            error: data.error,
-          });
-          return;
-        }
-        setNSeries({
-          status: 'ready',
-          rows: data.rows || [],
-          measures: data.measures || [],
-          // Carried so the snapshot can keep it: the card footer counts the
-          // opportunities from here, and a snapshot run has no response to read.
-          opportunity_ids: data.opportunity_ids || [],
-          coldCache: data.cold_cache || false,
-          partialCache: data.partial_cache || false,
-          coldHint: data.cold_cache_hint || '',
-        });
-      })
-      .catch(function (err) {
-        setNSeries({
-          status: 'error',
-          rows: [],
-          measures: [],
-          error: String((err && err.message) || err),
-        });
-      });
-  }
-
-  // The measure catalog now arrives WITH the rows, from the same YAML that produced
-  // the numbers — so a band cannot drift from the measure it grades. The C-series
-  // above keeps a hand-maintained copy of its own registry in this file; that
-  // duplication is the thing the semantic layer exists to end, and repeating it here
-  // would have been the same mistake with a newer date on it.
-  function nBandOf(m, value) {
-    if (value === null || value === undefined || isNaN(Number(value)))
-      return 'nodata';
-    if (!m.bands) return 'unbanded';
-    var x = Number(value),
-      b = m.bands;
-    if (m.direction === 'higher')
-      return x >= b[0] ? 'green' : x >= b[1] ? 'yellow' : 'red';
-    if (m.direction === 'lower')
-      return x <= b[0] ? 'green' : x <= b[1] ? 'yellow' : 'red';
-    if (m.direction === 'mid2') {
-      // Two-sided: green inside the inner range, yellow inside the outer, red
-      // beyond EITHER end. Guard the shape -- a one-dimensional band here would
-      // silently read as unbanded, which is the single outcome a two-sided
-      // mortality band exists to prevent (the spec: under ~2% means deaths are
-      // not being recorded, not that babies are surviving).
-      if (!b || !b.length || !b[0] || b[0].length !== 2) return 'unbanded';
-      if (x >= b[0][0] && x <= b[0][1]) return 'green';
-      if (b[1] && b[1].length === 2 && x >= b[1][0] && x <= b[1][1])
-        return 'yellow';
-      return 'red';
-    }
-    return 'unbanded';
-  }
-
-  var N_BAND_CLASS = {
-    green: 'bg-green-100 text-green-800',
-    yellow: 'bg-amber-100 text-amber-800',
-    red: 'bg-red-100 text-red-800',
-    unbanded: 'bg-gray-100 text-gray-500',
-    nodata: 'bg-gray-50 text-gray-400',
-    insufficient: 'bg-gray-100 text-gray-500',
-  };
-
   // Counts in a published report carry thousands separators; 37853 reads as a
   // typo next to 37,853.
   function nCount(value) {
@@ -774,30 +623,6 @@ function WorkflowUI({
     var num = Number(value);
     if (isNaN(num)) return String(value);
     return Math.round(num).toLocaleString('en-US');
-  }
-
-  function nFmt(value, unit) {
-    if (value === null || value === undefined) return 'n/a';
-    var num = Number(value);
-    if (isNaN(num)) return String(value);
-    if (unit === '%') return num.toFixed(1) + '%';
-    if (unit === 'g') return nCount(num) + ' g';
-    // Counts read as counts; a mean keeps its decimal.
-    if (unit === 'n' && Math.abs(num) >= 1000 && Math.round(num) === num)
-      return nCount(num);
-    return Math.round(num * 10) / 10;
-  }
-
-  // A value below its minimum denominator reads "insufficient volume", never a
-  // number — the spec's rule 0.2, and the reason every measure ships a denominator.
-  function nCell(m, row) {
-    var v = row[m.id],
-      den = row[m.id + '_denominator'];
-    var minDen = m.min_denominator || 0;
-    if (den !== null && den !== undefined && minDen && Number(den) < minDen) {
-      return { text: 'n<' + minDen, band: 'insufficient', den: den };
-    }
-    return { text: nFmt(v, m.unit), band: nBandOf(m, v), den: den };
   }
 
   // ── Roll-ups, straight off the payload ─────────────────────────────────────
@@ -816,6 +641,106 @@ function WorkflowUI({
     llos: [],
     of: 0,
   };
+
+  // ── Neal's scorecard ───────────────────────────────────────────────────────
+  // His compute spec's §5 table, column for column, from the N series the builder
+  // grades alongside the headline C series. `Qual N` is the shared denominator of
+  // the four growth-quality columns, which the spec prints as its own column.
+  var SC = (P.series && P.series.N) || null;
+  var SCORECARD = [
+    { id: 'N01', label: 'Total', title: 'Total cases' },
+    { id: 'N02', label: 'Reg', title: 'Registered (C01)' },
+    { id: 'N03', label: 'Started', title: 'Started (C02)' },
+    { id: 'N05', label: 'Med GA', title: 'Median gestational age, weeks' },
+    { id: 'N06', label: 'Med BW', title: 'Median birthweight, g' },
+    { id: 'N07', label: 'Visits/case', title: 'Mean visits per case (C24)' },
+    {
+      id: 'N08',
+      label: '%1st\u22643d',
+      title: '% first visit within 3 days of discharge (C16)',
+    },
+    {
+      id: 'N09',
+      label: 'Qual N',
+      title:
+        'Qualifying SVNs \u2014 the shared denominator of the four growth-quality columns',
+      denOnly: true,
+    },
+    { id: 'N09', label: '%slow', title: '% slow growth, of qualifying SVNs' },
+    {
+      id: 'N10',
+      label: '%healthy',
+      title: '% healthy growth, of qualifying SVNs',
+    },
+    { id: 'N11', label: '%fast', title: '% fast growth, of qualifying SVNs' },
+    {
+      id: 'N12',
+      label: '%incompl',
+      title: '% incomplete growth data, of qualifying SVNs',
+    },
+    {
+      id: 'N13',
+      label: 'Mortality',
+      title:
+        'Mortality (C14) \u2014 shown only where death recording is credible',
+    },
+    { id: 'N14', label: 'Round%', title: 'Weight rounding rate (C31)' },
+    { id: 'N15', label: '%imposs', title: '% impossible weight changes (C27)' },
+  ];
+  var N_BY_ID = React.useMemo(
+    function () {
+      var m = {};
+      ((SC && SC.measures) || []).forEach(function (x) {
+        m[x.indicator] = x;
+      });
+      return m;
+    },
+    [payload],
+  );
+  var nByFLW = React.useMemo(
+    function () {
+      var m = {};
+      ((SC && SC.byFLW) || []).forEach(function (f) {
+        m[f.key] = f;
+      });
+      return m;
+    },
+    [payload],
+  );
+  function scoreCell(c, ind) {
+    var e = ind && ind[c.id];
+    if (!e) return '\u2014';
+    if (c.denOnly) return e.n ? nCount(e.n) : '\u2014';
+    var m = N_BY_ID[c.id] || {};
+    if (e.band === 'insufficient')
+      return (
+        <span className="text-gray-400">
+          n&lt;{m.min_denominator || MIN_DEN}
+        </span>
+      );
+    if (e.value === null || e.value === undefined) return '\u2014';
+    var v = Number(e.value);
+    var text =
+      m.unit === '%'
+        ? (100 * v).toFixed(1) + '%'
+        : m.unit === 'g'
+        ? nCount(v)
+        : m.unit === 'wks'
+        ? String(Math.round(v * 10) / 10)
+        : c.id === 'N07'
+        ? v.toFixed(1)
+        : nCount(v);
+    if (e.band === 'notcredible')
+      return (
+        <span
+          className="text-slate-400"
+          title="Death recording is not credible for this organisation"
+        >
+          {text}
+        </span>
+      );
+    return text;
+  }
 
   // Per-worker roll-up. The payload stores each worker's cases as POSITIONS into
   // the case index -- holding the records in both places stored every case twice
@@ -1487,13 +1412,11 @@ function WorkflowUI({
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            Cohorted on each baby&rsquo;s REGISTRATION DATE, falling back to
-            first visit only where a row has none &mdash; this is C03, computed
-            rather than proxied now that the clone carries the form&rsquo;s
-            hidden calculated fields. Each month&rsquo;s quality and growth
-            figures describe the babies who ENTERED that month. A gap in a line
-            is a month with too few cases to score, not a zero. Dashed line =
-            target.
+            Cohorted on each baby&rsquo;s registration date, falling back to
+            first visit where none is recorded. Each month&rsquo;s quality and
+            growth figures describe the babies who entered that month. A gap in
+            a line is a month with too few cases to score, not a zero. Dashed
+            line = target.
           </p>
         </div>
 
@@ -1644,7 +1567,9 @@ function WorkflowUI({
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
           <span className="font-medium">
             Reporting period to{' '}
-            {view.asOf ? String(view.asOf).slice(0, 10) : ''}.
+            {(P.meta && P.meta.as_of) ||
+              (view.asOf ? String(view.asOf).slice(0, 10) : '')}
+            .
           </span>{' '}
           {nCount((snapshot.meta || {}).cases)} cases and{' '}
           {nCount((snapshot.meta || {}).visits)} visits across{' '}
@@ -1695,7 +1620,6 @@ function WorkflowUI({
         {[
           ['indicators', 'Indicators'],
           ['trends', 'Monthly trend'],
-          ['nseries', 'Extended metrics'],
         ].map(function (t) {
           var on = tab === t[0];
           return (
@@ -1718,304 +1642,6 @@ function WorkflowUI({
       </div>
 
       {tab === 'trends' && <TrendView />}
-
-      {tab === 'nseries' && (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100">
-            <div className="font-medium text-gray-900">Extended metrics</div>
-            <div className="text-xs text-gray-500 mt-1">
-              Maturity gates are 28/42/90 days and the growth bands are
-              birth-weight-band specific, so these deliberately differ from the
-              Indicators tab where the specification differs.
-            </div>
-            <div className="mt-2 flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={loadNSeries}
-                disabled={nSeries.status === 'loading'}
-                className={
-                  'px-3 py-1.5 rounded text-sm font-medium ' +
-                  (nSeries.status === 'loading'
-                    ? 'bg-gray-200 text-gray-500'
-                    : 'bg-indigo-600 text-white hover:bg-indigo-700')
-                }
-              >
-                {nSeries.status === 'loading'
-                  ? 'Running the query…'
-                  : nSeries.status === 'ready'
-                  ? 'Re-run'
-                  : 'Run'}
-              </button>
-              {nSeries.status === 'ready' &&
-                [
-                  ['programme', 'Programme'],
-                  ['opportunity', 'By opportunity'],
-                  ['flw', 'By worker'],
-                ].map(function (sc) {
-                  var on = nScope === sc[0];
-                  return (
-                    <button
-                      key={sc[0]}
-                      type="button"
-                      onClick={function () {
-                        setNScope(sc[0]);
-                      }}
-                      className={
-                        'px-2.5 py-1 rounded text-xs ' +
-                        (on
-                          ? 'bg-indigo-100 text-indigo-800 font-medium'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
-                      }
-                    >
-                      {sc[1]}
-                    </button>
-                  );
-                })}
-            </div>
-          </div>
-
-          {nSeries.status === 'error' && (
-            <div className="px-4 py-3 text-sm text-red-700">
-              {nSeries.error}
-            </div>
-          )}
-
-          {/* Two different lies the numbers cannot tell you about themselves.
-              COLD: every count is zero, which reads as a programme with no
-              babies. PARTIAL is worse and was silent -- the total is a real
-              number computed over only the opportunities that happen to be
-              cached, so it looks entirely credible while understating the
-              cohort. Neither is visible in the figures. */}
-          {nSeries.status === 'ready' &&
-            (nSeries.coldCache || nSeries.partialCache) && (
-              <div className="px-4 py-3 text-sm bg-amber-50 text-amber-900 border-b border-amber-100">
-                <span className="font-medium">
-                  {nSeries.coldCache
-                    ? 'Every metric is zero because nothing is cached \u2014 not because the programme has no data.'
-                    : 'These totals cover only part of the cohort.'}
-                </span>{' '}
-                {nSeries.coldHint}
-              </div>
-            )}
-
-          {nSeries.status === 'ready' &&
-            (function () {
-              var measures = nSeries.measures.filter(function (m) {
-                return m.id && m.id.charAt(0) === 'n';
-              });
-              var rows = nSeries.rows.filter(function (r) {
-                return (r.scope || 'programme') === nScope;
-              });
-              if (!rows.length) {
-                return (
-                  <div className="px-4 py-3 text-sm text-gray-500">
-                    No rows at this scope.
-                  </div>
-                );
-              }
-              // One column per metric, one row per entity in the scope. At
-              // programme scope that is a single row, which reads as the topline.
-              // FLW usernames are only unique WITHIN an opportunity -- the synthetic
-              // cohort reuses flw_001.. across all eleven -- so the username alone
-              // puts two different people on two rows reading the same name, with
-              // nothing on screen to tell them apart. Measured live: flw_001
-              // appeared twice in the first seven rows. The rollup elsewhere in this
-              // file keys on opp+username for exactly this reason; the label has to
-              // carry the same context or the drill points at the wrong person.
-              var labelFor = function (r) {
-                if (nScope === 'opportunity') return oppLabel(r.opportunity_id);
-                if (nScope === 'flw')
-                  return (
-                    (r.username || '(unassigned)') +
-                    ' \u00b7 ' +
-                    oppLabel(r.opportunity_id)
-                  );
-                return 'All opportunities';
-              };
-
-              // At PROGRAMME scope there is exactly one row, and a 14-column table
-              // to show a single record puts all the weight on the header and none
-              // on the number -- measured live: the table clipped at the viewport
-              // edge with two thirds of the page empty below it. Cards give the
-              // topline the hierarchy it should have; the table stays for the
-              // scopes that genuinely have many rows.
-              if (nScope === 'programme') {
-                var pr = rows[0];
-                var counts = measures.filter(function (m) {
-                  return m.unit === 'n' && !m.bands;
-                });
-                var rest = measures.filter(function (m) {
-                  return !(m.unit === 'n' && !m.bands);
-                });
-                var TONE = {
-                  green: 'border-green-200 bg-green-50 text-green-900',
-                  yellow: 'border-amber-200 bg-amber-50 text-amber-900',
-                  red: 'border-red-200 bg-red-50 text-red-900',
-                  unbanded: 'border-gray-200 bg-white text-gray-900',
-                  nodata: 'border-gray-200 bg-gray-50 text-gray-400',
-                  insufficient: 'border-gray-200 bg-gray-50 text-gray-400',
-                };
-                var card = function (m, big) {
-                  var c = nCell(m, pr);
-                  var derived =
-                    m.bands_source &&
-                    m.bands_source.indexOf('PROVISIONAL') !== -1;
-                  return (
-                    <div
-                      key={m.id}
-                      className={
-                        'rounded-lg border p-3 ' +
-                        (TONE[c.band] || TONE.unbanded)
-                      }
-                      title={m.bands_source || 'no band defined'}
-                    >
-                      <div
-                        className={
-                          (big ? 'text-3xl' : 'text-2xl') +
-                          ' font-semibold leading-none'
-                        }
-                      >
-                        {c.text}
-                      </div>
-                      <div className="text-xs mt-1.5 leading-snug opacity-80">
-                        {m.title}
-                        {derived ? (
-                          <span
-                            className="text-amber-600"
-                            title="band derived, not stated by the spec"
-                          >
-                            {' *'}
-                          </span>
-                        ) : (
-                          ''
-                        )}
-                      </div>
-                      <div className="text-[11px] mt-1 opacity-50">
-                        {c.den === null || c.den === undefined
-                          ? '\u2014'
-                          : 'n = ' + nCount(c.den)}
-                      </div>
-                    </div>
-                  );
-                };
-                return (
-                  <div className="p-4">
-                    <div className="grid grid-cols-4 gap-3 mb-3">
-                      {counts.map(function (m) {
-                        return card(m, true);
-                      })}
-                    </div>
-                    <div className="grid grid-cols-5 gap-3">
-                      {rest.map(function (m) {
-                        return card(m, false);
-                      })}
-                    </div>
-                    <div className="mt-4 text-xs text-gray-400">
-                      Across {pr.n_cases} cases in{' '}
-                      {(nSeries.opportunity_ids || []).length || 11}{' '}
-                      opportunities. Hover a card for where its band came from.{' '}
-                      <span className="text-amber-600">*</span> marks a band
-                      DERIVED from the workbook or from the spec's own
-                      expected-answers table rather than stated by the spec.
-                    </div>
-                  </div>
-                );
-              }
-              return (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-xs">
-                    <thead className="bg-gray-50 text-gray-500">
-                      <tr>
-                        <th className="px-3 py-2 text-left sticky left-0 bg-gray-50">
-                          {nScope === 'flw'
-                            ? 'Worker'
-                            : nScope === 'opportunity'
-                            ? 'Opportunity'
-                            : 'Scope'}
-                        </th>
-                        <th className="px-2 py-2 text-right">Cases</th>
-                        {measures.map(function (m) {
-                          return (
-                            <th
-                              key={m.id}
-                              className="px-2 py-2 text-right whitespace-nowrap"
-                              title={
-                                (m.bands_source || 'no band defined') +
-                                (m.min_denominator
-                                  ? ' · min n ' + m.min_denominator
-                                  : '')
-                              }
-                            >
-                              {m.title}
-                              {m.bands_source &&
-                              m.bands_source.indexOf('PROVISIONAL') !== -1 ? (
-                                <span
-                                  className="text-amber-600"
-                                  title="band is derived, not stated by the spec"
-                                >
-                                  {' *'}
-                                </span>
-                              ) : (
-                                ''
-                              )}
-                            </th>
-                          );
-                        })}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map(function (r, ri) {
-                        return (
-                          <tr key={ri} className="border-t border-gray-100">
-                            <td className="px-3 py-2 font-medium text-gray-900 sticky left-0 bg-white">
-                              {labelFor(r)}
-                            </td>
-                            <td className="px-2 py-2 text-right text-gray-500">
-                              {r.n_cases}
-                            </td>
-                            {measures.map(function (m) {
-                              var c = nCell(m, r);
-                              return (
-                                <td key={m.id} className="px-2 py-2 text-right">
-                                  <span
-                                    className={
-                                      'inline-block px-1.5 py-0.5 rounded ' +
-                                      (N_BAND_CLASS[c.band] ||
-                                        N_BAND_CLASS.unbanded)
-                                    }
-                                    title={
-                                      c.den === null || c.den === undefined
-                                        ? 'no denominator'
-                                        : 'n = ' + nCount(c.den)
-                                    }
-                                  >
-                                    {c.text}
-                                  </span>
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
-                    <span className="text-gray-500">
-                      {rows.length} row{rows.length === 1 ? '' : 's'} · scroll
-                      sideways for the rest of the {measures.length} metrics
-                      &rarr;
-                    </span>{' '}
-                    Hover a value for its denominator, or a column for where its
-                    band came from. <span className="text-amber-600">*</span>{' '}
-                    marks a band DERIVED from the workbook or from the spec's
-                    own expected-answers table rather than stated by the spec —
-                    those are the ones worth replacing with real ranges.
-                  </div>
-                </div>
-              );
-            })()}
-        </div>
-      )}
 
       {tab === 'indicators' && (
         <>
@@ -2158,6 +1784,79 @@ function WorkflowUI({
                   </div>
                 </div>
               </div>
+
+              {SC && (
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
+                    Programme scorecard{' '}
+                    <span className="text-xs font-normal text-gray-400 ml-2">
+                      15 headline metrics by organisation
+                      {P.meta && P.meta.as_of
+                        ? ' \u00b7 as of ' + P.meta.as_of
+                        : ''}
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-50 text-gray-500">
+                        <tr>
+                          <th className="px-3 py-2 text-left">LLO</th>
+                          {SCORECARD.map(function (c, i) {
+                            return (
+                              <th
+                                key={i}
+                                className="px-2 py-2 text-right whitespace-nowrap"
+                                title={c.title}
+                              >
+                                {c.label}
+                                <div className="text-[10px] font-normal text-gray-400">
+                                  {c.id}
+                                </div>
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(SC.byLLO || []).map(function (r) {
+                          return (
+                            <tr
+                              key={r.llo}
+                              className="border-t border-gray-100"
+                            >
+                              <td className="px-3 py-2 font-medium text-gray-900">
+                                {r.llo}
+                              </td>
+                              {SCORECARD.map(function (c, i) {
+                                return (
+                                  <td key={i} className="px-2 py-2 text-right">
+                                    {scoreCell(c, r.ind)}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                        <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+                          <td className="px-3 py-2">Programme</td>
+                          {SCORECARD.map(function (c, i) {
+                            return (
+                              <td key={i} className="px-2 py-2 text-right">
+                                {scoreCell(c, SC.programme)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
+                    %slow + %healthy + %fast + %incompl = 100 per row. n&lt;20 =
+                    below the minimum denominator. Hover a column for its
+                    definition.
+                  </div>
+                </div>
+              )}
 
               <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
@@ -2462,6 +2161,24 @@ function WorkflowUI({
                                 C31
                               </div>
                             </th>
+                            <th
+                              className="px-3 py-2 text-right"
+                              title="Mean visits per case (scorecard)"
+                            >
+                              Visits/case
+                              <div className="text-[10px] font-normal text-gray-400">
+                                N07
+                              </div>
+                            </th>
+                            <th
+                              className="px-3 py-2 text-right"
+                              title="% impossible weight changes (scorecard)"
+                            >
+                              %imposs
+                              <div className="text-[10px] font-normal text-gray-400">
+                                N15
+                              </div>
+                            </th>
                             <th className="px-3 py-2 text-right">Red</th>
                           </tr>
                         </thead>
@@ -2511,6 +2228,18 @@ function WorkflowUI({
                                   </td>
                                   <td className="px-3 py-2 text-right">
                                     {cell('C31')}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    {scoreCell(
+                                      SCORECARD[5],
+                                      (nByFLW[f.key] || {}).ind,
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    {scoreCell(
+                                      SCORECARD[14],
+                                      (nByFLW[f.key] || {}).ind,
+                                    )}
                                   </td>
                                   <td className="px-3 py-2 text-right">
                                     {f.reds ? (

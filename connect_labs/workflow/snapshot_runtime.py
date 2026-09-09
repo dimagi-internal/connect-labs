@@ -168,6 +168,11 @@ def build_snapshot_for_run(
             access_token=getattr(data_access, "access_token", None),
             program_id=program_id,
             run_id=run.id,
+            # The run's own window. A builder that evaluates AS OF a date reads
+            # `period_end`; without it a weekly run saved on Tuesday computed
+            # "as of Tuesday" and called it last week's figures.
+            period_start=run.period_start,
+            period_end=run.period_end,
         )
     except SnapshotStateNotStagedError as e:
         # The run stays in_progress, which is the whole point: an empty snapshot

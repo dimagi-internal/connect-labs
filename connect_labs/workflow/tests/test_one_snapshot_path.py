@@ -142,3 +142,53 @@ class TestBothSurfacesUseIt:
         for gone in ("function cEntry(", "function cPooled(", "function monthlyFor(", "function buildSnapshot("):
             assert gone not in src, f"the render still carries {gone.strip('(')} -- a second grader"
         assert "/snapshot/preview/" in src, "the render does not fetch the preview payload"
+
+
+class TestTheRunsPeriodReachesTheBuilder:
+    """A builder that evaluates AS OF a date reads `period_end` from its context.
+    Without it, a weekly run saved on Tuesday computed "as of Tuesday" and called
+    it last week's figures -- with no error anywhere, because the default is today."""
+
+    def test_period_travels_in_the_builder_context(self, declarative_definition, monkeypatch):
+        import datetime as dt
+
+        import connect_labs.workflow.templates as templates
+
+        seen = {}
+
+        def fake_build(contract, **kw):
+            seen.update(kw)
+            return {"state": {}}
+
+        monkeypatch.setattr(templates, "build_snapshot_for_contract", fake_build)
+        run = _Run()
+        run.period_start = dt.date(2026, 8, 31)
+        run.period_end = dt.date(2026, 9, 6)
+        build_snapshot_for_run(_DAO(declarative_definition), run)
+        assert seen["period_end"] == dt.date(2026, 9, 6)
+        assert seen["period_start"] == dt.date(2026, 8, 31)
+
+
+class TestAsOfIsADateOrNothing:
+    """`as_of` is spliced into SQL as a DATE literal, so only a date may pass."""
+
+    def test_accepts_date_datetime_and_iso_strings(self):
+        import datetime as dt
+
+        from connect_labs.workflow.snapshot_builders import as_of_iso
+
+        assert as_of_iso(dt.date(2026, 9, 6)) == "2026-09-06"
+        assert as_of_iso(dt.datetime(2026, 9, 6, 23, 59)) == "2026-09-06"
+        assert as_of_iso("2026-09-06T00:00:00+00:00") == "2026-09-06"
+
+    def test_nothing_means_today(self):
+        from connect_labs.workflow.snapshot_builders import as_of_iso
+
+        assert as_of_iso(None) is None
+        assert as_of_iso("") is None
+
+    def test_anything_else_is_refused_not_passed_through(self):
+        from connect_labs.workflow.snapshot_builders import as_of_iso
+
+        assert as_of_iso("'; DROP TABLE x; --") is None
+        assert as_of_iso("Sept 6") is None

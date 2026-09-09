@@ -117,7 +117,7 @@ def test_number_measures_inline_their_siblings(registry):
 def test_compiles_for_every_intrinsic_scope(props_doc, registry):
     for scope in ("programme", "opportunity", "flw", "month"):
         sql = compile_indicator_sql(props_doc, registry, "SELECT 1", scope=scope)
-        assert "WITH visits AS" in sql
+        assert "WITH visits_all AS" in sql
         assert "{CUBE}" not in sql  # no unresolved placeholders
         assert ":ELIG_DAYS" not in sql  # constants substituted
 
@@ -175,37 +175,18 @@ def test_unknown_scope_is_loud(props_doc, registry):
 
 
 def test_the_N_series_is_nreal_lesh_demo_spec_exactly(registry):
-    """Neal's demo compute spec (2026-09-05), pinned as its own set.
+    """Neal's demo compute spec (2026-09-05), pinned as its own set: all fifteen.
 
-    N05 (median gestational age) is deliberately ABSENT: it needs a Layer 1 field the
-    pipeline has never extracted (gestational_age_at_birth_lmp), which is added to the
-    pipeline template in the same change but only reaches the data on the next
-    extraction. Declaring a measure over a column that does not exist compiles cleanly
-    and fails at execution — the exact class test_every_declared_scope_actually_executes
-    exists to catch — so it lands with the pipeline migration rather than before it.
+    N05 (median gestational age) was held back until Layer 1 carried its column
+    (`gestational_age_wks`, from gestational_age_at_birth_lmp); the pipeline has it
+    now, so the scorecard is complete.
     """
     ids = {
         m["meta"]["indicator"]
         for m in registry["measures"]
         if m.get("meta") and str(m["meta"]["indicator"]).startswith("N")
     }
-    assert ids == {
-        "N01",
-        "N02",
-        "N03",
-        "N04",
-        "N06",
-        "N07",
-        "N08",
-        "N09",
-        "N10",
-        "N11",
-        "N12",
-        "N13",
-        "N14",
-        "N15",
-    }
-    assert "N05" not in ids
+    assert ids == {f"N{i:02d}" for i in range(1, 16)}
 
 
 def test_the_growth_quality_shares_share_one_denominator(registry):
@@ -284,3 +265,25 @@ def test_month_cohorting_falls_back_to_the_first_visit(props_doc, registry):
     window = sql[sql.index("DATE_TRUNC(") : sql.index("AS cohort_month")]
     assert "COALESCE" in window, "cohort_month must fall back, not truncate reg_date alone"
     assert "first_visit" in window, "the fallback must be the first visit, as the render does"
+
+
+def test_the_visit_set_itself_is_cut_at_as_of(props_doc, registry):
+    """ "As of 6 Sep" must mean the data as it stood on 6 Sep.
+
+    Every maturity gate measured against `:as_of`, but the visit set the gates ran
+    over was never filtered -- so a run for a past week counted visits that had
+    not happened yet, and only the eligibility side of the figures moved with the
+    date. The cut is the whole as-of day inclusive.
+    """
+    sql = compile_indicator_sql(props_doc, registry, "SELECT 1", as_of="DATE '2026-09-06'")
+    assert "visits_all AS" in sql, "the raw visit set must be kept apart from the as-of one"
+    window = sql[sql.index("visits AS (", sql.index("visits_all AS")) : sql.index("weight_days AS")]
+    assert "visit_date <" in window, "the visit set is not cut at the report date"
+    assert "DATE '2026-09-06'" in window, "the cut must use the same as_of every gate uses"
+    assert "+ 1" in window, "the as-of day itself must be included"
+
+
+def test_the_default_as_of_is_today(props_doc, registry):
+    sql = compile_indicator_sql(props_doc, registry, "SELECT 1")
+    window = sql[sql.index("visits AS (", sql.index("visits_all AS")) : sql.index("weight_days AS")]
+    assert "CURRENT_DATE" in window

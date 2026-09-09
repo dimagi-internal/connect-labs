@@ -387,7 +387,9 @@ WEIGHT_SERIES_SCHEMA = {
 # missing when the server computes the numbers.
 SNAPSHOT_INPUTS = {
     "builder": "semantic_snapshot",
-    "series": "C",
+    # C is the headline registry (Neal's workbook, banded). N is his demo compute
+    # spec -- the 15-metric scorecard -- graded from the same rows.
+    "series": ["C", "N"],
     # Every scope a saved run can drill to, in ONE evaluate pass: GROUPING SETS
     # exist precisely because per-scope calls re-run the whole Layer 1 extraction.
     "scopes": [
@@ -431,6 +433,8 @@ SNAPSHOT_INPUTS = {
         "C14": "mortality_recording_credible",
         "C18": "completion_recording_credible",
         "C22": "completion_recording_credible",
+        # The scorecard's mortality is the same human judgement.
+        "N13": "mortality_recording_credible",
     },
     # The render's own fallback (`var MIN_DEN = 25`), for measures that declare no
     # `min_denominator` of their own.
@@ -493,6 +497,12 @@ SNAPSHOT_SCHEMA = {
             "A saved run cannot rebuild this from its graded cells: a row banded "
             "'insufficient' still contributes to the pool while storing no value"
         ),
+        "state.snapshot.series": (
+            "Further indicator families graded from the same evaluation, keyed by series. "
+            "`N` is the 15-metric scorecard from the demo compute spec: its catalog and its "
+            "programme / LLO / opportunity / worker cells, in the same {id, n, value, band} "
+            "shape as the headline series"
+        ),
         "state.snapshot.monthly": (
             "Programme monthly trend series: per cohort month, the graded indicators, cohort "
             "size, the count of visits that HAPPENED that month (activity, from the visit rows "
@@ -508,7 +518,8 @@ SNAPSHOT_SCHEMA = {
         "state.snapshot.schema": "Payload version, independent of this manifest's version",
         "state.snapshot.generated_at": "When the snapshot was built",
         "state.snapshot.meta": (
-            "Cohort size as published: cases, visits, opportunities, llos — plus `synthetic`, "
+            "Cohort size as published: cases, visits, opportunities, llos — plus `as_of`, the "
+            "date every figure is reported as of (the run's period end), and `synthetic`, "
             "which the render reads to show the 'built on synthetic clones' disclaimer. "
             "Resolved from the SyntheticOpportunity registry, and ABSENT rather than false "
             "when that cannot be determined, since a confident false would claim real "

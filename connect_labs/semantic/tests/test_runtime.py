@@ -94,7 +94,8 @@ def fixture_visits(db):
                 child_alive_no boolean, danger_sign_yes boolean, referred_yes boolean,
                 self_referral_yes boolean, ebf_recorded boolean, form_name text,
                 days_discharge_to_reg double precision, birth_weight_g double precision,
-                enrollment_weight_g double precision, kmc_hours_mean double precision,
+                enrollment_weight_g double precision, gestational_age_wks double precision,
+                kmc_hours_mean double precision,
                 reg_date timestamp, hospital_discharge_date timestamp,
                 opportunity_id int, username text
             )
@@ -113,7 +114,7 @@ def fixture_visits(db):
         for baby, off, w, form in rows:
             cur.execute(
                 "INSERT INTO rt_fixture_visits VALUES (%s, DATE '2026-01-01' + %s, %s,"
-                " false, false, false, false, true, %s, 1.0, 1500.0, 1500.0, 4.0,"
+                " false, false, false, false, true, %s, 1.0, 1500.0, 1500.0, 34.0, 4.0,"
                 " DATE '2026-01-01', DATE '2026-01-01' - 2, 10042, %s)",
                 (baby, off, w, form, "asha" if baby == "b1" else "ravi"),
             )
@@ -209,10 +210,10 @@ def test_the_measure_catalog_carries_what_a_renderer_needs_to_band_a_value():
 
     _, inds = load_registry("kmc")
     cat = {c["indicator"]: c for c in measure_catalog(filter_to_series(inds, "N"))}
-    assert len(cat) == 14
+    assert len(cat) == 15
 
     banded = [c for c in cat.values() if c["bands"]]
-    assert len(banded) == 9, "9 of the 14 carry a band; the counts and medians do not"
+    assert len(banded) == 9, "9 of the 15 carry a band; the counts and medians do not"
     for c in banded:
         assert c["direction"] in {"higher", "lower", "mid2"}, c["indicator"]
         assert c["bands_source"], f"{c['indicator']} has a band with no provenance"

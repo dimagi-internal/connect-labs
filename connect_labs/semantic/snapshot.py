@@ -261,6 +261,7 @@ def build(
     meta: dict | None = None,
     generated_at: str | None = None,
     visit_rows: list[dict] | None = None,
+    extra_series: dict[str, list[dict]] | None = None,
 ) -> dict:
     """Assemble the saved-run payload from evaluated semantic rows.
 
@@ -372,11 +373,50 @@ def build(
         credible_rows = [r for r in llo_rows if not table or table.get(r.get("llo")) is True]
         names = [r.get("llo") for r in credible_rows if r.get("llo")]
         pooled_over_credible[ind_id] = {
-            "ind": pool(m, credible_rows, min_denominator_default=spec.get("min_denominator_default"))
-            if credible_rows
-            else None,
+            "ind": (
+                pool(m, credible_rows, min_denominator_default=spec.get("min_denominator_default"))
+                if credible_rows
+                else None
+            ),
             "llos": names,
             "of": len(llo_rows),
+        }
+
+    # Further indicator families, graded from the SAME rows with the SAME gates and
+    # credibility. Keyed by series name; each carries its own catalog and its own
+    # programme / LLO / opportunity / worker cells, so a scorecard registry rides
+    # alongside the headline one without a second evaluation or a second grader.
+    series_out: dict[str, dict] = {}
+    for name, catalog in (extra_series or {}).items():
+        ms = [m for m in catalog if m.get("indicator")]
+        series_out[name] = {
+            "measures": ms,
+            "programme": grade_all(programme, ms, **grade_kw),
+            "byLLO": [
+                {"llo": r.get("llo"), "ind": grade_all(r, ms, **grade_kw), "n": int(float(r.get("n_cases") or 0))}
+                for r in sorted(by_scope.get("llo") or [], key=lambda x: str(x.get("llo")))
+            ],
+            "byOpp": [
+                {
+                    "opp": int(r.get("opportunity_id")),
+                    "llo": llo_map.get(int(r.get("opportunity_id"))),
+                    "ind": grade_all(r, ms, **grade_kw),
+                    "n": int(float(r.get("n_cases") or 0)),
+                }
+                for r in sorted(by_scope.get("opportunity") or [], key=lambda x: x.get("opportunity_id") or 0)
+                if r.get("opportunity_id") is not None
+            ],
+            "byFLW": [
+                {
+                    "key": f"{r.get('opportunity_id')}{FLW_SEP}{r.get('username') or '(unassigned)'}",
+                    "opp": r.get("opportunity_id"),
+                    "flw": r.get("username"),
+                    "llo": llo_of_row(r, llo_map),
+                    "ind": grade_all(r, ms, **grade_kw),
+                    "n": int(float(r.get("n_cases") or 0)),
+                }
+                for r in by_scope.get("flw") or []
+            ],
         }
 
     def _month(r: dict) -> str:
@@ -489,6 +529,8 @@ def build(
         # row banded `insufficient` still contributes to the pool while storing no
         # value. Shaped as the render's own memo returns it.
         "pooledOverCredible": pooled_over_credible,
+        # Further indicator families from the same evaluation -- see above.
+        "series": series_out,
         "programInd": grade_all(programme, measures, **grade_kw),
         "byLLO": by_llo,
         "byOpp": by_opp,
