@@ -125,7 +125,9 @@ def semantic_snapshot(
         # disclaimer silently absent.
         meta["synthetic"] = synthetic
 
-    payload = snap.build(spec=spec, rows=rows, measures=measures, deployment=deployment, cases=cases, meta=meta)
+    payload = snap.build(
+        spec=spec, rows=rows, measures=measures, deployment=deployment, cases=cases, meta=meta, visit_rows=visits
+    )
     return wrap_for_runner(payload, spec.get("state_key"))
 
 

@@ -984,7 +984,12 @@ function WorkflowUI({
         // The pipeline (and so both the live rows and a snapshot's case records)
         // emits *_visit_date. `first_visit`/`last_visit` never existed on either
         // shape, so this range silently resolved to nothing on every run.
-        return r.first_visit_date || r.last_visit_date;
+        return (
+          r.first_visit_date ||
+          r.first_visit ||
+          r.last_visit_date ||
+          r.last_visit
+        );
       })
       .filter(Boolean)
       .sort();
@@ -1299,6 +1304,25 @@ function WorkflowUI({
     [derived, snapshot, servedFacts, cRows, C_LIST],
   );
 
+  // Most recent visit per organisation -- the one date that says whether an
+  // organisation is still reporting. Read off whichever case shape this run has:
+  // a snapshot's case records carry `last_visit_date`, the live derived rows
+  // carry `last_visit`.
+  var lastVisitByLLO = React.useMemo(
+    function () {
+      var src = snapshot ? snapshot.cases || [] : derived;
+      var out = {};
+      src.forEach(function (c) {
+        var d = c.last_visit_date || c.last_visit;
+        if (!c.llo || !d) return;
+        d = String(d).slice(0, 10);
+        if (!out[c.llo] || d > out[c.llo]) out[c.llo] = d;
+      });
+      return out;
+    },
+    [derived, snapshot],
+  );
+
   var programInd = React.useMemo(
     function () {
       if (snapshot) return snapshot.programInd || {};
@@ -1453,14 +1477,20 @@ function WorkflowUI({
       // Credible-recorder mortality still has to be pooled, and at a drill the
       // scope is already restricted, so the row itself is the pool.
       var credible = cMonthCredible(k, lloArg, oppArg, flwArg);
+      // Started / registered are C02 / C01 at this month scope -- the semantic
+      // layer's numbers, the same ones a saved run stores. Counting the browser's
+      // re-cohorted case rows here was a second copy of that arithmetic, and the
+      // one place the live trend could disagree with the saved one.
+      var count = function (id) {
+        var e = ind[id];
+        return e && e.value !== null && e.value !== undefined
+          ? Number(e.value)
+          : 0;
+      };
       return {
         month: k,
-        started: rows.filter(function (r) {
-          return r.started;
-        }).length,
-        registered: rows.filter(function (r) {
-          return r.registered;
-        }).length,
+        started: count('C02'),
+        registered: count('C01'),
         visits: visitsByMonth[k] || 0,
         c09: ind['C09'],
         c13: ind['C13'],
@@ -1482,7 +1512,34 @@ function WorkflowUI({
           : selLLO
           ? 'llo:' + selLLO
           : 'all';
-        return (snapshot.monthlyByScope && snapshot.monthlyByScope[key]) || all;
+        var series =
+          (snapshot.monthlyByScope && snapshot.monthlyByScope[key]) || all;
+        // A snapshot month carries the graded indicators, the visit count and the
+        // credible-recorder pool. The trend tab reads the LIVE builder's shape
+        // (started / visits / c09 / mortality ...), so map once here -- the same
+        // rehydration byFLW does for its case positions. Reading the snapshot
+        // month raw drew every bar as NaN and every line as "no month has enough
+        // data to score", on a run whose 17 months were all present.
+        return series.map(function (m) {
+          if (m.started !== undefined) return m;
+          var ind = m.ind || {};
+          var count = function (id) {
+            var e = ind[id];
+            return e && e.value !== null && e.value !== undefined
+              ? Number(e.value)
+              : 0;
+          };
+          return {
+            month: m.month,
+            started: count('C02'),
+            registered: count('C01'),
+            visits: m.visits || 0,
+            c09: ind['C09'],
+            c13: ind['C13'],
+            c15: ind['C15'],
+            mortality: (m.pooled && m.pooled['C14']) || null,
+          };
+        });
       }
       // monthlyFor IS this computation, and the freeze step already calls it to
       // precompute every drill scope. Inlining a second copy here let the two
@@ -2896,6 +2953,7 @@ function WorkflowUI({
                           C16
                         </div>
                       </th>
+                      <th className="px-3 py-2 text-right">Last visit</th>
                       <th className="px-3 py-2 text-right">Red</th>
                       <th className="px-3 py-2 text-right">Yellow</th>
                     </tr>
@@ -2935,6 +2993,9 @@ function WorkflowUI({
                             <span title={covTitle(entryOf(l.ind, 'C16'))}>
                               {fmtCov(indOf('C16'), entryOf(l.ind, 'C16'))}
                             </span>
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-500 whitespace-nowrap">
+                            {lastVisitByLLO[l.llo] || '\u2014'}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {l.reds ? (
