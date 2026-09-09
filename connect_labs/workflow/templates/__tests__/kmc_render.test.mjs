@@ -99,30 +99,33 @@ test('no top-level declaration appears twice', () => {
   assert.deepStrictEqual(dupes, []);
 });
 
-test('credibility is never read straight off the _suppressed column', () => {
+test('credibility is never derived in the render', () => {
   // `<measure>_suppressed` is `(props.llo IS NULL OR props.llo NOT IN (credible))`,
-  // and props.llo is NULL in every grouping set that does not group BY llo —
-  // programme, opportunity, flw, month. So the column reads TRUE there, and trusting
-  // it renders "recording not credible" on the programme card, the one scope
-  // semantic/gates.py says must never be gated.
-  //
-  // The column is only meaningful at the llo scope. cCredibleSet reads it there;
-  // everything else must go through cCredible, which gates a row by its OWN llo.
-  const reads = [...src.matchAll(/_suppressed'\]/g)].length;
-  const inSet = src.includes('function cCredibleSet');
-  assert.ok(inSet, 'cCredibleSet must exist');
+  // and props.llo is NULL in every grouping set that does not group BY llo, so
+  // trusting the column outside the llo scope rendered "recording not credible"
+  // on the programme card. The render used to guard that with a single reader
+  // (cCredibleSet); it now derives NO credibility at all -- every graded cell and
+  // every credible-recorder pool arrives in the payload, decided server-side by
+  // semantic/gates.py against the bound registry. A raw-column read appearing
+  // here again would be that second copy coming back.
+  const reads = [...src.matchAll(/_suppressed/g)].length;
   assert.strictEqual(
     reads,
-    1,
-    'only cCredibleSet may read _suppressed; every other site must call cCredible',
+    0,
+    'the render must not read _suppressed; credibility is decided server-side',
+  );
+  assert.ok(
+    !src.includes('function cCredibleSet'),
+    'cCredibleSet is a second copy of the gate',
   );
 });
 
-test('every memo that reads the SERVED registry facts depends on them', () => {
-  // `llo_map`, `app_asks` and `asks_as` used to be literals in this file. They are
-  // now served by the API and land in `servedFacts` state, which means any memo
-  // reading them must list it as a dependency -- otherwise the memo keeps a result
-  // computed BEFORE the facts arrived, forever, with no error.
+test('every memo that reads the payload-carried registry facts depends on the payload', () => {
+  // Everything this render shows comes off ONE payload (`payload`, aliased `P`):
+  // a completed run's stored snapshot, or a live run's fetched preview of the
+  // same thing. Any memo reading it must list it as a dependency -- otherwise the
+  // memo keeps a result computed BEFORE the payload arrived, forever, with no
+  // error.
   //
   // That has now happened twice. `byLLO`/`byFLW`/`byOpp` missed it and were saved
   // only by React batching `setServedFacts` with `setCSeries`; `derived` missed it
@@ -130,7 +133,7 @@ test('every memo that reads the SERVED registry facts depends on them', () => {
   // while the server had delivered 23 llo_map entries and 1,260 semantic rows.
   //
   // Reviewing dependency arrays by eye is exactly what failed, so this walks them.
-  const ROOTS = ['LLO_OF', 'APP_ASKS', 'ASKS_AS'];
+  const ROOTS = ['LLO_OF', 'P'];
   const tree = ast();
 
   // name -> identifiers its body references, for functions declared in this file.
@@ -187,7 +190,7 @@ test('every memo that reads the SERVED registry facts depends on them', () => {
       if (!reads) return;
 
       const declared = deps.elements.map((e) => (e && e.name) || '');
-      if (!declared.includes('servedFacts')) {
+      if (!declared.includes('payload') && !declared.includes('P')) {
         offenders.push(
           `line ${
             fn.loc ? fn.loc.start.line : '?'
@@ -200,7 +203,7 @@ test('every memo that reads the SERVED registry facts depends on them', () => {
   assert.deepStrictEqual(
     offenders,
     [],
-    'these memos read the served registry facts without depending on servedFacts:\n  ' +
+    'these memos read the payload without depending on it:\n  ' +
       offenders.join('\n  '),
   );
 });

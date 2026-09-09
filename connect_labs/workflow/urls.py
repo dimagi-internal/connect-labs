@@ -47,6 +47,9 @@ urlpatterns = [
     # Read-only snapshot inspection (debug/admin). Render code reads
     # `instance.snapshot` from props via the `useRunView` helper, not this URL.
     path("api/run/<int:run_id>/snapshot/", views.get_snapshot_api, name="api_get_snapshot"),
+    # What completing the run WOULD store, built now and not persisted. A live run
+    # renders from this so it shares one payload shape with a saved one.
+    path("api/run/<int:run_id>/snapshot/preview/", views.preview_snapshot_api, name="api_preview_snapshot"),
     # Explicit run creation — replaces the implicit auto-create that fired on every
     # visit to /workflow/<def>/run/ with no run_id.
     path("api/<int:definition_id>/run/start/", views.start_run_api, name="api_start_run"),

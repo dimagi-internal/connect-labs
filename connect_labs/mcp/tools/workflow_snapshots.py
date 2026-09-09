@@ -89,14 +89,7 @@ def workflow_save_snapshot(
     opportunity_id: int | None = None,
     program_id: int | None = None,
 ) -> dict[str, Any]:
-    from connect_labs.workflow.data_access import PipelineCacheMiss
-    from connect_labs.workflow.templates import (
-        SnapshotStateNotStagedError,
-        SnapshotTooLargeError,
-        build_snapshot_for_contract,
-        resolve_snapshot_contract,
-        resolve_snapshot_opp_scope,
-    )
+    from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run
 
     if (opportunity_id is None) == (program_id is None):
         raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
@@ -112,38 +105,20 @@ def workflow_save_snapshot(
                 f"workflow run {run_id} is already completed; start a new run",
             )
 
-        definition_id = run.data.get("definition_id")
-        if not definition_id:
-            raise MCPToolError("INVALID_SCHEMA", f"run {run_id} has no definition_id")
+        # ONE build step, shared with the web completion endpoint and the live
+        # preview. This tool used to "mirror the canonical run-completion endpoint"
+        # by hand; mirrors drift, and this one did (program_id / run_id context).
+        try:
+            built = build_snapshot_for_run(wda, run, requested_opportunity_id=opportunity_id, program_id=program_id)
+        except SnapshotBuildError as e:
+            raise _mcp_error_for(e, run_id) from e
 
-        definition = wda.get_definition(definition_id)
-        if definition is None:
-            raise MCPToolError("NOT_FOUND", f"workflow definition {definition_id} not found")
-
-        contract = resolve_snapshot_contract(definition)
-        if not contract["ok"]:
-            if contract["error"] == "unknown_template":
-                raise MCPToolError("NOT_FOUND", f"unknown template: {contract['template_key']}")
-            if contract["error"] == "template_not_saved_runs":
-                raise MCPToolError(
-                    "INVALID_SCHEMA",
-                    f"template {contract['template_key']!r} does not declare supports_saved_runs=True; "
-                    "to opt this workflow in anyway, set snapshot_inputs on its definition",
-                )
-            raise MCPToolError(
-                "INVALID_SCHEMA",
-                "workflow definition has no snapshot_inputs manifest, no template_type, and its "
-                "name does not match a known template; set snapshot_inputs (or config.templateType) "
-                "via workflow_update_definition so a snapshot builder can be resolved",
-            )
-
-        # Cross-check, opp-scoped calls only: the upstream GET already filtered
-        # by opportunity_id, so if the run came back its opp must match — but
-        # assert it explicitly to surface caller mistakes (wrong opp_id passed
-        # alongside a foreign run). A program-scoped run has no singular opp to
-        # compare, and the GET's program filter is what authorized it.
+        # Cross-check, opp-scoped calls only: the upstream GET already filtered by
+        # opportunity_id, so if the run came back its opp must match — but assert it
+        # explicitly to surface caller mistakes (wrong opp_id passed alongside a
+        # foreign run). A program-scoped run has no singular opp to compare.
         if opportunity_id is not None:
-            run_opp = run.opportunity_id or definition.opportunity_id
+            run_opp = run.opportunity_id or built["definition"].opportunity_id
             if run_opp and run_opp != opportunity_id:
                 raise MCPToolError(
                     "INVALID_SCHEMA",
@@ -151,92 +126,9 @@ def workflow_save_snapshot(
                     f"not the {opportunity_id} passed to workflow_save_snapshot",
                 )
 
-        # A program-owned multi-opp definition has no run-level or
-        # definition-level opportunity_id — its opps are in opportunity_ids — so
-        # everything downstream (the pipeline read, the worker fan-out, the
-        # builder) needs a resolved scope rather than the singular field (#1182).
-        primary_opp_id, effective_opp_ids = resolve_snapshot_opp_scope(run, definition, opportunity_id)
-        if not primary_opp_id:
-            raise MCPToolError(
-                "INVALID_SCHEMA",
-                f"run {run_id} has no opportunity: neither the run, the definition, nor its "
-                "opportunity_ids name one, so there is nothing to snapshot against",
-            )
-
-        # Match the views.py:complete_run code path exactly: cache-only,
-        # manifest-scoped pipeline read (snapshots freeze what was reviewed —
-        # they never re-execute pipelines), then workers, then the builder.
-        contract_inputs = contract.get("snapshot_inputs")
-        aliases = None if contract["source"] == "template_hook" else (contract_inputs or {}).get("pipelines")
-        if aliases == []:
-            pipelines = {}
-        else:
-            try:
-                pipelines = wda.get_cached_pipeline_data(
-                    definition_id,
-                    primary_opp_id,
-                    aliases=aliases,
-                    # Period-scope pipelines that opt in, so each saved run
-                    # freezes its own window rather than the all-time aggregate
-                    # (ace#764). No-op for runs without a period / opted-out
-                    # pipelines.
-                    period_start=run.period_start,
-                    period_end=run.period_end,
-                )
-            except PipelineCacheMiss as e:
-                raise MCPToolError(
-                    "UPSTREAM_ERROR",
-                    f"no cached data for pipeline {e.pipeline_name or e.alias!r} (opp {e.opportunity_id}); "
-                    "load the workflow's pipeline data first (open the run page or run the pipelines), "
-                    "then retry",
-                ) from e
-        workers: list[dict] = []
-        for oid in effective_opp_ids:
-            try:
-                for w in wda.get_workers(oid):
-                    workers.append({**w, "opportunity_id": oid})
-            except Exception:
-                # Match views.py tolerance — skip opps the user can't enumerate.
-                pass
-
-        try:
-            snapshot_payload = build_snapshot_for_contract(
-                contract,
-                pipelines=pipelines,
-                state=run.data.get("state", {}),
-                opportunity_id=primary_opp_id,
-                workers=workers,
-                opportunity_ids=effective_opp_ids,
-                # Optional context fields some templates' build_snapshot hooks accept
-                # (definition_id, access_token, program_id). Templates that don't use
-                # these absorb them via **_. access_token is necessary for hooks that
-                # construct their own DAOs (no `request` is available in MCP path) —
-                # and program_id completes that: a DAO built from a token alone is
-                # UNSCOPED, so a program-owned run's hook could not read back the very
-                # workflow it was called for.
-                definition_id=definition_id,
-                access_token=wda.access_token,
-                program_id=program_id,
-            )
-        except SnapshotStateNotStagedError as e:
-            # Not the caller's mistake to guess at: name the keys, and name both
-            # routes out (stage them, or give the template a build_snapshot hook).
-            raise MCPToolError(
-                "INVALID_SCHEMA",
-                str(e),
-                details={
-                    "template_key": e.template_key,
-                    "missing_state_keys": e.missing,
-                    "stage_endpoint": f"/labs/workflow/api/run/{run_id}/state/",
-                },
-            ) from e
-        except SnapshotTooLargeError as e:
-            raise MCPToolError("INVALID_SCHEMA", str(e)) from e
-        if not isinstance(snapshot_payload, dict):
-            raise MCPToolError(
-                "UPSTREAM_ERROR",
-                "snapshot builder returned non-dict",
-            )
+        snapshot_payload = built["payload"]
+        primary_opp_id = built["opportunity_id"]
+        effective_opp_ids = built["opportunity_ids"]
 
         snapshot_payload["name"] = snapshot_name
         snapshot_payload["captured_at"] = captured_at
@@ -257,3 +149,88 @@ def workflow_save_snapshot(
         "opportunity_id": primary_opp_id,
         "opportunity_ids": effective_opp_ids,
     }
+
+
+def _mcp_error_for(e, run_id: int) -> MCPToolError:
+    """Map a SnapshotBuildError onto the MCP error classes."""
+    if e.code in ("definition_not_found", "unknown_template"):
+        return MCPToolError("NOT_FOUND", e.message)
+    if e.code == "cache_miss":
+        return MCPToolError("UPSTREAM_ERROR", e.message)
+    if e.code == "non_dict":
+        return MCPToolError("UPSTREAM_ERROR", e.message)
+    if e.code == "not_staged":
+        return MCPToolError(
+            "INVALID_SCHEMA",
+            f"{e.message} Stage those keys via POST /labs/workflow/api/run/{run_id}/state/ first, "
+            "or declare a snapshot builder on the definition so this path works unattended.",
+        )
+    if e.code in ("no_contract", "template_not_saved_runs"):
+        return MCPToolError(
+            "INVALID_SCHEMA",
+            f"{e.message} Set snapshot_inputs (or config.templateType) via workflow_update_definition.",
+        )
+    return MCPToolError("INVALID_SCHEMA", e.message)
+
+
+@register(
+    name="workflow_preview_snapshot",
+    description=(
+        "What completing a run WOULD store, built now and not persisted -- the graded "
+        "payload of the run's snapshot builder over its bound registry, exactly as "
+        "workflow_save_snapshot would write it. Use it to read a live run's numbers "
+        "without completing it, or to check a builder spec / registry edit before "
+        "saving anything. For a completed run the stored snapshot is returned as-is "
+        "(source='stored').\n\n"
+        "`cache` reports whether the visit cache behind the build was cold or partial: "
+        "a preview over a cold cache is every metric zero, which reads as a programme "
+        "with no data, and the payload cannot say so itself. Refuses with UPSTREAM_ERROR "
+        "naming the pipeline when its processed cache is missing -- load the workflow's "
+        "pipeline data (open the run page, or run the pipelines) and retry.\n\n"
+        "Provide exactly ONE of opportunity_id / program_id, as for workflow_save_snapshot."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "run_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "program_id": {"type": "integer"},
+        },
+        "required": ["run_id"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def workflow_preview_snapshot(
+    user,
+    *,
+    run_id: int,
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
+) -> dict[str, Any]:
+    from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run, cache_state
+
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+
+    wda = _wda_for_user(user, opportunity_id=opportunity_id, program_id=program_id)
+    try:
+        run = wda.get_run(run_id)
+        if run is None:
+            raise MCPToolError("NOT_FOUND", f"workflow run {run_id} not found")
+        if run.is_completed and run.snapshot:
+            return {"run_id": run_id, "source": "stored", "snapshot": run.snapshot, "cache": None}
+        try:
+            built = build_snapshot_for_run(wda, run, requested_opportunity_id=opportunity_id, program_id=program_id)
+        except SnapshotBuildError as e:
+            raise _mcp_error_for(e, run_id) from e
+        return {
+            "run_id": run_id,
+            "source": "preview",
+            "opportunity_id": built["opportunity_id"],
+            "opportunity_ids": built["opportunity_ids"],
+            "snapshot": built["payload"],
+            "cache": cache_state(built["opportunity_ids"]),
+        }
+    finally:
+        wda.close()

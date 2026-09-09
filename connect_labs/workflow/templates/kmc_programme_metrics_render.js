@@ -8,70 +8,61 @@ function WorkflowUI({
   onUpdateState,
   view,
 }) {
-  // ══ KMC indicator registry ════════════════════════════════════════════════
-  // A direct port of the kmc_metrics_framework workbook. The registry below IS
-  // the Case-indicators tab: id, category, numerator, denominator (eligibility),
-  // bands, minimum denominator to score, and whether it is an FLW indicator.
-  // Nothing here is invented — an indicator the workbook leaves TBD is rendered
-  // as unbanded, and one whose inputs this programme does not collect is shown
-  // as not-computable with the reason, rather than given a plausible number.
+  // ══ One payload, one path ═══════════════════════════════════════════════════
+  // Every number on this page comes from ONE server-built payload: the graded
+  // output of the semantic-snapshot builder (workflow/snapshot_builders.py) over
+  // the registry this workflow is bound to. A completed run reads it off the run
+  // record; a live run fetches the SAME payload, built by the SAME code, as a
+  // preview of what completing the run would store. This file is a view over
+  // that one shape and computes no indicator, band, pool or trend itself.
   //
-  // Per-baby properties arrive already computed from the entity pipeline (SQL).
-  // This file derives only what SQL cannot express — the weight-series triple —
-  // then evaluates indicators and applies bands.
+  // It used to. Grading (`cEntry`), pooling (`cPooled`), the monthly trend
+  // (`monthlyFor`) and the per-worker rollup each existed twice -- once here in
+  // JavaScript for a live run, once in Python for a saved one -- and every
+  // saved-run defect this dashboard has had (a worker table with no names, a
+  // mortality card that threw, a trend that drew NaN) was the two copies
+  // disagreeing about a shape. There is one copy now.
+  //
+  // What this file still computes: per-case DISPLAY enrichment for the live case
+  // drill (the weight-series triple and growth velocity for one baby's row),
+  // which feeds no indicator and is absent, not approximated, on a saved run.
+  //
+  // ES5 dialect throughout -- no arrows, no destructuring, no computed keys --
+  // because nothing outside a browser can execute this file.
 
   var cases =
     (pipelines && pipelines.children && pipelines.children.rows) || [];
   var wrows = (pipelines && pipelines.visits && pipelines.visits.rows) || [];
-  var chMeta =
-    (pipelines && pipelines.children && pipelines.children.metadata) || {};
 
-  var v = view || {
-    state: (instance && instance.state) || {},
-    isCompleted: false,
-    asOf: null,
-    complete: null,
-  };
-
-  // ── Saved runs ────────────────────────────────────────────────────────────
-  // A completed run reads FROZEN AGGREGATES, never raw rows. This cohort's two
-  // pipelines are 8,656 case rows + 34,737 visit rows = 21.6 MB of JSON, four times
-  // the framework's 5 MB snapshot cap — and WORKFLOW_REFERENCE is explicit that
-  // verbatim capture is the failure mode that OOM-killed a web worker on a 102k-visit
-  // opp. So the render computes what it displays and freezes THAT (~300 KB), which is
-  // also the thing a reader actually wants preserved: the numbers as published.
+  // A completed run's payload, exactly as stored.
   var snapshot =
     view && view.isCompleted && view.state && view.state.snapshot
       ? view.state.snapshot
       : null;
 
-  // The (opportunity, worker) key separator. Declared UP HERE, above every scope
-  // memo that builds one: `var` hoists as undefined, so a memo evaluated earlier in
-  // the render than the old declaration site produced keys like "10042undefined"
-  // -- silently, since that is a perfectly good object key.
+  // A live run's payload, fetched: same shape, same builder, not persisted.
+  var _live = React.useState({
+    status: snapshot ? 'ready' : 'idle',
+    payload: null,
+    cache: null,
+    error: null,
+  });
+  var live = _live[0];
+  var setLive = _live[1];
+
+  // THE payload. Null only while a live preview is in flight or has failed.
+  var payload = snapshot || live.payload;
+  var P = payload || {};
+
+  // The (opportunity, worker) key separator. Declared up here, above every memo
+  // that builds one: `var` hoists as undefined.
   var FLW_SEP = '::';
 
-  // ══ Deployment facts: SERVED, never declared here ═════════════════════════
-  // `llo_map`, `app_asks` and `asks_as` are registry data. They used to be the
-  // literals `LLO_OF`, `APP_ASKS` and `ASKS_AS` in this file, duplicated against
-  // Python copies -- and THIS copy was the one that decided what a user saw. When
-  // C16's input widened, the server knew EHA and GHI could produce the metric and
-  // this map still said their apps did not ask, so the dashboard printed "not in
-  // this app" over a real 72.40% and 94.50%.
-  //
-  // A saved run carries the facts it was graded with, so an old run keeps
-  // explaining itself after the registry moves on. A live run reads whatever the
-  // bound registry currently says.
-  // ES5 dialect: this file has zero array destructuring on purpose -- no Python
-  // test can execute it, so a modern-syntax slip fails in the browser instead.
-  var _servedFacts = React.useState(null);
-  var servedFacts = _servedFacts[0];
-  var setServedFacts = _servedFacts[1];
-  var DEPLOY_FACTS = (snapshot && snapshot.deployment) ||
-    servedFacts || { llo_map: {}, app_asks: {}, asks_as: {} };
-  var LLO_OF = DEPLOY_FACTS.llo_map || {};
-  var APP_ASKS = DEPLOY_FACTS.app_asks || {};
-  var ASKS_AS = DEPLOY_FACTS.asks_as || {};
+  // Deployment facts travel WITH the payload, so a saved run keeps explaining
+  // itself after the registry moves on and a live run reads what the bound
+  // registry currently says. Only `llo_map` is read here (labels); the gates
+  // that read `app_asks` run server-side.
+  var LLO_OF = (P.deployment && P.deployment.llo_map) || {};
 
   var OPP_LABEL = {
     10021: 'PIPN pilot (524)',
@@ -89,90 +80,156 @@ function WorkflowUI({
   function lloOf(o) {
     return LLO_OF[o] || 'opp ' + o;
   }
-  // Synthetic clones are provisioned above 10000; the real KMC opportunities are
-  // all below it. This matters for honesty: on a synthetic run, "no value reaches
-  // this row" can mean OUR clone does not carry the field, which is not evidence
-  // about what the real programme records.
-  function isSyntheticOpp(o) {
-    return Number(o) >= 10000;
-  }
   function oppLabel(o) {
     return OPP_LABEL[o] || 'opp ' + o;
   }
 
-  // Case count for a rollup row. A FROZEN run carries the indicator results but
-  // NOT the per-case rows -- a snapshot deliberately drops them -- so reading
-  // `rows.length` there renders a confident 0 next to a Started column reading
-  // 606, which is worse than showing nothing: it looks like a measurement.
-  // C01's denominator IS every case in the group, and it does survive the
-  // snapshot, so fall through to that before giving up.
+  // Case count for a rollup row. The payload's rollups carry indicator results,
+  // not case rows (byFLW carries positions into the case index), so reading
+  // `rows.length` renders a confident 0 next to a Started column reading 606.
+  // C01's denominator IS every case in the group; fall through to it.
   function caseCount(g) {
     if (g && g.rows && g.rows.length) return g.rows.length;
     if (g && g.ind && g.ind['C01'] && typeof g.ind['C01'].n === 'number')
       return g.ind['C01'].n;
-    return '\u2014';
+    return '—';
   }
 
   var MIN_DEN = 25;
 
-  // ── App-structure capability map ──────────────────────────────────────────
-  // APP_ASKS is derived from each opportunity's app_structure.json — the app's
-  // ACTUAL question set (its /data/ paths), not from the observed data. That
-  // distinction is the whole point: a blank column has three very different
-  // causes and only one of them is benign.
-  //
-  //   not-in-app    the app never asks the question           -> n/a, benign
-  //   no-value      the app asks, but nothing reaches this row -> investigate
-  //   normal        asked and a value arrives                  -> score it
-  //
-  // The middle state deliberately says "reaches this row", NOT "was never
-  // recorded". Absence at entity stage is NOT evidence the field is uncollected:
-  // opp 524 records birth weight on 100% of its Register KMC Beneficiary forms
-  // and still reads 0% here, because registration forms carry form.case.@case_id
-  // with no subcase while visit forms carry both, so the registration values do
-  // not survive the entity_id join. Claiming "never recorded" there would blame
-  // the programme for a join defect.
-  //
-  // Deriving this from data instead of the app definition collapses the middle
-  // case into the first, which turns a collection failure into a benign n/a.
-  // Two real examples this map keeps honest: NAMA-523 and PIPN-524 both ASK for
-  // birth weight (/data/child_details/birth_weight_group/child_weight_birth) and
-  // recorded it zero times, and every one of the 11 apps asks for reg_date and
-  // kmc discharge and none of them has a single value.
-  // Keyed by BOTH real and synthetic-clone opp ids so one map serves both.
-  // Which pipeline field each indicator's numerator/denominator ultimately needs.
-  // Which DERIVED case property each indicator ultimately needs. These are the
-  // names on the derived row, not the pipeline column — the derivation renames
-  // several (danger_visits -> ever_danger_sign, referral_visits -> referred,
-  // self_referral_visits -> self_referral_count). Naming the pipeline column here
-  // meant the lookup found nothing and silently blanked C19/C20/C21, which had
-  // been reporting 27.1% / 15.5% / 31.3 the day before.
-  // Fields where 0/false means "nothing was recorded" rather than a real zero.
-  var ZERO_IS_ABSENT = {
-    referred: 1,
-    ever_danger_sign: 1,
-    self_referral_count: 1,
-  };
-  function anyAsks(field, opps) {
-    var col = ASKS_AS[field] || field;
-    if (!opps || !opps.length) return true;
-    return opps.some(function (o) {
-      var m = APP_ASKS[String(o)];
-      return !m || m[col] === undefined || m[col];
-    });
+  // ── Fetch the live payload ────────────────────────────────────────────────
+  // The scope the page is viewing, forwarded so the server resolves the same
+  // run the page did. `owning_program_id` is deliberately NOT `program_id`:
+  // that name is a labs-context param and putting it on a URL rewrites the
+  // session's ambient scope for every later request from this page.
+  function scopeParams() {
+    var q = String(window.location.search || '');
+    var out = [];
+    var m = q.match(/[?&]opportunity_id=(\d+)/);
+    if (m) out.push('opportunity_id=' + m[1]);
+    else if (instance && instance.opportunity_id)
+      out.push('opportunity_id=' + instance.opportunity_id);
+    var pgm = q.match(/[?&]owning_program_id=(\d+)/);
+    if (pgm) out.push('owning_program_id=' + pgm[1]);
+    else if (instance && instance.program_id)
+      out.push('owning_program_id=' + instance.program_id);
+    return out.length ? '?' + out.join('&') : '';
   }
-  // "Recorded" is computed from the rows in scope rather than baked in, so it stays
-  // true as the data changes.
-  // ── Targets & settings tab (the workbook's typed human inputs) ────────────
-  // The credibility gates that used to live here -- MORTALITY_CREDIBLE,
-  // COMPLETION_CREDIBLE and credibleFor -- are gone. They are declared once, in
-  // connect_labs/semantic/registry/kmc/deployment.yml, compiled into the query as
-  // the registry's `suppression:` rules, and arrive on each row as
-  // `<measure>_suppressed`. Three copies of one human judgement about which LLOs
-  // record deaths credibly is how they drift; there is now one.
-  //
-  // MONTHLY_TARGET, TOTAL_STARTED_TARGET and SCALE_TIER_CASES_PER_MONTH went with
-  // them: they were declared here and read nowhere, in this file or any other.
+
+  function loadPreview() {
+    var runId = instance && instance.id;
+    if (!runId) {
+      setLive({
+        status: 'error',
+        payload: null,
+        cache: null,
+        error: 'could not determine the run id from the page',
+      });
+      return;
+    }
+    setLive({ status: 'loading', payload: null, cache: null, error: null });
+    fetch(
+      '/labs/workflow/api/run/' + runId + '/snapshot/preview/' + scopeParams(),
+    )
+      .then(function (res) {
+        return res.json();
+      })
+      .then(function (data) {
+        if (data.error) {
+          setLive({
+            status: 'error',
+            payload: null,
+            cache: null,
+            error: data.error,
+          });
+          return;
+        }
+        var snap = data.snapshot || {};
+        var st = snap.state || {};
+        setLive({
+          status: 'ready',
+          payload: st.snapshot || null,
+          cache: data.cache || null,
+          error: st.snapshot ? null : 'the preview carried no snapshot payload',
+        });
+      })
+      .catch(function (err) {
+        setLive({
+          status: 'error',
+          payload: null,
+          cache: null,
+          error: String((err && err.message) || err),
+        });
+      });
+  }
+
+  // The payload IS this dashboard's content, so it loads with the page. A
+  // completed run already has it and fetches nothing.
+  React.useEffect(
+    function () {
+      if (snapshot) return;
+      loadPreview();
+    },
+    [Boolean(snapshot), instance && instance.id],
+  );
+
+  // ── The display contract, normalised into the field names the tables use ──
+  // The payload's catalog calls things `indicator` / `title` / `category` /
+  // `prominence`; the tables were written against id / name / cat / prom.
+  // Renaming HERE, once, leaves every display site untouched.
+  var C_LIST = React.useMemo(
+    function () {
+      return (P.cMeasures || [])
+        .filter(function (m) {
+          return m && m.indicator;
+        })
+        .map(function (m) {
+          return {
+            id: m.indicator,
+            measure: m.id,
+            name: m.title,
+            cat: m.category,
+            prom: m.prominence,
+            unit: m.unit,
+            kind: m.kind,
+            dir: m.direction,
+            bands: m.bands,
+            minDen: m.min_denominator,
+            inputs: m.inputs,
+            minCoverage: m.min_input_coverage,
+            coverageDen: m.coverage_denominator,
+            tbdInput: m.tbd_input,
+            scopeNote: m.scope_note,
+          };
+        });
+    },
+    [payload],
+  );
+
+  var C_BY_ID = React.useMemo(
+    function () {
+      var m = {};
+      C_LIST.forEach(function (x) {
+        m[x.id] = x;
+      });
+      return m;
+    },
+    [C_LIST],
+  );
+
+  // A lookup by id survives the registry gaining, losing or reordering a
+  // measure; a position does not. The fallback keeps a label on screen while
+  // the payload is in flight.
+  function indOf(id) {
+    return (
+      C_BY_ID[id] || {
+        id: id,
+        measure: String(id).toLowerCase(),
+        name: id,
+        unit: '',
+      }
+    );
+  }
 
   // ── Derive the weight series (the one thing SQL cannot express) ───────────
   var derived = React.useMemo(
@@ -366,452 +423,11 @@ function WorkflowUI({
         return d;
       });
     },
-    // `servedFacts` because this memo calls `lloOf`, which reads the SERVED
-    // `llo_map`. Without it every case row keeps the llo assigned before the
-    // registry's facts arrived -- i.e. "opp 10021" -- and `byLLO` then groups the
-    // whole dashboard by opportunity id, permanently, on a warm cache and with no
-    // error. Verified on live run 5507: 1,260 semantic rows and 23 llo_map entries
-    // delivered, and the page still showed opportunity ids 90 seconds later.
-    [cases, wrows, servedFacts],
+    // `payload` because this memo calls `lloOf`, which reads the payload's
+    // llo_map. Without it every case row keeps the llo assigned before the
+    // payload arrived -- "opp 10021" -- permanently, with no error.
+    [cases, wrows, payload],
   );
-
-  // ══ The C-series, served by the semantic layer ════════════════════════════
-  // This was `var IND` -- ~360 lines of closures restating the workbook -- run by
-  // `evaluate`/`evalAll`. The same 22 indicators now compile to SQL from
-  // connect_labs/semantic/registry/kmc/indicators.yml and are evaluated in ONE
-  // GROUPING SETS pass across all five scopes. Parity with the engine this
-  // replaces is pinned in connect_labs/semantic/PARITY.md -- 5,698 checks, 0
-  // mismatches at programme, opportunity, llo and flw -- and `month` was closed
-  // separately (#1523). That the registry computes exactly the same 22 indicators
-  // is pinned by test_the_registry_computes_exactly_the_indicators_the_render_did.
-  //
-  // UNITS -- the one conversion in this file, and it is deliberate. The registry
-  // scales percentages in its own sql (100.0 * num / den), so a row carries 0-100.
-  // This render has always carried FRACTIONS internally and multiplied by 100 in
-  // `fmt` -- and, the part that actually forces the decision, every snapshot run
-  // ever saved stores fractions. Converting once here rather than at fifteen
-  // display sites keeps every saved snapshot rendering correctly and untouched.
-  // Bands are graded BEFORE the conversion, against the registry's own percent
-  // thresholds, so no threshold is ever compared across units.
-  var C_SCOPES =
-    'programme,opportunity,llo,flw,month,llo_month,opportunity_month,flw_month';
-
-  // Frozen runs never query. Their values are in the snapshot; all they need from
-  // the server is the display contract, and `catalog_only` returns exactly that
-  // without touching a pipeline or the database.
-  var sCS = React.useState({
-    // A snapshot run that carries its own catalog needs nothing from the server, so
-    // it is ready immediately. Starting it at 'loading' left the "Computing
-    // indicators in SQL…" banner up permanently, because the effect below returns
-    // early in exactly that case and never flipped the status.
-    status:
-      snapshot && (snapshot.cMeasures || []).length
-        ? 'ready'
-        : snapshot
-        ? 'loading'
-        : 'idle',
-    rows: [],
-    measures: (snapshot && snapshot.cMeasures) || [],
-  });
-  var cSeries = sCS[0],
-    setCSeries = sCS[1];
-
-  function cUrl(params) {
-    var wfId = nWorkflowId();
-    return wfId ? '/labs/workflow/api/' + wfId + '/semantic/?' + params : null;
-  }
-
-  function loadCSeries() {
-    // A snapshot run wants labels only; anything else wants the numbers too.
-    var wantRows = !snapshot;
-    var url = cUrl(
-      (wantRows ? 'series=C&scopes=' + C_SCOPES : 'series=C&catalog_only=1') +
-        oppParam(),
-    );
-    if (!url) {
-      setCSeries({
-        status: 'error',
-        rows: [],
-        measures: [],
-        error: 'could not determine the workflow id from the page',
-      });
-      return;
-    }
-    setCSeries({ status: 'loading', rows: [], measures: [] });
-    fetch(url)
-      .then(function (res) {
-        return res.json();
-      })
-      .then(function (data) {
-        if (data.error) {
-          setCSeries({
-            status: 'error',
-            rows: [],
-            measures: [],
-            error: data.error,
-          });
-          return;
-        }
-        setServedFacts(data.deployment || null);
-        setCSeries({
-          status: 'ready',
-          rows: data.rows || [],
-          measures: data.measures || [],
-          coldCache: data.cold_cache || false,
-          partialCache: data.partial_cache || false,
-          coldHint: data.cold_cache_hint || '',
-        });
-      })
-      .catch(function (err) {
-        setCSeries({
-          status: 'error',
-          rows: [],
-          measures: [],
-          error: String((err && err.message) || err),
-        });
-      });
-  }
-
-  // The C-series IS this dashboard's content, not a side panel, so unlike the
-  // N-series it loads with the page rather than behind a button. A snapshot run
-  // fetches only the catalog, which runs no query at all.
-  React.useEffect(
-    function () {
-      if (snapshot && (snapshot.cMeasures || []).length) return;
-      loadCSeries();
-    },
-    [Boolean(snapshot)],
-  );
-
-  // The display contract, normalised into the field names the tables already use.
-  // The served catalog calls things `indicator` / `title` / `category` /
-  // `prominence`; `IND` called them id / name / cat / prom. Renaming HERE, once,
-  // means every display site downstream is untouched -- the smallest diff, and the
-  // one least able to silently mis-render a column.
-  //
-  // `measure` is the registry's own measure name (c09), which is the column prefix
-  // in a result row. `id` stays the workbook's indicator id (C09), which is what
-  // every table, selector and snapshot snapshot is keyed on.
-  var C_LIST = React.useMemo(
-    function () {
-      return (cSeries.measures || [])
-        .filter(function (m) {
-          return m && m.indicator;
-        })
-        .map(function (m) {
-          return {
-            id: m.indicator,
-            measure: m.id,
-            name: m.title,
-            cat: m.category,
-            prom: m.prominence,
-            unit: m.unit,
-            kind: m.kind,
-            dir: m.direction,
-            bands: m.bands,
-            minDen: m.min_denominator,
-            // Gate inputs and the thin-coverage rule, from the registry.
-            inputs: m.inputs,
-            minCoverage: m.min_input_coverage,
-            coverageDen: m.coverage_denominator,
-            tbdInput: m.tbd_input,
-            scopeNote: m.scope_note,
-          };
-        });
-    },
-    [cSeries.measures],
-  );
-
-  var C_BY_ID = React.useMemo(
-    function () {
-      var m = {};
-      C_LIST.forEach(function (x) {
-        m[x.id] = x;
-      });
-      return m;
-    },
-    [C_LIST],
-  );
-
-  // `IND[6]` used to index the registry positionally. A lookup by id survives the
-  // registry gaining, losing or reordering a measure; a position does not. The
-  // fallback keeps a label on screen if the catalog has not arrived yet.
-  function indOf(id) {
-    return (
-      C_BY_ID[id] || {
-        id: id,
-        measure: String(id).toLowerCase(),
-        name: id,
-        unit: '',
-      }
-    );
-  }
-
-  // Rows, split by the `scope` label the GROUPING SETS query stamps on each one.
-  var cRows = React.useMemo(
-    function () {
-      var out = {
-        programme: null,
-        opportunity: {},
-        llo: {},
-        flw: {},
-        month: {},
-        llo_month: {},
-        opportunity_month: {},
-        flw_month: {},
-      };
-      (cSeries.rows || []).forEach(function (r) {
-        if (r.scope === 'programme') out.programme = r;
-        else if (r.scope === 'opportunity')
-          out.opportunity[String(r.opportunity_id)] = r;
-        else if (r.scope === 'llo') out.llo[String(r.llo)] = r;
-        else if (r.scope === 'flw')
-          out.flw[r.opportunity_id + FLW_SEP + r.username] = r;
-        else if (r.scope === 'month') out.month[cMonth(r)] = r;
-        else if (r.scope === 'llo_month')
-          out.llo_month[r.llo + '|' + cMonth(r)] = r;
-        else if (r.scope === 'opportunity_month')
-          out.opportunity_month[r.opportunity_id + '|' + cMonth(r)] = r;
-        else if (r.scope === 'flw_month')
-          out.flw_month[
-            r.opportunity_id + FLW_SEP + r.username + '|' + cMonth(r)
-          ] = r;
-      });
-      return out;
-    },
-    [cSeries.rows],
-  );
-
-  // One indicator's verdict for one scope row, in the shape the tables have always
-  // consumed: { id, n, value, band }. `evaluate` produced this from closures over
-  // case rows; it now reads three columns the query already computed.
-  function cEntry(measure, row) {
-    var id = measure.id;
-    var out = { id: id, n: 0, value: null, band: 'nodata' };
-    if (!row) return out;
-
-    var den = row[measure.measure + '_denominator'];
-    out.n = den === null || den === undefined ? 0 : Number(den);
-
-    // Credibility marks a figure, it does not erase it. The engine this replaced
-    // computed the value and set band 'notcredible' -- which is why bandLabel reads
-    // "SHOWN, not credible" -- and its comment said why: a blank cell reads as "no
-    // data", which is wrong and actively confusing, because these LLOs DO record
-    // deaths; the workbook only says not credibly. Blanking also HIDES the
-    // under-recording, since pooling every LLO reads lower than the credible
-    // recorders alone. Returning early here regressed that to an em-dash for four
-    // of six LLOs. Neal's spec agrees: his expected table carries a mortality figure
-    // for every LLO with a sufficient denominator.
-    var notCredible = !cCredible(measure, row);
-
-    var state = cInputState(measure, row, cScopeOpps(row));
-    if (state !== 'ok') {
-      out.band = state;
-      return out;
-    }
-
-    var raw = row[measure.measure];
-    if (raw === null || raw === undefined || isNaN(Number(raw))) return out;
-
-    var minDen = measure.minDen || MIN_DEN;
-    if (out.n && minDen && out.n < minDen) {
-      out.band = 'insufficient';
-      return out;
-    }
-
-    out.band = notCredible ? 'notcredible' : cBandOf(measure, Number(raw));
-    out.value = measure.unit === '%' ? Number(raw) / 100 : Number(raw);
-
-    // Neal's spec, item 8: "Parenthesize / footnote for any LLO where <45% of cases
-    // carry a discharge date (thin, biased denominator)." C16's denominator is
-    // `started AND has a discharge date`, so when few cases carry one the rate is
-    // computed over a self-selected minority and reads far too well -- measured on
-    // this cohort, PIPN scores 96.5% off 20% coverage where the full-coverage figure
-    // is 66%.
-    // Both the floor and the measure it is a fraction OF are registry data
-    // (`meta.min_input_coverage` / `meta.coverage_denominator`). This was
-    // `measure.id === 'C16'` against a 0.45 literal declared in this file -- a
-    // programme rule in render code, and a second copy of one the server also held.
-    if (measure.minCoverage && measure.coverageDen) {
-      var base = row[measure.coverageDen];
-      if (base) {
-        var coverage = Number(out.n) / Number(base);
-        if (coverage < Number(measure.minCoverage)) {
-          out.thinDenominator = true;
-          out.coverage = coverage;
-        }
-      }
-    }
-    return out;
-  }
-
-  // 'ok' | 'notinapp' | 'unrecorded' -- the same two-reason gate that
-  // semantic/gates.py:input_state() implements server-side, reading the
-  // `anyrec_<field>` columns the registry emits for exactly this. It replaces the
-  // old anyRecorded(), which scanned derived case rows: at a drill scope the query
-  // already knows whether anything was recorded, and 268 of 5,302 per-FLW checks
-  // turned on getting this right.
-  //
-  // The distinction is real and worth keeping: an app that never ASKS the question
-  // ("not in this app") is a different fact about the programme from one that asks
-  // and recorded nothing ("no value reaches this row"). Both render n/a, so the
-  // values agree either way -- but reporting the wrong reason misdescribes it.
-  function cInputState(measure, row, opps) {
-    // The inputs an indicator needs are part of its registry definition
-    // (`meta.inputs`), so there is no `IND_INPUTS` side table to keep in step.
-    var need = (measure && measure.inputs) || null;
-    if (!need || !need.length) return 'ok';
-    for (var i = 0; i < need.length; i++) {
-      if (!anyAsks(need[i], opps)) return 'notinapp';
-      var gate = row['anyrec_' + need[i]];
-      if (gate !== null && gate !== undefined && Number(gate) === 0)
-        return 'unrecorded';
-    }
-    return 'ok';
-  }
-
-  // Is this row's scope a credible recorder for this measure?
-  //
-  // NOT simply `row.<measure>_suppressed`. That column is
-  // `(props.llo IS NULL OR props.llo NOT IN (credible))`, and `props.llo` is NULL in
-  // every grouping set that does not group BY llo -- programme, opportunity, flw,
-  // month. So the column reads TRUE there, and trusting it renders "recording not
-  // credible" on the programme card, which is the one scope semantic/gates.py says
-  // must never be gated ("Programme scope (llo=None) is never gated: it pools
-  // credible recorders").
-  //
-  // So: read the credible SET off the llo scope, where the column does mean what it
-  // says, then gate each row by ITS OWN llo. Programme has none and stays ungated,
-  // which is also what the old render did -- it passed `llo` per scope and
-  // `credibleFor` returned true for null.
-  function cCredible(measure, row) {
-    var llo = cLloOfRow(row);
-    if (!llo) return true;
-    var credible = cCredibleSet(measure.id);
-    return credible === null || credible[llo] === true;
-  }
-
-  // The llo a scope row belongs to, or null when the row pools several.
-  function cLloOfRow(row) {
-    if (row.llo) return row.llo;
-    if (row.opportunity_id !== null && row.opportunity_id !== undefined)
-      return lloOf(Number(row.opportunity_id));
-    return null;
-  }
-
-  // { LLO: true } for the recorders the registry did not suppress, read off the llo
-  // scope. Null when that scope is absent from the response, which means "no basis
-  // to gate" rather than "gate everything" -- withholding every number because a
-  // scope was not requested would be worse than showing them.
-  function cCredibleSet(id) {
-    var measure = indOf(id);
-    var keys = Object.keys(cRows.llo);
-    if (!keys.length) return null;
-    var out = {};
-    var sawColumn = false;
-    keys.forEach(function (k) {
-      var r = cRows.llo[k];
-      var v = r[measure.measure + '_suppressed'];
-      if (v === undefined) return;
-      sawColumn = true;
-      if (v === false) out[r.llo] = true;
-    });
-    return sawColumn ? out : null;
-  }
-
-  // Bands are graded in the REGISTRY's units (percent), before cEntry converts the
-  // value to the fraction this render carries. Shares `nBandOf`, which already
-  // implements the workbook's higher / lower / two-sided rules.
-  function cBandOf(measure, percentValue) {
-    // nBandOf reads `direction`; a C_LIST entry renames that to `dir` so the
-    // display sites keep the field names the old `IND` used. Passing the entry
-    // straight through therefore matched none of nBandOf's branches and returned
-    // 'unbanded' for EVERY indicator -- which renders as a grey chip and a
-    // truthful-looking "0 of 6 LLOs with a red indicator" while C09 sat at 37.8%
-    // against a red threshold of 40. Bridge the two names here rather than
-    // widening C_LIST, so there is one entry shape and one place that knows both.
-    return nBandOf(
-      { bands: measure.bands, direction: measure.dir, unit: measure.unit },
-      percentValue,
-    );
-  }
-
-  // Which opportunities a scope row covers -- the input the "not in this app"
-  // gate needs, since an app that never asks a question is a different fact from
-  // one that asks and recorded nothing.
-  function cScopeOpps(row) {
-    if (row.scope === 'opportunity' || row.scope === 'flw')
-      return [row.opportunity_id];
-    if (row.scope === 'llo') {
-      return Object.keys(LLO_OF).filter(function (o) {
-        return LLO_OF[o] === row.llo;
-      });
-    }
-    return null;
-  }
-
-  // 'YYYY-MM'. The query returns cohort_month as a date or a timestamp depending
-  // on the driver, so slice rather than trust the type.
-  function cMonth(row) {
-    return String(row.cohort_month || '').slice(0, 7);
-  }
-
-  // Pool ONE indicator across several scope rows by summing its numerator and
-  // denominator. Needed because "mortality among the LLOs that record it credibly"
-  // is not any single scope: the programme row pools everyone, and the workbook
-  // says four of six do not record deaths credibly. Summing the parts is exact --
-  // averaging the per-LLO percentages would not be.
-  function cPooled(id, rows) {
-    var measure = indOf(id);
-    var out = { id: id, n: 0, value: null, band: 'nodata' };
-    var num = 0,
-      den = 0,
-      any = false;
-    rows.forEach(function (r) {
-      var nu = r[measure.measure + '_numerator'],
-        de = r[measure.measure + '_denominator'];
-      if (nu === null || nu === undefined || de === null || de === undefined)
-        return;
-      any = true;
-      num += Number(nu);
-      den += Number(de);
-    });
-    if (!any || !den) return out;
-    out.n = den;
-    var pct = (100 * num) / den;
-    var minDen = measure.minDen || MIN_DEN;
-    if (minDen && den < minDen) {
-      out.band = 'insufficient';
-      return out;
-    }
-    out.band = cBandOf(measure, pct);
-    out.value = measure.unit === '%' ? pct / 100 : pct;
-    return out;
-  }
-
-  // The LLO rows the registry did NOT suppress for an indicator -- i.e. the ones
-  // the workbook accepts as credible recorders. Read off the query rather than a
-  // local table, so there is one statement of who is credible.
-  function cCredibleLloRows(id, index) {
-    var measure = indOf(id);
-    var src = index || cRows.llo;
-    return Object.keys(src)
-      .map(function (k) {
-        return src[k];
-      })
-      .filter(function (r) {
-        return cCredible(measure, r);
-      });
-  }
-
-  // Every indicator for one scope row, keyed by id -- the `evalAll` replacement.
-  function cIndFor(row) {
-    var m = {};
-    C_LIST.forEach(function (measure) {
-      m[measure.id] = cEntry(measure, row);
-    });
-    return m;
-  }
 
   // Declared in the workbook but not computable from what these programmes collect today.
   var NOT_COMPUTABLE = [
@@ -860,69 +476,6 @@ function WorkflowUI({
     },
   ];
 
-  // ── Roll up: opp → LLO → program ─────────────────────────────────────────
-  var byOpp = React.useMemo(
-    function () {
-      if (snapshot) return snapshot.byOpp || [];
-      var g = {};
-      derived.forEach(function (r) {
-        (g[r.opp] = g[r.opp] || []).push(r);
-      });
-      return Object.keys(g).map(function (o) {
-        var llo = lloOf(Number(o));
-        return {
-          opp: Number(o),
-          llo: llo,
-          rows: g[o],
-          ind: cIndFor(cRows.opportunity[String(o)]),
-        };
-      });
-    },
-    [derived, snapshot, servedFacts, cRows, C_LIST],
-  );
-
-  var byLLO = React.useMemo(
-    function () {
-      if (snapshot) return snapshot.byLLO || [];
-      var g = {};
-      derived.forEach(function (r) {
-        (g[r.llo] = g[r.llo] || []).push(r);
-      });
-      return Object.keys(g)
-        .sort()
-        .map(function (l) {
-          var rows = g[l];
-          var ind = cIndFor(cRows.llo[String(l)]);
-          var reds = Object.keys(ind).filter(function (k) {
-            return ind[k].band === 'red';
-          }).length;
-          var yellows = Object.keys(ind).filter(function (k) {
-            return ind[k].band === 'yellow';
-          }).length;
-          var opps = byOpp.filter(function (o) {
-            return o.llo === l;
-          });
-          return {
-            llo: l,
-            rows: rows,
-            ind: ind,
-            reds: reds,
-            yellows: yellows,
-            opps: opps,
-          };
-        });
-    },
-    [derived, byOpp, snapshot, servedFacts],
-  );
-
-  // Separator for the composite FLW key. NOT '\u0000': a NUL byte is legal in a JS
-  // string but Postgres cannot store it in a JSON column, so freezing a run died with
-  // `UntranslatableCharacter: \u0000 cannot be converted to text` — the key only
-  // became unstorable at the moment it was persisted, long after it was built.
-
-  // FLW rollup. Keyed by opp+username: FLW usernames are only unique within an
-  // opportunity (the synthetic cohort reuses flw_001.. across opps), so keying on
-  // username alone silently merges different people into one row.
   // ══ Drill-to-action ═══════════════════════════════════════════════════════
   // The drill ended here: a worker reading red, and nothing to do about it but
   // carry the name by hand into a separate workflow. This opens an audit on that
@@ -961,7 +514,7 @@ function WorkflowUI({
   // The span a snapshot covers, from its own monthly series. Months are 'YYYY-MM'
   // keys, so the end is the last day of the last month rather than its first.
   function snapshotSpan() {
-    var ms = ((snapshot && snapshot.monthly) || [])
+    var ms = (P.monthly || [])
       .map(function (m) {
         return m.month;
       })
@@ -1247,16 +800,33 @@ function WorkflowUI({
     return { text: nFmt(v, m.unit), band: nBandOf(m, v), den: den };
   }
 
+  // ── Roll-ups, straight off the payload ─────────────────────────────────────
+  var byOpp = P.byOpp || [];
+  var byLLO = P.byLLO || [];
+  var programInd = P.programInd || {};
+
+  // The headline for a credibility-gated indicator: the figure pooled over the
+  // recorders the workbook accepts, which LLOs those were, and how many there
+  // are in total. Built server-side (it cannot be rebuilt from graded cells: a
+  // row banded `insufficient` still contributes to the pool while storing no
+  // value), keyed by indicator, in the {ind, llos, of} shape the card reads.
+  var mortalityCredible = (P.pooledOverCredible &&
+    P.pooledOverCredible['C14']) || {
+    ind: null,
+    llos: [],
+    of: 0,
+  };
+
+  // Per-worker roll-up. The payload stores each worker's cases as POSITIONS into
+  // the case index -- holding the records in both places stored every case twice
+  // and pushed the payload past the 5 MB cap -- so resolve them once, here, and
+  // every consumer below (the case drill, flwDateRange, the counts) sees case
+  // objects. Sorted busiest first, as the table has always been.
   var byFLW = React.useMemo(
     function () {
-      if (snapshot) {
-        // A snapshot stores each worker's cases as POSITIONS into snapshot.cases,
-        // because holding the records here as well as there stored every case twice
-        // and pushed the payload past the 5 MB cap. Resolve them once, here, so
-        // `f.rows` is case objects for every consumer below -- the case drill,
-        // flwDateRange, the `rows.length` counts -- exactly as on a live run.
-        var allCases = snapshot.cases || [];
-        return (snapshot.byFLW || []).map(function (f) {
+      var allCases = P.cases || [];
+      return (P.byFLW || [])
+        .map(function (f) {
           var r = f.rows || [];
           if (!r.length || typeof r[0] !== 'number') return f;
           return Object.assign({}, f, {
@@ -1266,118 +836,75 @@ function WorkflowUI({
               })
               .filter(Boolean),
           });
-        });
-      }
-      var g = {};
-      derived.forEach(function (r) {
-        var k = r.opp + FLW_SEP + (r.flw || '(unassigned)');
-        (g[k] = g[k] || []).push(r);
-      });
-      return Object.keys(g)
-        .map(function (k) {
-          var parts = k.split(FLW_SEP),
-            opp = Number(parts[0]);
-          var rows = g[k],
-            llo = lloOf(opp);
-          var ind = cIndFor(cRows.flw[opp + FLW_SEP + parts[1]]);
-          var reds = Object.keys(ind).filter(function (x) {
-            return ind[x].band === 'red';
-          }).length;
-          var yellows = Object.keys(ind).filter(function (x) {
-            return ind[x].band === 'yellow';
-          }).length;
-          return {
-            key: k,
-            opp: opp,
-            flw: parts[1],
-            llo: llo,
-            rows: rows,
-            ind: ind,
-            reds: reds,
-            yellows: yellows,
-          };
         })
         .sort(function (a, b) {
-          return b.rows.length - a.rows.length;
+          return (b.rows || []).length - (a.rows || []).length;
         });
     },
-    [derived, snapshot, servedFacts, cRows, C_LIST],
+    [payload],
   );
 
   // Most recent visit per organisation -- the one date that says whether an
-  // organisation is still reporting. Read off whichever case shape this run has:
-  // a snapshot's case records carry `last_visit_date`, the live derived rows
-  // carry `last_visit`.
+  // organisation is still reporting. From the payload's case index.
   var lastVisitByLLO = React.useMemo(
     function () {
-      var src = snapshot ? snapshot.cases || [] : derived;
       var out = {};
-      src.forEach(function (c) {
-        var d = c.last_visit_date || c.last_visit;
+      (P.cases || []).forEach(function (c) {
+        var d = c.last_visit_date;
         if (!c.llo || !d) return;
         d = String(d).slice(0, 10);
         if (!out[c.llo] || d > out[c.llo]) out[c.llo] = d;
       });
       return out;
     },
-    [derived, snapshot],
+    [payload],
   );
 
-  var programInd = React.useMemo(
+  // Is this cohort synthetic? Decided server-side against the synthetic
+  // registry and carried in the payload, so a saved run keeps its disclaimer.
+  var runIsSynthetic = !!(P.meta && P.meta.synthetic);
+
+  // ── Case drill ────────────────────────────────────────────────────────────
+  // The payload's case index, filtered to the opportunity (and worker) in hand.
+  // On a live run each record is merged with this browser's per-case enrichment
+  // (weight triple, growth velocity) -- display only, and absent on a saved run.
+  var derivedByKey = React.useMemo(
     function () {
-      if (snapshot) return snapshot.programInd || {};
-      return cIndFor(cRows.programme);
+      var m = {};
+      derived.forEach(function (d) {
+        m[d.opp + '|' + d.entity_id] = d;
+      });
+      return m;
     },
-    [derived, snapshot, servedFacts, cRows, C_LIST],
+    [derived],
   );
 
-  // Programme mortality, restricted to the LLOs the workbook accepts as credible
-  // recorders of death. The card pooled every LLO while the table below it showed
-  // "recording not credible" for four of six — so the headline number was built on
-  // exactly the data the same dashboard declined to show, and it read LOWER than
-  // reality because non-recorders contribute denominator without deaths.
-  var mortalityCredible = React.useMemo(
-    function () {
-      // Snapshot first, like byOpp / byLLO / byFLW / programInd. This one is newly
-      // snapshot-dependent: it used to be computed from `derived` -- pipeline rows a
-      // snapshot run still loads -- and now reads the llo-scope SEMANTIC rows, which a
-      // snapshot run deliberately never fetches. Without this the headline mortality
-      // card silently degrades to "no credible recorder" the moment a run is snapshot,
-      // while the LLO table beside it still shows EHA and PIPN reporting deaths.
-      // Was `snapshot.mortalityCredible`. The builder now emits this shape for
-      // EVERY credibility-gated indicator, keyed by indicator, under
-      // `pooledOverCredible` -- and it emits the POOLED entry, not the raw
-      // credibility table. Reading the table here instead crashed on
-      // `.llos.length`: it has no `llos`. Both the hook that preceded the
-      // framework builder and this render's first read of it had that mismatch,
-      // and only opening the page showed it.
-      if (
-        snapshot &&
-        snapshot.pooledOverCredible &&
-        snapshot.pooledOverCredible.C14
-      )
-        return snapshot.pooledOverCredible.C14;
-      if (snapshot && snapshot.mortalityCredible)
-        return snapshot.mortalityCredible;
-      var credible = cCredibleLloRows('C14');
-      var llos = credible
-        .map(function (r) {
-          return r.llo;
-        })
-        .filter(function (l) {
-          return byLLO.some(function (x) {
-            return x.llo === l;
-          });
-        });
-      return {
-        ind: credible.length ? cPooled('C14', credible) : null,
-        llos: llos,
-        of: byLLO.length,
-      };
-    },
-    [byLLO, cRows, C_LIST, snapshot, servedFacts],
-  );
-  // ── UI ───────────────────────────────────────────────────────────────────
+  function casesForDrill(opp, flwKey) {
+    var flw = flwKey ? String(flwKey).split(FLW_SEP)[1] : null;
+    return (P.cases || [])
+      .filter(function (c) {
+        return (
+          Number(c.opportunity_id) === Number(opp) &&
+          (!flw || c.username === flw)
+        );
+      })
+      .map(function (c) {
+        var d = derivedByKey[c.opportunity_id + '|' + c.entity_id];
+        if (d) return Object.assign({}, c, d);
+        return Object.assign(
+          {
+            flw: c.username,
+            name: c.entity_id,
+            num_visits: c.total_visits || 0,
+            first_visit: c.first_visit_date,
+            last_visit: c.last_visit_date,
+          },
+          c,
+        );
+      });
+  }
+
+  // ── UI state ───────────────────────────────────────────────────────────────
   var s1 = React.useState(null);
   var selLLO = s1[0],
     setSelLLO = s1[1];
@@ -1395,171 +922,42 @@ function WorkflowUI({
     setSelFLW = s4[1];
 
   // ── Monthly trend ─────────────────────────────────────────────────────────
-  // Cohort entry is anchored on the FIRST VISIT, not reg_date: every KMC app asks
-  // for reg_date and not one has ever recorded a value, so C03 was listed as
-  // not-computable. First visit is the honest proxy and is present on every case.
-  // Each month's indicators are computed over the cases that ENTERED that month,
-  // so a month's growth/weight figures describe that intake cohort rather than
-  // everyone alive at the time.
-  // The month-scope row matching the current drill, if any.
-  function cMonthRow(month, lloArg, oppArg, flwArg) {
-    if (flwArg) return cRows.flw_month[flwArg + '|' + month];
-    if (oppArg) return cRows.opportunity_month[oppArg + '|' + month];
-    if (lloArg) return cRows.llo_month[lloArg + '|' + month];
-    return cRows.month[month];
-  }
-
-  // The rows to pool for credible-recorder mortality in one month. Undrilled that
-  // is every credible LLO's row for that month; drilled it is the single row for
-  // the scope in hand -- but only if the registry did not suppress it there, which
-  // is what keeps a non-credible LLO's drill from showing a mortality figure the
-  // programme card refuses to show.
-  function cMonthCredible(month, lloArg, oppArg, flwArg) {
-    if (flwArg || oppArg || lloArg) {
-      var row = cMonthRow(month, lloArg, oppArg, flwArg);
-      var measure = indOf('C14');
-      return row && cCredible(measure, row) ? [row] : [];
-    }
-    var index = {};
-    Object.keys(cRows.llo_month).forEach(function (k) {
-      if (k.slice(k.indexOf('|') + 1) === month) index[k] = cRows.llo_month[k];
-    });
-    return cCredibleLloRows('C14', index);
-  }
-
-  // Scoped monthly series as a plain function, so the freeze step can precompute
-  // every drill scope rather than only the one currently on screen.
-  function monthlyFor(lloArg, oppArg, flwArg) {
-    var m = function (d) {
-      return String(d || '').slice(0, 7);
-    };
-    var flwKey = flwArg ? String(flwArg).split(FLW_SEP) : null;
-    var ok = function (oppId, llo, flw) {
-      if (flwKey) return oppId === Number(flwKey[0]) && flw === flwKey[1];
-      if (oppArg) return oppId === oppArg;
-      if (lloArg) return llo === lloArg;
-      return true;
-    };
-    var byMonth = {},
-      visitsByMonth = {};
-    derived
-      .filter(function (r) {
-        return ok(r.opp, r.llo, r.flw);
-      })
-      .forEach(function (r) {
-        // Cohort on the REGISTRATION date, falling back to first visit only where a
-        // row genuinely has none. reg_date is a hidden field the form auto-calculates,
-        // so it was absent from every clone until the profiler learned to carry
-        // calculated fields — first visit was the proxy standing in for it, and this
-        // is what C03 was waiting on.
-        var k = m(r.reg_date) || m(r.first_visit);
-        if (k) (byMonth[k] = byMonth[k] || []).push(r);
-      });
-    wrows.forEach(function (v) {
-      if (!ok(v.opportunity_id, lloOf(v.opportunity_id), v.username)) return;
-      var vk = m(v.visit_date);
-      if (vk) visitsByMonth[vk] = (visitsByMonth[vk] || 0) + 1;
-    });
-    var months = Object.keys(byMonth)
-      .concat(Object.keys(visitsByMonth))
-      .filter(function (v, i, a) {
-        return v && a.indexOf(v) === i;
-      })
-      .sort();
-    return months.map(function (k) {
-      var rows = byMonth[k] || [];
-      // The trend FOLLOWS THE DRILL, so it reads the month scope that matches it:
-      // flw_month / opportunity_month / llo_month, else the programme-wide month.
-      // Those composite scopes exist for exactly this -- a bare `month` groups by
-      // cohort_month alone and cannot answer a drilled question.
-      var mrow = cMonthRow(k, lloArg, oppArg, flwArg);
-      var ind = mrow ? cIndFor(mrow) : {};
-      // Credible-recorder mortality still has to be pooled, and at a drill the
-      // scope is already restricted, so the row itself is the pool.
-      var credible = cMonthCredible(k, lloArg, oppArg, flwArg);
-      // Started / registered are C02 / C01 at this month scope -- the semantic
-      // layer's numbers, the same ones a saved run stores. Counting the browser's
-      // re-cohorted case rows here was a second copy of that arithmetic, and the
-      // one place the live trend could disagree with the saved one.
-      var count = function (id) {
-        var e = ind[id];
-        return e && e.value !== null && e.value !== undefined
-          ? Number(e.value)
-          : 0;
-      };
-      return {
-        month: k,
-        started: count('C02'),
-        registered: count('C01'),
-        visits: visitsByMonth[k] || 0,
-        c09: ind['C09'],
-        c13: ind['C13'],
-        c15: ind['C15'],
-        mortality: credible.length ? cPooled('C14', credible) : null,
-      };
-    });
-  }
-
+  // Precomputed per drill scope by the builder, so the drill works with no live
+  // pipeline behind it. Each point carries the graded indicators, the cohort
+  // size, the visit count for the month the visits HAPPENED in, and the
+  // credible-recorder pool; the trend tab reads it in the shape below.
   var monthly = React.useMemo(
     function () {
-      if (snapshot) {
-        var all = snapshot.monthly || [];
-        // The snapshot series is stored per scope key so a drill still works offline.
-        var key = selFLW
-          ? 'flw:' + selFLW
-          : selOpp
-          ? 'opp:' + selOpp
-          : selLLO
-          ? 'llo:' + selLLO
-          : 'all';
-        var series =
-          (snapshot.monthlyByScope && snapshot.monthlyByScope[key]) || all;
-        // A snapshot month carries the graded indicators, the visit count and the
-        // credible-recorder pool. The trend tab reads the LIVE builder's shape
-        // (started / visits / c09 / mortality ...), so map once here -- the same
-        // rehydration byFLW does for its case positions. Reading the snapshot
-        // month raw drew every bar as NaN and every line as "no month has enough
-        // data to score", on a run whose 17 months were all present.
-        return series.map(function (m) {
-          if (m.started !== undefined) return m;
-          var ind = m.ind || {};
-          var count = function (id) {
-            var e = ind[id];
-            return e && e.value !== null && e.value !== undefined
-              ? Number(e.value)
-              : 0;
-          };
-          return {
-            month: m.month,
-            started: count('C02'),
-            registered: count('C01'),
-            visits: m.visits || 0,
-            c09: ind['C09'],
-            c13: ind['C13'],
-            c15: ind['C15'],
-            mortality: (m.pooled && m.pooled['C14']) || null,
-          };
-        });
-      }
-      // monthlyFor IS this computation, and the freeze step already calls it to
-      // precompute every drill scope. Inlining a second copy here let the two
-      // drift: this one cohorted on first_visit alone while monthlyFor cohorted on
-      // reg_date falling back to first_visit. They agree only for as long as
-      // reg_date stays unrecorded everywhere, which is a property of today's data,
-      // not of the code.
-      return monthlyFor(selLLO, selOpp, selFLW);
+      var all = P.monthly || [];
+      var key = selFLW
+        ? 'flw:' + selFLW
+        : selOpp
+        ? 'opp:' + selOpp
+        : selLLO
+        ? 'llo:' + selLLO
+        : 'all';
+      var series = (P.monthlyByScope && P.monthlyByScope[key]) || all;
+      return series.map(function (m) {
+        var ind = m.ind || {};
+        var count = function (id) {
+          var e = ind[id];
+          return e && e.value !== null && e.value !== undefined
+            ? Number(e.value)
+            : 0;
+        };
+        return {
+          month: m.month,
+          started: count('C02'),
+          registered: count('C01'),
+          visits: m.visits || 0,
+          c09: ind['C09'],
+          c13: ind['C13'],
+          c15: ind['C15'],
+          mortality: (m.pooled && m.pooled['C14']) || null,
+        };
+      });
     },
-    [
-      derived,
-      wrows,
-      selLLO,
-      selOpp,
-      selFLW,
-      snapshot,
-      cRows,
-      C_LIST,
-      servedFacts,
-    ],
+    [payload, selLLO, selOpp, selFLW],
   );
 
   var llosRed = byLLO.filter(function (l) {
@@ -2220,163 +1618,23 @@ function WorkflowUI({
     );
   }
 
-  // Build the snapshot payload: everything the page DISPLAYS, and nothing it doesn't.
-  // Per-case rows are deliberately excluded — 8,656 of them is 7.5 MB on its own, and
-  // case-level drill is an investigative tool, not part of a published figure.
-  // Is this run built on synthetic clones rather than real programme data? A snapshot
-  // run reads the flag captured at freeze time; a live run computes it from scope.
-  var runIsSynthetic = React.useMemo(
-    function () {
-      if (snapshot) return !!(snapshot.meta && snapshot.meta.synthetic);
-      var seen = {};
-      derived.forEach(function (r) {
-        seen[r.opp] = true;
-      });
-      var opps = Object.keys(seen);
-      return opps.length > 0 && opps.every(isSyntheticOpp);
-    },
-    [derived, snapshot, servedFacts],
-  );
-
-  function buildSnapshot() {
-    var scopes = { all: monthlyFor(null, null, null) };
-    byLLO.forEach(function (l) {
-      scopes['llo:' + l.llo] = monthlyFor(l.llo, null, null);
-      (l.opps || []).forEach(function (o) {
-        scopes['opp:' + o.opp] = monthlyFor(null, o.opp, null);
-      });
-    });
-    return {
-      schema: 1,
-      generated_at: new Date().toISOString(),
-      // The SQL-computed series, so the snapshot run does not have to re-query for
-      // it. Null when the operator never ran the tab -- captured rather than
-      // required, because a snapshot without it is still a valid snapshot.
-      nSeries:
-        nSeries.status === 'ready' && nSeries.rows.length
-          ? {
-              rows: nSeries.rows,
-              measures: nSeries.measures,
-              opportunity_ids: nSeries.opportunity_ids || [],
-              generated_at: new Date().toISOString(),
-            }
-          : null,
-      // The display contract the numbers below were graded with. The render reads
-      // `snapshot.cMeasures` and nothing wrote it, so a snapshot run fetched the
-      // CURRENT catalog instead -- meaning a later change to a band threshold
-      // would silently re-grade a published snapshot, and a green chip could turn
-      // red with no edit to the run. A snapshot is "the numbers as published",
-      // which has to include what published them. Also makes a snapshot run
-      // genuinely zero-query rather than one cheap call away from it.
-      cMeasures: cSeries.measures || [],
-      mortalityCredible: mortalityCredible,
-      programInd: programInd,
-      byLLO: byLLO.map(function (l) {
-        return {
-          llo: l.llo,
-          rows: [],
-          ind: l.ind,
-          reds: l.reds,
-          yellows: l.yellows,
-          opps: (l.opps || []).map(function (o) {
-            return {
-              opp: o.opp,
-              llo: o.llo,
-              rows: [],
-              ind: o.ind,
-              n: (o.rows || []).length,
-            };
-          }),
-        };
-      }),
-      byOpp: byOpp.map(function (o) {
-        return {
-          opp: o.opp,
-          llo: o.llo,
-          rows: [],
-          ind: o.ind,
-          n: (o.rows || []).length,
-        };
-      }),
-      byFLW: byFLW.map(function (f) {
-        return {
-          key: f.key,
-          opp: f.opp,
-          flw: f.flw,
-          llo: f.llo,
-          rows: [],
-          ind: f.ind,
-          reds: f.reds,
-          yellows: f.yellows,
-          n: (f.rows || []).length,
-        };
-      }),
-      monthly: scopes.all,
-      monthlyByScope: scopes,
-      meta: {
-        cases: derived.length,
-        visits: wrows.length,
-        opportunities: byOpp.length,
-        llos: byLLO.length,
-        synthetic: runIsSynthetic,
-      },
-    };
-  }
-
-  // Staged snapshot: the aggregates have been written to run state but the run is
-  // still in_progress. `view.state` reflects the persisted write, so its presence is
-  // proof the write landed.
-  var staged =
-    view && view.state && view.state.snapshot ? view.state.snapshot : null;
-
-  // Freezing is TWO steps on purpose. onUpdateState is fire-and-forget, so pairing it
-  // with view.complete() behind one click is a race — and complete() won it, producing
-  // a completed run whose snapshot captured an empty state. Waiting for the write to
-  // round-trip through view.state removes the guess entirely.
+  // Saving a run persists the payload this page is already showing: the server
+  // builds it again with the same builder and stores it. One step, because
+  // nothing is computed here and so nothing has to be staged first.
   //
-  // SCOPE OF "permanent", because this comment has been misread twice: a completed run
-  // cannot be RE-OPENED, and that is all. Freezing is not a one-way door and it is not
-  // a publishing act. A workflow is MEANT to carry many runs — take as many snapshots
-  // as you like — and a bad one is deleted outright via
-  // `DELETE /labs/workflow/api/run/<run_id>/delete/` (workflow/urls.py, api_delete_run).
-  // Read as "irreversible", this sentence has twice stopped an agent from freezing a
-  // run at all and made it ask a human for permission it did not need.
-  function stageSnapshot() {
-    if (!derived.length) {
-      window.alert(
-        'No case data has loaded yet — a snapshot taken now would be empty, and a ' +
-          'completed run cannot be reopened (you would have to delete it and take ' +
-          'another). Wait for the indicators to appear.',
-      );
-      return;
-    }
-    if (!(nSeries.status === 'ready' && nSeries.rows.length)) {
-      if (
-        !window.confirm(
-          'The Extended metrics tab has not been run, so it will not be part ' +
-            'of this snapshot and will keep querying live (and can go stale). ' +
-            'Run it first for a fully snapshot dashboard.\n\nSnapshot anyway?',
-        )
-      )
-        return;
-    }
-    onUpdateState({ snapshot: buildSnapshot() });
-  }
-
-  function freezeRun() {
+  // SCOPE OF "final": a completed run cannot be RE-OPENED, and that is all. A
+  // workflow is meant to carry many runs; a bad one is deleted outright via
+  // DELETE /labs/workflow/api/run/<run_id>/delete/.
+  function saveRun() {
     if (!view || !view.complete) {
-      window.alert('This run does not support snapshots yet.');
-      return;
-    }
-    if (!staged) {
-      window.alert('Prepare the snapshot first.');
+      window.alert('This run does not support saved snapshots yet.');
       return;
     }
     view.complete({
       confirm:
-        'Freeze this run? The figures become read-only and load from the snapshot ' +
-        'instead of recomputing. Re-running later creates a new run; this one stays ' +
-        'in the history.',
+        'Save this run? Its figures become final and load from the saved ' +
+        'snapshot. Re-running later creates a new run; this one stays in the ' +
+        'history.',
     });
   }
 
@@ -2410,35 +1668,24 @@ function WorkflowUI({
         </div>
         {!snapshot && view && view.complete && (
           <div className="shrink-0 flex items-center gap-2">
-            {staged && (
-              <span className="text-xs text-gray-500">
-                snapshot prepared · {(staged.meta || {}).cases} cases
-              </span>
-            )}
             <button
-              onClick={staged ? freezeRun : stageSnapshot}
-              disabled={!derived.length}
+              onClick={saveRun}
+              disabled={live.status !== 'ready'}
               className={
                 'px-3 py-2 rounded-lg text-sm border ' +
-                (!derived.length
+                (live.status !== 'ready'
                   ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
-                  : staged
-                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                   : 'border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100')
               }
               title={
-                !derived.length
-                  ? 'Waiting for case data to load'
-                  : staged
-                  ? 'Freeze the prepared snapshot — figures become read-only'
-                  : 'Compute the snapshot from what is on screen'
+                live.status !== 'ready'
+                  ? 'Waiting for the figures to load'
+                  : 'Save this run — its figures become final'
               }
             >
-              {!derived.length
-                ? 'Freeze this run (loading…)'
-                : staged
-                ? 'Freeze this run'
-                : '1. Prepare snapshot'}
+              {live.status === 'ready'
+                ? 'Save this run'
+                : 'Save this run (loading…)'}
             </button>
           </div>
         )}
@@ -2475,14 +1722,11 @@ function WorkflowUI({
       {tab === 'nseries' && (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100">
-            <div className="font-medium text-gray-900">
-              Demo metrics — computed in SQL
-            </div>
+            <div className="font-medium text-gray-900">Extended metrics</div>
             <div className="text-xs text-gray-500 mt-1">
-              The indicator registry evaluated server-side rather than in this
-              browser. Maturity gates are 28/42/90 and the growth bands are
+              Maturity gates are 28/42/90 days and the growth bands are
               birth-weight-band specific, so these deliberately differ from the
-              Indicators tab where the spec differs.
+              Indicators tab where the specification differs.
             </div>
             <div className="mt-2 flex items-center gap-2 flex-wrap">
               <button
@@ -2787,43 +2031,43 @@ function WorkflowUI({
               babies. PARTIAL: a real number over only the cached opportunities,
               entirely credible and understated. Neither is visible in the
               figures themselves. */}
-          {cSeries.status !== 'ready' && (
+          {!snapshot && live.status !== 'ready' && (
             <div
               className={
                 'px-4 py-3 text-sm border rounded ' +
-                (cSeries.status === 'error'
+                (live.status === 'error'
                   ? 'bg-red-50 text-red-900 border-red-200'
                   : 'bg-slate-50 text-slate-700 border-slate-200')
               }
             >
-              {cSeries.status === 'error' ? (
+              {live.status === 'error' ? (
                 <span>
                   <span className="font-medium">
                     Indicators could not be computed.
                   </span>{' '}
-                  {cSeries.error}
+                  {live.error}
                 </span>
               ) : (
                 <span>
-                  <span className="font-medium">
-                    Computing indicators in SQL…
-                  </span>{' '}
-                  one pass over the whole cohort, usually ~30 seconds. Values
+                  <span className="font-medium">Computing indicators…</span> one
+                  pass over the whole cohort, usually under a minute. Values
                   below stay blank until it returns.
                 </span>
               )}
             </div>
           )}
 
-          {cSeries.status === 'ready' &&
-            (cSeries.coldCache || cSeries.partialCache) && (
+          {!snapshot &&
+            live.status === 'ready' &&
+            live.cache &&
+            (live.cache.cold_cache || live.cache.partial_cache) && (
               <div className="px-4 py-3 text-sm bg-amber-50 text-amber-900 border border-amber-200 rounded">
                 <span className="font-medium">
-                  {cSeries.coldCache
+                  {live.cache.cold_cache
                     ? 'Every metric is blank because nothing is cached \u2014 not because the programme has no data.'
                     : 'These totals cover only part of the cohort.'}
                 </span>{' '}
-                {cSeries.coldHint}
+                {live.cache.cold_cache_hint}
               </div>
             )}
 
@@ -3150,22 +2394,7 @@ function WorkflowUI({
           {selOpp &&
             (function () {
               var CASE_CAP = 300;
-              var caseRows = byOpp.filter(function (o) {
-                return o.opp === selOpp;
-              })[0].rows;
-              if (selFLW) {
-                var f0 = byFLW.filter(function (f) {
-                  return f.key === selFLW;
-                })[0];
-                if (f0) caseRows = f0.rows;
-              }
-              if (selInd) {
-                var indSel = C_LIST.filter(function (i) {
-                  return i.id === selInd;
-                })[0];
-                if (indSel && indSel.den)
-                  caseRows = caseRows.filter(indSel.den);
-              }
+              var caseRows = casesForDrill(selOpp, selFLW);
               return (
                 <div className="space-y-5">
                   <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -3179,9 +2408,6 @@ function WorkflowUI({
                             return o.opp === selOpp;
                           })[0].ind
                         }
-                        onPick={function (id) {
-                          setSelInd(id === selInd ? null : id);
-                        }}
                       />
                     </div>
                   </div>
@@ -3396,12 +2622,7 @@ function WorkflowUI({
 
                   <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                     <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-                      {snapshot
-                        ? 'Cases — not captured in a snapshot'
-                        : 'Cases '}
-                      {!snapshot && selInd
-                        ? '\u2014 in the denominator of ' + selInd
-                        : ''}
+                      {'Cases '}
                       {selFLW
                         ? ' \u2014 ' +
                           (
@@ -3420,9 +2641,9 @@ function WorkflowUI({
                           : caseRows.length +
                             ' case' +
                             (caseRows.length === 1 ? '' : 's') +
-                            (selInd
+                            (derived.length
                               ? ''
-                              : ' \u2014 click an indicator above to filter')}
+                              : ' \u2014 per-visit detail is shown on the current reporting period')}
                       </span>
                     </div>
                     <div className="overflow-x-auto">
