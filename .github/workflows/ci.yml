@@ -51,7 +51,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       # Run pre-commit directly (instead of pre-commit/action@v3.0.0, which pins the
@@ -139,7 +139,7 @@ jobs:
             libproj-dev
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: pip
