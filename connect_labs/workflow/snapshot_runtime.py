@@ -237,3 +237,23 @@ def cache_state(opportunity_ids) -> dict[str, Any]:
         "opportunities_missing": missing,
         "cold_cache_hint": hint,
     }
+
+
+def project_state(state: dict | None, keys: list[str]) -> dict[str, Any]:
+    """Pick dotted paths out of a saved snapshot's state.
+
+    The run-history API returns MANY runs' snapshots at once, and a KMC snapshot is
+    megabytes (its case index alone). A trend needs a few hundred bytes of each --
+    the graded programme cells and the as-of date -- so the caller names what it
+    wants and nothing else travels. Missing paths come back as None rather than
+    being dropped, so the shape is the same for every run.
+    """
+    out: dict[str, Any] = {}
+    for key in keys:
+        cur: Any = state or {}
+        for part in key.split("."):
+            cur = cur.get(part) if isinstance(cur, dict) else None
+            if cur is None:
+                break
+        out[key] = cur
+    return out

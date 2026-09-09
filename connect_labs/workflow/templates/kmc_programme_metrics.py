@@ -503,6 +503,12 @@ SNAPSHOT_SCHEMA = {
             "programme / LLO / opportunity / worker cells, in the same {id, n, value, band} "
             "shape as the headline series"
         ),
+        "state.snapshot.weekly": (
+            "Activity by ISO week per drill scope (all / llo:<name> / opp:<id>): visits that "
+            "happened and babies registered, cut at the run's as-of date. The indicator lines "
+            "of the trend are NOT in the snapshot -- they are the series of saved runs, one "
+            "point per run computed as of its period end, served by the run-history API"
+        ),
         "state.snapshot.monthly": (
             "Programme monthly trend series: per cohort month, the graded indicators, cohort "
             "size, the count of visits that HAPPENED that month (activity, from the visit rows "

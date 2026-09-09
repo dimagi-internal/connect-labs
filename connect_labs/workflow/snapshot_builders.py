@@ -153,6 +153,7 @@ def semantic_snapshot(
         meta=meta,
         visit_rows=visits,
         extra_series=extra_series,
+        as_of=as_of_date,
     )
     return wrap_for_runner(payload, spec.get("state_key"))
 

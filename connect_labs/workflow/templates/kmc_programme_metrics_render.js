@@ -885,6 +885,121 @@ function WorkflowUI({
     [payload, selLLO, selOpp, selFLW],
   );
 
+  // ── Weekly trend ───────────────────────────────────────────────────────────
+  // Two halves. ACTIVITY (visits, registrations) by week comes off this payload,
+  // per drill scope, cut at the run's as-of date. INDICATORS over time are the
+  // series of SAVED RUNS: each is computed as of its own period end by the same
+  // builder, so the line is one point per saved report -- a weekly report, saved
+  // weekly, is the time series. Nothing here re-grades anything.
+  var trendKey = selOpp ? 'opp:' + selOpp : selLLO ? 'llo:' + selLLO : 'all';
+  var weekly = React.useMemo(
+    function () {
+      var w = (P.weekly && P.weekly[trendKey]) || [];
+      return w.slice(-26);
+    },
+    [payload, trendKey],
+  );
+  var historyState = React.useState(null);
+  var history = historyState[0];
+  var setHistory = historyState[1];
+  React.useEffect(
+    function () {
+      var defId = definition && definition.id;
+      if (!defId) return;
+      var cancelled = false;
+      fetch(
+        '/labs/workflow/api/' +
+          defId +
+          '/runs/history/?keys=programInd,byLLO,byOpp,pooledOverCredible,meta',
+        { credentials: 'same-origin' },
+      )
+        .then(function (r) {
+          return r.ok ? r.json() : { runs: [] };
+        })
+        .then(function (j) {
+          if (!cancelled) setHistory(j.runs || []);
+        })
+        .catch(function () {
+          if (!cancelled) setHistory([]);
+        });
+      return function () {
+        cancelled = true;
+      };
+    },
+    [definition && definition.id],
+  );
+  // One point per as-of date: the graded cells for the current drill scope, taken
+  // from each saved run's own snapshot. The run being viewed is a point too -- a
+  // live run as of today, a saved one via the history (deduplicated by date).
+  var historyPoints = React.useMemo(
+    function () {
+      function cellsOf(st) {
+        if (!st) return null;
+        if (selOpp) {
+          var o = (st.byOpp || []).filter(function (x) {
+            return String(x.opp) === String(selOpp);
+          })[0];
+          return o ? o.ind : null;
+        }
+        if (selLLO) {
+          var l = (st.byLLO || []).filter(function (x) {
+            return x.llo === selLLO;
+          })[0];
+          return l ? l.ind : null;
+        }
+        var ind = {};
+        Object.keys(st.programInd || {}).forEach(function (k) {
+          ind[k] = st.programInd[k];
+        });
+        // Undrilled mortality is the pooled-over-credible figure, as the headline.
+        var pc = st.pooledOverCredible && st.pooledOverCredible.C14;
+        if (pc && pc.ind) ind.C14 = pc.ind;
+        return ind;
+      }
+      var byDate = {};
+      (history || []).forEach(function (r) {
+        var st = r.state || {};
+        var d =
+          (st.meta && st.meta.as_of) || String(r.period_end || '').slice(0, 10);
+        if (!d) return;
+        var ind = cellsOf(st);
+        if (!ind) return;
+        byDate[d] = {
+          date: d,
+          ind: ind,
+          runId: r.id,
+          n: st.meta && st.meta.cases,
+        };
+      });
+      var own = {
+        programInd: P.programInd,
+        byLLO: P.byLLO,
+        byOpp: P.byOpp,
+        pooledOverCredible: P.pooledOverCredible,
+        meta: P.meta,
+      };
+      var ownDate =
+        (P.meta && P.meta.as_of) ||
+        (view && view.asOf ? String(view.asOf).slice(0, 10) : '') ||
+        new Date().toISOString().slice(0, 10);
+      var ownInd = cellsOf(own);
+      if (ownInd && !byDate[ownDate])
+        byDate[ownDate] = {
+          date: ownDate,
+          ind: ownInd,
+          runId: null,
+          n: P.meta && P.meta.cases,
+          current: true,
+        };
+      return Object.keys(byDate)
+        .sort()
+        .map(function (d) {
+          return byDate[d];
+        });
+    },
+    [history, payload, selLLO, selOpp],
+  );
+
   var llosRed = byLLO.filter(function (l) {
     return l.reds > 0;
   }).length;
@@ -1094,7 +1209,7 @@ function WorkflowUI({
     if (!real.length) {
       return (
         <div className="text-xs text-gray-400 py-8 text-center">
-          no month has enough data to score
+          no point has enough data to score
         </div>
       );
     }
@@ -1253,7 +1368,7 @@ function WorkflowUI({
             .join(' ')}
         />
         <text x={PAD_L} y={PAD_T - 2} fontSize="9" fill="#6366f1">
-          bars = babies started (max {maxS})
+          bars = babies registered (max {maxS})
         </text>
         <text
           x={CHART_W - PAD_R}
@@ -1269,274 +1384,313 @@ function WorkflowUI({
   }
 
   function TrendView() {
-    if (!monthly.length) {
-      return (
-        <div className="bg-white border border-gray-200 rounded-xl p-6 text-sm text-gray-500">
-          No dated visits to trend.
-        </div>
-      );
-    }
-    var months = monthly.map(function (m) {
-      return m.month;
+    var scopeLabel = selOpp ? oppLabel(selOpp) : selLLO ? selLLO : 'Programme';
+    var dates = historyPoints.map(function (p) {
+      return p.date;
     });
-    function series(key) {
-      return monthly.map(function (m) {
-        var e = m[key];
-        // An unscored month (n below the minimum denominator) is a GAP, not a zero.
-        if (!e || e.value === null || e.band === 'insufficient') return null;
+    function series(id) {
+      return historyPoints.map(function (p) {
+        var e = p.ind && p.ind[id];
+        // An unscored point (n below the minimum denominator) is a GAP, not a zero.
+        if (!e || e.value === null || e.value === undefined) return null;
+        if (e.band === 'insufficient' || e.band === 'notcredible') return null;
         return e.value;
       });
     }
     var charts = [
       {
         id: 'C09',
-        title: 'C09 · % weight data sufficient',
-        note: 'of that month\u2019s intake cohort',
-        values: series('c09'),
+        title: 'C09 \u00b7 % weight data sufficient',
+        values: series('C09'),
         color: '#0d9488',
         pct: true,
         target: 0.6,
       },
       {
         id: 'C14',
-        title: 'C14 · Mortality',
-        note: 'PIPN + EHA only \u2014 the credible recorders',
-        values: series('mortality'),
+        title: 'C14 \u00b7 Mortality',
+        note: selLLO || selOpp ? '' : 'pooled over the credible recorders',
+        values: series('C14'),
         color: '#dc2626',
         pct: true,
         target: 0.04,
       },
       {
         id: 'C15',
-        title: 'C15 · Loss to follow-up by day 28',
-        note: 'newest month is right-censored, not a collapse',
-        values: series('c15'),
+        title: 'C15 \u00b7 Loss to follow-up by day 28',
+        values: series('C15'),
         color: '#d97706',
         pct: true,
         target: 0.1,
       },
       {
         id: 'C13',
-        title: 'C13 · Mean early growth rate',
+        title: 'C13 \u00b7 Mean early growth rate',
         note: 'g/kg/day \u2014 target 15',
-        values: series('c13'),
+        values: series('C13'),
         color: '#4f46e5',
         pct: false,
         target: 15,
       },
     ];
+    var weeks = weekly.map(function (w) {
+      return w.week;
+    });
+    var savedCount = historyPoints.filter(function (p) {
+      return !p.current;
+    }).length;
     return (
       <div className="space-y-5">
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <div className="flex items-baseline justify-between gap-4 flex-wrap">
             <div className="font-medium text-gray-900">
-              Monthly trend
+              Weekly trend
               <span className="ml-2 text-sm font-normal text-gray-500">
-                {selFLW
-                  ? (
-                      byFLW.filter(function (f) {
-                        return f.key === selFLW;
-                      })[0] || {}
-                    ).flw +
-                    ' — ' +
-                    oppLabel(selOpp || (selFLW || '').split(FLW_SEP)[0])
-                  : selOpp
-                  ? oppLabel(selOpp)
-                  : selLLO
-                  ? selLLO + ' — all opportunities'
-                  : 'Whole programme'}
+                {scopeLabel}
               </span>
             </div>
-            {/* Scope switcher, so you can move between LLOs without hopping tabs. */}
-            <div className="flex items-center gap-1 flex-wrap">
+            {(selLLO || selOpp) && (
               <button
+                className="text-xs text-indigo-600 hover:underline"
                 onClick={function () {
                   setSelLLO(null);
                   setSelOpp(null);
                   setSelFLW(null);
                 }}
-                className={
-                  'px-2 py-1 rounded text-xs border ' +
-                  (!selLLO && !selOpp
-                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50')
-                }
               >
-                Whole programme
+                Programme-wide
               </button>
-              {byLLO.map(function (l) {
-                var on = selLLO === l.llo && !selOpp;
-                return (
-                  <button
-                    key={l.llo}
-                    onClick={function () {
-                      setSelLLO(l.llo);
-                      setSelOpp(null);
-                      setSelFLW(null);
-                    }}
-                    className={
-                      'px-2 py-1 rounded text-xs border ' +
-                      (on
-                        ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
-                        : 'border-gray-200 text-gray-600 hover:bg-gray-50')
-                    }
-                  >
-                    {l.llo}
-                  </button>
-                );
-              })}
-              {selFLW && (
-                <button
-                  onClick={function () {
-                    setSelFLW(null);
-                  }}
-                  className="px-2 py-1 rounded text-xs border border-indigo-300 bg-indigo-50 text-indigo-700"
-                >
-                  {(
-                    byFLW.filter(function (f) {
-                      return f.key === selFLW;
-                    })[0] || {}
-                  ).flw + ' ✕'}
-                </button>
-              )}
-              {selOpp && !selFLW && (
-                <button
-                  onClick={function () {
-                    setSelOpp(null);
-                  }}
-                  className="px-2 py-1 rounded text-xs border border-indigo-300 bg-indigo-50 text-indigo-700"
-                >
-                  {oppLabel(selOpp)} ✕
-                </button>
-              )}
-            </div>
+            )}
           </div>
-          <p className="text-xs text-gray-500 mt-2">
-            Cohorted on each baby&rsquo;s registration date, falling back to
-            first visit where none is recorded. Each month&rsquo;s quality and
-            growth figures describe the babies who entered that month. A gap in
-            a line is a month with too few cases to score, not a zero. Dashed
-            line = target.
+          <p className="text-xs text-gray-500 mt-1">
+            Activity is counted in the week it happened. Each indicator point is
+            the figure as of a saved weekly report, computed the same way as the
+            headline; a gap is a week with too few cases to score, not a zero.
+            Dashed line = target.
           </p>
         </div>
 
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <div className="text-sm font-medium text-gray-900 mb-1">
-            Intake &amp; activity
+            Registrations &amp; visits by week
+            <span className="ml-2 text-xs font-normal text-gray-400">
+              last {weeks.length} weeks
+              {P.meta && P.meta.as_of ? ' to ' + P.meta.as_of : ''}
+            </span>
           </div>
-          <VolumeChart
-            months={months}
-            started={monthly.map(function (m) {
-              return m.started;
-            })}
-            visits={monthly.map(function (m) {
-              return m.visits;
-            })}
-          />
+          {weeks.length ? (
+            <VolumeChart
+              months={weeks}
+              started={weekly.map(function (w) {
+                return w.registered;
+              })}
+              visits={weekly.map(function (w) {
+                return w.visits;
+              })}
+            />
+          ) : (
+            <div className="text-xs text-gray-400 py-8 text-center">
+              No dated visits in this scope.
+            </div>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {charts.map(function (c) {
-            return (
-              <div
-                key={c.id}
-                className="bg-white border border-gray-200 rounded-xl p-4"
-              >
-                <div className="text-sm font-medium text-gray-900">
-                  {c.title}
+        {historyPoints.length < 2 ? (
+          <div className="bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-600">
+            <div className="font-medium text-gray-900 mb-1">
+              Indicators over time
+            </div>
+            {savedCount
+              ? 'One saved report so far. '
+              : 'No saved reports yet. '}
+            Each saved report adds a point as of its date; save this report
+            weekly and the indicator lines build from here.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {charts.map(function (c) {
+              return (
+                <div
+                  key={c.id}
+                  className="bg-white border border-gray-200 rounded-xl p-4"
+                >
+                  <div className="text-sm font-medium text-gray-900">
+                    {c.title}
+                  </div>
+                  <div className="text-xs text-gray-400 mb-1">
+                    {c.note || '\u00a0'}
+                  </div>
+                  <LineChart
+                    months={dates}
+                    values={c.values}
+                    color={c.color}
+                    pct={c.pct}
+                    target={c.target}
+                  />
                 </div>
-                <div className="text-xs text-gray-400 mb-1">{c.note}</div>
-                <LineChart
-                  months={months}
-                  values={c.values}
-                  color={c.color}
-                  pct={c.pct}
-                  target={c.target}
-                />
-              </div>
-            );
-          })}
-        </div>
-
-        <details className="bg-white border border-gray-200 rounded-xl">
-          <summary className="px-4 py-3 text-sm font-medium text-gray-900 cursor-pointer">
-            Monthly figures (table)
-          </summary>
-          <div className="overflow-x-auto border-t border-gray-100">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-gray-500">
-                <tr>
-                  <th className="px-3 py-2 text-left">Month</th>
-                  <th className="px-3 py-2 text-right">Registered</th>
-                  <th className="px-3 py-2 text-right">Started</th>
-                  <th className="px-3 py-2 text-right">Visits</th>
-                  <th className="px-3 py-2 text-right">
-                    % weight data sufficient
-                    <div className="text-[10px] font-normal text-gray-400">
-                      C09
-                    </div>
-                  </th>
-                  <th className="px-3 py-2 text-right">
-                    Mean early growth rate
-                    <div className="text-[10px] font-normal text-gray-400">
-                      C13
-                    </div>
-                  </th>
-                  <th className="px-3 py-2 text-right">
-                    Mortality
-                    <div className="text-[10px] font-normal text-gray-400">
-                      C14
-                    </div>
-                  </th>
-                  <th className="px-3 py-2 text-right">
-                    Loss to follow-up
-                    <div className="text-[10px] font-normal text-gray-400">
-                      C15
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthly.map(function (m) {
-                  function cell(e, id) {
-                    var ind = C_LIST.filter(function (i) {
-                      return i.id === id;
-                    })[0];
-                    if (!e || e.value === null)
-                      return <span className="text-gray-300">&mdash;</span>;
-                    if (e.band === 'insufficient')
-                      return (
-                        <span className="text-gray-400">n&lt;{MIN_DEN}</span>
-                      );
-                    return fmt(ind, e);
-                  }
-                  return (
-                    <tr key={m.month} className="border-t border-gray-100">
-                      <td className="px-3 py-2 font-medium text-gray-900">
-                        {m.month}
-                      </td>
-                      <td className="px-3 py-2 text-right">{m.registered}</td>
-                      <td className="px-3 py-2 text-right">{m.started}</td>
-                      <td className="px-3 py-2 text-right">{m.visits}</td>
-                      <td className="px-3 py-2 text-right">
-                        {cell(m.c09, 'C09')}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {cell(m.c13, 'C13')}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {cell(m.mortality, 'C14')}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {cell(m.c15, 'C15')}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              );
+            })}
           </div>
-        </details>
+        )}
+
+        {historyPoints.length > 0 && (
+          <details className="bg-white border border-gray-200 rounded-xl">
+            <summary className="px-4 py-3 text-sm font-medium text-gray-900 cursor-pointer">
+              Weekly figures (table)
+            </summary>
+            <div className="overflow-x-auto border-t border-gray-100">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left">As of</th>
+                    <th className="px-3 py-2 text-right">Cases</th>
+                    {['C09', 'C13', 'C14', 'C15'].map(function (id) {
+                      var ind = C_LIST.filter(function (i) {
+                        return i.id === id;
+                      })[0];
+                      return (
+                        <th key={id} className="px-3 py-2 text-right">
+                          {ind ? ind.title : id}
+                          <div className="text-[10px] font-normal text-gray-400">
+                            {id}
+                          </div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyPoints.map(function (p) {
+                    return (
+                      <tr key={p.date} className="border-t border-gray-100">
+                        <td className="px-3 py-2 font-medium text-gray-900">
+                          {p.date}
+                          {p.current ? (
+                            <span className="ml-2 text-[10px] text-gray-400">
+                              this report
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {p.n ? nCount(p.n) : '\u2014'}
+                        </td>
+                        {['C09', 'C13', 'C14', 'C15'].map(function (id) {
+                          var ind = C_LIST.filter(function (i) {
+                            return i.id === id;
+                          })[0];
+                          var e = p.ind && p.ind[id];
+                          return (
+                            <td key={id} className="px-3 py-2 text-right">
+                              {!e ||
+                              e.value === null ||
+                              e.value === undefined ? (
+                                <span className="text-gray-300">&mdash;</span>
+                              ) : e.band === 'insufficient' ? (
+                                <span className="text-gray-400">
+                                  n&lt;{(ind && ind.min_denominator) || MIN_DEN}
+                                </span>
+                              ) : (
+                                fmt(ind, e)
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        )}
+
+        {monthly.length > 0 && (
+          <details className="bg-white border border-gray-200 rounded-xl">
+            <summary className="px-4 py-3 text-sm font-medium text-gray-900 cursor-pointer">
+              Intake cohorts by month (table)
+            </summary>
+            <div className="px-4 pt-2 text-xs text-gray-500">
+              Babies grouped by the month they were registered; each row
+              describes that cohort as of this report. Recent cohorts are still
+              maturing into the 28- and 42-day gates, so their figures are not
+              yet comparable.
+            </div>
+            <div className="overflow-x-auto border-t border-gray-100 mt-2">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Month</th>
+                    <th className="px-3 py-2 text-right">Registered</th>
+                    <th className="px-3 py-2 text-right">Started</th>
+                    <th className="px-3 py-2 text-right">Visits</th>
+                    <th className="px-3 py-2 text-right">
+                      % weight data sufficient
+                      <div className="text-[10px] font-normal text-gray-400">
+                        C09
+                      </div>
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      Mean early growth rate
+                      <div className="text-[10px] font-normal text-gray-400">
+                        C13
+                      </div>
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      Mortality
+                      <div className="text-[10px] font-normal text-gray-400">
+                        C14
+                      </div>
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      Loss to follow-up
+                      <div className="text-[10px] font-normal text-gray-400">
+                        C15
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthly.map(function (m) {
+                    function cell(e, id) {
+                      var ind = C_LIST.filter(function (i) {
+                        return i.id === id;
+                      })[0];
+                      if (!e || e.value === null)
+                        return <span className="text-gray-300">&mdash;</span>;
+                      if (e.band === 'insufficient')
+                        return (
+                          <span className="text-gray-400">n&lt;{MIN_DEN}</span>
+                        );
+                      return fmt(ind, e);
+                    }
+                    return (
+                      <tr key={m.month} className="border-t border-gray-100">
+                        <td className="px-3 py-2 font-medium text-gray-900">
+                          {m.month}
+                        </td>
+                        <td className="px-3 py-2 text-right">{m.registered}</td>
+                        <td className="px-3 py-2 text-right">{m.started}</td>
+                        <td className="px-3 py-2 text-right">{m.visits}</td>
+                        <td className="px-3 py-2 text-right">
+                          {cell(m.c09, 'C09')}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {cell(m.c13, 'C13')}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {cell(m.mortality, 'C14')}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {cell(m.c15, 'C15')}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        )}
       </div>
     );
   }
@@ -1619,7 +1773,7 @@ function WorkflowUI({
       <div className="flex items-center gap-1 border-b border-gray-200">
         {[
           ['indicators', 'Indicators'],
-          ['trends', 'Monthly trend'],
+          ['trends', 'Weekly trend'],
         ].map(function (t) {
           var on = tab === t[0];
           return (

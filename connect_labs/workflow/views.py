@@ -2185,6 +2185,57 @@ def preview_snapshot_api(request, run_id):
 
 
 @login_required
+@require_GET
+def run_history_api(request, definition_id):
+    """Every COMPLETED run of a definition, with a projection of each saved snapshot.
+
+    This is how a dashboard draws a time series without a second data model: each
+    saved run is one point, computed AS OF its period end by the same builder that
+    computed every other point, and the render asks for the few paths it charts
+    (`?keys=programInd,meta`). Generic on purpose -- `flw_audit_report_history_api`
+    and `flw_daily_indicator_history_api` above are the same idea written twice
+    with a template's state key baked in; a third copy for KMC would have been the
+    signal to write this.
+
+    Scoping is `list_runs`'s: program-owned multi-opp definitions fan out across
+    their member opportunities, so the history is complete wherever the page is
+    opened from.
+    """
+    from connect_labs.workflow.snapshot_runtime import project_state
+
+    keys = [k.strip() for k in (request.GET.get("keys") or "").split(",") if k.strip()]
+    if not keys:
+        return JsonResponse({"error": "keys is required: comma-separated paths under the snapshot state"}, status=400)
+    try:
+        wf_access = WorkflowDataAccess(request=request)
+        try:
+            runs = wf_access.list_runs(definition_id=definition_id)
+        finally:
+            wf_access.close()
+        out = []
+        for run in runs:
+            if not run.is_completed:
+                continue
+            state = ((run.data.get("snapshot") or {}).get("state")) or {}
+            out.append(
+                {
+                    "id": run.id,
+                    "name": run.name,
+                    "opportunity_id": run.opportunity_id,
+                    "period_start": run.period_start,
+                    "period_end": run.period_end,
+                    "completed_at": run.completed_at,
+                    "state": project_state(state, keys),
+                }
+            )
+        out.sort(key=lambda r: (str(r["period_end"] or ""), str(r["completed_at"] or "")))
+        return JsonResponse({"runs": out})
+    except Exception:
+        logger.exception("Failed to build run history for definition %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+@login_required
 @require_POST
 def complete_run_api(request, run_id):
     """Mark a workflow run as completed — atomic terminal transition.

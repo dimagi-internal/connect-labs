@@ -262,6 +262,7 @@ def build(
     generated_at: str | None = None,
     visit_rows: list[dict] | None = None,
     extra_series: dict[str, list[dict]] | None = None,
+    as_of: str | None = None,
 ) -> dict:
     """Assemble the saved-run payload from evaluated semantic rows.
 
@@ -510,7 +511,62 @@ def build(
                 drilled_llo = llo_map.get(_int(ident))
             monthly_by_scope[f"{prefix}{ident}"] = _series(rows, pred, drilled_llo=drilled_llo, drilled=True)
 
+    # Activity by ISO week (Monday-start), per drill scope: visits that happened
+    # and babies registered in the week, cut at `as_of` so a run for a past week
+    # shows nothing after its own date. This is the ACTIVITY half of the trend tab;
+    # the indicator half is the series of saved runs (one point per run, each
+    # computed as of its period end), which the run-history API serves and which no
+    # single evaluation could produce. Cohort-month indicator lines are NOT drawn
+    # any more: an intake cohort's figures move for weeks after intake as babies
+    # mature into each gate, so the newest months always read as a collapse.
+    # Worker scope is deliberately absent: hundreds of keys x weeks would not fit
+    # the payload cap, and the worker drill has its own workflow.
+    cut = str(as_of)[:10] if as_of else None
+
+    def _week_of(d) -> str | None:
+        try:
+            day = dt.date.fromisoformat(str(d)[:10])
+        except (TypeError, ValueError):
+            return None
+        return (day - dt.timedelta(days=day.weekday())).isoformat()
+
+    def _weekly(visit_pred, case_pred) -> list[dict]:
+        weeks: dict[str, dict] = {}
+        for v in visit_rows:
+            if not visit_pred(v):
+                continue
+            d = str(v.get("visit_date") or "")[:10]
+            if not d or (cut and d > cut):
+                continue
+            w = _week_of(d)
+            if w:
+                weeks.setdefault(w, {"visits": 0, "registered": 0})["visits"] += 1
+        for c in cases:
+            if not case_pred(c):
+                continue
+            d = str(c.get("reg_date") or c.get("first_visit_date") or "")[:10]
+            if not d or (cut and d > cut):
+                continue
+            w = _week_of(d)
+            if w:
+                weeks.setdefault(w, {"visits": 0, "registered": 0})["registered"] += 1
+        return [{"week": w, "visits": weeks[w]["visits"], "registered": weeks[w]["registered"]} for w in sorted(weeks)]
+
+    weekly: dict[str, list[dict]] = {"all": _weekly(lambda v: True, lambda c: True)}
+    for name in sorted({x for x in llo_map.values() if x}):
+        weekly[f"llo:{name}"] = _weekly(
+            lambda v, n=name: llo_map.get(_int(v.get("opportunity_id"))) == n,
+            lambda c, n=name: c.get("llo") == n,
+        )
+    for oid in sorted({_int(v.get("opportunity_id")) for v in visit_rows} - {None}):
+        weekly[f"opp:{oid}"] = _weekly(
+            lambda v, o=oid: _int(v.get("opportunity_id")) == o,
+            lambda c, o=oid: _int(c.get("opportunity_id")) == o,
+        )
+
     return {
+        # Activity by week per drill scope -- see above.
+        "weekly": weekly,
         # 3: `byFLW[].rows` carries positions into `cases`; `credibility` replaces the
         # single-purpose `mortalityCredible`; graded by the framework, not a template.
         "schema": 3,
