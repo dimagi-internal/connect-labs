@@ -1,5 +1,7 @@
 # Connect Pulse — funder-facing live service-delivery telemetry
 
+> **Status (2026-09-08 doc-regen):** SHIPPED — the 'pending spec review' line below is stale. Live at `/labs/pulse/` (`connect_labs/pulse/`); see CLAUDE.md § Connect Pulse for current behaviour. Historical design record.
+
 **Date:** 2026-07-28
 **Status:** Design approved, pending spec review
 **Prototype:** artifact `12b63ed7-5f9d-4c5f-bbbb-33269e70536e` (night-map variant, 27,501 real visits baked in)

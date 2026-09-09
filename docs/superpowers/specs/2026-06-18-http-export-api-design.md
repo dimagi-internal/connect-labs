@@ -1,5 +1,7 @@
 # HTTP `/api/export/` API for synthetic opportunities
 
+> **Status (2026-09-08 doc-regen):** shipped — historical design record. Current behaviour: see CLAUDE.md § Production API Reference and `docs/SYNTHETIC_OPPS.md`.
+
 **Issue:** [#637](https://github.com/dimagi-internal/connect-labs/issues/637)
 **Date:** 2026-06-18
 

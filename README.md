@@ -41,7 +41,7 @@ python manage.py runserver
 | `tasks/`         | Task management for FLW follow-ups                 | [README](connect_labs/tasks/README.md)                                 |
 | `workflow/`      | Configurable workflow engine with React UIs        | [README](connect_labs/workflow/README.md)                              |
 | `ai/`            | AI agent integration via pydantic-ai               | [README](connect_labs/ai/README.md)                                    |
-| `solicitations/` | RFP management scoped by program                   | [README](connect_labs/solicitations/README.md)                         |
+| `solicitations/` | RFP management scoped by program                   | `data_access.py`, `api_views.py`, `mcp_tools.py`                       |
 | `coverage/`      | Delivery unit mapping from CommCare HQ             | [Commands README](connect_labs/coverage/management/commands/README.md) |
 
 ## Documentation Map

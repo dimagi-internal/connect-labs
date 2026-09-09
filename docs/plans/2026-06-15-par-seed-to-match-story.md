@@ -1,5 +1,7 @@
 # PAR demo: seed data to match the story (DDD iteration 2)
 
+> **Status (2026-09-08 doc-regen):** shipped — historical record. The PAR synthetic env's weeks are PINNED, not sliding; re-seed via `synthetic_env_ensure fresh=True`.
+
 **Goal:** flip the PAR walkthrough's concept verdict from FAIL (2/5) to converged by
 making the seeded synthetic env match what the spec narrates. The render pipeline
 already works (run `program-admin-report-2026-06-15-002`: 15/15 scenes, 0 required

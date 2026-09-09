@@ -1,5 +1,7 @@
 # Enhanced KPIs + Impact Headline + Performance Table
 
+> **Status (2026-09-08 doc-regen):** shipped — historical design record for the funder dashboard KPIs (`connect_labs/funder_dashboard/`).
+
 ## Summary
 
 Transform the fund detail page from a static data display into an impact dashboard. Add an impact headline, enhanced KPI cards with trends, and a performance comparison table with sparklines and status indicators. Remove the low-value Linked Programs and Delivery Types sections.

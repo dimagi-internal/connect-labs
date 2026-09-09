@@ -1,5 +1,7 @@
 # Fund Allocations + E2E Tests Design
 
+> **Status (2026-09-08 doc-regen):** shipped — historical design record. Live tests are in `connect_labs/funder_dashboard/tests/e2e/` (excluded from the default pytest run).
+
 **Date:** 2026-03-15
 **Branch:** jj/regranting
 
