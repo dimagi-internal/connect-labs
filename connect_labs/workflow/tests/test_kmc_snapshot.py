@@ -197,11 +197,18 @@ class TestBuild:
     def test_flw_carries_its_cases_so_the_drill_survives_freezing(self):
         """The render's builder stores `rows: []` — correct there, because a LIVE
         dashboard still holds the case rows. A saved run does not, so copying that
-        shape dead-ends the drill at the worker."""
+        shape dead-ends the drill at the worker.
+
+        What `rows` HOLDS changed (positions into `cases`, not the records — storing
+        both put the payload over the 5 MB cap), but the property under test did not:
+        the worker still reaches its own cases. Resolved the way the render resolves
+        them, so this stays a test of the drill and not of the encoding.
+        """
         snap = self._build()
         flw = snap["byFLW"][0]
         assert len(flw["rows"]) == 2
-        assert {c["entity_id"] for c in flw["rows"]} == {"case-a", "case-b"}
+        resolved = [snap["cases"][i] for i in flw["rows"]]
+        assert {c["entity_id"] for c in resolved} == {"case-a", "case-b"}
 
     def test_cases_carry_their_llo_for_the_handoff(self):
         snap = self._build()
@@ -302,3 +309,246 @@ class TestHookScoping:
             idx = src.find(dao)
             assert idx != -1, f"{dao} not found"
             assert "**scope" in src[idx : idx + 200], f"{dao} is built without the run's scope"
+
+
+class TestByFLWMatchesWhatTheRenderReads:
+    """The render's own snapshot builder IS the contract for a snapshot's shape.
+
+    Three fields were missing from the server-side byFLW and each broke something
+    silently on a saved run, because nothing compared the two builders:
+
+      * `key`   — the render's selection identity AND React key (`f.key === selFLW`).
+                  Undefined on every row, so selecting one worker matched all of them.
+      * `flw`   — what the worker table renders and what the audit payload sends.
+                  The server emitted `username`, so every worker rendered blank.
+      * `reds` / `yellows` — the badge counts. by_llo computed them; byFLW did not.
+
+    So this does not hand-list the fields: it reads them out of the render's
+    `buildSnapshot()` and asserts the Python builder emits the same set. A field added
+    to one side and not the other fails here instead of on a funder's screen.
+    """
+
+    RENDER = "kmc_programme_metrics_render.js"
+
+    def _render_src(self) -> str:
+        from pathlib import Path
+
+        from connect_labs.workflow.templates import kmc_programme_metrics as tpl
+
+        return (Path(tpl.__file__).parent / self.RENDER).read_text()
+
+    def _keys_declared_by_render(self, group: str) -> set[str]:
+        """Field names in the render's `<group>: <group>.map(function (x) { return {...} })`."""
+        import re
+
+        src = self._render_src()
+        start = src.index(f"      {group}: {group}.map(function (")
+        # First `return {` after that, then walk to its matching brace.
+        i = src.index("return {", start) + len("return {")
+        depth, j = 1, i
+        while depth:
+            if src[j] == "{":
+                depth += 1
+            elif src[j] == "}":
+                depth -= 1
+            j += 1
+        body = src[i : j - 1]
+        # Top-level `name:` only — skip anything nested inside a sub-object/array.
+        keys, depth = set(), 0
+        for line in body.splitlines():
+            m = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*):", line)
+            if m and depth == 0:
+                keys.add(m.group(1))
+            depth += line.count("{") + line.count("[") - line.count("}") - line.count("]")
+        return keys
+
+    def _snap(self):
+        cases = ks.case_rows(
+            {
+                "children": {
+                    "rows": [
+                        {"entity_id": "c1", "username": "flw_001", "opportunity_id": 10017, "total_visits": 3},
+                        {"entity_id": "c2", "username": "flw_001", "opportunity_id": 10017, "total_visits": 5},
+                        {"entity_id": "c3", "username": "flw_009", "opportunity_id": 10020, "total_visits": 2},
+                    ]
+                }
+            },
+            LLO_MAP,
+        )
+        rows = [
+            {"scope": "programme", "n_cases": 3},
+            {
+                "scope": "flw",
+                "opportunity_id": 10017,
+                "username": "flw_001",
+                "n_cases": 2,
+                "c16": 10.0,
+                "c16_denominator": 30,
+                "anyrec_days_discharge_to_reg": 1,
+            },
+            {
+                "scope": "flw",
+                "opportunity_id": 10020,
+                "username": "flw_009",
+                "n_cases": 1,
+                "c16": 90.0,
+                "c16_denominator": 30,
+                "anyrec_days_discharge_to_reg": 1,
+            },
+        ]
+        return ks.build(rows=rows, measures=[C16], llo_map=LLO_MAP, credible_sets={}, cases=cases)
+
+    def test_byflw_emits_every_field_the_render_declares(self):
+        declared = self._keys_declared_by_render("byFLW")
+        assert declared, "could not parse byFLW out of the render — fix the parser, not the assert"
+        emitted = set(self._snap()["byFLW"][0])
+        missing = declared - emitted
+        assert not missing, f"render reads byFLW[].{sorted(missing)}; the server-side builder omits them"
+
+    def test_byopp_and_byllo_match_too(self):
+        snap = ks.build(
+            rows=[
+                {"scope": "programme", "n_cases": 1},
+                {"scope": "opportunity", "opportunity_id": 10017, "n_cases": 1},
+                {"scope": "llo", "llo": "GHI", "n_cases": 1},
+            ],
+            measures=[C16],
+            llo_map=LLO_MAP,
+            credible_sets={},
+            cases=[],
+        )
+        for group, key in (("byOpp", "byOpp"), ("byLLO", "byLLO")):
+            declared = self._keys_declared_by_render(group)
+            missing = declared - set(snap[key][0])
+            assert not missing, f"render reads {group}[].{sorted(missing)}; the builder omits them"
+
+    def test_key_format_is_the_renders_own(self):
+        # render: var k = r.opp + FLW_SEP + (r.flw || '(unassigned)');  FLW_SEP = '::'
+        entries = {f["key"]: f for f in self._snap()["byFLW"]}
+        assert "10017::flw_001" in entries
+        assert entries["10017::flw_001"]["flw"] == "flw_001"
+
+    def test_unassigned_worker_gets_the_renders_placeholder(self):
+        snap = ks.build(
+            rows=[
+                {"scope": "programme", "n_cases": 1},
+                {"scope": "flw", "opportunity_id": 10017, "username": None, "n_cases": 1},
+            ],
+            measures=[C16],
+            llo_map=LLO_MAP,
+            credible_sets={},
+            cases=[],
+        )
+        assert snap["byFLW"][0]["key"] == "10017::(unassigned)"
+
+    def test_badges_are_counted_not_dropped(self):
+        # c16 = 10.0 against bands [50, 30] on `higher` is red; 90.0 is green.
+        by_key = {f["key"]: f for f in self._snap()["byFLW"]}
+        assert by_key["10017::flw_001"]["reds"] == 1
+        assert by_key["10020::flw_009"]["reds"] == 0
+
+
+class TestCasesAreStoredOnce:
+    """`byFLW[].rows` holds POSITIONS into `cases`, not copies of the records.
+
+    Storing the records in both places stored every case twice: measured on the live
+    9,011-case cohort, 3.07 MB each way — 6.14 MB of a 7.0 MB payload against a 5 MB
+    cap, so `workflow_save_snapshot` refused the run outright. The old code's comment
+    claimed "json dedupes on write"; it does not.
+    """
+
+    def _cases_and_snap(self, children):
+        cases = ks.case_rows({"children": {"rows": children}}, LLO_MAP)
+        rows = [{"scope": "programme", "n_cases": len(children)}]
+        seen = []
+        for c in children:
+            k = (c["opportunity_id"], c["username"])
+            if k not in seen:
+                seen.append(k)
+        for oid, user in seen:
+            rows.append({"scope": "flw", "opportunity_id": oid, "username": user, "n_cases": 1})
+        return cases, ks.build(rows=rows, measures=[C16], llo_map=LLO_MAP, credible_sets={}, cases=cases)
+
+    def test_rows_are_integer_positions_that_resolve(self):
+        children = [
+            {"entity_id": "c1", "username": "flw_001", "opportunity_id": 10017},
+            {"entity_id": "c2", "username": "flw_001", "opportunity_id": 10017},
+            {"entity_id": "c3", "username": "flw_009", "opportunity_id": 10020},
+        ]
+        cases, snap = self._cases_and_snap(children)
+        by_key = {f["key"]: f for f in snap["byFLW"]}
+        rows = by_key["10017::flw_001"]["rows"]
+        assert all(isinstance(i, int) for i in rows), rows
+        assert [snap["cases"][i]["entity_id"] for i in rows] == ["c1", "c2"]
+        assert by_key["10020::flw_009"]["rows"] == [2]
+
+    def test_payload_does_not_carry_a_second_copy_of_the_cases(self):
+        import json
+
+        children = [
+            {
+                "entity_id": f"c{i}",
+                "username": "flw_001",
+                "opportunity_id": 10017,
+                "dob": "2026-05-21",
+                "gender": "Male",
+                "last_kmc_status": "flw_program_concluded",
+            }
+            for i in range(200)
+        ]
+        cases, snap = self._cases_and_snap(children)
+        cases_bytes = len(json.dumps(snap["cases"], separators=(",", ":")))
+        flw_bytes = len(json.dumps(snap["byFLW"], separators=(",", ":")))
+        # The index must be a small fraction of the records it points at, not a peer.
+        assert (
+            flw_bytes < cases_bytes / 4
+        ), f"byFLW is {flw_bytes} B against {cases_bytes} B of cases — the records look duplicated"
+
+    def test_entity_ids_reused_across_opportunities_do_not_collide(self):
+        # 751 of 8,173 entity ids in the live synthetic cohort appear under more than
+        # one opportunity, which is why the reference is a position and not an id.
+        children = [
+            {"entity_id": "shared", "username": "flw_001", "opportunity_id": 10017},
+            {"entity_id": "shared", "username": "flw_009", "opportunity_id": 10020},
+        ]
+        cases, snap = self._cases_and_snap(children)
+        assert len(snap["cases"]) == 2, "an id-keyed index would have collapsed these to one"
+        by_key = {f["key"]: f for f in snap["byFLW"]}
+        assert by_key["10017::flw_001"]["rows"] == [0]
+        assert by_key["10020::flw_009"]["rows"] == [1]
+
+
+class TestSyntheticDisclaimerSurvivesTheSnapshot:
+    """The render shows "this run is built on synthetic clones" from
+    `snapshot.meta.synthetic`. A live run computes it; a saved run can only know what
+    was captured, so omitting the flag published a synthetic cohort with the
+    disclaimer silently absent."""
+
+    def _build(self, **kw):
+        return ks.build(
+            rows=[{"scope": "programme", "n_cases": 1}],
+            measures=[C16],
+            llo_map=LLO_MAP,
+            credible_sets={},
+            cases=[],
+            meta={"cases": 1},
+            **kw,
+        )
+
+    def test_flag_is_carried(self):
+        assert self._build(synthetic=True)["meta"]["synthetic"] is True
+        assert self._build(synthetic=False)["meta"]["synthetic"] is False
+
+    def test_absent_when_not_supplied_rather_than_guessed_false(self):
+        # A builder that guessed False would state "this is real programme data".
+        assert "synthetic" not in self._build()["meta"]
+
+    def test_render_reads_it_from_meta(self):
+        from pathlib import Path
+
+        from connect_labs.workflow.templates import kmc_programme_metrics as tpl
+
+        src = (Path(tpl.__file__).parent / "kmc_programme_metrics_render.js").read_text()
+        assert (
+            "snapshot.meta && snapshot.meta.synthetic" in src
+        ), "the render no longer reads meta.synthetic — this contract moved"
