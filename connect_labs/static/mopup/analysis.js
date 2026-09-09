@@ -335,7 +335,10 @@ window.MopupAnalysis = (function () {
     $('map-legend').innerHTML = swatches.join('');
   }
 
+  let lastMapFeatures = null;
+
   function renderMap(rawMapFeatures) {
+    lastMapFeatures = rawMapFeatures;
     if (!map || !mapReady) return;
     const styled = styleMapFeatures(rawMapFeatures);
     window.PlanLayers.workAreas(map, { data: styled, promoteId: 'wa_id' });
@@ -390,6 +393,11 @@ window.MopupAnalysis = (function () {
           },
         });
       }
+      // The first data poll can complete before Mapbox's own 'load' fires
+      // (e.g. a backgrounded tab throttles its render loop) — renderMap()
+      // would have already returned early in that race, so replay the
+      // last-known data now that the map can actually take layers.
+      if (lastMapFeatures) renderMap(lastMapFeatures);
     });
   }
 
