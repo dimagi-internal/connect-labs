@@ -20,8 +20,18 @@ on:
   pull_request:
     branches: ['main']
 
-  push:
-    branches: ['main']
+  # NOT `push: branches: [main]`. With the merge queue on, every merge produced
+  # THREE runs of this workflow -- pull_request, merge_group, and then push --
+  # and the third re-tested the exact tree the merge_group run had just
+  # certified. Over a recent 39-hour window that was 107 of 300 runs, a third of
+  # all CI spend, for no signal a required check had not already given.
+  #
+  # What push-on-main did still cover is a commit that reached main WITHOUT the
+  # queue: an admin merge, or a direct push. The nightly below covers that at
+  # 1/100th the spend, and unlike the push run it also catches main going red
+  # from something outside the repo (a moved dependency, an expired fixture).
+  schedule:
+    - cron: '0 7 * * *' # 07:00 UTC daily, against whatever main is by then
 
   # REQUIRED BY THE MERGE QUEUE, and it must land BEFORE the queue is switched
   # on. GitHub runs the required checks against the QUEUED MERGE RESULT — this
@@ -34,8 +44,8 @@ on:
   merge_group:
 
 concurrency:
-  # `head_ref` is empty for `merge_group` (and for `push`), so the group falls
-  # back to the unique `run_id` and a queued build is never cancelled by a
+  # `head_ref` is empty for `merge_group` (and for `schedule`), so the group
+  # falls back to the unique `run_id` and a queued build is never cancelled by a
   # sibling. That is the behaviour the queue needs — a cancelled required check
   # is a check that never reports — and it is why this expression is left alone
   # rather than being "simplified" to a bare `github.ref`, which WOULD collide
@@ -92,8 +102,18 @@ jobs:
       # ("Missing: jiti@2.7.0 from lock file"), which predates this job and is not
       # this job's to fix. Installing the one package the check imports keeps the
       # check honest and independent of that.
+      # 20s of this 30s job was re-downloading the same two packages.
+      - name: Cache the JSX parser
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: jsx-parser-${{ runner.os }}-node20-babel7-v1
+
       - name: Install the JSX parser
-        run: npm install --no-save --no-audit --no-fund @babel/core@^7 @babel/preset-react@^7
+        run: |
+          if [ ! -d node_modules/@babel/preset-react ]; then
+            npm install --no-save --no-audit --no-fund @babel/core@^7 @babel/preset-react@^7
+          fi
 
       - name: Check the workflow render templates
         run: node --test connect_labs/workflow/templates/__tests__/kmc_render.test.mjs
@@ -122,21 +142,69 @@ jobs:
       # to reach the real API — a test that actually calls Anthropic should
       # fail loudly here, not silently spend money.
       ANTHROPIC_API_KEY: 'sk-ant-ci-dummy-key-not-real'
+      # Migrate once into a template database and clone it per xdist worker
+      # rather than migrating four times. Opt-in, and deliberately opt-in HERE
+      # and not by default: it trades wall clock for total work, and it wins
+      # only on a loaded machine. This runner is the loaded case -- four shared
+      # vCPUs, Postgres in a container, four pytest workers. See
+      # connect_labs/testing/db_template.py.
+      LABS_TEST_DB_TEMPLATE: '1'
 
     steps:
       - name: Checkout Code Repository
         uses: actions/checkout@v6
 
+      # ~18s of every run went on `apt-get update` plus a download of the same
+      # three packages. Cache the .debs and unpack them instead.
+      - name: Cache the geo packages
+        uses: actions/cache@v4
+        with:
+          path: /tmp/geo-debs
+          # Bump the version suffix to force a refetch; the runner image's own
+          # base libraries move under us occasionally.
+          key: geo-debs-${{ runner.os }}-v1
+
       - name: Install Geo Dependencies
         # --no-install-recommends: Django reaches libgdal/libgeos through ctypes, so
         # the recommended extras (docs, python bindings) are downloaded and unpacked
         # for nothing on every run. Hard dependencies are still installed.
+        #
+        # A stale cache must never be able to fail this step or, worse, leave a
+        # half-installed GDAL that fails later inside pytest with an error about
+        # settings. `dpkg -i` is attempted first and ANY problem falls straight
+        # through to the plain apt path, which is exactly what this used to do.
+        # The import check at the end is the actual contract -- it is what a
+        # partial install would break, and it is cheap.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            binutils \
-            gdal-bin \
-            libproj-dev
+          set -u
+          install_from_apt() {
+            sudo apt-get update
+            # apt refuses to use an archives dir without a `partial` inside it.
+            sudo rm -rf /tmp/geo-debs && mkdir -p /tmp/geo-debs/partial
+            sudo apt-get install -y --no-install-recommends \
+              -o Dir::Cache::archives=/tmp/geo-debs \
+              binutils \
+              gdal-bin \
+              libproj-dev
+            sudo chown -R "$USER" /tmp/geo-debs
+            rmdir /tmp/geo-debs/partial 2>/dev/null || true
+          }
+
+          if compgen -G '/tmp/geo-debs/*.deb' > /dev/null; then
+            echo "Restoring geo packages from cache"
+            sudo dpkg -i /tmp/geo-debs/*.deb || install_from_apt
+          else
+            install_from_apt
+          fi
+
+          # Prove the shared libraries are actually loadable. Without this a
+          # partial restore surfaces 300 lines later as a GDAL error inside
+          # pytest, which names neither this step nor the cache.
+          python3 -c "
+          import ctypes.util, sys
+          missing = [n for n in ('gdal', 'geos_c') if ctypes.util.find_library(n) is None]
+          sys.exit('geo libraries missing after install: ' + ', '.join(missing) if missing else 0)
+          "
 
       - name: Set up Python
         uses: actions/setup-python@v6
