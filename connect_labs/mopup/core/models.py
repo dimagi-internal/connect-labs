@@ -83,5 +83,21 @@ class MopupRunRecord(LocalLabsRecord):
         return self.data.get("fetch_task_id")
 
     @property
+    def create_plan_task_id(self) -> str | None:
+        """The Celery task id (if any) for `mopup.tasks.create_mopup_plan` —
+        Phase 3's hand-off, offloaded the same way as `fetch_task_id` since
+        `include_planning_gaps` can mean fetching + diffing buildings across
+        every locked ward, not just one (confirmed slow enough to risk a
+        gateway timeout on a single real ward this session). Unlike
+        `fetch_task_id` (a run's ONE-TIME data pull), this is cleared as soon
+        as a terminal state (success or failure) is read back — each
+        "Create mop-up plan" click is its own attempt, not a single
+        run-lifetime action, so a later click must dispatch a genuinely new
+        task rather than replay a finished one. See
+        `MopupCreatePlanView`/`_create_plan_result_or_progress` for how this
+        is read back via `AsyncResult`."""
+        return self.data.get("create_plan_task_id")
+
+    @property
     def created_at(self) -> str:
         return self.data.get("created_at", "")

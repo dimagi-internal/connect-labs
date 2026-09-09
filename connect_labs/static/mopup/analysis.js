@@ -264,7 +264,14 @@ window.MopupAnalysis = (function () {
     }
   }
 
+  let createPlanPollTimer = null;
+
+  // Offloaded to a Celery task server-side (a real include_planning_gaps
+  // hand-off can take well over a minute) — this polls the SAME endpoint
+  // every 2s, mirroring pollOrEvaluate's dispatch-once/poll-many pattern,
+  // until it reports a terminal status.
   async function createPlan() {
+    $('create-plan').disabled = true;
     $('status').textContent = 'Creating plan…';
     try {
       const resp = await fetch(CFG.createPlanUrl, {
@@ -278,17 +285,36 @@ window.MopupAnalysis = (function () {
         }),
       });
       const data = await resp.json();
-      if (!resp.ok || data.status !== 'ok') {
-        $('status').textContent = data.detail || 'Failed to create plan.';
+
+      if (data.status === 'pending' || data.status === 'running') {
+        $('status').textContent = data.message || 'Creating plan…';
+        createPlanPollTimer = setTimeout(createPlan, 2000);
         return;
       }
-      $('status').textContent = data.planning_gap_cells_added
-        ? `Plan created (${data.planning_gap_cells_added} planning-gap work area(s) added) — opening review…`
-        : 'Plan created — opening review…';
+      if (data.status === 'failed' || data.status === 'error') {
+        $('status').textContent =
+          data.detail || data.message || data.error || 'Failed to create plan.';
+        $('create-plan').disabled = false;
+        return;
+      }
+
+      // status === 'ok'
+      const warnings = data.planning_gap_warnings || {};
+      const warnedWards = Object.keys(warnings);
+      let msg = data.planning_gap_cells_added
+        ? `Plan created (${data.planning_gap_cells_added} planning-gap work area(s) added)`
+        : 'Plan created';
+      if (warnedWards.length) {
+        msg += ` — planning-gap check failed for ${warnedWards.join(', ')} (${
+          warnings[warnedWards[0]]
+        })`;
+      }
+      $('status').textContent = msg + ' — opening review…';
       if (data.urls && data.urls.review)
         window.location.href = data.urls.review;
     } catch (e) {
       $('status').textContent = 'Failed to create plan.';
+      $('create-plan').disabled = false;
     }
   }
 

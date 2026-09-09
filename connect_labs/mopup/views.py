@@ -31,7 +31,6 @@ from connect_labs.labs.context import get_org_data
 from connect_labs.mopup.core import indicators as ind
 from connect_labs.mopup.core.candidates import summarize_candidates_by_ward
 from connect_labs.mopup.core.data_access import MopupRunDataAccess
-from connect_labs.mopup.core.handoff import HandoffError, create_plan_from_locked_run
 from connect_labs.mopup.core.models import STATUS_LOCKED
 from connect_labs.mopup.core.work_areas import list_work_areas, summarize_wards
 
@@ -86,6 +85,49 @@ def _rows_or_progress(da, run, request, program_id) -> tuple[list[dict] | None, 
         # doesn't need a separate "retry" action, just keep polling (or
         # re-open the page).
         da.update_run(run, fetch_task_id=None)
+    return None, progress
+
+
+def _create_plan_result_or_progress(da, run, request, program_id, payload) -> tuple[dict | None, dict | None]:
+    """Same dispatch-once/poll pattern as `_rows_or_progress`, for
+    `mopup.tasks.create_mopup_plan`. Returns `(resp, None)` once the task
+    reaches a terminal state — `resp` is the task's own result dict, already
+    carrying its OWN `"status"` ("ok" or, for a caught `HandoffError`,
+    "error") — or `(None, progress)` while it's still pending/running.
+
+    Unlike `_rows_or_progress`'s `fetch_task_id` (a run's ONE fetch, ever),
+    `create_plan_task_id` is cleared as soon as ANY terminal state is read
+    back (success included) — each "Create mop-up plan" click is its own
+    attempt, so a later, separate click (e.g. after navigating back to a
+    still-locked run) must dispatch a genuinely new task, not replay a
+    finished one."""
+    from celery.result import AsyncResult
+
+    from connect_labs.labs.analysis.sse_streaming import build_task_progress
+    from connect_labs.mopup.tasks import create_mopup_plan
+
+    task_id = run.create_plan_task_id
+    if not task_id:
+        result = create_mopup_plan.delay(
+            program_id,
+            run.id,
+            request.user.id,
+            grouping=payload.get("grouping"),
+            group_id=payload.get("group_id"),
+            include_planning_gaps=bool(payload.get("include_planning_gaps", False)),
+        )
+        da.update_run(run, create_plan_task_id=result.id)
+        return None, build_task_progress("PENDING", None)
+
+    task = AsyncResult(task_id)
+    progress = build_task_progress(task.state, task.info)
+
+    if progress["status"] == "completed":
+        da.update_run(run, create_plan_task_id=None)
+        return progress["result"], None
+    if progress["status"] == "failed":
+        da.update_run(run, create_plan_task_id=None)
+        return None, progress
     return None, progress
 
 
@@ -389,8 +431,15 @@ class MopupLockView(LoginRequiredMixin, View):
 class MopupCreatePlanView(LoginRequiredMixin, View):
     """Phase 3: hand a locked run's candidate set to the existing microplans
     coverage engine. Only acts on `run.candidate_work_areas` (frozen at lock
-    time) — never re-reads thresholds. See core/handoff.py for the actual
-    microplans calls."""
+    time) — never re-reads thresholds.
+
+    Offloaded to Celery (`mopup.tasks.create_mopup_plan`) the same way
+    Phase 2's data pull is — a real `include_planning_gaps=True` hand-off
+    (fetching + diffing thousands of Overture buildings, per ward) took well
+    over a minute synchronously against real program-217 data this session,
+    and mop-up is expected to run against several wards' candidates at once.
+    See `_create_plan_result_or_progress` for the dispatch/poll mechanics,
+    and core/handoff.py for the actual microplans calls."""
 
     def post(self, request, program_id, run_id):
         da = MopupRunDataAccess(program_id, request=request)
@@ -405,20 +454,7 @@ class MopupCreatePlanView(LoginRequiredMixin, View):
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        try:
-            resp = create_plan_from_locked_run(
-                run,
-                program_id,
-                request=request,
-                grouping=payload.get("grouping"),
-                group_id=payload.get("group_id"),
-                include_planning_gaps=bool(payload.get("include_planning_gaps", False)),
-            )
-        except HandoffError as e:
-            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
-        except Exception:  # noqa: BLE001
-            logger.exception("mopup create_plan: hand-off failed (program=%s run=%s)", program_id, run_id)
-            return JsonResponse({"status": "error", "detail": "Could not create the plan."}, status=502)
-
-        resp["status"] = "ok"
+        resp, progress = _create_plan_result_or_progress(da, run, request, program_id, payload)
+        if resp is None:
+            return JsonResponse(progress)
         return JsonResponse(resp)
