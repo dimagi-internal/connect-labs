@@ -606,6 +606,10 @@ DEFINITION = {
         "scale_agent_by_llo": SCALE_AGENT_BY_LLO,
         "scale_unverified_llos": sorted(UNVERIFIED_SCALE_LLOS),
         "audit_count_per_flw": 25,
+        # Where a worker row opens: the KMC Worker Review workflow and its
+        # long-lived run, `{"workflow_id": ..., "run_id": ...}`. Set on the
+        # instance once that workflow exists; until then rows are not links.
+        "flw_review": None,
     },
     "pipeline_sources": [],
     "snapshot_inputs": SNAPSHOT_INPUTS,
