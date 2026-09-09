@@ -85,7 +85,7 @@ def test_photos_come_through_the_frameworks_visit_image_route():
     the workflow visit-images API returns each visit's blob ids, and the audit
     image route serves them -- the same path the audit review pages use."""
     src = RENDER.read_text()
-    assert "/visit-images/?visit_ids=" in src
+    assert "/visit-images/" in src and "visit_ids=" in src
     assert "/audit/image/" in src
     assert "weighings photographed" in src
 

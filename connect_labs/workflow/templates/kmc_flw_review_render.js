@@ -357,6 +357,9 @@ function WorkflowUI({
   var sImages = React.useState({});
   var imagesByVisit = sImages[0],
     setImagesByVisit = sImages[1];
+  var sImagesLoading = React.useState(false);
+  var imagesLoading = sImagesLoading[0],
+    setImagesLoading = sImagesLoading[1];
   React.useEffect(
     function () {
       if (!selCase) return;
@@ -371,10 +374,17 @@ function WorkflowUI({
         return;
       }
       var cancelled = false;
+      setImagesLoading(true);
+      // The page's own scope travels with the call so the context middleware
+      // does not redirect it; the opportunity the images belong to is in the path.
+      var sp = scopeParams();
       fetch(
         '/labs/workflow/api/' +
           selCase.opportunity_id +
-          '/visit-images/?visit_ids=' +
+          '/visit-images/' +
+          sp +
+          (sp ? '&' : '?') +
+          'visit_ids=' +
           ids.join(','),
         { credentials: 'same-origin' },
       )
@@ -386,6 +396,9 @@ function WorkflowUI({
         })
         .catch(function () {
           if (!cancelled) setImagesByVisit({});
+        })
+        .then(function () {
+          if (!cancelled) setImagesLoading(false);
         });
       return function () {
         cancelled = true;
@@ -1016,11 +1029,13 @@ function WorkflowUI({
               <div className="text-xs text-gray-500 mb-2">
                 Photos
                 <span className="text-gray-400">
-                  {' · ' +
-                    photos +
-                    ' of ' +
-                    weighed.length +
-                    ' weighings photographed'}
+                  {imagesLoading
+                    ? ' · loading photos…'
+                    : ' · ' +
+                      photos +
+                      ' of ' +
+                      weighed.length +
+                      ' weighings photographed'}
                 </span>
               </div>
               <div
@@ -1047,7 +1062,7 @@ function WorkflowUI({
                         </a>
                       ) : (
                         <div className="w-full aspect-square rounded bg-gray-100 flex items-center justify-center text-[10px] text-gray-400">
-                          no photo
+                          {imagesLoading ? '…' : 'no photo'}
                         </div>
                       )}
                       <div className="flex items-center justify-between mt-1 text-[11px]">
@@ -1429,8 +1444,11 @@ function WorkflowUI({
                             }
                           }}
                         >
-                          <td className="px-3 py-2 font-mono text-xs text-gray-700">
-                            {c.entity_id}
+                          <td
+                            className="px-3 py-2 font-mono text-xs text-gray-700 whitespace-nowrap"
+                            title={c.entity_id}
+                          >
+                            {String(c.entity_id).slice(0, 8)}…
                           </td>
                           <td className="px-3 py-2">{dateOnly(c.reg_date)}</td>
                           <td className="px-3 py-2 text-right">
