@@ -872,7 +872,7 @@ function WorkflowUI({
         };
       });
     },
-    [derived, snapshot, cRows, C_LIST],
+    [derived, snapshot, servedFacts, cRows, C_LIST],
   );
 
   var byLLO = React.useMemo(
@@ -1278,7 +1278,7 @@ function WorkflowUI({
           return b.rows.length - a.rows.length;
         });
     },
-    [derived, snapshot, cRows, C_LIST],
+    [derived, snapshot, servedFacts, cRows, C_LIST],
   );
 
   var programInd = React.useMemo(
@@ -1286,7 +1286,7 @@ function WorkflowUI({
       if (snapshot) return snapshot.programInd || {};
       return cIndFor(cRows.programme);
     },
-    [derived, snapshot, cRows, C_LIST],
+    [derived, snapshot, servedFacts, cRows, C_LIST],
   );
 
   // Programme mortality, restricted to the LLOs the workbook accepts as credible
@@ -2138,7 +2138,7 @@ function WorkflowUI({
       var opps = Object.keys(seen);
       return opps.length > 0 && opps.every(isSyntheticOpp);
     },
-    [derived, snapshot],
+    [derived, snapshot, servedFacts],
   );
 
   function buildSnapshot() {
