@@ -870,10 +870,11 @@ def test_analysis_view_caption_lists_each_distinct_source_once(client, django_us
 
     resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
     assert resp.status_code == 200
-    # Two distinct sources across three wards -> each named once, not repeated.
+    # Two distinct sources across three wards -> the caption names each once,
+    # not once per ward (three wards, two sources).
     body = resp.content.decode()
-    assert body.count("GeoPoDe") == 1
-    assert body.count("Overture") == 1
+    assert "Boundary source: GeoPoDe / WHO (wards + pop), Overture" in body
+    assert body.count("Boundary source:") == 1
 
 
 def test_analysis_view_skips_wards_with_no_boundary_match(client, django_user_model, monkeypatch):
@@ -1175,10 +1176,53 @@ def test_planning_gaps_dispatches_a_task_with_the_given_config(client, django_us
         217,
         1,
         mock.ANY,
+        mode="overture",
         building_sources=["Google Open Buildings"],
         min_confidence=0.6,
         min_buildings_per_cell=2,
         cell_size_m=50.0,
+        csv_storage_key=None,
+    )
+
+
+def test_planning_gaps_upload_mode_requires_an_uploaded_file(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_locked_run(runs)
+
+    resp = client.post(
+        reverse("mopup:planning_gaps", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"mode": "upload"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert "Upload a building-data file" in resp.json()["detail"]
+
+
+def test_planning_gaps_upload_mode_dispatches_with_the_stored_key(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    run.data["uploaded_buildings_key"] = "mopup/uploads/run-1/abc123.csv"
+
+    fake_async_result = mock.Mock(id="fresh-gap-task-id")
+    with mock.patch("connect_labs.mopup.tasks.preview_planning_gaps.delay", return_value=fake_async_result) as delay:
+        resp = client.post(
+            reverse("mopup:planning_gaps", kwargs={"program_id": 217, "run_id": 1}),
+            data=json.dumps({"mode": "upload"}),
+            content_type="application/json",
+        )
+    assert resp.status_code == 200, resp.content
+    delay.assert_called_once_with(
+        217,
+        1,
+        mock.ANY,
+        mode="upload",
+        building_sources=None,
+        min_confidence=None,
+        min_buildings_per_cell=1,
+        cell_size_m=100.0,
+        csv_storage_key="mopup/uploads/run-1/abc123.csv",
     )
     assert runs[1].planning_gap_task_id == "fresh-gap-task-id"
 
@@ -1254,3 +1298,98 @@ def test_planning_gaps_surfaces_a_failed_task_and_clears_it_for_retry(client, dj
     assert body["status"] == "failed"
     assert "CommCare HQ authorization needed" in body["error"]
     assert runs[1].planning_gap_task_id is None
+
+
+# --- MopupUploadBuildingsView --------------------------------------------------
+
+
+def _csv_upload(name="buildings.csv", content=None):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    if content is None:
+        content = (
+            "latitude,longitude,area_in_meters,confidence,wardname,lganame,statename\n"
+            "11.09,11.33,14.35,0.66,Nafada Central,Nafada,Gombe\n"
+        )
+    return SimpleUploadedFile(name, content.encode("utf-8"), content_type="text/csv")
+
+
+def test_upload_buildings_requires_login(client):
+    resp = client.post(reverse("mopup:upload_buildings", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_upload_buildings_requires_locked_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)  # not locked
+    resp = client.post(
+        reverse("mopup:upload_buildings", kwargs={"program_id": 217, "run_id": 1}), {"file": _csv_upload()}
+    )
+    assert resp.status_code == 400
+    assert "Lock the run" in resp.json()["detail"]
+
+
+def test_upload_buildings_rejects_non_csv_extension(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_locked_run(runs)
+    resp = client.post(
+        reverse("mopup:upload_buildings", kwargs={"program_id": 217, "run_id": 1}),
+        {"file": _csv_upload(name="buildings.txt")},
+    )
+    assert resp.status_code == 400
+    assert "CSV" in resp.json()["detail"]
+
+
+def test_upload_buildings_rejects_missing_required_columns(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_locked_run(runs)
+    resp = client.post(
+        reverse("mopup:upload_buildings", kwargs={"program_id": 217, "run_id": 1}),
+        {"file": _csv_upload(content="latitude,longitude\n11.09,11.33\n")},
+    )
+    assert resp.status_code == 400
+    assert "missing required column" in resp.json()["detail"]
+    for col in ("wardname", "lganame", "statename"):
+        assert col in resp.json()["detail"]
+
+
+def test_upload_buildings_rejects_oversized_file(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_locked_run(runs)
+    from connect_labs.mopup import views as views_module
+
+    monkeypatch.setattr(views_module, "_MAX_UPLOAD_BYTES", 10)
+    resp = client.post(
+        reverse("mopup:upload_buildings", kwargs={"program_id": 217, "run_id": 1}), {"file": _csv_upload()}
+    )
+    assert resp.status_code == 400
+    assert "too large" in resp.json()["detail"]
+
+
+def test_upload_buildings_success_persists_key_and_filename(
+    client, django_user_model, monkeypatch, settings, tmp_path
+):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    settings.MEDIA_ROOT = str(tmp_path)
+
+    resp = client.post(
+        reverse("mopup:upload_buildings", kwargs={"program_id": 217, "run_id": 1}),
+        {"file": _csv_upload(name="rct_wards_buildings.csv")},
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["filename"] == "rct_wards_buildings.csv"
+    assert run.uploaded_buildings_filename == "rct_wards_buildings.csv"
+    assert run.uploaded_buildings_key
+    assert run.uploaded_buildings_key.startswith("mopup/uploads/run-1/")
+
+    from django.core.files.storage import default_storage
+
+    assert default_storage.exists(run.uploaded_buildings_key)

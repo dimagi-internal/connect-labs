@@ -179,25 +179,42 @@ def preview_planning_gaps(
     run_id: int,
     user_id: int,
     *,
+    mode: str = "overture",
     building_sources: list[str] | None = None,
     min_confidence: float | None = None,
     min_buildings_per_cell: int = 1,
     cell_size_m: float = 100.0,
+    csv_storage_key: str | None = None,
 ) -> dict:
     """Phase 2 Step 2 (locked runs only): for every distinct ward among the
-    run's locked candidates, fetch buildings never covered by any existing
+    run's locked candidates, find buildings never covered by any existing
     work area and grid them into gap-fill candidate work areas — the real,
     potentially slow building fetch (confirmed this session: well over a
-    minute against real ward data) that used to happen silently at Phase 3
-    hand-off time. Offloaded and polled the same way as
-    `fetch_evaluation_data`/`create_mopup_plan`.
+    minute against real ward data, for the Overture mode) that used to
+    happen silently at Phase 3 hand-off time. Offloaded and polled the same
+    way as `fetch_evaluation_data`/`create_mopup_plan`.
+
+    `mode` picks where the buildings come from:
+      * `"skip"` — no new work areas; returns immediately with empty
+        features, right after the run/lock checks below (before any of the
+        per-ward work, which skip mode has no use for) — but still behind
+        the same Connect/CommCare HQ token resolution every mode goes
+        through, so an auth problem surfaces identically regardless of mode.
+      * `"overture"` (default) — today's behavior: `building_sources`/
+        `min_confidence` control `microplans.core.footprints.fetch_buildings`.
+      * `"upload"` — reads the CSV stored at `csv_storage_key` (via
+        `MopupUploadBuildingsView`) ONCE for the whole run (not per ward —
+        the file can be hundreds of thousands of rows), then
+        `core.gaps.buildings_from_upload` filters it down to each ward's own
+        rows. `building_sources`/`min_confidence` are ignored in this mode
+        (no such concept for user-supplied data).
 
     Does NOT persist its own result — `MopupPlanningGapsView` stores the
     returned features/config/warnings onto the run once this returns, so a
     caller can inspect the response before committing to it if it ever
     needs to (today it always stores it).
 
-    Building-fetch caching is inherited for free from
+    Building-fetch caching (Overture mode only) is inherited for free from
     `microplans.core.footprints.fetch_buildings`'s own `FootprintArea`/
     `FootprintBuilding` Postgres cache (7-day TTL) — `core.gaps.buildings_not_covered`
     already calls that function directly, so a second Recompute with the
@@ -211,18 +228,17 @@ def preview_planning_gaps(
     fast cache hit in practice, not a second slow pull.
     """
     from django.contrib.auth import get_user_model
-    from shapely.geometry import shape
 
-    from connect_labs.labs.analysis.pipeline import AnalysisPipeline
-    from connect_labs.mopup.core.areas import carry_forward_features, distinct_wards
-    from connect_labs.mopup.core.candidates import build_evaluation_input
     from connect_labs.mopup.core.data_access import MopupRunDataAccess
-    from connect_labs.mopup.core.gaps import (
-        planning_gap_features,
-        ward_visits_per_building,
-        work_area_boundaries_for_ward,
-    )
     from connect_labs.mopup.core.models import STATUS_LOCKED
+
+    config = {
+        "mode": mode,
+        "building_sources": building_sources,
+        "min_confidence": min_confidence,
+        "min_buildings_per_cell": min_buildings_per_cell,
+        "cell_size_m": cell_size_m,
+    }
 
     set_task_progress(self, "Starting…")
 
@@ -234,8 +250,10 @@ def preview_planning_gaps(
         raise RuntimeError(f"Connect authorization needed: {e}") from e
 
     # work_area_ids_for_ward (via work_area_boundaries_for_ward) is
-    # cchq_cases-sourced -- this task always needs it (unlike
-    # create_mopup_plan, which never touches CommCare HQ any more).
+    # cchq_cases-sourced -- every mode resolves this upfront (even "skip",
+    # which doesn't end up needing it) so a broken CCHQ session always
+    # surfaces the same way regardless of mode, matching every other check
+    # in this task running before the mode-specific branches below.
     try:
         cchq_access_token = get_valid_cchq_access_token(user)
     except CCHQTokenError as e:
@@ -250,6 +268,23 @@ def preview_planning_gaps(
     if run.status != STATUS_LOCKED:
         raise RuntimeError("Lock the run before previewing planning gaps.")
 
+    if mode == "skip":
+        result = {"status": "ok", "features": [], "cells_added": 0, "warnings": {}, "config": config}
+        set_task_progress(self, "Done", is_complete=True, result=result)
+        return result
+
+    from shapely.geometry import shape
+
+    from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+    from connect_labs.mopup.core.areas import carry_forward_features, distinct_wards
+    from connect_labs.mopup.core.candidates import build_evaluation_input
+    from connect_labs.mopup.core.gaps import (
+        buildings_from_upload,
+        planning_gap_features,
+        ward_visits_per_building,
+        work_area_boundaries_for_ward,
+    )
+
     candidates = run.candidate_work_areas
     with_geometry = [c for c in candidates if c.get("boundary")]
     if not with_geometry:
@@ -260,6 +295,13 @@ def preview_planning_gaps(
 
     set_task_progress(self, "Fetching this run's visit history for the EVC estimate…")
     all_rows = build_evaluation_input(run.target_opportunity_id, run.selected_wards, pipeline=pipeline)
+
+    uploaded_df = None
+    if mode == "upload":
+        if not csv_storage_key:
+            raise RuntimeError("Upload a building-data file before recomputing.")
+        set_task_progress(self, "Reading the uploaded building file…")
+        uploaded_df = _read_uploaded_buildings_csv(csv_storage_key)
 
     gap_features: list[dict] = []
     warnings: dict[str, str] = {}
@@ -276,6 +318,9 @@ def preview_planning_gaps(
                 warnings[w["ward"]] = "no ward boundary match — skipped"
                 continue
             rate = ward_visits_per_building(all_rows, w["ward"])
+            ward_buildings = (
+                buildings_from_upload(uploaded_df, w["ward"], w["lga"], w["state"]) if mode == "upload" else None
+            )
             gap_features += planning_gap_features(
                 w["ward"],
                 w["lga"],
@@ -288,6 +333,7 @@ def preview_planning_gaps(
                 sources=building_sources,
                 min_buildings_per_cell=min_buildings_per_cell,
                 visits_per_building=rate,
+                buildings=ward_buildings,
             )
         except Exception as e:  # noqa: BLE001
             warnings[w["ward"]] = str(e)
@@ -300,12 +346,19 @@ def preview_planning_gaps(
         "features": gap_features,
         "cells_added": len(gap_features),
         "warnings": warnings,
-        "config": {
-            "building_sources": building_sources,
-            "min_confidence": min_confidence,
-            "min_buildings_per_cell": min_buildings_per_cell,
-            "cell_size_m": cell_size_m,
-        },
+        "config": config,
     }
     set_task_progress(self, "Done", is_complete=True, result=result)
     return result
+
+
+def _read_uploaded_buildings_csv(storage_key: str):
+    """Reads a Step 2 "upload your own" CSV back from `default_storage`
+    (wherever `MopupUploadBuildingsView` wrote it — S3 in production,
+    `MEDIA_ROOT` locally/in tests) into a DataFrame, once per Recompute —
+    `core.gaps.buildings_from_upload` then filters it per ward."""
+    import pandas as pd
+    from django.core.files.storage import default_storage
+
+    with default_storage.open(storage_key, "rb") as f:
+        return pd.read_csv(f)
