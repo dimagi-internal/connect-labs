@@ -81,6 +81,9 @@
     <h2 class="text-lg font-semibold text-gray-900">Map</h2>
     <div id="analysis-map"></div>
     <div id="map-legend" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600"></div>
+    {% if boundary_source_caption %}
+    <p class="text-xs text-gray-400">{{ boundary_source_caption }} <span class="info-icon" tabindex="0" data-tip="Connect's own API doesn't yet expose ward-level boundary data — only individual work-area shapes. This ward outline instead comes from a public/curated boundary matched by ward name, which can disagree with what's actually uploaded in Connect for this ward.">ⓘ</span></p>
+    {% endif %}
   </section>
 
   <section class="border border-gray-200 rounded p-4 space-y-4">
