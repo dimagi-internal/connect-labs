@@ -548,6 +548,15 @@ def build_snapshot(*, pipelines, state, opportunity_id, **context):
     opportunity_ids = [int(o) for o in (context.get("opportunity_ids") or [opportunity_id])]
     request = context.get("request")
     access_token = context.get("access_token")
+    program_id = context.get("program_id")
+
+    # EVERY data accessor below carries the run's scope. On the web path `request`
+    # supplies it; on the MCP path there is no request, and an accessor built from a
+    # token alone is unscoped — `get_definition` then cannot see the very workflow it
+    # was called for ("workflow 5456 could not be read"). Same defect as the registry
+    # binding's unscoped read, and the reason it is stated once here rather than at
+    # four call sites.
+    scope = {"opportunity_id": opportunity_id, "program_id": program_id}
 
     try:
         from connect_labs.semantic.runtime import evaluate, filter_to_series, measure_catalog
@@ -559,7 +568,7 @@ def build_snapshot(*, pipelines, state, opportunity_id, **context):
         )
         from connect_labs.workflow.templates import kmc_snapshot
 
-        wda = WorkflowDataAccess(request=request, access_token=access_token)
+        wda = WorkflowDataAccess(request=request, access_token=access_token, **scope)
         try:
             definition = wda.get_definition(definition_id)
         finally:
@@ -568,7 +577,7 @@ def build_snapshot(*, pipelines, state, opportunity_id, **context):
             raise RuntimeError(f"workflow {definition_id} could not be read")
 
         pipeline_config, extra_fields = build_evaluate_inputs(
-            definition, lambda: PipelineDataAccess(request=request, access_token=access_token)
+            definition, lambda: PipelineDataAccess(request=request, access_token=access_token, **scope)
         )
 
         # The registry this WORKFLOW is bound to, not a hardcoded one. That binding is
@@ -578,7 +587,9 @@ def build_snapshot(*, pipelines, state, opportunity_id, **context):
         # someone actually made the indicators dynamic.
         props_doc, full_registry, llo_map, reg_settings, _source = resolve_registry_for(
             definition,
-            registry_access_factory=lambda: SemanticRegistryDataAccess(request=request, access_token=access_token),
+            registry_access_factory=lambda: SemanticRegistryDataAccess(
+                request=request, access_token=access_token, **scope
+            ),
         )
         # Every scope a saved run can drill to. ONE pass: GROUPING SETS exist
         # precisely because per-scope calls re-run the whole Layer 1 extraction.
