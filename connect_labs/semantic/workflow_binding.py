@@ -30,7 +30,7 @@ class SemanticBindingError(Exception):
 
 
 def resolve_registry_for(definition, registry_access_factory=None, registry_id_override: int | None = None):
-    """Resolve the registry a workflow computes from, and its llo_map + settings.
+    """Resolve the registry a workflow computes from, and its deployment facts.
 
     A workflow BINDS a registry (`definition.registry_source`), and that binding is the
     whole point of registries-as-records: indicators become editable without a deploy.
@@ -45,6 +45,13 @@ def resolve_registry_for(definition, registry_access_factory=None, registry_id_o
 
     `registry_id_override` supports reading a CANDIDATE registry against real data
     before it is bound — the dry run that makes editing indicators live safe.
+
+    Returns `(properties, indicators, llo_map, settings, deployment, source)`.
+    `deployment` is the whole fact set — llo_map, settings, app_asks, asks_as — and
+    it is returned because the availability gates read `app_asks`, which used to be
+    a static dict in `semantic/gates.py`. A workflow bound to a RECORD therefore
+    took its bands from the record and its gates from the repo, with nothing to
+    notice when they disagreed.
     """
     from connect_labs.semantic.runtime import resolve_registry
 
@@ -56,11 +63,11 @@ def resolve_registry_for(definition, registry_access_factory=None, registry_id_o
     if source.get("registry_id") and registry_access_factory is not None:
         access = registry_access_factory()
     try:
-        props_doc, full_registry, llo_map, settings = resolve_registry(source, access)
+        props_doc, full_registry, llo_map, settings, deployment = resolve_registry(source, access)
     finally:
         if access is not None and hasattr(access, "close"):
             access.close()
-    return props_doc, full_registry, llo_map, settings, source
+    return props_doc, full_registry, llo_map, settings, deployment, source
 
 
 def build_evaluate_inputs(definition, pipeline_access_factory) -> tuple[Any, dict[str, Any] | None]:

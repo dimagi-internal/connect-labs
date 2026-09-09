@@ -100,7 +100,7 @@ def test_a_seeded_record_compiles_to_the_same_sql_as_the_files(seeded):
     disk_map = {int(k): str(v) for k, v in disk_dep["llo_map"].items()}
     disk_settings = disk_dep["settings"]
 
-    db_props, db_inds, db_map, db_settings = resolve_registry({"registry_id": record.id}, store)
+    db_props, db_inds, db_map, db_settings, _db_dep = resolve_registry({"registry_id": record.id}, store)
 
     assert db_map == disk_map, "llo_map did not survive the JSON round trip as integers"
     assert db_settings == disk_settings
@@ -117,8 +117,8 @@ def test_a_seeded_record_compiles_to_the_same_sql_as_the_files(seeded):
 
 def test_the_built_in_registry_is_still_the_default():
     """Binding nothing must behave exactly as it did before records existed."""
-    named_props, named_inds, named_map, named_settings = resolve_registry({"name": "kmc"})
-    default_props, default_inds, default_map, default_settings = resolve_registry(None)
+    named_props, named_inds, named_map, named_settings, _n = resolve_registry({"name": "kmc"})
+    default_props, default_inds, default_map, default_settings, _d = resolve_registry(None)
     assert (default_props, default_inds, default_map, default_settings) == (
         named_props,
         named_inds,

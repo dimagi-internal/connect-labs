@@ -368,6 +368,10 @@ def _default_snapshot_from_inputs(
     """Build the default snapshot honoring a template's declarative manifest.
 
     `snapshot_inputs` keys (all optional):
+      - `builder`: name of a framework snapshot builder (see
+        workflow/snapshot_builders.py). When set, that builder OWNS the payload and
+        every key below is ignored — the manifest becomes the builder's spec. This
+        is how a computed snapshot stays declarative instead of needing a hook.
       - `pipelines`: list of alias strings to capture verbatim. None/missing
         means "all"; an empty list means "none."
       - `workers`: bool (default True) — capture worker list if present.
@@ -381,6 +385,29 @@ def _default_snapshot_from_inputs(
         merely early. Default False, so no existing template changes behaviour.
     Anything not listed is not captured.
     """
+    # A DECLARED BUILDER, before anything is copied. Everything below this point can
+    # only copy — pipeline rows, state keys, workers, verbatim — so a template whose
+    # snapshot is a COMPUTATION had no declarative route and had to ship a Python
+    # hook, which is a deploy for every change. `builder` names a framework builder
+    # and the rest of this manifest is its spec, so the computation becomes editable
+    # through `workflow_update_definition`. See workflow/snapshot_builders.py.
+    builder_name = snapshot_inputs.get("builder")
+    if builder_name:
+        from connect_labs.workflow.snapshot_builders import BUILDERS, SnapshotBuilderError
+
+        builder = BUILDERS.get(str(builder_name))
+        if builder is None:
+            raise SnapshotBuilderError(
+                f"{template_key}: snapshot_inputs.builder is {builder_name!r}, which is not a "
+                f"registered builder. Known: {sorted(BUILDERS)}"
+            )
+        return builder(
+            spec=snapshot_inputs,
+            pipelines=pipelines,
+            opportunity_id=opportunity_id,
+            context=context,
+        )
+
     out: dict = {"schema_version": 1}
 
     pipelines_filter = snapshot_inputs.get("pipelines")

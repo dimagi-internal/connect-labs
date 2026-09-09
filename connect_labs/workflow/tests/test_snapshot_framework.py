@@ -252,42 +252,72 @@ class TestDefaultHookSnapshotInputs:
         )
         assert snap["state"]["frozen"]["meta"]["cases"] == 9011
 
+    SAFETY_KEY = "_tv_safety_flag"
+
+    def _register_template_declaring_the_flag(self):
+        """A template that declares the safety flag, registered for this test.
+
+        This used to point at `kmc_programme_metrics`, which declared
+        `require_state_keys: True` because its snapshot was staged by its render.
+        That template now declares a server-side `builder` instead, so it has no
+        staged state to be missing and no reason to carry the flag — and the test
+        broke, even though the framework rule it checks did not change. The rule is
+        the framework's, so the fixture is too.
+        """
+        TEMPLATES[self.SAFETY_KEY] = {
+            "key": self.SAFETY_KEY,
+            "name": "TV Safety",
+            "description": "d",
+            "definition": {"name": "TV Safety", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+            "supports_saved_runs": True,
+            "snapshot_inputs": {"state_keys": ["staged"], "require_state_keys": True},
+        }
+
     def test_require_state_keys_survives_an_older_instance_manifest(self):
         """The flag must reach workflows created BEFORE it existed.
 
         Instance manifests are stamped at create-from-template time and never
-        migrate, and `resolve_snapshot_contract` lets the instance win. Measured
-        on live workflow 5456: its stored manifest is
-        `{"workers": False, "pipelines": [], "state_keys": ["frozen"]}` — no
-        `require_state_keys` — so the guard shipped and was inert on the one
-        workflow it was written for.
+        migrate, and `resolve_snapshot_contract` lets the instance win. Measured on
+        live workflow 5456: its stored manifest carried no `require_state_keys`, so
+        the guard shipped and was inert on the one workflow it was written for.
 
-        `state_keys` / `pipelines` / `workers` stay instance-owned; only the
-        safety flag is inherited.
+        `state_keys` / `pipelines` / `workers` stay instance-owned; only the safety
+        flag is inherited.
         """
         from connect_labs.workflow.templates import resolve_snapshot_contract
 
-        class _Def:
-            template_type = "kmc_programme_metrics"
-            data = {"snapshot_inputs": {"workers": False, "pipelines": [], "state_keys": ["frozen"]}}
+        self._register_template_declaring_the_flag()
+        try:
 
-        contract = resolve_snapshot_contract(_Def())
-        assert contract["ok"] and contract["source"] == "definition"
-        assert contract["snapshot_inputs"]["require_state_keys"] is True
-        # instance-owned content is untouched
-        assert contract["snapshot_inputs"]["state_keys"] == ["frozen"]
-        assert contract["snapshot_inputs"]["workers"] is False
+            class _Def:
+                template_type = self.SAFETY_KEY
+                data = {"snapshot_inputs": {"workers": False, "pipelines": [], "state_keys": ["staged"]}}
+
+            contract = resolve_snapshot_contract(_Def())
+            assert contract["ok"] and contract["source"] == "definition"
+            assert contract["snapshot_inputs"]["require_state_keys"] is True
+            # instance-owned content is untouched
+            assert contract["snapshot_inputs"]["state_keys"] == ["staged"]
+            assert contract["snapshot_inputs"]["workers"] is False
+        finally:
+            TEMPLATES.pop(self.SAFETY_KEY, None)
 
     def test_an_instance_may_still_turn_the_flag_off_explicitly(self):
         """Inheritance fills a GAP; it does not override a deliberate choice."""
         from connect_labs.workflow.templates import resolve_snapshot_contract
 
-        class _Def:
-            template_type = "kmc_programme_metrics"
-            data = {"snapshot_inputs": {"state_keys": ["frozen"], "require_state_keys": False}}
+        self._register_template_declaring_the_flag()
+        try:
 
-        contract = resolve_snapshot_contract(_Def())
-        assert contract["snapshot_inputs"]["require_state_keys"] is False
+            class _Def:
+                template_type = self.SAFETY_KEY
+                data = {"snapshot_inputs": {"state_keys": ["staged"], "require_state_keys": False}}
+
+            contract = resolve_snapshot_contract(_Def())
+            assert contract["snapshot_inputs"]["require_state_keys"] is False
+        finally:
+            TEMPLATES.pop(self.SAFETY_KEY, None)
 
     def test_unknown_template_instance_manifest_is_unchanged(self):
         """A bespoke workflow with no registered template keeps its manifest verbatim."""
