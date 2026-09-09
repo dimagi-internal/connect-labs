@@ -726,6 +726,22 @@ function WorkflowRunner({
   const [pipelineData, setPipelineData] = useState<
     Record<string, PipelineResult>
   >(initialData.pipeline_data || {});
+  // A COMPLETED run whose snapshot carries its own pipeline results never reads
+  // live pipeline data: the view resolves `snapshot.pipelines`, and `{}` is not
+  // nullish, so anything streamed is discarded. Such a run must therefore neither
+  // stream (see the mount effect) nor WAIT -- it is already complete.
+  //
+  // Both halves matter. Skipping only the stream leaves this status pinned at
+  // 'Connecting...' with nothing left to clear it, and the render is gated on it
+  // being null: a permanent spinner on a finished report. And gating on the
+  // snapshot actually CARRYING pipelines keeps a template whose hook emits no
+  // `pipelines` key falling through to live data, as it always has.
+  const snapshotCarriesPipelines = !!(
+    initialData.instance.status === 'completed' &&
+    initialData.instance.snapshot &&
+    (initialData.instance.snapshot as { pipelines?: unknown }).pipelines
+  );
+
   // Pipeline loading status - null means loaded/ready, string means loading with message
   const [pipelineLoadingStatus, setPipelineLoadingStatus] = useState<
     string | null
@@ -736,6 +752,9 @@ function WorkflowRunner({
       ? null
       : // No pipelines configured?
       !initialData.definition.pipeline_sources?.length
+      ? null
+      : // A finished run carries its own; nothing to wait for.
+      snapshotCarriesPipelines
       ? null
       : // Need to load
         'Connecting...',
@@ -1068,15 +1087,6 @@ function WorkflowRunner({
     applyScopeParams,
     definition.pipeline_sources,
   ]);
-
-  // Whether this run is finished AND its snapshot carries the pipeline results the
-  // render will read. Both halves matter -- see the effect below.
-  const snapshotCarriesPipelines = useMemo(() => {
-    const inst = initialData.instance;
-    if (inst.status !== 'completed') return false;
-    const snap = inst.snapshot as { pipelines?: unknown } | null | undefined;
-    return !!(snap && snap.pipelines);
-  }, [initialData.instance]);
 
   // Load pipeline data on mount via SSE streaming.
   // Gated on the framework auth check passing — no point hammering CCHQ

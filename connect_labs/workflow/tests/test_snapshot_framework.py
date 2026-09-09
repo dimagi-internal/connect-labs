@@ -681,6 +681,16 @@ class TestTheSnapshotShapeTheRunnerActuallyReads:
         assert (
             "if (snapshotCarriesPipelines) return;" in src
         ), "the guard exists but no longer short-circuits the pipeline stream effect"
+        # Skipping the stream is only half of it. The render is gated on
+        # `pipelineLoadingStatus` clearing, and the stream was the only thing that
+        # cleared it -- so a finished report sat on a permanent spinner until the
+        # same condition also seeded that state to null.
+        start = src.index("const [pipelineLoadingStatus")
+        gate = src[start : src.index("'Connecting...'", start)]
+        assert "snapshotCarriesPipelines" in gate, (
+            "a completed run skips the pipeline stream but still initialises "
+            "pipelineLoadingStatus to 'Connecting...', which nothing will now clear"
+        )
 
     def test_a_graded_payload_is_wrapped_under_state(self):
         from connect_labs.workflow.snapshot_builders import wrap_for_runner
