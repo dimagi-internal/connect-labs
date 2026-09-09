@@ -127,7 +127,7 @@ CREATE TABLE fixture_visits (
     child_alive_no boolean, danger_sign_yes boolean, referred_yes boolean,
     self_referral_yes boolean, ebf_recorded boolean, form_name text,
     days_discharge_to_reg double precision, birth_weight_g double precision,
-    enrollment_weight_g double precision, kmc_hours_mean double precision,
+    enrollment_weight_g double precision, gestational_age_wks double precision, kmc_hours_mean double precision,
     reg_date timestamp, hospital_discharge_date timestamp,
     opportunity_id int, username text
 );
@@ -141,7 +141,7 @@ def _load(conn):
     for baby, off, w, alive, danger, ref, form, d2r, bw, ew in VISITS:
         cur.execute(
             "INSERT INTO fixture_visits VALUES (%s, DATE '2026-01-01' + %s, %s, %s, %s, %s,"
-            " false, true, %s, %s, %s, %s, 4.0, DATE '2026-01-01',"
+            " false, true, %s, %s, %s, %s, 34.0, 4.0, DATE '2026-01-01',"
             " DATE '2026-01-01' - %s::int, 1, 'flw1')",
             (
                 baby,
