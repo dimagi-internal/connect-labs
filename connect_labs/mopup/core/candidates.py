@@ -95,6 +95,8 @@ def _empty_ward_row(ward: str, lga: str, state: str) -> dict:
         "lga": lga,
         "state": state,
         "total_work_areas": 0,
+        "total_hsd": 0,
+        "total_ncf": 0,
         "total_buildings": 0,
         "total_evc": 0,
         "candidate_count": 0,
@@ -104,11 +106,25 @@ def _empty_ward_row(ward: str, lga: str, state: str) -> dict:
     }
 
 
+def ward_key(ward: str, lga: str, state: str) -> str:
+    """The composite string key used to align a ward's row across
+    `summarize_candidates_by_ward` and `gap_summary_by_ward` — plain
+    ward-name lookup risks colliding two same-named wards in different
+    LGAs/states, so every ward-keyed dict in this module uses this same
+    "state|lga|ward" composite."""
+    return f"{state}|{lga}|{ward}"
+
+
 def summarize_candidates_by_ward(candidates: list[dict], all_rows: list[dict]) -> list[dict]:
     """Per-ward rollup for the candidate table (design brief §8): total work
-    areas/buildings/EVC reviewed, how many (and how much) are candidates, and
-    how many were flagged by 2+ indicators (§6c) — cheap since severity is
-    already computed per candidate.
+    areas/HSD/NCF visits/buildings/EVC reviewed, how many (and how much) are
+    candidates, and how many were flagged by 2+ indicators (§6c) — cheap
+    since severity is already computed per candidate.
+
+    `total_hsd`/`total_ncf` mirror the NCF/inaccessible indicator's own
+    definition (`core.indicators._ncf_visit_total`: NCF + Inaccessible visits
+    counted together) so the ward summary's numbers are traceable back to
+    what the indicator itself is computing.
 
     Every ward present in `all_rows` gets a row here, even one with zero
     candidates under the current thresholds — this is a survey of what was
@@ -122,6 +138,8 @@ def summarize_candidates_by_ward(candidates: list[dict], all_rows: list[dict]) -
         key = (wa["state"], wa["lga"], wa["ward"])
         row = by_ward.setdefault(key, _empty_ward_row(wa["ward"], wa["lga"], wa["state"]))
         row["total_work_areas"] += 1
+        row["total_hsd"] += wa.get("approved_hsd_count", 0) or 0
+        row["total_ncf"] += (wa.get("approved_ncf_count", 0) or 0) + (wa.get("approved_inaccessible_count", 0) or 0)
         row["total_buildings"] += wa.get("building_count", 0) or 0
         row["total_evc"] += wa.get("expected_visit_count", 0) or 0
 
@@ -135,6 +153,34 @@ def summarize_candidates_by_ward(candidates: list[dict], all_rows: list[dict]) -
             row["flagged_by_2_plus"] += 1
 
     return sorted(by_ward.values(), key=lambda r: (r["state"], r["lga"], r["ward"]))
+
+
+def gap_summary_by_ward(gap_features: list[dict]) -> dict[str, dict]:
+    """Step 2's gap-fill work areas, rolled up per ward — a sibling to
+    `summarize_candidates_by_ward`, not merged into its rows, so the
+    frontend can render Step 2's contribution as its own distinguishable
+    sub-row per ward rather than widening the table with more columns.
+    Keyed by `ward_key` (state|lga|ward) so the frontend can align it
+    against the matching main-row without a same-named-ward collision."""
+    by_ward: dict[str, dict] = {}
+    for feature in gap_features:
+        props = feature.get("properties", {}) or {}
+        key = ward_key(props.get("ward", ""), props.get("lga", ""), props.get("state", ""))
+        row = by_ward.setdefault(
+            key,
+            {
+                "ward": props.get("ward", ""),
+                "lga": props.get("lga", ""),
+                "state": props.get("state", ""),
+                "gap_wa_count": 0,
+                "gap_buildings": 0,
+                "gap_evc": 0,
+            },
+        )
+        row["gap_wa_count"] += 1
+        row["gap_buildings"] += props.get("building_count", 0) or 0
+        row["gap_evc"] += props.get("expected_visit_count", 0) or 0
+    return by_ward
 
 
 def build_map_features(all_rows: list[dict], candidates: list[dict], gap_features: list[dict] | None = None) -> dict:

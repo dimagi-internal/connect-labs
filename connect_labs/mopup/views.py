@@ -32,6 +32,7 @@ from connect_labs.mopup.core import indicators as ind
 from connect_labs.mopup.core.candidates import (
     build_map_features,
     gap_feature_to_candidate_row,
+    gap_summary_by_ward,
     summarize_candidates_by_ward,
 )
 from connect_labs.mopup.core.data_access import MopupRunDataAccess
@@ -467,6 +468,7 @@ class MopupCandidatesView(LoginRequiredMixin, View):
                 "candidates": candidates,
                 "gap_candidates": gap_candidates,
                 "ward_summary": ward_summary,
+                "gap_summary_by_ward": gap_summary_by_ward(gap_features),
                 "total_work_areas": len(rows),
                 "candidate_count": len(candidates),
                 "per_indicator_counts": per_indicator_counts,
