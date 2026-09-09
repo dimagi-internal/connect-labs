@@ -8,6 +8,8 @@ tested separately at the template level.
 
 from __future__ import annotations
 
+import pytest
+
 from connect_labs.workflow.templates import TEMPLATES, build_snapshot_for_template, list_templates
 
 
@@ -632,3 +634,68 @@ class TestSnapshotSizeCap:
                 state={"blob": "x" * (6 * 1024 * 1024)},
                 opportunity_id=700,
             )
+
+
+@pytest.mark.contract
+class TestTheSnapshotShapeTheRunnerActuallyReads:
+    """A saved run renders from `instance.snapshot`, and the shape is not the payload.
+
+    `workflow-runner.tsx` sets `state: snapshot.state ?? instanceState`, so render
+    code reading `view.state.<key>` resolves ONLY if the stored snapshot carries a
+    `state` object. A builder that returns its graded payload bare puts every key one
+    level too high: `state` is undefined, the view falls back to the run's own empty
+    state, and the render silently draws its LIVE path instead — on a completed run
+    that means LLO names reading "opp 10021" and every indicator an em-dash, with no
+    error raised anywhere.
+
+    That is what the first saved run of the KMC dashboard did, and the hook that
+    preceded the framework builder had the same defect (`{"snapshot": ...}`, also
+    missing `state`). Nothing caught it because no saved run had ever been rendered,
+    which is why this is a contract test against the runner's own source.
+    """
+
+    RUNNER = "connect_labs/static/js/workflow-runner.tsx"
+
+    def test_the_runner_still_reads_state_off_the_snapshot(self):
+        from pathlib import Path
+
+        src = Path(self.RUNNER).read_text()
+        assert "snapshot.state" in src, (
+            "the runner no longer derives view.state from the stored snapshot — "
+            "this contract moved, and wrap_for_runner must move with it"
+        )
+
+    def test_a_graded_payload_is_wrapped_under_state(self):
+        from connect_labs.workflow.snapshot_builders import wrap_for_runner
+
+        wrapped = wrap_for_runner({"byFLW": [], "cases": [], "schema": 3})
+        assert set(wrapped) == {"state", "pipelines", "workers"}
+        assert wrapped["state"]["snapshot"]["schema"] == 3
+
+    def test_the_state_key_is_spec_driven_not_assumed(self):
+        from connect_labs.workflow.snapshot_builders import wrap_for_runner
+
+        assert "frozen" in wrap_for_runner({"a": 1}, "frozen")["state"]
+
+    def test_the_payload_is_not_returned_bare(self):
+        """The exact regression: graded keys must not sit at the top level, where
+        the runner will never look for them."""
+        from connect_labs.workflow.snapshot_builders import wrap_for_runner
+
+        wrapped = wrap_for_runner({"byFLW": [1], "programInd": {}})
+        assert "byFLW" not in wrapped, "graded keys are one level too high; view.state would be undefined"
+        assert "programInd" not in wrapped
+
+    def test_the_declared_schema_keys_describe_the_wrapped_path(self):
+        """`snapshot_schema` advertises `state.snapshot.*`, so the stored shape has
+        to actually put them there."""
+        from connect_labs.workflow.snapshot_builders import wrap_for_runner
+        from connect_labs.workflow.templates.kmc_programme_metrics import SNAPSHOT_INPUTS, SNAPSHOT_SCHEMA
+
+        declared = [k for k in SNAPSHOT_SCHEMA["keys"] if k.startswith("state.snapshot.")]
+        assert declared, "the manifest no longer declares state.snapshot.* keys"
+        wrapped = wrap_for_runner({"programInd": {}}, SNAPSHOT_INPUTS.get("state_key"))
+        node = wrapped
+        for part in declared[0].split(".")[:-1]:
+            assert part in node, f"the stored shape has no {part!r}, so {declared[0]} is unreachable"
+            node = node[part]
