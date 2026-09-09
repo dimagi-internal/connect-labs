@@ -46,6 +46,20 @@ function WorkflowUI({
   var sCase = React.useState(null);
   var selCase = sCase[0],
     setSelCase = sCase[1];
+  // A case is addressable too (`?case=<entity_id>`), so a demo or a review note
+  // can link straight to one baby. The URL follows the selection either way.
+  var caseParam = qp('case');
+  function openCase(c) {
+    setSelCase(c);
+    try {
+      var u = new URL(window.location.href);
+      if (c) u.searchParams.set('case', c.entity_id);
+      else u.searchParams.delete('case');
+      window.history.replaceState(null, '', u.toString());
+    } catch (e) {
+      // an older browser keeps the state without the URL
+    }
+  }
 
   // ── The report this page reads ───────────────────────────────────────────────
   var sReport = React.useState({ status: 'loading' });
@@ -192,6 +206,7 @@ function WorkflowUI({
     try {
       var u = new URL(window.location.href);
       u.searchParams.set('flw', key);
+      u.searchParams.delete('case');
       window.history.replaceState(null, '', u.toString());
     } catch (e) {
       // an older browser keeps the state without the URL
@@ -305,6 +320,16 @@ function WorkflowUI({
         });
     },
     [P, flw, childByKey, childRows, selKey],
+  );
+  React.useEffect(
+    function () {
+      if (selCase || !caseParam || !cases.length) return;
+      var hit = cases.filter(function (c) {
+        return String(c.entity_id) === caseParam;
+      })[0];
+      if (hit) setSelCase(hit);
+    },
+    [cases, caseParam, selCase],
   );
   function visitsFor(c) {
     if (!c) return [];
@@ -903,7 +928,7 @@ function WorkflowUI({
               type="button"
               className="text-indigo-600 hover:underline"
               onClick={function () {
-                setSelCase(null);
+                openCase(null);
               }}
             >
               ← all cases
@@ -930,7 +955,7 @@ function WorkflowUI({
                   : 'border-gray-100 text-gray-300')
               }
               onClick={function () {
-                if (prev) setSelCase(prev);
+                if (prev) openCase(prev);
               }}
             >
               ← Previous
@@ -945,7 +970,7 @@ function WorkflowUI({
                   : 'border-gray-100 text-gray-300')
               }
               onClick={function () {
-                if (next) setSelCase(next);
+                if (next) openCase(next);
               }}
             >
               Next →
@@ -1396,7 +1421,7 @@ function WorkflowUI({
                             (selCase === c ? 'bg-indigo-50' : '')
                           }
                           onClick={function () {
-                            setSelCase(c);
+                            openCase(c);
                             try {
                               window.scrollTo({ top: 0, behavior: 'smooth' });
                             } catch (e) {
