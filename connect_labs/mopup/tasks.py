@@ -102,13 +102,12 @@ def create_mopup_plan(
     *,
     grouping: dict | None = None,
     group_id: int | None = None,
-    include_planning_gaps: bool = False,
 ) -> dict:
     """Phase 3 hand-off, offloaded the same way as `fetch_evaluation_data` —
-    confirmed this session that a real ward's `include_planning_gaps=True`
-    hand-off (fetching + diffing thousands of Overture buildings) can take
-    well over a minute synchronously, and mop-up is expected to run against
-    several wards' candidates at once, which only grows that number. See
+    kept async even though planning-gap computation moved to Phase 2's Step 2
+    (`preview_planning_gaps`, so this hand-off is typically fast now): mop-up
+    is expected to run against several wards' locked candidates at once,
+    which is still worth guarding against a gateway timeout. See
     `connect_labs.mopup.views.MopupCreatePlanView`/
     `_create_plan_result_or_progress` for how this is dispatched/polled.
 
@@ -137,20 +136,6 @@ def create_mopup_plan(
     except ConnectTokenError as e:
         raise RuntimeError(f"Connect authorization needed: {e}") from e
 
-    # Only the planning-gap branch's existing-WA lookup
-    # (core/gaps.py:work_area_boundaries_for_ward -> core/areas.py:
-    # work_area_ids_for_ward) is cchq_cases-sourced — a carry-forward-only
-    # hand-off never touches CommCare HQ, so don't demand a token it doesn't
-    # need.
-    cchq_access_token = None
-    if include_planning_gaps:
-        try:
-            cchq_access_token = get_valid_cchq_access_token(user)
-        except CCHQTokenError as e:
-            raise RuntimeError(
-                f"CommCare HQ authorization needed — visit /labs/commcare/initiate/ to reconnect: {e}"
-            ) from e
-
     da = MopupRunDataAccess(program_id, access_token=access_token)
     run = da.get_run(run_id)
     if run is None:
@@ -158,7 +143,11 @@ def create_mopup_plan(
     if run.status != STATUS_LOCKED:
         raise RuntimeError("Lock the run before creating a plan.")
 
-    pipeline = AnalysisPipeline(access_token=access_token, cchq_access_token=cchq_access_token)
+    # Carry-forward + ward_children_per_building's target-rate lookups are
+    # Connect-export-sourced only — this hand-off never needs a CommCare HQ
+    # token (that's only true for the planning-gap ward lookups, which moved
+    # to Step 2's own preview_planning_gaps task).
+    pipeline = AnalysisPipeline(access_token=access_token, cchq_access_token=None)
 
     def on_stage(label: str) -> None:
         set_task_progress(self, label)
@@ -171,7 +160,6 @@ def create_mopup_plan(
             access_token=access_token,
             grouping=grouping,
             group_id=group_id,
-            include_planning_gaps=include_planning_gaps,
             on_stage=on_stage,
         )
     except HandoffError as e:
@@ -182,3 +170,142 @@ def create_mopup_plan(
     resp["status"] = "ok"
     set_task_progress(self, "Done", is_complete=True, result=resp)
     return resp
+
+
+@celery_app.task(bind=True)
+def preview_planning_gaps(
+    self,
+    program_id: int,
+    run_id: int,
+    user_id: int,
+    *,
+    building_sources: list[str] | None = None,
+    min_confidence: float | None = None,
+    min_buildings_per_cell: int = 1,
+    cell_size_m: float = 100.0,
+) -> dict:
+    """Phase 2 Step 2 (locked runs only): for every distinct ward among the
+    run's locked candidates, fetch buildings never covered by any existing
+    work area and grid them into gap-fill candidate work areas — the real,
+    potentially slow building fetch (confirmed this session: well over a
+    minute against real ward data) that used to happen silently at Phase 3
+    hand-off time. Offloaded and polled the same way as
+    `fetch_evaluation_data`/`create_mopup_plan`.
+
+    Does NOT persist its own result — `MopupPlanningGapsView` stores the
+    returned features/config/warnings onto the run once this returns, so a
+    caller can inspect the response before committing to it if it ever
+    needs to (today it always stores it).
+
+    Building-fetch caching is inherited for free from
+    `microplans.core.footprints.fetch_buildings`'s own `FootprintArea`/
+    `FootprintBuilding` Postgres cache (7-day TTL) — `core.gaps.buildings_not_covered`
+    already calls that function directly, so a second Recompute with the
+    same ward boundary is fast without any mop-up-side cache of its own.
+
+    Re-fetches this run's evaluation rows (`core.candidates.build_evaluation_input`)
+    for the ward-level visits-per-building EVC estimate (`core.gaps.ward_visits_per_building`)
+    rather than relying on the original Phase 2 fetch's Celery result still
+    being around — that data pull is itself cached at the SQL layer
+    (`AnalysisPipeline`'s own RawVisitCache/ComputedVisitCache), so this is a
+    fast cache hit in practice, not a second slow pull.
+    """
+    from django.contrib.auth import get_user_model
+    from shapely.geometry import shape
+
+    from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+    from connect_labs.mopup.core.areas import carry_forward_features, distinct_wards
+    from connect_labs.mopup.core.candidates import build_evaluation_input
+    from connect_labs.mopup.core.data_access import MopupRunDataAccess
+    from connect_labs.mopup.core.gaps import (
+        planning_gap_features,
+        ward_visits_per_building,
+        work_area_boundaries_for_ward,
+    )
+    from connect_labs.mopup.core.models import STATUS_LOCKED
+
+    set_task_progress(self, "Starting…")
+
+    user = get_user_model().objects.get(pk=user_id)
+
+    try:
+        access_token = get_valid_access_token(user)
+    except ConnectTokenError as e:
+        raise RuntimeError(f"Connect authorization needed: {e}") from e
+
+    # work_area_ids_for_ward (via work_area_boundaries_for_ward) is
+    # cchq_cases-sourced -- this task always needs it (unlike
+    # create_mopup_plan, which never touches CommCare HQ any more).
+    try:
+        cchq_access_token = get_valid_cchq_access_token(user)
+    except CCHQTokenError as e:
+        raise RuntimeError(
+            f"CommCare HQ authorization needed — visit /labs/commcare/initiate/ to reconnect: {e}"
+        ) from e
+
+    da = MopupRunDataAccess(program_id, access_token=access_token)
+    run = da.get_run(run_id)
+    if run is None:
+        raise RuntimeError(f"Mop-up run {run_id} not found.")
+    if run.status != STATUS_LOCKED:
+        raise RuntimeError("Lock the run before previewing planning gaps.")
+
+    candidates = run.candidate_work_areas
+    with_geometry = [c for c in candidates if c.get("boundary")]
+    if not with_geometry:
+        raise RuntimeError("None of the locked candidates have boundary geometry.")
+    wards = distinct_wards(carry_forward_features(with_geometry))
+
+    pipeline = AnalysisPipeline(access_token=access_token, cchq_access_token=cchq_access_token)
+
+    set_task_progress(self, "Fetching this run's visit history for the EVC estimate…")
+    all_rows = build_evaluation_input(run.target_opportunity_id, run.selected_wards, pipeline=pipeline)
+
+    gap_features: list[dict] = []
+    warnings: dict[str, str] = {}
+    for i, w in enumerate(wards, start=1):
+        set_task_progress(self, f"Checking planning gaps for {w['ward']} ({i}/{len(wards)})…")
+        try:
+            from connect_labs.microplans.core.admin_boundaries import find_ward_boundary_geometry
+
+            existing_boundaries = work_area_boundaries_for_ward(
+                pipeline, run.target_opportunity_id, w["ward"], w["lga"], w["state"]
+            )
+            ward_boundary = find_ward_boundary_geometry(w["state"], w["lga"], w["ward"])
+            if ward_boundary is None:
+                warnings[w["ward"]] = "no ward boundary match — skipped"
+                continue
+            rate = ward_visits_per_building(all_rows, w["ward"])
+            gap_features += planning_gap_features(
+                w["ward"],
+                w["lga"],
+                w["state"],
+                w["area_id"],
+                shape(ward_boundary),
+                existing_boundaries,
+                cell_size_m=cell_size_m,
+                min_confidence=min_confidence,
+                sources=building_sources,
+                min_buildings_per_cell=min_buildings_per_cell,
+                visits_per_building=rate,
+            )
+        except Exception as e:  # noqa: BLE001
+            warnings[w["ward"]] = str(e)
+            logger.exception(
+                "mopup planning-gap preview: failed (program=%s run=%s ward=%s)", program_id, run_id, w["ward"]
+            )
+
+    result = {
+        "status": "ok",
+        "features": gap_features,
+        "cells_added": len(gap_features),
+        "warnings": warnings,
+        "config": {
+            "building_sources": building_sources,
+            "min_confidence": min_confidence,
+            "min_buildings_per_cell": min_buildings_per_cell,
+            "cell_size_m": cell_size_m,
+        },
+    }
+    set_task_progress(self, "Done", is_complete=True, result=result)
+    return result

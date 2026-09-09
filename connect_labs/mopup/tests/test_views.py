@@ -664,6 +664,40 @@ def test_candidates_returns_map_features_for_the_map(client, django_user_model, 
     assert features[0]["properties"]["first_indicator"] == ind.EVC_SHORTFALL
 
 
+def test_candidates_includes_gap_candidates_already_stored_on_the_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    gap_boundary = {"type": "Polygon", "coordinates": [[[2, 2], [3, 2], [3, 3], [2, 3], [2, 2]]]}
+    run.data["planning_gap_features"] = [
+        {
+            "type": "Feature",
+            "geometry": gap_boundary,
+            "properties": {
+                "cluster": "mopup-x-gap-C0",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "building_count": 4,
+                "expected_visit_count": 9,
+            },
+        }
+    ]
+    _mock_ready_data(monkeypatch, run, [])
+
+    resp = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert len(body["gap_candidates"]) == 1
+    assert body["gap_candidates"][0]["wa_id"] == "mopup-x-gap-C0"
+    assert body["gap_candidates"][0]["building_count"] == 4
+    map_sources = {f["properties"]["source"] for f in body["map_features"]["features"]}
+    assert "planning_gap" in map_sources
+
+
 def test_candidates_persists_thresholds_used(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
@@ -961,13 +995,13 @@ def test_create_plan_dispatches_a_task_when_none_exists(client, django_user_mode
     with mock.patch("connect_labs.mopup.tasks.create_mopup_plan.delay", return_value=fake_async_result) as delay:
         resp = client.post(
             reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}),
-            data=json.dumps({"group_id": 7, "include_planning_gaps": True}),
+            data=json.dumps({"group_id": 7}),
             content_type="application/json",
         )
     assert resp.status_code == 200, resp.content
     body = resp.json()
     assert body["status"] == "pending"
-    delay.assert_called_once_with(217, 1, mock.ANY, grouping=None, group_id=7, include_planning_gaps=True)
+    delay.assert_called_once_with(217, 1, mock.ANY, grouping=None, group_id=7)
     assert runs[1].create_plan_task_id == "fresh-plan-task-id"
 
 
@@ -1057,3 +1091,127 @@ def test_create_plan_surfaces_a_failed_task_and_clears_it_for_retry(client, djan
     assert body["status"] == "failed"
     assert "Connect authorization needed" in body["error"]
     assert runs[1].create_plan_task_id is None
+
+
+# --- MopupPlanningGapsView ---------------------------------------------------
+
+
+def test_planning_gaps_requires_login(client):
+    resp = client.post(reverse("mopup:planning_gaps", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_planning_gaps_requires_locked_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)  # status is STATUS_ANALYSIS, not locked
+    resp = client.post(reverse("mopup:planning_gaps", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 400
+    assert "Lock the run" in resp.json()["detail"]
+
+
+def test_planning_gaps_dispatches_a_task_with_the_given_config(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    assert run.planning_gap_task_id is None
+
+    fake_async_result = mock.Mock(id="fresh-gap-task-id")
+    with mock.patch("connect_labs.mopup.tasks.preview_planning_gaps.delay", return_value=fake_async_result) as delay:
+        resp = client.post(
+            reverse("mopup:planning_gaps", kwargs={"program_id": 217, "run_id": 1}),
+            data=json.dumps(
+                {
+                    "building_sources": ["Google Open Buildings"],
+                    "min_confidence": 0.6,
+                    "min_buildings_per_cell": 2,
+                    "cell_size_m": 50.0,
+                }
+            ),
+            content_type="application/json",
+        )
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["status"] == "pending"
+    delay.assert_called_once_with(
+        217,
+        1,
+        mock.ANY,
+        building_sources=["Google Open Buildings"],
+        min_confidence=0.6,
+        min_buildings_per_cell=2,
+        cell_size_m=50.0,
+    )
+    assert runs[1].planning_gap_task_id == "fresh-gap-task-id"
+
+
+def test_planning_gaps_polls_a_running_task(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    run.data["planning_gap_task_id"] = "gap-task-in-flight"
+    mock_result = mock.Mock(state="PROGRESS", info={"message": "Checking planning gaps for Sabon Gari (1/1)…"})
+    monkeypatch.setattr("celery.result.AsyncResult", lambda task_id: mock_result)
+
+    resp = client.post(
+        reverse("mopup:planning_gaps", kwargs={"program_id": 217, "run_id": 1}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "running"
+    assert runs[1].planning_gap_task_id == "gap-task-in-flight"
+
+
+def test_planning_gaps_persists_the_completed_result_onto_the_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    run.data["planning_gap_task_id"] = "gap-task-done"
+    gap_feature = {"type": "Feature", "properties": {"ward": "Sabon Gari"}}
+    result_payload = {
+        "status": "ok",
+        "features": [gap_feature],
+        "cells_added": 1,
+        "warnings": {"Other Ward": "no ward boundary match — skipped"},
+        "config": {
+            "building_sources": None,
+            "min_confidence": None,
+            "min_buildings_per_cell": 1,
+            "cell_size_m": 100.0,
+        },
+    }
+    mock_result = mock.Mock(state="SUCCESS", info=result_payload)
+    monkeypatch.setattr("celery.result.AsyncResult", lambda task_id: mock_result)
+
+    resp = client.post(
+        reverse("mopup:planning_gaps", kwargs={"program_id": 217, "run_id": 1}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["cells_added"] == 1
+    # Persisted onto the run so a later Create-plan hand-off carries it
+    # forward without recomputing -- no separate "lock" step for Step 2.
+    assert runs[1].planning_gap_task_id is None
+    assert runs[1].planning_gap_features == [gap_feature]
+    assert runs[1].planning_gap_config == result_payload["config"]
+    assert runs[1].planning_gap_warnings == {"Other Ward": "no ward boundary match — skipped"}
+
+
+def test_planning_gaps_surfaces_a_failed_task_and_clears_it_for_retry(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    run.data["planning_gap_task_id"] = "gap-task-in-flight"
+    mock_result = mock.Mock(state="FAILURE", info=RuntimeError("CommCare HQ authorization needed"))
+    monkeypatch.setattr("celery.result.AsyncResult", lambda task_id: mock_result)
+
+    resp = client.post(
+        reverse("mopup:planning_gaps", kwargs={"program_id": 217, "run_id": 1}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "failed"
+    assert "CommCare HQ authorization needed" in body["error"]
+    assert runs[1].planning_gap_task_id is None
