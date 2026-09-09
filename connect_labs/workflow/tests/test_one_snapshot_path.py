@@ -192,3 +192,37 @@ class TestAsOfIsADateOrNothing:
 
         assert as_of_iso("'; DROP TABLE x; --") is None
         assert as_of_iso("Sept 6") is None
+
+
+class TestRunHistoryIsAProjection:
+    """The history API returns many runs' snapshots at once; a trend needs a few
+    hundred bytes of each. The caller names the paths, missing ones come back as
+    None so every run has the same shape."""
+
+    def test_dotted_paths_are_picked_out(self):
+        from connect_labs.workflow.snapshot_runtime import project_state
+
+        state = {"snapshot": {"programInd": {"C09": {"value": 0.5}}, "meta": {"as_of": "2026-09-06"}}}
+        got = project_state(state, ["snapshot.programInd", "snapshot.meta.as_of", "snapshot.cases"])
+        assert got == {
+            "snapshot.programInd": {"C09": {"value": 0.5}},
+            "snapshot.meta.as_of": "2026-09-06",
+            "snapshot.cases": None,
+        }
+
+    def test_a_missing_or_non_dict_state_is_all_none(self):
+        from connect_labs.workflow.snapshot_runtime import project_state
+
+        assert project_state(None, ["a.b"]) == {"a.b": None}
+        assert project_state({"a": 3}, ["a.b"]) == {"a.b": None}
+
+    def test_the_history_route_exists(self):
+        from connect_labs.workflow import urls
+
+        routes = {str(getattr(p.pattern, "_route", "")) for p in urls.urlpatterns}
+        assert "api/<int:definition_id>/runs/history/" in routes
+
+    def test_the_render_draws_its_trend_from_saved_runs_not_cohort_lines(self):
+        src = (REPO / "workflow" / "templates" / "kmc_programme_metrics_render.js").read_text()
+        assert "/runs/history/" in src, "the trend does not read the saved-run history"
+        assert "P.weekly" in src, "the activity chart does not read the builder's weekly series"

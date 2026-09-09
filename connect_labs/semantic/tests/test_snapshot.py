@@ -911,3 +911,56 @@ class TestFurtherSeriesRideTheSameRows:
         """The render joins scorecard worker cells onto the headline worker table by key."""
         payload = self._build({"N": [N06]})
         assert [f["key"] for f in payload["series"]["N"]["byFLW"]] == [f["key"] for f in payload["byFLW"]]
+
+
+class TestWeeklyActivityIsCutAtAsOf:
+    """The activity half of the trend: visits and registrations by ISO week, per
+    drill scope, and nothing after the run's as-of date -- a run for a past week
+    must not show the visits that came after it."""
+
+    VISITS = [
+        {"visit_date": "2026-08-31", "opportunity_id": 10017},  # Monday
+        {"visit_date": "2026-09-06", "opportunity_id": 10017},  # Sunday, same ISO week
+        {"visit_date": "2026-09-07", "opportunity_id": 10016},  # next week
+        {"visit_date": "2026-09-20", "opportunity_id": 10017},  # after as-of
+    ]
+    CASES = [
+        {"opportunity_id": 10017, "llo": "GHI", "reg_date": "2026-09-02"},
+        {"opportunity_id": 10016, "llo": "EHA", "first_visit_date": "2026-09-08"},
+        {"opportunity_id": 10017, "llo": "GHI", "reg_date": "2026-09-21"},  # after as-of
+    ]
+
+    def _build(self, as_of="2026-09-13"):
+        return snap.build(
+            spec=SPEC,
+            rows=[{"scope": "programme", "n_cases": 3}],
+            measures=[C16],
+            deployment=DEPLOY,
+            cases=self.CASES,
+            visit_rows=self.VISITS,
+            as_of=as_of,
+        )["weekly"]
+
+    def test_weeks_start_on_monday_and_carry_both_counts(self):
+        assert self._build()["all"] == [
+            {"week": "2026-08-31", "visits": 2, "registered": 1},
+            {"week": "2026-09-07", "visits": 1, "registered": 1},
+        ]
+
+    def test_nothing_after_as_of_exists(self):
+        weeks = [w["week"] for w in self._build()["all"]]
+        assert "2026-09-14" not in weeks
+
+    def test_no_as_of_means_everything(self):
+        assert [w["week"] for w in self._build(as_of=None)["all"]] == [
+            "2026-08-31",
+            "2026-09-07",
+            "2026-09-14",
+            "2026-09-21",
+        ]
+
+    def test_scoped_by_llo_and_opportunity_but_not_worker(self):
+        weekly = self._build()
+        assert weekly["llo:GHI"] == [{"week": "2026-08-31", "visits": 2, "registered": 1}]
+        assert weekly["opp:10016"] == [{"week": "2026-09-07", "visits": 1, "registered": 1}]
+        assert not any(k.startswith("flw:") for k in weekly), "worker scope would not fit the payload cap"
