@@ -806,89 +806,118 @@ def test_create_plan_requires_locked_run(client, django_user_model, monkeypatch)
     assert "Lock the run" in resp.json()["detail"]
 
 
-def test_create_plan_calls_handoff_and_returns_its_response(client, django_user_model, monkeypatch):
-    _login(client, django_user_model)
-    runs = _make_fake_run_da(monkeypatch)
+def _seed_locked_run(runs):
     from connect_labs.mopup.core.models import STATUS_LOCKED
 
     run = _seed_run(runs)
     run.data["status"] = STATUS_LOCKED
     run.data["candidate_work_areas"] = [{"wa_id": "wa-1"}]
+    return run
 
-    import connect_labs.mopup.views as views_module
 
-    calls = []
+def test_create_plan_dispatches_a_task_when_none_exists(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    assert run.create_plan_task_id is None
 
-    def fake_handoff(run_arg, program_id, *, request=None, grouping=None, group_id=None, include_planning_gaps=False):
-        calls.append((run_arg.id, program_id, grouping, group_id))
-        return {"plan_id": 42, "plan_status": "draft", "urls": {"review": "/microplans/program/217/plan/42/review/"}}
+    fake_async_result = mock.Mock(id="fresh-plan-task-id")
+    with mock.patch("connect_labs.mopup.tasks.create_mopup_plan.delay", return_value=fake_async_result) as delay:
+        resp = client.post(
+            reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}),
+            data=json.dumps({"group_id": 7, "include_planning_gaps": True}),
+            content_type="application/json",
+        )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "pending"
+    delay.assert_called_once_with(217, 1, mock.ANY, grouping=None, group_id=7, include_planning_gaps=True)
+    assert runs[1].create_plan_task_id == "fresh-plan-task-id"
 
-    monkeypatch.setattr(views_module, "create_plan_from_locked_run", fake_handoff)
+
+def test_create_plan_polls_a_running_task(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    run.data["create_plan_task_id"] = "plan-task-in-flight"
+    mock_result = mock.Mock(state="PROGRESS", info={"message": "Creating the plan…"})
+    monkeypatch.setattr("celery.result.AsyncResult", lambda task_id: mock_result)
+
     resp = client.post(
         reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}),
-        data=json.dumps({"group_id": 7}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "running"
+    assert body["message"] == "Creating the plan…"
+    assert runs[1].create_plan_task_id == "plan-task-in-flight"
+
+
+def test_create_plan_returns_the_completed_task_result_and_clears_the_task_id(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    run.data["create_plan_task_id"] = "plan-task-done"
+    resp_payload = {
+        "status": "ok",
+        "plan_id": 42,
+        "plan_status": "draft",
+        "urls": {"review": "/microplans/program/217/plan/42/review/"},
+    }
+    mock_result = mock.Mock(state="SUCCESS", info=resp_payload)
+    monkeypatch.setattr("celery.result.AsyncResult", lambda task_id: mock_result)
+
+    resp = client.post(
+        reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}),
         content_type="application/json",
     )
     assert resp.status_code == 200, resp.content
     body = resp.json()
     assert body["status"] == "ok"
     assert body["plan_id"] == 42
-    assert calls == [(1, 217, None, 7)]
+    # A terminal state (success included) clears the task id — a LATER,
+    # separate "Create mop-up plan" click must dispatch a genuinely new
+    # attempt, not replay this finished one.
+    assert runs[1].create_plan_task_id is None
 
 
-def test_create_plan_passes_include_planning_gaps_through(client, django_user_model, monkeypatch):
+def test_create_plan_surfaces_a_handoff_error_result_without_treating_it_as_a_celery_failure(
+    client, django_user_model, monkeypatch
+):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
-    from connect_labs.mopup.core.models import STATUS_LOCKED
+    run = _seed_locked_run(runs)
+    run.data["create_plan_task_id"] = "plan-task-done"
+    # create_mopup_plan catches HandoffError and returns it as a normal
+    # SUCCESS-state result shaped {"status": "error", "detail": ...} — this
+    # simulates exactly that (not a Celery FAILURE state).
+    mock_result = mock.Mock(state="SUCCESS", info={"status": "error", "detail": "no boundary geometry"})
+    monkeypatch.setattr("celery.result.AsyncResult", lambda task_id: mock_result)
 
-    run = _seed_run(runs)
-    run.data["status"] = STATUS_LOCKED
-    run.data["candidate_work_areas"] = [{"wa_id": "wa-1"}]
-
-    import connect_labs.mopup.views as views_module
-
-    calls = []
-
-    def fake_handoff(run_arg, program_id, *, request=None, grouping=None, group_id=None, include_planning_gaps=False):
-        calls.append(include_planning_gaps)
-        return {"plan_id": 42, "plan_status": "draft", "urls": {}}
-
-    monkeypatch.setattr(views_module, "create_plan_from_locked_run", fake_handoff)
-
-    client.post(
-        reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}),
-        data=json.dumps({"include_planning_gaps": True}),
-        content_type="application/json",
-    )
-    assert calls == [True]
-
-    client.post(
-        reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}),
-        data=json.dumps({}),
-        content_type="application/json",
-    )
-    assert calls == [True, False]
-
-
-def test_create_plan_handoff_error_is_400(client, django_user_model, monkeypatch):
-    _login(client, django_user_model)
-    runs = _make_fake_run_da(monkeypatch)
-    from connect_labs.mopup.core.models import STATUS_LOCKED
-
-    run = _seed_run(runs)
-    run.data["status"] = STATUS_LOCKED
-    run.data["candidate_work_areas"] = [{"wa_id": "wa-1"}]
-
-    import connect_labs.mopup.views as views_module
-    from connect_labs.mopup.core.handoff import HandoffError
-
-    def fake_handoff(*a, **k):
-        raise HandoffError("no boundary geometry")
-
-    monkeypatch.setattr(views_module, "create_plan_from_locked_run", fake_handoff)
     resp = client.post(
         reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}),
         content_type="application/json",
     )
-    assert resp.status_code == 400
-    assert resp.json()["detail"] == "no boundary geometry"
+    assert resp.status_code == 200, resp.content
+    assert resp.json() == {"status": "error", "detail": "no boundary geometry"}
+    assert runs[1].create_plan_task_id is None
+
+
+def test_create_plan_surfaces_a_failed_task_and_clears_it_for_retry(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    run.data["create_plan_task_id"] = "plan-task-in-flight"
+    mock_result = mock.Mock(state="FAILURE", info=RuntimeError("Connect authorization needed"))
+    monkeypatch.setattr("celery.result.AsyncResult", lambda task_id: mock_result)
+
+    resp = client.post(
+        reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "failed"
+    assert "Connect authorization needed" in body["error"]
+    assert runs[1].create_plan_task_id is None

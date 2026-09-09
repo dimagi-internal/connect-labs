@@ -107,3 +107,116 @@ class TestFetchEvaluationData:
 
         with pytest.raises(RuntimeError, match="not found"):
             tasks.fetch_evaluation_data.apply(kwargs={"program_id": 217, "run_id": 999, "user_id": user.id}).get()
+
+
+def _locked_run():
+    run = _run()
+    run.data["status"] = "locked"
+    run.data["candidate_work_areas"] = [{"wa_id": "wa-1"}]
+    return run
+
+
+class TestCreateMopupPlan:
+    """The Phase 3 hand-off, offloaded the same way as fetch_evaluation_data
+    — see tasks.py's own docstring for why (a real include_planning_gaps
+    hand-off measured well over a minute synchronously this session)."""
+
+    def test_success_returns_the_handoff_response(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
+        monkeypatch.setattr(tasks, "get_valid_access_token", lambda u: "connect-token")
+        _patch_da(monkeypatch, _locked_run())
+
+        fake_resp = {"plan_id": 42, "plan_status": "draft", "urls": {"review": "/x/"}}
+        stages_seen = []
+
+        def fake_create_plan_from_locked_run(
+            run, program_id, *, pipeline, access_token, grouping, group_id, include_planning_gaps, on_stage=None
+        ):
+            if on_stage:
+                on_stage("Creating the plan…")
+            stages_seen.append((program_id, grouping, group_id, include_planning_gaps))
+            return dict(fake_resp)
+
+        monkeypatch.setattr(
+            "connect_labs.mopup.core.handoff.create_plan_from_locked_run", fake_create_plan_from_locked_run
+        )
+
+        result = tasks.create_mopup_plan.apply(
+            kwargs={"program_id": 217, "run_id": 1, "user_id": user.id, "group_id": 7}
+        ).get()
+        assert result["status"] == "ok"
+        assert result["plan_id"] == 42
+        assert stages_seen == [(217, None, 7, False)]
+
+    def test_handoff_error_becomes_a_normal_error_result_not_a_task_failure(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
+        monkeypatch.setattr(tasks, "get_valid_access_token", lambda u: "connect-token")
+        _patch_da(monkeypatch, _locked_run())
+
+        from connect_labs.mopup.core.handoff import HandoffError
+
+        def boom(*a, **k):
+            raise HandoffError("no boundary geometry")
+
+        monkeypatch.setattr("connect_labs.mopup.core.handoff.create_plan_from_locked_run", boom)
+
+        result = tasks.create_mopup_plan.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
+        assert result == {"status": "error", "detail": "no boundary geometry"}
+
+    def test_connect_token_failure_raises(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
+
+        def boom(u):
+            raise ConnectReLoginRequired("dead refresh token")
+
+        monkeypatch.setattr(tasks, "get_valid_access_token", boom)
+
+        with pytest.raises(RuntimeError, match="Connect authorization needed"):
+            tasks.create_mopup_plan.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
+
+    def test_cchq_token_only_required_when_planning_gaps_requested(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
+        monkeypatch.setattr(tasks, "get_valid_access_token", lambda u: "connect-token")
+
+        def boom(u):
+            raise CCHQReLoginRequired("no CommCare HQ authorization")
+
+        monkeypatch.setattr(tasks, "get_valid_cchq_access_token", boom)
+        _patch_da(monkeypatch, _locked_run())
+        monkeypatch.setattr(
+            "connect_labs.mopup.core.handoff.create_plan_from_locked_run",
+            lambda *a, **k: {"plan_id": 1, "plan_status": "draft", "urls": {}},
+        )
+
+        # include_planning_gaps=False (default) -> never calls the failing
+        # CCHQ token getter, succeeds fine.
+        result = tasks.create_mopup_plan.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
+        assert result["status"] == "ok"
+
+        # include_planning_gaps=True -> now it's demanded, and fails.
+        with pytest.raises(RuntimeError, match="CommCare HQ authorization needed"):
+            tasks.create_mopup_plan.apply(
+                kwargs={"program_id": 217, "run_id": 1, "user_id": user.id, "include_planning_gaps": True}
+            ).get()
+
+    def test_missing_run_raises(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
+        monkeypatch.setattr(tasks, "get_valid_access_token", lambda u: "connect-token")
+        _patch_da(monkeypatch, None)
+
+        with pytest.raises(RuntimeError, match="not found"):
+            tasks.create_mopup_plan.apply(kwargs={"program_id": 217, "run_id": 999, "user_id": user.id}).get()
+
+    def test_unlocked_run_raises(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
+        monkeypatch.setattr(tasks, "get_valid_access_token", lambda u: "connect-token")
+        _patch_da(monkeypatch, _run())  # status "analysis", never locked
+
+        with pytest.raises(RuntimeError, match="Lock the run"):
+            tasks.create_mopup_plan.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
