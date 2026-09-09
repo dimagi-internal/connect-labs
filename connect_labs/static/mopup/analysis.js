@@ -43,6 +43,7 @@ window.MopupAnalysis = (function () {
   let indicatorConfigs = {};
   let globalConfig = {};
   let lastCandidates = [];
+  let lastGapCandidates = [];
   let severitySortDesc = true;
 
   function renderIndicatorRows() {
@@ -181,6 +182,7 @@ window.MopupAnalysis = (function () {
     deworming: 'Deworming completion',
     muac: 'MUAC-recorded rate',
     vaccination: 'Vaccination-given rate',
+    planning_gap: 'Planning gap (new)',
   };
 
   function triggeredIndicatorDisplay(c) {
@@ -197,15 +199,8 @@ window.MopupAnalysis = (function () {
       .join(', ');
   }
 
-  function renderCandidates() {
-    const rows = [...lastCandidates].sort((a, b) =>
-      severitySortDesc
-        ? b.severity_count - a.severity_count
-        : a.severity_count - b.severity_count,
-    );
-    $('candidate-rows').innerHTML = rows
-      .map(
-        (c) => `<tr class="border-b border-gray-50">
+  function candidateRowHtml(c, extraClass) {
+    return `<tr class="border-b border-gray-50 ${extraClass || ''}">
           <td class="p-2">${esc(c.ward)}</td><td class="p-2">${esc(
             c.lga,
           )}</td><td class="p-2">${esc(c.state)}</td>
@@ -217,9 +212,23 @@ window.MopupAnalysis = (function () {
             c.severity_count
           }</td>
           <td class="p-2">${triggeredIndicatorDisplay(c)}</td>
-        </tr>`,
-      )
+        </tr>`;
+  }
+
+  function renderCandidates() {
+    const rows = [...lastCandidates].sort((a, b) =>
+      severitySortDesc
+        ? b.severity_count - a.severity_count
+        : a.severity_count - b.severity_count,
+    );
+    const html = rows.map((c) => candidateRowHtml(c)).join('');
+    // Gap-fill rows (Step 2's new work areas for uncovered buildings, if
+    // computed) always render after the execution-gap candidates, tinted so
+    // they read as a distinct group rather than one more triggered WA.
+    const gapHtml = lastGapCandidates
+      .map((c) => candidateRowHtml(c, 'bg-emerald-50'))
       .join('');
+    $('candidate-rows').innerHTML = html + gapHtml;
   }
 
   // ---------------------------------------------------------------------
@@ -269,13 +278,18 @@ window.MopupAnalysis = (function () {
     return bbox[0] === Infinity ? null : bbox;
   }
 
+  const GAP_FILL_COLOR = '#10b981';
+
   function styleMapFeatures(fc) {
     return {
       type: 'FeatureCollection',
       features: (fc?.features || []).map((f) => {
-        const color = f.properties.included
-          ? INDICATOR_COLORS[f.properties.first_indicator] || '#3b82f6'
-          : '#9ca3af';
+        const color =
+          f.properties.source === 'planning_gap'
+            ? GAP_FILL_COLOR
+            : f.properties.included
+            ? INDICATOR_COLORS[f.properties.first_indicator] || '#3b82f6'
+            : '#9ca3af';
         return {
           ...f,
           properties: {
@@ -293,27 +307,31 @@ window.MopupAnalysis = (function () {
     };
   }
 
+  function swatch(color, label) {
+    return `<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${color};margin-right:4px;"></span>${esc(
+      label,
+    )}</span>`;
+  }
+
   function renderMapLegend(fc) {
+    const features = fc?.features || [];
     const present = new Set(
-      (fc?.features || [])
-        .filter((f) => f.properties.included)
+      features
+        .filter(
+          (f) =>
+            f.properties.included && f.properties.source !== 'planning_gap',
+        )
         .map((f) => f.properties.first_indicator),
     );
     const swatches = Object.keys(INDICATOR_COLORS)
       .filter((key) => present.has(key))
-      .map(
-        (key) =>
-          `<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${
-            INDICATOR_COLORS[key]
-          };margin-right:4px;"></span>${esc(
-            INDICATOR_LABELS[key] || key,
-          )}</span>`,
+      .map((key) =>
+        swatch(INDICATOR_COLORS[key], INDICATOR_LABELS[key] || key),
       );
-    swatches.push(
-      `<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#9ca3af;margin-right:4px;"></span>${esc(
-        NOT_INCLUDED_LABEL,
-      )}</span>`,
-    );
+    swatches.push(swatch('#9ca3af', NOT_INCLUDED_LABEL));
+    if (features.some((f) => f.properties.source === 'planning_gap')) {
+      swatches.push(swatch(GAP_FILL_COLOR, 'Planning gap (new)'));
+    }
     $('map-legend').innerHTML = swatches.join('');
   }
 
@@ -434,6 +452,7 @@ window.MopupAnalysis = (function () {
       dataReady = true;
       showReady();
       lastCandidates = data.candidates || [];
+      lastGapCandidates = data.gap_candidates || [];
       $('live-count').textContent = data.candidate_count;
       renderWardSummary(data.ward_summary || []);
       renderCandidates();
@@ -479,6 +498,7 @@ window.MopupAnalysis = (function () {
       $('lock-run').disabled = true;
       $('lock-run').textContent = `Locked (${data.locked_count} WAs)`;
       $('create-plan').disabled = false;
+      $('planning-gaps-section').classList.remove('hidden');
     } catch (e) {
       $('status').textContent = 'Failed to lock.';
     }
@@ -486,10 +506,11 @@ window.MopupAnalysis = (function () {
 
   let createPlanPollTimer = null;
 
-  // Offloaded to a Celery task server-side (a real include_planning_gaps
-  // hand-off can take well over a minute) — this polls the SAME endpoint
-  // every 2s, mirroring pollOrEvaluate's dispatch-once/poll-many pattern,
-  // until it reports a terminal status.
+  // Offloaded to a Celery task server-side (a real multi-ward hand-off can
+  // still be slow) — this polls the SAME endpoint every 2s, mirroring
+  // pollOrEvaluate's dispatch-once/poll-many pattern, until it reports a
+  // terminal status. Planning-gap features (if Step 2 was ever run) are
+  // already stored on the run — this never recomputes them.
   async function createPlan() {
     $('create-plan').disabled = true;
     $('status').textContent = 'Creating plan…';
@@ -500,9 +521,7 @@ window.MopupAnalysis = (function () {
           'Content-Type': 'application/json',
           'X-CSRFToken': CFG.csrfToken,
         },
-        body: JSON.stringify({
-          include_planning_gaps: $('include-planning-gaps').checked,
-        }),
+        body: JSON.stringify({}),
       });
       const data = await resp.json();
 
@@ -538,6 +557,75 @@ window.MopupAnalysis = (function () {
     }
   }
 
+  let planningGapsPollTimer = null;
+
+  function collectPlanningGapsConfig() {
+    return {
+      building_sources: [
+        ...document.querySelectorAll('.gap-src-cb:checked'),
+      ].map((cb) => cb.value),
+      min_confidence: parseFloat($('gap-cfg-min-confidence').value) || null,
+      min_buildings_per_cell:
+        parseInt($('gap-cfg-min-buildings').value, 10) || 1,
+      cell_size_m: parseFloat($('gap-cfg-cell-size').value) || 100,
+    };
+  }
+
+  // Offloaded to a Celery task server-side — the real building fetch this
+  // triggers (the FIRST time it's needed, never before) measured well over
+  // a minute against real ward data this session. Polls the same endpoint
+  // every 2s until it reports a terminal status, same pattern as
+  // pollOrEvaluate/createPlan. On success, re-runs the normal Recompute so
+  // the map/tables pick up the newly-stored gap-fill features (persisted
+  // server-side onto the run by MopupPlanningGapsView — no separate lock
+  // step for Step 2).
+  async function previewPlanningGaps() {
+    $('planning-gaps-recompute').disabled = true;
+    $('planning-gaps-status').textContent = 'Checking planning gaps…';
+    try {
+      const resp = await fetch(CFG.planningGapsUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': CFG.csrfToken,
+        },
+        body: JSON.stringify(collectPlanningGapsConfig()),
+      });
+      const data = await resp.json();
+
+      if (data.status === 'pending' || data.status === 'running') {
+        $('planning-gaps-status').textContent =
+          data.message || 'Checking planning gaps…';
+        planningGapsPollTimer = setTimeout(previewPlanningGaps, 2000);
+        return;
+      }
+      $('planning-gaps-recompute').disabled = false;
+      if (data.status === 'failed' || data.status === 'error') {
+        $('planning-gaps-status').textContent =
+          data.detail ||
+          data.message ||
+          data.error ||
+          'Failed to check planning gaps.';
+        return;
+      }
+
+      // status === 'ok'
+      const warnings = data.warnings || {};
+      const warnedWards = Object.keys(warnings);
+      let msg = `${data.cells_added} planning-gap work area(s) added.`;
+      if (warnedWards.length) {
+        msg += ` Failed for ${warnedWards.join(', ')} (${
+          warnings[warnedWards[0]]
+        }).`;
+      }
+      $('planning-gaps-status').textContent = msg;
+      pollOrEvaluate();
+    } catch (e) {
+      $('planning-gaps-status').textContent = 'Failed to check planning gaps.';
+      $('planning-gaps-recompute').disabled = false;
+    }
+  }
+
   function init(cfg) {
     CFG = cfg;
     indicatorDefs = JSON.parse($('indicator-defs-data').textContent);
@@ -562,6 +650,7 @@ window.MopupAnalysis = (function () {
     });
     $('lock-run').addEventListener('click', lockRun);
     $('create-plan').addEventListener('click', createPlan);
+    $('planning-gaps-recompute').addEventListener('click', previewPlanningGaps);
     showLoadingPanel(
       'Loading work-area, visit, and geometry data for this opportunity…',
     );

@@ -5,13 +5,15 @@ imports) — this app makes zero changes to microplans' own core logic, per
 the design brief's §3 architecture decision.
 
 Carries forward each locked candidate's OWN boundary as one WorkArea feature
-(no union, no regridding — `core.areas.carry_forward_features`), optionally
-adding freshly-gridded planning-gap cells for buildings never covered by any
-existing WA in that ward (`core.gaps.planning_gap_features`, gated by
-`include_planning_gaps` — no Phase 2 review step for these in this version;
-see `core/gaps.py`'s module docstring). An earlier version of this module
-unioned every candidate's polygon per ward and re-gridded the union from
-scratch via `generate_coverage_frame` — replaced entirely by the
+(no union, no regridding — `core.areas.carry_forward_features`), merged with
+whatever planning-gap cells Phase 2's Step 2 already computed and stored on
+the run (`run.planning_gap_features`) — this module does NOT compute
+planning gaps itself; that moved to `mopup.tasks.preview_planning_gaps` so
+the reviewer sees the gap-fill work areas on the map/tables and can tune the
+building-source settings BEFORE locking, instead of them silently
+materializing for the first time at hand-off. An earlier version of this
+module unioned every candidate's polygon per ward and re-gridded the union
+from scratch via `generate_coverage_frame` — replaced entirely by the
 carry-forward redesign; see `core/areas.py`'s module docstring for why.
 """
 
@@ -23,7 +25,6 @@ from collections.abc import Callable
 from django.http import HttpRequest
 
 from connect_labs.mopup.core.areas import carry_forward_features, distinct_wards, ward_children_per_building
-from connect_labs.mopup.core.gaps import planning_gap_features, work_area_boundaries_for_ward
 from connect_labs.mopup.core.models import MopupRunRecord
 
 logger = logging.getLogger(__name__)
@@ -43,32 +44,23 @@ def create_plan_from_locked_run(
     access_token: str | None = None,
     grouping: dict | None = None,
     group_id: int | None = None,
-    include_planning_gaps: bool = False,
     on_stage: Callable[[str], None] | None = None,
 ) -> dict:
     """Build a Draft coverage plan from `run.candidate_work_areas` (the
-    frozen candidate set from the lock action). Returns
-    `{"plan_id", "urls", ..., "skipped_no_geometry": [wa_id, ...],
-    "planning_gap_cells_added": N, "planning_gap_warnings": {ward: reason}}`
-    — the same shape `serialization.plan_to_json` produces, plus hand-off
-    bookkeeping.
+    frozen candidate set from the lock action) merged with
+    `run.planning_gap_features` (Step 2's latest preview, empty if Step 2
+    was never run). Returns `{"plan_id", "urls", ...,
+    "skipped_no_geometry": [wa_id, ...], "planning_gap_cells_added": N,
+    "planning_gap_warnings": {ward: reason}}` — the same shape
+    `serialization.plan_to_json` produces, plus hand-off bookkeeping.
+    `planning_gap_warnings` is a passthrough of whatever Step 2 recorded
+    (see `MopupRunRecord.planning_gap_warnings`'s docstring for why that
+    exists), not recomputed here.
 
     Pass one of `request` (a Django view's request — used to build both the
-    `AnalysisPipeline` and `ProgramPlanDataAccess`) or `pipeline` +
-    `access_token` (for a headless caller, e.g. `mopup.tasks.create_mopup_plan`
-    — `pipeline` is used for the planning-gap ward lookups, `access_token`
-    for `ProgramPlanDataAccess`). If neither `pipeline` nor `request` is
-    given, `ward_children_per_building`/planning-gap lookups degrade to their
-    own best-effort failure path (logged, not fatal) rather than raising —
-    always provide one of the two in production code.
-
-    `planning_gap_warnings` exists because a failed per-ward gap computation
-    (an expired CommCare HQ session, a missing ward boundary, ...) is caught
-    and skipped rather than failing the whole hand-off — without this, that
-    looks IDENTICAL to "this ward genuinely has no uncovered buildings" in
-    the response the reviewer sees. Confirmed live this session: a stale
-    CCHQ token made a real hand-off report `planning_gap_cells_added: 0` with
-    no visible sign anything had gone wrong.
+    `AnalysisPipeline` for `ward_children_per_building` and
+    `ProgramPlanDataAccess`) or `pipeline` + `access_token` (for a headless
+    caller, e.g. `mopup.tasks.create_mopup_plan`).
 
     Raises `HandoffError` for anything that should stop the hand-off and be
     shown to the reviewer (no candidates, no opportunity, plan-creation
@@ -76,7 +68,6 @@ def create_plan_from_locked_run(
     """
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline
     from connect_labs.microplans import serialization
-    from connect_labs.microplans.core.admin_boundaries import find_ward_boundary_geometry
     from connect_labs.microplans.core.data_access import ProgramPlanDataAccess
     from connect_labs.microplans.view_helpers import _plan_scoped_urls
 
@@ -108,39 +99,8 @@ def create_plan_from_locked_run(
     if pipeline is None and request is not None:
         pipeline = AnalysisPipeline(request=request)
 
-    gap_features: list[dict] = []
-    planning_gap_warnings: dict[str, str] = {}
-    if include_planning_gaps:
-        from shapely.geometry import shape
-
-        for i, w in enumerate(wards, start=1):
-            _stage(f"Checking planning gaps for {w['ward']} ({i}/{len(wards)})…")
-            try:
-                existing_boundaries = work_area_boundaries_for_ward(
-                    pipeline, opportunity_id, w["ward"], w["lga"], w["state"], request=request
-                )
-                ward_boundary = find_ward_boundary_geometry(w["state"], w["lga"], w["ward"])
-                if ward_boundary is None:
-                    planning_gap_warnings[w["ward"]] = "no ward boundary match — skipped"
-                    logger.info(
-                        "mopup handoff: no ward boundary match for planning gaps "
-                        "(program=%s run=%s ward=%s) — skipping this ward",
-                        program_id,
-                        run.id,
-                        w["ward"],
-                    )
-                    continue
-                gap_features += planning_gap_features(
-                    w["ward"], w["lga"], w["state"], w["area_id"], shape(ward_boundary), existing_boundaries
-                )
-            except Exception as e:  # noqa: BLE001
-                planning_gap_warnings[w["ward"]] = str(e)
-                logger.exception(
-                    "mopup handoff: planning-gap detection failed (program=%s run=%s ward=%s)",
-                    program_id,
-                    run.id,
-                    w["ward"],
-                )
+    gap_features = run.planning_gap_features
+    planning_gap_warnings = run.planning_gap_warnings
 
     all_features = cf_features + gap_features
 
@@ -201,7 +161,7 @@ def create_plan_from_locked_run(
                 "source": "chc_mopup",
                 "opportunity_ids": opportunity_ids,
                 "mopup_run_id": run.id,
-                "include_planning_gaps": include_planning_gaps,
+                "include_planning_gaps": bool(gap_features),
             },
         )
     except Exception as e:  # noqa: BLE001

@@ -131,11 +131,11 @@ class TestCreateMopupPlan:
         stages_seen = []
 
         def fake_create_plan_from_locked_run(
-            run, program_id, *, pipeline, access_token, grouping, group_id, include_planning_gaps, on_stage=None
+            run, program_id, *, pipeline, access_token, grouping, group_id, on_stage=None
         ):
             if on_stage:
                 on_stage("Creating the plan…")
-            stages_seen.append((program_id, grouping, group_id, include_planning_gaps))
+            stages_seen.append((program_id, grouping, group_id))
             return dict(fake_resp)
 
         monkeypatch.setattr(
@@ -147,7 +147,7 @@ class TestCreateMopupPlan:
         ).get()
         assert result["status"] == "ok"
         assert result["plan_id"] == 42
-        assert stages_seen == [(217, None, 7, False)]
+        assert stages_seen == [(217, None, 7)]
 
     def test_handoff_error_becomes_a_normal_error_result_not_a_task_failure(self, django_user_model, monkeypatch):
         user = django_user_model.objects.create(username="tester", email="t@example.com")
@@ -177,7 +177,12 @@ class TestCreateMopupPlan:
         with pytest.raises(RuntimeError, match="Connect authorization needed"):
             tasks.create_mopup_plan.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
 
-    def test_cchq_token_only_required_when_planning_gaps_requested(self, django_user_model, monkeypatch):
+    def test_never_requires_a_cchq_token(self, django_user_model, monkeypatch):
+        # Planning-gap ward lookups (the only cchq_cases-sourced part of a
+        # mop-up hand-off) moved to Phase 2's Step 2 (preview_planning_gaps)
+        # -- this task carries forward whatever Step 2 already computed
+        # (run.planning_gap_features), so it never needs a CommCare HQ token
+        # at all, even if one would fail.
         user = django_user_model.objects.create(username="tester", email="t@example.com")
         monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
         monkeypatch.setattr(tasks, "get_valid_access_token", lambda u: "connect-token")
@@ -192,16 +197,8 @@ class TestCreateMopupPlan:
             lambda *a, **k: {"plan_id": 1, "plan_status": "draft", "urls": {}},
         )
 
-        # include_planning_gaps=False (default) -> never calls the failing
-        # CCHQ token getter, succeeds fine.
         result = tasks.create_mopup_plan.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
         assert result["status"] == "ok"
-
-        # include_planning_gaps=True -> now it's demanded, and fails.
-        with pytest.raises(RuntimeError, match="CommCare HQ authorization needed"):
-            tasks.create_mopup_plan.apply(
-                kwargs={"program_id": 217, "run_id": 1, "user_id": user.id, "include_planning_gaps": True}
-            ).get()
 
     def test_missing_run_raises(self, django_user_model, monkeypatch):
         user = django_user_model.objects.create(username="tester", email="t@example.com")
@@ -220,3 +217,164 @@ class TestCreateMopupPlan:
 
         with pytest.raises(RuntimeError, match="Lock the run"):
             tasks.create_mopup_plan.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
+
+
+_CANDIDATE_BOUNDARY = {
+    "type": "Polygon",
+    "coordinates": [[[3.0, 6.0], [3.1, 6.0], [3.1, 6.1], [3.0, 6.1], [3.0, 6.0]]],
+}
+
+
+def _locked_run_with_geometry():
+    run = _run()
+    run.data["status"] = "locked"
+    run.data["candidate_work_areas"] = [
+        {
+            "wa_id": "wa-1",
+            "ward": "Sabon Gari",
+            "lga": "Rano",
+            "state": "Kano",
+            "boundary": _CANDIDATE_BOUNDARY,
+            "building_count": 10,
+            "expected_visit_count": 10,
+        }
+    ]
+    return run
+
+
+class TestPreviewPlanningGaps:
+    """Phase 2 Step 2's building fetch + gap-grid preview, offloaded the same
+    way as fetch_evaluation_data/create_mopup_plan -- confirmed this session
+    that a real hand-off-time equivalent took well over a minute
+    synchronously."""
+
+    def _mock_common(self, monkeypatch, run, *, gap_features=None):
+        monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
+        monkeypatch.setattr(tasks, "get_valid_access_token", lambda u: "connect-token")
+        monkeypatch.setattr(tasks, "get_valid_cchq_access_token", lambda u: "cchq-token")
+        _patch_da(monkeypatch, run)
+        monkeypatch.setattr("connect_labs.mopup.core.candidates.build_evaluation_input", lambda *a, **k: [])
+        monkeypatch.setattr(
+            "connect_labs.mopup.core.gaps.work_area_boundaries_for_ward", lambda *a, **k: [_CANDIDATE_BOUNDARY]
+        )
+        monkeypatch.setattr(
+            "connect_labs.microplans.core.admin_boundaries.find_ward_boundary_geometry",
+            lambda state, lga, ward: {
+                "type": "Polygon",
+                "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+            },
+        )
+        monkeypatch.setattr(
+            "connect_labs.mopup.core.gaps.planning_gap_features", lambda *a, **k: list(gap_features or [])
+        )
+
+    def test_success_returns_features_and_config(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        run = _locked_run_with_geometry()
+        gap_feature = {"type": "Feature", "properties": {"ward": "Sabon Gari"}}
+        self._mock_common(monkeypatch, run, gap_features=[gap_feature])
+
+        result = tasks.preview_planning_gaps.apply(
+            kwargs={
+                "program_id": 217,
+                "run_id": 1,
+                "user_id": user.id,
+                "building_sources": ["Google Open Buildings"],
+                "min_confidence": 0.6,
+                "min_buildings_per_cell": 2,
+                "cell_size_m": 50.0,
+            }
+        ).get()
+        assert result["status"] == "ok"
+        assert result["features"] == [gap_feature]
+        assert result["cells_added"] == 1
+        assert result["warnings"] == {}
+        assert result["config"] == {
+            "building_sources": ["Google Open Buildings"],
+            "min_confidence": 0.6,
+            "min_buildings_per_cell": 2,
+            "cell_size_m": 50.0,
+        }
+
+    def test_ward_failure_is_best_effort_not_fatal(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        run = _locked_run_with_geometry()
+        self._mock_common(monkeypatch, run)
+
+        def boom(*a, **k):
+            raise RuntimeError("grid generation blew up")
+
+        monkeypatch.setattr("connect_labs.mopup.core.gaps.planning_gap_features", boom)
+
+        result = tasks.preview_planning_gaps.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
+        assert result["status"] == "ok"
+        assert result["cells_added"] == 0
+        assert result["warnings"] == {"Sabon Gari": "grid generation blew up"}
+
+    def test_missing_ward_boundary_is_reported_as_a_warning(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        run = _locked_run_with_geometry()
+        self._mock_common(monkeypatch, run)
+        monkeypatch.setattr(
+            "connect_labs.microplans.core.admin_boundaries.find_ward_boundary_geometry",
+            lambda state, lga, ward: None,
+        )
+
+        result = tasks.preview_planning_gaps.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
+        assert result["cells_added"] == 0
+        assert result["warnings"] == {"Sabon Gari": "no ward boundary match — skipped"}
+
+    def test_connect_token_failure_raises(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
+
+        def boom(u):
+            raise ConnectReLoginRequired("dead refresh token")
+
+        monkeypatch.setattr(tasks, "get_valid_access_token", boom)
+
+        with pytest.raises(RuntimeError, match="Connect authorization needed"):
+            tasks.preview_planning_gaps.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
+
+    def test_cchq_token_failure_raises_after_connect_succeeds(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
+        monkeypatch.setattr(tasks, "get_valid_access_token", lambda u: "connect-token")
+
+        def boom(u):
+            raise CCHQReLoginRequired("no CommCare HQ authorization")
+
+        monkeypatch.setattr(tasks, "get_valid_cchq_access_token", boom)
+
+        with pytest.raises(RuntimeError, match="CommCare HQ authorization needed"):
+            tasks.preview_planning_gaps.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
+
+    def test_missing_run_raises(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
+        monkeypatch.setattr(tasks, "get_valid_access_token", lambda u: "connect-token")
+        monkeypatch.setattr(tasks, "get_valid_cchq_access_token", lambda u: "cchq-token")
+        _patch_da(monkeypatch, None)
+
+        with pytest.raises(RuntimeError, match="not found"):
+            tasks.preview_planning_gaps.apply(kwargs={"program_id": 217, "run_id": 999, "user_id": user.id}).get()
+
+    def test_unlocked_run_raises(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
+        monkeypatch.setattr(tasks, "get_valid_access_token", lambda u: "connect-token")
+        monkeypatch.setattr(tasks, "get_valid_cchq_access_token", lambda u: "cchq-token")
+        _patch_da(monkeypatch, _run())  # status "analysis", never locked
+
+        with pytest.raises(RuntimeError, match="Lock the run"):
+            tasks.preview_planning_gaps.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
+
+    def test_no_geometry_raises(self, django_user_model, monkeypatch):
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        run = _run()
+        run.data["status"] = "locked"
+        run.data["candidate_work_areas"] = [{"wa_id": "wa-1", "ward": "Sabon Gari", "boundary": None}]
+        self._mock_common(monkeypatch, run)
+
+        with pytest.raises(RuntimeError, match="boundary geometry"):
+            tasks.preview_planning_gaps.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()

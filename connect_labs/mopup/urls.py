@@ -29,4 +29,9 @@ urlpatterns = [
         views.MopupCreatePlanView.as_view(),
         name="create_plan",
     ),
+    path(
+        "program/<int:program_id>/run/<int:run_id>/planning_gaps/",
+        views.MopupPlanningGapsView.as_view(),
+        name="planning_gaps",
+    ),
 ]
