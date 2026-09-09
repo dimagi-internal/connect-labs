@@ -416,9 +416,10 @@ Resources:
       # 09-05 (issue #1461): 9 of the last 15 firings, and every firing since
       # 09-02, coincided with a deploy rollout rather than with load.
       AlarmDescription: >-
-        A web task has been pinned near 100% CPU for 15 of the last 25 minutes.
-        Each task has 1 vCPU, so a pinned task means its requests are queueing
-        behind CPU-bound Python and every user routed to it is stalled.
+        A web task has been at/over 90% CPU for 4 of the last 5 MINUTES — a
+        real sustained pin, not a spike. Each task has 1 vCPU, so a pinned task
+        means its requests are queueing behind CPU-bound Python and every user
+        routed to it is stalled.
         CHECK THE DEPLOY LOG FIRST (see issue #1461): a rolling replacement pins
         the booting task, and this alarm reads Maximum across tasks, so one
         starting task holds 100% for the whole rollout. Overlapping deploys — a
@@ -427,9 +428,9 @@ Resources:
         such a pin, so low request volume is not evidence against it. Only if no
         deploy was rolling, look for a request path fanning out remote calls in a
         loop: check the web log group for one URL repeating at high volume before
-        reaching for a scale-up. Holds through brief dips (3-of-5 datapoints), so
-        one sustained pin is ONE incident — treat a repeat notification as the
-        same incident until proven otherwise.
+        reaching for a scale-up. Holds through brief dips (4-of-5 one-minute
+        datapoints), so one sustained pin is ONE incident — treat a repeat
+        notification as the same incident until proven otherwise.
       Namespace: AWS/ECS
       MetricName: CPUUtilization
       Dimensions:
@@ -458,9 +459,25 @@ Resources:
       # an aggregate that averages away the bad half cannot alarm on the bad half.
       # It applies across tasks for exactly the reason it applies across requests.
       Statistic: Maximum
-      Period: 300
-      # 3-of-5, NOT 3-of-3. DatapointsToAlarm is omitted by default, which makes
-      # EvaluationPeriods do double duty: 3 breaching periods to fire, and — the
+      # Period 60, NOT 300. At 300, Maximum records the PEAK INSTANT in a
+      # bucket, so ONE breaching minute marks a whole "5-minute period" — and
+      # buckets align to the alarm's evaluation offset, not :00/:05, so a spike
+      # straddling a boundary counts TWICE. The 2026-09-09T06:44:31Z page scored
+      # 3-of-5 on three breaching MINUTES out of 25 (06:21, 06:22, 06:38), two
+      # of them one spike, and landed at 60% CPU and falling; the same mechanism
+      # paged at 1.1% on 09-08 23:52 and 23:57. At Period 60 a datapoint IS a
+      # minute. Replay 08-31 -> 09-09 (tools/alarm_rule_replay.py): 3of5@300s
+      # fires 26x, 4of5@60s 9x, and 4of5@60s still catches both established
+      # incidents (09-08 04:49Z; 05:27Z = #1578's OOM pin). #1461's objection —
+      # a real 08-24 incident whose longest run was 5 min — defeats a 10-MINUTE
+      # bar, not this one: the 5-minute run at 09-03 10:27Z fires 4of5@60s. The
+      # suppressor rationale below stands: it is about DEPLOY CHURN, a different
+      # pair of populations. Evidence on #1512.
+      # KEEP ADDITIONS HERE TERSE: this file is ~50KB against CloudFormation's
+      # 51,200-byte INLINE limit, which infra/README.md's change-set path uses.
+      Period: 60
+      # 4-of-5, NOT 4-of-4. DatapointsToAlarm is omitted by default, which makes
+      # EvaluationPeriods do double duty: N breaching periods to fire, and — the
       # part that bites — a SINGLE sub-threshold datapoint to clear. A tier that
       # sits at 90-100% and dips briefly therefore does not produce one alarm; it
       # produces an ALARM/OK pair every few minutes, for as long as the condition
@@ -482,18 +499,23 @@ Resources:
       # different message. Deduping downstream cannot fix this — by then the
       # transitions are already distinct events.
       #
-      # 3-of-5 adds hysteresis without dulling detection: still 3 breaching
-      # datapoints to fire (marginally EARLIER than 3-of-3, since they need not
-      # be consecutive), but clearing now requires 3 of the last 5 to fall back
+      # M-of-N adds hysteresis without dulling detection: still N breaching
+      # datapoints to fire (marginally EARLIER than M-of-M, since they need not
+      # be consecutive), but clearing now requires 4 of the last 5 to fall back
       # under threshold — so a one-datapoint dip inside a sustained pin no longer
-      # resolves the incident. Statistic stays Maximum for the reason above; this
-      # changes when we are told, not what we measure.
+      # resolves the incident. That reasoning was written for 3-of-5 at Period
+      # 300 and it survives the period change intact; only the meaning of a
+      # "datapoint" got honest. Statistic stays Maximum for the reason above.
       #
-      # Falsifier: if a future genuinely-transient CPU spike (one pinned task,
-      # <10 minutes, self-resolving) stops being reported at all, this is too
-      # blunt and the fix is a separate low-severity alarm, not 3-of-3 again.
+      # Falsifier for the period change: if a real user-visible incident is
+      # reported here whose longest consecutive run >=90% was under four
+      # minutes, then a minute-resolution duration rule is the wrong instrument
+      # for this tier and the answer is a second, lower-severity signal (or
+      # #1578's direction — page on a different metric entirely), NOT a return
+      # to Period 300, which cannot express duration at all. Re-run
+      # `python3 tools/alarm_rule_replay.py --metric web-cpu --days 9` to check.
       EvaluationPeriods: 5
-      DatapointsToAlarm: 3
+      DatapointsToAlarm: 4
       Threshold: !Ref WebCpuThreshold
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
