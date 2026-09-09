@@ -95,6 +95,73 @@ def validate_registry(
         except Exception as exc:
             errors.append(f"scope {scope!r} does not compile: {type(exc).__name__}: {exc}")
 
+    # 3. Coherence of the facts the GATES read. These moved out of Python
+    #    (`gates.IND_INPUTS` / `APP_ASKS`, and a `_C16_MIN_COVERAGE` literal) into
+    #    registry data so they can be edited without a deploy — which means their
+    #    correctness has to be checked HERE, against the registry actually being
+    #    saved, rather than by a unit test over the on-disk copy. A test would pin
+    #    values that are meant to change, and would read the seed file while a
+    #    workflow bound to a record computed from something else.
+    errors.extend(_gate_coherence(registry, deployment))
+
+    return errors
+
+
+def _gate_coherence(registry: dict[str, Any], deployment: dict[str, Any]) -> list[str]:
+    """Reasons the availability/credibility facts would misgrade a real number."""
+    errors: list[str] = []
+
+    for m in registry.get("measures") or []:
+        meta = m.get("meta") or {}
+        ind = meta.get("indicator")
+        if not ind:
+            continue
+
+        # A thin-coverage floor is a fraction OF something. A floor with nothing to
+        # divide by silently footnotes nothing, and a denominator with no floor is
+        # dead weight that reads as if a rule were active.
+        floor, base = meta.get("min_input_coverage"), meta.get("coverage_denominator")
+        if floor and not base:
+            errors.append(f"{ind}: min_input_coverage is set but coverage_denominator names no measure")
+        if base and not floor:
+            errors.append(f"{ind}: coverage_denominator is set but there is no min_input_coverage to apply")
+        if floor is not None:
+            try:
+                if not 0 < float(floor) <= 1:
+                    errors.append(f"{ind}: min_input_coverage must be a fraction in (0, 1], got {floor!r}")
+            except (TypeError, ValueError):
+                errors.append(f"{ind}: min_input_coverage must be a number, got {floor!r}")
+        if base and not any((x.get("name") == base) for x in (registry.get("measures") or [])):
+            errors.append(f"{ind}: coverage_denominator {base!r} is not a measure in this registry")
+
+        inputs = meta.get("inputs")
+        if inputs is not None and not isinstance(inputs, list):
+            errors.append(f"{ind}: inputs must be a list of derived-property names, got {type(inputs).__name__}")
+
+    # Credibility is read two opposite ways on purpose — an allow-list for
+    # mortality ("is this LLO listed true") and a deny-list for completion ("is it
+    # NOT false"). They agree ONLY when every LLO is listed explicitly. An LLO
+    # omitted from the completion table reads credible to the gate and suppressed to
+    # the compiler, which is the exact shape of bug a shared table exists to prevent.
+    settings = deployment.get("settings") or {}
+    every_llo = sorted({str(v) for v in (deployment.get("llo_map") or {}).values()})
+    for setting, table in settings.items():
+        if not every_llo or not table:
+            continue
+        missing = [llo for llo in every_llo if llo not in table]
+        if missing:
+            errors.append(f"deployment.settings.{setting}: states no verdict for {missing} — a gate would guess")
+
+    # An availability map that has been flattened to all-true gates nothing while
+    # looking configured, so every indicator reads as available everywhere. That is
+    # the failure mode of regenerating the map, and it is silent.
+    app_asks = deployment.get("app_asks") or {}
+    if app_asks and not any(v is False for fields in app_asks.values() for v in fields.values()):
+        errors.append(
+            "deployment.app_asks: every opportunity asks every field, so the availability gate "
+            "can never fire. If that is genuinely true, omit app_asks rather than declaring it."
+        )
+
     return errors
 
 
