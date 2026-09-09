@@ -387,32 +387,56 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
             {"key": ind.VACCINATION, "label": "Vaccination-given rate", "direction": "below"},
         ]
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
-        context["ward_boundaries"] = self._ward_boundaries_geojson(run.selected_wards)
+        ward_boundaries, boundary_source_caption = self._ward_boundaries_geojson(run.selected_wards)
+        context["ward_boundaries"] = ward_boundaries
+        context["boundary_source_caption"] = boundary_source_caption
         return context
 
     @staticmethod
-    def _ward_boundaries_geojson(selected_wards: list[dict]) -> dict:
+    def _ward_boundaries_geojson(selected_wards: list[dict]) -> tuple[dict, str | None]:
         """Static, fetched once at page load (mopup's wards are fixed by
         Phase 1's picker, not viewport-panned like microplans' own admin
         boundary layer) — one Feature per selected ward, skipping any that
         don't resolve. Empty `selected_wards` (no wards, i.e. "every ward in
         the opportunity") intentionally yields no boundaries — resolving
-        every ward's boundary just for the map isn't worth the cost."""
-        from connect_labs.microplans.core.admin_boundaries import find_ward_boundary_geometry
+        every ward's boundary just for the map isn't worth the cost.
+
+        Also returns a caption naming which boundary source(s) actually
+        resolved (`None` if nothing did) — Connect's own API doesn't yet
+        expose a ward-level boundary at all (only per-work-area polygons),
+        so every ward shape shown here comes from a name-matched public/
+        curated source (`microplans.core.admin_boundaries`'s labs/Overture
+        resolver), which can disagree with what's actually uploaded in
+        Connect for that ward. Surfacing the real source is a deliberately
+        small, paused-scope fix — see the plan this shipped under for why
+        a deeper fix (an upload override, or deriving from existing work
+        areas) is on hold pending a Connect API change."""
+        from connect_labs.microplans.core.admin_boundaries import SOURCE_LABELS, find_ward_boundary
 
         features = []
+        sources_seen: set[str] = set()
         for sw in selected_wards:
-            geom = find_ward_boundary_geometry(sw.get("state", ""), sw.get("lga", ""), sw.get("ward", ""))
-            if geom is None:
+            boundary = find_ward_boundary(sw.get("state", ""), sw.get("lga", ""), sw.get("ward", ""))
+            if boundary is None or boundary.geometry is None:
                 continue
+            sources_seen.add(boundary.source)
             features.append(
                 {
                     "type": "Feature",
-                    "geometry": geom,
-                    "properties": {"ward": sw.get("ward", ""), "lga": sw.get("lga", ""), "state": sw.get("state", "")},
+                    "geometry": json.loads(boundary.geometry.geojson),
+                    "properties": {
+                        "ward": sw.get("ward", ""),
+                        "lga": sw.get("lga", ""),
+                        "state": sw.get("state", ""),
+                        "source": boundary.source,
+                    },
                 }
             )
-        return {"type": "FeatureCollection", "features": features}
+        caption = None
+        if sources_seen:
+            labels = sorted(SOURCE_LABELS.get(s, s) for s in sources_seen)
+            caption = f"Boundary source: {', '.join(labels)} — pending native Connect boundary support."
+        return {"type": "FeatureCollection", "features": features}, caption
 
 
 class MopupCandidatesView(LoginRequiredMixin, View):
