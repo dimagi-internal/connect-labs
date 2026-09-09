@@ -67,7 +67,11 @@ window.MopupAnalysis = (function () {
           <td class="py-2 pr-2">
             <input type="number" step="0.01" min="0" max="1" class="ind-threshold base-input" style="width:6rem" value="${
               cfg.threshold
-            }">
+            }">${
+              def.key === 'ncf_inaccessible_rate'
+                ? ` <span class="info-icon ncf-threshold-note hidden" tabindex="0" data-tip="Not used under Cluster-aware — see &quot;Min affected neighbors (NCF)&quot; below instead.">ⓘ</span>`
+                : ''
+            }
           </td>
           <td class="py-2 pr-2">
             <select class="ind-granularity base-input" style="width:10rem">
@@ -100,13 +104,16 @@ window.MopupAnalysis = (function () {
     );
     if (!row) return;
     const thresholdInput = row.querySelector('.ind-threshold');
+    const note = row.querySelector('.ncf-threshold-note');
     const granularitySelect = row.querySelector('.ind-granularity');
     const isClusterAware = granularitySelect.value === 'cluster_aware';
     thresholdInput.disabled = isClusterAware;
-    thresholdInput.title = isClusterAware
-      ? 'Not used under Cluster-aware — see "Min affected neighbors (NCF)" below instead.'
-      : '';
     thresholdInput.classList.toggle('opacity-40', isClusterAware);
+    // A native `title` attribute needs a ~1s hover dwell and is easy to miss
+    // entirely — real testing this session already flagged that pattern as
+    // invisible (see analysis.html's .info-icon comment). Use the same
+    // always-hoverable tooltip everything else on this page uses instead.
+    if (note) note.classList.toggle('hidden', !isClusterAware);
   }
 
   function renderIndicatorCounts(counts) {
@@ -374,6 +381,12 @@ window.MopupAnalysis = (function () {
     } catch (e) {
       return; // headless / no WebGL
     }
+    // General safeguard beyond the one-shot showReady() resize — covers a
+    // browser-window resize, and any other layout shift of the container
+    // after construction.
+    if (window.ResizeObserver) {
+      new ResizeObserver(() => map && map.resize()).observe(el);
+    }
     map.on('load', () => {
       mapReady = true;
       if (wardBoundariesData.features.length) {
@@ -421,6 +434,11 @@ window.MopupAnalysis = (function () {
   function showReady() {
     $('loading-panel').classList.add('hidden');
     $('analysis-body').classList.remove('hidden');
+    // #analysis-body is `display:none` while loading, so Mapbox — which
+    // sizes its canvas from the container's bounding box at construction
+    // time — locked in a 0-or-stale size and never grew to fill the page on
+    // its own. Nudge it once the container actually has real dimensions.
+    if (map) map.resize();
   }
 
   // The single entry point for both "check whether the initial fetch is
