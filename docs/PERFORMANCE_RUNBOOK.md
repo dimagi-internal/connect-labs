@@ -79,6 +79,59 @@ actually saw. Read the run lengths first: if the tier emits mostly one-minute sp
 over a long `Period` cannot tell a spike from a sustained pin whatever M-of-N you choose, because
 one breaching minute marks the whole bucket. See #1512.
 
+### Did THIS page describe a real pin? Ask the alarm what it evaluated.
+
+The replay above answers a question about the rule *over days*. A turn dispatched by one alarm
+email has a narrower and cheaper question — **was the firing in front of me a sustained pin or a
+few spike minutes?** — and CloudWatch answers it directly, because it records the datapoints it
+actually used:
+
+```bash
+aws cloudwatch describe-alarm-history --profile labs --region us-east-1 \
+  --alarm-name labs-jj-web-cpu-high --history-item-type StateUpdate \
+  --start-date 2026-09-09T06:00:00Z --end-date 2026-09-09T07:30:00Z --output json \
+  --query 'AlarmHistoryItems[].[Timestamp,HistorySummary,HistoryData]'
+```
+
+`HistoryData.newState.stateReasonData.evaluatedDatapoints` is the list of buckets that fired it.
+Read the same span at `--period 60 --statistics Maximum` and line the two up. The alarm is
+`Maximum` over `Period: 300`, so **one breaching minute marks a whole five-minute bucket** — which
+means "breaching in 3 of 5 periods" can be three isolated spike minutes spread over 20+ minutes.
+
+Worked example — the composite paged at 06:44:31Z on 2026-09-09:
+
+| what the alarm evaluated | what the minutes said |
+| --- | --- |
+| 06:17 = 100.0, 06:22 = 97.75, 06:37 = 90.21 → 3 of 5, rule satisfied | only 06:21, 06:22 and 06:38 were ≥90 — **three minutes, non-consecutive, across 17** |
+
+CPU at the moment of the page was **60.1%**; the last breaching minute was 06:38, six minutes
+earlier; the ALARM cleared at 06:45:31, having lasted one minute. If a firing has that shape, do
+not open a capacity or fan-out investigation on the CPU signal alone — and record the firing on
+#1512, which tracks the cost of these.
+
+### A CPU page can be a LAGGING proxy for a memory problem
+
+Same incident, and the reason the shape above matters. There *was* a real fault: three gunicorn
+OOM `SIGKILL`s at 06:21:00 and 06:21:30 with `MemoryUtilization` at **90.4%**. The CPU page
+arrived at 06:44 — **23 minutes after the kills** — and cleared 60 seconds later. CPU spiked as a
+*consequence* of workers dying and rebooting, so the alarm was neither crying wolf nor describing
+the cause.
+
+So on a `labs-jj-web-cpu-high` page whose per-minute shape is spiky, check the kill signal for the
+same window **before** concluding anything about CPU:
+
+```bash
+aws cloudwatch get-metric-statistics --profile labs --region us-east-1 \
+  --namespace "Labs/Web" --metric-name WorkerKilled \
+  --start-time 2026-09-08T15:10:00Z --end-time 2026-09-09T07:30:00Z \
+  --period 1800 --statistics Sum --output text --query 'Datapoints[].[Timestamp,Sum]'
+```
+
+Then reconcile it against the logs — `filter @message like /SIGKILL/` on `/ecs/labs-jj-web` — and
+require the two to agree before you report a count. The metric alone is weak evidence for a claim
+anyone will act on; the metric plus matching log lines is strong. (2026-09-09: both read exactly
+**7** across three tasks, every 30-minute bucket reconciling with its log timestamps.) See #1575.
+
 ## 2. Is anything actually wrong?
 
 ```bash
