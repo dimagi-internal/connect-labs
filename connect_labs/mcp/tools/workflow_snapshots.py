@@ -208,11 +208,15 @@ def workflow_save_snapshot(
                 workers=workers,
                 opportunity_ids=effective_opp_ids,
                 # Optional context fields some templates' build_snapshot hooks accept
-                # (definition_id, access_token). Templates that don't use these
-                # absorb them via **_. access_token is necessary for hooks that
-                # construct their own DAOs (no `request` is available in MCP path).
+                # (definition_id, access_token, program_id). Templates that don't use
+                # these absorb them via **_. access_token is necessary for hooks that
+                # construct their own DAOs (no `request` is available in MCP path) —
+                # and program_id completes that: a DAO built from a token alone is
+                # UNSCOPED, so a program-owned run's hook could not read back the very
+                # workflow it was called for.
                 definition_id=definition_id,
                 access_token=wda.access_token,
+                program_id=program_id,
             )
         except SnapshotStateNotStagedError as e:
             # Not the caller's mistake to guess at: name the keys, and name both
