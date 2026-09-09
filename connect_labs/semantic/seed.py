@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from connect_labs.semantic.runtime import load_deployment, load_registry
+from connect_labs.semantic.runtime import load_deployment_facts, load_registry
 from connect_labs.semantic.validation import assert_registry_valid
 
 REGISTRY_ROOT_NAME = "kmc"
@@ -25,15 +25,25 @@ REGISTRY_ROOT_NAME = "kmc"
 def registry_payload(name: str = REGISTRY_ROOT_NAME) -> dict[str, Any]:
     """The `data` for a semantic_registry record, seeded from the on-disk registry."""
     props, inds = load_registry(name)
-    llo_map, settings = load_deployment(name)
+    # EVERY deployment fact, not just the compiler's two. This read `load_deployment`,
+    # which returns the back-compat (llo_map, settings) pair -- so when `app_asks` and
+    # `asks_as` moved out of `semantic/gates.py` into the registry, the seeder
+    # silently dropped them and every record was born without the facts its
+    # availability gates need. A gate with no facts fails OPEN, so "not in this app"
+    # could never fire and the on-disk registry looked identical to the record from
+    # the outside. Measured on registry 5500: 0 app_asks opportunities against 22 on
+    # disk.
+    facts = load_deployment_facts(name)
 
     # JSON object keys are always strings, so an int-keyed llo_map does not survive
-    # a round trip through the record. `_normalise_deployment` coerces them back on
-    # read; writing them as strings here makes the stored shape honest about what
+    # a round trip through the record. `normalise_deployment_facts` coerces them back
+    # on read; writing them as strings here makes the stored shape honest about what
     # JSON can hold rather than pretending the ints came back.
     deployment = {
-        "llo_map": {str(k): v for k, v in llo_map.items()},
-        "settings": settings,
+        "llo_map": {str(k): v for k, v in facts["llo_map"].items()},
+        "settings": facts["settings"],
+        "app_asks": facts["app_asks"],
+        "asks_as": facts["asks_as"],
     }
 
     assert_registry_valid(props, inds, deployment)
