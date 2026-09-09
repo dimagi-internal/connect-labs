@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import time
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -825,10 +826,11 @@ def test_analysis_view_embeds_ward_boundaries_and_mapbox_token(client, django_us
     run = _seed_run(runs)
     run.data["selected_wards"] = [{"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"}]
 
-    boundary = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]}
+    boundary_geojson = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]}
+    fake_boundary = SimpleNamespace(source="geopode", geometry=SimpleNamespace(geojson=json.dumps(boundary_geojson)))
     monkeypatch.setattr(
-        "connect_labs.microplans.core.admin_boundaries.find_ward_boundary_geometry",
-        lambda state, lga, ward: boundary,
+        "connect_labs.microplans.core.admin_boundaries.find_ward_boundary",
+        lambda state, lga, ward: fake_boundary,
     )
     settings.MAPBOX_TOKEN = "testtoken123"
 
@@ -836,6 +838,42 @@ def test_analysis_view_embeds_ward_boundaries_and_mapbox_token(client, django_us
     assert resp.status_code == 200
     assert b"testtoken123" in resp.content
     assert b"Sabon Gari" in resp.content
+    assert b"GeoPoDe" in resp.content
+    assert b"pending native Connect boundary support" in resp.content
+
+
+def test_analysis_view_caption_lists_each_distinct_source_once(client, django_user_model, monkeypatch, settings):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    run.data["selected_wards"] = [
+        {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"},
+        {"ward": "Fagge", "lga": "Fagge", "state": "Kano"},
+        {"ward": "Nassarawa", "lga": "Nassarawa", "state": "Kano"},
+    ]
+
+    boundary_geojson = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]}
+    by_ward = {
+        "Sabon Gari": SimpleNamespace(
+            source="geopode", geometry=SimpleNamespace(geojson=json.dumps(boundary_geojson))
+        ),
+        "Fagge": SimpleNamespace(source="geopode", geometry=SimpleNamespace(geojson=json.dumps(boundary_geojson))),
+        "Nassarawa": SimpleNamespace(
+            source="overture", geometry=SimpleNamespace(geojson=json.dumps(boundary_geojson))
+        ),
+    }
+    monkeypatch.setattr(
+        "connect_labs.microplans.core.admin_boundaries.find_ward_boundary",
+        lambda state, lga, ward: by_ward.get(ward),
+    )
+    settings.MAPBOX_TOKEN = "testtoken123"
+
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200
+    # Two distinct sources across three wards -> each named once, not repeated.
+    body = resp.content.decode()
+    assert body.count("GeoPoDe") == 1
+    assert body.count("Overture") == 1
 
 
 def test_analysis_view_skips_wards_with_no_boundary_match(client, django_user_model, monkeypatch):
@@ -845,12 +883,13 @@ def test_analysis_view_skips_wards_with_no_boundary_match(client, django_user_mo
     run.data["selected_wards"] = [{"ward": "Nowhere", "lga": "Rano", "state": "Kano"}]
 
     monkeypatch.setattr(
-        "connect_labs.microplans.core.admin_boundaries.find_ward_boundary_geometry",
+        "connect_labs.microplans.core.admin_boundaries.find_ward_boundary",
         lambda state, lga, ward: None,
     )
 
     resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
     assert resp.status_code == 200
+    assert b"pending native Connect boundary support" not in resp.content
 
 
 # --- MopupLockView -----------------------------------------------------------
