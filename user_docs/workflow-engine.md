@@ -210,6 +210,16 @@ The custom name replaces the generic label everywhere the run appears: the workf
 
 ---
 
+## Creating a Run
+
+When you click **Create Run** on a workflow, the button darkens immediately to confirm your click has been registered, then shows a spinner labelled **"Creating run..."** until the new run opens. This means you will always get a visible response the instant you press the button — there is no silent pause before anything happens.
+
+While the button is in its "Creating run..." state, pressing it again has no effect, so you cannot accidentally create two runs by clicking twice.
+
+Once the run opens, the runner reports its progress step by step as work actually happens: **"Loading workflow configuration..."**, then **"Checking data sources..."**, then **"Checking CommCare HQ access..."**, rather than sitting on a static **"Connecting to pipeline stream..."** message throughout. Nothing about how runs are created or how pipelines load has changed — only what you are shown while you wait.
+
+---
+
 ## Resuming an Audit Run
 
 Audit runs — such as the Weekly Dual-Track Image Audit and the Muac Picture Audit — can be interrupted mid-way through, most commonly when a system deployment restarts the background workers while AI review is in progress. You can resume an interrupted run to pick up exactly where it left off.
@@ -220,14 +230,4 @@ When you resume a run, the system:
 
 - **Completes any audits that were started but not finished.** If an audit was created and AI review began but did not finish, resume picks up image-by-image from where it stopped rather than skipping or restarting those audits.
 - **Skips work that is already fully done.** Opportunities and audits that were completed before the interruption are not redone.
-- **Creates any audits that were never started.** Previously, if a run asked for more than one audit — for example, the two tracks of a Weekly Dual-Track Image Audit, or a second audit on a Muac Picture Audit run — only the first was actually created. Resume (and new runs) now ensure every audit the run is configured to produce is created.
-
-### Settings are preserved on resume
-
-When you resume a run that was started with custom settings — pass threshold, visit statuses, FLW cap, sampling — those settings are carried forward automatically. The run does not revert to the workflow's saved defaults partway through.
-
-### How quickly an interrupted run recovers
-
-When a system deployment restarts background workers, any audit batch that was running at that moment is killed. The run page will reflect this promptly — it no longer shows a run as still in progress for up to 45 minutes after a deploy has already ended it.
-
-The system can now detect almost immediately that a deploy killed a particular batch, because each job records which server process is running it. Once that process is gone, the system knows the job is dead rather than merely slow, and
+- **Creates any audits that were never started.** Previously, if a run asked for more than one audit — for example, the two tracks of a Weekly Dual-Track Image Audit, or a second audit on a Muac Picture Audit run
