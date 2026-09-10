@@ -1,0 +1,93 @@
+name: Resolve the prebuilt base and node images
+description: >-
+  Wait for any in-flight "Build Base Image" / "Build Node Image" run, then
+  resolve base-latest and node-latest to an image ref AND a digest each. Shared
+  by the merge-queue image build (ci.yml) and the deploy (deploy-labs.yml). The
+  digests are the whole point of sharing: they are what lets the deploy tell
+  whether an image CI built minutes ago stands on the same foundations the
+  deploy would build on now.
+
+inputs:
+  github-token:
+    description: Token with actions:read, for `gh run list` / `gh run watch`.
+    required: true
+  registry:
+    description: ECR registry host.
+    required: true
+  repository:
+    description: ECR repository name.
+    required: true
+
+outputs:
+  base_image:
+    description: Image ref to pass as BASE_IMAGE (or the from-scratch fallback).
+    value: ${{ steps.resolve.outputs.base_image }}
+  node_image:
+    description: Image ref to pass as NODE_IMAGE (or the from-scratch fallback).
+    value: ${{ steps.resolve.outputs.node_image }}
+  base_digest:
+    description: Digest of base-latest, or "none" when falling back.
+    value: ${{ steps.resolve.outputs.base_digest }}
+  node_digest:
+    description: Digest of node-latest, or "none" when falling back.
+    value: ${{ steps.resolve.outputs.node_digest }}
+
+runs:
+  using: composite
+  steps:
+    # A build that runs concurrently with (or shortly after) a merge that changed
+    # requirements/ or the frontend races the Build Base / Build Node Image
+    # workflows: base-latest / node-latest still point at the OLD image when we
+    # query ECR, and the app image ships stale deps or stale JS. That happened:
+    # PR #97 merged and the framework code never made it into the deployed
+    # bundle. So wait for any such run first.
+    #
+    # No `2>/dev/null || true` around `gh run list`: the deploy used to have
+    # that, and it turns a 403 from a token without actions:read into "nothing
+    # is running", which is the one answer that must never be faked here.
+    - name: Wait for base/node image builds if running
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        for WF in "Build Base Image" "Build Node Image"; do
+          for STATUS in in_progress queued; do
+            RUN=$(gh run list --workflow="$WF" --status="$STATUS" \
+                    --json databaseId --jq '.[0].databaseId // empty')
+            if [ -n "$RUN" ]; then
+              echo "'$WF' is $STATUS (run $RUN) — waiting for it before resolving tags..."
+              gh run watch "$RUN" --exit-status
+              echo "'$WF' completed."
+            fi
+          done
+        done
+
+    - name: Resolve base-latest and node-latest
+      id: resolve
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        REPO: ${{ inputs.repository }}
+      run: |
+        set -euo pipefail
+        # describe-images on one tag, not list-images over the whole repository:
+        # the repo holds thousands of SHA-tagged images and the old filter
+        # paginated through all of them (~10s per tag) to answer a yes/no.
+        resolve() {  # <tag> <from-scratch fallback> <output prefix>
+          DIGEST=$(aws ecr describe-images --repository-name "$REPO" \
+                     --image-ids imageTag="$1" \
+                     --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || true)
+          if [ -n "$DIGEST" ] && [ "$DIGEST" != "None" ]; then
+            echo "$1 -> $DIGEST"
+            echo "${3}_image=${REGISTRY}/${REPO}:$1" >> "$GITHUB_OUTPUT"
+            echo "${3}_digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::$1 not found in ECR — falling back to $2, a from-scratch build. Run the matching Build workflow."
+            echo "${3}_image=$2" >> "$GITHUB_OUTPUT"
+            echo "${3}_digest=none" >> "$GITHUB_OUTPUT"
+          fi
+        }
+        resolve base-latest python:3.11-slim-bookworm base
+        resolve node-latest node:18-bullseye node
