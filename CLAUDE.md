@@ -214,13 +214,14 @@ Before creating any pull request, read `.github/PULL_REQUEST_TEMPLATE.md` and fo
 
 The `## Product Description` section drives automated documentation updates and the weekly changelog. PRs that skip it or use a different section name (e.g. `## Summary`) are invisible to that automation.
 
-### `main` is behind a merge queue
+### `main` merges directly — the merge queue is OFF (since 2026-09-10)
 
-A GitHub **merge queue** is active on `main` (repo ruleset; `.github/workflows/ci.yml` carries the required `merge_group` trigger). Consequences:
+`main` is protected by a repo ruleset: no direct pushes, no deletion, no non-fast-forward, `linter` + `pytest` required on the PR, **squash merges only** (the repository allows no other method). There is **no merge queue**: it re-ran the whole suite against the queued merge result and cost a median 4.3 minutes per merge, nearly always to confirm that two independently green PRs were also green together. Jonathan took that trade for iteration speed. Consequences:
 
-- **Never push to `main`.** It is protected against direct pushes, deletion, and non-fast-forward.
-- `gh pr merge` **enqueues**; it does not land the commit. CI re-runs against the queued merge result (a `gh-readonly-queue/...` ref) and the merge happens when those checks pass. A PR sitting in the queue is normal — do not retry, re-push, or assume the merge failed.
+- `gh pr merge <N> --squash` (or with no flag — squash is the only allowed method) **lands the commit immediately** once the PR's own checks are green. The branch does not have to be up to date with `main`.
+- **`main` is tested after the fact.** CI runs the full suite on every push to `main`. If a merge that was green on its PR goes red on `main` (a semantic conflict with something that merged in between), that push run is the signal, within ~3 minutes. **Fix forward**: a follow-up PR, not a revert-and-wait.
 - Confirm a merge actually landed before deploying: `git fetch origin main && git log origin/main --oneline -5`. "Deploy only from `main`" (above) depends on this.
+- `ci.yml` keeps its `merge_group` trigger, inert, so the queue can be switched back on without the deadlock its comment describes.
 
 ## Git Worktrees and Virtualenv
 
