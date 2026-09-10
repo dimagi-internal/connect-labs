@@ -380,31 +380,46 @@ window.MopupAnalysis = (function () {
   }
 
   const GAP_FILL_COLOR = '#10b981';
+  const UPLOADED_BUILDING_COLOR = '#a855f7';
 
+  // PlanLayers.workAreas draws polygon fill/line layers — uploaded-building
+  // Points (Step 2's "upload your own" mode) render as a separate circle
+  // layer instead (see renderBuildingPoints), so they're filtered out here.
   function styleMapFeatures(fc) {
     return {
       type: 'FeatureCollection',
-      features: (fc?.features || []).map((f) => {
-        const color =
-          f.properties.source === 'planning_gap'
-            ? GAP_FILL_COLOR
-            : f.properties.included
-            ? INDICATOR_COLORS[f.properties.first_indicator] || '#3b82f6'
-            : '#9ca3af';
-        return {
-          ...f,
-          properties: {
-            ...f.properties,
-            fill: color,
-            outline: color,
-            // PlanLayers.workAreas forces a light grey fill/outline whenever
-            // status === 'EXCLUDED' (see plan_layers.js) — reused as-is for
-            // "not included in this mop-up round" rather than duplicating
-            // that paint logic here.
-            status: f.properties.included ? '' : 'EXCLUDED',
-          },
-        };
-      }),
+      features: (fc?.features || [])
+        .filter((f) => f.properties.source !== 'uploaded_building')
+        .map((f) => {
+          const color =
+            f.properties.source === 'planning_gap'
+              ? GAP_FILL_COLOR
+              : f.properties.included
+              ? INDICATOR_COLORS[f.properties.first_indicator] || '#3b82f6'
+              : '#9ca3af';
+          return {
+            ...f,
+            properties: {
+              ...f.properties,
+              fill: color,
+              outline: color,
+              // PlanLayers.workAreas forces a light grey fill/outline whenever
+              // status === 'EXCLUDED' (see plan_layers.js) — reused as-is for
+              // "not included in this mop-up round" rather than duplicating
+              // that paint logic here.
+              status: f.properties.included ? '' : 'EXCLUDED',
+            },
+          };
+        }),
+    };
+  }
+
+  function buildingPointFeatures(fc) {
+    return {
+      type: 'FeatureCollection',
+      features: (fc?.features || []).filter(
+        (f) => f.properties.source === 'uploaded_building',
+      ),
     };
   }
 
@@ -433,7 +448,30 @@ window.MopupAnalysis = (function () {
     if (features.some((f) => f.properties.source === 'planning_gap')) {
       swatches.push(swatch(GAP_FILL_COLOR, 'Planning gap (new)'));
     }
+    if (features.some((f) => f.properties.source === 'uploaded_building')) {
+      swatches.push(swatch(UPLOADED_BUILDING_COLOR, 'Uploaded buildings'));
+    }
     $('map-legend').innerHTML = swatches.join('');
+  }
+
+  // A separate circle layer, not PlanLayers.workAreas (which only draws
+  // polygons) — the real building positions behind Step 2's "upload your
+  // own" gap-fill cells, not just the gridded cells themselves.
+  function renderBuildingPoints(fc) {
+    window.PlanLayers.setSource(map, 'mopup-uploaded-buildings', fc);
+    if (!map.getLayer('mopup-uploaded-buildings-circles')) {
+      map.addLayer({
+        id: 'mopup-uploaded-buildings-circles',
+        type: 'circle',
+        source: 'mopup-uploaded-buildings',
+        paint: {
+          'circle-radius': 3,
+          'circle-color': UPLOADED_BUILDING_COLOR,
+          'circle-stroke-width': 1,
+          'circle-stroke-color': '#ffffff',
+        },
+      });
+    }
   }
 
   let lastMapFeatures = null;
@@ -443,6 +481,7 @@ window.MopupAnalysis = (function () {
     if (!map || !mapReady) return;
     const styled = styleMapFeatures(rawMapFeatures);
     window.PlanLayers.workAreas(map, { data: styled, promoteId: 'wa_id' });
+    renderBuildingPoints(buildingPointFeatures(rawMapFeatures));
     renderMapLegend(rawMapFeatures);
     if (!mapBoundsFitted) {
       const bbox = geojsonBbox(styled, wardBoundariesData);
@@ -797,7 +836,9 @@ window.MopupAnalysis = (function () {
           data.detail || 'Failed to upload file.';
         return;
       }
-      $('gap-upload-status').textContent = `Uploaded: ${data.filename}`;
+      $(
+        'gap-upload-status',
+      ).textContent = `Uploaded: ${data.filename} (${data.matched_rows} row(s) matched this run's ward(s))`;
     } catch (e) {
       $('gap-upload-button').disabled = false;
       $('gap-upload-status').textContent = 'Failed to upload file.';
