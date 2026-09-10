@@ -52,6 +52,13 @@
   .ward-col-connect { background: #f8fafc; }
   .ward-col-new { background: #ecfdf5; }
   .ward-group-start { border-left: 2px solid #d1d5db; }
+  /* .button sets display:inline-block directly, which ties with .hidden's
+     display:none on specificity (both single-class selectors) and wins on
+     source order — confirmed live: toggling .hidden on a `.button`-styled
+     element (e.g. Recompute in Step 2's "Skip" mode) silently has no visual
+     effect. Same latent bug already existed on #loading-retry, just never
+     surfaced since its hidden state is usually too brief to notice. */
+  .button.hidden { display: none; }
 </style>
 {% endblock %}
 
