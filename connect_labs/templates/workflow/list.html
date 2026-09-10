@@ -4,7 +4,8 @@
 {% block title %}Workflows{% endblock %}
 
 {% block content %}
-{% if view_mode == "program" and program_member_opps %}{{ program_member_opps|json_script:"user-opportunities" }}{% else %}{{ user_opportunities|json_script:"user-opportunities" }}{% endif %}
+{{ user_opportunities|json_script:"user-opportunities" }}
+{% if view_mode == "program" %}{{ program_member_opps|json_script:"program-member-opps" }}{% endif %}
 <style>[x-cloak] { display: none !important; }</style>
 <div class="max-w-6xl mx-auto px-4 py-6">
     <!-- Header -->
@@ -45,11 +46,25 @@
                 teal: { bg: 'bg-teal-100', text: 'text-teal-600', hover: 'hover:border-teal-400 hover:bg-teal-50' },
                 gray: { bg: 'bg-gray-100', text: 'text-gray-600', hover: 'hover:border-gray-400 hover:bg-gray-50' }
             },
+            // Every opportunity the user can access, in program view with the
+            // programme's own first. A spanning workflow may cross programmes —
+            // the real KMC opportunities sit in several — so the picker must
+            // never be limited to the programme it is created from.
+            programMemberIds: [],
             loadAvailableOpps() {
                 if (this.availableOpps.length > 0) return;
                 try {
                     const el = document.getElementById('user-opportunities');
                     if (el) this.availableOpps = JSON.parse(el.textContent);
+                    const pm = document.getElementById('program-member-opps');
+                    if (pm) this.programMemberIds = (JSON.parse(pm.textContent) || []).map(o => o.id);
+                    if (this.programMemberIds.length) {
+                        const isMember = o => this.programMemberIds.includes(o.id);
+                        this.availableOpps = [
+                            ...this.availableOpps.filter(isMember),
+                            ...this.availableOpps.filter(o => !isMember(o)),
+                        ];
+                    }
                 } catch (e) { console.error('Failed to parse user-opportunities', e); }
             },
             async loadTemplates() {
@@ -94,7 +109,9 @@
                 this.selectedTemplate = templateKey;
                 this.selectedTemplateMultiOpp = true;
                 this.loadAvailableOpps();
-                this.pickedOppIds = this.primaryOppId ? [this.primaryOppId] : [];
+                // Pre-tick the page's own scope: the opportunity in opp view, the
+                // programme's members in program view. Everything else stays offered.
+                this.pickedOppIds = this.primaryOppId ? [this.primaryOppId] : [...this.programMemberIds];
                 this.oppFilter = '';
                 this.showTemplateModal = false;
                 this.showOppPickerModal = true;
