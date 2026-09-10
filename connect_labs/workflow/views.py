@@ -5165,6 +5165,16 @@ class PipelineDataStreamView(BaseSSEStreamView):
                 yield send_sse_event("Error", error="No OAuth token found. Please log in to Connect.")
                 return
 
+            # First event, before ANY network I/O. Everything below this point
+            # — the definition fetch, and the CCHQ probe with its documented
+            # 1-2s cost — used to run while the runner still showed its static
+            # "Connecting to pipeline stream..." placeholder, because that text
+            # is only replaced when the first event lands. That read as a hang
+            # on exactly the slowest path (a freshly created multi-opp
+            # workflow). Emitting here also flushes the response headers, so
+            # the EventSource connection opens immediately.
+            yield send_sse_event("Loading workflow configuration...")
+
             # Get workflow definition to find pipeline sources.
             data_access = WorkflowDataAccess(request=request)
             try:
@@ -5449,6 +5459,10 @@ class PipelineDataStreamView(BaseSSEStreamView):
         from connect_labs.labs.analysis.sse_streaming import send_sse_event
         from connect_labs.labs.integrations.commcare.api_client import CommCareDataAccess
 
+        # Reading each source's definition is itself a round trip per source,
+        # so say so rather than going quiet again.
+        yield send_sse_event("Checking data sources...")
+
         # Any cchq_forms sources?
         needs_cchq = False
         for source in definition.pipeline_sources or []:
@@ -5469,6 +5483,8 @@ class PipelineDataStreamView(BaseSSEStreamView):
                 continue
         if not needs_cchq:
             return
+
+        yield send_sse_event("Checking CommCare HQ access...")
 
         try:
             metadata = fetch_opportunity_metadata(access_token, opportunity_id)

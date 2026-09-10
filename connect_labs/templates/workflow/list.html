@@ -681,6 +681,7 @@
                  deleting: false,
                  copying: false,
                  sharing: false,
+                 starting: false,
                  showDeleteConfirm: false,
                  showShareMenu: false,
                  isShared: {{ workflow.definition.is_shared|yesno:'true,false' }},
@@ -974,7 +975,8 @@
 
                     <!-- Action Buttons -->
                     <div class="flex items-center gap-2 flex-shrink-0">
-                    <form method="POST" action="{% url 'labs:workflow:api_start_run' workflow.definition.id %}" class="m-0">
+                    <form method="POST" action="{% url 'labs:workflow:api_start_run' workflow.definition.id %}" class="m-0"
+                          @submit="if (starting) { $event.preventDefault(); return; } starting = true">
                         {% csrf_token %}
                         {% if view_mode == "program" %}
                         {% comment %}Program-owned workflow: start a PROGRAM-scoped run (no owning opp).{% endcomment %}
@@ -983,9 +985,17 @@
                         {% comment %}Program view has no opportunity_id in session context; pass the workflow's owning opp so the run is created against it.{% endcomment %}
                         <input type="hidden" name="opportunity_id" value="{{ workflow.definition.opportunity_id }}">
                         {% endif %}
+                        {% comment %}Creating a run is a full-page POST that does two Connect API
+                        round trips and an S3 mirror before it redirects, so it is never instant.
+                        active: gives the press itself an immediate paint with no JS in the path;
+                        the starting flag then holds a spinner for the rest of the wait, and blocks
+                        a second submit. Without either, the click looked like it had missed.{% endcomment %}
                         <button type="submit"
-                                class="inline-flex items-center px-3 py-1.5 border border-green-300 rounded-md text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 hover:border-green-400 transition-colors">
-                            <i class="fa-solid fa-plus mr-1.5"></i> Create Run
+                                :class="starting ? 'opacity-60 pointer-events-none' : ''"
+                                class="inline-flex items-center px-3 py-1.5 border border-green-300 rounded-md text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 hover:border-green-400 active:bg-green-200 active:border-green-500 transition-colors">
+                            <i class="fa-solid fa-plus mr-1.5" x-show="!starting"></i>
+                            <i class="fa-solid fa-spinner fa-spin mr-1.5" x-show="starting" x-cloak></i>
+                            <span x-text="starting ? 'Creating run...' : 'Create Run'">Create Run</span>
                         </button>
                     </form>
                     {% if view_mode == "program" %}

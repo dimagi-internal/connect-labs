@@ -1521,3 +1521,64 @@ class TestFlwDailySummaryHistoryApi:
 
         assert resp.status_code == 400
         assert "integer" in json.loads(resp.content)["error"]
+
+
+class TestPipelineStreamSpeaksBeforeItBlocks:
+    """The runner shows a static "Connecting to pipeline stream..." placeholder
+    until the first SSE event lands, so anything the stream does before its
+    first yield is invisible dead air.
+
+    It used to fetch the workflow definition and then run the CCHQ probe —
+    whose own docstring budgets 1-2s, on top of a round trip per pipeline
+    source — before saying anything at all. On the slowest path, a freshly
+    created multi-opp workflow, that read as a hang rather than as progress.
+    """
+
+    def test_first_event_arrives_before_the_definition_is_fetched(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        from connect_labs.workflow.views import PipelineDataStreamView
+
+        request = rf.get("/labs/workflow/api/5181/pipeline-data/stream/")
+        request.user = dimagi_user
+        request.labs_context = {"program_id": 176}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            MockWDA.return_value.get_definition.return_value = MagicMock(pipeline_sources=[], opportunity_ids=[1973])
+
+            view = PipelineDataStreamView()
+            view.kwargs = {"definition_id": 5181}
+            stream = view.stream_data(request)
+            first = json.loads(next(stream)[len("data: ") :])
+
+            assert (
+                MockWDA.return_value.get_definition.call_count == 0
+            ), "the stream went to the network before telling the user anything"
+
+        assert first.get("message"), f"first event carried no status message: {first!r}"
+
+    def test_the_cchq_probe_announces_itself_before_scanning_sources(self, dimagi_user, rf: RequestFactory):
+        """The probe reads every pipeline source's definition — a round trip
+        each — before it even decides whether CCHQ is involved."""
+        import json
+
+        from connect_labs.workflow.views import PipelineDataStreamView
+
+        request = rf.get("/labs/workflow/api/5181/pipeline-data/stream/")
+        request.user = dimagi_user
+        request.session = {"labs_oauth": {"access_token": "t"}}
+        definition = MagicMock(pipeline_sources=[{"pipeline_id": 7}])
+
+        view = PipelineDataStreamView()
+        with patch("connect_labs.workflow.views.PipelineDataAccess") as MockPDA:
+            MockPDA.return_value.get_definition.return_value = MagicMock(schema={"data_source": {"type": "visits"}})
+
+            probe = view._maybe_probe_cchq_access(request, definition, 1973, "t")
+            first = json.loads(next(probe)[len("data: ") :])
+
+            assert (
+                MockPDA.return_value.get_definition.call_count == 0
+            ), "the probe read a pipeline definition before reporting progress"
+
+        assert "data source" in (first.get("message") or "").lower()
