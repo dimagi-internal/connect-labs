@@ -358,6 +358,20 @@ class TestBuildMapFeatures:
         fc = build_map_features(all_rows, [])
         assert fc["features"][0]["geometry"] == self._BOUNDARY
 
+    def test_building_points_appended_as_point_features(self):
+        points = [{"lon": 11.33, "lat": 11.09}, {"lon": 11.34, "lat": 10.80}]
+        fc = build_map_features([], [], building_points=points)
+        assert len(fc["features"]) == 2
+        for f, p in zip(fc["features"], points):
+            assert f["geometry"] == {"type": "Point", "coordinates": [p["lon"], p["lat"]]}
+            assert f["properties"]["source"] == "uploaded_building"
+            assert f["properties"]["included"] is True
+
+    def test_no_building_points_adds_nothing(self):
+        all_rows = [{"wa_id": "wa-1", "ward": "Sabon Gari", "boundary": self._BOUNDARY}]
+        fc = build_map_features(all_rows, [])
+        assert not any(f["properties"]["source"] == "uploaded_building" for f in fc["features"])
+
 
 class TestGapFeatureToCandidateRow:
     def test_adapts_a_gap_feature_into_candidate_shape(self):

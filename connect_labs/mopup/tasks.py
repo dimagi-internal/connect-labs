@@ -184,7 +184,6 @@ def preview_planning_gaps(
     min_confidence: float | None = None,
     min_buildings_per_cell: int = 1,
     cell_size_m: float = 100.0,
-    csv_storage_key: str | None = None,
 ) -> dict:
     """Phase 2 Step 2 (locked runs only): for every distinct ward among the
     run's locked candidates, find buildings never covered by any existing
@@ -202,12 +201,16 @@ def preview_planning_gaps(
         through, so an auth problem surfaces identically regardless of mode.
       * `"overture"` (default) — today's behavior: `building_sources`/
         `min_confidence` control `microplans.core.footprints.fetch_buildings`.
-      * `"upload"` — reads the CSV stored at `csv_storage_key` (via
-        `MopupUploadBuildingsView`) ONCE for the whole run (not per ward —
-        the file can be hundreds of thousands of rows), then
-        `core.gaps.buildings_from_upload` filters it down to each ward's own
-        rows. `building_sources`/`min_confidence` are ignored in this mode
-        (no such concept for user-supplied data).
+      * `"upload"` — reads `run.uploaded_buildings_csv` (already shrunk to
+        this run's own ward(s) at upload time by
+        `MopupUploadBuildingsView`/`core.gaps.filter_upload_to_wards`) ONCE
+        for the whole run, then `core.gaps.buildings_from_upload` filters it
+        down to each ward's own rows. `building_sources`/`min_confidence`
+        are ignored in this mode (no such concept for user-supplied data).
+        Unlike Overture, this mode also keeps every individual building
+        position (`result["building_points"]`) for Step 2's map to plot —
+        an Overture-fetched remainder can be far larger, so that's skipped
+        for the other modes rather than bloating the run record.
 
     Does NOT persist its own result — `MopupPlanningGapsView` stores the
     returned features/config/warnings onto the run once this returns, so a
@@ -298,12 +301,17 @@ def preview_planning_gaps(
 
     uploaded_df = None
     if mode == "upload":
-        if not csv_storage_key:
+        if not run.uploaded_buildings_csv:
             raise RuntimeError("Upload a building-data file before recomputing.")
+        import io
+
+        import pandas as pd
+
         set_task_progress(self, "Reading the uploaded building file…")
-        uploaded_df = _read_uploaded_buildings_csv(csv_storage_key)
+        uploaded_df = pd.read_csv(io.StringIO(run.uploaded_buildings_csv))
 
     gap_features: list[dict] = []
+    building_points: list[dict] = []
     warnings: dict[str, str] = {}
     for i, w in enumerate(wards, start=1):
         set_task_progress(self, f"Checking planning gaps for {w['ward']} ({i}/{len(wards)})…")
@@ -321,7 +329,7 @@ def preview_planning_gaps(
             ward_buildings = (
                 buildings_from_upload(uploaded_df, w["ward"], w["lga"], w["state"]) if mode == "upload" else None
             )
-            gap_features += planning_gap_features(
+            features, points = planning_gap_features(
                 w["ward"],
                 w["lga"],
                 w["state"],
@@ -335,6 +343,9 @@ def preview_planning_gaps(
                 visits_per_building=rate,
                 buildings=ward_buildings,
             )
+            gap_features += features
+            if mode == "upload":
+                building_points += points
         except Exception as e:  # noqa: BLE001
             warnings[w["ward"]] = str(e)
             logger.exception(
@@ -345,20 +356,9 @@ def preview_planning_gaps(
         "status": "ok",
         "features": gap_features,
         "cells_added": len(gap_features),
+        "building_points": building_points,
         "warnings": warnings,
         "config": config,
     }
     set_task_progress(self, "Done", is_complete=True, result=result)
     return result
-
-
-def _read_uploaded_buildings_csv(storage_key: str):
-    """Reads a Step 2 "upload your own" CSV back from `default_storage`
-    (wherever `MopupUploadBuildingsView` wrote it — S3 in production,
-    `MEDIA_ROOT` locally/in tests) into a DataFrame, once per Recompute —
-    `core.gaps.buildings_from_upload` then filters it per ward."""
-    import pandas as pd
-    from django.core.files.storage import default_storage
-
-    with default_storage.open(storage_key, "rb") as f:
-        return pd.read_csv(f)

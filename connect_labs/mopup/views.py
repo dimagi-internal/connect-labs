@@ -160,7 +160,6 @@ def _planning_gaps_result_or_progress(da, run, request, program_id, payload) -> 
             min_confidence=payload.get("min_confidence"),
             min_buildings_per_cell=int(payload.get("min_buildings_per_cell") or 1),
             cell_size_m=float(payload.get("cell_size_m") or 100.0),
-            csv_storage_key=run.uploaded_buildings_key if mode == "upload" else None,
         )
         da.update_run(run, planning_gap_task_id=result.id)
         return None, build_task_progress("PENDING", None)
@@ -176,6 +175,7 @@ def _planning_gaps_result_or_progress(da, run, request, program_id, payload) -> 
             planning_gap_features=resp.get("features", []),
             planning_gap_config=resp.get("config", {}),
             planning_gap_warnings=resp.get("warnings", {}),
+            planning_gap_building_points=resp.get("building_points", []),
         )
         return resp, None
     if progress["status"] == "failed":
@@ -383,6 +383,7 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         context["upload_buildings_url"] = reverse("mopup:upload_buildings", args=[program_id, run_id])
         context["planning_gap_config"] = run.planning_gap_config
         context["uploaded_buildings_filename"] = run.uploaded_buildings_filename
+        context["uploaded_buildings_row_count"] = run.uploaded_buildings_row_count
         context["indicator_configs"] = run.thresholds.get("indicator_configs") or ind.DEFAULT_INDICATOR_CONFIGS
         context["global_config"] = run.thresholds.get("global_config") or ind.DEFAULT_GLOBAL_CONFIG
         context["indicator_defs"] = [
@@ -502,7 +503,7 @@ class MopupCandidatesView(LoginRequiredMixin, View):
                 "total_work_areas": len(rows),
                 "candidate_count": len(candidates),
                 "per_indicator_counts": per_indicator_counts,
-                "map_features": build_map_features(rows, candidates, gap_features),
+                "map_features": build_map_features(rows, candidates, gap_features, run.planning_gap_building_points),
             }
         )
 
@@ -609,7 +610,7 @@ class MopupPlanningGapsView(LoginRequiredMixin, View):
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        if (payload.get("mode") or "overture") == "upload" and not run.uploaded_buildings_key:
+        if (payload.get("mode") or "overture") == "upload" and not run.uploaded_buildings_csv:
             return JsonResponse(
                 {"status": "error", "detail": "Upload a building-data file before recomputing."}, status=400
             )
@@ -621,22 +622,35 @@ class MopupPlanningGapsView(LoginRequiredMixin, View):
 
 
 _MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # the confirmed real sample was ~28MB
-_REQUIRED_UPLOAD_COLUMNS = {"latitude", "longitude", "wardname", "lganame", "statename"}
+_MAX_UPLOAD_ROWS = 50_000  # after shrinking to this run's own ward(s) -- see the view's docstring
 
 
 class MopupUploadBuildingsView(LoginRequiredMixin, View):
     """Phase 2 Step 2's "upload your own building data" mode (locked runs
     only): accepts a multipart CSV, validates it's a plausible building
-    file (extension, size, required columns), and stores the raw bytes via
-    `default_storage` (S3 in production, `MEDIA_ROOT` locally/in tests) —
-    the storage key (not the file itself) is persisted onto the run as
-    `uploaded_buildings_key`, read back by
-    `mopup.tasks.preview_planning_gaps` the next time Step 2's Recompute
-    runs in "upload" mode. Re-uploading simply overwrites the stored key —
-    same "latest wins, no separate lock" convention Step 2 already has for
-    its Overture-mode settings."""
+    file (extension, size, required columns), shrinks it down to just this
+    run's own locked ward(s) (`core.gaps.filter_upload_to_wards` — a
+    reviewer's file is allowed to cover more ground than this run reviews,
+    e.g. a multi-ward source file, but only the reviewed ward(s) are worth
+    keeping), and stores the result as CSV text directly on the run
+    (`MopupRunRecord.uploaded_buildings_csv`) — NOT Django's file storage/S3
+    (`default_storage`), which has no working bucket/IAM wiring in labs
+    (confirmed live: every upload attempt through that path 500'd). This
+    mirrors how `microplans`' own "upload your own boundary" feature
+    persists an upload directly on its record instead of touching file
+    storage at all.
+
+    Re-uploading simply overwrites what's stored — same "latest wins, no
+    separate lock" convention Step 2 already has for its Overture-mode
+    settings. `_MAX_UPLOAD_ROWS` is a safety net on the POST-shrink row
+    count, not the raw file — real usage reviews a handful of wards at
+    most, so this should essentially never trigger; if it does, the fix is
+    a smaller/more targeted upload, not a bigger cap."""
 
     def post(self, request, program_id, run_id):
+        from connect_labs.mopup.core.areas import carry_forward_features, distinct_wards
+        from connect_labs.mopup.core.gaps import filter_upload_to_wards
+
         da = MopupRunDataAccess(program_id, request=request)
         run = da.get_run(run_id)
         if run is None:
@@ -657,25 +671,47 @@ class MopupUploadBuildingsView(LoginRequiredMixin, View):
                 status=400,
             )
 
+        import pandas as pd
+
         try:
-            header_line = upload.readline().decode("utf-8-sig")
-        except UnicodeDecodeError:
-            return JsonResponse({"status": "error", "detail": "File must be UTF-8 text."}, status=400)
-        finally:
-            upload.seek(0)
-        header_cols = {c.strip() for c in header_line.strip().split(",")}
-        missing = _REQUIRED_UPLOAD_COLUMNS - header_cols
-        if missing:
+            df = pd.read_csv(upload)
+        except (UnicodeDecodeError, pd.errors.ParserError) as e:
+            return JsonResponse({"status": "error", "detail": f"Could not read this as a CSV: {e}"}, status=400)
+
+        with_geometry = [c for c in run.candidate_work_areas if c.get("boundary")]
+        wards = distinct_wards(carry_forward_features(with_geometry))
+
+        try:
+            filtered = filter_upload_to_wards(df, wards)
+        except KeyError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
+
+        if filtered.empty:
+            ward_names = ", ".join(sorted({w["ward"] for w in wards})) or "(none)"
             return JsonResponse(
-                {"status": "error", "detail": f"CSV is missing required column(s): {', '.join(sorted(missing))}."},
+                {
+                    "status": "error",
+                    "detail": f"No rows in this file match this run's ward(s): {ward_names}.",
+                },
+                status=400,
+            )
+        if len(filtered) > _MAX_UPLOAD_ROWS:
+            return JsonResponse(
+                {
+                    "status": "error",
+                    "detail": (
+                        f"{len(filtered)} rows matched this run's ward(s) — over the {_MAX_UPLOAD_ROWS:,} limit. "
+                        "Upload a file scoped to just the ward(s) being reviewed in this round."
+                    ),
+                },
                 status=400,
             )
 
-        from uuid import uuid4
+        da.update_run(
+            run,
+            uploaded_buildings_csv=filtered.to_csv(index=False),
+            uploaded_buildings_filename=upload.name,
+            uploaded_buildings_row_count=len(filtered),
+        )
 
-        from django.core.files.storage import default_storage
-
-        key = default_storage.save(f"mopup/uploads/run-{run_id}/{uuid4().hex}.csv", upload)
-        da.update_run(run, uploaded_buildings_key=key, uploaded_buildings_filename=upload.name)
-
-        return JsonResponse({"status": "ok", "filename": upload.name})
+        return JsonResponse({"status": "ok", "filename": upload.name, "matched_rows": len(filtered)})

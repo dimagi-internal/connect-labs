@@ -229,7 +229,7 @@
         <input type="file" id="gap-upload-file" accept=".csv" class="base-input">
       </label>
       <button type="button" id="gap-upload-button" class="button outline-style">Upload</button>
-      <p id="gap-upload-status" class="text-xs text-gray-500">{% if uploaded_buildings_filename %}Uploaded: {{ uploaded_buildings_filename }}{% endif %}</p>
+      <p id="gap-upload-status" class="text-xs text-gray-500">{% if uploaded_buildings_filename %}Uploaded: {{ uploaded_buildings_filename }} ({{ uploaded_buildings_row_count }} row(s) matched this run's ward(s)){% endif %}</p>
     </div>
 
     <div id="gap-mode-shared-controls" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">

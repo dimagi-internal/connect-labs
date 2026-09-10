@@ -116,6 +116,17 @@ class MopupRunRecord(LocalLabsRecord):
         return self.data.get("planning_gap_features", [])
 
     @property
+    def planning_gap_building_points(self) -> list[dict]:
+        """Individual uploaded-building positions (`{"lon": float, "lat": float}`)
+        behind the LATEST successful Step 2 "upload your own" preview — for
+        the map to show real building positions inside the gap-fill cells,
+        not just the cells themselves. Only ever populated for the "upload"
+        mode (see `tasks.preview_planning_gaps`) — an Overture-fetched
+        remainder can be far larger, so this stays empty for that mode
+        rather than bloating the run record and the map payload."""
+        return self.data.get("planning_gap_building_points", [])
+
+    @property
     def planning_gap_config(self) -> dict:
         """The mode ("skip"/"overture"/"upload")/building-source/confidence/
         min-buildings/cell-size settings used to produce
@@ -124,20 +135,28 @@ class MopupRunRecord(LocalLabsRecord):
         return self.data.get("planning_gap_config", {})
 
     @property
-    def uploaded_buildings_key(self) -> str | None:
-        """Storage key (under `default_storage`, e.g. `MediaRootS3Boto3Storage`
-        in production) for the raw CSV last uploaded via
-        `MopupUploadBuildingsView` — read back by
+    def uploaded_buildings_csv(self) -> str | None:
+        """The last uploaded buildings CSV, ALREADY SHRUNK at upload time to
+        just this run's own ward(s) (`core.gaps.filter_upload_to_wards`) and
+        stored as plain CSV text directly on this record — not Django's file
+        storage/S3, which has no working bucket/IAM wiring in labs (confirmed
+        live: every attempt through that path 500'd). Read back by
         `mopup.tasks.preview_planning_gaps` when Step 2's mode is "upload".
         `None` until a file has been uploaded for this run."""
-        return self.data.get("uploaded_buildings_key")
+        return self.data.get("uploaded_buildings_csv")
 
     @property
     def uploaded_buildings_filename(self) -> str | None:
         """The original filename of the last uploaded buildings CSV, purely
-        for redisplaying "X uploaded" on Step 2's form — never used to
-        resolve the actual stored file (that's `uploaded_buildings_key`)."""
+        for redisplaying "X uploaded" on Step 2's form."""
         return self.data.get("uploaded_buildings_filename")
+
+    @property
+    def uploaded_buildings_row_count(self) -> int:
+        """How many rows of `uploaded_buildings_csv` matched this run's own
+        ward(s) after upload-time filtering — shown next to the filename so
+        a reviewer can sanity-check the upload before hitting Recompute."""
+        return self.data.get("uploaded_buildings_row_count", 0)
 
     @property
     def planning_gap_warnings(self) -> dict:

@@ -1181,7 +1181,6 @@ def test_planning_gaps_dispatches_a_task_with_the_given_config(client, django_us
         min_confidence=0.6,
         min_buildings_per_cell=2,
         cell_size_m=50.0,
-        csv_storage_key=None,
     )
 
 
@@ -1199,11 +1198,11 @@ def test_planning_gaps_upload_mode_requires_an_uploaded_file(client, django_user
     assert "Upload a building-data file" in resp.json()["detail"]
 
 
-def test_planning_gaps_upload_mode_dispatches_with_the_stored_key(client, django_user_model, monkeypatch):
+def test_planning_gaps_upload_mode_dispatches_when_a_csv_is_stored(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
     run = _seed_locked_run(runs)
-    run.data["uploaded_buildings_key"] = "mopup/uploads/run-1/abc123.csv"
+    run.data["uploaded_buildings_csv"] = "latitude,longitude,wardname,lganame,statename\n1.0,2.0,W,L,S\n"
 
     fake_async_result = mock.Mock(id="fresh-gap-task-id")
     with mock.patch("connect_labs.mopup.tasks.preview_planning_gaps.delay", return_value=fake_async_result) as delay:
@@ -1222,7 +1221,6 @@ def test_planning_gaps_upload_mode_dispatches_with_the_stored_key(client, django
         min_confidence=None,
         min_buildings_per_cell=1,
         cell_size_m=100.0,
-        csv_storage_key="mopup/uploads/run-1/abc123.csv",
     )
     assert runs[1].planning_gap_task_id == "fresh-gap-task-id"
 
@@ -1255,6 +1253,7 @@ def test_planning_gaps_persists_the_completed_result_onto_the_run(client, django
         "status": "ok",
         "features": [gap_feature],
         "cells_added": 1,
+        "building_points": [{"lon": 11.33, "lat": 11.09}],
         "warnings": {"Other Ward": "no ward boundary match — skipped"},
         "config": {
             "building_sources": None,
@@ -1279,6 +1278,7 @@ def test_planning_gaps_persists_the_completed_result_onto_the_run(client, django
     assert runs[1].planning_gap_features == [gap_feature]
     assert runs[1].planning_gap_config == result_payload["config"]
     assert runs[1].planning_gap_warnings == {"Other Ward": "no ward boundary match — skipped"}
+    assert runs[1].planning_gap_building_points == [{"lon": 11.33, "lat": 11.09}]
 
 
 def test_planning_gaps_surfaces_a_failed_task_and_clears_it_for_retry(client, django_user_model, monkeypatch):
@@ -1370,13 +1370,24 @@ def test_upload_buildings_rejects_oversized_file(client, django_user_model, monk
     assert "too large" in resp.json()["detail"]
 
 
-def test_upload_buildings_success_persists_key_and_filename(
-    client, django_user_model, monkeypatch, settings, tmp_path
-):
+def test_upload_buildings_success_persists_csv_and_filename(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
     run = _seed_locked_run(runs)
-    settings.MEDIA_ROOT = str(tmp_path)
+    # _csv_upload()'s default row is ward="Nafada Central"/lga="Nafada"/
+    # state="Gombe" (the real sample's shape) -- give this run a matching
+    # locked candidate so the upload-time ward filter keeps that row.
+    run.data["candidate_work_areas"] = [
+        {
+            "wa_id": "wa-1",
+            "ward": "Nafada Central",
+            "lga": "Nafada",
+            "state": "Gombe",
+            "boundary": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]},
+            "building_count": 1,
+            "expected_visit_count": 1,
+        }
+    ]
 
     resp = client.post(
         reverse("mopup:upload_buildings", kwargs={"program_id": 217, "run_id": 1}),
@@ -1386,10 +1397,59 @@ def test_upload_buildings_success_persists_key_and_filename(
     body = resp.json()
     assert body["status"] == "ok"
     assert body["filename"] == "rct_wards_buildings.csv"
+    assert body["matched_rows"] == 1
     assert run.uploaded_buildings_filename == "rct_wards_buildings.csv"
-    assert run.uploaded_buildings_key
-    assert run.uploaded_buildings_key.startswith("mopup/uploads/run-1/")
+    assert run.uploaded_buildings_row_count == 1
+    assert "Nafada Central" in run.uploaded_buildings_csv
 
-    from django.core.files.storage import default_storage
 
-    assert default_storage.exists(run.uploaded_buildings_key)
+def test_upload_buildings_no_matching_ward_is_rejected(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    run.data["candidate_work_areas"] = [
+        {
+            "wa_id": "wa-1",
+            "ward": "Some Other Ward",
+            "lga": "Some Other LGA",
+            "state": "Some Other State",
+            "boundary": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]},
+            "building_count": 1,
+            "expected_visit_count": 1,
+        }
+    ]
+
+    resp = client.post(
+        reverse("mopup:upload_buildings", kwargs={"program_id": 217, "run_id": 1}),
+        {"file": _csv_upload()},
+    )
+    assert resp.status_code == 400
+    assert "No rows in this file match" in resp.json()["detail"]
+    assert run.uploaded_buildings_csv is None
+
+
+def test_upload_buildings_over_row_cap_is_rejected(client, django_user_model, monkeypatch):
+    from connect_labs.mopup import views as views_module
+
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    run.data["candidate_work_areas"] = [
+        {
+            "wa_id": "wa-1",
+            "ward": "Nafada Central",
+            "lga": "Nafada",
+            "state": "Gombe",
+            "boundary": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]},
+            "building_count": 1,
+            "expected_visit_count": 1,
+        }
+    ]
+    monkeypatch.setattr(views_module, "_MAX_UPLOAD_ROWS", 0)
+
+    resp = client.post(
+        reverse("mopup:upload_buildings", kwargs={"program_id": 217, "run_id": 1}),
+        {"file": _csv_upload()},
+    )
+    assert resp.status_code == 400
+    assert "over the 0" in resp.json()["detail"]

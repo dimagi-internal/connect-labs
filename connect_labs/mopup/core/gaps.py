@@ -17,6 +17,18 @@ better local building data than any of the automated providers carry. Either
 way, the buildings feed the SAME `buildings_not_covered`/`grid_clusters`
 pipeline below — only where the DataFrame comes from differs.
 
+An uploaded CSV is shrunk to this run's own ward(s) at UPLOAD time
+(`filter_upload_to_wards`) and stored as CSV text directly on the run's own
+JSON record (`MopupRunRecord.uploaded_buildings_csv`) — deliberately NOT
+Django's file storage/S3 (`default_storage`), which has no working bucket/
+IAM wiring for labs (confirmed live: every upload attempt through that path
+500'd). This mirrors how `microplans`' own "upload your own boundary"
+feature works (parse client-side or server-side, store the result directly
+on the record — never touch file storage at all), adapted here to keep the
+data server-side (a 28MB/362k-row CSV is a much heavier payload than a
+handful of boundary polygons, so parsing happens in Python via pandas
+rather than in the browser).
+
 Deliberately not built on top of `microplans.coverage.frame.generate_coverage_frame`
 — that function always calls `fetch_buildings` itself with no seam to inject
 a pre-filtered building set, and adding one would be a microplans-file change
@@ -104,6 +116,39 @@ def _normalize_name(s: str | None) -> str:
     return " ".join(str(s or "").strip().casefold().split())
 
 
+def filter_upload_to_wards(df: pd.DataFrame, wards: list[dict]) -> pd.DataFrame:
+    """Shrinks an uploaded building CSV, AT UPLOAD TIME, down to only the
+    row(s) whose ward/LGA/state exactly match one of `wards` (this run's own
+    locked wards — see `core.areas.distinct_wards`) — before anything gets
+    stored on the run.
+
+    A reviewer's file is explicitly allowed to cover more ground than this
+    mop-up round reviews (see `buildings_from_upload`'s own docstring), but
+    there is no reason to keep rows for wards this run will never touch:
+    shrinking here is what keeps what's actually stored on the run small,
+    regardless of how many wards the uploaded file itself spans (confirmed
+    against a real sample: 80 wards / 362k rows in the file, but a single
+    mop-up round reviews only a handful of them at most).
+
+    `wards`: `[{"ward": ..., "lga": ..., "state": ...}, ...]`. Matching is
+    the same exact, case/whitespace-normalized comparison
+    `buildings_from_upload` uses — deliberately not fuzzy.
+
+    Raises `KeyError` if a required column is missing (surfaced directly to
+    the uploader as a 400, not deferred to Recompute time)."""
+    required = ("wardname", "lganame", "statename")
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise KeyError(f"uploaded file is missing required column(s): {', '.join(missing)}")
+
+    wanted = {(_normalize_name(w["ward"]), _normalize_name(w["lga"]), _normalize_name(w["state"])) for w in wards}
+    keys = zip(
+        df["wardname"].map(_normalize_name), df["lganame"].map(_normalize_name), df["statename"].map(_normalize_name)
+    )
+    mask = [k in wanted for k in keys]
+    return df[pd.Series(mask, index=df.index)]
+
+
 def buildings_from_upload(df: pd.DataFrame, ward: str, lga: str, state: str) -> pd.DataFrame:
     """Filters a user-uploaded building CSV down to this ward's rows, and
     reshapes them into the same `lon`/`lat`/`area_m2`/`confidence`/`dataset`
@@ -167,7 +212,7 @@ def planning_gap_features(
     min_buildings_per_cell: int = 1,
     visits_per_building: float | None = None,
     buildings: pd.DataFrame | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], list[dict]]:
     """Grid the buildings-minus-existing-footprint remainder for one ward
     into the SAME Feature shape `generate_coverage_frame` produces (`cluster`,
     `area_id`, `ward`/`lga`/`state`, `building_count`, `expected_visit_count`,
@@ -191,12 +236,22 @@ def planning_gap_features(
     target still comes from `core.areas.ward_children_per_building`,
     unrelated to this estimate. `None` (the default) keeps the original
     building-count placeholder.
+
+    Returns `(features, building_points)` — `building_points` is every
+    individual building in the remainder (`{"lon": float, "lat": float}`),
+    BEFORE gridding, for Step 2's map to show real building positions inside
+    the gap-fill cells, not just the cells themselves. Always computed (it's
+    a byproduct of `remainder`, already in hand) — callers decide whether to
+    keep it (Step 2 only keeps this for "upload your own" mode, since an
+    Overture-fetched remainder can be far larger; see `tasks.preview_planning_gaps`).
     """
     from connect_labs.microplans.core import clustering
 
     remainder = buildings_not_covered(
         ward_boundary, existing_wa_boundaries, min_confidence=min_confidence, sources=sources, buildings=buildings
     )
+    building_points = [{"lon": float(lon), "lat": float(lat)} for lon, lat in zip(remainder["lon"], remainder["lat"])]
+
     out = clustering.grid_clusters(remainder, cell_size_m=cell_size_m)
     features = []
     for _, row in out.psu_frame.iterrows():
@@ -223,7 +278,7 @@ def planning_gap_features(
                 },
             }
         )
-    return features
+    return features, building_points
 
 
 def work_area_boundaries_for_ward(

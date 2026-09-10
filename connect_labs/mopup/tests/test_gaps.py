@@ -88,6 +88,47 @@ class TestBuildingsNotCovered:
         assert result.iloc[0]["lon"] == pytest.approx(0.005)
 
 
+class TestFilterUploadToWards:
+    def _df(self, rows):
+        return pd.DataFrame(rows)
+
+    def test_keeps_only_rows_matching_one_of_the_given_wards(self):
+        df = self._df(
+            [
+                {"wardname": "Nafada Central", "lganame": "Nafada", "statename": "Gombe"},
+                {"wardname": "Birin Bolawa", "lganame": "Nafada", "statename": "Gombe"},
+                {"wardname": "Some Other Ward", "lganame": "Other LGA", "statename": "Other State"},
+            ]
+        )
+        wards = [{"ward": "Nafada Central", "lga": "Nafada", "state": "Gombe"}]
+        result = gaps.filter_upload_to_wards(df, wards)
+        assert len(result) == 1
+        assert result.iloc[0]["wardname"] == "Nafada Central"
+
+    def test_matches_multiple_wards_and_normalizes_case_and_whitespace(self):
+        df = self._df(
+            [
+                {"wardname": "  nafada central  ", "lganame": "NAFADA", "statename": "gombe"},
+                {"wardname": "Birin Bolawa", "lganame": "Nafada", "statename": "Gombe"},
+            ]
+        )
+        wards = [
+            {"ward": "Nafada Central", "lga": "Nafada", "state": "Gombe"},
+            {"ward": "Birin Bolawa", "lga": "Nafada", "state": "Gombe"},
+        ]
+        result = gaps.filter_upload_to_wards(df, wards)
+        assert len(result) == 2
+
+    def test_empty_ward_list_matches_nothing(self):
+        df = self._df([{"wardname": "Nafada Central", "lganame": "Nafada", "statename": "Gombe"}])
+        assert gaps.filter_upload_to_wards(df, []).empty
+
+    def test_missing_required_column_raises_keyerror(self):
+        df = self._df([{"wardname": "W", "lganame": "L"}])  # no statename
+        with pytest.raises(KeyError, match="statename"):
+            gaps.filter_upload_to_wards(df, [{"ward": "W", "lga": "L", "state": "S"}])
+
+
 class TestBuildingsFromUpload:
     def _df(self, rows):
         """rows: list of dicts with latitude/longitude/wardname/lganame/statename
@@ -171,7 +212,9 @@ class TestPlanningGapFeatures:
         # Two buildings far enough apart to land in different 100m cells.
         buildings = _buildings_df([(0.0, 0.0), (0.005, 0.005)])
         monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: buildings)
-        features = gaps.planning_gap_features("Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), [])
+        features, points = gaps.planning_gap_features(
+            "Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), []
+        )
         assert len(features) >= 1
         for f in features:
             assert f["type"] == "Feature"
@@ -179,33 +222,43 @@ class TestPlanningGapFeatures:
             assert f["properties"]["ward"] == "Sabon Gari"
             assert f["properties"]["cluster"].startswith("mopup-kano-rano-sabon-gari-gap-")
             assert f["properties"]["building_count"] >= 1
+        assert len(points) == 2
+        assert {"lon", "lat"} <= points[0].keys()
 
     def test_existing_wa_boundaries_reduce_the_gridded_remainder(self, monkeypatch):
         buildings = _buildings_df([(0.001, 0.001), (0.008, 0.008)])
         monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: buildings)
         # Excluding the WA covering the first building leaves only the second.
         existing = [_square(0.0, 0.0, 0.002, 0.002)]
-        features = gaps.planning_gap_features(
+        features, points = gaps.planning_gap_features(
             "Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), existing
         )
         total_buildings = sum(f["properties"]["building_count"] for f in features)
         assert total_buildings == 1
+        assert len(points) == 1
+        assert points[0]["lon"] == pytest.approx(0.008)
 
     def test_no_remainder_returns_empty(self, monkeypatch):
         monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: _buildings_df([]))
-        features = gaps.planning_gap_features("Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), [])
+        features, points = gaps.planning_gap_features(
+            "Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), []
+        )
         assert features == []
+        assert points == []
 
     def test_min_buildings_per_cell_drops_small_cells(self, monkeypatch):
         # One isolated building (its own cell, n_buildings=1) plus two close
         # together (share a cell, n_buildings=2).
         buildings = _buildings_df([(0.009, 0.009), (0.0001, 0.0001), (0.00011, 0.00011)])
         monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: buildings)
-        features = gaps.planning_gap_features(
+        features, points = gaps.planning_gap_features(
             "Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), [], min_buildings_per_cell=2
         )
         assert len(features) == 1
         assert features[0]["properties"]["building_count"] == 2
+        # min_buildings_per_cell only drops CELLS from the gridded output --
+        # the raw point list still carries every building in the remainder.
+        assert len(points) == 3
 
     def test_min_confidence_and_sources_are_forwarded_to_fetch_buildings(self, monkeypatch):
         seen = {}
@@ -231,7 +284,7 @@ class TestPlanningGapFeatures:
     def test_visits_per_building_sets_expected_visit_count_estimate(self, monkeypatch):
         buildings = _buildings_df([(0.0, 0.0), (0.0001, 0.0001), (0.0002, 0.0002)])
         monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: buildings)
-        features = gaps.planning_gap_features(
+        features, _points = gaps.planning_gap_features(
             "Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), [], visits_per_building=2.5
         )
         assert len(features) == 1
@@ -241,7 +294,9 @@ class TestPlanningGapFeatures:
     def test_no_visits_per_building_keeps_building_count_placeholder(self, monkeypatch):
         buildings = _buildings_df([(0.0, 0.0), (0.0001, 0.0001)])
         monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: buildings)
-        features = gaps.planning_gap_features("Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), [])
+        features, _points = gaps.planning_gap_features(
+            "Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), []
+        )
         assert features[0]["properties"]["expected_visit_count"] == features[0]["properties"]["building_count"]
 
 
