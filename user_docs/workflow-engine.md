@@ -66,6 +66,36 @@ This means each workflow appears in exactly one place. If you cannot find a work
 
 ---
 
+## Creating a Workflow from a Template
+
+You can create new workflows from ready-made templates rather than building them from scratch. The template picker is available from the program's own Workflows page (the URL includes `?program_id=…`) via the **Create Workflow** button. Using the program-level page means you can create whole-program reports — such as the KMC Programme Metrics report — without having to start from an individual opportunity.
+
+### Choosing a template
+
+Clicking **Create Workflow** opens the **Choose a template** modal. Templates are presented one per row, grouped by what they produce:
+
+| Group | Examples |
+|---|---|
+| Programme reports | KMC Programme Metrics |
+| Automatic reports | Scheduled summary reports |
+| Worker reviews | KMC Worker Review |
+| Audits | Weekly Dual-Track Image Audit, Muac Picture Audit |
+| Beneficiary tracking | Beneficiary-level dashboards |
+| Outreach & demos | Outreach and demonstration reports |
+
+A **filter box** at the top of the modal lets you type to narrow the list. Each row shows a short description; hovering over or tapping the row expands the full description. If a template is always created together with another template, both rows say so, so you know what you will get before you confirm.
+
+### Templates that create linked workflows together
+
+Some templates produce more than one workflow in a single action. The **KMC Programme Metrics** template is the main example: selecting it creates both the **KMC Programme Metrics** report and the **KMC Worker Review** page at the same time, over the same set of opportunities, with a run ready on each and the two pages already linked to each other. Worker rows on the programme metrics report open directly into the worker review — no manual linking step is needed.
+
+Before this change, creating the KMC Programme Metrics report by hand left worker rows that were plain text rather than links; a separate API step was required to connect the two workflows. That step is no longer needed.
+
+!!! note "The opportunity picker uses the programme's own opportunities"
+    When you create a workflow from the programme-level Workflows page, the opportunity picker in the template modal shows only the opportunities that belong to that programme. You do not need to navigate to a specific opportunity first.
+
+---
+
 ## Scheduling a Workflow to Run Automatically
 
 Any workflow that supports a one-click default run can be put on a recurring schedule so it runs itself automatically — no one has to log in and click "run" each week.
@@ -214,28 +244,4 @@ Dashboards in Connect Labs are built by program authors and can include charts, 
 
 Previously, some dashboard elements could appear invisible or unstyled with no error message: a warning figure might show in near-black instead of red, or a bar chart might render at zero height even though all the underlying data was present and the page otherwise loaded normally. These problems were silent — nothing on screen indicated that anything was wrong.
 
-This has been fixed. All colours and sizing options available to dashboard authors now render correctly. If you previously noticed a chart, figure, or panel that looked blank, collapsed, or oddly coloured, it should now display as intended. If you still see a dashboard element that appears missing or unstyled, contact whoever manages your program's dashboards so they can review the configuration.
-
-### Consistent data across live view and saved runs
-
-On multi-opportunity dashboards, the figures you see while a run is in progress are now guaranteed to match what is saved once the run completes. Previously, if a pipeline happened to define a field with the same name as one the system fills in automatically — such as an opportunity identifier — the live view and the saved run could show different values for that field. The system now ensures that its own identifier always takes precedence, so all three ways a dashboard's data is produced (live view, saved run, and pipeline preview) agree on the same value.
-
-No dashboard is known to have displayed wrong numbers as a result of this — for real Connect data the two values were always the same. This change closes the gap before it can affect any program.
-
-### Review outcome counts on open runs
-
-On a dashboard backed by a visit-level pipeline — such as an in-progress audit run — the summary figures for flagged and rejected visits now show correct counts even while the run is still open. Previously, those counts showed **0 flagged** and **0 rejected** on any run that had not yet been marked complete, even when flagged and rejected records were already present.
-
-This fix applies in three places:
-
-- The **live dashboard** for an open run
-- The **run list**, which displays summary counts next to each run
-- The **pipeline preview**, which program authors use to check a pipeline's output before wiring a dashboard to it
-
-If you were previously cross-checking flagged or rejected counts between a dashboard and a pipeline preview and saw zeroes in one or both places, those figures should now match the actual records.
-
-### Protection against incomplete data refreshes
-
-Live workflow dashboards occasionally showed briefly corrupted numbers after a data refresh — for example, a metric like "Weeks to WA Completion" dropping to a fraction of its real value for a short time. This could happen when CommCare's data export returned an incomplete result during a burst of new visit submissions, and the dashboard trusted that incomplete snapshot instead of recognising something looked wrong.
-
-The system now checks each fresh data pull before replacing what is already displayed. If the new pull contains significantly fewer records than the previous one — a sign that the export may not have finished — the system retries automatically. If the retried pull still looks too small, the dashboard continues showing the last known-good data rather than the
+This has been fixed. All colours and sizing options available to dashboard authors now render correctly. If you previously noticed a chart, figure, or panel that looked blank, collapsed, or oddly coloured, it should now display as intended. If you still see a dashboard element that appears missing or unstyled, contact whoever manages your program's dashboards so they can
