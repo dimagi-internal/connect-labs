@@ -849,6 +849,14 @@ function WorkflowUI({
   var explainState = React.useState({ status: 'idle', by: {}, error: null });
   var explainData = explainState[0];
   var setExplain = explainState[1];
+  // The panel's open/closed state lives HERE, not in the <details> element.
+  // AllIndicators is a function defined inside WorkflowUI, so every state change
+  // (the explain fetch landing, a definition row toggling) gives it a new
+  // identity and React remounts the <details>, wiping its native `open`. Seen
+  // live on run 5623: the panel shut itself the instant a row was clicked.
+  var allOpenState = React.useState(false);
+  var allOpen = allOpenState[0];
+  var setAllOpen = allOpenState[1];
   function definitionId() {
     var pathMatch = String(window.location.pathname || '').match(
       /\/workflow\/(\d+)\//,
@@ -2560,8 +2568,11 @@ function WorkflowUI({
     return (
       <details
         className="bg-white border border-gray-200 rounded-xl"
+        open={allOpen}
         onToggle={function (ev) {
-          if (ev.target && ev.target.open) loadExplain();
+          var isOpen = !!(ev.target && ev.target.open);
+          setAllOpen(isOpen);
+          if (isOpen) loadExplain();
         }}
       >
         <summary className="px-4 py-3 text-sm font-semibold text-gray-700 cursor-pointer flex items-center justify-between">
