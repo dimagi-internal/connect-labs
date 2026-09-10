@@ -193,9 +193,11 @@ class TestBuildEntityAggregationQuery:
     def test_no_filters_leaves_where_clause_unchanged(self):
         """A schema with filters={} (every entity-stage template as of this
         change) must emit the exact same WHERE clause as before — no
-        behavior change for existing pipelines that never opted in."""
+        behavior change for existing pipelines that never opted in. The scope
+        fragment itself now excludes in-progress sentinel generations
+        (visit_count > 0); that is the slot filter, not a schema filter."""
         query = build_entity_aggregation_query(self._config(), opportunity_id=999)
-        assert "WHERE opportunity_id = 999 AND pipeline_id IS NULL\n" in query
+        assert "WHERE opportunity_id = 999 AND pipeline_id IS NULL AND visit_count > 0\n" in query
 
     def test_status_filter_restricts_row_set(self):
         """Entity-stage aggregation previously ignored config.filters entirely,
