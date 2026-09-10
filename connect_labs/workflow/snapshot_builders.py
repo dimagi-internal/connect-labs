@@ -72,7 +72,17 @@ def semantic_snapshot(
     # same omission was made three times in one day.
     scope = {"opportunity_id": opportunity_id, "program_id": program_id}
 
-    wda = WorkflowDataAccess(request=request, access_token=access_token, **scope)
+    # The DEFINITION is read by its OWNER, not by the data anchor. `opportunity_id`
+    # here is opportunity_ids[0] — where the pipelines live and the rows come from —
+    # and a by-id read filters on it whenever it is set. A program-owned report
+    # (created from the programme page; #1699) has no opportunity FK at all, so
+    # reading it through the anchor found nothing and every such run failed with
+    # "could not be read" while its opp-owned twin worked. Observed on workflow
+    # 5626 / run 5631, the first program-owned KMC report. Pipelines stay on the
+    # anchor: they are always opportunity-owned.
+    owner_scope = {"program_id": program_id} if program_id else {"opportunity_id": opportunity_id}
+
+    wda = WorkflowDataAccess(request=request, access_token=access_token, **owner_scope)
     try:
         definition = wda.get_definition(definition_id)
     finally:
