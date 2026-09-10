@@ -34,7 +34,11 @@ from connect_labs.utils.feature_access import can_create_from_template, get_allo
 from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess, serialize_pipeline_row
 from connect_labs.workflow.templates import MULTI_OPTION_COERCERS, TEMPLATES, companion_links
 from connect_labs.workflow.templates import create_workflow_from_template as create_from_template
-from connect_labs.workflow.templates import schedule_options_for_definition, template_supports_default_run
+from connect_labs.workflow.templates import (
+    schedule_options_for_definition,
+    template_groups,
+    template_supports_default_run,
+)
 from connect_labs.workflow.templates.weekly_dual_track_audit import CLASSIFIER_KEYS
 
 logger = logging.getLogger(__name__)
@@ -220,8 +224,9 @@ class WorkflowTemplateListAPIView(LoginRequiredMixin, View):
     """API endpoint to list available workflow templates."""
 
     def get(self, request):
-        """Return list of workflow templates with metadata for UI rendering."""
-        return JsonResponse({"templates": get_allowed_templates(request.user)})
+        """Return list of workflow templates with metadata for UI rendering,
+        and the picker's groups in display order."""
+        return JsonResponse({"templates": get_allowed_templates(request.user), "groups": template_groups()})
 
 
 class WorkflowListView(LoginRequiredMixin, TemplateView):
