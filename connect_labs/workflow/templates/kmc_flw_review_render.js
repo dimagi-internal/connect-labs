@@ -144,26 +144,6 @@ function WorkflowUI({
   }
 
   // The display contract travels with the payload, as on the programme page.
-  var C_LIST = React.useMemo(
-    function () {
-      return (P.cMeasures || [])
-        .filter(function (m) {
-          return m && m.indicator;
-        })
-        .map(function (m) {
-          return {
-            id: m.indicator,
-            name: m.title,
-            cat: m.category,
-            prom: m.prominence,
-            unit: m.unit,
-            kind: m.kind,
-            minDen: m.min_denominator,
-          };
-        });
-    },
-    [P],
-  );
   var N_LIST = React.useMemo(
     function () {
       return (((P.series || {}).N || {}).measures || [])
@@ -198,6 +178,19 @@ function WorkflowUI({
       return f.key === selKey;
     })[0] || null;
   var nFLW = nByKey[selKey] || null;
+  var SC = (P.series && P.series.N) || null;
+  var lloRow =
+    flw && SC
+      ? (SC.byLLO || []).filter(function (r) {
+          return r.llo === flw.llo;
+        })[0]
+      : null;
+  var oppRow =
+    flw && SC
+      ? (SC.byOpp || []).filter(function (r) {
+          return String(r.opp) === String(flw.opp);
+        })[0]
+      : null;
 
   // Keep the address bar shareable: a picked worker is a link, not a click.
   function pickWorker(key) {
@@ -746,6 +739,357 @@ function WorkflowUI({
     );
   }
 
+  // ── The scorecard, in the programme report's own header ────────────────────
+  // Same fifteen columns, same groups, same order as the programme page, so a
+  // worker's row reads against the programme, organisation and opportunity rows
+  // without relearning the table. The case table below reuses the header with
+  // case-level labels.
+  var SCORECARD = [
+    { id: 'N01', label: 'Total', caseLabel: 'Counted', title: 'Total cases' },
+    { id: 'N02', label: 'Reg', caseLabel: 'Reg', title: 'Registered (C01)' },
+    {
+      id: 'N03',
+      label: 'Started',
+      caseLabel: 'Started',
+      title: 'Started (C02)',
+    },
+    {
+      id: 'N05',
+      label: 'Med GA',
+      caseLabel: 'GA',
+      title: 'Median gestational age, weeks',
+    },
+    {
+      id: 'N06',
+      label: 'Med BW',
+      caseLabel: 'BW',
+      title: 'Median birthweight, g',
+    },
+    {
+      id: 'N07',
+      label: 'Visits/case',
+      caseLabel: 'Visits',
+      title: 'Mean visits per case (C24)',
+    },
+    {
+      id: 'N08',
+      label: '%1st≤3d',
+      caseLabel: '1st≤3d',
+      title: '% first visit within 3 days of discharge (C16)',
+    },
+    {
+      id: 'N09',
+      label: 'Qual N',
+      caseLabel: 'Qual',
+      title:
+        'Qualifying SVNs — the shared denominator of the four growth-quality columns',
+      denOnly: true,
+    },
+    {
+      id: 'N09',
+      label: '%slow',
+      caseLabel: 'Slow',
+      title: '% slow growth, of qualifying SVNs',
+    },
+    {
+      id: 'N10',
+      label: '%healthy',
+      caseLabel: 'Healthy',
+      title: '% healthy growth, of qualifying SVNs',
+    },
+    {
+      id: 'N11',
+      label: '%fast',
+      caseLabel: 'Fast',
+      title: '% fast growth, of qualifying SVNs',
+    },
+    {
+      id: 'N12',
+      label: '%incompl',
+      caseLabel: 'Incompl',
+      title: '% incomplete growth data, of qualifying SVNs',
+    },
+    {
+      id: 'N13',
+      label: 'Mortality',
+      caseLabel: 'Outcome',
+      title: 'Mortality (C14) — shown only where death recording is credible',
+    },
+    {
+      id: 'N14',
+      label: 'Round%',
+      caseLabel: 'Rounded',
+      title: 'Weight rounding rate (C31)',
+    },
+    {
+      id: 'N15',
+      label: '%imposs',
+      caseLabel: 'Implausible',
+      title: '% impossible weight changes (C27)',
+    },
+  ];
+  var SCORECARD_GROUPS = [
+    { label: 'Scale', span: 3 },
+    { label: 'Cohort', span: 2 },
+    { label: 'Enrolment & visits', span: 3 },
+    { label: 'Growth quality (of Qual N)', span: 4 },
+    { label: 'Outcome', span: 1 },
+    { label: 'Data quality', span: 2 },
+  ];
+  var N_BY_ID = React.useMemo(
+    function () {
+      var m = {};
+      N_LIST.forEach(function (x) {
+        m[x.id] = x;
+      });
+      return m;
+    },
+    [N_LIST],
+  );
+  function tintFor(e) {
+    if (!e) return '';
+    if (e.band === 'green') return 'bg-green-50 text-green-800';
+    if (e.band === 'yellow') return 'bg-amber-50 text-amber-800';
+    if (e.band === 'red') return 'bg-red-50 text-red-800';
+    if (e.band === 'notcredible') return 'text-slate-400 italic';
+    if (e.band === 'insufficient') return 'text-gray-400';
+    return '';
+  }
+  function scoreCell(c, ind) {
+    var e = ind && ind[c.id];
+    if (!e) return '—';
+    if (c.denOnly) return e.n ? nCount(e.n) : '—';
+    var m = N_BY_ID[c.id] || {};
+    if (e.band === 'insufficient')
+      return <span className="text-gray-400">n&lt;{m.minDen || MIN_DEN}</span>;
+    if (e.value === null || e.value === undefined) return '—';
+    var v = Number(e.value);
+    if (m.unit === '%') return (100 * v).toFixed(1) + '%';
+    if (m.unit === 'g') return nCount(v);
+    if (m.unit === 'wks') return String(Math.round(v * 10) / 10);
+    if (c.id === 'N07') return v.toFixed(1);
+    return nCount(v);
+  }
+  function ScorecardHead(props) {
+    var lead = props.lead || [];
+    var forCases = !!props.forCases;
+    return (
+      <thead>
+        <tr className="text-[10px] uppercase tracking-wide text-gray-400 border-b border-gray-200">
+          {lead.map(function (l, i) {
+            return <th key={'l' + i} className="px-3 py-1"></th>;
+          })}
+          {SCORECARD_GROUPS.map(function (g) {
+            return (
+              <th
+                key={g.label}
+                className="px-1.5 py-1 text-center"
+                colSpan={g.span}
+              >
+                {g.label}
+              </th>
+            );
+          })}
+        </tr>
+        <tr className="text-xs text-gray-500 border-b border-gray-100">
+          {lead.map(function (l, i) {
+            return (
+              <th
+                key={'l' + i}
+                className={
+                  (i === 0 ? 'px-3' : 'px-1.5') +
+                  ' py-2 text-left font-semibold text-gray-600'
+                }
+              >
+                {l}
+              </th>
+            );
+          })}
+          {SCORECARD.map(function (c, i) {
+            return (
+              <th
+                key={i}
+                className="px-1.5 py-2 text-right whitespace-nowrap font-semibold text-gray-600"
+                title={c.title}
+              >
+                {forCases ? c.caseLabel : c.label}
+                <div className="font-mono text-[10px] font-normal text-gray-300">
+                  {c.id}
+                </div>
+              </th>
+            );
+          })}
+        </tr>
+      </thead>
+    );
+  }
+  function scorecardRow(label, ind, highlight) {
+    return (
+      <tr
+        key={label}
+        className={
+          'border-t border-gray-100 ' +
+          (highlight ? 'bg-indigo-50 font-semibold' : '')
+        }
+      >
+        <td className="px-3 py-2 text-left text-gray-900 whitespace-nowrap">
+          {label}
+        </td>
+        {SCORECARD.map(function (c, i) {
+          var e = ind && ind[c.id];
+          return (
+            <td
+              key={i}
+              className={
+                'px-1.5 py-2 text-right tabular-nums ' +
+                (c.denOnly ? '' : tintFor(e))
+              }
+            >
+              {scoreCell(c, ind)}
+            </td>
+          );
+        })}
+      </tr>
+    );
+  }
+
+  // ── Each case's contribution: the same measures at the `case` scope ────────
+  // The registry evaluated one grouping level further down, for this worker's
+  // visits only, as of the report's date -- served by the semantic endpoint of
+  // the programme workflow this page reads, so a case row and the worker's row
+  // above it are the same computation. At case scope a rate is 0 or 100 with a
+  // denominator of 0 or 1 (in the denominator, and whether it counted), a median
+  // is the baby's own value, visits-per-case is the baby's count. Nothing is
+  // re-derived here.
+  var sCaseRows = React.useState({ status: 'idle', byCase: {}, error: null });
+  var caseRows = sCaseRows[0],
+    setCaseRows = sCaseRows[1];
+  var flwKeyForRows = flw ? flw.key : null;
+  var asOfForRows = (P.meta && P.meta.as_of) || '';
+  React.useEffect(
+    function () {
+      var src = cfg.source_workflow_id;
+      if (!flwKeyForRows || report.status !== 'ready') return;
+      if (!src) {
+        setCaseRows({
+          status: 'error',
+          byCase: {},
+          error:
+            'config.source_workflow_id is not set, so case contributions cannot be read',
+        });
+        return;
+      }
+      var cancelled = false;
+      setCaseRows({ status: 'loading', byCase: {}, error: null });
+      var sp = scopeParams();
+      fetch(
+        '/labs/workflow/api/' +
+          src +
+          '/semantic/' +
+          sp +
+          (sp ? '&' : '?') +
+          'scopes=case&flw=' +
+          encodeURIComponent(flwKeyForRows) +
+          (asOfForRows ? '&as_of=' + asOfForRows : ''),
+        { credentials: 'same-origin' },
+      )
+        .then(function (r) {
+          return r.json().then(function (j) {
+            return { ok: r.ok, j: j };
+          });
+        })
+        .then(function (res) {
+          if (cancelled) return;
+          if (!res.ok)
+            throw new Error(res.j.error || 'could not read case contributions');
+          var m = {};
+          (res.j.rows || []).forEach(function (r) {
+            if (r.scope === 'case' && r.case_id) m[String(r.case_id)] = r;
+          });
+          setCaseRows({ status: 'ready', byCase: m, error: null });
+        })
+        .catch(function (e) {
+          if (!cancelled)
+            setCaseRows({
+              status: 'error',
+              byCase: {},
+              error: String((e && e.message) || e),
+            });
+        });
+      return function () {
+        cancelled = true;
+      };
+    },
+    [flwKeyForRows, cfg.source_workflow_id, report.status, asOfForRows],
+  );
+  function caseScopeRow(c) {
+    return caseRows.byCase[c.opportunity_id + '|' + c.entity_id] || null;
+  }
+  var YES = <span className="text-green-700 font-semibold">✓</span>;
+  var NO = <span className="text-red-700 font-semibold">✗</span>;
+  var DASH = <span className="text-gray-300">—</span>;
+  var DOT = <span className="text-indigo-600 font-bold">●</span>;
+  function contrib(c, row, rec) {
+    if (!row)
+      return caseRows.status === 'loading' ? (
+        <span className="text-gray-300">…</span>
+      ) : (
+        DASH
+      );
+    var m = c.id.toLowerCase();
+    var v = row[m];
+    var den = row[m + '_denominator'];
+    var has = den !== null && den !== undefined && Number(den) > 0;
+    var pos = has && Number(v) > 0;
+    if (c.denOnly) return has ? YES : DASH;
+    if (c.id === 'N01') return YES;
+    if (c.id === 'N02' || c.id === 'N03' || c.id === 'N08')
+      return has ? (pos ? YES : NO) : DASH;
+    if (c.id === 'N05')
+      return v === null || v === undefined
+        ? DASH
+        : String(Math.round(Number(v) * 10) / 10);
+    if (c.id === 'N06') return v === null || v === undefined ? DASH : nCount(v);
+    if (c.id === 'N07')
+      return has ? (
+        nCount(v)
+      ) : (
+        <span
+          className="text-gray-400"
+          title="not yet 42 days since the first visit"
+        >
+          {rec.total_visits || '—'}
+        </span>
+      );
+    if (c.id === 'N09' || c.id === 'N10' || c.id === 'N11' || c.id === 'N12')
+      return has ? (pos ? DOT : DASH) : '';
+    if (c.id === 'N13')
+      return has ? (
+        pos ? (
+          <span className="text-red-700 font-semibold">died</span>
+        ) : (
+          <span className="text-gray-500">alive</span>
+        )
+      ) : (
+        DASH
+      );
+    if (c.id === 'N14')
+      return has
+        ? Math.round((Number(v) / 100) * Number(den)) + '/' + den
+        : DASH;
+    if (c.id === 'N15')
+      return has ? (
+        pos ? (
+          <span className="text-red-700 font-semibold">yes</span>
+        ) : (
+          <span className="text-gray-500">no</span>
+        )
+      ) : (
+        DASH
+      );
+    return DASH;
+  }
+
   // ── Views ────────────────────────────────────────────────────────────────────
   var backHref = cfg.source_workflow_id
     ? '/labs/workflow/' +
@@ -847,12 +1191,21 @@ function WorkflowUI({
       return first && p.x - first.x <= 42;
     });
     var earlyLast = earlyEnd[earlyEnd.length - 1];
+    // Early growth is C13 at case scope when the registry has it (the baby is
+    // past the growth gate); the descriptive window here is only a fallback.
+    var scopeRow = caseScopeRow(c);
+    var c13 =
+      scopeRow && Number(scopeRow.c13_denominator) > 0
+        ? Number(scopeRow.c13)
+        : null;
     var earlyVel =
-      first &&
-      earlyLast &&
-      earlyLast !== first &&
-      first.y > 0 &&
-      earlyLast.x > first.x
+      c13 !== null
+        ? c13
+        : first &&
+          earlyLast &&
+          earlyLast !== first &&
+          first.y > 0 &&
+          earlyLast.x > first.x
         ? (earlyLast.y - first.y) / ((first.y / 1000) * (earlyLast.x - first.x))
         : null;
     var gain =
@@ -934,7 +1287,7 @@ function WorkflowUI({
       );
     }
     return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="bg-white border border-indigo-200 rounded-xl overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
           <div className="text-sm">
             <button
@@ -944,7 +1297,7 @@ function WorkflowUI({
                 openCase(null);
               }}
             >
-              ← all cases
+              close
             </button>
             <span className="text-gray-300 mx-2">·</span>
             <span className="font-medium text-gray-900">
@@ -1099,8 +1452,14 @@ function WorkflowUI({
                   {earlyVel === null ? '—' : earlyVel.toFixed(1) + ' g/kg/day'}
                 </div>
                 <div className="text-[10px] text-gray-400">
-                  {first && earlyLast && earlyLast !== first
-                    ? 'days ' + first.x + '–' + earlyLast.x + ' · target 15'
+                  {c13 !== null
+                    ? 'C13 · target 15'
+                    : first && earlyLast && earlyLast !== first
+                    ? 'days ' +
+                      first.x +
+                      '–' +
+                      earlyLast.x +
+                      ' · not yet graded'
                     : 'needs two weighings'}
                 </div>
               </div>
@@ -1304,192 +1663,139 @@ function WorkflowUI({
         </div>
       </div>
 
-      {nFLW && N_LIST.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-            Scorecard
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
+          Scorecard
+          <span className="ml-2 text-xs font-normal text-gray-400">
+            the programme report&rsquo;s fifteen columns &mdash; this
+            worker&rsquo;s row under the programme, organisation and opportunity
+            rows
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <ScorecardHead lead={['Scope']} />
+            <tbody>
+              {scorecardRow('Programme', SC && SC.programme)}
+              {scorecardRow(flw.llo || 'Organisation', (lloRow || {}).ind)}
+              {scorecardRow(oppLabel(flw.opp), (oppRow || {}).ind)}
+              {scorecardRow(flw.flw || '(unassigned)', nFLW && nFLW.ind, true)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
+          Cases
+          <span className="ml-2 text-xs font-normal text-gray-400">
+            {cases.length} &middot; one row per case &middot; each cell is the
+            case&rsquo;s contribution to the column above &middot; click a case
+            to open it
+          </span>
+          {caseRows.status === 'loading' && (
             <span className="ml-2 text-xs font-normal text-gray-400">
-              the 15 headline metrics, this worker
+              &middot; reading contributions…
             </span>
-          </div>
-          <div
-            className="grid gap-px bg-gray-100"
-            style={{
-              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-            }}
-          >
-            {N_LIST.map(function (m) {
-              var e = entryOf(nFLW.ind, m.id);
-              return (
-                <div key={m.id} className="bg-white px-3 py-2">
-                  <div className="text-[10px] text-gray-400">
-                    {m.id} · {m.name}
-                  </div>
-                  <div className="text-base font-semibold text-gray-900">
-                    {e.band === 'insufficient' ? (
-                      <span className="text-gray-400 text-sm">
-                        n&lt;{m.minDen || MIN_DEN}
-                      </span>
-                    ) : (
-                      fmt(m, e)
-                    )}
-                  </div>
-                  <div className="text-[10px] text-gray-400">n = {e.n}</div>
-                </div>
-              );
-            })}
-          </div>
+          )}
+          {caseRows.status === 'error' && (
+            <span className="ml-2 text-xs font-normal text-red-600">
+              &middot; {caseRows.error}
+            </span>
+          )}
         </div>
-      )}
-
-      {selCase && <CaseDetail c={selCase} />}
-
-      <div
-        className="grid gap-4"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(460px, 1fr))' }}
-      >
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-            Indicators
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-gray-500">
-                <tr>
-                  <th className="px-3 py-2 text-left">ID</th>
-                  <th className="px-3 py-2 text-left">Indicator</th>
-                  <th className="px-3 py-2 text-right">Value</th>
-                  <th className="px-3 py-2 text-right">n</th>
-                  <th className="px-3 py-2 text-left">Band</th>
-                </tr>
-              </thead>
-              <tbody>
-                {C_LIST.map(function (i) {
-                  var e = entryOf(flw.ind, i.id);
-                  return (
-                    <tr key={i.id} className="border-t border-gray-100">
-                      <td className="px-3 py-2 font-mono text-xs text-gray-500">
-                        {i.id}
-                      </td>
-                      <td className="px-3 py-2">
-                        {i.name}
-                        {i.prom === 'Top' && (
-                          <span className="ml-2 text-xs text-indigo-500">
-                            top
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right font-medium">
-                        {fmt(i, e)}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-400">
-                        {e.n}
-                      </td>
-                      <td className="px-3 py-2">
-                        <span
-                          className={
-                            'px-2 py-0.5 rounded text-xs ' +
-                            (BAND_CLS[e.band] || BAND_CLS.nodata)
-                          }
-                        >
-                          {bandLabel(e, i)}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          {
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">
-                Cases
-                <span className="ml-2 text-xs font-normal text-gray-400">
-                  {cases.length} · most recent first · click a case for its
-                  growth chart
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-500">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Case</th>
-                      <th className="px-3 py-2 text-left">Registered</th>
-                      <th className="px-3 py-2 text-right">Birth wt</th>
-                      <th className="px-3 py-2 text-right">Last wt</th>
-                      <th className="px-3 py-2 text-right">Visits</th>
-                      <th className="px-3 py-2 text-left">Last visit</th>
-                      <th className="px-3 py-2 text-left">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cases.map(function (c) {
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <ScorecardHead
+              lead={['Case', 'Registered', 'Last visit']}
+              forCases={true}
+            />
+            <tbody>
+              {cases.map(function (c) {
+                var row = caseScopeRow(c);
+                var open = selCase === c;
+                var out = [
+                  <tr
+                    key={c.opportunity_id + '|' + c.entity_id}
+                    className={
+                      'border-t border-gray-100 cursor-pointer hover:bg-indigo-50 ' +
+                      (open ? 'bg-indigo-50' : '')
+                    }
+                    onClick={function () {
+                      openCase(open ? null : c);
+                    }}
+                  >
+                    <td
+                      className="px-3 py-2 font-mono text-xs text-gray-700 whitespace-nowrap"
+                      title={c.entity_id}
+                    >
+                      {String(c.entity_id).slice(0, 8)}…
+                    </td>
+                    <td className="px-1.5 py-2 text-gray-500 whitespace-nowrap">
+                      {dateOnly(c.reg_date)}
+                    </td>
+                    <td className="px-1.5 py-2 text-gray-500 whitespace-nowrap">
+                      {dateOnly(c.last_visit_date)}
+                    </td>
+                    {SCORECARD.map(function (col, i) {
                       return (
-                        <tr
-                          key={c.opportunity_id + '|' + c.entity_id}
-                          className={
-                            'border-t border-gray-100 cursor-pointer hover:bg-indigo-50 ' +
-                            (selCase === c ? 'bg-indigo-50' : '')
-                          }
-                          onClick={function () {
-                            openCase(c);
-                            try {
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
-                            } catch (e) {
-                              window.scrollTo(0, 0);
-                            }
-                          }}
+                        <td
+                          key={i}
+                          className="px-1.5 py-2 text-right tabular-nums"
                         >
-                          <td
-                            className="px-3 py-2 font-mono text-xs text-gray-700 whitespace-nowrap"
-                            title={c.entity_id}
-                          >
-                            {String(c.entity_id).slice(0, 8)}…
-                          </td>
-                          <td className="px-3 py-2">{dateOnly(c.reg_date)}</td>
-                          <td className="px-3 py-2 text-right">
-                            {c.birth_weight_g
-                              ? nCount(c.birth_weight_g) + ' g'
-                              : '—'}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {c.last_weight_g
-                              ? nCount(c.last_weight_g) + ' g'
-                              : '—'}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {c.total_visits || '—'}
-                          </td>
-                          <td className="px-3 py-2">
-                            {dateOnly(c.last_visit_date)}
-                          </td>
-                          <td className="px-3 py-2 text-gray-600">
-                            {c.last_kmc_status || '—'}
-                          </td>
-                        </tr>
+                          {contrib(col, row, c)}
+                        </td>
                       );
                     })}
-                    {!cases.length && (
-                      <tr>
-                        <td
-                          colSpan="7"
-                          className="px-3 py-6 text-center text-xs text-gray-400"
-                        >
-                          {pipelinesLoaded
-                            ? 'No cases for this worker in the report.'
-                            : 'Loading cases…'}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          }
+                  </tr>,
+                ];
+                if (open)
+                  out.push(
+                    <tr key={c.opportunity_id + '|' + c.entity_id + '|detail'}>
+                      <td
+                        colSpan={3 + SCORECARD.length}
+                        className="p-0 bg-indigo-50/40"
+                      >
+                        <div className="p-3">
+                          <CaseDetail c={c} />
+                        </div>
+                      </td>
+                    </tr>,
+                  );
+                return out;
+              })}
+              {!cases.length && (
+                <tr>
+                  <td
+                    colSpan={3 + SCORECARD.length}
+                    className="px-3 py-6 text-center text-xs text-gray-400"
+                  >
+                    {pipelinesLoaded
+                      ? 'No cases for this worker in the report.'
+                      : 'Loading cases…'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100 flex items-center gap-4 flex-wrap">
+          <span>
+            <span className="text-green-700 font-semibold">✓</span> counts
+            toward the numerator
+          </span>
+          <span>
+            <span className="text-red-700 font-semibold">✗</span> in the
+            denominator only
+          </span>
+          <span>
+            <span className="text-gray-300">—</span> not in the denominator (not
+            yet eligible, or not recorded)
+          </span>
+          <span>
+            <span className="text-indigo-600 font-bold">●</span> this
+            case&rsquo;s growth class
+          </span>
         </div>
       </div>
     </div>

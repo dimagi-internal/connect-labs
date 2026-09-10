@@ -254,3 +254,26 @@ def test_evaluate_refuses_the_raw_schema_dict_by_name():
     """
     with pytest.raises(SemanticRuntimeError, match="AnalysisPipelineConfig"):
         evaluate({"fields": [], "terminal_stage": "entity"}, [10042], series="N")
+
+
+def test_the_case_scope_returns_one_row_per_baby_and_a_worker_filter_narrows_it(fixture_visits):
+    """The fixture has two babies under two workers. Unfiltered, the case scope
+    yields both; filtered to one worker, only theirs -- and a rate at case scope is
+    the baby's own contribution (a 0/100 with a 0/1 denominator)."""
+    rows = evaluate(None, [10042], visit_sql=fixture_visits, series="N", scopes=["case"], as_of="'2026-04-01'")
+    assert len(rows) == 2
+    assert {r["username"] for r in rows} == {"asha", "ravi"}
+    assert all(r["case_id"] for r in rows)
+    for r in rows:
+        assert r["n03_denominator"] == 1
+        assert r["n03"] in (0.0, 1.0)
+    one = evaluate(
+        None,
+        [10042],
+        visit_sql=fixture_visits,
+        series="N",
+        scopes=["case"],
+        as_of="'2026-04-01'",
+        visit_filter={"username": "asha", "opportunity_id": 10042},
+    )
+    assert [r["username"] for r in one] == ["asha"]

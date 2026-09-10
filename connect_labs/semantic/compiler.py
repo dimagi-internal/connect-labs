@@ -77,6 +77,13 @@ SCOPES: dict[str, list[str]] = {
     "llo_month": ["llo", "cohort_month"],
     "opportunity_month": ["opportunity_id", "cohort_month"],
     "flw_month": ["opportunity_id", "username", "cohort_month"],
+    # One row per baby. This is how a measure becomes a CONTRIBUTION: at case
+    # scope a rate's denominator is 1 or 0 and its value 100 or 0, a median is the
+    # baby's own value, a mean-per-case is the baby's count -- the same measure,
+    # the same gates, read one grouping level further down. A worker's case table
+    # is this scope filtered to that worker (see `visit_filter`), never a second
+    # implementation of the registry in the browser.
+    "case": ["opportunity_id", "username", "case_id"],
 }
 
 # Scope columns the CTE chain produces on its own. Anything else has to be
@@ -88,7 +95,7 @@ SCOPES: dict[str, list[str]] = {
 # emit `props.llo` happily and fail with "column props.llo does not exist". It got
 # past validate() because `llo` had been whitelisted in the known-columns set,
 # which is the check defeating itself.
-INTRINSIC_SCOPE_COLUMNS = frozenset({"opportunity_id", "username", "cohort_month"})
+INTRINSIC_SCOPE_COLUMNS = frozenset({"opportunity_id", "username", "cohort_month", "case_id"})
 
 _CUBE_REF = re.compile(r"\{CUBE\}\.([a-zA-Z_][a-zA-Z0-9_]*)")
 # `{CUBE}` is the column namespace, not a measure -- exclude it or a measure sql
@@ -477,12 +484,45 @@ def _seed_reading_sql(ws: dict[str, Any], C) -> str:
       AND NOT COALESCE(({C(exclude)}), FALSE)"""
 
 
+# The visit-level predicate a caller may push down. Keys are the only columns a
+# filter may name; values are escaped here, never interpolated by the caller.
+_FILTER_COLUMNS = {"opportunity_id": int, "username": str, "baby_case_id": str}
+
+
+def visit_filter_sql(visit_filter: dict[str, Any] | None) -> str:
+    """AND-clauses restricting the visit set BEFORE Layer 2 runs, or ''.
+
+    A per-worker case table needs the case scope for ONE worker. Filtering the
+    grouped output would still pay for the whole cohort's extraction (the 28-30 s
+    measured on opp 10042); filtering the visits makes the same query take the
+    time of one worker's visits. Values are escaped, keys are whitelisted, and an
+    unknown key is an error rather than a clause that silently matches nothing.
+    """
+    if not visit_filter:
+        return ""
+    parts = []
+    for key, value in visit_filter.items():
+        if key not in _FILTER_COLUMNS:
+            raise RegistryError(
+                f"visit_filter key {key!r} is not filterable; expected one of {sorted(_FILTER_COLUMNS)}"
+            )
+        if value is None:
+            continue
+        if _FILTER_COLUMNS[key] is int:
+            parts.append(f"{key} = {int(value)}")
+        else:
+            escaped = str(value).replace("'", "''")
+            parts.append(f"{key} = '{escaped}'")
+    return "".join(f"\n      AND {p}" for p in parts)
+
+
 def _build_ctes(
     props_doc: dict[str, Any],
     registry: dict[str, Any],
     visit_sql: str,
     as_of: str,
     llo_map: dict[Any, str] | None = None,
+    visit_filter: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, str]]:
     """The Layer 1 -> Layer 2 CTE chain, plus every measure's compiled expression.
 
@@ -528,7 +568,7 @@ visits AS (
     -- 6 Sep" quietly meant "eligibility as of 6 Sep, activity as of now".
     -- `< date + 1` keeps the whole of the as-of day, midnight included.
     SELECT * FROM visits_all
-    WHERE visit_date < ((({as_of}))::date + 1)::timestamp
+    WHERE visit_date < ((({as_of}))::date + 1)::timestamp{visit_filter_sql(visit_filter)}
 ),
 weight_readings AS (
     -- The baby key is (opportunity, case), NOT the case id alone. 829 case ids in
@@ -607,6 +647,10 @@ visit_agg AS (
 ),
 base_m AS (
     SELECT v.*, w.*,
+           -- The baby's key under its own name: `baby_id` is on both sides of the
+           -- join below (USING keeps both), so a scope cannot reference it
+           -- unambiguously. This is what the `case` scope groups by.
+           v.baby_id AS case_id,
            -- Cohort on registration, falling back to the first visit. The render
            -- has always done this (`m(r.reg_date) || m(r.first_visit)`), and
            -- reg_date is NOT guaranteed: it is a FILTERed MIN over the visits, so
@@ -712,10 +756,11 @@ def compile_indicator_sql(
     as_of: str = "CURRENT_DATE",
     llo_map: dict[Any, str] | None = None,
     settings: dict[str, dict[Any, bool]] | None = None,
+    visit_filter: dict[str, Any] | None = None,
 ) -> str:
     """One statement for ONE scope. Prefer compile_rollup_sql for several."""
     _check_scopes([scope], llo_map)
-    ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of, llo_map=llo_map)
+    ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of, llo_map=llo_map, visit_filter=visit_filter)
     supp = _suppression_columns(registry, settings, llo_map)
     scope_cols = SCOPES[scope]
     scope_select = "".join(f"props.{c},\n    " for c in scope_cols)
@@ -737,6 +782,7 @@ def compile_rollup_sql(
     as_of: str = "CURRENT_DATE",
     llo_map: dict[Any, str] | None = None,
     settings: dict[str, dict[Any, bool]] | None = None,
+    visit_filter: dict[str, Any] | None = None,
 ) -> str:
     """EVERY scope from ONE pass over props, via GROUPING SETS.
 
@@ -753,7 +799,7 @@ def compile_rollup_sql(
     scopes = scopes or ["programme", "opportunity", "flw", "month"]
     _check_scopes(scopes, llo_map)
 
-    ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of, llo_map=llo_map)
+    ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of, llo_map=llo_map, visit_filter=visit_filter)
     supp = _suppression_columns(registry, settings, llo_map)
 
     all_cols: list[str] = []
