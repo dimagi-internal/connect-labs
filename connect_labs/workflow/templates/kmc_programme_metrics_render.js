@@ -1764,34 +1764,140 @@ function WorkflowUI({
     );
   }
 
+  // ── One scorecard head and one cell renderer, for BOTH tables ─────────────
+  // The organisations table and the workers table are the same 15 columns in
+  // the same groups, the same labels and the same type; only the leading
+  // (who) and trailing (last visit / attention / review) columns differ. One
+  // component for the head and one for the cells is what keeps them identical.
+  var SCORECARD_GROUPS = [
+    { label: 'Scale', span: 3 },
+    { label: 'Cohort', span: 2 },
+    { label: 'Enrolment & visits', span: 3 },
+    { label: 'Growth quality (of Qual N)', span: 4 },
+    { label: 'Outcome', span: 1 },
+    { label: 'Data quality', span: 2 },
+  ];
+  function scorecardTh(c, i) {
+    return (
+      <th
+        key={i}
+        className="px-1.5 py-2 text-right whitespace-nowrap font-semibold text-gray-600"
+        title={c.title}
+      >
+        {c.label}
+        <div className="font-mono text-[10px] font-normal text-gray-300">
+          {c.id}
+        </div>
+      </th>
+    );
+  }
+  function ScorecardHead(props) {
+    var lead = props.lead || [];
+    var trail = props.trail || [];
+    return (
+      <thead>
+        <tr className="text-[10px] uppercase tracking-wide text-gray-400 border-b border-gray-200">
+          {lead.map(function (l, i) {
+            return <th key={'l' + i} className="px-3 py-1"></th>;
+          })}
+          {SCORECARD_GROUPS.map(function (g) {
+            return (
+              <th
+                key={g.label}
+                className="px-1.5 py-1 text-center"
+                colSpan={g.span}
+              >
+                {g.label}
+              </th>
+            );
+          })}
+          {trail.map(function (l, i) {
+            return <th key={'t' + i} className="px-1.5 py-1"></th>;
+          })}
+        </tr>
+        <tr className="text-xs text-gray-500 border-b border-gray-100">
+          {lead.map(function (l, i) {
+            return (
+              <th
+                key={'l' + i}
+                className={
+                  (i === 0 ? 'px-3' : 'px-1.5') +
+                  ' py-2 text-left font-semibold text-gray-600'
+                }
+              >
+                {l}
+              </th>
+            );
+          })}
+          {SCORECARD.map(scorecardTh)}
+          {trail.map(function (l, i) {
+            return (
+              <th
+                key={'t' + i}
+                className="px-1.5 py-2 text-right font-semibold text-gray-600"
+              >
+                {l}
+              </th>
+            );
+          })}
+        </tr>
+      </thead>
+    );
+  }
+  function scorecardCells(ind) {
+    return SCORECARD.map(function (c, i) {
+      var e = ind && ind[c.id];
+      var tint = c.denOnly ? '' : tintFor(e);
+      return (
+        <td key={i} className={'px-1.5 py-2 text-right tabular-nums ' + tint}>
+          {scoreCell(c, ind)}
+        </td>
+      );
+    });
+  }
+  function ScorecardLegend(props) {
+    return (
+      <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100 flex items-center gap-4 flex-wrap">
+        <span>
+          <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-400 mr-1 align-middle" />
+          Off target
+        </span>
+        <span>
+          <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-400 mr-1 align-middle" />
+          Watch
+        </span>
+        <span>n&lt;20 = below the minimum denominator</span>
+        <span className="ml-auto">{props.right}</span>
+      </div>
+    );
+  }
+  function attentionCell(reds, yellows) {
+    return (
+      <td className="px-1.5 py-2 text-right">
+        {reds ? (
+          <span
+            className="inline-block px-1.5 py-0.5 rounded-md text-xs font-semibold bg-red-100 text-red-800 text-center"
+            title={reds + ' off target · ' + (yellows || 0) + ' to watch'}
+          >
+            {reds}
+          </span>
+        ) : yellows ? (
+          <span
+            className="inline-block px-1.5 py-0.5 rounded-md text-xs font-semibold bg-amber-100 text-amber-800 text-center"
+            title={yellows + ' to watch'}
+          >
+            {yellows}
+          </span>
+        ) : (
+          <span className="text-gray-300">0</span>
+        )}
+      </td>
+    );
+  }
+
   // ── The organisations table: Neal's scorecard, plus last visit and attention ──
   function OrgTable() {
     if (!SC) return null;
-    function th(c, i) {
-      return (
-        <th
-          key={i}
-          className="px-1.5 py-2 text-right whitespace-nowrap font-semibold text-gray-600"
-          title={c.title}
-        >
-          {c.label}
-          <div className="font-mono text-[10px] font-normal text-gray-300">
-            {c.id}
-          </div>
-        </th>
-      );
-    }
-    function cells(ind) {
-      return SCORECARD.map(function (c, i) {
-        var e = ind && ind[c.id];
-        var tint = c.denOnly ? '' : tintFor(e);
-        return (
-          <td key={i} className={'px-1.5 py-2 text-right tabular-nums ' + tint}>
-            {scoreCell(c, ind)}
-          </td>
-        );
-      });
-    }
     var rows = byLLO.slice().sort(function (a, b) {
       return (entryOf(b.ind, 'C01').n || 0) - (entryOf(a.ind, 'C01').n || 0);
     });
@@ -1810,41 +1916,10 @@ function WorkflowUI({
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-xs">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-wide text-gray-400 border-b border-gray-200">
-                <th className="px-3 py-1 text-left"></th>
-                <th className="px-1.5 py-1 text-center" colSpan={3}>
-                  Scale
-                </th>
-                <th className="px-1.5 py-1 text-center" colSpan={2}>
-                  Cohort
-                </th>
-                <th className="px-1.5 py-1 text-center" colSpan={3}>
-                  Enrolment &amp; visits
-                </th>
-                <th className="px-1.5 py-1 text-center" colSpan={4}>
-                  Growth quality (of Qual N)
-                </th>
-                <th className="px-1.5 py-1 text-center">Outcome</th>
-                <th className="px-1.5 py-1 text-center" colSpan={2}>
-                  Data quality
-                </th>
-                <th className="px-1.5 py-1"></th>
-                <th className="px-1.5 py-1"></th>
-              </tr>
-              <tr className="text-xs text-gray-500 border-b border-gray-100">
-                <th className="px-3 py-2 text-left font-semibold text-gray-600">
-                  Organisation
-                </th>
-                {SCORECARD.map(th)}
-                <th className="px-1.5 py-2 text-right font-semibold text-gray-600">
-                  Last visit
-                </th>
-                <th className="px-1.5 py-2 text-right font-semibold text-gray-600">
-                  Attention
-                </th>
-              </tr>
-            </thead>
+            <ScorecardHead
+              lead={['Organisation']}
+              trail={['Last visit', 'Attention']}
+            />
             <tbody>
               {rows.map(function (l) {
                 var lv = lastVisitByLLO[l.llo];
@@ -1875,7 +1950,7 @@ function WorkflowUI({
                           ' workers'}
                       </div>
                     </td>
-                    {cells(nByLLO[l.llo])}
+                    {scorecardCells(nByLLO[l.llo])}
                     <td
                       className={
                         'px-1.5 py-2 text-right whitespace-nowrap tabular-nums ' +
@@ -1887,27 +1962,7 @@ function WorkflowUI({
                     >
                       {lv ? dateLbl(lv) : '—'}
                     </td>
-                    <td className="px-1.5 py-2 text-right">
-                      {l.reds ? (
-                        <span
-                          className="inline-block px-1.5 py-0.5 rounded-md text-xs font-semibold bg-red-100 text-red-800 text-center"
-                          title={
-                            l.reds + ' off target · ' + l.yellows + ' to watch'
-                          }
-                        >
-                          {l.reds}
-                        </span>
-                      ) : l.yellows ? (
-                        <span
-                          className="inline-block px-1.5 py-0.5 rounded-md text-xs font-semibold bg-amber-100 text-amber-800 text-center"
-                          title={l.yellows + ' to watch'}
-                        >
-                          {l.yellows}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300">0</span>
-                      )}
-                    </td>
+                    {attentionCell(l.reds, l.yellows)}
                   </tr>
                 );
               })}
@@ -1921,25 +1976,14 @@ function WorkflowUI({
                       ' opportunities'}
                   </div>
                 </td>
-                {cells(SC.programme)}
+                {scorecardCells(SC.programme)}
                 <td className="px-1.5 py-2"></td>
                 <td className="px-1.5 py-2"></td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100 flex items-center gap-4 flex-wrap">
-          <span>
-            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-400 mr-1 align-middle" />
-            Off target
-          </span>
-          <span>
-            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-400 mr-1 align-middle" />
-            Watch
-          </span>
-          <span>n&lt;20 = below the minimum denominator</span>
-          <span className="ml-auto">Hover a column for its definition</span>
-        </div>
+        <ScorecardLegend right="Hover a column for its definition" />
       </div>
     );
   }
@@ -1989,51 +2033,8 @@ function WorkflowUI({
     );
   }
 
-  var FLW_COLS = [
-    { id: 'N07', label: 'Visits/case', src: 'N' },
-    { id: 'N08', label: '1st visit ≤3d', src: 'N' },
-    { id: 'C15', label: 'Lost by d28', src: 'C' },
-    { id: 'C09', label: 'Weight data', src: 'C' },
-    { id: 'N10', label: 'Healthy growth', src: 'N' },
-    { id: 'C13', label: 'Growth rate', src: 'C' },
-    { id: 'C28', label: 'Birth-copy', src: 'C' },
-    { id: 'C31', label: 'Rounded wts', src: 'C' },
-    { id: 'N15', label: 'Impossible Δ', src: 'N' },
-  ];
-  function flwCell(col, f) {
-    var e;
-    if (col.src === 'N') {
-      var nf = nByFLW[f.key];
-      e = nf && nf.ind && nf.ind[col.id];
-      var text = scoreCell(
-        { id: col.id, label: col.label, title: col.label },
-        nf && nf.ind,
-      );
-      return (
-        <td
-          key={col.id}
-          className={'px-2 py-2 text-right tabular-nums ' + tintFor(e)}
-        >
-          {text}
-        </td>
-      );
-    }
-    e = entryOf(f.ind, col.id);
-    var body =
-      e.band === 'insufficient' ? (
-        <span className="text-gray-400">n&lt;{MIN_DEN}</span>
-      ) : (
-        fmt(indOf(col.id), e)
-      );
-    return (
-      <td
-        key={col.id}
-        className={'px-2 py-2 text-right tabular-nums ' + tintFor(e)}
-      >
-        {body}
-      </td>
-    );
-  }
+  // The workers table: the SAME scorecard as the organisations table, one row
+  // per worker, with the worker's cells from the N-series byFLW.
   function FLWTable() {
     if (!scopeLLO) return null;
     var oppSet = {};
@@ -2066,59 +2067,16 @@ function WorkflowUI({
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-wide text-gray-400 border-b border-gray-200">
-                <th className="px-3 py-1"></th>
-                <th className="px-2 py-1"></th>
-                <th className="px-2 py-1 text-center" colSpan={2}>
-                  Scale
-                </th>
-                <th className="px-2 py-1 text-center" colSpan={2}>
-                  Enrolment &amp; visits
-                </th>
-                <th className="px-2 py-1 text-center" colSpan={3}>
-                  Growth
-                </th>
-                <th className="px-2 py-1 text-center" colSpan={3}>
-                  Data quality
-                </th>
-                <th className="px-2 py-1"></th>
-                <th className="px-2 py-1"></th>
-              </tr>
-              <tr className="text-xs text-gray-500 border-b border-gray-100">
-                <th className="px-3 py-2 text-left font-semibold text-gray-600">
-                  Worker
-                </th>
-                <th className="px-2 py-2 text-left font-semibold text-gray-600">
-                  Opportunity
-                </th>
-                <th className="px-2 py-2 text-right font-semibold text-gray-600">
-                  Cases
-                </th>
-                {FLW_COLS.map(function (c) {
-                  return (
-                    <th
-                      key={c.id}
-                      className="px-2 py-2 text-right whitespace-nowrap font-semibold text-gray-600"
-                    >
-                      {c.label}
-                      <div className="font-mono text-[10px] font-normal text-gray-300">
-                        {c.id}
-                      </div>
-                    </th>
-                  );
-                })}
-                <th className="px-2 py-2 text-right font-semibold text-gray-600">
-                  Attention
-                </th>
-                <th className="px-2 py-2"></th>
-              </tr>
-            </thead>
+          <table className="min-w-full text-xs">
+            <ScorecardHead
+              lead={['Worker', 'Opportunity']}
+              trail={['Attention', '']}
+            />
             <tbody>
               {rows.map(function (f) {
                 var on = selFLW === f.key;
                 var reviewUrl = flwReviewUrl(f);
+                var nf = nByFLW[f.key];
                 return (
                   <tr
                     key={f.key}
@@ -2134,25 +2092,12 @@ function WorkflowUI({
                     <td className="px-3 py-2 font-semibold text-indigo-700 whitespace-nowrap">
                       {f.flw}
                     </td>
-                    <td className="px-2 py-2 text-gray-600 whitespace-nowrap">
+                    <td className="px-1.5 py-2 text-gray-600 whitespace-nowrap">
                       {oppLabel(f.opp)}
                     </td>
-                    <td className="px-2 py-2 text-right tabular-nums">
-                      {caseCount(f)}
-                    </td>
-                    {FLW_COLS.map(function (c) {
-                      return flwCell(c, f);
-                    })}
-                    <td className="px-2 py-2 text-right">
-                      {f.reds ? (
-                        <span className="inline-block px-1.5 py-0.5 rounded-md text-xs font-semibold bg-red-100 text-red-800 text-center">
-                          {f.reds}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300">0</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-2 text-right whitespace-nowrap">
+                    {scorecardCells(nf && nf.ind)}
+                    {attentionCell(f.reds, f.yellows)}
+                    <td className="px-1.5 py-2 text-right whitespace-nowrap">
                       {reviewUrl ? (
                         <a
                           className="inline-block px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 text-indigo-700 hover:bg-indigo-50 bg-white"
@@ -2186,21 +2131,7 @@ function WorkflowUI({
             </button>
           </div>
         ) : null}
-        <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100 flex items-center gap-4 flex-wrap">
-          <span>
-            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-400 mr-1 align-middle" />
-            Off target
-          </span>
-          <span>
-            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-400 mr-1 align-middle" />
-            Watch
-          </span>
-          <span>n&lt;{MIN_DEN} = too few cases to score</span>
-          <span className="ml-auto">
-            Review opens the worker's own page: stats, cases, growth charts,
-            image audit
-          </span>
-        </div>
+        <ScorecardLegend right="Review opens the worker's own page: stats, cases, growth charts, image audit" />
         {sel ? <FLWPanel f={sel} /> : null}
       </div>
     );
