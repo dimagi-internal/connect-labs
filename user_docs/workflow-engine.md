@@ -94,8 +94,14 @@ Some templates produce more than one workflow in a single action. The **KMC Prog
 
 Before this change, creating the KMC Programme Metrics report by hand left worker rows that were plain text rather than links; a separate API step was required to connect the two workflows. That step is no longer needed.
 
-!!! note "The opportunity picker uses the programme's own opportunities"
-    When you create a workflow from the programme-level Workflows page, the opportunity picker in the template modal shows only the opportunities that belong to that programme. You do not need to navigate to a specific opportunity first.
+!!! note "The opportunity picker spans all programmes you can access"
+    When you create a workflow from the programme-level Workflows page, the opportunity picker shows **every opportunity you have access to**, not only those belonging to the current programme. The current programme's own opportunities appear at the top of the list and are pre-ticked, so the default selection is correct for most reports. If your KMC report needs to span opportunities from several programmes — which is common for whole-programme KMC metrics — you can tick the additional opportunities from the same picker without navigating away.
+
+### Computing and saving a program-owned KMC Programme Metrics report
+
+A KMC Programme Metrics report created from the programme's Workflows page (a program-owned report) can now compute and save its weekly figures normally. Previously, every preview and Save on such a report failed with **"Indicators could not be computed"**, even though the same report created from an individual opportunity page worked without issue. This has been corrected — program-owned KMC reports compute and save in exactly the same way as opportunity-owned ones.
+
+If you previously avoided creating KMC Programme Metrics reports from the programme page because of this error, you can now do so without issue.
 
 ---
 
@@ -229,20 +235,4 @@ A typical workflow dashboard shows a **table of field workers** with performance
 | Count       | Number of visits or activities in the period |
 | Status      | Current enrollment or case status            |
 | Last value  | Most recent recorded measurement             |
-| Percentage  | Proportion of cases meeting a threshold      |
-
-**Filtering and sorting:**
-
-- Use the **date range picker** to focus on a specific period
-- Click column headers to sort ascending or descending
-- Use the **search box** to find a specific worker by name
-
-**Drilling into a worker:**
-
-Click any row to see that worker's detailed record — individual visit data, timeline of activities, and linked cases.
-
-### Dashboard display and colours
-
-Dashboards in Connect Labs are built by program authors and can include charts, bar graphs, and highlighted figures — for example, a consent-rate percentage shown in red when it falls below a target threshold, or a bar chart tracking weekly visit counts over twelve weeks.
-
-Previously, some dashboard elements could appear invisible or unstyled with no error message: a warning figure might show in near-black instead of red, or a bar chart might render at zero height even though all the underlying data was present and the page otherwise loaded normally
+|
