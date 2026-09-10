@@ -2979,7 +2979,26 @@ def semantic_indicators_api(request, definition_id):
 
     series = (request.GET.get("series") or "").strip() or None
     scopes = [s for s in (request.GET.get("scopes") or "").split(",") if s.strip()]
-    as_of = (request.GET.get("as_of") or "").strip() or "CURRENT_DATE"
+    # `as_of` is spliced into SQL as a date literal, so only a date may pass: an
+    # ISO date (a report's `meta.as_of`), or nothing for today.
+    as_of_param = (request.GET.get("as_of") or "").strip()
+    if as_of_param and as_of_param != "CURRENT_DATE":
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", as_of_param):
+            return JsonResponse({"error": "as_of must be an ISO date (YYYY-MM-DD)"}, status=400)
+        as_of = f"DATE '{as_of_param}'"
+    else:
+        as_of = "CURRENT_DATE"
+    # `flw=<opportunity_id>::<username>` restricts the evaluation to ONE worker's
+    # visits before Layer 2 runs -- the worker review's case table is the `case`
+    # scope for one worker, at the cost of that worker's visits rather than the
+    # cohort's. The key is the payload's own worker key.
+    visit_filter = None
+    flw_param = (request.GET.get("flw") or "").strip()
+    if flw_param:
+        opp_part, sep, user_part = flw_param.partition("::")
+        if not sep or not opp_part.isdigit():
+            return JsonResponse({"error": "flw must be <opportunity_id>::<username>"}, status=400)
+        visit_filter = {"opportunity_id": int(opp_part), "username": user_part}
     catalog_only = (request.GET.get("catalog_only") or "").strip().lower() in ("1", "true", "yes")
     registry_id_param = (request.GET.get("registry_id") or "").strip()
 
@@ -3106,6 +3125,7 @@ def semantic_indicators_api(request, definition_id):
             as_of=as_of,
             llo_map=llo_map or None,
             settings=reg_settings or None,
+            visit_filter=visit_filter,
         )
         # The display contract travels WITH the rows: bands, direction and unit come
         # from the same YAML that produced the numbers, so a threshold cannot drift

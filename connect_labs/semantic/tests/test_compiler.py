@@ -356,3 +356,35 @@ def test_explain_returns_the_whole_chain_behind_an_indicator(props_doc, registry
     assert explain(props_doc, registry, "c14")["indicator"] == "C14"
     with pytest.raises(UnknownIndicator):
         explain(props_doc, registry, "N99")
+
+
+def test_the_case_scope_groups_by_baby(props_doc, registry):
+    """One row per baby: how a measure becomes a contribution. The worker review's
+    case table is this scope for one worker -- the same registry read one grouping
+    level further down, not a second implementation in the browser."""
+    from connect_labs.semantic.compiler import compile_rollup_sql
+
+    sql = compile_rollup_sql(props_doc, registry, "SELECT 1", scopes=["case"])
+    sets = sql[sql.index("GROUPING SETS") :]
+    assert "props.case_id" in sets
+    assert "props.username" in sets and "props.opportunity_id" in sets
+
+
+def test_a_visit_filter_is_pushed_below_layer_2(props_doc, registry):
+    """Filtering the grouped output would still pay for the whole cohort's
+    extraction; the filter has to cut the visit set. Values are escaped, keys are
+    whitelisted, and an unknown key is refused rather than matching nothing."""
+    from connect_labs.semantic.compiler import RegistryError, compile_rollup_sql
+
+    sql = compile_rollup_sql(
+        props_doc,
+        registry,
+        "SELECT 1",
+        scopes=["case"],
+        visit_filter={"opportunity_id": "10042", "username": "flw'001"},
+    )
+    visits_cte = sql[sql.index("visits AS (", sql.index("visits_all AS")) : sql.index("weight_days AS")]
+    assert "AND opportunity_id = 10042" in visits_cte
+    assert "AND username = 'flw''001'" in visits_cte, "the quote must be escaped, not interpolated"
+    with pytest.raises(RegistryError):
+        compile_rollup_sql(props_doc, registry, "SELECT 1", scopes=["case"], visit_filter={"llo": "PIPN"})

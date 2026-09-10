@@ -352,6 +352,7 @@ def evaluate(
     as_of: str = "CURRENT_DATE",
     llo_map: dict[Any, str] | None = None,
     settings: dict[str, dict[Any, bool]] | None = None,
+    visit_filter: dict[str, Any] | None = None,
     connection=None,
 ) -> list[dict[str, Any]]:
     """Compile the registry and RUN it, returning one dict per result row.
@@ -422,11 +423,25 @@ def evaluate(
     try:
         if scopes:
             sql = compile_rollup_sql(
-                props_doc, registry, visit_sql, scopes=scopes, as_of=as_of, llo_map=llo_map, settings=settings
+                props_doc,
+                registry,
+                visit_sql,
+                scopes=scopes,
+                as_of=as_of,
+                llo_map=llo_map,
+                settings=settings,
+                visit_filter=visit_filter,
             )
         else:
             sql = compile_indicator_sql(
-                props_doc, registry, visit_sql, scope=scope, as_of=as_of, llo_map=llo_map, settings=settings
+                props_doc,
+                registry,
+                visit_sql,
+                scope=scope,
+                as_of=as_of,
+                llo_map=llo_map,
+                settings=settings,
+                visit_filter=visit_filter,
             )
     except SemanticRuntimeError:
         raise
