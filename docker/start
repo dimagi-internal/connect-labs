@@ -34,10 +34,25 @@ WORKERS=${WEB_CONCURRENCY:-3}
 # ECS's stop signal never reached gunicorn: every replaced task ran on until
 # the 30s stopTimeout and was SIGKILLed mid-request. Measured 2026-09-10 on
 # the two web tasks replaced by deployment ecs-svc/3203028132013102768: no
-# "Handling signal: term" in either log, and the two stop events sit exactly
-# 30s apart. With exec, gunicorn gets the SIGTERM, stops accepting, lets
-# in-flight requests finish (up to its graceful timeout), and exits in
-# seconds -- which is also ~30s less per task on every rollout.
+# "Handling signal: term" in either log. With exec, gunicorn gets the
+# SIGTERM, stops accepting, lets in-flight requests finish (up to its
+# graceful timeout), and exits 0 -- verified on the next rollout, where both
+# replaced tasks logged "Handling signal: term" / "Shutting down: Master"
+# and stopped with exit 0.
+#
+# What this does NOT change is deploy time. ECS deregisters a web task from
+# the ALB and holds it in DEACTIVATING for the target group's full
+# deregistration delay (300s here) BEFORE sending SIGTERM, but it counts the
+# task out of the old task set as soon as the drain begins -- so "deployment
+# completed" fires ~60s after the last drain starts, and the container's own
+# exit time is never on that path. The rollout's ~4 minutes is ECS cadence:
+# staggered task launches, two 30s health-check intervals, one old-task stop
+# per scheduler cycle, and the completion lag. Measured on the verification
+# rollout (12:01:29 -> 12:05:31 UTC): stops issued 12:03:40 and 12:04:21,
+# SIGTERM delivered 12:09:19 and 12:10:02, deployment already complete at
+# 12:05:31. The first version of this comment claimed ~30s per task off
+# every rollout from the 30s stop stagger; that stagger was scheduler
+# cadence (41s the next time), not the stopTimeout.
 exec gunicorn config.asgi:application --bind 0.0.0.0:8000 --chdir=/app --timeout 600 \
     --no-control-socket \
     -k config.uvicorn_worker.LabsUvicornWorker -w "$WORKERS"
