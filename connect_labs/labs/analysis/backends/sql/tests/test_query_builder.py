@@ -10,6 +10,7 @@ import pytest
 from connect_labs.labs.analysis.backends.sql.query_builder import (
     _aggregation_to_sql,
     _date_window_where,
+    _pipeline_scope_where,
     _sql_ident,
     _sql_str,
     build_flw_aggregation_query,
@@ -223,3 +224,31 @@ class TestAggregationTypeLiteral:
         assert "median" in members
         assert "mode" in members
         assert "mode_share" in members
+
+
+class TestPipelineScopeWhere:
+    """Every raw-cache extraction reads through this fragment, so it must exclude
+    an in-progress streaming generation (rows written under a NEGATIVE visit_count
+    by store_raw_visits_start) exactly as the ORM readers do. A stream that never
+    finalized used to leave a full second copy of an opportunity's visits that this
+    fragment read alongside the real one -- duplicate visit_ids in the computed
+    batch, rejected by the unique constraint and reported as a concurrent write on
+    every request for the sentinel's whole TTL (opp 10019, 2026-09-10)."""
+
+    def test_scoped_slot_excludes_sentinel_generations(self):
+        where = _pipeline_scope_where(10019, 5109)
+        assert "opportunity_id = 10019" in where
+        assert "pipeline_id = 5109" in where
+        assert "visit_count > 0" in where
+
+    def test_legacy_null_slot_excludes_sentinel_generations_too(self):
+        where = _pipeline_scope_where(42, None)
+        assert "pipeline_id IS NULL" in where
+        assert "visit_count > 0" in where
+
+    def test_alias_qualifies_every_column(self):
+        where = _pipeline_scope_where(42, 7, alias="rv")
+        assert "rv.opportunity_id = 42" in where
+        assert "rv.pipeline_id = 7" in where
+        assert "rv.visit_count > 0" in where
+        assert " visit_count" not in where.replace("rv.visit_count", "")
