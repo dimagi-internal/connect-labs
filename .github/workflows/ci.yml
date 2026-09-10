@@ -83,16 +83,27 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Python
+        id: py
         uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       # Run pre-commit directly (instead of pre-commit/action@v3.0.0, which pins the
       # deprecated actions/cache@v3 → Node 20 warning) with a current cache action.
+      #
+      # The key carries the runner OS and the RESOLVED interpreter version, for
+      # the same reason the pytest venv key does: pre-commit builds each hook's
+      # environment against the exact python it ran under, and marks an
+      # environment unhealthy (and rebuilds it) when that interpreter is gone.
+      # Keyed on the config hash alone, this cache was saved once on 2026-07-24
+      # and never again -- actions/cache only saves on a miss -- so by September
+      # every run "hit" a 42MB entry built for a python the runner no longer
+      # ships, printed "[INFO] Installing environment" for six of the eight
+      # repos, and threw the rebuilt environments away at the end of the job.
       - name: Cache pre-commit environments
         uses: actions/cache@v6
         with:
           path: ~/.cache/pre-commit
-          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          key: pre-commit-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-${{ hashFiles('.pre-commit-config.yaml') }}
       - name: Run pre-commit
         run: |
           python -m pip install pre-commit
