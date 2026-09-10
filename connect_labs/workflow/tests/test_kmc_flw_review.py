@@ -20,6 +20,8 @@ METRICS_RENDER = TEMPLATES_DIR / "kmc_programme_metrics_render.js"
 
 def test_the_template_is_registered_as_a_multi_opp_drill_view():
     assert TEMPLATES["kmc_flw_review"] is TEMPLATE
+    assert DEFINITION["config"]["renderWhileLoading"] is True, "the page must not sit behind the pipeline stream"
+    assert "pipelinesLoaded" in RENDER.read_text(), "opting in means tolerating absent pipelines"
     assert TEMPLATE["multi_opp"] is True
     assert TEMPLATE["supports_saved_runs"] is False, "a drill view has no moment of completion"
     assert [p["alias"] for p in TEMPLATE["pipeline_schemas"]] == ["children", "visits"]
