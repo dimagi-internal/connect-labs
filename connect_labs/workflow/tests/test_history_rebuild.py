@@ -417,6 +417,44 @@ class TestRebuild:
             hr.rebuild_history(dao, 1, cadence="weekly", end=date(2026, 9, 6), opportunity_id=10)
         assert e.value.code == "no_start"
 
+    def test_a_cold_cache_while_deriving_the_start_says_so_instead_of_no_start(self, monkeypatch):
+        # A cold cache and genuinely undated rows both leave the derivation
+        # with nothing to read, but the remedies are opposite: load the
+        # pipeline data, versus pass an explicit start. Reporting `no_start`
+        # for a cold cache sends someone to supply a date that cannot help --
+        # the rebuild then dies at its first period on the cache it never had.
+        # Observed live on definition 5456.
+        from connect_labs.workflow.data_access import PipelineCacheMiss
+
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+
+        def cold(*a, **kw):
+            raise PipelineCacheMiss("children", 10, "KMC Case Properties (SQL)")
+
+        dao.get_cached_pipeline_data = cold
+
+        with pytest.raises(hr.HistoryRebuildError) as e:
+            hr.rebuild_history(dao, 1, cadence="weekly", end=date(2026, 9, 6), opportunity_id=10)
+        assert e.value.code == "cache_miss"
+        assert "children" in e.value.message, "names the pipeline to load"
+        assert dao.calls == [], "nothing is written when the start cannot be derived"
+
+    def test_any_other_read_failure_still_degrades_to_asking_for_a_start(self, monkeypatch):
+        # Deriving a convenience default must not be able to fail a call the
+        # caller could have made themselves by passing `start`.
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+
+        def boom(*a, **kw):
+            raise RuntimeError("some unrelated read problem")
+
+        dao.get_cached_pipeline_data = boom
+
+        with pytest.raises(hr.HistoryRebuildError) as e:
+            hr.rebuild_history(dao, 1, cadence="weekly", end=date(2026, 9, 6), opportunity_id=10)
+        assert e.value.code == "no_start"
+
     def test_an_ineligible_definition_is_refused_before_anything_is_written(self, monkeypatch):
         dao = _DAO(_Definition(builder="copy_rows"))
         _stub_build(monkeypatch)

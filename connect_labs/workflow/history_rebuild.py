@@ -154,13 +154,35 @@ def eligibility(definition) -> tuple[bool, str | None]:
 
 
 def _case_index_rows(data_access, definition, contract, definition_id, opportunity_id) -> list[dict]:
-    """The rows a start date can be derived from -- the contract's own case index."""
+    """The rows a start date can be derived from -- the contract's own case index.
+
+    A COLD CACHE is raised, not swallowed. Both a cold cache and genuinely
+    undated rows leave this with nothing to read, but they need opposite
+    remedies -- load the pipeline data, versus pass an explicit start -- and
+    reporting the second when the first is true sends someone to supply a date
+    that will not help, because the rebuild then fails at its first period on
+    the very cache it never had. Observed as a `no_start` on definition 5456,
+    whose cache was cold.
+
+    Any OTHER read failure still degrades to "no rows": deriving a convenience
+    default must not be able to fail a call the caller could have made by
+    passing `start` themselves.
+    """
+    from connect_labs.workflow.data_access import PipelineCacheMiss
+
     inputs = contract.get("snapshot_inputs") or {}
     alias = (inputs.get("case_index") or {}).get("pipeline") or inputs.get("visits_pipeline")
     if not alias:
         return []
     try:
         pipelines = data_access.get_cached_pipeline_data(definition_id, opportunity_id, aliases=[alias])
+    except PipelineCacheMiss as e:
+        raise HistoryRebuildError(
+            "cache_miss",
+            f"no cached data for pipeline {alias!r} (opp {opportunity_id}), so the start date cannot be "
+            "derived -- and a rebuild would fail at its first period for the same reason. Load the "
+            "workflow's pipeline data first (open the run page, or run the pipelines), then retry.",
+        ) from e
     except Exception:  # noqa: BLE001 -- deriving a default must not fail the whole call
         logger.warning("could not read pipeline %r to derive a start date", alias, exc_info=True)
         return []
