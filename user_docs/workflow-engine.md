@@ -97,6 +97,25 @@ Before this change, creating the KMC Programme Metrics report by hand left worke
 !!! note "The opportunity picker spans all programmes you can access"
     When you create a workflow from the programme-level Workflows page, the opportunity picker shows **every opportunity you have access to**, not only those belonging to the current programme. The current programme's own opportunities appear at the top of the list and are pre-ticked, so the default selection is correct for most reports. If your KMC report needs to span opportunities from several programmes — which is common for whole-programme KMC metrics — you can tick the additional opportunities from the same picker without navigating away.
 
+### Selecting opportunities with the multi-opportunity picker
+
+When a template asks you to choose which opportunities to include, the picker offers several ways to build your selection quickly.
+
+**Typing a name** filters the list to matching opportunities. When a name filter is active, two extra controls appear:
+
+- **Select all shown** — ticks every opportunity currently visible in the filtered list
+- **Clear shown** — unticks every opportunity currently visible in the filtered list
+
+A count of how many opportunities are currently selected is shown at all times so you can confirm your selection before proceeding.
+
+**Pasting a list of IDs** is the fastest way to select a specific set of opportunities across programmes. Click into the picker's search box and paste a comma-separated list of opportunity IDs — for example:
+
+> 523, 524, 675, 874, 938, 1234, 1236, 1487, 1488, 1739, 1790, 2166
+
+The picker immediately switches to ID mode: it lists exactly those opportunities in the order you pasted them and ticks them all. If any ID in your list cannot be found — because it does not exist or you do not have access to it — those IDs are named in an amber notice at the top of the list rather than silently dropped, so you can check whether something is missing before saving.
+
+Typing a single number works as a plain name filter as before; the picker only switches to ID mode when it detects a comma-separated list.
+
 ### Computing and saving a program-owned KMC Programme Metrics report
 
 A KMC Programme Metrics report created from the programme's Workflows page (a program-owned report) can now compute and save its weekly figures normally. Previously, every preview and Save on such a report failed with **"Indicators could not be computed"**, even though the same report created from an individual opportunity page worked without issue. This has been corrected — program-owned KMC reports compute and save in exactly the same way as opportunity-owned ones.
@@ -211,28 +230,4 @@ When you resume a run that was started with custom settings — pass threshold, 
 
 When a system deployment restarts background workers, any audit batch that was running at that moment is killed. The run page will reflect this promptly — it no longer shows a run as still in progress for up to 45 minutes after a deploy has already ended it.
 
-The system can now detect almost immediately that a deploy killed a particular batch, because each job records which server process is running it. Once that process is gone, the system knows the job is dead rather than merely slow, and picks it up at the next check — roughly **ten minutes** after the interruption rather than up to an hour.
-
-A run that is simply slow — still actively processing inside a live server process — is still given the full waiting period before being considered stuck. Only deploy-killed runs benefit from the faster recovery.
-
-In practice this means that if a run is interrupted during a routine deployment, you can expect it to resume automatically within about ten minutes. If a run does not recover on its own, use the manual **Resume** option as described below.
-
-### Resume is blocked while a run is still active
-
-If a run is still processing, the resume option is unavailable. This prevents two copies of the same batch running at the same time and producing duplicate audit sessions. Wait for the current batch to finish (or fail) before resuming.
-
-!!! note "Audits shown in the run list reflect the full set now being created"
-    Because all requested audits are now created — not just the first — you may see more audit entries on a run than you did before for workflows that produce multiple audits per run. This is expected and correct behaviour.
-
----
-
-## Reading a Workflow Dashboard
-
-A typical workflow dashboard shows a **table of field workers** with performance columns:
-
-| Column type | What it shows                                |
-| ----------- | -------------------------------------------- |
-| Count       | Number of visits or activities in the period |
-| Status      | Current enrollment or case status            |
-| Last value  | Most recent recorded measurement             |
-|
+The system can now detect almost immediately that a deploy killed a particular batch, because each job records which server process is running it. Once that process is gone, the system knows the job is dead rather than merely slow, and
