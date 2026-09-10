@@ -2956,6 +2956,10 @@ def semantic_explain_api(request, definition_id):
     download. Same reader as the `semantic_registry_explain` MCP tool
     (connect_labs/semantic/explain.py), so the page and an agent read one thing.
 
+    Route: api/<definition_id>/indicator-definitions/ -- deliberately not under
+    /semantic/, which the render is forbidden to reference (it must never fetch
+    numbers from the semantic endpoint; definitions carry none).
+
     Query params:
       indicators  comma-separated ids or measure names (N15,C14); omitted = every
                   top-level indicator in the bound registry
