@@ -93,61 +93,63 @@
     {% endif %}
   </section>
 
+  <section class="border border-gray-200 rounded p-4">
+    <label class="inline-flex items-center gap-2 font-medium text-gray-900">
+      <input type="checkbox" id="cfg-cluster-filter-enabled">
+      Enable cluster-aware filter <span class="info-icon" tabindex="0" data-tip="Optional, applied AFTER the full candidate list is built, to every indicator including NCF/inaccessible: drops a candidate only if NONE of its triggered indicators have enough spatially-nearby, also-flagged neighbors. Never adds candidates, never removes an indicator from a WA that survives — it can only shorten the list. When off, Neighbor distance/Min neighbor count are greyed out and every indicator's count is simply the raw number of affected work areas.">ⓘ</span>
+    </label>
+  </section>
+
   <section class="border border-gray-200 rounded p-4 space-y-4">
     <h2 class="text-lg font-semibold text-gray-900">Indicators</h2>
+    <div class="overflow-x-auto">
     <table class="w-full text-sm">
       <thead>
         <tr class="text-left text-gray-500 border-b border-gray-100">
           <th class="pb-2 pr-2">On</th>
           <th class="pb-2 pr-2">Indicator</th>
           <th class="pb-2 pr-2">Threshold <span class="info-icon" tabindex="0" data-tip="The cutoff at which a work area is flagged as a mop-up candidate for this indicator — an unconditional floor, no neighbor/FLW corroboration required. NCF/inaccessible has no threshold: any NCF or Inaccessible visit floors it.">ⓘ</span></th>
-          <th class="pb-2 pr-2"># WAs triggered <span class="info-icon" tabindex="0" data-tip="How many work areas this specific indicator flagged (after the optional cluster-aware filter below, if enabled), under the current thresholds. Recomputed every time you hit Recompute.">ⓘ</span></th>
+          <th class="pb-2 pr-2">Neighbor distance (m) <span class="info-icon" tabindex="0" data-tip="How close two work areas' centroids need to be to count as 'neighbors' for the cluster-aware filter. Deworming/MUAC/vaccination share one value; EVC shortfall and NCF/inaccessible each have their own. Only used when the filter above is enabled.">ⓘ</span></th>
+          <th class="pb-2 pr-2">Min neighbor count <span class="info-icon" tabindex="0" data-tip="The fewest spatially-nearby neighbors that must ALSO be flagged on the same indicator to corroborate it. Only used when the filter above is enabled.">ⓘ</span></th>
+          <th class="pb-2 pr-2"># WAs triggered <span class="info-icon" tabindex="0" data-tip="How many work areas this specific indicator flagged (after the optional cluster-aware filter, if enabled), under the current thresholds. Recomputed every time you hit Recompute.">ⓘ</span></th>
         </tr>
       </thead>
       <tbody id="indicator-rows"></tbody>
     </table>
+    </div>
   </section>
 
-  <section class="border border-gray-200 rounded p-4 space-y-3">
-    <h2 class="text-lg font-semibold text-gray-900">Shared settings</h2>
-    <p class="text-xs text-gray-500">Every setting that only affects ONE indicator now lives in a settings row directly under that indicator above — this panel only holds what's genuinely used by more than one, plus the one cluster-aware filter toggle.</p>
+  <section class="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
+    <div class="border border-gray-200 rounded p-4 space-y-2">
+      <div class="text-xs font-semibold uppercase tracking-wide text-center text-blue-700">Applies to EVC shortfall only</div>
+      <label class="flex items-center gap-1">
+        <input type="checkbox" id="cfg-include-not-visited">
+        Include not-yet-visited in EVC <span class="info-icon" tabindex="0" data-tip="A work area that's not yet visited (or has a pending inaccessible request) is excluded from EVC-shortfall scoring by default, since the campaign may just not have reached it yet. Check this to score it anyway.">ⓘ</span>
+      </label>
+      <label class="flex items-center gap-2">
+        <span class="text-gray-600">WA min EVC count <span class="info-icon" tabindex="0" data-tip="Excludes a work area from EVC shortfall entirely if its own EXPECTED visit count is below this — a plain worth-visiting cutoff, so a WA with both a low HSD/EVC ratio AND a low total EVC isn't considered for mop-up.">ⓘ</span></span>
+        <input type="number" id="cfg-min-evc-floor" class="base-input" style="width:5rem" min="0">
+      </label>
+    </div>
 
-    <fieldset class="space-y-2">
-      <legend class="text-xs font-semibold uppercase tracking-wide text-gray-400">Cluster-aware filter</legend>
-      <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-        <label class="inline-flex items-center gap-1">
-          <input type="checkbox" id="cfg-cluster-filter-enabled">
-          Enable cluster-aware filter <span class="info-icon" tabindex="0" data-tip="Optional, applied AFTER the full candidate list is built, to every indicator including NCF/inaccessible: drops a candidate only if NONE of its triggered indicators have enough spatially-nearby, also-flagged neighbors. Never adds candidates, never removes an indicator from a WA that survives — it can only shorten the list. When off, every indicator's count (NCF/inaccessible included) is just the raw number of affected work areas.">ⓘ</span>
-        </label>
-      </div>
-    </fieldset>
+    <div class="border border-gray-200 rounded p-4 space-y-2">
+      <div class="text-xs font-semibold uppercase tracking-wide text-center text-blue-700">Applies to deworming, MUAC, vaccination only</div>
+      <label class="flex items-center gap-2">
+        <span class="text-gray-600">WA min HSD-visits <span class="info-icon" tabindex="0" data-tip="The fewest approved Health Service Delivery visits a work area needs before its deworming/MUAC/vaccination rate is trusted at all.">ⓘ</span></span>
+        <input type="number" id="cfg-min-hsd" class="base-input" style="width:5rem" min="0">
+      </label>
+    </div>
 
-    <fieldset class="space-y-2">
-      <legend class="text-xs font-semibold uppercase tracking-wide text-gray-400">Spatial neighbors — deworming, MUAC, vaccination (shared)</legend>
-      <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-        <label class="space-y-1">
-          <span class="text-gray-600">Neighbor distance, m (Tier 2) <span class="info-icon" tabindex="0" data-tip="How close two work areas' centroids need to be to count as 'neighbors' for the cluster-aware filter, shared by deworming/MUAC/vaccination. Only used when the filter above is enabled.">ⓘ</span></span>
-          <input type="number" id="cfg-tier2-neighbor-distance" class="base-input" min="1">
-        </label>
-        <label class="space-y-1">
-          <span class="text-gray-600">Min neighbor count (Tier 2) <span class="info-icon" tabindex="0" data-tip="The fewest spatially-nearby neighbors that must ALSO be flagged on the same indicator to corroborate it, shared by deworming/MUAC/vaccination. Only used when the filter above is enabled.">ⓘ</span></span>
-          <input type="number" id="cfg-tier2-min-neighbor-count" class="base-input" min="1">
-        </label>
-      </div>
-    </fieldset>
-
-    <fieldset class="space-y-2">
-      <legend class="text-xs font-semibold uppercase tracking-wide text-gray-400">Data-quality gate — deworming, MUAC, vaccination</legend>
-      <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-        <label class="space-y-1">
-          <span class="text-gray-600">Min HSD-visits floor <span class="info-icon" tabindex="0" data-tip="The fewest approved Health Service Delivery visits a work area needs before its deworming/MUAC/vaccination rate is trusted at all.">ⓘ</span></span>
-          <input type="number" id="cfg-min-hsd" class="base-input" min="0">
-        </label>
-      </div>
-    </fieldset>
-
-    <button type="button" id="recompute" class="button primary-dark">Recompute</button>
+    <div class="border border-gray-200 rounded p-4 space-y-2">
+      <div class="text-xs font-semibold uppercase tracking-wide text-center text-blue-700">Applies to NCF / inaccessible only</div>
+      <label class="flex items-center gap-2">
+        <span class="text-gray-600">Min building count <span class="info-icon" tabindex="0" data-tip="The fewest real buildings a work area needs before an NCF or Inaccessible result there is treated as meaningful.">ⓘ</span></span>
+        <input type="number" id="cfg-min-buildings" class="base-input" style="width:5rem" min="0">
+      </label>
+    </div>
   </section>
+
+  <button type="button" id="recompute" class="button primary-dark">Recompute</button>
 
   <section class="space-y-2">
     <h2 class="text-lg font-semibold text-gray-900">Ward summary</h2>
