@@ -211,18 +211,35 @@ Resources:
               Value: postgresql
             - Name: DISABLE_TELEMETRY
               Value: '1'
-            # Safe ONLY because the Image above is derived from this same
-            # parameter. Shipped in #1438 while the image was still `:latest`,
-            # it read v3.3.1 over a 2026-07-24 container and was reverted the
-            # same hour (#1439). It is back because the two are now one knob.
-            - Name: UMAMI_BUILD_VERSION
-              Value: !Ref UmamiVersion
-            # Purely so `aws ecs describe-task-definition` can answer "what
-            # version is running". Umami's own package.json cannot: at the
-            # 2026-07-24 build it read "3.2.0" while the source was a month of
-            # unreleased post-v3.2.0 main. Reading the version from INSIDE the
-            # app is therefore not a fallback for this -- it is the thing that
-            # was wrong. This value is what the image was actually built from.
+            # UPGRADING UMAMI IS ONE KNOB: change the UmamiVersion parameter.
+            # It moves the Image above and this variable together, which is the
+            # whole procedure -- there is no second place to remember. Rollback
+            # is the same knob pointed at an earlier release tag.
+            #
+            # DECLARED ONCE. It was declared twice -- the Umami upgrade work
+            # added it in two separate changes, each with its own rationale, and
+            # both landed. ECS keeps one, so the running task had three
+            # environment variables while this template described four, and the
+            # stack read DRIFTED from the day the duplicate merged. Found
+            # 2026-09-09 by the first drift check anyone had run against this
+            # stack. That matters beyond tidiness: upgrades here RECUR, so a
+            # duplicate left in place would re-drift the stack on every one, and
+            # a drifted stack is one whose template no longer describes what is
+            # running. Both reasons below are real, so both are kept rather than
+            # one being deleted along with its argument:
+            #
+            #   1. It is safe to set at all ONLY because the Image above is
+            #      derived from this same parameter. Shipped in #1438 while the
+            #      image was still `:latest`, it read v3.3.1 over a 2026-07-24
+            #      container and was reverted the same hour (#1439). It is back
+            #      because the two are now one knob.
+            #   2. It exists so `aws ecs describe-task-definition` can answer
+            #      "what version is running". Umami's own package.json cannot:
+            #      at the 2026-07-24 build it read "3.2.0" while the source was
+            #      a month of unreleased post-v3.2.0 main. Reading the version
+            #      from INSIDE the app is not a fallback for this -- it is the
+            #      thing that was wrong. This value is what the image was
+            #      actually built from.
             - Name: UMAMI_BUILD_VERSION
               Value: !Ref UmamiVersion
           Secrets:
