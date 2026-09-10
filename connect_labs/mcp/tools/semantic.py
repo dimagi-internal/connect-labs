@@ -14,6 +14,8 @@ of a broken dashboard.
 
 import logging
 
+from connect_labs.semantic.explain import UnknownIndicator, explain
+from connect_labs.semantic.runtime import normalise_deployment_facts
 from connect_labs.semantic.seed import registry_payload
 from connect_labs.semantic.validation import RegistryInvalid, validate_registry
 from connect_labs.workflow.data_access import SemanticRegistryDataAccess
@@ -245,3 +247,76 @@ def semantic_registry_update(
     finally:
         access.close()
     return {**_summary(record), "_version_before": before.version, "_version_after": record.version}
+
+
+@register(
+    name="semantic_registry_explain",
+    description=(
+        "The exact logic behind an indicator, read from the registry with nothing hidden: "
+        "the compiled measure expression, its numerator/denominator components, the Layer-2 "
+        "property chain it depends on in evaluation order with every constant substituted, "
+        "the per-baby aggregates and weight-series window derivations it touches, the "
+        "section-2 cutoffs used, and the full compiled statement for one scope (Layer 1, the "
+        "pipeline rows, as a named placeholder -- read that schema with pipeline_get). Pass an "
+        "indicator id (N15, C14), a measure name (n15), or several. This is how a second "
+        "engine reproduces a number instead of trusting its label."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "registry_id": {"type": "integer"},
+            "indicators": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Indicator ids or measure names, e.g. ['N15', 'C14']. Omit for every top-level indicator."
+                ),
+            },
+            "scope": {
+                "type": "string",
+                "description": "Scope the compiled statement groups by: programme (default), llo, opportunity, flw.",
+            },
+            **_SCOPE_PROPS,
+        },
+        "required": ["registry_id"],
+        "additionalProperties": False,
+    },
+)
+def semantic_registry_explain(
+    user,
+    registry_id: int,
+    indicators: list[str] | None = None,
+    scope: str = "programme",
+    opportunity_id=None,
+    program_id=None,
+    organization_id=None,
+):
+    access = _access(user, opportunity_id, program_id, organization_id)
+    try:
+        record = access.get_registry(registry_id)
+        if record is None:
+            raise MCPToolError("NOT_FOUND", f"No semantic registry with id {registry_id}")
+        facts = normalise_deployment_facts(record.deployment)
+        wanted = indicators or [
+            (m.get("meta") or {}).get("indicator") or m["name"]
+            for m in record.indicators_doc.get("measures") or []
+            if (m.get("meta") or {}).get("indicator")
+        ]
+        out = []
+        for ind in wanted:
+            try:
+                out.append(
+                    explain(
+                        record.properties_doc,
+                        record.indicators_doc,
+                        ind,
+                        scope=scope,
+                        llo_map=facts.get("llo_map") or None,
+                        settings=facts.get("settings") or None,
+                    )
+                )
+            except UnknownIndicator:
+                raise MCPToolError("NOT_FOUND", f"No indicator or measure named {ind!r} in registry {registry_id}")
+        return {"registry_id": record.id, "version": record.version, "scope": scope, "indicators": out}
+    finally:
+        access.close()

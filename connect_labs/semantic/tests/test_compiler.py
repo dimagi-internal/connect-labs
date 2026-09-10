@@ -324,3 +324,33 @@ def test_a_registry_without_a_seed_reading_compiles_as_before(props_doc, registr
     readings = sql[sql.index("weight_readings AS") : sql.index("weight_days AS")]
     assert "UNION ALL" not in readings
     assert "FALSE AS is_seed" in readings, "every reading is measured; is_seed still exists for the derived SQL"
+
+
+def test_explain_returns_the_whole_chain_behind_an_indicator(props_doc, registry):
+    """A second engine has to be able to read the exact logic behind a number. For
+    N15 that is the measure expression, its numerator/denominator, flag_impossible ->
+    any_impossible_step (a weight-series derivation), the constants it substitutes,
+    and a compiled statement -- in evaluation order, with no database."""
+    from connect_labs.semantic.explain import UnknownIndicator, explain
+
+    out = explain(props_doc, registry, "N15", llo_map={10042: "BERI"})
+    assert out["indicator"] == "N15" and out["measure"] == "n15"
+    assert {c["name"] for c in out["components"]} == {"n15_numerator", "n15_denominator"}
+    names = [p["name"] for p in out["properties"]]
+    assert "flag_impossible" in names and "computable_spec" in names and "velocity_spec" in names
+    # evaluation order: velocity_spec before computable_spec before sufficient chain
+    assert names.index("velocity_spec") < names.index("computable_spec")
+    derived = {d["name"] for d in out["weight_series"]["derived"]}
+    assert "any_impossible_step" in derived and "win_mean_w" in derived
+    assert out["constants"]["IMPOSSIBLE_LO"] == -20 and out["constants"]["IMPOSSIBLE_HI"] == 45
+    assert out["weight_series"]["seed_reading"]["value"] == "enrollment_weight_g"
+    # constants are substituted in the SQL a reader sees
+    assert ":IMPOSSIBLE_LO" not in "".join(d["sql"] for d in out["weight_series"]["derived"])
+    assert "NOT BETWEEN -20 AND 45" in "".join(d["sql"] for d in out["weight_series"]["derived"])
+    assert "FILTER (WHERE (props.flag_impossible AND props.computable_spec))" in out["expression"]["compiled"]
+    assert "pipeline_visit_rows" in out["compiled_sql"] and "any_impossible_step" in out["compiled_sql"]
+    # ids resolve case-insensitively and by measure name
+    assert explain(props_doc, registry, "n15")["measure"] == "n15"
+    assert explain(props_doc, registry, "c14")["indicator"] == "C14"
+    with pytest.raises(UnknownIndicator):
+        explain(props_doc, registry, "N99")
