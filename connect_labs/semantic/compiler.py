@@ -410,6 +410,73 @@ def _llo_case_sql(llo_map: dict[Any, str]) -> str:
     return f"CASE v.opportunity_id {whens} ELSE NULL END"
 
 
+_SQL_WORDS = frozenset(
+    {
+        "abs",
+        "and",
+        "or",
+        "not",
+        "is",
+        "null",
+        "true",
+        "false",
+        "coalesce",
+        "between",
+        "case",
+        "when",
+        "then",
+        "else",
+        "end",
+        "weight_g",
+        "day",
+    }
+)
+
+
+def _seed_reading_sql(ws: dict[str, Any], C) -> str:
+    """The optional per-baby SEED reading a registry may declare on its weight series.
+
+    The demo compute spec's weight series is the ENROLMENT weight at the registration
+    date plus every visit weight, with an enrolment weight within 1 g of birth weight
+    dropped as a re-entry. The visits pipeline carries only visit weights, so without
+    this every "measured weigh-days" rule (thin) and the window anchor run one reading
+    short. Declared as data::
+
+        weight_series:
+          seed_reading:
+            day: reg_date                  # a Layer-1 column, MIN() per baby
+            value: enrollment_weight_g     # a Layer-1 column, MIN() per baby
+            exclude: 'ABS(weight_g - birth_weight_g) < 1'   # optional predicate
+
+    Any other column the predicate names is also MIN()'d per baby, so the rule can
+    read registration fields. A registry without `seed_reading` compiles to the
+    same SQL it always did: every reading is is_seed = FALSE.
+    """
+    seed = ws.get("seed_reading")
+    if not seed:
+        return ""
+    day, value = seed["day"], seed["value"]
+    exclude = seed.get("exclude") or "FALSE"
+    refs = set(re.findall(r"\b([a-z_][a-z0-9_]*)\b", exclude.lower()))
+    extra = sorted(c for c in refs if c not in _SQL_WORDS and c not in {day, value})
+    extra_cols = "".join(f",\n               MIN({c}) AS {c}" for c in extra)
+    return f"""
+    UNION ALL
+    SELECT baby_id, day, weight_g, TRUE AS is_seed
+    FROM (
+        SELECT opportunity_id || '|' || baby_case_id AS baby_id,
+               MIN({day})::date AS day,
+               MIN({value}) AS weight_g{extra_cols}
+        FROM visits
+        WHERE baby_case_id IS NOT NULL
+        GROUP BY 1
+    ) seed
+    WHERE day IS NOT NULL
+      AND weight_g IS NOT NULL
+      AND {C(ws['valid'])}
+      AND NOT COALESCE(({C(exclude)}), FALSE)"""
+
+
 def _build_ctes(
     props_doc: dict[str, Any],
     registry: dict[str, Any],
@@ -433,6 +500,7 @@ def _build_ctes(
         return _subst_constants(sql, consts)
 
     ws = props_doc["weight_series"]
+    seed_union = _seed_reading_sql(ws, C)
     agg_cols = ",\n    ".join(f"{C(a['sql'])} AS {a['name']}" for a in props_doc["aggregates"])
     wderived = ",\n    ".join(f"{C(d['sql'])} AS {d['name']}" for d in ws["derived"])
 
@@ -462,7 +530,7 @@ visits AS (
     SELECT * FROM visits_all
     WHERE visit_date < ((({as_of}))::date + 1)::timestamp
 ),
-weight_days AS (
+weight_readings AS (
     -- The baby key is (opportunity, case), NOT the case id alone. 829 case ids in
     -- the KMC cohort appear in more than one opportunity, and grouping on the id
     -- by itself merged them into a single baby -- 7,889 cases instead of 8,718,
@@ -470,10 +538,21 @@ weight_days AS (
     -- exactly this reason.
     SELECT opportunity_id || '|' || baby_case_id AS baby_id,
            visit_date::date AS day,
-           {ws['day_collapse']} AS w
+           weight_g,
+           FALSE AS is_seed
     FROM visits
     WHERE baby_case_id IS NOT NULL
-      AND {C(ws['valid'])}
+      AND {C(ws['valid'])}{seed_union}
+),
+weight_days AS (
+    -- One reading per (baby, day). A measured reading wins over a seed reading
+    -- on the same day, as the demo compute spec has it ("a visit weighing wins
+    -- over the enrolment value").
+    SELECT baby_id, day,
+           COALESCE({ws['day_collapse']} FILTER (WHERE NOT is_seed),
+                    MAX(weight_g) FILTER (WHERE is_seed)) AS w,
+           BOOL_AND(is_seed) AS is_seed
+    FROM weight_readings
     GROUP BY 1, 2
 ),
 baby_first AS (
@@ -489,14 +568,20 @@ weight_seq AS (
     -- visit; anchoring on the first weighing instead shifts the growth window for
     -- every baby whose first visit carried no weight, and silently changes
     -- C09-C13. Caught only on real data.
-    SELECT wd.baby_id, wd.day, wd.w,
-           LAG(wd.w) OVER (PARTITION BY wd.baby_id ORDER BY wd.day) AS prev_w,
+    SELECT wd.baby_id, wd.day, wd.w, wd.is_seed,
+           -- prev_* are partitioned by is_seed as well as baby: a measured
+           -- reading's predecessor is the previous MEASURED reading, so a seed
+           -- reading (the enrolment weight) never forms a pair -- the spec
+           -- excludes the enrolment->visit-1 rebound -- and a registry with no
+           -- seed reading compiles to exactly what it did before.
+           LAG(wd.w) OVER (PARTITION BY wd.baby_id, wd.is_seed ORDER BY wd.day) AS prev_w,
            -- prev_day and series_day exist for the demo compute spec's rules,
            -- which the render's old swing check cannot express: an IMPOSSIBLE
            -- step is a per-pair g/kg/DAY rate (so the gap in days matters), and
            -- the velocity window is the first 21 days of the MEASURED series,
-           -- counted from the first weighing rather than the first visit.
-           LAG(wd.day) OVER (PARTITION BY wd.baby_id ORDER BY wd.day) AS prev_day,
+           -- counted from the first weighing (seed included) rather than the
+           -- first visit.
+           LAG(wd.day) OVER (PARTITION BY wd.baby_id, wd.is_seed ORDER BY wd.day) AS prev_day,
            (wd.day - MIN(wd.day) OVER (PARTITION BY wd.baby_id))::int AS series_day,
            (wd.day - bf.first_visit_day)::int AS age_days
     FROM weight_days wd
