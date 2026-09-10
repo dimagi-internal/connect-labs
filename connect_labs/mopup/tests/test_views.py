@@ -507,10 +507,11 @@ def test_candidates_uses_default_config_when_none_saved(client, django_user_mode
     body = resp.json()
     assert body["status"] == "ok"
     assert body["total_work_areas"] == 1
-    # Default granularity is cluster-aware (§6's recommended default) — a
-    # single isolated WA has no neighbors to corroborate a bad EVC ratio, so
-    # it correctly does NOT become a candidate (see test_indicators.py's
-    # isolated-outlier coverage for the same rule in isolation).
+    # This WA floor-flags on EVC shortfall (an unconditional check), but the
+    # cluster-aware filter defaults to enabled and this isolated WA (no lat/
+    # lon) has no neighbors to corroborate it, so the filter drops it (see
+    # test_indicators.py's TestEvaluateRunClusterAwareFilter for the same
+    # rule in isolation).
     assert body["candidate_count"] == 0
 
 
@@ -552,9 +553,12 @@ def test_candidates_accepts_threshold_override(client, django_user_model, monkey
                     ind.EVC_SHORTFALL: {
                         "enabled": True,
                         "threshold": 0.95,  # tighter than default -> 0.9 now fails
-                        "granularity": ind.GRANULARITY_WA_ONLY,
                     }
-                }
+                },
+                # Isolate the floor/threshold behavior from the cluster-aware
+                # filter (default on) -- this WA has no lat/lon so it would
+                # otherwise be dropped for lacking corroborating neighbors.
+                "global_config": {"cluster_aware_filter_enabled": False},
             }
         ),
         content_type="application/json",
@@ -598,9 +602,10 @@ def test_candidates_returns_per_indicator_trigger_counts(client, django_user_mod
         data=json.dumps(
             {
                 "indicator_configs": {
-                    ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_WA_ONLY},
-                    ind.DEWORMING: {"enabled": True, "threshold": 0.7, "granularity": ind.GRANULARITY_WA_ONLY},
-                }
+                    ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5},
+                    ind.DEWORMING: {"enabled": True, "threshold": 0.7},
+                },
+                "global_config": {"cluster_aware_filter_enabled": False},
             }
         ),
         content_type="application/json",
@@ -651,8 +656,9 @@ def test_candidates_returns_map_features_for_the_map(client, django_user_model, 
         data=json.dumps(
             {
                 "indicator_configs": {
-                    ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_WA_ONLY},
-                }
+                    ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5},
+                },
+                "global_config": {"cluster_aware_filter_enabled": False},
             }
         ),
         content_type="application/json",
@@ -706,7 +712,7 @@ def test_candidates_persists_thresholds_used(client, django_user_model, monkeypa
     _mock_ready_data(monkeypatch, run, [])
     from connect_labs.mopup.core import indicators as ind
 
-    custom_configs = {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.4, "granularity": ind.GRANULARITY_WA_ONLY}}
+    custom_configs = {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.4}}
     client.post(
         reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
         data=json.dumps({"indicator_configs": custom_configs}),
@@ -802,7 +808,7 @@ def test_analysis_view_renders_saved_thresholds(client, django_user_model, monke
     runs = _make_fake_run_da(monkeypatch)
     from connect_labs.mopup.core import indicators as ind
 
-    custom = {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.42, "granularity": ind.GRANULARITY_WA_ONLY}}
+    custom = {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.42}}
     _seed_run(runs, thresholds={"indicator_configs": custom})
     resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
     assert resp.status_code == 200
@@ -956,9 +962,8 @@ def test_lock_freezes_candidates_and_sets_status(client, django_user_model, monk
         reverse("mopup:lock", kwargs={"program_id": 217, "run_id": 1}),
         data=json.dumps(
             {
-                "indicator_configs": {
-                    ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_WA_ONLY}
-                }
+                "indicator_configs": {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}},
+                "global_config": {"cluster_aware_filter_enabled": False},
             }
         ),
         content_type="application/json",

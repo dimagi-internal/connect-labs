@@ -100,9 +100,8 @@
         <tr class="text-left text-gray-500 border-b border-gray-100">
           <th class="pb-2 pr-2">On</th>
           <th class="pb-2 pr-2">Indicator</th>
-          <th class="pb-2 pr-2">Threshold <span class="info-icon" tabindex="0" data-tip="The cutoff at which a work area is flagged as a mop-up candidate for this indicator. Set independently per indicator.">ⓘ</span></th>
-          <th class="pb-2 pr-2">Comparison scope <span class="info-icon" tabindex="0" data-tip="What this indicator's own number is compared against before flagging: &quot;This WA only&quot; flags a single work area on its own number, alone. &quot;Cluster-aware&quot; (recommended) only flags it if nearby work areas — or, for data-quality metrics, this FLW's other work areas — are ALSO elevated, filtering out one-off noise. &quot;Whole-FLW average&quot; discards the work area's own number and judges the FLW's whole portfolio instead.">ⓘ</span></th>
-          <th class="pb-2 pr-2"># WAs triggered <span class="info-icon" tabindex="0" data-tip="How many work areas this specific indicator flagged, under the current thresholds. Recomputed every time you hit Recompute.">ⓘ</span></th>
+          <th class="pb-2 pr-2">Threshold <span class="info-icon" tabindex="0" data-tip="The cutoff at which a work area is flagged as a mop-up candidate for this indicator — an unconditional floor, no neighbor/FLW corroboration required. NCF/inaccessible has no threshold: any NCF or Inaccessible visit floors it.">ⓘ</span></th>
+          <th class="pb-2 pr-2"># WAs triggered <span class="info-icon" tabindex="0" data-tip="How many work areas this specific indicator flagged (after the optional cluster-aware filter below, if enabled), under the current thresholds. Recomputed every time you hit Recompute.">ⓘ</span></th>
         </tr>
       </thead>
       <tbody id="indicator-rows"></tbody>
@@ -111,24 +110,28 @@
 
   <section class="border border-gray-200 rounded p-4 space-y-3">
     <h2 class="text-lg font-semibold text-gray-900">Shared settings</h2>
-    <p class="text-xs text-gray-500">Every setting that only affects ONE indicator now lives in a settings row directly under that indicator above — this panel only holds what's genuinely used by more than one.</p>
+    <p class="text-xs text-gray-500">Every setting that only affects ONE indicator now lives in a settings row directly under that indicator above — this panel only holds what's genuinely used by more than one, plus the one cluster-aware filter toggle.</p>
 
     <fieldset class="space-y-2">
-      <legend class="text-xs font-semibold uppercase tracking-wide text-gray-400">Spatial neighbors — EVC shortfall (cluster-aware), NCF/inaccessible (cluster-aware)</legend>
+      <legend class="text-xs font-semibold uppercase tracking-wide text-gray-400">Cluster-aware filter</legend>
       <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-        <label class="space-y-1">
-          <span class="text-gray-600">Neighbor distance (m) <span class="info-icon" tabindex="0" data-tip="How close two work areas' centroids need to be to count as 'neighbors' — feeds both EVC shortfall's neighborhood rate and NCF/inaccessible's affected-neighbor count under Cluster-aware.">ⓘ</span></span>
-          <input type="number" id="cfg-neighbor-distance" class="base-input" min="1">
+        <label class="inline-flex items-center gap-1">
+          <input type="checkbox" id="cfg-cluster-filter-enabled">
+          Enable cluster-aware filter <span class="info-icon" tabindex="0" data-tip="Optional, applied AFTER the full candidate list is built: drops a candidate only if NONE of its triggered indicators have enough spatially-nearby, also-flagged neighbors. Never adds candidates, never removes an indicator from a WA that survives — it can only shorten the list. NCF/inaccessible is always exempt (a WA logs at most one NCF-or-Inaccessible visit ever, so there's nothing to corroborate against).">ⓘ</span>
         </label>
       </div>
     </fieldset>
 
     <fieldset class="space-y-2">
-      <legend class="text-xs font-semibold uppercase tracking-wide text-gray-400">FLW portfolio — deworming/MUAC/vaccination (cluster-aware), NCF/inaccessible (whole-FLW average)</legend>
+      <legend class="text-xs font-semibold uppercase tracking-wide text-gray-400">Spatial neighbors — deworming, MUAC, vaccination (shared)</legend>
       <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
         <label class="space-y-1">
-          <span class="text-gray-600">Min neighborhood size (FLW) <span class="info-icon" tabindex="0" data-tip="The within-FLW equivalent of minimum neighbor count — the fewest of an FLW's other work areas needed before their combined rate is trusted.">ⓘ</span></span>
-          <input type="number" id="cfg-min-portfolio" class="base-input" min="1">
+          <span class="text-gray-600">Neighbor distance, m (Tier 2) <span class="info-icon" tabindex="0" data-tip="How close two work areas' centroids need to be to count as 'neighbors' for the cluster-aware filter, shared by deworming/MUAC/vaccination. Only used when the filter above is enabled.">ⓘ</span></span>
+          <input type="number" id="cfg-tier2-neighbor-distance" class="base-input" min="1">
+        </label>
+        <label class="space-y-1">
+          <span class="text-gray-600">Min neighbor count (Tier 2) <span class="info-icon" tabindex="0" data-tip="The fewest spatially-nearby neighbors that must ALSO be flagged on the same indicator to corroborate it, shared by deworming/MUAC/vaccination. Only used when the filter above is enabled.">ⓘ</span></span>
+          <input type="number" id="cfg-tier2-min-neighbor-count" class="base-input" min="1">
         </label>
       </div>
     </fieldset>
@@ -178,6 +181,7 @@
             <th class="p-2">Ward</th><th class="p-2">LGA</th><th class="p-2">State</th>
             <th class="p-2">FLW</th>
             <th class="p-2">Total buildings</th><th class="p-2">Total EVC</th>
+            <th class="p-2">Tier <span class="info-icon" tabindex="0" data-tip="Tier 1 (EVC shortfall, NCF/inaccessible — did we find/register children at all) generally outranks Tier 2 (deworming, MUAC, vaccination — for children found, did they get complete services).">ⓘ</span></th>
             <th class="p-2 cursor-pointer" id="sort-severity">Severity <span class="info-icon" tabindex="0" data-tip="How many of the currently-enabled indicators flagged this work area. A plain count, not a weighted score.">ⓘ</span> ↕</th>
             <th class="p-2">Triggered indicators</th>
           </tr>

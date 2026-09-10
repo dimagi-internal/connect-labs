@@ -7,7 +7,7 @@ Offloaded to Celery because a synchronous web request doing this for a real
 production opportunity (tens of thousands of visits) reliably hits the
 gateway timeout — confirmed directly against program 217 this session.
 
-Every threshold/granularity tweak on the analysis screen re-runs only
+Every threshold tweak on the analysis screen re-runs only
 `evaluate_run()` over this task's already-fetched result (pure Python, no
 network calls) — it does NOT re-dispatch this task. See
 `connect_labs.mopup.views.MopupCandidatesView` for how a run's cached task

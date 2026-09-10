@@ -62,8 +62,8 @@ class MopupRunRecord(LocalLabsRecord):
 
     @property
     def thresholds(self) -> dict:
-        """Per-indicator threshold/granularity config + the global cluster
-        settings (§6's control inventory) — set in Phase 2."""
+        """Per-indicator threshold config + the global neighbor/gate settings
+        (see core/indicators.py's module docstring) — set in Phase 2."""
         return self.data.get("thresholds", {})
 
     @property

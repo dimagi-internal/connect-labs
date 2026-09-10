@@ -9,7 +9,7 @@ candidate list. The expensive part — pulling a whole opportunity's
 work-area/visit/geometry data — runs exactly ONCE per run, in a Celery task
 (`mopup.tasks.fetch_evaluation_data`; confirmed necessary this session — a
 synchronous web request doing this for a real opportunity gateway-times
-out). Every subsequent threshold/granularity tweak only re-runs
+out). Every subsequent threshold tweak only re-runs
 `evaluate_run()` over that task's already-fetched result — pure Python, no
 network calls, and never re-dispatches the task. `_rows_or_progress` is the
 one place that dispatches-if-needed and polls a run's fetch task; both
@@ -387,11 +387,11 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         context["indicator_configs"] = run.thresholds.get("indicator_configs") or ind.DEFAULT_INDICATOR_CONFIGS
         context["global_config"] = run.thresholds.get("global_config") or ind.DEFAULT_GLOBAL_CONFIG
         context["indicator_defs"] = [
-            {"key": ind.EVC_SHORTFALL, "label": "EVC shortfall", "direction": "below"},
-            {"key": ind.NCF_INACCESSIBLE, "label": "NCF / inaccessible rate", "direction": "above"},
-            {"key": ind.DEWORMING, "label": "Deworming completion", "direction": "below"},
-            {"key": ind.MUAC, "label": "MUAC-recorded rate", "direction": "below"},
-            {"key": ind.VACCINATION, "label": "Vaccination-given rate", "direction": "below"},
+            {"key": ind.EVC_SHORTFALL, "label": "EVC shortfall", "tier": 1},
+            {"key": ind.NCF_INACCESSIBLE, "label": "NCF / inaccessible", "tier": 1},
+            {"key": ind.DEWORMING, "label": "Deworming completion", "tier": 2},
+            {"key": ind.MUAC, "label": "MUAC-recorded rate", "tier": 2},
+            {"key": ind.VACCINATION, "label": "Vaccination-given rate", "tier": 2},
         ]
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
         ward_boundaries, boundary_source_caption = self._ward_boundaries_geojson(run.selected_wards)
