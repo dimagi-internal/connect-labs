@@ -32,7 +32,7 @@ from connect_labs.labs.presentation import is_present_mode
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.utils.feature_access import can_create_from_template, get_allowed_templates
 from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess, serialize_pipeline_row
-from connect_labs.workflow.templates import MULTI_OPTION_COERCERS, TEMPLATES
+from connect_labs.workflow.templates import MULTI_OPTION_COERCERS, TEMPLATES, companion_links
 from connect_labs.workflow.templates import create_workflow_from_template as create_from_template
 from connect_labs.workflow.templates import schedule_options_for_definition, template_supports_default_run
 from connect_labs.workflow.templates.weekly_dual_track_audit import CLASSIFIER_KEYS
@@ -2605,13 +2605,18 @@ def create_workflow_from_template_view(request):
             opportunity_ids=opportunity_ids,
         )
 
+        created = f"Created workflow: {definition.name} (ID: {definition.id})"
         if pipeline:
-            messages.success(
-                request,
-                f"Created workflow: {definition.name} (ID: {definition.id}) with pipeline: {pipeline.name}",
+            created += f" with pipeline: {pipeline.name}"
+        # Companions (a drill's second page, created alongside) — say so, or the
+        # extra card on the list reads as a mystery.
+        companions = companion_links(definition)
+        if companions:
+            created += ", and its companion " + ", ".join(
+                f"workflow {link['workflow_id']}" + (f" (run {link['run_id']})" if link.get("run_id") else "")
+                for link in companions.values()
             )
-        else:
-            messages.success(request, f"Created workflow: {definition.name} (ID: {definition.id})")
+        messages.success(request, created)
         return redirect("labs:workflow:list")
 
     except Exception as e:

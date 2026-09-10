@@ -287,7 +287,7 @@ def list_templates() -> list[dict]:
 
     Returns:
         List of dicts with 'key', 'name', 'description', 'icon', 'color',
-        'multi_opp', and 'supports_saved_runs'.
+        'multi_opp', 'supports_saved_runs' and 'companions' (template keys).
     """
     return [
         {
@@ -298,6 +298,9 @@ def list_templates() -> list[dict]:
             "color": t.get("color", "gray"),
             "multi_opp": bool(t.get("multi_opp", False)),
             "supports_saved_runs": bool(t.get("supports_saved_runs", False)),
+            # Templates created alongside this one (see "Companions" below), so a
+            # creation surface can say "also creates X" instead of surprising you.
+            "companions": [c["template_key"] for c in t.get("companions") or [] if isinstance(c, dict)],
         }
         for key, t in TEMPLATES.items()
         if not t.get("deprecated")
@@ -807,10 +810,22 @@ def _create_workflow_from_template_scoped(
     template_key: str,
     request=None,
     opportunity_ids: list[int] | None = None,
+    pipeline_sources_override: list[dict] | None = None,
+    config_overrides: dict | None = None,
+    _ancestry: tuple[str, ...] = (),
 ) -> tuple:
     """Inner body of ``create_workflow_from_template`` — runs against an
     already-ownership-scoped ``data_access``. Kept separate so the public
-    function can own/close a re-scoped DAO in a ``finally``."""
+    function can own/close a re-scoped DAO in a ``finally``.
+
+    ``pipeline_sources_override`` and ``config_overrides`` exist for
+    companions (see ``_create_companions``): a companion that shares its
+    primary's pipelines is handed the primary's ``pipeline_sources`` verbatim
+    and creates none of its own, and its config is stamped with the back
+    reference to the primary at create time rather than by a second write.
+    """
+
+    _validate_companions(template, template_key, _ancestry)
 
     template_def = template["definition"]
     pipeline_schema = template.get("pipeline_schema")
@@ -848,6 +863,11 @@ def _create_workflow_from_template_scoped(
         "organization_id": getattr(data_access, "organization_id", None),
     }
     can_create_pipelines = bool(request) or bool(pipeline_access_token)
+    if pipeline_sources_override is not None:
+        # A companion sharing its primary's pipelines: the same two records,
+        # so the two workflows share one cache. Nothing is created here.
+        can_create_pipelines = False
+        pipeline_sources = [dict(src) for src in pipeline_sources_override]
 
     # Create pipeline if template has one (singular schema)
     if pipeline_schema and can_create_pipelines:
@@ -911,10 +931,13 @@ def _create_workflow_from_template_scoped(
             )
         pipeline_data_access.close()
 
-    # Create the workflow definition with pipeline source if created
-    config = template_def.get("config", {})
+    # Create the workflow definition with pipeline source if created. A COPY:
+    # the template's DEFINITION is module state shared by every create, and a
+    # companion's back reference must not leak into the next instance.
+    config = dict(template_def.get("config", {}))
     config["templateType"] = template_key  # Store template type for filtering
     config["multi_opp"] = bool(template.get("multi_opp", False))
+    config.update(config_overrides or {})
     extra_definition_kwargs = {}
     if template.get("supports_saved_runs") and not callable(template.get("build_snapshot")):
         # Stamp the snapshot manifest onto the instance: the definition — not
@@ -940,7 +963,154 @@ def _create_workflow_from_template_scoped(
         version=1,
     )
 
+    definition = _create_companions(
+        data_access=data_access,
+        template=template,
+        template_key=template_key,
+        definition=definition,
+        pipeline_sources=pipeline_sources,
+        request=request,
+        opportunity_ids=opportunity_ids,
+        _ancestry=_ancestry,
+    )
+
     return definition, render_code, pipeline_record
+
+
+# =============================================================================
+# Companions — a template that is only useful alongside another one
+# =============================================================================
+#
+# A drill has two pages. The KMC programme report drills programme -> LLO ->
+# opportunity -> worker, and a worker row opens the KMC Worker Review — a second
+# workflow, linked by configuration: the report's ``config.flw_review`` names the
+# review workflow and its long-lived run; the review's ``config.source_workflow_id``
+# names the report. Two templates, one feature.
+#
+# Until this existed, creating the report from its template gave you HALF the
+# feature: the review had to be created separately, its run minted, both configs
+# patched — four API calls that the "Create" button could not make, so a workflow
+# created by hand had worker rows that were not links. The link was a runbook.
+#
+# ``TEMPLATE["companions"]`` moves that runbook into the registry. Each entry is
+# created right after the primary, in the same ownership scope and over the same
+# ``opportunity_ids``, and the two are cross-linked before ``create`` returns:
+#
+#     {
+#         "template_key": "kmc_flw_review",     # the companion's registered template
+#         "config_key": "flw_review",           # primary.config[key] = {workflow_id, run_id?}
+#         "share_pipelines": True,              # companion reuses the primary's pipeline records
+#         "mint_run": True,                     # create one long-lived run; its id joins the link
+#         "back_reference": "source_workflow_id",  # companion.config[key] = primary's id
+#     }
+#
+# The MCP tool and the web view both go through ``create_workflow_from_template``,
+# so both get the whole feature from one call.
+
+_COMPANION_KEYS = {"template_key", "config_key", "share_pipelines", "mint_run", "back_reference"}
+
+
+def _validate_companions(template: dict, template_key: str, ancestry: tuple[str, ...]) -> None:
+    """Refuse a malformed or cyclic companion chain BEFORE anything is created —
+    a failure halfway through leaves a primary with no link and a companion with
+    no owner, which is exactly the half-built state companions exist to end."""
+    if template_key in ancestry:
+        chain = " -> ".join((*ancestry, template_key))
+        raise ValueError(f"Template companions form a cycle: {chain}")
+    for spec in template.get("companions") or []:
+        if not isinstance(spec, dict):
+            raise ValueError(f"Template '{template_key}': each companion must be a dict, got {spec!r}")
+        unknown = set(spec) - _COMPANION_KEYS
+        if unknown:
+            raise ValueError(f"Template '{template_key}': unknown companion keys {sorted(unknown)}")
+        if not spec.get("template_key") or not spec.get("config_key"):
+            raise ValueError(f"Template '{template_key}': a companion needs template_key and config_key")
+        companion = get_template(spec["template_key"])
+        if not companion:
+            raise ValueError(f"Template '{template_key}': unknown companion template '{spec['template_key']}'")
+        if companion.get("deprecated"):
+            raise ValueError(f"Template '{template_key}': companion '{spec['template_key']}' is deprecated")
+        _validate_companions(companion, spec["template_key"], (*ancestry, template_key))
+
+
+def _create_companions(
+    *,
+    data_access: WorkflowDataAccess,
+    template: dict,
+    template_key: str,
+    definition,
+    pipeline_sources: list[dict],
+    request,
+    opportunity_ids: list[int] | None,
+    _ancestry: tuple[str, ...],
+):
+    """Create each declared companion and write the links. Returns the primary
+    definition — re-read after the link write when there was one, so a caller
+    that inspects ``definition.config`` sees the links."""
+    specs = template.get("companions") or []
+    if not specs:
+        return definition
+
+    from datetime import date
+
+    dao_opportunity_id = getattr(data_access, "opportunity_id", None)
+    dao_program_id = getattr(data_access, "program_id", None)
+    links: dict[str, dict] = {}
+    for spec in specs:
+        companion_key = spec["template_key"]
+        companion_template = get_template(companion_key)
+        overrides = {}
+        if spec.get("back_reference"):
+            overrides[spec["back_reference"]] = definition.id
+        companion_def, _companion_render, _ = _create_workflow_from_template_scoped(
+            data_access=data_access,
+            template=companion_template,
+            template_key=companion_key,
+            request=request,
+            opportunity_ids=opportunity_ids,
+            pipeline_sources_override=pipeline_sources if spec.get("share_pipelines") else None,
+            config_overrides=overrides,
+            _ancestry=(*_ancestry, template_key),
+        )
+        link = {"workflow_id": companion_def.id}
+        if spec.get("mint_run"):
+            # One long-lived run: the drill opens it with ?run_id=, carrying the
+            # worker and the source report as query parameters. No run per click.
+            today = date.today().isoformat()
+            run = data_access.create_run(
+                companion_def.id,
+                opportunity_id=dao_opportunity_id,
+                program_id=None if dao_opportunity_id else dao_program_id,
+                period_start=today,
+                period_end=today,
+                initial_state={},
+            )
+            link["run_id"] = run.id
+        links[spec["config_key"]] = link
+
+    # ``update_definition`` replaces the whole data blob, so the payload is the
+    # record as created plus the links — never a partial config.
+    new_data = dict(getattr(definition, "data", None) or {})
+    config = dict(new_data.get("config") or {})
+    config.update(links)
+    new_data["config"] = config
+    updated = data_access.update_definition(definition_id=definition.id, data=new_data)
+    return updated or definition
+
+
+def companion_links(definition) -> dict[str, dict]:
+    """The companion links a created definition carries, keyed by config key —
+    for callers that report what ``create`` produced (the MCP tool, the view)."""
+    data = getattr(definition, "data", None)
+    if not isinstance(data, dict):
+        return {}
+    template = get_template((data.get("config") or {}).get("templateType") or "") or {}
+    config = data.get("config") or {}
+    return {
+        spec["config_key"]: config[spec["config_key"]]
+        for spec in template.get("companions") or []
+        if isinstance(config.get(spec["config_key"]), dict)
+    }
 
 
 # =============================================================================
@@ -964,6 +1134,7 @@ __all__ = [
     "get_template",
     "list_templates",
     "create_workflow_from_template",
+    "companion_links",
     "run_default_for_definition",
     "resolve_snapshot_contract",
     "resolve_snapshot_opp_scope",

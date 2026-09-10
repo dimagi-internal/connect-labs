@@ -610,8 +610,11 @@ DEFINITION = {
         "scale_unverified_llos": sorted(UNVERIFIED_SCALE_LLOS),
         "audit_count_per_flw": 25,
         # Where a worker row opens: the KMC Worker Review workflow and its
-        # long-lived run, `{"workflow_id": ..., "run_id": ...}`. Set on the
-        # instance once that workflow exists; until then rows are not links.
+        # long-lived run, `{"workflow_id": ..., "run_id": ...}`. Written on the
+        # instance by the `companions` entry below the moment this template is
+        # created, so a hand-created report links from the first render. None
+        # here, never a real id: an id in the template would point every new
+        # instance at one review workflow in one scope.
         "flw_review": None,
     },
     "pipeline_sources": [],
@@ -633,5 +636,20 @@ TEMPLATE = {
     "pipeline_schemas": [
         {"alias": "children", "name": "KMC Case Properties (SQL)", "schema": CASE_PROPERTIES_SCHEMA},
         {"alias": "visits", "name": "KMC Weight Series", "schema": WEIGHT_SERIES_SCHEMA},
+    ],
+    # The drill's second page. Creating this report also creates the KMC Worker
+    # Review in the same scope over the same opportunities, on the SAME two
+    # pipeline records (one cache), mints the review's long-lived run, and
+    # cross-links the two: this report's `config.flw_review` and the review's
+    # `config.source_workflow_id`. One "Create" gives the whole feature — the
+    # four-call runbook that used to follow it is gone.
+    "companions": [
+        {
+            "template_key": "kmc_flw_review",
+            "config_key": "flw_review",
+            "share_pipelines": True,
+            "mint_run": True,
+            "back_reference": "source_workflow_id",
+        }
     ],
 }
