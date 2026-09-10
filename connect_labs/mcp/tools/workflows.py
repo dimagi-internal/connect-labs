@@ -320,6 +320,7 @@ def _attach_render_code_warning(result: dict, jsx: str) -> dict:
     return result
 
 
+from connect_labs.workflow.templates import companion_links  # noqa: E402
 from connect_labs.workflow.templates import (  # noqa: E402
     create_workflow_from_template as _create_workflow_from_template,
 )
@@ -907,6 +908,11 @@ def workflow_create_from_template(
             "pipeline_id": pipeline.id if pipeline else None,
             "opportunity_ids": list(cleaned_opp_ids),
             "program_id": program_id,
+            # Workflows created ALONGSIDE this one by the template's `companions`
+            # declaration, keyed by the config key that links them — e.g.
+            # {"flw_review": {"workflow_id": 5618, "run_id": 5620}}. Empty for
+            # templates that declare none.
+            "companions": companion_links(definition),
             "_version_before": None,
             "_version_after": 1,
         }
