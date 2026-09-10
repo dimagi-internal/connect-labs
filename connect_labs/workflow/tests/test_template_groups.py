@@ -95,3 +95,16 @@ def test_every_template_icon_and_colour_resolve_in_the_picker():
         if not t["icon"].startswith("fa-") or t["color"] not in PICKER_COLOURS
     }
     assert not bad, f"icon must be fa-*, colour one of {sorted(PICKER_COLOURS)}: {bad}"
+
+
+def test_the_opportunity_picker_accepts_a_pasted_id_list():
+    """ "523, 524, 675, 874, …" pasted into the picker must list exactly those,
+    tick them, and name any id the user cannot see — a substring filter matched
+    none of it. The behaviour is Alpine in the template; these pin its hooks."""
+    from django.template.loader import get_template
+
+    src = get_template("workflow/list.html").template.source
+    for needle in ("pastedIds()", "missingPastedIds()", "onOppFilterInput()", "selectShown()", "clearShown()"):
+        assert needle in src, needle
+    assert '@input="onOppFilterInput()"' in src, "a paste must tick its matches without a second action"
+    assert "Not found (no access, or not an opportunity ID)" in src

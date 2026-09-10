@@ -116,12 +116,50 @@
                 this.showTemplateModal = false;
                 this.showOppPickerModal = true;
             },
+            // A pasted LIST of ids ("523, 524, 675" — commas, spaces or semicolons)
+            // is a different intent from a filter: the person already knows the
+            // opportunities and wants exactly those, in that order, ticked. A
+            // single number stays a substring filter, unless it ends in a comma.
+            pastedIds() {
+                const q = this.oppFilter.trim();
+                if (!q) return null;
+                const tokens = q.split(/[\s,;]+/).filter(Boolean);
+                if (!tokens.length || !tokens.every(t => /^\d+$/.test(t))) return null;
+                if (tokens.length < 2 && !/[,;]\s*$/.test(q)) return null;
+                return [...new Set(tokens.map(Number))];
+            },
             filteredAvailableOpps() {
+                const ids = this.pastedIds();
+                if (ids) {
+                    const byId = new Map(this.availableOpps.map(o => [o.id, o]));
+                    return ids.map(id => byId.get(id)).filter(Boolean);
+                }
                 if (!this.oppFilter) return this.availableOpps;
                 const q = this.oppFilter.toLowerCase();
                 return this.availableOpps.filter(o =>
                     o.name.toLowerCase().includes(q) || String(o.id).toLowerCase().includes(q)
                 );
+            },
+            // Ids in the pasted list that are not opportunities this user can see —
+            // shown, never silently dropped: a report missing one opportunity
+            // reads as a programme with fewer workers, not as an error.
+            missingPastedIds() {
+                const ids = this.pastedIds();
+                if (!ids) return [];
+                const have = new Set(this.availableOpps.map(o => o.id));
+                return ids.filter(id => !have.has(id));
+            },
+            onOppFilterInput() {
+                if (this.pastedIds()) this.selectShown();
+            },
+            selectShown() {
+                for (const o of this.filteredAvailableOpps()) {
+                    if (!this.pickedOppIds.includes(o.id)) this.pickedOppIds.push(o.id);
+                }
+            },
+            clearShown() {
+                const shown = new Set(this.filteredAvailableOpps().map(o => o.id));
+                this.pickedOppIds = this.pickedOppIds.filter(id => !shown.has(id));
             },
             submitCreate(templateKey, form) {
                 const isMulti = (this.templates.find(t => t.key === templateKey) || {}).multi_opp;
@@ -348,9 +386,28 @@
                             This workflow can pull data from multiple opportunities. Pick the ones you want.
                         </p>
                         <input type="text"
+                               id="opp-picker-filter"
                                x-model="oppFilter"
-                               placeholder="Filter by name or ID…"
+                               @input="onOppFilterInput()"
+                               placeholder="Filter by name or ID, or paste a list of IDs: 523, 524, 675…"
                                class="w-full mb-2 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <div class="flex items-center justify-between gap-3 mb-2 text-xs">
+                            <div class="text-gray-500 min-w-0">
+                                <span x-show="pastedIds()" x-cloak>
+                                    <span x-text="filteredAvailableOpps().length"></span> of
+                                    <span x-text="(pastedIds() || []).length"></span> pasted IDs found and ticked.
+                                </span>
+                                <span x-show="missingPastedIds().length" x-cloak class="text-amber-700">
+                                    Not found (no access, or not an opportunity ID):
+                                    <span class="font-mono" x-text="missingPastedIds().join(', ')"></span>
+                                </span>
+                            </div>
+                            <div class="flex-none flex items-center gap-3">
+                                <span class="text-gray-500"><span x-text="pickedOppIds.length"></span> selected</span>
+                                <button type="button" @click="selectShown()" class="text-blue-600 hover:underline">Select all shown</button>
+                                <button type="button" @click="clearShown()" class="text-gray-500 hover:underline">Clear shown</button>
+                            </div>
+                        </div>
                         <div class="max-h-96 overflow-y-auto border border-gray-200 rounded p-2 mb-4">
                             <template x-for="opp in filteredAvailableOpps()" :key="opp.id">
                                 <label class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
