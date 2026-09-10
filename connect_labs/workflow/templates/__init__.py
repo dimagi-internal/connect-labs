@@ -289,8 +289,9 @@ def schedule_options_for_definition(definition) -> list[dict]:
 # it. Order is by how often each family is opened: reports first, demos last.
 #
 # One map, one file, so reorganising the picker is an edit here and nowhere
-# else. Every registered template must appear (enforced by
-# test_template_groups.py), so a new template cannot silently fall into "other".
+# else: the map's ORDER is the picker's order within each group. Every registered
+# template must appear (enforced by test_template_groups.py), so a new template
+# cannot silently fall into "other".
 TEMPLATE_GROUPS: list[dict] = [
     {"key": "reports", "label": "Programme reports", "blurb": "cross-opportunity, drillable, read-only"},
     {"key": "automatic", "label": "Automatic reports", "blurb": "computed on a schedule, nothing to decide"},
@@ -303,6 +304,9 @@ TEMPLATE_GROUPS: list[dict] = [
 TEMPLATE_GROUP_OF: dict[str, str] = {
     # Programme reports: read across opportunities and drill down.
     "kmc_programme_metrics": "reports",
+    # The report's drill page. Created WITH the report as its companion, and
+    # creatable on its own — opened alone it reads the newest saved report.
+    "kmc_flw_review": "reports",
     "program_admin_report": "reports",
     "audit_par": "reports",
     "chc_audit_history": "reports",
@@ -334,9 +338,6 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     "ocs_outreach": "other",
     "interviews_reporting_v2": "other",
     "jakusko_chlorine_dispenser": "other",
-    # A companion: created with the programme report, shown as a tag on its
-    # row rather than a card. Grouped with its primary for the MCP listing.
-    "kmc_flw_review": "reports",
 }
 
 
@@ -347,8 +348,9 @@ def template_groups() -> list[dict]:
 
 
 def _companion_of(key: str) -> list[str]:
-    """The templates that create ``key`` as a companion — the picker shows such
-    a template as a tag on its primary's row, not as a card of its own."""
+    """The templates that create ``key`` as a companion. Such a template keeps
+    its own row in the picker — it is designed to work alone too — and the row
+    says which template also creates it."""
     return [
         k
         for k, t in TEMPLATES.items()
@@ -370,6 +372,8 @@ def list_templates() -> list[dict]:
         'multi_opp', 'supports_saved_runs', 'companions' (template keys),
         'group' (a TEMPLATE_GROUPS key) and 'companion_of' (template keys).
     """
+    # Picker order: the map's order, then anything unplaced (a test forbids it).
+    position = {key: i for i, key in enumerate(TEMPLATE_GROUP_OF)}
     return [
         {
             "key": key,
@@ -387,7 +391,7 @@ def list_templates() -> list[dict]:
             "group": TEMPLATE_GROUP_OF.get(key, "other"),
             "companion_of": _companion_of(key),
         }
-        for key, t in TEMPLATES.items()
+        for key, t in sorted(TEMPLATES.items(), key=lambda kv: position.get(kv[0], len(position)))
         if not t.get("deprecated")
     ]
 

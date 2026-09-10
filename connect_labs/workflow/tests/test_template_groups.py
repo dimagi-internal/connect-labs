@@ -48,10 +48,20 @@ def test_list_templates_carries_group_and_companion_of():
     rows = {t["key"]: t for t in list_templates()}
     assert rows["kmc_programme_metrics"]["group"] == "reports"
     assert rows["kmc_programme_metrics"]["companion_of"] == []
-    # The worker review is created WITH the programme report, so the picker
-    # shows it as a tag on that row rather than a card of its own.
+    # The worker review is created WITH the programme report and stays its own
+    # row — designed to stand alone, it reads the newest saved report when
+    # opened by itself. Its row can say which template also creates it.
     assert rows["kmc_flw_review"]["companion_of"] == ["kmc_programme_metrics"]
+    assert rows["kmc_flw_review"]["group"] == "reports"
     assert all(r["group"] in {g["key"] for g in TEMPLATE_GROUPS} for r in rows.values())
+
+
+def test_the_picker_order_is_the_maps_order():
+    """One map decides both placement and order, so "put the worker review
+    right after the programme report" is a line move, not a sort rule."""
+    listed = [t["key"] for t in list_templates()]
+    assert listed == [k for k in TEMPLATE_GROUP_OF if k in set(listed)]
+    assert listed.index("kmc_flw_review") == listed.index("kmc_programme_metrics") + 1
 
 
 def test_the_picker_template_compiles_and_reads_what_the_api_sends():
