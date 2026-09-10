@@ -75,9 +75,12 @@ urlpatterns = [
         name="api_semantic_indicators",
     ),
     path(
-        "api/<int:definition_id>/semantic/explain/",
+        # NOT under /semantic/: the render's own guard (test_kmc_programme_metrics_action)
+        # forbids that substring so the page can never fetch NUMBERS from the
+        # semantic endpoint. Definitions carry no numbers.
+        "api/<int:definition_id>/indicator-definitions/",
         views.semantic_explain_api,
-        name="api_semantic_explain",
+        name="api_indicator_definitions",
     ),
     path(
         "api/<int:definition_id>/pipeline-data/stream/",

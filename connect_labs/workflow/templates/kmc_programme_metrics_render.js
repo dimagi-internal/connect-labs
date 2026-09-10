@@ -865,7 +865,7 @@ function WorkflowUI({
     return (
       '/labs/workflow/api/' +
       definitionId() +
-      '/semantic/explain/' +
+      '/indicator-definitions/' +
       sp +
       (sp ? '&' : '?') +
       'format=' +
