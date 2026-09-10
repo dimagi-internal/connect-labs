@@ -1,0 +1,59 @@
+name: Build and push the app image
+description: >-
+  One buildx build of the Dockerfile on top of the resolved base and node
+  images, pushed to ECR under the given tags, with the base/node digests it was
+  built on recorded as image labels. Shared by the merge-queue build (ci.yml)
+  and the deploy's fallback build (deploy-labs.yml) so the two can never drift.
+
+inputs:
+  registry:
+    description: ECR registry host.
+    required: true
+  repository:
+    description: ECR repository name.
+    required: true
+  tags:
+    description: Newline-separated full image refs to push.
+    required: true
+  base_image:
+    description: BASE_IMAGE build-arg, from resolve-base-images.
+    required: true
+  node_image:
+    description: NODE_IMAGE build-arg, from resolve-base-images.
+    required: true
+  base_digest:
+    description: Digest of the base image used, recorded as a label.
+    required: true
+  node_digest:
+    description: Digest of the node image used, recorded as a label.
+    required: true
+  app_release:
+    description: APP_RELEASE build-arg (the commit SHA, for Sentry).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+    # The two labels are read back by the deploy: an image whose recorded
+    # foundations differ from the CURRENT base-latest / node-latest digests is
+    # stale (a dependency or frontend change landed after it was built) and is
+    # rebuilt rather than shipped.
+    - name: Build and push
+      uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+      with:
+        context: .
+        push: true
+        provenance: false
+        tags: ${{ inputs.tags }}
+        build-args: |
+          BASE_IMAGE=${{ inputs.base_image }}
+          NODE_IMAGE=${{ inputs.node_image }}
+          APP_RELEASE=${{ inputs.app_release }}
+        labels: |
+          labs.base_digest=${{ inputs.base_digest }}
+          labs.node_digest=${{ inputs.node_digest }}
+        cache-from: type=registry,ref=${{ inputs.registry }}/${{ inputs.repository }}:buildcache
+        cache-to: type=registry,ref=${{ inputs.registry }}/${{ inputs.repository }}:buildcache,mode=max

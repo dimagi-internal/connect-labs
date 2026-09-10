@@ -151,6 +151,66 @@ jobs:
       - name: Check the workflow render templates
         run: node --test connect_labs/workflow/templates/__tests__/kmc_render.test.mjs
 
+  # Build the deployable image for the merge result WHILE the tests run, so the
+  # deploy that follows the merge finds `:<sha>` already in ECR and skips its
+  # own ~100s build (the build was ~25% of a 7-minute deploy; the rest is the
+  # ECS rollout, which nothing here can shorten).
+  #
+  # merge_group ONLY. The queue's head SHA is the exact commit that lands on
+  # main, so the image is addressable by the SHA the deploy will look for — a
+  # pull_request run's SHA is a throwaway merge commit nobody will ever deploy.
+  # It also keeps the OIDC deploy role away from pull_request runs of PR code.
+  #
+  # Not a required check, on purpose: if this fails the entry still merges and
+  # the deploy builds the image itself, exactly as it did before this job.
+  # The deploy also refuses to reuse an image whose recorded base/node digests
+  # differ from the current base-latest / node-latest (see the labels in
+  # build-app-image), so an image built here just before a requirements or
+  # frontend change landed cannot be shipped stale.
+  build-image:
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      actions: read # gh run list/watch in resolve-base-images
+    env:
+      AWS_REGION: us-east-1
+      ECR_REPOSITORY: labs-jj-commcare-connect
+      ECR_REGISTRY: 858923557655.dkr.ecr.us-east-1.amazonaws.com
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v7
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Resolve the base and node images
+        id: bases
+        uses: ./.github/actions/resolve-base-images
+        with:
+          github-token: ${{ github.token }}
+          registry: ${{ env.ECR_REGISTRY }}
+          repository: ${{ env.ECR_REPOSITORY }}
+
+      - name: Build and push the image for this merge result
+        uses: ./.github/actions/build-app-image
+        with:
+          registry: ${{ env.ECR_REGISTRY }}
+          repository: ${{ env.ECR_REPOSITORY }}
+          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          base_image: ${{ steps.bases.outputs.base_image }}
+          node_image: ${{ steps.bases.outputs.node_image }}
+          base_digest: ${{ steps.bases.outputs.base_digest }}
+          node_digest: ${{ steps.bases.outputs.node_digest }}
+          app_release: ${{ github.sha }}
+
   pytest:
     runs-on: ubuntu-latest
 

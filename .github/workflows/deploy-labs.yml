@@ -119,6 +119,10 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      # gh run list/watch in resolve-base-images. Without this the token has
+      # no Actions scope, `gh run list` 403s, and the old `2>/dev/null || true`
+      # around it read that as "no base build running" — silently.
+      actions: read
 
     steps:
       - name: Checkout code
@@ -134,117 +138,93 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
 
-      - name: Wait for base image build if running
+      # Waits for any in-flight Build Base / Build Node Image run (the stale-JS
+      # incident, PR #97, lives in the action's comments), then resolves
+      # base-latest / node-latest to refs and digests.
+      - name: Resolve the base and node images
+        id: bases
+        uses: ./.github/actions/resolve-base-images
+        with:
+          github-token: ${{ github.token }}
+          registry: ${{ env.ECR_REGISTRY }}
+          repository: ${{ env.ECR_REPOSITORY }}
+
+      # ci.yml's `build-image` job builds `:<sha>` for every merge-queue entry
+      # while the tests run, so by the time a deploy is dispatched the image is
+      # usually already here. Reuse it ONLY if the base/node digests it records
+      # in its labels are the ones we would build on right now: an image built
+      # a minute before a requirements or frontend change merged carries the
+      # OLD foundations, and the diff-of-paths heuristic cannot see that race.
+      # Anything short of a full match falls through to a normal build.
+      - name: Reuse the image CI built for this commit, if its foundations match
+        id: prebuilt
         env:
-          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          WANT_BASE: ${{ steps.bases.outputs.base_digest }}
+          WANT_NODE: ${{ steps.bases.outputs.node_digest }}
         run: |
-          # Check if a "Build Base Image" workflow is currently running
-          RUNNING=$(gh run list \
-            --workflow="Build Base Image" \
-            --status=in_progress \
-            --json databaseId \
-            --jq '.[0].databaseId' 2>/dev/null || true)
-          if [ -n "$RUNNING" ]; then
-            echo "Base image build in progress (run $RUNNING), waiting for it to complete..."
-            gh run watch "$RUNNING" --exit-status
-            echo "Base image build completed."
+          set -euo pipefail
+          if ! aws ecr describe-images --repository-name ${{ env.ECR_REPOSITORY }} \
+                 --image-ids imageTag=${{ github.sha }} >/dev/null 2>&1; then
+            echo "No prebuilt image for ${{ github.sha }} — building here."
+            echo "reuse=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          # Also check queued runs
-          QUEUED=$(gh run list \
-            --workflow="Build Base Image" \
-            --status=queued \
-            --json databaseId \
-            --jq '.[0].databaseId' 2>/dev/null || true)
-          if [ -n "$QUEUED" ]; then
-            echo "Base image build queued (run $QUEUED), waiting for it to complete..."
-            gh run watch "$QUEUED" --exit-status
-            echo "Base image build completed."
-          fi
-
-      - name: Wait for node image build if running
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Mirror the base-image wait above. Without this, a deploy that
-          # runs concurrently with (or shortly after) a frontend-changing
-          # merge to main races against the Build Node Image workflow:
-          # the Node tag node-latest still points at the OLD image when
-          # this deploy queries ECR, so the deploy ships stale JS.
-          # See incident: PR #97 (workflow-framework auth gate) merged but
-          # the framework code never made it into the deployed bundle.
-          RUNNING=$(gh run list \
-            --workflow="Build Node Image" \
-            --status=in_progress \
-            --json databaseId \
-            --jq '.[0].databaseId' 2>/dev/null || true)
-          if [ -n "$RUNNING" ]; then
-            echo "Node image build in progress (run $RUNNING), waiting for it to complete..."
-            gh run watch "$RUNNING" --exit-status
-            echo "Node image build completed."
-          fi
-          QUEUED=$(gh run list \
-            --workflow="Build Node Image" \
-            --status=queued \
-            --json databaseId \
-            --jq '.[0].databaseId' 2>/dev/null || true)
-          if [ -n "$QUEUED" ]; then
-            echo "Node image build queued (run $QUEUED), waiting for it to complete..."
-            gh run watch "$QUEUED" --exit-status
-            echo "Node image build completed."
-          fi
-
-      - name: Check base image exists
-        id: base-check
-        run: |
-          BASE_TAG="base-latest"
-          BASE_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${BASE_TAG}"
-          TAG_EXISTS=$(aws ecr list-images \
-            --repository-name ${{ env.ECR_REPOSITORY }} \
-            --query "imageIds[?imageTag=='${BASE_TAG}'].imageTag" \
-            --output text 2>&1) || true
-          if [ -n "$TAG_EXISTS" ] && [ "$TAG_EXISTS" != "None" ]; then
-            echo "base_image=${BASE_IMAGE}" >> "$GITHUB_OUTPUT"
-            echo "Base image found: ${BASE_IMAGE}"
+          CONFIG=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Image}}' 2>/dev/null || echo '{}')
+          read -r HAVE_BASE HAVE_NODE < <(printf '%s' "$CONFIG" | python3 -c '
+          import json, sys
+          j = json.load(sys.stdin)
+          # single-platform: {"config": {...}}; multi-platform: {"<platform>": {"config": {...}}}
+          cfg = j.get("config") or next((v.get("config") for v in j.values() if isinstance(v, dict) and "config" in v), {}) or {}
+          labels = cfg.get("Labels") or {}
+          print(labels.get("labs.base_digest", "?"), labels.get("labs.node_digest", "?"))
+          ')
+          echo "prebuilt image records base=$HAVE_BASE node=$HAVE_NODE; current base=$WANT_BASE node=$WANT_NODE"
+          if [ "$HAVE_BASE" = "$WANT_BASE" ] && [ "$HAVE_NODE" = "$WANT_NODE" ] \
+             && [ "$WANT_BASE" != "none" ] && [ "$WANT_NODE" != "none" ]; then
+            echo "Foundations match — reusing the CI-built image, skipping the build."
+            echo "reuse=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::Base image not found in ECR. Build will fall back to installing deps from scratch. Run the 'Build Base Image' workflow first."
-            echo "base_image=python:3.11-slim-bookworm" >> "$GITHUB_OUTPUT"
+            echo "Foundations differ or are unrecorded — building here."
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Check node image exists
-        id: node-check
-        run: |
-          NODE_TAG="node-latest"
-          NODE_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${NODE_TAG}"
-          TAG_EXISTS=$(aws ecr list-images \
-            --repository-name ${{ env.ECR_REPOSITORY }} \
-            --query "imageIds[?imageTag=='${NODE_TAG}'].imageTag" \
-            --output text 2>&1) || true
-          if [ -n "$TAG_EXISTS" ] && [ "$TAG_EXISTS" != "None" ]; then
-            echo "node_image=${NODE_IMAGE}" >> "$GITHUB_OUTPUT"
-            echo "Node image found: ${NODE_IMAGE} (webpack build will be skipped)"
-          else
-            echo "::warning::Node image not found in ECR. Webpack will build from source. Run the 'Build Node Image' workflow first."
-            echo "node_image=node:18-bullseye" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        if: steps.prebuilt.outputs.reuse != 'true'
+        uses: ./.github/actions/build-app-image
         with:
-          context: .
-          push: true
-          provenance: false
+          registry: ${{ env.ECR_REGISTRY }}
+          repository: ${{ env.ECR_REPOSITORY }}
           tags: |
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-          build-args: |
-            BASE_IMAGE=${{ steps.base-check.outputs.base_image }}
-            NODE_IMAGE=${{ steps.node-check.outputs.node_image }}
-            APP_RELEASE=${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:buildcache
-          cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:buildcache,mode=max
+          base_image: ${{ steps.bases.outputs.base_image }}
+          node_image: ${{ steps.bases.outputs.node_image }}
+          base_digest: ${{ steps.bases.outputs.base_digest }}
+          node_digest: ${{ steps.bases.outputs.node_digest }}
+          app_release: ${{ github.sha }}
+
+      # The build tags `:latest` too; when we reuse, move the tag ourselves so
+      # it keeps meaning "the most recently deployed image". A manifest re-put
+      # under a new tag is a metadata write — no pull, no push of layers.
+      - name: Point :latest at the reused image
+        if: steps.prebuilt.outputs.reuse == 'true'
+        run: |
+          set -euo pipefail
+          REPO=${{ env.ECR_REPOSITORY }}
+          SHA_DIGEST=$(aws ecr describe-images --repository-name "$REPO" --image-ids imageTag=${{ github.sha }} \
+                         --query 'imageDetails[0].imageDigest' --output text)
+          LATEST_DIGEST=$(aws ecr describe-images --repository-name "$REPO" --image-ids imageTag=latest \
+                            --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || echo none)
+          if [ "$SHA_DIGEST" = "$LATEST_DIGEST" ]; then
+            echo ":latest already points at $SHA_DIGEST"; exit 0
+          fi
+          MANIFEST=$(aws ecr batch-get-image --repository-name "$REPO" --image-ids imageTag=${{ github.sha }} \
+                       --query 'images[0].imageManifest' --output text)
+          MEDIA_TYPE=$(aws ecr batch-get-image --repository-name "$REPO" --image-ids imageTag=${{ github.sha }} \
+                         --query 'images[0].imageManifestMediaType' --output text)
+          aws ecr put-image --repository-name "$REPO" --image-tag latest \
+            --image-manifest "$MANIFEST" --image-manifest-media-type "$MEDIA_TYPE" --output text >/dev/null
+          echo ":latest -> $SHA_DIGEST"
 
   # PHASE 2 — release. NOT cancellable, deliberately. Every step below either
   # writes to the database or moves the running service, and each one has a
