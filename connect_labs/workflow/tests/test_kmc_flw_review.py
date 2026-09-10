@@ -29,15 +29,68 @@ def test_the_template_is_registered_as_a_multi_opp_drill_view():
 
 def test_the_render_reads_the_programme_report_and_grades_nothing():
     """One path. The worker's figures are the programme report's own rows, read
-    through the preview endpoint the programme page reads -- never a second
-    evaluation, never a JavaScript grader."""
+    through the preview endpoint the programme page reads; each case's
+    contributions are the same registry at the `case` scope, filtered to the
+    worker, as of the report -- read from the semantic endpoint. Never a JavaScript
+    grader."""
     src = RENDER.read_text()
     assert "/snapshot/preview/" in src
     assert "source_run" in src
     assert "/runs/history/" in src, "opened on its own, it reads the newest saved report"
-    for gone in ("function cEntry(", "function bandOf(", "/semantic/", "_suppressed"):
+    assert "scopes=case&flw=" in src, "case contributions come from the case scope for this worker"
+    assert "&as_of=" in src, "as of the report's date, not today"
+    for gone in (
+        "function cEntry(",
+        "function bandOf(",
+        "function nBandOf(",
+        "_suppressed",
+        "series=N&scopes=programme",
+    ):
         assert gone not in src, f"the worker review must not carry {gone!r}"
     assert "P.byFLW" in src and "P.series" in src
+
+
+def test_the_scorecard_shares_the_programme_reports_header_and_the_indicators_table_is_gone():
+    """Same fifteen columns, same groups, same order as the programme page, with
+    the worker's row under the programme, organisation and opportunity rows; the
+    C-series table that used to sit beside the cases is gone (too cluttered)."""
+    src = RENDER.read_text()
+    assert "SCORECARD_GROUPS" in src and "function ScorecardHead" in src
+    assert ">Indicators<" not in src and "Indicators\n" not in src.split("Scorecard")[0]
+    block = src[src.index("var SCORECARD = [") : src.index("];", src.index("var SCORECARD = ["))]
+    ids = re.findall(r"id: '(N\d\d)'", block)
+    assert ids == [
+        "N01",
+        "N02",
+        "N03",
+        "N05",
+        "N06",
+        "N07",
+        "N08",
+        "N09",
+        "N09",
+        "N10",
+        "N11",
+        "N12",
+        "N13",
+        "N14",
+        "N15",
+    ]
+    # case-level labels drop the aggregate words
+    assert "caseLabel: 'GA'" in block and "caseLabel: 'BW'" in block
+    assert "scorecardRow('Programme'" in src
+
+
+def test_each_case_row_carries_its_contribution_and_opens_inline():
+    """A rate becomes ✓/✗ (in the denominator and whether it counted), a median
+    the case's own value, the growth class a dot in its column; a clicked case opens
+    directly under its row."""
+    src = RENDER.read_text()
+    assert "function contrib(" in src
+    assert "_denominator'" in src, "a contribution reads the measure's denominator at case scope"
+    assert "forCases={true}" in src
+    assert "'|detail'" in src, "the case view renders as a row under the case"
+    assert "<CaseDetail c={c} />" in src
 
 
 def test_the_render_stays_in_the_es5_dialect_the_runner_transpiles():
