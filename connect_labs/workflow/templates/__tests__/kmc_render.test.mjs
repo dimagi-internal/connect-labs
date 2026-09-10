@@ -25,6 +25,19 @@ const RENDERS = ['kmc_programme_metrics_render.js', 'kmc_flw_review_render.js'];
 
 for (const file of RENDERS) {
   const src = readFileSync(join(HERE, '..', file), 'utf8');
+  if (file === 'kmc_programme_metrics_render.js') {
+    test(`${file}: the all-indicators panel keeps its own open state`, () => {
+      // AllIndicators is a function defined inside WorkflowUI, so every state
+      // change gives it a new identity and React remounts its <details>, wiping
+      // the element's native `open`. Seen live on run 5623: the panel shut
+      // itself the instant a row was clicked. The state must live in React and
+      // be handed back to the element on every render.
+      assert.match(src, /var allOpenState = React\.useState\(false\);/);
+      const details = src.slice(src.indexOf('function AllIndicators()'));
+      assert.match(details, /<details[^>]*\sopen=\{allOpen\}/);
+      assert.match(details, /setAllOpen\(isOpen\)/);
+    });
+  }
   const ast = () =>
     parseSync(src, {
       filename: file.replace(/\.js$/, '.jsx'),
