@@ -72,7 +72,7 @@ You can create new workflows from ready-made templates rather than building them
 
 ### Choosing a template
 
-Clicking **Create Workflow** opens the **Choose a template** modal. Templates are presented one per row, grouped by what they produce:
+Clicking **Create Workflow** opens the **Choose a template** modal. The modal is designed to fit a standard desktop screen without scrolling. Templates are presented one per row, grouped by what they produce:
 
 | Group | Examples |
 |---|---|
@@ -83,7 +83,10 @@ Clicking **Create Workflow** opens the **Choose a template** modal. Templates ar
 | Beneficiary tracking | Beneficiary-level dashboards |
 | Outreach & demos | Outreach and demonstration reports |
 
-A **filter box** at the top of the modal lets you type to narrow the list. Each row shows a short description; hovering over or tapping the row expands the full description. If a template is always created together with another template, both rows say so, so you know what you will get before you confirm.
+A **filter box** at the top of the modal lets you type to narrow the list. Each row shows the template's full name — names are never cut short — alongside a coloured icon and a short description on the line below. If a template is always created together with another template, both rows say so, so you know what you will get before you confirm.
+
+!!! note "Template icons and names"
+    Every template displays a coloured icon. Previously, some icons appeared in the wrong colour or did not appear at all (for example, Verified Monitoring showed no icon). This has been corrected — all icons now draw in their intended colour, and every template has one.
 
 ### Templates that create linked workflows together
 
@@ -242,6 +245,4 @@ Click any row to see that worker's detailed record — individual visit data, ti
 
 Dashboards in Connect Labs are built by program authors and can include charts, bar graphs, and highlighted figures — for example, a consent-rate percentage shown in red when it falls below a target threshold, or a bar chart tracking weekly visit counts over twelve weeks.
 
-Previously, some dashboard elements could appear invisible or unstyled with no error message: a warning figure might show in near-black instead of red, or a bar chart might render at zero height even though all the underlying data was present and the page otherwise loaded normally. These problems were silent — nothing on screen indicated that anything was wrong.
-
-This has been fixed. All colours and sizing options available to dashboard authors now render correctly. If you previously noticed a chart, figure, or panel that looked blank, collapsed, or oddly coloured, it should now display as intended. If you still see a dashboard element that appears missing or unstyled, contact whoever manages your program's dashboards so they can
+Previously, some dashboard elements could appear invisible or unstyled with no error message: a warning figure might show in near-black instead of red, or a bar chart might render at zero height even though all the underlying data was present and the page otherwise loaded normally
