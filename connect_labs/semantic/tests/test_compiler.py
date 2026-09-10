@@ -308,8 +308,10 @@ def test_a_seed_reading_is_declared_as_data_and_never_pairs_with_a_visit(props_d
     seq = sql[sql.index("weight_seq AS") : sql.index("weight_agg AS")]
     assert "PARTITION BY wd.baby_id, wd.is_seed ORDER BY wd.day) AS prev_w" in seq
     assert "PARTITION BY wd.baby_id, wd.is_seed ORDER BY wd.day) AS prev_day" in seq
-    # the window anchor includes the seed; the C-series expressions exclude it
-    assert "MIN(wd.day) OVER (PARTITION BY wd.baby_id))::int AS series_day" in seq
+    # the window anchors on the first MEASURED weighing -- the spec's "first 21
+    # days of the VISIT weight series" -- not on the seed; the C-series
+    # expressions exclude the seed too
+    assert "MIN(wd.day) FILTER (WHERE NOT wd.is_seed) OVER (PARTITION BY wd.baby_id))::int AS series_day" in seq
     agg = sql[sql.index("weight_agg AS") : sql.index("visit_agg AS")]
     assert "COUNT(*) FILTER (WHERE NOT is_seed) AS n_weight_days" in agg
     assert "COUNT(*) AS n_measured_days" in agg
