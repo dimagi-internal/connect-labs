@@ -1,6 +1,7 @@
-"""Tests for the §5 execution-gap indicators and §6 cluster-aware detection —
-the core logic the design brief specifically wanted real pytest coverage for
-instead of manual live-browser checks."""
+"""Tests for the tiered execution-gap indicators and the optional cluster-aware
+filter (see core/indicators.py's module docstring for the design) — the core
+logic the design brief specifically wanted real pytest coverage for instead of
+manual live-browser checks."""
 
 from __future__ import annotations
 
@@ -32,8 +33,17 @@ def _wa(wa_id, **overrides):
     return base
 
 
+def _no_filter(**overrides):
+    """A global_config with the cluster-aware filter off, so evaluate_run
+    tests can isolate the unconditional per-WA floor without also needing a
+    corroborating neighbor/FLW."""
+    cfg = {"cluster_aware_filter_enabled": False}
+    cfg.update(overrides)
+    return cfg
+
+
 # ---------------------------------------------------------------------------
-# wa_rate
+# wa_rate / wa_numerator_denominator
 # ---------------------------------------------------------------------------
 
 
@@ -62,11 +72,16 @@ class TestWaRateEvcShortfall:
         wa = _wa("wa-1", status=status, approved_hsd_count=5, expected_visit_count=10)
         assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {}) == pytest.approx(0.5)
 
+    def test_gated_by_min_evc_floor(self):
+        wa = _wa("wa-1", expected_visit_count=3, approved_hsd_count=0)
+        assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {"min_evc_floor": 5}) is None
+
+    def test_not_gated_when_expected_meets_floor(self):
+        wa = _wa("wa-1", expected_visit_count=5, approved_hsd_count=0)
+        assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {"min_evc_floor": 5}) is not None
+
 
 class TestWaNumeratorDenominator:
-    """`wa_rate` is now derived from this — same gating, but the raw pair is
-    what the candidate table shows next to each triggered indicator."""
-
     def test_matches_wa_rate_for_evc_shortfall(self):
         wa = _wa("wa-1", approved_hsd_count=5, expected_visit_count=10)
         assert ind.wa_numerator_denominator(wa, ind.EVC_SHORTFALL, {}) == (5, 10)
@@ -75,32 +90,13 @@ class TestWaNumeratorDenominator:
         wa = _wa("wa-1", status="NOT_VISITED")
         assert ind.wa_numerator_denominator(wa, ind.EVC_SHORTFALL, {}) is None
 
-    def test_ncf_pair_is_ncf_plus_inaccessible_over_total_visits(self):
-        wa = _wa("wa-1", approved_hsd_count=8, approved_ncf_count=1, approved_inaccessible_count=1)
-        assert ind.wa_numerator_denominator(wa, ind.NCF_INACCESSIBLE, {}) == (2, 10)
-
     def test_dq_pair_is_given_over_hsd_count(self):
         wa = _wa("wa-1", approved_hsd_count=8, deworming_given=3)
         assert ind.wa_numerator_denominator(wa, ind.DEWORMING, {}) == (3, 8)
 
-
-class TestWaRateNcfInaccessible:
-    def test_basic_rate(self):
-        wa = _wa("wa-1", approved_hsd_count=7, approved_ncf_count=2, approved_inaccessible_count=1)
-        # (2+1) / (7+2+1) = 0.3
-        assert ind.wa_rate(wa, ind.NCF_INACCESSIBLE, {}) == pytest.approx(0.3)
-
-    def test_gated_by_min_building_count(self):
-        wa = _wa("wa-1", building_count=2)
-        assert ind.wa_rate(wa, ind.NCF_INACCESSIBLE, {"min_building_count": 5}) is None
-
-    def test_not_gated_when_building_count_meets_floor(self):
-        wa = _wa("wa-1", building_count=5)
-        assert ind.wa_rate(wa, ind.NCF_INACCESSIBLE, {"min_building_count": 5}) is not None
-
-    def test_zero_total_visits_returns_none(self):
-        wa = _wa("wa-1", approved_hsd_count=0, approved_ncf_count=0, approved_inaccessible_count=0)
-        assert ind.wa_rate(wa, ind.NCF_INACCESSIBLE, {}) is None
+    def test_ncf_raises_since_it_has_no_rate(self):
+        with pytest.raises(ValueError):
+            ind.wa_numerator_denominator(_wa("wa-1"), ind.NCF_INACCESSIBLE, {})
 
 
 class TestWaRateDataQuality:
@@ -136,14 +132,9 @@ class TestIsFlagged:
         assert ind.is_flagged(0.5, 0.5, ind.EVC_SHORTFALL) is False
         assert ind.is_flagged(0.7, 0.5, ind.EVC_SHORTFALL) is False
 
-    def test_above_direction(self):
-        assert ind.is_flagged(0.7, 0.5, ind.NCF_INACCESSIBLE) is True
-        assert ind.is_flagged(0.5, 0.5, ind.NCF_INACCESSIBLE) is False
-        assert ind.is_flagged(0.3, 0.5, ind.NCF_INACCESSIBLE) is False
-
 
 # ---------------------------------------------------------------------------
-# Spatial neighbor graph (§6a)
+# Spatial neighbor graph
 # ---------------------------------------------------------------------------
 
 
@@ -152,7 +143,6 @@ class TestHaversineDistance:
         assert ind.haversine_distance_m(12.0, 8.0, 12.0, 8.0) == 0.0
 
     def test_known_short_distance_is_reasonable(self):
-        # ~0.001 degrees latitude is roughly 111m.
         d = ind.haversine_distance_m(12.0, 8.0, 12.001, 8.0)
         assert 100 < d < 120
 
@@ -207,106 +197,27 @@ class TestNcfNeighborAffectedCount:
         assert count == 0
 
 
-class TestNeighborhoodRate:
-    def test_averages_qualifying_neighbors(self):
+class TestFlaggedNeighborCount:
+    """The unified cluster-aware corroboration signal for EVC/deworming/MUAC/
+    vaccination — a raw count of neighbors themselves floor-flagged on the
+    same indicator, not an averaged rate (matches NCF's existing mechanism)."""
+
+    def test_counts_only_flagged_neighbors(self):
         by_id = {
-            "b": _wa("b", approved_hsd_count=5, expected_visit_count=10),  # 0.5
-            "c": _wa("c", approved_hsd_count=3, expected_visit_count=10),  # 0.3
+            "b": _wa("b", approved_hsd_count=1, expected_visit_count=10),  # 0.1, flagged
+            "c": _wa("c", approved_hsd_count=9, expected_visit_count=10),  # 0.9, not flagged
         }
-        rate = ind.neighborhood_rate(_wa("a"), ["b", "c"], by_id, ind.EVC_SHORTFALL, {}, min_neighbors=2)
-        assert rate == pytest.approx(0.4)
+        count = ind.flagged_neighbor_count(_wa("a"), ["b", "c"], by_id, ind.EVC_SHORTFALL, 0.5, {})
+        assert count == 1
 
-    def test_too_few_qualifying_neighbors_returns_none(self):
-        by_id = {"b": _wa("b", approved_hsd_count=5, expected_visit_count=10)}
-        rate = ind.neighborhood_rate(_wa("a"), ["b"], by_id, ind.EVC_SHORTFALL, {}, min_neighbors=3)
-        assert rate is None
+    def test_missing_neighbor_id_ignored(self):
+        count = ind.flagged_neighbor_count(_wa("a"), ["ghost"], {}, ind.EVC_SHORTFALL, 0.5, {})
+        assert count == 0
 
-    def test_neighbors_with_ungated_rate_excluded_from_average_and_count(self):
-        by_id = {
-            "b": _wa("b", building_count=0),  # gated out for NCF (min_building_count default 1)
-            "c": _wa(
-                "c", building_count=10, approved_hsd_count=7, approved_ncf_count=2, approved_inaccessible_count=1
-            ),
-        }
-        rate = ind.neighborhood_rate(_wa("a"), ["b", "c"], by_id, ind.NCF_INACCESSIBLE, {}, min_neighbors=1)
-        assert rate == pytest.approx(0.3)
-        # with min_neighbors=2, only "c" qualifies -> not enough
-        rate2 = ind.neighborhood_rate(_wa("a"), ["b", "c"], by_id, ind.NCF_INACCESSIBLE, {}, min_neighbors=2)
-        assert rate2 is None
-
-
-# ---------------------------------------------------------------------------
-# Within-FLW clustering (§6b)
-# ---------------------------------------------------------------------------
-
-
-class TestFlwPortfolioRate:
-    def test_averages_other_was_excluding_self(self):
-        flw_was = [
-            _wa("a", approved_hsd_count=10, deworming_given=1),  # self, excluded
-            _wa("b", approved_hsd_count=10, deworming_given=2),  # 0.2
-            _wa("c", approved_hsd_count=10, deworming_given=4),  # 0.4
-        ]
-        rate = ind.flw_portfolio_rate(flw_was[0], flw_was, ind.DEWORMING, {}, min_portfolio_size=2)
-        assert rate == pytest.approx(0.3)
-
-    def test_too_few_others_returns_none(self):
-        flw_was = [_wa("a"), _wa("b", approved_hsd_count=10, deworming_given=2)]
-        rate = ind.flw_portfolio_rate(flw_was[0], flw_was, ind.DEWORMING, {}, min_portfolio_size=3)
-        assert rate is None
-
-
-# ---------------------------------------------------------------------------
-# Whole-FLW average (§6, three-way view)
-# ---------------------------------------------------------------------------
-
-
-class TestFlwAverageRate:
-    def test_evc_blends_concluded_only_by_default(self):
-        flw_was = [
-            _wa("a", status="VISITED", approved_hsd_count=5, expected_visit_count=10),
-            _wa("b", status="NOT_VISITED", approved_hsd_count=0, expected_visit_count=10),
-        ]
-        # only "a" counts: 5/10 = 0.5
-        assert ind.flw_average_rate(flw_was, ind.EVC_SHORTFALL, {}) == pytest.approx(0.5)
-
-    def test_evc_override_includes_not_yet_visited(self):
-        flw_was = [
-            _wa("a", status="VISITED", approved_hsd_count=5, expected_visit_count=10),
-            _wa("b", status="NOT_VISITED", approved_hsd_count=0, expected_visit_count=10),
-        ]
-        rate = ind.flw_average_rate(flw_was, ind.EVC_SHORTFALL, {"include_not_yet_visited": True})
-        assert rate == pytest.approx(5 / 20)
-
-    def test_ncf_is_share_of_affected_work_areas_not_share_of_visits(self):
-        # A work area logs at most ONE NCF-or-Inaccessible visit ever (see
-        # core/indicators.py's module docstring) -- flw_average's NCF/
-        # inaccessible rate is "how many of this FLW's work areas were ever
-        # affected," not a visit-mix ratio blended across all their visits.
-        flw_was = [
-            _wa("a", building_count=10, approved_hsd_count=7, approved_ncf_count=1, approved_inaccessible_count=0),
-            _wa("b", building_count=10, approved_hsd_count=9, approved_ncf_count=0, approved_inaccessible_count=0),
-            # Excluded by min_building_count -- doesn't count toward either side.
-            _wa("c", building_count=0, approved_hsd_count=0, approved_ncf_count=5, approved_inaccessible_count=0),
-        ]
-        rate = ind.flw_average_rate(flw_was, ind.NCF_INACCESSIBLE, {"min_building_count": 1})
-        assert rate == pytest.approx(0.5)  # 1 of 2 eligible WAs ("a") affected
-
-    def test_ncf_returns_none_when_no_wa_is_eligible(self):
-        flw_was = [_wa("a", building_count=0, approved_ncf_count=1)]
-        assert ind.flw_average_rate(flw_was, ind.NCF_INACCESSIBLE, {"min_building_count": 1}) is None
-
-    def test_dq_excludes_wa_below_min_hsd_floor(self):
-        flw_was = [
-            _wa("a", approved_hsd_count=10, muac_given=4),
-            _wa("b", approved_hsd_count=1, muac_given=0),
-        ]
-        rate = ind.flw_average_rate(flw_was, ind.MUAC, {"min_hsd_visits_floor": 5})
-        assert rate == pytest.approx(0.4)  # only "a" counted
-
-    def test_zero_denominator_returns_none(self):
-        flw_was = [_wa("a", status="NOT_VISITED", expected_visit_count=10)]
-        assert ind.flw_average_rate(flw_was, ind.EVC_SHORTFALL, {}) is None
+    def test_neighbor_gated_out_does_not_count(self):
+        by_id = {"b": _wa("b", status="NOT_VISITED")}
+        count = ind.flagged_neighbor_count(_wa("a"), ["b"], by_id, ind.EVC_SHORTFALL, 0.5, {})
+        assert count == 0
 
 
 # ---------------------------------------------------------------------------
@@ -314,165 +225,154 @@ class TestFlwAverageRate:
 # ---------------------------------------------------------------------------
 
 
-class TestEvaluateRunNcfClusterAware:
-    """Cluster-aware NCF/inaccessible: own-check is a boolean (presence, not
-    a ratio) AND'd with a raw affected-neighbor COUNT vs. a separate setting
-    (min_affected_neighbors_ncf) -- not the indicator's own rate threshold."""
+class TestEvaluateRunFloor:
+    """ "This WA only" is now an unconditional floor — every candidate here
+    uses the cluster-aware filter turned OFF to isolate that floor."""
 
-    def _ncf_config(self, threshold=0.3):
-        return {
-            ind.NCF_INACCESSIBLE: {
-                "enabled": True,
-                "threshold": threshold,
-                "granularity": ind.GRANULARITY_CLUSTER_AWARE,
-            }
-        }
-
-    def test_flags_when_own_affected_and_enough_neighbors_affected(self):
-        was = [
-            _wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),
-            _wa("b", lat=12.0005, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),  # ~55m away
-        ]
-        candidates = ind.evaluate_run(was, self._ncf_config(), {"min_affected_neighbors_ncf": 1})
-        assert {c["wa_id"] for c in candidates} == {"a", "b"}
-
-    def test_not_flagged_when_own_wa_unaffected_even_if_neighbors_are(self):
-        was = [
-            _wa("a", lat=12.0, lon=8.0, approved_ncf_count=0, approved_inaccessible_count=0),
-            _wa("b", lat=12.0005, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),
-        ]
-        candidates = ind.evaluate_run(was, self._ncf_config(), {"min_affected_neighbors_ncf": 1})
-        assert {c["wa_id"] for c in candidates} == set()
-
-    def test_not_flagged_when_not_enough_affected_neighbors(self):
-        was = [
-            _wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),
-            _wa("b", lat=12.0005, lon=8.0, approved_ncf_count=0, approved_inaccessible_count=0),
-        ]
-        candidates = ind.evaluate_run(was, self._ncf_config(), {"min_affected_neighbors_ncf": 1})
-        assert {c["wa_id"] for c in candidates} == set()
-
-    def test_detail_reports_own_affected_and_neighbor_count(self):
-        was = [
-            _wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),
-            _wa("b", lat=12.0005, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),
-        ]
-        candidates = ind.evaluate_run(was, self._ncf_config(), {"min_affected_neighbors_ncf": 1})
-        detail = next(c for c in candidates if c["wa_id"] == "a")["detail"][ind.NCF_INACCESSIBLE]
-        assert detail["own_affected"] is True
-        assert detail["affected_neighbor_count"] == 1
-        assert detail["is_isolated_outlier"] is False
-
-    def test_wa_only_and_flw_average_still_use_the_original_ratio(self):
-        # Sanity check that this special-case is scoped to cluster_aware
-        # only -- wa_only keeps the original visit-mix ratio unchanged.
-        was = [_wa("a", approved_hsd_count=7, approved_ncf_count=2, approved_inaccessible_count=1)]
-        candidates = ind.evaluate_run(
-            was,
-            {
-                ind.NCF_INACCESSIBLE: {
-                    "enabled": True,
-                    "threshold": 0.2,
-                    "granularity": ind.GRANULARITY_WA_ONLY,
-                }
-            },
-        )
-        assert candidates[0]["detail"][ind.NCF_INACCESSIBLE]["rate"] == pytest.approx(0.3)
-
-
-class TestEvaluateRun:
     def test_disabled_indicator_never_flags(self):
         was = [_wa("a", approved_hsd_count=0, expected_visit_count=10)]  # would fail EVC shortfall
-        candidates = ind.evaluate_run(was, {ind.EVC_SHORTFALL: {"enabled": False, "threshold": 0.5}})
+        candidates = ind.evaluate_run(was, {ind.EVC_SHORTFALL: {"enabled": False, "threshold": 0.5}}, _no_filter())
         assert candidates == []
 
-    def test_wa_only_granularity_flags_on_own_rate_alone(self):
+    def test_floor_flags_on_own_rate_alone(self):
         was = [_wa("a", approved_hsd_count=1, expected_visit_count=10)]  # 0.1, below 0.5
-        candidates = ind.evaluate_run(
-            was, {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_WA_ONLY}}
-        )
+        candidates = ind.evaluate_run(was, {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}}, _no_filter())
         assert len(candidates) == 1
         assert candidates[0]["triggered_indicators"] == [ind.EVC_SHORTFALL]
         assert candidates[0]["severity_count"] == 1
 
-    def test_detail_carries_own_numerator_denominator_regardless_of_granularity(self):
-        # The candidate table's bracketed "(rate; num/denom)" display needs
-        # this WA's own raw pair even under cluster-aware/flw-average, where
-        # what gets COMPARED against differs but the WA's own counts don't.
-        was = [
-            _wa("a", approved_hsd_count=1, expected_visit_count=10),
-            _wa("b", approved_hsd_count=1, expected_visit_count=10, lat=12.001, lon=8.001),
-        ]
-        for granularity in (ind.GRANULARITY_WA_ONLY, ind.GRANULARITY_CLUSTER_AWARE, ind.GRANULARITY_FLW_AVERAGE):
-            candidates = ind.evaluate_run(
-                was,
-                {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": granularity}},
-                {"min_neighbor_count": 1},
-            )
-            assert candidates, granularity
-            detail = candidates[0]["detail"][ind.EVC_SHORTFALL]
-            assert detail["own_numerator"] == 1, granularity
-            assert detail["own_denominator"] == 10, granularity
+    def test_passing_wa_is_excluded_entirely(self):
+        was = [_wa("a", approved_hsd_count=9, expected_visit_count=10)]  # 0.9, not below 0.5
+        candidates = ind.evaluate_run(was, {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}}, _no_filter())
+        assert candidates == []
+
+    def test_detail_carries_own_numerator_denominator(self):
+        was = [_wa("a", approved_hsd_count=1, expected_visit_count=10)]
+        candidates = ind.evaluate_run(was, {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}}, _no_filter())
+        detail = candidates[0]["detail"][ind.EVC_SHORTFALL]
+        assert detail["own_numerator"] == 1
+        assert detail["own_denominator"] == 10
 
     def test_candidate_carries_building_count_and_source_for_phase_3(self):
-        # Phase 3's carry_forward_features needs building_count/
-        # expected_visit_count/source on every candidate without a second
-        # lookup — see evaluate_run's docstring.
         was = [_wa("a", approved_hsd_count=1, expected_visit_count=10, building_count=7, boundary={"type": "Point"})]
-        candidates = ind.evaluate_run(
-            was, {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_WA_ONLY}}
-        )
+        candidates = ind.evaluate_run(was, {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}}, _no_filter())
         assert len(candidates) == 1
         assert candidates[0]["building_count"] == 7
         assert candidates[0]["expected_visit_count"] == 10
         assert candidates[0]["source"] == ind.SOURCE_EXISTING_WA
         assert candidates[0]["boundary"] == {"type": "Point"}
 
-    def test_passing_wa_is_excluded_entirely(self):
-        was = [_wa("a", approved_hsd_count=9, expected_visit_count=10)]  # 0.9, not below 0.5
-        candidates = ind.evaluate_run(
-            was, {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_WA_ONLY}}
-        )
-        assert candidates == []
-
     def test_union_or_across_multiple_indicators(self):
-        # Fails EVC shortfall AND has a low deworming rate -> both trigger.
-        was = [
-            _wa(
-                "a",
-                approved_hsd_count=1,
-                expected_visit_count=10,  # EVC 0.1, fails
-                deworming_given=0,  # deworming 0/1, fails
-            )
-        ]
+        # approved_hsd_count=5 clears the default min_hsd_visits_floor (5) so
+        # deworming is actually computed, not gated out.
+        was = [_wa("a", approved_hsd_count=5, expected_visit_count=20, deworming_given=0)]
         candidates = ind.evaluate_run(
             was,
             {
-                ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_WA_ONLY},
-                ind.DEWORMING: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_WA_ONLY},
+                ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5},
+                ind.DEWORMING: {"enabled": True, "threshold": 0.5},
             },
+            _no_filter(),
         )
         assert len(candidates) == 1
         assert set(candidates[0]["triggered_indicators"]) == {ind.EVC_SHORTFALL, ind.DEWORMING}
         assert candidates[0]["severity_count"] == 2
 
-    def test_cluster_aware_isolated_outlier_is_not_flagged(self):
-        # "a" has a bad rate, but its neighbors are all fine -> not a real cluster.
-        was = [
-            _wa("a", lat=12.0, lon=8.0, approved_hsd_count=1, expected_visit_count=10),  # 0.1
-            _wa("b", lat=12.0005, lon=8.0, approved_hsd_count=9, expected_visit_count=10),  # 0.9
-            _wa("c", lat=12.001, lon=8.0, approved_hsd_count=9, expected_visit_count=10),  # 0.9
-            _wa("d", lat=12.0015, lon=8.0, approved_hsd_count=9, expected_visit_count=10),  # 0.9
-        ]
+    def test_ncf_floor_is_presence_not_a_ratio(self):
+        was = [_wa("a", approved_ncf_count=1, approved_inaccessible_count=0)]
+        candidates = ind.evaluate_run(was, {ind.NCF_INACCESSIBLE: {"enabled": True}}, _no_filter())
+        assert len(candidates) == 1
+        assert candidates[0]["triggered_indicators"] == [ind.NCF_INACCESSIBLE]
+
+    def test_ncf_not_flagged_when_no_ncf_or_inaccessible_visit(self):
+        was = [_wa("a", approved_ncf_count=0, approved_inaccessible_count=0)]
+        candidates = ind.evaluate_run(was, {ind.NCF_INACCESSIBLE: {"enabled": True}}, _no_filter())
+        assert candidates == []
+
+    def test_ncf_detail_names_which_signal_fired(self):
+        was = [_wa("a", approved_ncf_count=1, approved_inaccessible_count=0)]
+        candidates = ind.evaluate_run(was, {ind.NCF_INACCESSIBLE: {"enabled": True}}, _no_filter())
+        detail = candidates[0]["detail"][ind.NCF_INACCESSIBLE]
+        assert detail["own_ncf_form"] is True
+        assert detail["own_inaccessible_form"] is False
+
+    def test_ncf_corroboration_is_informational_only_regardless_of_filter_state(self):
+        # NCF's own neighbor distance/count settings still compute an
+        # informational "is this part of a cluster" signal even though NCF's
+        # candidacy and filter-survival never depend on it.
+        was = [_wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0)]
+        candidates = ind.evaluate_run(
+            was, {ind.NCF_INACCESSIBLE: {"enabled": True}}, _no_filter(min_affected_neighbors_ncf=1)
+        )
+        detail = candidates[0]["detail"][ind.NCF_INACCESSIBLE]
+        assert detail["affected_neighbor_count"] == 0
+        assert detail["corroborated"] is False
+        assert len(candidates) == 1  # still a candidate -- never gated on this
+
+    def test_evc_corroboration_is_informational_when_filter_disabled(self):
+        # Filter is off, so this isolated WA still survives -- but its
+        # corroboration data is still computed for display.
+        was = [_wa("a", lat=12.0, lon=8.0, approved_hsd_count=1, expected_visit_count=10)]
         candidates = ind.evaluate_run(
             was,
-            {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_CLUSTER_AWARE}},
-            {"neighbor_distance_m": 250, "min_neighbor_count": 3},
+            {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}},
+            _no_filter(evc_min_neighbor_count=3),
+        )
+        detail = candidates[0]["detail"][ind.EVC_SHORTFALL]
+        assert detail["flagged_neighbor_count"] == 0
+        assert detail["corroborated"] is False
+        assert len(candidates) == 1
+
+
+class TestEvaluateRunTier:
+    def test_evc_only_is_tier_1(self):
+        was = [_wa("a", approved_hsd_count=1, expected_visit_count=10)]
+        candidates = ind.evaluate_run(was, {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}}, _no_filter())
+        assert candidates[0]["tier"] == 1
+
+    def test_ncf_only_is_tier_1(self):
+        was = [_wa("a", approved_ncf_count=1, approved_inaccessible_count=0)]
+        candidates = ind.evaluate_run(was, {ind.NCF_INACCESSIBLE: {"enabled": True}}, _no_filter())
+        assert candidates[0]["tier"] == 1
+
+    def test_dq_only_is_tier_2(self):
+        was = [_wa("a", approved_hsd_count=10, deworming_given=0)]
+        candidates = ind.evaluate_run(was, {ind.DEWORMING: {"enabled": True, "threshold": 0.5}}, _no_filter())
+        assert candidates[0]["tier"] == 2
+
+    def test_evc_plus_dq_is_still_tier_1(self):
+        was = [_wa("a", approved_hsd_count=1, expected_visit_count=10, deworming_given=0)]
+        candidates = ind.evaluate_run(
+            was,
+            {
+                ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5},
+                ind.DEWORMING: {"enabled": True, "threshold": 0.5},
+            },
+            _no_filter(),
+        )
+        assert candidates[0]["tier"] == 1
+
+
+class TestEvaluateRunClusterAwareFilter:
+    """The optional post-hoc filter — only affects whether a floor-flagged WA
+    SURVIVES, never prunes triggered_indicators."""
+
+    def test_isolated_outlier_is_dropped_when_filter_enabled(self):
+        # "a" has a bad rate, but no neighbors at all to corroborate it.
+        was = [_wa("a", lat=12.0, lon=8.0, approved_hsd_count=1, expected_visit_count=10)]
+        candidates = ind.evaluate_run(
+            was,
+            {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}},
+            {"cluster_aware_filter_enabled": True, "evc_neighbor_distance_m": 250, "evc_min_neighbor_count": 1},
         )
         assert candidates == []
 
-    def test_cluster_aware_real_cluster_is_flagged(self):
-        # "a" and its neighbors are ALL bad -> a genuine cluster.
+    def test_isolated_outlier_survives_when_filter_disabled(self):
+        was = [_wa("a", lat=12.0, lon=8.0, approved_hsd_count=1, expected_visit_count=10)]
+        candidates = ind.evaluate_run(was, {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}}, _no_filter())
+        assert len(candidates) == 1
+
+    def test_real_cluster_survives_the_filter(self):
         was = [
             _wa("a", lat=12.0, lon=8.0, approved_hsd_count=1, expected_visit_count=10),
             _wa("b", lat=12.0005, lon=8.0, approved_hsd_count=1, expected_visit_count=10),
@@ -481,51 +381,87 @@ class TestEvaluateRun:
         ]
         candidates = ind.evaluate_run(
             was,
-            {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_CLUSTER_AWARE}},
-            {"neighbor_distance_m": 250, "min_neighbor_count": 3},
+            {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}},
+            {"cluster_aware_filter_enabled": True, "evc_neighbor_distance_m": 250, "evc_min_neighbor_count": 3},
         )
         assert len(candidates) == 4
-        detail = candidates[0]["detail"][ind.EVC_SHORTFALL]
-        assert detail["is_isolated_outlier"] is False
+        assert candidates[0]["detail"][ind.EVC_SHORTFALL]["corroborated"] is True
 
-    def test_cluster_aware_too_few_neighbors_does_not_flag(self):
-        # "a" is bad but has only 1 neighbor (min_neighbor_count=3) -> can't trust the neighborhood.
+    def test_too_few_flagged_neighbors_is_dropped(self):
         was = [
             _wa("a", lat=12.0, lon=8.0, approved_hsd_count=1, expected_visit_count=10),
             _wa("b", lat=12.0005, lon=8.0, approved_hsd_count=1, expected_visit_count=10),
         ]
         candidates = ind.evaluate_run(
             was,
-            {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_CLUSTER_AWARE}},
-            {"neighbor_distance_m": 250, "min_neighbor_count": 3},
+            {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}},
+            {"cluster_aware_filter_enabled": True, "evc_neighbor_distance_m": 250, "evc_min_neighbor_count": 3},
         )
         assert candidates == []
 
-    def test_flw_average_flags_whole_portfolio_uniformly(self):
-        was = [
-            _wa("a", flw_username="bad-flw", approved_hsd_count=1, expected_visit_count=10),
-            _wa("b", flw_username="bad-flw", approved_hsd_count=2, expected_visit_count=10),
-        ]
+    def test_ncf_is_exempt_from_the_filter(self):
+        # "a" is the only WA -- no neighbors at all -- but NCF should still
+        # survive since it's exempt from cluster-aware entirely.
+        was = [_wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0)]
         candidates = ind.evaluate_run(
-            was, {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_FLW_AVERAGE}}
+            was,
+            {ind.NCF_INACCESSIBLE: {"enabled": True}},
+            {"cluster_aware_filter_enabled": True},
         )
-        assert {c["wa_id"] for c in candidates} == {"a", "b"}
+        assert len(candidates) == 1
 
-    def test_dq_cluster_aware_uses_flw_portfolio_not_spatial_neighbors(self):
-        # Two WAs far apart (no spatial neighbors) but same FLW, both bad on deworming.
+    def test_wa_with_ncf_and_uncorroborated_evc_survives_via_ncf_exemption(self):
+        # A WA triggered on BOTH NCF (exempt) and an isolated/uncorroborated
+        # EVC shortfall -- NCF's exemption keeps the whole WA, and nothing
+        # gets pruned from triggered_indicators (confirmed product decision).
         was = [
-            _wa("a", lat=12.0, lon=8.0, flw_username="flw-x", approved_hsd_count=10, deworming_given=0),
-            _wa("b", lat=20.0, lon=20.0, flw_username="flw-x", approved_hsd_count=10, deworming_given=1),
-            _wa("c", lat=30.0, lon=30.0, flw_username="flw-x", approved_hsd_count=10, deworming_given=0),
+            _wa(
+                "a",
+                lat=12.0,
+                lon=8.0,
+                approved_hsd_count=0,
+                approved_ncf_count=1,
+                approved_inaccessible_count=0,
+                expected_visit_count=10,
+            )
         ]
         candidates = ind.evaluate_run(
             was,
-            {ind.DEWORMING: {"enabled": True, "threshold": 0.5, "granularity": ind.GRANULARITY_CLUSTER_AWARE}},
-            {"min_neighborhood_size": 2},
+            {
+                ind.NCF_INACCESSIBLE: {"enabled": True},
+                ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5},
+            },
+            {"cluster_aware_filter_enabled": True, "evc_neighbor_distance_m": 250, "evc_min_neighbor_count": 3},
         )
-        assert len(candidates) == 3
+        assert len(candidates) == 1
+        assert set(candidates[0]["triggered_indicators"]) == {ind.NCF_INACCESSIBLE, ind.EVC_SHORTFALL}
 
-    def test_unknown_granularity_raises(self):
-        was = [_wa("a")]
-        with pytest.raises(ValueError):
-            ind.evaluate_run(was, {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5, "granularity": "bogus"}})
+    def test_one_corroborating_indicator_keeps_the_whole_wa_unpruned(self):
+        # "a" triggers on EVC (corroborated by neighbors) AND deworming
+        # (isolated, no dq neighbors at all) -- since AT LEAST ONE indicator
+        # corroborates, the WA survives with BOTH indicators still listed,
+        # nothing pruned (the "Option 3" severity/pruning decision).
+        was = [
+            _wa("a", lat=12.0, lon=8.0, approved_hsd_count=5, expected_visit_count=20, deworming_given=0),
+            _wa("b", lat=12.0005, lon=8.0, approved_hsd_count=5, expected_visit_count=20, deworming_given=5),
+            _wa("c", lat=12.001, lon=8.0, approved_hsd_count=5, expected_visit_count=20, deworming_given=5),
+        ]
+        candidates = ind.evaluate_run(
+            was,
+            {
+                ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5},
+                ind.DEWORMING: {"enabled": True, "threshold": 0.5},
+            },
+            {
+                "cluster_aware_filter_enabled": True,
+                "evc_neighbor_distance_m": 250,
+                "evc_min_neighbor_count": 2,
+                "tier2_neighbor_distance_m": 250,
+                "tier2_min_neighbor_count": 2,
+            },
+        )
+        a = next(c for c in candidates if c["wa_id"] == "a")
+        assert set(a["triggered_indicators"]) == {ind.EVC_SHORTFALL, ind.DEWORMING}
+        assert a["severity_count"] == 2
+        assert a["detail"][ind.EVC_SHORTFALL]["corroborated"] is True
+        assert a["detail"][ind.DEWORMING]["corroborated"] is False
