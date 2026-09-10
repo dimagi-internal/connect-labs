@@ -239,3 +239,78 @@ def test_eligibility_on_a_missing_definition_is_not_found(user, monkeypatch):
         get_tool("workflow_history_eligibility").handler(user=user, definition_id=999, opportunity_id=10)
     assert e.value.code == "NOT_FOUND"
     fake_wda.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# An unreadable definition. `get_definition` is annotated `-> Record | None`,
+# but a 404 from the records API RAISES rather than returning None -- so the
+# `is None` branch above is dead on the likeliest failure of all: a mistyped id,
+# or the right id read under the wrong scope. Unhandled, the caller gets a
+# Python traceback ending in a raw upstream URL instead of a sentence saying
+# what to fix. Observed against production while probing definition 5626.
+# ---------------------------------------------------------------------------
+
+
+def _raising_wda(exc):
+    wda = MagicMock()
+    wda.get_definition.side_effect = exc
+    return wda
+
+
+@pytest.mark.django_db
+def test_eligibility_turns_an_unreadable_definition_into_not_found(user, monkeypatch):
+    from connect_labs.labs.integrations.connect.api_client import LabsAPIError
+
+    fake_wda = _raising_wda(LabsAPIError("Failed to fetch record 5626: Client error '404 Not Found'"))
+    _patch_wda(monkeypatch, fake_wda)
+
+    with pytest.raises(MCPToolError) as e:
+        get_tool("workflow_history_eligibility").handler(user=user, definition_id=5626, program_id=176)
+
+    assert e.value.code == "NOT_FOUND"
+    msg = str(e.value)
+    assert "5626" in msg
+    # The scope is the likelier culprit than the id, and the upstream read is an
+    # exact scope match rather than a hierarchical one -- so name it.
+    assert "program_id=176" in msg
+    fake_wda.close.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_rebuild_turns_an_unreadable_definition_into_not_found(user, monkeypatch):
+    from connect_labs.labs.integrations.connect.api_client import LabsAPIError
+    from connect_labs.workflow import history_rebuild
+
+    fake_wda = MagicMock()
+    _patch_wda(monkeypatch, fake_wda)
+
+    def boom(dao, did, **kw):
+        raise LabsAPIError("Failed to fetch record 5626: Client error '404 Not Found'")
+
+    monkeypatch.setattr(history_rebuild, "rebuild_history", boom)
+
+    with pytest.raises(MCPToolError) as e:
+        get_tool("workflow_rebuild_history").handler(user=user, definition_id=5626, opportunity_id=523)
+
+    assert e.value.code == "NOT_FOUND"
+    assert "opportunity_id=523" in str(e.value)
+    fake_wda.close.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_an_upstream_failure_that_is_not_a_404_is_not_reported_as_not_found(user, monkeypatch):
+    # A 500 or a timeout is transient and worth retrying; a 404 is not. Calling
+    # both NOT_FOUND would tell a caller to go fix an id that was never wrong.
+    from connect_labs.labs.integrations.connect.api_client import LabsAPIError
+    from connect_labs.workflow import history_rebuild
+
+    _patch_wda(monkeypatch, MagicMock())
+
+    def boom(dao, did, **kw):
+        raise LabsAPIError("Failed to fetch record 5626: Server error '502 Bad Gateway'")
+
+    monkeypatch.setattr(history_rebuild, "rebuild_history", boom)
+
+    with pytest.raises(MCPToolError) as e:
+        get_tool("workflow_rebuild_history").handler(user=user, definition_id=5626, opportunity_id=523)
+    assert e.value.code == "UPSTREAM_ERROR"
