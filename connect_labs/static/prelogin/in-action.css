@@ -342,6 +342,25 @@
   margin-right: 0;
   padding-right: 0;
 }
+/* An early ask for readers who leave before the closing CTA. Absolutely placed
+   at the right of the stats row and dropped onto the numbers line (past the
+   label row) so it reads as a peer of the figures rather than a separate block.
+   Kept compact; .btn qualifier so it outranks the base .cia .btn size. */
+.cia-facts {
+  position: relative;
+}
+.cia-facts-cta {
+  position: absolute;
+  right: 0;
+  top: 50px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.btn.cia-facts-btn {
+  padding: 9px 20px;
+  font-size: 13px;
+}
 .cia-facts dt {
   font-family: var(--mono);
   font-size: 10px;
@@ -390,6 +409,104 @@
 }
 
 /* &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; LOCATOR, INSET, DESKTOP MOCK &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552; */
+/* Coverage map: Nigeria overview + enlarged Borno LGA panel. */
+.cia-map {
+  position: relative;
+}
+.cia-map svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+  max-width: 460px;
+  margin: 0 auto;
+}
+.cia-map-ng {
+  fill: var(--paper-warm);
+  stroke: var(--rule);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+.cia-map-box {
+  fill: none;
+  stroke: #202a5e;
+  stroke-width: 2.4;
+}
+.cia-map-link {
+  stroke: #a9b3ec;
+  stroke-width: 1.8;
+  stroke-dasharray: 7 6;
+  opacity: 0.9;
+}
+.cia-lga {
+  fill: var(--paper-warm);
+  stroke: var(--rule);
+  stroke-width: 0.7;
+  stroke-linejoin: round;
+}
+.cia-lga--served {
+  fill: var(--indigo);
+  stroke: var(--indigo-deep);
+  stroke-width: 0.7;
+}
+.cia-lga--mmc {
+  fill: #6f79e6;
+  stroke: var(--indigo);
+  stroke-width: 0.7;
+}
+.cia-map-marker {
+  fill: var(--indigo);
+}
+.cia-map-outline {
+  fill: none;
+  stroke: #202a5e;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.cia-map-label {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  fill: #8b93ad;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.cia-map-label--borno {
+  font-size: 19px;
+  fill: #8b93ad;
+  stroke-width: 4px;
+}
+.cia-map-legend {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  font-size: 14px;
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+.cia-map-legend li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 7px 0;
+}
+.cia-map-legend i {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  flex: none;
+}
+.cia-sw-served {
+  background: var(--indigo);
+}
+.cia-sw-other {
+  background: var(--paper-warm);
+  border: 1px solid var(--rule);
+}
+
 .cia-locator {
   position: relative;
 }
@@ -1746,6 +1863,13 @@
   }
   .cia-facts {
     gap: 18px 24px;
+  }
+  /* Outrank the `.cia-facts div` grid rule above so the CTA drops to its own
+     full-width line on a phone instead of squeezing beside a stat. */
+  .cia-facts .cia-facts-cta {
+    position: static;
+    flex: 1 0 100%;
+    margin: 2px 0 0;
   }
   /* One column, with the thread redrawn as a rail down the left margin. */
   .cia-rows {
