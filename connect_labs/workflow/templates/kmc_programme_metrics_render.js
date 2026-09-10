@@ -842,6 +842,65 @@ function WorkflowUI({
   var historyState = React.useState(null);
   var history = historyState[0];
   var setHistory = historyState[1];
+
+  // The definitions behind the indicators -- plain English AND the resolved SQL
+  // chain -- from the same reader the MCP explain tool uses, fetched once when
+  // the panel is first opened. Nothing is computed here.
+  var explainState = React.useState({ status: 'idle', by: {}, error: null });
+  var explainData = explainState[0];
+  var setExplain = explainState[1];
+  function definitionId() {
+    var pathMatch = String(window.location.pathname || '').match(
+      /\/workflow\/(\d+)\//,
+    );
+    return (
+      (definition && (definition.id || definition.definition_id)) ||
+      (instance && instance.definition_id) ||
+      (pathMatch && Number(pathMatch[1])) ||
+      null
+    );
+  }
+  function explainUrl(fmt, download) {
+    var sp = scopeParams();
+    return (
+      '/labs/workflow/api/' +
+      definitionId() +
+      '/semantic/explain/' +
+      sp +
+      (sp ? '&' : '?') +
+      'format=' +
+      fmt +
+      (download ? '&download=1' : '')
+    );
+  }
+  function loadExplain() {
+    if (explainData.status !== 'idle' || !definitionId()) return;
+    setExplain({ status: 'loading', by: {}, error: null });
+    fetch(explainUrl('json', false), { credentials: 'same-origin' })
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (j) {
+        if (j.error) throw new Error(j.error);
+        var by = {};
+        (j.indicators || []).forEach(function (e) {
+          by[e.indicator] = e;
+        });
+        setExplain({ status: 'ready', by: by, error: null });
+      })
+      .catch(function (err) {
+        setExplain({
+          status: 'error',
+          by: {},
+          error: String((err && err.message) || err),
+        });
+      });
+  }
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text);
+    }
+  }
   React.useEffect(
     function () {
       // The definition prop has not always carried `id`; the run knows its
@@ -1030,10 +1089,123 @@ function WorkflowUI({
     return e.band;
   }
 
+  var openDefState = React.useState({});
+  var openDef = openDefState[0];
+  var setOpenDef = openDefState[1];
+  function toggleDef(id) {
+    setOpenDef(function (prev) {
+      var next = Object.assign({}, prev);
+      next[id] = !prev[id];
+      return next;
+    });
+  }
+
+  // One indicator's definition: the authored sentence, the sentence rendered
+  // from its SQL, the properties it reads, and the compiled measure -- each
+  // block copyable. Read from the explain endpoint; nothing derived here.
+  function DefinitionRow(props) {
+    var i = props.ind;
+    var e = explainData.by[i.id];
+    var en = (e && e.english) || null;
+    if (
+      explainData.status === 'loading' ||
+      (!e && explainData.status !== 'error')
+    )
+      return (
+        <tr className="bg-gray-50">
+          <td colSpan={6} className="px-4 py-2 text-xs text-gray-400">
+            Loading the definition…
+          </td>
+        </tr>
+      );
+    if (!e)
+      return (
+        <tr className="bg-gray-50">
+          <td colSpan={6} className="px-4 py-2 text-xs text-red-700">
+            {explainData.error || 'No definition for ' + i.id + '.'}
+          </td>
+        </tr>
+      );
+    var measureSql = [
+      '-- ' + e.measure,
+      (e.expression && e.expression.compiled) || '',
+    ]
+      .concat(
+        (e.components || []).map(function (c) {
+          return '-- ' + c.name + '\n' + (c.compiled || c.sql || '');
+        }),
+      )
+      .join('\n');
+    var propSql = (e.properties || [])
+      .map(function (p) {
+        return (
+          (p.notes ? '-- ' + p.name + ': ' + p.notes + '\n' : '') +
+          p.name +
+          ' = ' +
+          p.sql
+        );
+      })
+      .concat(
+        ((e.weight_series && e.weight_series.derived) || []).map(function (d) {
+          return d.name + ' = ' + d.sql;
+        }),
+      )
+      .join('\n');
+    var consts = Object.keys(e.constants || {})
+      .map(function (k) {
+        return k + ' = ' + e.constants[k];
+      })
+      .join(', ');
+    function block(title, text) {
+      return (
+        <div className="mt-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+              {title}
+            </span>
+            <button
+              type="button"
+              className="text-xs text-indigo-600 hover:underline"
+              onClick={function () {
+                copyText(text);
+              }}
+            >
+              Copy
+            </button>
+          </div>
+          <pre className="mt-1 text-xs bg-white border border-gray-200 rounded-md p-2 overflow-x-auto whitespace-pre">
+            {text}
+          </pre>
+        </div>
+      );
+    }
+    return (
+      <tr className="bg-gray-50">
+        <td colSpan={6} className="px-4 py-3 text-sm">
+          {en && en.plain ? <p className="text-gray-900">{en.plain}</p> : null}
+          {en && en.definition ? (
+            <p className="text-gray-600 text-xs mt-1">
+              <span className="font-semibold text-gray-500">
+                From the SQL:{' '}
+              </span>
+              {en.definition}
+              {consts ? ' Constants: ' + consts + '.' : ''}
+            </p>
+          ) : null}
+          {block('Measure', measureSql)}
+          {propSql
+            ? block('Properties and window derivations it reads', propSql)
+            : null}
+        </td>
+      </tr>
+    );
+  }
+
   function IndicatorTable(props) {
     var rows = props.rows,
       ind = props.ind,
-      onPick = props.onPick;
+      onPick = props.onPick,
+      withDefinitions = props.withDefinitions;
     return (
       <table className="min-w-full text-sm">
         <thead className="bg-gray-50 text-gray-500">
@@ -1049,17 +1221,24 @@ function WorkflowUI({
         <tbody>
           {C_LIST.map(function (i) {
             var e = entryOf(ind, i.id);
-            return (
+            var rowsOut = [];
+            rowsOut.push(
               <tr
                 key={i.id}
                 className={
                   'border-t border-gray-100 ' +
-                  (onPick ? 'cursor-pointer hover:bg-indigo-50' : '')
+                  (onPick || withDefinitions
+                    ? 'cursor-pointer hover:bg-indigo-50'
+                    : '')
                 }
                 onClick={
                   onPick
                     ? function () {
                         onPick(i.id);
+                      }
+                    : withDefinitions
+                    ? function () {
+                        toggleDef(i.id);
                       }
                     : undefined
                 }
@@ -1102,9 +1281,17 @@ function WorkflowUI({
                   >
                     {bandLabel(e)}
                   </span>
+                  {withDefinitions ? (
+                    <span className="ml-2 text-xs text-indigo-600">
+                      {openDef[i.id] ? 'hide definition' : 'definition'}
+                    </span>
+                  ) : null}
                 </td>
-              </tr>
+              </tr>,
             );
+            if (withDefinitions && openDef[i.id])
+              rowsOut.push(<DefinitionRow key={i.id + ':def'} ind={i} />);
+            return rowsOut;
           })}
         </tbody>
       </table>
@@ -2371,15 +2558,55 @@ function WorkflowUI({
 
   function AllIndicators() {
     return (
-      <details className="bg-white border border-gray-200 rounded-xl">
+      <details
+        className="bg-white border border-gray-200 rounded-xl"
+        onToggle={function (ev) {
+          if (ev.target && ev.target.open) loadExplain();
+        }}
+      >
         <summary className="px-4 py-3 text-sm font-semibold text-gray-700 cursor-pointer flex items-center justify-between">
           <span>All programme indicators · {scopeName}</span>
           <span className="text-xs font-normal text-gray-400">
-            value, n and band for the full C-series
+            value, n and band for the full C-series · click a row for its
+            definition
           </span>
         </summary>
+        <div className="px-4 py-2 border-t border-gray-100 flex items-center gap-3 flex-wrap text-xs">
+          <span className="text-gray-500">
+            Definitions, in English and as the SQL that computes them:
+          </span>
+          <a
+            className="text-indigo-600 hover:underline"
+            href={explainUrl('md', true)}
+          >
+            Download Markdown
+          </a>
+          <a
+            className="text-indigo-600 hover:underline"
+            href={explainUrl('sql', true)}
+          >
+            Download SQL
+          </a>
+          <a
+            className="text-indigo-600 hover:underline"
+            href={explainUrl('json', true)}
+          >
+            Download JSON
+          </a>
+          <a
+            className="text-indigo-600 hover:underline"
+            href={explainUrl('md', false)}
+            target="_blank"
+            rel="noopener"
+          >
+            Open as text
+          </a>
+          <span className="text-gray-400">
+            Same reader as the labs MCP tool semantic_registry_explain.
+          </span>
+        </div>
         <div className="overflow-x-auto border-t border-gray-100">
-          <IndicatorTable ind={scopeInd} />
+          <IndicatorTable ind={scopeInd} withDefinitions={true} />
         </div>
       </details>
     );

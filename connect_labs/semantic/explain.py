@@ -157,6 +157,7 @@ def explain(
     ws = props_doc.get("weight_series") or {}
     return {
         "indicator": (top.get("meta") or {}).get("indicator") or top["name"],
+        "english": english(registry, props_doc, top["name"]),
         "measure": top["name"],
         "title": top.get("title"),
         "meta": top.get("meta") or {},
@@ -189,3 +190,188 @@ def explain(
             "Layer-1 definition: read it with pipeline_get on the workflow's pipeline_sources."
         ),
     }
+
+
+# ── English ────────────────────────────────────────────────────────────────
+# A definition a programme manager can read, rendered FROM the SQL so it cannot
+# drift from the number. `meta.plain` on a measure is an authored override (the
+# demo compute spec's own wording for the N-series); the mechanical rendering is
+# always returned beside it so the two can be compared.
+
+_WORDS = [
+    (re.compile(r"\{CUBE\}\."), ""),
+    (re.compile(r"\bIS NOT NULL\b"), "is recorded"),
+    (re.compile(r"\bIS NULL\b"), "is not recorded"),
+    (re.compile(r"\bNOT\b"), "not"),
+    (re.compile(r"\bAND\b"), "and"),
+    (re.compile(r"\bOR\b"), "or"),
+    (re.compile(r"\s*=\s*'([^']+)'"), r" is \1"),
+    (re.compile(r"\s*>=\s*"), " is at least "),
+    (re.compile(r"\s*<=\s*"), " is at most "),
+    (re.compile(r"\s*>\s*"), " is more than "),
+    (re.compile(r"\s*<\s*"), " is less than "),
+]
+
+
+def _words(sql: str) -> str:
+    out = sql.strip()
+    for pat, rep in _WORDS:
+        out = pat.sub(rep, out)
+    return out.replace("_", " ").strip()
+
+
+def _component_words(m: dict[str, Any]) -> str:
+    """One aggregating measure -> 'number of babies where ...' and friends."""
+    where = " and ".join(f"({_words(f['sql'])})" for f in (m.get("filters") or []))
+    where = where.strip("()") if where.count("(") == 1 else where
+    scope = f" where {where}" if where else ""
+    mtype = m.get("type")
+    inner = m.get("sql") or ""
+    if mtype == "count":
+        return f"the number of babies{scope}"
+    if mtype == "count_distinct":
+        return f"the number of distinct {_words(inner)}{scope}"
+    if mtype == "sum":
+        guarded = re.match(r"\s*CASE WHEN (.+?) THEN (.+?) ELSE 0 END\s*$", inner, re.S)
+        if guarded and not scope:
+            return f"the sum of {_words(guarded.group(2))} over babies where {_words(guarded.group(1))}"
+        return f"the sum of {_words(inner)} over babies{scope}"
+    if mtype == "avg":
+        return f"the mean of {_words(inner)} over babies{scope}"
+    if mtype == "min":
+        return f"the smallest {_words(inner)} over babies{scope}"
+    if mtype == "max":
+        return f"the largest {_words(inner)} over babies{scope}"
+    if "PERCENTILE_CONT(0.5)" in inner:
+        col = re.search(r"ORDER BY \{CUBE\}\.([a-z0-9_]+)", inner)
+        return f"the median {_words(col.group(1)) if col else 'value'} over babies{scope}"
+    return f"{_words(inner)}{scope}"
+
+
+def english(registry: dict[str, Any], props_doc: dict[str, Any], indicator: str) -> dict[str, Any]:
+    """{plain, definition, reads}: the authored sentence if any, the mechanical one
+    always, and one line per property the definition leans on."""
+    top = _resolve_indicator(registry, indicator)
+    by_name = _measure_index(registry)
+    meta = top.get("meta") or {}
+    unit = meta.get("unit") or ""
+    expr = top.get("sql") or ""
+    refs = [r for r in re.findall(r"\{([a-z0-9_]+)\}", expr) if r in by_name]
+    parts = {r: _component_words(by_name[r]) for r in refs}
+
+    if len(refs) == 2 and expr.startswith("100.0 *"):
+        definition = f"{parts[refs[0]]}, as a percentage of {parts[refs[1]]}."
+    elif len(refs) == 2 and "NULLIF" in expr:
+        definition = f"{parts[refs[0]]}, divided by {parts[refs[1]]}."
+    elif len(refs) == 1 and by_name[refs[0]].get("type") == "count":
+        definition = f"{parts[refs[0]][0].upper()}{parts[refs[0]][1:]}."
+    elif len(refs) == 1:
+        definition = f"{parts[refs[0]][0].upper()}{parts[refs[0]][1:]}."
+    else:
+        definition = _words(expr)
+    definition = definition[0].upper() + definition[1:]
+    if unit and unit not in ("%", "n"):
+        definition = definition.rstrip(".") + f" ({unit})."
+    if meta.get("min_denominator"):
+        definition += f" Shown only when the denominator is at least {meta['min_denominator']}."
+
+    props = {p["name"]: p for p in props_doc.get("properties") or []}
+    constants = props_doc.get("constants") or {}
+    reads = []
+    for name in sorted(_cube_refs([top] + _referenced_measures(top, by_name))):
+        if name in props:
+            p = props[name]
+            reads.append(
+                {
+                    "name": name,
+                    "means": (p.get("notes") or "").strip() or None,
+                    "sql": _subst_constants(p["sql"], {**constants, "as_of": "CURRENT_DATE"}).strip(),
+                }
+            )
+    return {
+        "plain": meta.get("plain"),
+        "definition": definition,
+        "reads": reads,
+    }
+
+
+def to_markdown(explanations: list[dict[str, Any]], *, registry_label: str = "") -> str:
+    """Every indicator as a Markdown section: English first, then the SQL chain."""
+    lines = [f"# Indicator definitions{(' — ' + registry_label) if registry_label else ''}", ""]
+    lines.append(
+        "Each indicator: the plain-English definition (authored where one exists, otherwise "
+        "rendered from the SQL), the properties it reads, the measure as compiled, and the "
+        "constants substituted. `props` is one row per baby; Layer 1 (the visit rows) is the "
+        "workflow's pipeline schema."
+    )
+    lines.append("")
+    for e in explanations:
+        en = e.get("english") or {}
+        lines.append(f"## {e['indicator']} · {e.get('title') or e['measure']}")
+        lines.append("")
+        if en.get("plain"):
+            lines.append(en["plain"])
+            lines.append("")
+        lines.append(f"**Definition (from the SQL):** {en.get('definition', '')}")
+        lines.append("")
+        meta = e.get("meta") or {}
+        bits = [
+            f"unit `{meta['unit']}`" if meta.get("unit") else "",
+            f"direction `{meta['direction']}`" if meta.get("direction") else "",
+            f"bands `{meta['bands']}`" if meta.get("bands") else "",
+        ]
+        bits = [b for b in bits if b]
+        if bits:
+            lines.append("_" + " · ".join(bits) + "_")
+            lines.append("")
+        lines.append("**Measure:**")
+        lines.append("```sql")
+        lines.append(f"-- {e['measure']}")
+        lines.append(str((e.get("expression") or {}).get("compiled") or (e.get("expression") or {}).get("sql") or ""))
+        for c in e.get("components") or []:
+            lines.append(f"-- {c['name']}")
+            lines.append(str(c.get("compiled") or c.get("sql") or ""))
+        lines.append("```")
+        if e.get("properties"):
+            lines.append("")
+            lines.append("**Properties it reads (one row per baby, in evaluation order):**")
+            lines.append("```sql")
+            for p in e["properties"]:
+                if p.get("notes"):
+                    lines.append(f"-- {p['name']}: {p['notes']}")
+                lines.append(f"{p['name']} = {p['sql']}")
+            lines.append("```")
+        ws = e.get("weight_series") or {}
+        if ws.get("derived"):
+            lines.append("")
+            lines.append("**Weight-series derivations (window over each baby's weighings):**")
+            lines.append("```sql")
+            for d in ws["derived"]:
+                lines.append(f"{d['name']} = {d['sql']}")
+            lines.append("```")
+        if e.get("constants"):
+            lines.append("")
+            lines.append("**Constants:** " + ", ".join(f"`{k}` = {v}" for k, v in e["constants"].items()))
+        lines.append("")
+    return "\n".join(lines)
+
+
+def to_sql(explanations: list[dict[str, Any]], *, registry_label: str = "") -> str:
+    """One .sql file: a commented header per indicator, then the compiled statement."""
+    out = [f"-- Indicator definitions{(' -- ' + registry_label) if registry_label else ''}", "--"]
+    for e in explanations:
+        en = e.get("english") or {}
+        out.append(f"-- {e['indicator']} {e.get('title') or ''}")
+        if en.get("plain"):
+            out.append(f"--   {en['plain']}")
+        out.append(f"--   {en.get('definition', '')}")
+        out.append(f"--   measure: {(e.get('expression') or {}).get('compiled') or ''}")
+        for c in e.get("components") or []:
+            out.append(f"--   {c['name']}: {c.get('compiled') or c.get('sql') or ''}")
+        out.append("--")
+    if explanations:
+        out.append("")
+        out.append(f"-- Full statement, scope = {explanations[0].get('scope')}; replace pipeline_visit_rows with the")
+        out.append("-- workflow's Layer-1 pipeline query (pipeline_get on its pipeline_sources).")
+        out.append(explanations[0]["compiled_sql"])
+    return "\n".join(out) + "\n"

@@ -2950,6 +2950,91 @@ def _deployment_facts_for_render(deployment: dict | None) -> dict:
 
 @login_required
 @require_GET
+def semantic_explain_api(request, definition_id):
+    """The exact logic behind each indicator of the registry this workflow is bound
+    to -- plain English AND the resolved SQL chain -- for the page to show, copy and
+    download. Same reader as the `semantic_registry_explain` MCP tool
+    (connect_labs/semantic/explain.py), so the page and an agent read one thing.
+
+    Query params:
+      indicators  comma-separated ids or measure names (N15,C14); omitted = every
+                  top-level indicator in the bound registry
+      scope       the compiled statement's grouping: programme (default), llo,
+                  opportunity, flw
+      format      json (default) | md | sql
+      download    1 to send md/sql/json as an attachment
+    """
+    from connect_labs.semantic.explain import UnknownIndicator, explain, to_markdown, to_sql
+    from connect_labs.semantic.runtime import SemanticRuntimeError
+    from connect_labs.semantic.workflow_binding import resolve_registry_for
+    from connect_labs.workflow.data_access import SemanticRegistryDataAccess
+
+    fmt = (request.GET.get("format") or "json").strip().lower()
+    scope = (request.GET.get("scope") or "programme").strip() or "programme"
+    wanted = [i.strip() for i in (request.GET.get("indicators") or "").split(",") if i.strip()]
+    download = (request.GET.get("download") or "").strip().lower() in ("1", "true", "yes")
+    try:
+        data_access = WorkflowDataAccess(request=request)
+        definition = data_access.get_definition(definition_id)
+        if definition is None:
+            return JsonResponse({"error": "Workflow not found"}, status=404)
+        try:
+            props_doc, full_registry, llo_map, reg_settings, _deployment, registry_source = resolve_registry_for(
+                definition,
+                registry_access_factory=lambda: SemanticRegistryDataAccess(request=request),
+            )
+        except SemanticRuntimeError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        if not wanted:
+            wanted = [
+                (m.get("meta") or {}).get("indicator")
+                for m in full_registry.get("measures") or []
+                if (m.get("meta") or {}).get("indicator")
+            ]
+        out = []
+        for ind in wanted:
+            try:
+                out.append(
+                    explain(
+                        props_doc,
+                        full_registry,
+                        ind,
+                        scope=scope,
+                        llo_map=llo_map or None,
+                        settings=reg_settings or None,
+                    )
+                )
+            except UnknownIndicator:
+                return JsonResponse({"error": f"No indicator or measure named {ind!r}"}, status=404)
+            except Exception as exc:
+                return JsonResponse({"error": f"{ind}: {type(exc).__name__}: {exc}"}, status=400)
+        label = (
+            f"registry {registry_source.get('registry_id')}" if registry_source.get("registry_id") else "registry kmc"
+        )
+        stem = f"kmc-indicators-{definition_id}"
+        if fmt == "md":
+            resp = HttpResponse(to_markdown(out, registry_label=label), content_type="text/markdown; charset=utf-8")
+            if download:
+                resp["Content-Disposition"] = f'attachment; filename="{stem}.md"'
+            return resp
+        if fmt == "sql":
+            resp = HttpResponse(to_sql(out, registry_label=label), content_type="text/plain; charset=utf-8")
+            if download:
+                resp["Content-Disposition"] = f'attachment; filename="{stem}.sql"'
+            return resp
+        resp = JsonResponse(
+            {"definition_id": definition_id, "registry": registry_source, "scope": scope, "indicators": out}
+        )
+        if download:
+            resp["Content-Disposition"] = f'attachment; filename="{stem}.json"'
+        return resp
+    except Exception:
+        logger.exception("Semantic explain failed for definition %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+@login_required
+@require_GET
 def semantic_indicators_api(request, definition_id):
     """Evaluate the semantic registry for a workflow and return indicator rows.
 
