@@ -265,7 +265,7 @@ class TestPreviewPlanningGaps:
             },
         )
         monkeypatch.setattr(
-            "connect_labs.mopup.core.gaps.planning_gap_features", lambda *a, **k: list(gap_features or [])
+            "connect_labs.mopup.core.gaps.planning_gap_features", lambda *a, **k: (list(gap_features or []), [])
         )
 
     def test_success_returns_features_and_config(self, django_user_model, monkeypatch):
@@ -409,39 +409,24 @@ class TestPreviewPlanningGaps:
                 "cell_size_m": 100.0,
             },
         }
+        assert "building_points" not in result
 
     def test_upload_mode_reads_the_stored_csv_and_filters_per_ward(self, django_user_model, monkeypatch):
         user = django_user_model.objects.create(username="tester", email="t@example.com")
         run = _locked_run_with_geometry()
-        self._mock_common(monkeypatch, run)
-
-        import pandas as pd
-
-        uploaded_df = pd.DataFrame(
-            [
-                {
-                    "latitude": 1.0,
-                    "longitude": 2.0,
-                    "wardname": "Sabon Gari",
-                    "lganame": "Rano",
-                    "statename": "Kano",
-                },
-                {  # a different ward -- must never leak into Sabon Gari's cells
-                    "latitude": 3.0,
-                    "longitude": 4.0,
-                    "wardname": "Somewhere Else",
-                    "lganame": "Rano",
-                    "statename": "Kano",
-                },
-            ]
+        run.data["uploaded_buildings_csv"] = (
+            "latitude,longitude,wardname,lganame,statename\n"
+            "1.0,2.0,Sabon Gari,Rano,Kano\n"
+            # a different ward -- must never leak into Sabon Gari's cells
+            "3.0,4.0,Somewhere Else,Rano,Kano\n"
         )
-        monkeypatch.setattr(tasks, "_read_uploaded_buildings_csv", lambda key: uploaded_df)
+        self._mock_common(monkeypatch, run)
 
         seen_buildings = {}
 
         def fake_planning_gap_features(ward, lga, state, area_id, ward_boundary, existing, **kw):
             seen_buildings["buildings"] = kw.get("buildings")
-            return []
+            return [], []
 
         monkeypatch.setattr("connect_labs.mopup.core.gaps.planning_gap_features", fake_planning_gap_features)
 
@@ -451,24 +436,24 @@ class TestPreviewPlanningGaps:
                 "run_id": 1,
                 "user_id": user.id,
                 "mode": "upload",
-                "csv_storage_key": "mopup/uploads/run-1/abc.csv",
             }
         ).get()
         assert result["status"] == "ok"
         assert result["config"]["mode"] == "upload"
+        assert result["building_points"] == []
         matched = seen_buildings["buildings"]
         assert len(matched) == 1
         assert matched.iloc[0]["lat"] == pytest.approx(1.0)
 
-    def test_upload_mode_without_a_stored_key_raises(self, django_user_model, monkeypatch):
+    def test_upload_mode_without_an_uploaded_csv_raises(self, django_user_model, monkeypatch):
         # Defensive only -- MopupPlanningGapsView already rejects this
         # synchronously (400) before ever dispatching the task, so this
         # path is a belt-and-suspenders guard, not a normal-flow warning.
         user = django_user_model.objects.create(username="tester", email="t@example.com")
-        run = _locked_run_with_geometry()
+        run = _locked_run_with_geometry()  # no uploaded_buildings_csv set
         self._mock_common(monkeypatch, run)
 
         with pytest.raises(RuntimeError, match="Upload a building-data file"):
             tasks.preview_planning_gaps.apply(
-                kwargs={"program_id": 217, "run_id": 1, "user_id": user.id, "mode": "upload", "csv_storage_key": None}
+                kwargs={"program_id": 217, "run_id": 1, "user_id": user.id, "mode": "upload"}
             ).get()

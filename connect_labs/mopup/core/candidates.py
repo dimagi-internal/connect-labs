@@ -183,7 +183,12 @@ def gap_summary_by_ward(gap_features: list[dict]) -> dict[str, dict]:
     return by_ward
 
 
-def build_map_features(all_rows: list[dict], candidates: list[dict], gap_features: list[dict] | None = None) -> dict:
+def build_map_features(
+    all_rows: list[dict],
+    candidates: list[dict],
+    gap_features: list[dict] | None = None,
+    building_points: list[dict] | None = None,
+) -> dict:
     """One GeoJSON Feature per evaluated work area that has boundary
     geometry, for Phase 2's map — a work area with no geometry match is
     skipped (nothing to draw), same "never guess a shape" rule
@@ -198,7 +203,13 @@ def build_map_features(all_rows: list[dict], candidates: list[dict], gap_feature
     `gap_features`, if given (Step 2's already-computed
     `run.planning_gap_features`), are appended as-is with
     `properties.source = "planning_gap"` added — their own distinct map
-    color, separate from the execution-gap candidates above."""
+    color, separate from the execution-gap candidates above.
+
+    `building_points`, if given (Step 2's "upload your own" mode —
+    `run.planning_gap_building_points`, individual `{"lon", "lat"}` dicts),
+    are appended as Point features tagged `properties.source =
+    "uploaded_building"` — the real building positions behind the gap-fill
+    cells above, not just the gridded cells themselves."""
     candidates_by_id = {c["wa_id"]: c for c in candidates}
     features = []
     for wa in all_rows:
@@ -232,6 +243,20 @@ def build_map_features(all_rows: list[dict], candidates: list[dict], gap_feature
                     "included": True,
                     "first_indicator": None,
                     "source": "planning_gap",
+                },
+            }
+        )
+    for point in building_points or []:
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [point["lon"], point["lat"]]},
+                "properties": {
+                    "wa_id": "",
+                    "ward": "",
+                    "included": True,
+                    "first_indicator": None,
+                    "source": "uploaded_building",
                 },
             }
         )
