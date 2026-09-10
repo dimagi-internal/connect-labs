@@ -94,7 +94,7 @@ window.MopupAnalysis = (function () {
           <span class="inline-flex items-center gap-1">
             Min affected neighbors (NCF)
             <input type="number" id="cfg-min-affected-neighbors-ncf" class="base-input" style="width:4rem" min="0">
-            <span class="info-icon" tabindex="0" data-tip="Informational only — NCF/inaccessible is always exempt from the cluster-aware filter (a work area can only ever log ONE NCF-or-Inaccessible visit, so there's no rate to corroborate). This just flags, for your own reading, whether an NCF/inaccessible result looks spatially clustered or isolated.">ⓘ</span>
+            <span class="info-icon" tabindex="0" data-tip="Used by the optional cluster-aware filter (Shared settings), same as every other indicator: the fewest spatially-nearby neighbors that must ALSO be affected to corroborate it. A work area can only ever log ONE NCF-or-Inaccessible visit, so this counts affected neighbors directly rather than averaging a rate.">ⓘ</span>
           </span>
         </td>
       </tr>`;
