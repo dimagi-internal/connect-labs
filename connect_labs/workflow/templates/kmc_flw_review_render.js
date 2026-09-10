@@ -1713,7 +1713,13 @@ function WorkflowUI({
             <tbody>
               {cases.map(function (c) {
                 var row = caseScopeRow(c);
-                var open = selCase === c;
+                // Match by key, not identity: the case index is rebuilt as the
+                // pipeline stream delivers rows (the page renders while it loads),
+                // so the object a click selected is not the object rendered next.
+                var open =
+                  !!selCase &&
+                  selCase.entity_id === c.entity_id &&
+                  String(selCase.opportunity_id) === String(c.opportunity_id);
                 var out = [
                   <tr
                     key={c.opportunity_id + '|' + c.entity_id}
