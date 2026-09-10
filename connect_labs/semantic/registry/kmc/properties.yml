@@ -130,42 +130,54 @@ aggregates:
 weight_series:
   day_collapse: 'AVG(weight_g)' # one reading per (baby, day)
   valid: 'weight_g BETWEEN :WMIN AND :WMAX'
+  # The demo compute spec's series is the ENROLMENT weight at reg_date plus every
+  # visit weight (same-day visit wins; an enrolment weight within 1 g of birth
+  # weight is a re-entry, not a measurement). It enters as a SEED reading:
+  # is_seed = TRUE, never paired with a visit reading, and every C-series
+  # expression below filters it out, so the workbook series is unchanged.
+  seed_reading:
+    day: reg_date
+    value: enrollment_weight_g
+    exclude: 'ABS(weight_g - birth_weight_g) < 1'
   derived:
     - name: n_weight_days
+      sql: 'COUNT(*) FILTER (WHERE NOT is_seed)'
+    - name: n_measured_days
       sql: 'COUNT(*)'
+      # measured weigh-days INCLUDING the enrolment reading -- the spec's "thin"
     - name: weight_span_days
-      sql: 'MAX(day)::date - MIN(day)::date'
+      sql: 'MAX(day) FILTER (WHERE NOT is_seed) - MIN(day) FILTER (WHERE NOT is_seed)'
     - name: first_weight_g
-      sql: 'ROUND((ARRAY_AGG(w ORDER BY day ASC))[1])'
+      sql: 'ROUND((ARRAY_AGG(w ORDER BY day ASC) FILTER (WHERE NOT is_seed))[1])'
     - name: last_weight_g
-      sql: 'ROUND((ARRAY_AGG(w ORDER BY day DESC))[1])'
+      sql: 'ROUND((ARRAY_AGG(w ORDER BY day DESC) FILTER (WHERE NOT is_seed))[1])'
     # |w[i] - w[i-1]| > SWING * w[i-1] on ANY consecutive pair -> inconsistent.
     # The JS breaks out of the loop on the first offender; bool_and is equivalent.
     - name: no_implausible_swing
-      sql: 'BOOL_AND(prev_w IS NULL OR ABS(w - prev_w) <= :SWING * prev_w)'
+      sql: 'BOOL_AND(is_seed OR prev_w IS NULL OR ABS(w - prev_w) <= :SWING * prev_w)'
     # Early growth: w0 is the first reading, w28 the LAST reading whose age falls
     # in the window. Matches the JS, which overwrites w28 on each in-window hit.
     - name: growth_w0
-      sql: '(ARRAY_AGG(w ORDER BY day ASC))[1]'
+      sql: '(ARRAY_AGG(w ORDER BY day ASC) FILTER (WHERE NOT is_seed))[1]'
     - name: growth_w0_day
-      sql: '(ARRAY_AGG(day ORDER BY day ASC))[1]'
+      sql: '(ARRAY_AGG(day ORDER BY day ASC) FILTER (WHERE NOT is_seed))[1]'
     - name: growth_w28
-      sql: '(ARRAY_AGG(w ORDER BY day DESC) FILTER (WHERE age_days BETWEEN :GROWTH_LO_DAY AND :GROWTH_HI_DAY))[1]'
+      sql: '(ARRAY_AGG(w ORDER BY day DESC) FILTER (WHERE NOT is_seed AND age_days BETWEEN :GROWTH_LO_DAY AND :GROWTH_HI_DAY))[1]'
     - name: growth_w28_day
-      sql: '(ARRAY_AGG(day ORDER BY day DESC) FILTER (WHERE age_days BETWEEN :GROWTH_LO_DAY AND :GROWTH_HI_DAY))[1]'
+      sql: '(ARRAY_AGG(day ORDER BY day DESC) FILTER (WHERE NOT is_seed AND age_days BETWEEN :GROWTH_LO_DAY AND :GROWTH_HI_DAY))[1]'
     # --- Demo compute spec (section 2b): the first SERIES_WINDOW_DAYS days of the
     # measured series, counted from the first weighing (series_day), not from the
     # first visit. Velocity = (last - first) / span / (mean / 1000) over that window.
     - name: win_n
-      sql: 'COUNT(*) FILTER (WHERE series_day <= :SERIES_WINDOW_DAYS)'
+      sql: 'COUNT(*) FILTER (WHERE NOT is_seed AND series_day <= :SERIES_WINDOW_DAYS)'
     - name: win_first_w
-      sql: '(ARRAY_AGG(w ORDER BY day ASC) FILTER (WHERE series_day <= :SERIES_WINDOW_DAYS))[1]'
+      sql: '(ARRAY_AGG(w ORDER BY day ASC) FILTER (WHERE NOT is_seed AND series_day <= :SERIES_WINDOW_DAYS))[1]'
     - name: win_last_w
-      sql: '(ARRAY_AGG(w ORDER BY day DESC) FILTER (WHERE series_day <= :SERIES_WINDOW_DAYS))[1]'
+      sql: '(ARRAY_AGG(w ORDER BY day DESC) FILTER (WHERE NOT is_seed AND series_day <= :SERIES_WINDOW_DAYS))[1]'
     - name: win_span_days
-      sql: 'MAX(day) FILTER (WHERE series_day <= :SERIES_WINDOW_DAYS) - MIN(day) FILTER (WHERE series_day <= :SERIES_WINDOW_DAYS)'
+      sql: 'MAX(day) FILTER (WHERE NOT is_seed AND series_day <= :SERIES_WINDOW_DAYS) - MIN(day) FILTER (WHERE NOT is_seed AND series_day <= :SERIES_WINDOW_DAYS)'
     - name: win_mean_w
-      sql: 'AVG(w) FILTER (WHERE series_day <= :SERIES_WINDOW_DAYS)'
+      sql: 'AVG(w) FILTER (WHERE NOT is_seed AND series_day <= :SERIES_WINDOW_DAYS)'
     # An impossible STEP is a per-pair rate in g/kg/day -- the change between two
     # consecutive weighings divided by the earlier weight in kg and by the days
     # between them -- outside IMPOSSIBLE_LO..HI, checked only inside the window and
@@ -173,7 +185,7 @@ weight_series:
     # series, so the spec's enrolment->visit-1 exclusion holds by construction.
     - name: any_impossible_step
       sql: >-
-        BOOL_OR(prev_day IS NOT NULL
+        BOOL_OR(NOT is_seed AND prev_day IS NOT NULL
                 AND series_day <= :SERIES_WINDOW_DAYS
                 AND (day - prev_day) BETWEEN :IMPOSSIBLE_GAP_MIN AND :IMPOSSIBLE_GAP_MAX
                 AND prev_w > 0
@@ -371,7 +383,7 @@ properties:
 
   - name: flag_thin
     type: bool
-    sql: 'COALESCE(n_weight_days, 0) < :THIN_MIN_DAYS'
+    sql: 'COALESCE(n_measured_days, 0) < :THIN_MIN_DAYS'
 
   - name: flag_inconsistent
     type: bool
