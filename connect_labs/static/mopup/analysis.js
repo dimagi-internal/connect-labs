@@ -46,64 +46,52 @@ window.MopupAnalysis = (function () {
   let lastGapCandidates = [];
   let severitySortDesc = true;
 
-  // Per-indicator gate settings that used to live in one shared "Global
-  // cluster / gate settings" panel, unlabeled as to which indicator each one
-  // actually affected — real feedback this session was that the grouping
-  // there (by WHAT the setting does, not WHICH indicator uses it) read as
-  // confusing. These render as a compact settings sub-row directly under
-  // the one indicator each setting actually gates; only genuinely
-  // cross-indicator settings remain in the "Shared settings" panel
-  // (see analysis.html).
-  function indicatorSettingsRowHtml(def) {
-    if (def.key === 'evc_shortfall') {
-      return `<tr class="ind-subrow bg-gray-50 text-xs border-b border-gray-50" data-key="evc_shortfall_settings">
-        <td class="py-1 pl-8 pr-2 text-gray-600" colspan="4">
-          <label class="inline-flex items-center gap-1 mr-4">
-            <input type="checkbox" id="cfg-include-not-visited">
-            Include not-yet-visited in EVC <span class="info-icon" tabindex="0" data-tip="A work area that's not yet visited (or has a pending inaccessible request) is excluded from EVC-shortfall scoring by default, since the campaign may just not have reached it yet. Check this to score it anyway.">ⓘ</span>
-          </label>
-          <span class="inline-flex items-center gap-1 mr-4">
-            Min EVC floor
-            <input type="number" id="cfg-min-evc-floor" class="base-input" style="width:4rem" min="0">
-            <span class="info-icon" tabindex="0" data-tip="A plain worth-visiting cutoff: excludes work areas whose EXPECTED visit count itself is below this from EVC shortfall entirely.">ⓘ</span>
-          </span>
-          <span class="inline-flex items-center gap-1 mr-4">
-            Neighbor distance, m (EVC)
-            <input type="number" id="cfg-evc-neighbor-distance" class="base-input" style="width:4rem" min="1">
-          </span>
-          <span class="inline-flex items-center gap-1">
-            Min neighbor count (EVC)
-            <input type="number" id="cfg-evc-min-neighbor-count" class="base-input" style="width:4rem" min="1">
-            <span class="info-icon" tabindex="0" data-tip="Used by the optional cluster-aware filter (Shared settings): the fewest spatially-nearby neighbors that must ALSO be flagged on EVC shortfall to corroborate it.">ⓘ</span>
-          </span>
-        </td>
-      </tr>`;
+  // One flat table row per indicator now (design mockup, 2026-09) — EVC
+  // shortfall and NCF/inaccessible each get their own Neighbor distance/Min
+  // neighbor count cells; deworming/MUAC/vaccination share a single pair
+  // rendered as one rowspan=3 cell spanning their three rows. Everything
+  // else (Include-not-visited, WA min EVC count, WA min HSD-visits, Min
+  // building count) lives in the three scoped cards below the table
+  // (see analysis.html) since those aren't naturally table columns.
+  const TIER2_KEYS = ['deworming', 'muac', 'vaccination'];
+
+  function neighborCellsHtml(def, rowDisabled, tier2State) {
+    if (TIER2_KEYS.includes(def.key)) {
+      if (tier2State.rendered) return '';
+      tier2State.rendered = true;
+      // Deliberately no .ind-neighbor-distance/.ind-neighbor-count classes
+      // here -- this shared cell's disabled state is driven ONLY by the
+      // global filter (handled separately below), never by any one of the
+      // three rows' own "On" state, since it belongs to all three at once.
+      return `
+          <td class="py-2 pr-2 align-middle" rowspan="3">
+            <input type="number" id="cfg-tier2-neighbor-distance" class="base-input" style="width:5rem" min="1">
+            <div class="text-[11px] text-gray-500 mt-1">Applies to deworming, MUAC, vaccination</div>
+          </td>
+          <td class="py-2 pr-2 align-middle" rowspan="3">
+            <input type="number" id="cfg-tier2-min-neighbor-count" class="base-input" style="width:5rem" min="1">
+          </td>`;
     }
-    if (def.key === 'ncf_inaccessible_rate') {
-      return `<tr class="ind-subrow bg-gray-50 text-xs border-b border-gray-50" data-key="ncf_inaccessible_rate_settings">
-        <td class="py-1 pl-8 pr-2 text-gray-600" colspan="4">
-          <span class="inline-flex items-center gap-1 mr-4">
-            Min building count
-            <input type="number" id="cfg-min-buildings" class="base-input" style="width:4rem" min="0">
-            <span class="info-icon" tabindex="0" data-tip="The fewest real buildings a work area needs before an NCF or Inaccessible result there is treated as meaningful.">ⓘ</span>
-          </span>
-          <span class="inline-flex items-center gap-1 mr-4">
-            Neighbor distance, m (NCF)
-            <input type="number" id="cfg-ncf-neighbor-distance" class="base-input" style="width:4rem" min="1">
-          </span>
-          <span class="inline-flex items-center gap-1">
-            Min affected neighbors (NCF)
-            <input type="number" id="cfg-min-affected-neighbors-ncf" class="base-input" style="width:4rem" min="0">
-            <span class="info-icon" tabindex="0" data-tip="Used by the optional cluster-aware filter (Shared settings), same as every other indicator: the fewest spatially-nearby neighbors that must ALSO be affected to corroborate it. A work area can only ever log ONE NCF-or-Inaccessible visit, so this counts affected neighbors directly rather than averaging a rate.">ⓘ</span>
-          </span>
-        </td>
-      </tr>`;
-    }
-    return '';
+    const distanceId =
+      def.key === 'evc_shortfall'
+        ? 'cfg-evc-neighbor-distance'
+        : 'cfg-ncf-neighbor-distance';
+    const countId =
+      def.key === 'evc_shortfall'
+        ? 'cfg-evc-min-neighbor-count'
+        : 'cfg-min-affected-neighbors-ncf';
+    return `
+          <td class="py-2 pr-2"><input type="number" id="${distanceId}" class="base-input ind-neighbor-distance" style="width:5rem" min="1" ${
+            rowDisabled ? 'disabled' : ''
+          }></td>
+          <td class="py-2 pr-2"><input type="number" id="${countId}" class="base-input ind-neighbor-count" style="width:5rem" min="1" ${
+            rowDisabled ? 'disabled' : ''
+          }></td>`;
   }
 
   function renderIndicatorRows() {
     const tb = $('indicator-rows');
+    const tier2State = { rendered: false };
     tb.innerHTML = indicatorDefs
       .map((def) => {
         const cfg = indicatorConfigs[def.key] || {
@@ -111,7 +99,15 @@ window.MopupAnalysis = (function () {
           threshold: 0.5,
         };
         const isNcf = def.key === 'ncf_inaccessible_rate';
-        const row = `<tr class="border-b border-gray-50" data-key="${def.key}">
+        const rowDisabled = !cfg.enabled;
+        const thresholdCell = isNcf
+          ? `<span class="text-gray-400 italic">n/a</span>`
+          : `<input type="number" step="0.01" min="0" max="1" class="ind-threshold base-input" style="width:6rem" value="${
+              cfg.threshold
+            }" ${rowDisabled ? 'disabled' : ''}>`;
+        return `<tr class="border-b border-gray-50 ${
+          rowDisabled ? 'opacity-50' : ''
+        }" data-key="${def.key}">
           <td class="py-2 pr-2"><input type="checkbox" class="ind-enabled" ${
             cfg.enabled ? 'checked' : ''
           }></td>
@@ -120,16 +116,16 @@ window.MopupAnalysis = (function () {
           )} <span class="info-icon" tabindex="0" data-tip="${esc(
             INDICATOR_TOOLTIPS[def.key] || '',
           )}">ⓘ</span></td>
-          <td class="py-2 pr-2">${
-            isNcf
-              ? `<span class="text-gray-400 italic">Floor is any NCF/Inaccessible visit — no threshold</span>`
-              : `<input type="number" step="0.01" min="0" max="1" class="ind-threshold base-input" style="width:6rem" value="${cfg.threshold}">`
-          }</td>
+          <td class="py-2 pr-2">${thresholdCell}</td>${neighborCellsHtml(
+            def,
+            rowDisabled,
+            tier2State,
+          )}
           <td class="py-2 pr-2 ind-trigger-count">—</td>
         </tr>`;
-        return row + indicatorSettingsRowHtml(def);
       })
       .join('');
+    applyIndicatorRowStates();
   }
 
   function renderIndicatorCounts(counts) {
@@ -138,6 +134,32 @@ window.MopupAnalysis = (function () {
       const cell = tr.querySelector('.ind-trigger-count');
       if (cell) cell.textContent = counts[tr.dataset.key] ?? '—';
     });
+  }
+
+  // Two independent greying rules, applied together: a row's own "On"
+  // checkbox greys its Threshold + (for EVC/NCF) its own neighbor inputs;
+  // the global cluster-aware toggle greys EVERY neighbor distance/count
+  // input (including the shared deworming/MUAC/vaccination cell) regardless
+  // of individual row state. Re-run after any relevant checkbox changes,
+  // never on a full re-render, so in-progress edits/focus aren't lost.
+  function applyIndicatorRowStates() {
+    const filterInput = $('cfg-cluster-filter-enabled');
+    const filterOn = filterInput ? filterInput.checked : true;
+    document.querySelectorAll('#indicator-rows tr[data-key]').forEach((tr) => {
+      const enabledInput = tr.querySelector('.ind-enabled');
+      const rowOn = enabledInput ? enabledInput.checked : true;
+      tr.classList.toggle('opacity-50', !rowOn);
+      const thresholdInput = tr.querySelector('.ind-threshold');
+      if (thresholdInput) thresholdInput.disabled = !rowOn;
+      const distanceInput = tr.querySelector('.ind-neighbor-distance');
+      const countInput = tr.querySelector('.ind-neighbor-count');
+      if (distanceInput) distanceInput.disabled = !filterOn || !rowOn;
+      if (countInput) countInput.disabled = !filterOn || !rowOn;
+    });
+    const tier2Distance = $('cfg-tier2-neighbor-distance');
+    const tier2Count = $('cfg-tier2-min-neighbor-count');
+    if (tier2Distance) tier2Distance.disabled = !filterOn;
+    if (tier2Count) tier2Count.disabled = !filterOn;
   }
 
   function renderGlobalConfig() {
@@ -835,6 +857,14 @@ window.MopupAnalysis = (function () {
     initMap(cfg.mapboxToken);
     renderIndicatorRows();
     renderGlobalConfig();
+    applyIndicatorRowStates(); // re-apply now that the real filter state is loaded
+    $('cfg-cluster-filter-enabled').addEventListener(
+      'change',
+      applyIndicatorRowStates,
+    );
+    $('indicator-rows').addEventListener('change', (e) => {
+      if (e.target.classList.contains('ind-enabled')) applyIndicatorRowStates();
+    });
     $('recompute').addEventListener('click', pollOrEvaluate);
     $('loading-retry').addEventListener('click', retryLoad);
     $('sort-severity').addEventListener('click', () => {
