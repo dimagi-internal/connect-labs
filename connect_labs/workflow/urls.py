@@ -75,6 +75,11 @@ urlpatterns = [
         name="api_semantic_indicators",
     ),
     path(
+        "api/<int:definition_id>/semantic/explain/",
+        views.semantic_explain_api,
+        name="api_semantic_explain",
+    ),
+    path(
         "api/<int:definition_id>/pipeline-data/stream/",
         views.PipelineDataStreamView.as_view(),
         name="api_pipeline_data_stream",

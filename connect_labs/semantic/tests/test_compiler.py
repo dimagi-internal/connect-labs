@@ -388,3 +388,27 @@ def test_a_visit_filter_is_pushed_below_layer_2(props_doc, registry):
     assert "AND username = 'flw''001'" in visits_cte, "the quote must be escaped, not interpolated"
     with pytest.raises(RegistryError):
         compile_rollup_sql(props_doc, registry, "SELECT 1", scopes=["case"], visit_filter={"llo": "PIPN"})
+def test_every_indicator_has_english_rendered_from_its_sql(props_doc, registry):
+    """A programme manager reads the definition; an agent reads the SQL; both must
+    come from the same registry so they cannot disagree. The mechanical sentence
+    is rendered from the measure, so it exists for every indicator; the authored
+    `plain` (the demo compute spec's wording) exists for the whole N-series."""
+    from connect_labs.semantic.explain import english, explain, to_markdown, to_sql
+
+    tops = [m for m in registry["measures"] if (m.get("meta") or {}).get("indicator")]
+    for m in tops:
+        en = english(registry, props_doc, m["name"])
+        assert en["definition"] and en["definition"][0].isupper(), m["name"]
+        if m["meta"]["indicator"].startswith("N"):
+            assert en["plain"], f"{m['meta']['indicator']} has no authored plain-English definition"
+    n15 = english(registry, props_doc, "n15")
+    assert "as a percentage of" in n15["definition"] and "computable spec" in n15["definition"]
+    assert any(r["name"] == "flag_impossible" for r in n15["reads"])
+    n07 = english(registry, props_doc, "n07")
+    assert n07["definition"].startswith("The sum of visits spec over babies where eligible 42d spec, divided by")
+
+    exps = [explain(props_doc, registry, i) for i in ("N15", "C14")]
+    md = to_markdown(exps, registry_label="test")
+    assert "## N15" in md and "## C14" in md and "```sql" in md and "flag_impossible" in md
+    sql = to_sql(exps, registry_label="test")
+    assert sql.startswith("-- Indicator definitions") and "pipeline_visit_rows" in sql and "-- N15" in sql
