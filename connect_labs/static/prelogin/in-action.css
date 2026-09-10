@@ -371,6 +371,16 @@
   margin-right: 0;
   padding-right: 0;
 }
+/* An early ask for readers who drop off before the closing CTA. Pushed to the
+   right of the stats row on wide layouts; drops onto its own line on a phone. */
+.cia-facts-cta {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+.cia-facts-btn {
+  white-space: nowrap;
+}
 .cia-facts dt {
   font-family: var(--mono);
   font-size: 10px;
@@ -416,6 +426,96 @@
     opacity: 1;
     transform: none;
   }
+}
+
+/* ══════════ COVERAGE MAP (Nigeria → Borno LGAs) ══════════ */
+.cia-map {
+  position: relative;
+}
+.cia-map svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+  max-width: 460px;
+  margin: 0 auto;
+}
+.cia-map-ng {
+  fill: var(--paper-warm);
+  stroke: var(--rule);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+.cia-map-box {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.4;
+}
+.cia-map-link {
+  stroke: var(--indigo);
+  stroke-width: 1.8;
+  stroke-dasharray: 5 5;
+  opacity: 0.6;
+}
+.cia-lga {
+  fill: var(--paper-warm);
+  stroke: var(--rule);
+  stroke-width: 0.7;
+  stroke-linejoin: round;
+}
+.cia-lga--served {
+  fill: var(--indigo);
+  stroke: var(--indigo-deep);
+  stroke-width: 0.7;
+}
+.cia-map-outline {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.cia-map-label {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  fill: var(--muted);
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.cia-map-label--borno {
+  font-size: 19px;
+  fill: #6f7690;
+  stroke-width: 4px;
+}
+.cia-map-legend {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  font-size: 14px;
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+.cia-map-legend li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 7px 0;
+}
+.cia-map-legend i {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  flex: none;
+}
+.cia-sw-served {
+  background: var(--indigo);
+}
+.cia-sw-other {
+  background: var(--paper-warm);
+  border: 1px solid var(--rule);
 }
 
 /* ══════════ LOCATOR, INSET, DESKTOP MOCK ══════════ */
@@ -1903,6 +2003,11 @@
   }
   .cia-facts {
     gap: 18px 24px;
+  }
+  .cia-facts-cta {
+    flex: 1 0 100%;
+    margin-left: 0;
+    margin-top: 2px;
   }
   /* The active-state growth is sized for a wide bar; cap it on a phone, where
      it would otherwise push the sticky bar to twice its height. */
