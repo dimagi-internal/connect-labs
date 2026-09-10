@@ -410,6 +410,18 @@ operations can never touch them. Recorded here for reproducibility:
   ECS deploy layer, not CF; they previously had NO retention policy). The
   6-year audit copy lives in the S3 archive, not CloudWatch.
 
+- **Web ALB target group `labs-jj-target-group`** — health check `/health/`
+  every **10s**, healthy after **2**, unhealthy after **3**, timeout 5s;
+  `deregistration_delay.timeout_seconds` = **60**. Set 2026-09-10 via
+  `aws elbv2 modify-target-group` / `modify-target-group-attributes` (was
+  30s / 2 / 3 and 300s). Why: `/health/` is a static JSON view, and the two
+  30s checks were ~60s of every rollout's ~4-minute steady-state wait. The
+  300s drain was not on that path (ECS counts a task out of the deployment
+  the moment its drain starts) but held two replaced tasks alive for five
+  minutes after every deploy; 60s is plenty now that gunicorn actually
+  receives SIGTERM (#1697) and finishes in-flight requests itself.
+  canopy-web's group on the same ALB runs 5s / 2 / 2.
+
 ## Future slices (not yet implemented)
 
 - **RDS `idle_session_timeout` backstop.** A server-side reaper so any future
