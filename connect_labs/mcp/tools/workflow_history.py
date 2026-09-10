@@ -53,6 +53,39 @@ _ERROR_CLASS = {
 }
 
 
+def _scope_label(opportunity_id: int | None, program_id: int | None) -> str:
+    return f"program_id={program_id}" if program_id is not None else f"opportunity_id={opportunity_id}"
+
+
+def _reraise_unreadable(exc, definition_id: int, opportunity_id: int | None, program_id: int | None):
+    """Turn an upstream read failure into an error class the caller can act on.
+
+    `get_definition` is annotated `-> Record | None`, but a 404 from the records
+    API RAISES rather than returning None -- so an `is None` check never fires on
+    the likeliest failure there is: a mistyped id, or the right id read under the
+    wrong scope. Unhandled, the caller gets a Python traceback ending in a raw
+    upstream URL rather than a sentence naming what to change.
+
+    The scope is worth naming because it is the likelier culprit. The upstream
+    read is an EXACT scope match, not a hierarchical one, so a program-owned
+    workflow is invisible to an opportunity-scoped read and vice versa -- the
+    definition can exist, be yours, and still 404 here.
+
+    A non-404 (a 5xx, a timeout) is transient and stays UPSTREAM_ERROR: calling
+    it NOT_FOUND would send someone to fix an id that was never wrong.
+    """
+    detail = str(exc)
+    if "404" not in detail:
+        raise MCPToolError("UPSTREAM_ERROR", detail) from exc
+    raise MCPToolError(
+        "NOT_FOUND",
+        f"workflow definition {definition_id} could not be read under {_scope_label(opportunity_id, program_id)}. "
+        "The upstream read is an exact scope match, not a hierarchical one, so a program-owned workflow is "
+        "invisible to an opportunity-scoped read and vice versa -- check the scope as well as the id. "
+        f"Upstream said: {detail}",
+    ) from exc
+
+
 def _mcp_error(e) -> MCPToolError:
     """Map a HistoryRebuildError onto the MCP error classes.
 
@@ -149,6 +182,7 @@ def workflow_rebuild_history(
     replace: bool = True,
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    from connect_labs.labs.integrations.connect.api_client import LabsAPIError
     from connect_labs.workflow.history_rebuild import HistoryRebuildError, rebuild_history
 
     if (opportunity_id is None) == (program_id is None):
@@ -173,6 +207,8 @@ def workflow_rebuild_history(
             )
         except HistoryRebuildError as e:
             raise _mcp_error(e) from e
+        except LabsAPIError as e:
+            _reraise_unreadable(e, definition_id, opportunity_id, program_id)
     finally:
         wda.close()
 
@@ -205,6 +241,7 @@ def workflow_history_eligibility(
     opportunity_id: int | None = None,
     program_id: int | None = None,
 ) -> dict[str, Any]:
+    from connect_labs.labs.integrations.connect.api_client import LabsAPIError
     from connect_labs.workflow.history_rebuild import GENERATED_BY, eligibility
 
     if (opportunity_id is None) == (program_id is None):
@@ -212,9 +249,15 @@ def workflow_history_eligibility(
 
     wda = _wda_for_user(user, opportunity_id=opportunity_id, program_id=program_id)
     try:
-        definition = wda.get_definition(definition_id)
+        try:
+            definition = wda.get_definition(definition_id)
+        except LabsAPIError as e:
+            _reraise_unreadable(e, definition_id, opportunity_id, program_id)
         if definition is None:
-            raise MCPToolError("NOT_FOUND", f"workflow definition {definition_id} not found")
+            raise MCPToolError(
+                "NOT_FOUND",
+                f"workflow definition {definition_id} not found under " f"{_scope_label(opportunity_id, program_id)}",
+            )
 
         ok, reason = eligibility(definition)
 
