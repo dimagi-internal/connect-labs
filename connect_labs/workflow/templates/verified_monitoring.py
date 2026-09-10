@@ -45,8 +45,11 @@ TEMPLATE = {
     "key": "verified_monitoring",
     "name": "Verified Monitoring",
     "description": "Funder-facing independent verified-coverage dashboard — rotating program/comparison wards, bi-monthly, with drillable metrics + an independent back-check.",
-    "icon": "map",
-    "color": "#7c3aed",
+    # A Font Awesome class and a palette name, like every other template: the
+    # picker resolves `fa-<icon>` and `colorClasses[<color>]`, so a bare "map"
+    # drew no icon and a raw hex fell through to gray.
+    "icon": "fa-map",
+    "color": "purple",
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
 }
