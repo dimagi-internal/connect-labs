@@ -196,7 +196,10 @@ def test_the_growth_quality_shares_share_one_denominator(registry):
     by_name = {m["name"]: m for m in registry["measures"]}
     dens = {by_name[f"n{i:02d}_denominator"]["filters"][0]["sql"] for i in (9, 10, 11, 12)}
     assert len(dens) == 1, f"growth-quality shares disagree on their denominator: {dens}"
-    assert "qualifying_svn" in dens.pop()
+    # qualifying_spec since the N-series moved onto the demo compute spec's own
+    # definitions (started = 2 visits, 21-day window); the invariant is the SHARED
+    # denominator, not its name.
+    assert "qualifying" in dens.pop()
 
 
 def test_the_banded_growth_table_is_neals_not_a_flat_guess(registry):

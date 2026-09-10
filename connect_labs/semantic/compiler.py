@@ -491,6 +491,13 @@ weight_seq AS (
     -- C09-C13. Caught only on real data.
     SELECT wd.baby_id, wd.day, wd.w,
            LAG(wd.w) OVER (PARTITION BY wd.baby_id ORDER BY wd.day) AS prev_w,
+           -- prev_day and series_day exist for the demo compute spec's rules,
+           -- which the render's old swing check cannot express: an IMPOSSIBLE
+           -- step is a per-pair g/kg/DAY rate (so the gap in days matters), and
+           -- the velocity window is the first 21 days of the MEASURED series,
+           -- counted from the first weighing rather than the first visit.
+           LAG(wd.day) OVER (PARTITION BY wd.baby_id ORDER BY wd.day) AS prev_day,
+           (wd.day - MIN(wd.day) OVER (PARTITION BY wd.baby_id))::int AS series_day,
            (wd.day - bf.first_visit_day)::int AS age_days
     FROM weight_days wd
     JOIN baby_first bf USING (baby_id)
