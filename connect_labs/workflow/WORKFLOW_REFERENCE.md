@@ -61,6 +61,13 @@ TEMPLATE = {
 }
 ```
 
+**Where a template appears in the picker** is not a `TEMPLATE` key. The Create
+Workflow modal sections templates by what they produce, from one map,
+`TEMPLATE_GROUP_OF` in `workflow/templates/__init__.py` (groups and their order in
+`TEMPLATE_GROUPS`). Every registered template must be placed there — a test fails
+otherwise — and a template that is another's companion is shown as a tag on its
+primary's row, not as a card.
+
 Rules:
 
 - **Validated before anything is created.** An unknown or deprecated companion

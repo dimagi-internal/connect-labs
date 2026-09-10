@@ -28,6 +28,8 @@
             selectedTemplateMultiOpp: false,
             abortController: null,
             templates: [],
+            groups: [],
+            templateFilter: '',
             loadingTemplates: false,
             availableOpps: [],
             pickedOppIds: [],
@@ -55,8 +57,30 @@
                     const response = await fetch('{% url 'labs:workflow:api_templates' %}');
                     const data = await response.json();
                     this.templates = data.templates || [];
+                    this.groups = data.groups || [];
                 } catch (e) { console.error('Failed to load templates:', e); }
                 finally { this.loadingTemplates = false; }
+            },
+            // The picker shows a template as a tag on the row that creates it
+            // (a companion), never as a card of its own.
+            pickable() {
+                return this.templates.filter(t => !(t.companion_of && t.companion_of.length));
+            },
+            matchesFilter(t) {
+                const q = this.templateFilter.trim().toLowerCase();
+                if (!q) return true;
+                return [t.name, t.description, t.key].some(v => (v || '').toLowerCase().includes(q));
+            },
+            templatesIn(groupKey) {
+                return this.pickable().filter(t => (t.group || 'other') === groupKey && this.matchesFilter(t));
+            },
+            visibleGroups() {
+                return this.groups.filter(g => this.templatesIn(g.key).length > 0);
+            },
+            companionNames(t) {
+                return (t.companions || [])
+                    .map(k => (this.templates.find(x => x.key === k) || {}).name || k)
+                    .join(', ');
             },
             openOppPicker(templateKey) {
                 this.selectedTemplate = templateKey;
@@ -180,7 +204,7 @@
 
                 <!-- Modal Panel -->
                 <div class="flex min-h-full items-center justify-center p-4">
-                    <div class="relative bg-white rounded-lg shadow-xl max-w-5xl w-full p-6"
+                    <div class="relative bg-white rounded-lg shadow-xl max-w-4xl w-full p-5 max-h-[92vh] overflow-y-auto"
                          @click.stop>
                         <div class="absolute top-4 right-4">
                             <button @click="!creating && (showTemplateModal = false)"
@@ -190,60 +214,82 @@
                             </button>
                         </div>
 
-                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Choose a Template</h3>
-                        <p class="text-sm text-gray-500 mb-6" x-show="!creating && !loadingTemplates">Select a workflow template to get started.</p>
-                        <p class="text-sm text-blue-600 mb-6" x-show="creating" x-cloak>
+                        <h3 class="text-base font-semibold text-gray-900 mb-1">
+                            Choose a template
+                            <span class="font-normal text-gray-400 tabular-nums" x-show="templates.length" x-text="'· ' + pickable().length"></span>
+                        </h3>
+                        <p class="text-sm text-blue-600 mb-3" x-show="creating" x-cloak>
                             <i class="fa-solid fa-spinner fa-spin mr-2"></i>Creating your workflow, please wait...
                         </p>
-                        <p class="text-sm text-gray-500 mb-6" x-show="loadingTemplates && !creating" x-cloak>
+                        <p class="text-sm text-gray-500 mb-3" x-show="loadingTemplates && !creating" x-cloak>
                             <i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading templates...
                         </p>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            <!-- Dynamic Template List -->
-                            <template x-for="t in templates" :key="t.key">
-                                <form method="post" action="{% url 'labs:workflow:create_from_template' %}"
-                                      @submit.prevent="submitCreate(t.key, $el)">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="template" :value="t.key">
-                                    <button type="submit"
-                                            :disabled="creating"
-                                            :class="creating ? (selectedTemplate === t.key ? 'border-blue-400 bg-blue-50' : 'opacity-50 cursor-not-allowed') : getColorClass(t.color, 'hover')"
-                                            class="w-full text-left p-4 border border-gray-200 rounded-lg transition-colors group">
-                                        <div class="flex items-start gap-4">
-                                            <div class="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center"
-                                                 :class="getColorClass(t.color, 'bg')">
-                                                <i x-show="!(creating && selectedTemplate === t.key)"
-                                                   class="fa-solid"
-                                                   :class="[t.icon, getColorClass(t.color, 'text')]"></i>
-                                                <i x-show="creating && selectedTemplate === t.key" x-cloak
-                                                   class="fa-solid fa-spinner fa-spin"
-                                                   :class="getColorClass(t.color, 'text')"></i>
-                                            </div>
-                                            <div class="flex-1">
-                                                <h4 class="font-medium text-gray-900 group-hover:text-blue-700">
-                                                    <span x-text="t.name"></span>
-                                                    <span x-show="t.multi_opp"
-                                                          class="ml-2 inline-block px-2 py-0.5 rounded text-xs font-normal bg-indigo-100 text-indigo-700">
-                                                        Multi-opp
-                                                    </span>
-                                                    <span x-show="t.companions && t.companions.length"
-                                                          class="ml-2 inline-block px-2 py-0.5 rounded text-xs font-normal bg-teal-100 text-teal-700"
-                                                          x-text="'+ ' + (t.companions || []).length + ' companion'"></span>
-                                                </h4>
-                                                <p class="text-sm text-gray-500 mt-1" x-text="t.description"></p>
-                                            </div>
-                                            <div class="flex-shrink-0 text-gray-400 group-hover:text-blue-600">
-                                                <i x-show="!(creating && selectedTemplate === t.key)" class="fa-solid fa-arrow-right"></i>
-                                                <i x-show="creating && selectedTemplate === t.key" x-cloak class="fa-solid fa-circle-notch fa-spin text-blue-600"></i>
-                                            </div>
-                                        </div>
-                                    </button>
-                                </form>
+                        {% comment %}
+                        One row per template, grouped by what it produces (TEMPLATE_GROUPS
+                        in workflow/templates/__init__.py). Descriptions clip to one line
+                        and carry the full text as a tooltip; the whole registry fits a
+                        laptop screen without scrolling, which the old three-line cards
+                        did not.
+                        {% endcomment %}
+                        <label class="flex items-center gap-2 mb-3 px-3 py-1.5 border border-gray-300 rounded-md bg-gray-50 text-gray-400 text-sm"
+                               x-show="!loadingTemplates">
+                            <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                            <input id="template-filter" type="text" x-model="templateFilter"
+                                   placeholder="Filter by name, programme or key"
+                                   class="w-full bg-transparent border-0 p-0 text-sm text-gray-900 focus:ring-0 placeholder-gray-400">
+                        </label>
+
+                        <div class="space-y-3">
+                            <template x-for="g in visibleGroups()" :key="g.key">
+                                <section>
+                                    <div class="flex items-baseline gap-2 pb-1 mb-1 border-b border-gray-200 text-[11px] font-semibold uppercase tracking-wider text-gray-600">
+                                        <span x-text="g.label"></span>
+                                        <span class="font-medium text-gray-400 tabular-nums" x-text="templatesIn(g.key).length"></span>
+                                        <span class="ml-auto font-normal normal-case tracking-normal text-gray-400" x-text="g.blurb"></span>
+                                    </div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-2.5 gap-y-1">
+                                        <template x-for="t in templatesIn(g.key)" :key="t.key">
+                                            <form method="post" action="{% url 'labs:workflow:create_from_template' %}"
+                                                  @submit.prevent="submitCreate(t.key, $el)">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="template" :value="t.key">
+                                                <button type="submit"
+                                                        :disabled="creating"
+                                                        :title="t.description"
+                                                        :class="creating ? (selectedTemplate === t.key ? 'border-blue-400 bg-blue-50' : 'opacity-50 cursor-not-allowed') : 'border-transparent ' + getColorClass(t.color, 'hover')"
+                                                        class="w-full text-left px-1.5 py-1 border rounded-md transition-colors group grid grid-cols-[26px_minmax(0,1fr)] gap-x-2 items-center min-h-[40px]">
+                                                    <div class="w-[26px] h-[26px] rounded-md flex items-center justify-center text-xs"
+                                                         :class="getColorClass(t.color, 'bg')">
+                                                        <i x-show="!(creating && selectedTemplate === t.key)"
+                                                           class="fa-solid"
+                                                           :class="[t.icon, getColorClass(t.color, 'text')]"></i>
+                                                        <i x-show="creating && selectedTemplate === t.key" x-cloak
+                                                           class="fa-solid fa-spinner fa-spin"
+                                                           :class="getColorClass(t.color, 'text')"></i>
+                                                    </div>
+                                                    <div class="min-w-0">
+                                                        <div class="flex items-center gap-1.5 min-w-0 text-[13px] font-medium text-gray-900 leading-tight group-hover:text-blue-700">
+                                                            <span class="truncate" x-text="t.name"></span>
+                                                            <span x-show="t.companions && t.companions.length"
+                                                                  class="flex-none px-1 py-px rounded text-[9.5px] font-semibold tracking-wide bg-teal-100 text-teal-700"
+                                                                  x-text="'+ ' + companionNames(t)"></span>
+                                                        </div>
+                                                        <div class="text-[11.5px] text-gray-500 truncate leading-snug" x-text="t.description"></div>
+                                                    </div>
+                                                </button>
+                                            </form>
+                                        </template>
+                                    </div>
+                                </section>
                             </template>
+                            <p class="text-sm text-gray-500 py-4 text-center"
+                               x-show="!loadingTemplates && templates.length && !visibleGroups().length" x-cloak>
+                                No template matches “<span x-text="templateFilter"></span>”.
+                            </p>
                         </div>
 
-                        <div class="mt-6 pt-4 border-t border-gray-200">
+                        <div class="mt-4 pt-3 border-t border-gray-200">
                             <button @click="cancelCreating()"
                                     type="button"
                                     class="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">

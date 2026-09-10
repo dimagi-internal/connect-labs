@@ -277,6 +277,86 @@ def schedule_options_for_definition(definition) -> list[dict]:
     return options
 
 
+# =============================================================================
+# Groups — how the template picker is organised
+# =============================================================================
+#
+# The picker used to be one flat list in module-load order, three lines per
+# card, 27 cards: a long scroll to find the thing you came for. Templates are
+# grouped by what they PRODUCE — the question a person has when they open the
+# picker — not by the programme they were written for; a programme's name is
+# still in the description where it matters (176, 217), and the filter box finds
+# it. Order is by how often each family is opened: reports first, demos last.
+#
+# One map, one file, so reorganising the picker is an edit here and nowhere
+# else. Every registered template must appear (enforced by
+# test_template_groups.py), so a new template cannot silently fall into "other".
+TEMPLATE_GROUPS: list[dict] = [
+    {"key": "reports", "label": "Programme reports", "blurb": "cross-opportunity, drillable, read-only"},
+    {"key": "automatic", "label": "Automatic reports", "blurb": "computed on a schedule, nothing to decide"},
+    {"key": "reviews", "label": "Worker reviews", "blurb": "one scorecard per worker, you assign a status"},
+    {"key": "audits", "label": "Audits", "blurb": "decide on photos and records, or create the audits"},
+    {"key": "tracking", "label": "Beneficiary tracking", "blurb": "one child across follow-up visits"},
+    {"key": "other", "label": "Outreach & demos", "blurb": "talk to workers, or show the platform"},
+]
+
+TEMPLATE_GROUP_OF: dict[str, str] = {
+    # Programme reports: read across opportunities and drill down.
+    "kmc_programme_metrics": "reports",
+    "program_admin_report": "reports",
+    "audit_par": "reports",
+    "chc_audit_history": "reports",
+    "flw_audit_trend_dashboard": "reports",
+    "flw_daily_indicator_table": "reports",
+    "kmc_project_metrics": "reports",
+    "verified_monitoring": "reports",
+    # Automatic reports: run themselves on a schedule, no statuses.
+    "flw_weekly_audit_report": "automatic",
+    "flw_daily_indicator_report": "automatic",
+    "flw_daily_summary_report": "automatic",
+    # Worker reviews: one worker per row, a decision expected.
+    "performance_review": "reviews",
+    "llo_weekly_review": "reviews",
+    "chc_nutrition_analysis": "reviews",
+    "mbw_auditing_v5": "reviews",
+    # Audits: a photo or record gets a verdict, plus the creators that spawn them.
+    "bulk_image_audit": "audits",
+    "muac_picture_audit": "audits",
+    "kmc_image_audit": "audits",
+    "weekly_dual_track_audit": "audits",
+    "audit_with_ai_review": "audits",
+    "program_audit_creator": "audits",
+    "kmc_flw_flags": "audits",
+    # Beneficiary tracking: keyed on a child, not a worker.
+    "kmc_longitudinal": "tracking",
+    "sam_followup": "tracking",
+    # Outreach & demos.
+    "ocs_outreach": "other",
+    "interviews_reporting_v2": "other",
+    "jakusko_chlorine_dispenser": "other",
+    # A companion: created with the programme report, shown as a tag on its
+    # row rather than a card. Grouped with its primary for the MCP listing.
+    "kmc_flw_review": "reports",
+}
+
+
+def template_groups() -> list[dict]:
+    """The picker's groups, in display order — copies, so a caller cannot
+    reorder the registry's constant by accident."""
+    return [dict(g) for g in TEMPLATE_GROUPS]
+
+
+def _companion_of(key: str) -> list[str]:
+    """The templates that create ``key`` as a companion — the picker shows such
+    a template as a tag on its primary's row, not as a card of its own."""
+    return [
+        k
+        for k, t in TEMPLATES.items()
+        if not t.get("deprecated")
+        and any(isinstance(c, dict) and c.get("template_key") == key for c in t.get("companions") or [])
+    ]
+
+
 def list_templates() -> list[dict]:
     """
     List available templates for creation/listing surfaces.
@@ -287,7 +367,8 @@ def list_templates() -> list[dict]:
 
     Returns:
         List of dicts with 'key', 'name', 'description', 'icon', 'color',
-        'multi_opp', 'supports_saved_runs' and 'companions' (template keys).
+        'multi_opp', 'supports_saved_runs', 'companions' (template keys),
+        'group' (a TEMPLATE_GROUPS key) and 'companion_of' (template keys).
     """
     return [
         {
@@ -301,6 +382,10 @@ def list_templates() -> list[dict]:
             # Templates created alongside this one (see "Companions" below), so a
             # creation surface can say "also creates X" instead of surprising you.
             "companions": [c["template_key"] for c in t.get("companions") or [] if isinstance(c, dict)],
+            # The picker's section for this template (TEMPLATE_GROUP_OF), and
+            # the templates that create it alongside themselves, if any.
+            "group": TEMPLATE_GROUP_OF.get(key, "other"),
+            "companion_of": _companion_of(key),
         }
         for key, t in TEMPLATES.items()
         if not t.get("deprecated")
@@ -1135,6 +1220,7 @@ __all__ = [
     "list_templates",
     "create_workflow_from_template",
     "companion_links",
+    "template_groups",
     "run_default_for_definition",
     "resolve_snapshot_contract",
     "resolve_snapshot_opp_scope",
