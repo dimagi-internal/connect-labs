@@ -44,6 +44,18 @@ constants:
   WMIN: 250 # implausible weight floor (g). 250, not 400: these are preterm
   # babies and a 400g floor silently discards real low-birth-weight readings.
   WMAX: 8000 # implausible weight ceiling (g)
+  # Neal's demo compute spec, section 2 ("all cutoffs -- no magic numbers in code").
+  # Read only by the *_spec properties below, which the N-series measures use; the
+  # C-series keeps the workbook rules above.
+  STARTED_MIN_VISITS: 2 # started = num_visits >= 2 (spec 2b)
+  SERIES_WINDOW_DAYS: 21 # growth window: first 21 days of the measured series
+  VELOCITY_MIN_SPAN: 5 # velocity needs >=2 in-window weigh-days spanning >=5 days
+  THIN_MIN_DAYS: 3 # thin: <3 measured weigh-days
+  INCONSISTENT_RATIO: 0.6 # inconsistent: first-visit wt < 0.60 x birth wt
+  IMPOSSIBLE_LO: -20 # impossible step: visit-to-visit change outside -20..45 g/kg/day
+  IMPOSSIBLE_HI: 45
+  IMPOSSIBLE_GAP_MIN: 1 # checked only between visits 1-90 days apart
+  IMPOSSIBLE_GAP_MAX: 90
 
 # ---------------------------------------------------------------------------
 # Per-baby aggregates over the visit series. These replace the JS `series` map
@@ -141,6 +153,32 @@ weight_series:
       sql: '(ARRAY_AGG(w ORDER BY day DESC) FILTER (WHERE age_days BETWEEN :GROWTH_LO_DAY AND :GROWTH_HI_DAY))[1]'
     - name: growth_w28_day
       sql: '(ARRAY_AGG(day ORDER BY day DESC) FILTER (WHERE age_days BETWEEN :GROWTH_LO_DAY AND :GROWTH_HI_DAY))[1]'
+    # --- Demo compute spec (section 2b): the first SERIES_WINDOW_DAYS days of the
+    # measured series, counted from the first weighing (series_day), not from the
+    # first visit. Velocity = (last - first) / span / (mean / 1000) over that window.
+    - name: win_n
+      sql: 'COUNT(*) FILTER (WHERE series_day <= :SERIES_WINDOW_DAYS)'
+    - name: win_first_w
+      sql: '(ARRAY_AGG(w ORDER BY day ASC) FILTER (WHERE series_day <= :SERIES_WINDOW_DAYS))[1]'
+    - name: win_last_w
+      sql: '(ARRAY_AGG(w ORDER BY day DESC) FILTER (WHERE series_day <= :SERIES_WINDOW_DAYS))[1]'
+    - name: win_span_days
+      sql: 'MAX(day) FILTER (WHERE series_day <= :SERIES_WINDOW_DAYS) - MIN(day) FILTER (WHERE series_day <= :SERIES_WINDOW_DAYS)'
+    - name: win_mean_w
+      sql: 'AVG(w) FILTER (WHERE series_day <= :SERIES_WINDOW_DAYS)'
+    # An impossible STEP is a per-pair rate in g/kg/day -- the change between two
+    # consecutive weighings divided by the earlier weight in kg and by the days
+    # between them -- outside IMPOSSIBLE_LO..HI, checked only inside the window and
+    # only between weighings 1-90 days apart. The enrolment weight is not in this
+    # series, so the spec's enrolment->visit-1 exclusion holds by construction.
+    - name: any_impossible_step
+      sql: >-
+        BOOL_OR(prev_day IS NOT NULL
+                AND series_day <= :SERIES_WINDOW_DAYS
+                AND (day - prev_day) BETWEEN :IMPOSSIBLE_GAP_MIN AND :IMPOSSIBLE_GAP_MAX
+                AND prev_w > 0
+                AND ((w - prev_w) / (prev_w / 1000.0) / (day - prev_day))
+                    NOT BETWEEN :IMPOSSIBLE_LO AND :IMPOSSIBLE_HI)
 
 # ---------------------------------------------------------------------------
 # The workbook's Layer 2 properties.
@@ -293,6 +331,77 @@ properties:
            WHEN early_g_per_kg_day > growth_plausible_hi THEN 'fast'
            ELSE 'plausible' END
     notes: 'The banded counterpart of growth_class. Computed only when the case is sufficient AND banded, so slow/plausible/fast plus not-sufficient partition the qualifying set exactly.'
+
+  # -------------------------------------------------------------------------
+  # The demo compute spec's OWN definitions (sections 2 and 2b), suffixed _spec.
+  # Neal's section 5 numbers are computed with these; the N-series measures read
+  # them. The C-series properties above are untouched and keep their parity.
+  #   started      = at least STARTED_MIN_VISITS visits (the C-series says >= 1)
+  #   velocity     = first 21 days of the measured series, mean-weight denominator
+  #   sufficient   = computable AND NOT thin AND NOT inconsistent AND NOT impossible
+  #   growth_class = the band-specific plausible range, on the spec velocity
+  # -------------------------------------------------------------------------
+  - name: visits_spec
+    type: int
+    sql: 'CASE WHEN n_form_names > 0 THEN n_followups ELSE num_visits END'
+    notes: "The spec's num_visits counts visit submissions, not the registration form."
+
+  - name: started_spec
+    type: bool
+    sql: 'visits_spec >= :STARTED_MIN_VISITS'
+    notes: 'Spec 2b: started = num_visits >= 2.'
+
+  - name: eligible_28d_spec
+    type: bool
+    sql: 'started_spec AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_OUTCOME_DAYS'
+
+  - name: eligible_42d_spec
+    type: bool
+    sql: 'started_spec AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_GROWTH_DAYS'
+
+  - name: velocity_spec
+    type: number
+    sql: >-
+      CASE WHEN COALESCE(win_n, 0) >= 2
+                AND COALESCE(win_span_days, 0) >= :VELOCITY_MIN_SPAN
+                AND win_mean_w > 0
+           THEN (win_last_w - win_first_w) / win_span_days / (win_mean_w / 1000.0)
+           ELSE NULL END
+    notes: 'Spec 2b early_g_per_kg_day: (last_in_window - first) / days / (mean_in_window / 1000); null under 2 in-window points or a span under 5 days.'
+
+  - name: flag_thin
+    type: bool
+    sql: 'COALESCE(n_weight_days, 0) < :THIN_MIN_DAYS'
+
+  - name: flag_inconsistent
+    type: bool
+    sql: 'birth_weight_g IS NOT NULL AND first_weight_g IS NOT NULL AND first_weight_g < :INCONSISTENT_RATIO * birth_weight_g'
+
+  - name: flag_impossible
+    type: bool
+    sql: 'COALESCE(any_impossible_step, FALSE)'
+
+  - name: computable_spec
+    type: bool
+    sql: 'velocity_spec IS NOT NULL'
+
+  - name: sufficient_spec
+    type: bool
+    sql: 'computable_spec AND NOT flag_thin AND NOT flag_inconsistent AND NOT flag_impossible'
+
+  - name: growth_class_spec
+    type: categorical
+    sql: >-
+      CASE WHEN NOT sufficient_spec THEN NULL
+           WHEN birthweight_band IS NULL THEN NULL
+           WHEN velocity_spec < growth_plausible_lo THEN 'slow'
+           WHEN velocity_spec > growth_plausible_hi THEN 'fast'
+           ELSE 'plausible' END
+
+  - name: qualifying_spec
+    type: bool
+    sql: 'eligible_42d_spec AND birthweight_band IS NOT NULL'
+    notes: 'Spec 3: qualifying SVN = eligible_42d AND birthweight_band is not null. The one denominator of N09-N12.'
 
   - name: eligible_28d
     type: bool
