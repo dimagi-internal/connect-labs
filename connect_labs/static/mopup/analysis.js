@@ -1,5 +1,5 @@
-// Phase 2 analysis screen: per-indicator thresholds/granularity + global
-// cluster settings, recomputed live against a run's already-loaded data via
+// Phase 2 analysis screen: per-indicator thresholds + global neighbor/gate
+// settings, recomputed live against a run's already-loaded data via
 // MopupCandidatesView. The first load (and only the first load) triggers a
 // real, potentially slow Celery fetch server-side (see mopup/tasks.py) —
 // this file polls MopupCandidatesView until it reports the fetch is done,
@@ -57,33 +57,44 @@ window.MopupAnalysis = (function () {
   function indicatorSettingsRowHtml(def) {
     if (def.key === 'evc_shortfall') {
       return `<tr class="ind-subrow bg-gray-50 text-xs border-b border-gray-50" data-key="evc_shortfall_settings">
-        <td class="py-1 pl-8 pr-2 text-gray-600" colspan="5">
+        <td class="py-1 pl-8 pr-2 text-gray-600" colspan="4">
           <label class="inline-flex items-center gap-1 mr-4">
             <input type="checkbox" id="cfg-include-not-visited">
             Include not-yet-visited in EVC <span class="info-icon" tabindex="0" data-tip="A work area that's not yet visited (or has a pending inaccessible request) is excluded from EVC-shortfall scoring by default, since the campaign may just not have reached it yet. Check this to score it anyway.">ⓘ</span>
           </label>
+          <span class="inline-flex items-center gap-1 mr-4">
+            Min EVC floor
+            <input type="number" id="cfg-min-evc-floor" class="base-input" style="width:4rem" min="0">
+            <span class="info-icon" tabindex="0" data-tip="A plain worth-visiting cutoff: excludes work areas whose EXPECTED visit count itself is below this from EVC shortfall entirely.">ⓘ</span>
+          </span>
+          <span class="inline-flex items-center gap-1 mr-4">
+            Neighbor distance, m (EVC)
+            <input type="number" id="cfg-evc-neighbor-distance" class="base-input" style="width:4rem" min="1">
+          </span>
           <span class="inline-flex items-center gap-1">
-            Min neighbor count
-            <input type="number" id="cfg-min-neighbors" class="base-input" style="width:4rem" min="1">
-            <span class="info-icon" tabindex="0" data-tip="The fewest qualifying neighbors a work area needs before its neighborhood's rate is trusted for cluster detection.">ⓘ</span>
-            <span class="info-icon evc-min-neighbors-note hidden" tabindex="0" data-tip="Only used under Cluster-aware.">ⓘ</span>
+            Min neighbor count (EVC)
+            <input type="number" id="cfg-evc-min-neighbor-count" class="base-input" style="width:4rem" min="1">
+            <span class="info-icon" tabindex="0" data-tip="Used by the optional cluster-aware filter (Shared settings): the fewest spatially-nearby neighbors that must ALSO be flagged on EVC shortfall to corroborate it.">ⓘ</span>
           </span>
         </td>
       </tr>`;
     }
     if (def.key === 'ncf_inaccessible_rate') {
       return `<tr class="ind-subrow bg-gray-50 text-xs border-b border-gray-50" data-key="ncf_inaccessible_rate_settings">
-        <td class="py-1 pl-8 pr-2 text-gray-600" colspan="5">
+        <td class="py-1 pl-8 pr-2 text-gray-600" colspan="4">
           <span class="inline-flex items-center gap-1 mr-4">
             Min building count
             <input type="number" id="cfg-min-buildings" class="base-input" style="width:4rem" min="0">
             <span class="info-icon" tabindex="0" data-tip="The fewest real buildings a work area needs before an NCF or Inaccessible result there is treated as meaningful.">ⓘ</span>
           </span>
+          <span class="inline-flex items-center gap-1 mr-4">
+            Neighbor distance, m (NCF)
+            <input type="number" id="cfg-ncf-neighbor-distance" class="base-input" style="width:4rem" min="1">
+          </span>
           <span class="inline-flex items-center gap-1">
             Min affected neighbors (NCF)
             <input type="number" id="cfg-min-affected-neighbors-ncf" class="base-input" style="width:4rem" min="0">
-            <span class="info-icon" tabindex="0" data-tip="Cluster-aware only: a work area can only ever log ONE NCF-or-Inaccessible visit, so instead of averaging a rate across neighbors, this counts how many spatially-nearby work areas were ALSO affected. At least this many must be affected to corroborate.">ⓘ</span>
-            <span class="info-icon ncf-min-affected-note hidden" tabindex="0" data-tip="Only used under Cluster-aware.">ⓘ</span>
+            <span class="info-icon" tabindex="0" data-tip="Informational only — NCF/inaccessible is always exempt from the cluster-aware filter (a work area can only ever log ONE NCF-or-Inaccessible visit, so there's no rate to corroborate). This just flags, for your own reading, whether an NCF/inaccessible result looks spatially clustered or isolated.">ⓘ</span>
           </span>
         </td>
       </tr>`;
@@ -98,8 +109,8 @@ window.MopupAnalysis = (function () {
         const cfg = indicatorConfigs[def.key] || {
           enabled: true,
           threshold: 0.5,
-          granularity: 'cluster_aware',
         };
+        const isNcf = def.key === 'ncf_inaccessible_rate';
         const row = `<tr class="border-b border-gray-50" data-key="${def.key}">
           <td class="py-2 pr-2"><input type="checkbox" class="ind-enabled" ${
             cfg.enabled ? 'checked' : ''
@@ -109,81 +120,16 @@ window.MopupAnalysis = (function () {
           )} <span class="info-icon" tabindex="0" data-tip="${esc(
             INDICATOR_TOOLTIPS[def.key] || '',
           )}">ⓘ</span></td>
-          <td class="py-2 pr-2">
-            <input type="number" step="0.01" min="0" max="1" class="ind-threshold base-input" style="width:6rem" value="${
-              cfg.threshold
-            }">${
-              def.key === 'ncf_inaccessible_rate'
-                ? ` <span class="info-icon ncf-threshold-note hidden" tabindex="0" data-tip="Not used under Cluster-aware — see &quot;Min affected neighbors (NCF)&quot; below instead.">ⓘ</span>`
-                : ''
-            }
-          </td>
-          <td class="py-2 pr-2">
-            <select class="ind-granularity base-input" style="width:10rem">
-              <option value="wa_only" ${
-                cfg.granularity === 'wa_only' ? 'selected' : ''
-              }>This WA only</option>
-              <option value="cluster_aware" ${
-                cfg.granularity === 'cluster_aware' ? 'selected' : ''
-              }>Cluster-aware</option>
-              <option value="flw_average" ${
-                cfg.granularity === 'flw_average' ? 'selected' : ''
-              }>Whole-FLW average</option>
-            </select>
-          </td>
+          <td class="py-2 pr-2">${
+            isNcf
+              ? `<span class="text-gray-400 italic">Floor is any NCF/Inaccessible visit — no threshold</span>`
+              : `<input type="number" step="0.01" min="0" max="1" class="ind-threshold base-input" style="width:6rem" value="${cfg.threshold}">`
+          }</td>
           <td class="py-2 pr-2 ind-trigger-count">—</td>
         </tr>`;
         return row + indicatorSettingsRowHtml(def);
       })
       .join('');
-    updateInlineSettingsState();
-  }
-
-  // Some inline settings only apply under one Comparison scope, per
-  // indicator — greyed out with a visible tooltip otherwise (never just a
-  // native `title`, which needs a ~1s hover dwell and is easy to miss
-  // entirely; the whole reason the .info-icon tooltip exists on this page).
-  function updateInlineSettingsState() {
-    const ncfRow = document.querySelector(
-      '#indicator-rows tr[data-key="ncf_inaccessible_rate"]',
-    );
-    if (ncfRow) {
-      const isClusterAware =
-        ncfRow.querySelector('.ind-granularity').value === 'cluster_aware';
-      const thresholdInput = ncfRow.querySelector('.ind-threshold');
-      const thresholdNote = ncfRow.querySelector('.ncf-threshold-note');
-      thresholdInput.disabled = isClusterAware;
-      thresholdInput.classList.toggle('opacity-40', isClusterAware);
-      if (thresholdNote)
-        thresholdNote.classList.toggle('hidden', !isClusterAware);
-
-      const minAffectedInput = $('cfg-min-affected-neighbors-ncf');
-      const minAffectedNote = document.querySelector('.ncf-min-affected-note');
-      if (minAffectedInput) {
-        minAffectedInput.disabled = !isClusterAware;
-        minAffectedInput.classList.toggle('opacity-40', !isClusterAware);
-      }
-      if (minAffectedNote)
-        minAffectedNote.classList.toggle('hidden', isClusterAware);
-    }
-
-    const evcRow = document.querySelector(
-      '#indicator-rows tr[data-key="evc_shortfall"]',
-    );
-    if (evcRow) {
-      const isClusterAware =
-        evcRow.querySelector('.ind-granularity').value === 'cluster_aware';
-      const minNeighborsInput = $('cfg-min-neighbors');
-      const minNeighborsNote = document.querySelector(
-        '.evc-min-neighbors-note',
-      );
-      if (minNeighborsInput) {
-        minNeighborsInput.disabled = !isClusterAware;
-        minNeighborsInput.classList.toggle('opacity-40', !isClusterAware);
-      }
-      if (minNeighborsNote)
-        minNeighborsNote.classList.toggle('hidden', isClusterAware);
-    }
   }
 
   function renderIndicatorCounts(counts) {
@@ -195,25 +141,34 @@ window.MopupAnalysis = (function () {
   }
 
   function renderGlobalConfig() {
-    $('cfg-neighbor-distance').value = globalConfig.neighbor_distance_m;
-    $('cfg-min-neighbors').value = globalConfig.min_neighbor_count;
-    $('cfg-min-portfolio').value = globalConfig.min_neighborhood_size;
-    $('cfg-min-hsd').value = globalConfig.min_hsd_visits_floor;
-    $('cfg-min-buildings').value = globalConfig.min_building_count;
-    $('cfg-min-affected-neighbors-ncf').value =
-      globalConfig.min_affected_neighbors_ncf;
     $('cfg-include-not-visited').checked =
       !!globalConfig.include_not_yet_visited;
+    $('cfg-min-evc-floor').value = globalConfig.min_evc_floor;
+    $('cfg-evc-neighbor-distance').value = globalConfig.evc_neighbor_distance_m;
+    $('cfg-evc-min-neighbor-count').value = globalConfig.evc_min_neighbor_count;
+    $('cfg-min-buildings').value = globalConfig.min_building_count;
+    $('cfg-ncf-neighbor-distance').value = globalConfig.ncf_neighbor_distance_m;
+    $('cfg-min-affected-neighbors-ncf').value =
+      globalConfig.min_affected_neighbors_ncf;
+    $('cfg-cluster-filter-enabled').checked =
+      !!globalConfig.cluster_aware_filter_enabled;
+    $('cfg-tier2-neighbor-distance').value =
+      globalConfig.tier2_neighbor_distance_m;
+    $('cfg-tier2-min-neighbor-count').value =
+      globalConfig.tier2_min_neighbor_count;
+    $('cfg-min-hsd').value = globalConfig.min_hsd_visits_floor;
   }
 
   function collectIndicatorConfigs() {
     const out = {};
     document.querySelectorAll('#indicator-rows tr').forEach((tr) => {
       const key = tr.dataset.key;
+      const thresholdInput = tr.querySelector('.ind-threshold');
       out[key] = {
         enabled: tr.querySelector('.ind-enabled').checked,
-        threshold: parseFloat(tr.querySelector('.ind-threshold').value) || 0,
-        granularity: tr.querySelector('.ind-granularity').value,
+        ...(thresholdInput
+          ? { threshold: parseFloat(thresholdInput.value) || 0 }
+          : {}),
       };
     });
     return out;
@@ -221,14 +176,23 @@ window.MopupAnalysis = (function () {
 
   function collectGlobalConfig() {
     return {
-      neighbor_distance_m: parseFloat($('cfg-neighbor-distance').value) || 0,
-      min_neighbor_count: parseInt($('cfg-min-neighbors').value, 10) || 0,
-      min_neighborhood_size: parseInt($('cfg-min-portfolio').value, 10) || 0,
-      min_hsd_visits_floor: parseInt($('cfg-min-hsd').value, 10) || 0,
+      include_not_yet_visited: $('cfg-include-not-visited').checked,
+      min_evc_floor: parseInt($('cfg-min-evc-floor').value, 10) || 0,
+      evc_neighbor_distance_m:
+        parseFloat($('cfg-evc-neighbor-distance').value) || 0,
+      evc_min_neighbor_count:
+        parseInt($('cfg-evc-min-neighbor-count').value, 10) || 0,
       min_building_count: parseInt($('cfg-min-buildings').value, 10) || 0,
+      ncf_neighbor_distance_m:
+        parseFloat($('cfg-ncf-neighbor-distance').value) || 0,
       min_affected_neighbors_ncf:
         parseInt($('cfg-min-affected-neighbors-ncf').value, 10) || 0,
-      include_not_yet_visited: $('cfg-include-not-visited').checked,
+      cluster_aware_filter_enabled: $('cfg-cluster-filter-enabled').checked,
+      tier2_neighbor_distance_m:
+        parseFloat($('cfg-tier2-neighbor-distance').value) || 0,
+      tier2_min_neighbor_count:
+        parseInt($('cfg-tier2-min-neighbor-count').value, 10) || 0,
+      min_hsd_visits_floor: parseInt($('cfg-min-hsd').value, 10) || 0,
     };
   }
 
@@ -279,7 +243,7 @@ window.MopupAnalysis = (function () {
 
   const INDICATOR_LABELS = {
     evc_shortfall: 'EVC shortfall',
-    ncf_inaccessible_rate: 'NCF / inaccessible rate',
+    ncf_inaccessible_rate: 'NCF / inaccessible',
     deworming: 'Deworming completion',
     muac: 'MUAC-recorded rate',
     vaccination: 'Vaccination-given rate',
@@ -291,6 +255,13 @@ window.MopupAnalysis = (function () {
       .map((key) => {
         const label = INDICATOR_LABELS[key] || key;
         const detail = (c.detail || {})[key] || {};
+        if (key === 'ncf_inaccessible_rate') {
+          const signals = [];
+          if (detail.own_ncf_form) signals.push('NCF visit');
+          if (detail.own_inaccessible_form) signals.push('Inaccessible visit');
+          const signal = signals.join(' + ') || 'affected';
+          return esc(`${label} (affected — ${signal})`);
+        }
         const rate = detail.rate;
         const num = detail.own_numerator;
         const denom = detail.own_denominator;
@@ -309,6 +280,7 @@ window.MopupAnalysis = (function () {
           <td class="p-2">${c.building_count}</td><td class="p-2">${
             c.expected_visit_count
           }</td>
+          <td class="p-2">${c.tier ? `Tier ${c.tier}` : '—'}</td>
           <td class="p-2" title="${esc(SEVERITY_TOOLTIP)}">${
             c.severity_count
           }</td>
@@ -317,11 +289,12 @@ window.MopupAnalysis = (function () {
   }
 
   function renderCandidates() {
-    const rows = [...lastCandidates].sort((a, b) =>
-      severitySortDesc
+    const rows = [...lastCandidates].sort((a, b) => {
+      if (a.tier !== b.tier) return a.tier - b.tier;
+      return severitySortDesc
         ? b.severity_count - a.severity_count
-        : a.severity_count - b.severity_count,
-    );
+        : a.severity_count - b.severity_count;
+    });
     const html = rows.map((c) => candidateRowHtml(c)).join('');
     // Gap-fill rows (Step 2's new work areas for uncovered buildings, if
     // computed) always render after the execution-gap candidates, tinted so
@@ -857,10 +830,6 @@ window.MopupAnalysis = (function () {
     initMap(cfg.mapboxToken);
     renderIndicatorRows();
     renderGlobalConfig();
-    $('indicator-rows').addEventListener('change', (e) => {
-      if (e.target.classList.contains('ind-granularity'))
-        updateInlineSettingsState();
-    });
     $('recompute').addEventListener('click', pollOrEvaluate);
     $('loading-retry').addEventListener('click', retryLoad);
     $('sort-severity').addEventListener('click', () => {
