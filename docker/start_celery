@@ -9,4 +9,17 @@ set -o nounset
 # so N processes > vCPU count is fine — they mostly wait on I/O. 6 comfortably runs a
 # 4-opportunity program in parallel with headroom for other users; the 8 GB worker
 # has ample memory for the extra prefork processes.
-REMAP_SIGTERM=SIGQUIT celery -A config.celery_app worker -l INFO --concurrency 6 --max-tasks-per-child 20 --beat
+#
+# `exec`, so celery is PID 1 and actually RECEIVES the stop signal. The task
+# definition runs `bash /app/docker/start_celery`; with celery as a child of a
+# bash PID 1, ECS's SIGTERM was silently dropped (see docker/start for the
+# mechanism), so REMAP_SIGTERM below has never once taken effect: every
+# replaced worker ran on, Beat kept dispatching due tasks, and the whole
+# process tree was SIGKILLed at the 30s stopTimeout. Measured 2026-09-10 on
+# task 782a059a: ECS issued the stop at 10:15:57, the worker was still
+# scheduling pulse-summary-warm at 10:16:20, and the log ends with no
+# shutdown line. exec makes the remap real -- SIGTERM becomes celery's
+# SIGQUIT cold shutdown, which stops Beat and the pool cleanly instead of
+# leaving half-run tasks and a stale beat schedule behind on every deploy.
+export REMAP_SIGTERM=SIGQUIT
+exec celery -A config.celery_app worker -l INFO --concurrency 6 --max-tasks-per-child 20 --beat
