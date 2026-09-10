@@ -385,7 +385,14 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         context["uploaded_buildings_filename"] = run.uploaded_buildings_filename
         context["uploaded_buildings_row_count"] = run.uploaded_buildings_row_count
         context["indicator_configs"] = run.thresholds.get("indicator_configs") or ind.DEFAULT_INDICATOR_CONFIGS
-        context["global_config"] = run.thresholds.get("global_config") or ind.DEFAULT_GLOBAL_CONFIG
+        # Merge, not replace: a run whose thresholds were saved before a
+        # global_config key was introduced (every run predating this schema)
+        # would otherwise render that setting's input blank instead of its
+        # default, and Recompute would then collect that blank as 0/false —
+        # silently different from what a fresh run gets. evaluate_run already
+        # self-heals this for the CALCULATION (same merge pattern), but nothing
+        # upstream did it for what the template actually renders into the form.
+        context["global_config"] = {**ind.DEFAULT_GLOBAL_CONFIG, **(run.thresholds.get("global_config") or {})}
         context["indicator_defs"] = [
             {"key": ind.EVC_SHORTFALL, "label": "EVC shortfall", "tier": 1},
             {"key": ind.NCF_INACCESSIBLE, "label": "NCF / inaccessible", "tier": 1},
