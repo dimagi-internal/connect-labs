@@ -34,6 +34,27 @@ def _square(x0, y0, x1, y1):
     return {"type": "Polygon", "coordinates": [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]}
 
 
+class TestBuildingsWithinWard:
+    def test_none_buildings_delegates_to_fetch_buildings(self, monkeypatch):
+        sentinel = _buildings_df([(0.001, 0.001)])
+        monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: sentinel)
+        result = gaps.buildings_within_ward(object())
+        assert result is sentinel
+
+    def test_pre_built_buildings_are_clipped_to_the_ward_boundary(self, monkeypatch):
+        def boom(*a, **k):
+            raise AssertionError("fetch_buildings should not be called when buildings= is given")
+
+        monkeypatch.setattr(gaps, "fetch_buildings", boom)
+        buildings = _buildings_df([(0.005, 0.005), (5.0, 5.0)])
+        result = gaps.buildings_within_ward(shape(_WARD_BOUNDARY), buildings)
+        assert len(result) == 1
+        assert result.iloc[0]["lon"] == pytest.approx(0.005)
+
+    def test_empty_buildings_returns_empty(self):
+        assert gaps.buildings_within_ward(object(), _buildings_df([])).empty
+
+
 class TestBuildingsNotCovered:
     def test_no_existing_boundaries_returns_everything(self, monkeypatch):
         buildings = _buildings_df([(0.001, 0.001), (0.005, 0.005)])
@@ -225,18 +246,24 @@ class TestPlanningGapFeatures:
         assert len(points) == 2
         assert {"lon", "lat"} <= points[0].keys()
 
-    def test_existing_wa_boundaries_reduce_the_gridded_remainder(self, monkeypatch):
+    def test_existing_wa_boundaries_reduce_the_gridded_remainder_but_not_the_building_points(self, monkeypatch):
         buildings = _buildings_df([(0.001, 0.001), (0.008, 0.008)])
         monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: buildings)
-        # Excluding the WA covering the first building leaves only the second.
+        # Excluding the WA covering the first building leaves only the
+        # second for gridding -- but building_points is every building
+        # within the ward, covered or not (the map's "uploaded buildings"
+        # layer shows the reviewer everything inside the ward they're
+        # reviewing, not just the subset that became new gap-fill cells).
         existing = [_square(0.0, 0.0, 0.002, 0.002)]
         features, points = gaps.planning_gap_features(
             "Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), existing
         )
         total_buildings = sum(f["properties"]["building_count"] for f in features)
         assert total_buildings == 1
-        assert len(points) == 1
-        assert points[0]["lon"] == pytest.approx(0.008)
+        assert len(points) == 2
+        lons = sorted(p["lon"] for p in points)
+        assert lons[0] == pytest.approx(0.001)
+        assert lons[1] == pytest.approx(0.008)
 
     def test_no_remainder_returns_empty(self, monkeypatch):
         monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: _buildings_df([]))
