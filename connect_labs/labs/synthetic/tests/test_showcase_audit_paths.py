@@ -33,7 +33,10 @@ def kmc():
 
 def _first_visit(image_config: dict):
     cfg = ImageConfig(**image_config)
-    return build_showcase_visits(cfg, opportunity_id=10020, start_date=dt.date(2026, 3, 2))[0]
+    visits = build_showcase_visits(cfg, opportunity_id=10020, start_date=dt.date(2026, 3, 2))
+    # The first visit is now the registration form, which carries no weighing
+    # and no photo; the audit reads the weighings, so test the first of those.
+    return next(v for v in visits if v["images"])
 
 
 def test_the_audit_sees_the_question_id_the_config_must_name(kmc):
