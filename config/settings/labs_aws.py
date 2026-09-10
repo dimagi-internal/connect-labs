@@ -133,7 +133,12 @@ MANAGERS = []
 # SENTRY
 # ------------------------------------------------------------------------------
 SENTRY_DSN = env("SENTRY_DSN", default="")
-APP_RELEASE = env("APP_RELEASE", default=None)
+# GIT_SHA is set on the task definition by the deploy for the commit it rolled
+# out; APP_RELEASE is baked into the image at build time. They differ now that
+# CI builds the image on the PR's merge commit and the deploy reuses it by tree
+# hash: the baked value names a commit that never existed on main. Prefer the
+# deploy's, so a Sentry release always resolves to the commit that is live.
+APP_RELEASE = env("GIT_SHA", default=None) or env("APP_RELEASE", default=None)
 if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.celery import CeleryIntegration

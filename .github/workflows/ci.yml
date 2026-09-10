@@ -20,49 +20,41 @@ on:
   pull_request:
     branches: ['main']
 
-  # NOT an unconditional `push: branches: [main]`. With the merge queue on, every
-  # merge produced THREE runs of this workflow -- pull_request, merge_group, and
-  # then push -- and the third re-tested the exact tree the merge_group run had
-  # just certified. Over a recent 39-hour window that was 107 of 300 runs, a
-  # third of all CI spend, for no signal a required check had not already given.
+  # THE FULL SUITE RUNS ON EVERY PUSH TO MAIN, AFTER THE FACT. This is the
+  # trade made on 2026-09-10 when the merge queue was switched off: a green PR
+  # merges the moment its own checks pass, against whatever main is by then,
+  # and the commit that actually landed is tested HERE, asynchronously, with
+  # nobody waiting on it. The queue's re-run of the same suite against the
+  # queued merge result was a median 4.3 minutes of every merge's wall-clock
+  # (measured over the 30 merges before the switch), spent almost always
+  # confirming that two independently green PRs were also green together.
+  # When they are not, this run goes red within ~3 minutes of the merge and
+  # the fix is a forward commit -- the accepted cost, in exchange for those
+  # minutes back on every one of the ~100 merges a week.
   #
-  # What push-on-main did still cover is a commit that reached main WITHOUT the
-  # queue: an admin merge, or a direct push. The nightly below covers that at
-  # 1/100th the spend, and unlike the push run it also catches main going red
-  # from something outside the repo (a moved dependency, an expired fixture).
-  #
-  # But the push run was ALSO the only thing that ever wrote this workflow's
-  # caches under `main`, and that is the one scope every other run can read
-  # from. A cache saved by a pull_request run lives on `refs/pull/N/merge`; one
-  # saved by a merge_group run lives on the queue's throwaway ref. Neither is
-  # visible to the next PR. Measured 2026-09-10, ~17h after the push trigger was
-  # dropped: 46 of 48 caches in the repo sat on PR/queue refs, NONE of the venv,
-  # geo-deb or JSX-parser caches existed on main, and every pytest job was doing
-  # the full 60-70s dependency install and 16s apt path the caches exist to
-  # skip -- while still uploading ~950MB of caches per run that nothing would
-  # ever restore, pushing the repo to its 10GB cache cap.
-  #
-  # So push-on-main comes back for exactly the files that change a cache key,
-  # so a dependency bump re-seeds main within minutes instead of at the next
-  # nightly. A docs or code change still triggers nothing here.
+  # Two things this run also does that nothing else would:
+  # - It is the only run that writes this workflow's caches under `main`, the
+  #   one scope every PR run can restore from. A PR run's caches live on
+  #   `refs/pull/N/merge` and are invisible to the next PR. Measured 2026-09-10
+  #   after a spell with no push run: zero venv / geo-deb / JSX caches on main
+  #   and every pytest job paying the full 60-70s install the caches exist to
+  #   skip.
+  # - It catches main going red from something outside the repo (a moved
+  #   dependency, an expired fixture), which a PR run would attribute to the PR.
   push:
     branches: ['main']
-    paths:
-      - 'requirements/**'
-      - '.pre-commit-config.yaml'
-      - '.github/workflows/ci.yml'
 
   schedule:
     - cron: '0 7 * * *' # 07:00 UTC daily, against whatever main is by then
 
-  # REQUIRED BY THE MERGE QUEUE, and it must land BEFORE the queue is switched
-  # on. GitHub runs the required checks against the QUEUED MERGE RESULT — this
-  # PR rebased onto the queue head — which arrives as a `merge_group` event on a
-  # `gh-readonly-queue/...` ref, not as a `pull_request` on the branch. Without
-  # this trigger `linter` and `pytest` never report for a queued entry, every
-  # entry sits until `check_response_timeout_minutes` expires, and NOTHING in
-  # the repository can merge. Enabling the queue first also deadlocks the fix:
-  # the PR that adds this line would itself be stuck in the queue.
+  # Kept although the merge queue is OFF (2026-09-10): the trigger is inert
+  # without a queue, and it must already be here on the day someone switches
+  # the queue back on. GitHub runs the required checks against the QUEUED
+  # MERGE RESULT, which arrives as a `merge_group` event on a
+  # `gh-readonly-queue/...` ref, not as a `pull_request`. Without this trigger
+  # `linter` and `pytest` never report for a queued entry, every entry sits
+  # until `check_response_timeout_minutes` expires, NOTHING can merge -- and
+  # the PR that adds the line back is itself stuck in the queue.
   merge_group:
 
 concurrency:
@@ -151,24 +143,35 @@ jobs:
       - name: Check the workflow render templates
         run: node --test connect_labs/workflow/templates/__tests__/kmc_render.test.mjs
 
-  # Build the deployable image for the merge result WHILE the tests run, so the
-  # deploy that follows the merge finds `:<sha>` already in ECR and skips its
-  # own ~100s build (the build was ~25% of a 7-minute deploy; the rest is the
-  # ECS rollout, which nothing here can shorten).
+  # Build the deployable image WHILE the tests run, so the deploy that follows
+  # the merge finds it already in ECR and skips its own ~100s build (the build
+  # was ~25% of a 7-minute deploy; the rest is the ECS rollout, which nothing
+  # here can shorten).
   #
-  # merge_group ONLY. The queue's head SHA is the exact commit that lands on
-  # main, so the image is addressable by the SHA the deploy will look for — a
-  # pull_request run's SHA is a throwaway merge commit nobody will ever deploy.
-  # It also keeps the OIDC deploy role away from pull_request runs of PR code.
+  # ADDRESSED BY TREE HASH, not commit SHA. A pull_request run checks out the
+  # PR's merge commit (refs/pull/N/merge); its commit SHA is a throwaway nobody
+  # deploys, but its TREE is byte-for-byte what a squash-merge of this PR
+  # produces on main -- provided main has not moved since. So the image is
+  # pushed as `:tree-<tree hash>`, and the deploy looks up main's own tree
+  # hash: a hit means "the tree on main is exactly what CI built and tested",
+  # and a miss (main moved, so the merge produced a tree nobody built) means
+  # the deploy builds it, as it always did. With the merge queue on, the same
+  # job runs on merge_group and the tree hit is guaranteed; the `:<sha>` tag
+  # is pushed too in that case, for the same lookup by SHA.
   #
-  # Not a required check, on purpose: if this fails the entry still merges and
-  # the deploy builds the image itself, exactly as it did before this job.
-  # The deploy also refuses to reuse an image whose recorded base/node digests
-  # differ from the current base-latest / node-latest (see the labels in
-  # build-app-image), so an image built here just before a requirements or
-  # frontend change landed cannot be shipped stale.
+  # Same-repo PRs only: the OIDC deploy role is not handed to a fork's code
+  # (and id-token is unavailable to fork PRs regardless).
+  #
+  # Not a required check, on purpose: if this fails the PR still merges and the
+  # deploy builds the image itself. The deploy also refuses to reuse an image
+  # whose recorded base/node digests differ from the current base-latest /
+  # node-latest (see the labels in build-app-image), so an image built here
+  # just before a requirements or frontend change landed cannot ship stale.
   build-image:
-    if: github.event_name == 'merge_group'
+    if: >-
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -199,12 +202,26 @@ jobs:
           registry: ${{ env.ECR_REGISTRY }}
           repository: ${{ env.ECR_REPOSITORY }}
 
-      - name: Build and push the image for this merge result
+      - name: Compute the tree hash this image will be addressed by
+        id: tree
+        run: |
+          TREE=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=$TREE" >> "$GITHUB_OUTPUT"
+          echo "HEAD $(git rev-parse HEAD) has tree $TREE"
+          IMG="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}"
+          TAGS="$IMG:tree-$TREE"
+          # On a merge_group run the SHA is the one that lands on main; tag it too.
+          if [ "${{ github.event_name }}" = merge_group ]; then
+            TAGS="$TAGS"$'\n'"$IMG:${{ github.sha }}"
+          fi
+          { echo "tags<<EOF"; echo "$TAGS"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push the image for this tree
         uses: ./.github/actions/build-app-image
         with:
           registry: ${{ env.ECR_REGISTRY }}
           repository: ${{ env.ECR_REPOSITORY }}
-          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          tags: ${{ steps.tree.outputs.tags }}
           base_image: ${{ steps.bases.outputs.base_image }}
           node_image: ${{ steps.bases.outputs.node_image }}
           base_digest: ${{ steps.bases.outputs.base_digest }}
