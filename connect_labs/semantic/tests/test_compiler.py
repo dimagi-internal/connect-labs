@@ -290,3 +290,37 @@ def test_the_default_as_of_is_today(props_doc, registry):
     sql = compile_indicator_sql(props_doc, registry, "SELECT 1")
     window = sql[sql.index("visits AS (", sql.index("visits_all AS")) : sql.index("weight_days AS")]
     assert "CURRENT_DATE" in window
+
+
+def test_a_seed_reading_is_declared_as_data_and_never_pairs_with_a_visit(props_doc, registry):
+    """The demo compute spec's weight series is the enrolment weight at reg_date PLUS
+    every visit weight, with a same-day visit winning and an enrolment weight within
+    1 g of birth weight dropped as a re-entry. That is `weight_series.seed_reading`,
+    registry data. The seed reading must count as a measured day (the spec's "thin"
+    rule) but never form a pair with a visit reading (the spec excludes the
+    enrolment->visit-1 rebound), and the C-series must not see it at all."""
+    sql = compile_indicator_sql(props_doc, registry, "SELECT 1")
+    readings = sql[sql.index("weight_readings AS") : sql.index("weight_days AS")]
+    assert "UNION ALL" in readings and "TRUE AS is_seed" in readings
+    assert "MIN(reg_date)::date AS day" in readings and "MIN(enrollment_weight_g) AS weight_g" in readings
+    assert "MIN(birth_weight_g) AS birth_weight_g" in readings, "a column the exclude rule names is MIN()'d too"
+    assert "ABS(weight_g - birth_weight_g) < 1" in readings
+    seq = sql[sql.index("weight_seq AS") : sql.index("weight_agg AS")]
+    assert "PARTITION BY wd.baby_id, wd.is_seed ORDER BY wd.day) AS prev_w" in seq
+    assert "PARTITION BY wd.baby_id, wd.is_seed ORDER BY wd.day) AS prev_day" in seq
+    # the window anchor includes the seed; the C-series expressions exclude it
+    assert "MIN(wd.day) OVER (PARTITION BY wd.baby_id))::int AS series_day" in seq
+    agg = sql[sql.index("weight_agg AS") : sql.index("visit_agg AS")]
+    assert "COUNT(*) FILTER (WHERE NOT is_seed) AS n_weight_days" in agg
+    assert "COUNT(*) AS n_measured_days" in agg
+
+
+def test_a_registry_without_a_seed_reading_compiles_as_before(props_doc, registry):
+    import copy
+
+    plain = copy.deepcopy(props_doc)
+    plain["weight_series"].pop("seed_reading")
+    sql = compile_indicator_sql(plain, registry, "SELECT 1")
+    readings = sql[sql.index("weight_readings AS") : sql.index("weight_days AS")]
+    assert "UNION ALL" not in readings
+    assert "FALSE AS is_seed" in readings, "every reading is measured; is_seed still exists for the derived SQL"

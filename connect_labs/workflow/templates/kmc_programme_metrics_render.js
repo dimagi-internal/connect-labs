@@ -1258,9 +1258,37 @@ function WorkflowUI({
       sub: 'target 10%',
     },
   ];
+  // The N-series cells for the scope in hand -- the scorecard's own rows.
+  function nScopeInd() {
+    if (!SC) return null;
+    if (oppFilter) {
+      var o = (SC.byOpp || []).filter(function (x) {
+        return String(x.opp) === String(oppFilter);
+      })[0];
+      return o ? o.ind : null;
+    }
+    if (selLLO) {
+      var l = (SC.byLLO || []).filter(function (x) {
+        return x.llo === selLLO;
+      })[0];
+      return l ? l.ind : null;
+    }
+    return SC.programme || null;
+  }
+  // Started reads the scorecard's N03 (the demo compute spec: two or more
+  // visits) when the payload carries it, so the tile and the table agree. The
+  // workbook's C02 (one follow-up) is the fallback for an older run.
   function tileEntry(id) {
     if (id === 'C14' && !selLLO && !oppFilter) return mortalityCredible.ind;
+    if (id === 'C02') {
+      var n = nScopeInd();
+      if (n && n.N03) return n.N03;
+    }
     return entryOf(scopeInd, id);
+  }
+  function tileId(t) {
+    if (t.id === 'C02' && nScopeInd() && nScopeInd().N03) return 'N03';
+    return t.id;
   }
   function tileValue(t, e) {
     if (!e || e.value === null || e.value === undefined) return '—';
@@ -1270,6 +1298,9 @@ function WorkflowUI({
     return Number(e.value).toFixed(1);
   }
   function tileDelta(t) {
+    // The run history projects the C-series only; a delta for the spec's
+    // started count against the workbook's would compare two definitions.
+    if (t.id === 'C02' && tileId(t) === 'N03') return '';
     if (historyPoints.length < 2) return '';
     var prev = historyPoints[historyPoints.length - 2];
     var cur = historyPoints[historyPoints.length - 1];
@@ -1297,7 +1328,7 @@ function WorkflowUI({
     return (d > 0 ? '+' : '−') + s + since;
   }
   function Tiles() {
-    var started = entryOf(scopeInd, 'C02');
+    var started = tileEntry('C02');
     var pctOfTarget =
       !selLLO && started.value
         ? Math.min(100, (started.value / 25000) * 100)
@@ -1315,8 +1346,10 @@ function WorkflowUI({
                 : mortalityCredible.llos && mortalityCredible.llos.length
                 ? mortalityCredible.llos.join(' + ') + ' only'
                 : 'no credible recorder';
-          if (t.id === 'C02' && pctOfTarget !== null)
-            sub = 'of 25,000 target by Q1 2027';
+          if (t.id === 'C02')
+            sub =
+              (tileId(t) === 'N03' ? 'two or more visits' : 'one follow-up') +
+              (pctOfTarget !== null ? ' · of 25,000 target by Q1 2027' : '');
           return (
             <div
               key={t.id}
@@ -1325,7 +1358,7 @@ function WorkflowUI({
               <div className="flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                 <span className="truncate">{t.label}</span>
                 <span className="font-mono font-normal normal-case tracking-normal text-gray-300">
-                  {t.id}
+                  {tileId(t)}
                 </span>
               </div>
               <div className="mt-1 text-2xl font-bold text-gray-900 tabular-nums">
