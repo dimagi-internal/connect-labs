@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
+from shapely.geometry import shape
 
 from connect_labs.mopup.core import gaps
 
@@ -62,9 +63,29 @@ class TestBuildingsNotCovered:
         monkeypatch.setattr(gaps, "fetch_buildings", boom)
         buildings = _buildings_df([(0.001, 0.001), (0.008, 0.008)])
         existing = [_square(0.0, 0.0, 0.002, 0.002)]
-        result = gaps.buildings_not_covered(object(), existing, buildings=buildings)
+        result = gaps.buildings_not_covered(shape(_WARD_BOUNDARY), existing, buildings=buildings)
         assert len(result) == 1
         assert result.iloc[0]["lon"] == pytest.approx(0.008)
+
+    def test_pre_built_buildings_outside_the_ward_boundary_are_clipped(self, monkeypatch):
+        # Real bug, caught live: a pre-built (uploaded) DataFrame is matched
+        # to a ward by NAME only (see buildings_from_upload), never by
+        # geometry -- unlike fetch_buildings, which only ever returns
+        # buildings already inside the queried area. Without an explicit
+        # clip here, an upload row tagged with the right ward name but
+        # sitting outside that ward's actual reviewed boundary would
+        # incorrectly become a gap-fill work area.
+        def boom(*a, **k):
+            raise AssertionError("fetch_buildings should not be called when buildings= is given")
+
+        monkeypatch.setattr(gaps, "fetch_buildings", boom)
+        # One building inside _WARD_BOUNDARY (0,0)-(0.01,0.01), one clearly
+        # outside it -- no existing work areas to exclude, so only the
+        # ward-boundary clip is at play.
+        buildings = _buildings_df([(0.005, 0.005), (5.0, 5.0)])
+        result = gaps.buildings_not_covered(shape(_WARD_BOUNDARY), [], buildings=buildings)
+        assert len(result) == 1
+        assert result.iloc[0]["lon"] == pytest.approx(0.005)
 
 
 class TestBuildingsFromUpload:

@@ -63,19 +63,35 @@ def buildings_not_covered(
     candidate being revisited is itself an existing WA and its footprint is
     already covered.
 
-    ``buildings``, if given, is used AS-IS instead of calling
-    `fetch_buildings` — the seam Step 2's "upload your own building data"
-    mode uses (see `buildings_from_upload`): the exclusion/clipping logic
-    below is identical regardless of where the buildings came from, only
-    the source of the DataFrame differs. `min_confidence`/`sources` are
-    ignored when `buildings` is given (they're `fetch_buildings`-specific
-    filters with no meaning for an already-built frame).
+    ``buildings``, if given, is used instead of calling `fetch_buildings` —
+    the seam Step 2's "upload your own building data" mode uses (see
+    `buildings_from_upload`): the exclusion/clipping logic below is
+    identical regardless of where the buildings came from, only the source
+    of the DataFrame differs. `min_confidence`/`sources` are ignored when
+    `buildings` is given (they're `fetch_buildings`-specific filters with no
+    meaning for an already-built frame).
+
+    Unlike `fetch_buildings` (which only ever returns buildings whose
+    centroid falls inside `ward_boundary` to begin with — an Overture query
+    scoped to that area), a pre-built `buildings` frame is matched by ward
+    NAME only (`buildings_from_upload`'s exact-match, not spatial), so it is
+    NOT guaranteed to already be confined to `ward_boundary`'s actual shape.
+    This function clips it here — a row a reviewer's upload tags as this
+    ward but that falls outside the boundary actually selected/reviewed for
+    this mop-up round never becomes a gap-fill work area, matching the
+    requirement that an upload may cover more ground than this run reviews,
+    but only the reviewed boundary's own area ever computes new cells.
 
     Raises `ValueError` (the same `MAX_AREA_KM2` guard) via `fetch_buildings`
     — only when `buildings` is not given.
     """
     if buildings is None:
         buildings = fetch_buildings(ward_boundary, min_confidence=min_confidence, sources=sources)
+    elif not buildings.empty:
+        prepared_ward = prep(ward_boundary)
+        inside = [prepared_ward.contains(Point(lon, lat)) for lon, lat in zip(buildings["lon"], buildings["lat"])]
+        buildings = buildings[pd.Series(inside, index=buildings.index)]
+
     if not existing_wa_boundaries or buildings.empty:
         return buildings
 
