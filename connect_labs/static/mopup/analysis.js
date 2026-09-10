@@ -162,10 +162,15 @@ window.MopupAnalysis = (function () {
   function collectIndicatorConfigs() {
     const out = {};
     document.querySelectorAll('#indicator-rows tr').forEach((tr) => {
+      // Skip the per-indicator settings sub-rows (data-key ending in
+      // "_settings") -- they have no .ind-enabled checkbox of their own,
+      // they're rendered directly under the real indicator row.
+      const enabledInput = tr.querySelector('.ind-enabled');
+      if (!enabledInput) return;
       const key = tr.dataset.key;
       const thresholdInput = tr.querySelector('.ind-threshold');
       out[key] = {
-        enabled: tr.querySelector('.ind-enabled').checked,
+        enabled: enabledInput.checked,
         ...(thresholdInput
           ? { threshold: parseFloat(thresholdInput.value) || 0 }
           : {}),
