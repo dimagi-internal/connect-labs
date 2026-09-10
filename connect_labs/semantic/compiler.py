@@ -578,11 +578,14 @@ weight_seq AS (
            -- prev_day and series_day exist for the demo compute spec's rules,
            -- which the render's old swing check cannot express: an IMPOSSIBLE
            -- step is a per-pair g/kg/DAY rate (so the gap in days matters), and
-           -- the velocity window is the first 21 days of the MEASURED series,
-           -- counted from the first weighing (seed included) rather than the
-           -- first visit.
+           -- the velocity window is "the first 21 days of the VISIT weight
+           -- series" -- counted from the first MEASURED (non-seed) weighing.
+           -- Anchoring on the seed reading instead pulled the window back to
+           -- the registration date, where it held too few visit weighings to
+           -- score, and turned healthy babies into "incomplete" (measured
+           -- 2026-09-10: PIPN incomplete 45 to 54 percent, EHA 39 to 66).
            LAG(wd.day) OVER (PARTITION BY wd.baby_id, wd.is_seed ORDER BY wd.day) AS prev_day,
-           (wd.day - MIN(wd.day) OVER (PARTITION BY wd.baby_id))::int AS series_day,
+           (wd.day - MIN(wd.day) FILTER (WHERE NOT wd.is_seed) OVER (PARTITION BY wd.baby_id))::int AS series_day,
            (wd.day - bf.first_visit_day)::int AS age_days
     FROM weight_days wd
     JOIN baby_first bf USING (baby_id)
