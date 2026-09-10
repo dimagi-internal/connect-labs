@@ -388,6 +388,8 @@ def test_a_visit_filter_is_pushed_below_layer_2(props_doc, registry):
     assert "AND username = 'flw''001'" in visits_cte, "the quote must be escaped, not interpolated"
     with pytest.raises(RegistryError):
         compile_rollup_sql(props_doc, registry, "SELECT 1", scopes=["case"], visit_filter={"llo": "PIPN"})
+
+
 def test_every_indicator_has_english_rendered_from_its_sql(props_doc, registry):
     """A programme manager reads the definition; an agent reads the SQL; both must
     come from the same registry so they cannot disagree. The mechanical sentence
