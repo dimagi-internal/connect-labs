@@ -117,7 +117,7 @@
       <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
         <label class="inline-flex items-center gap-1">
           <input type="checkbox" id="cfg-cluster-filter-enabled">
-          Enable cluster-aware filter <span class="info-icon" tabindex="0" data-tip="Optional, applied AFTER the full candidate list is built: drops a candidate only if NONE of its triggered indicators have enough spatially-nearby, also-flagged neighbors. Never adds candidates, never removes an indicator from a WA that survives — it can only shorten the list. NCF/inaccessible is always exempt (a WA logs at most one NCF-or-Inaccessible visit ever, so there's nothing to corroborate against).">ⓘ</span>
+          Enable cluster-aware filter <span class="info-icon" tabindex="0" data-tip="Optional, applied AFTER the full candidate list is built, to every indicator including NCF/inaccessible: drops a candidate only if NONE of its triggered indicators have enough spatially-nearby, also-flagged neighbors. Never adds candidates, never removes an indicator from a WA that survives — it can only shorten the list. When off, every indicator's count (NCF/inaccessible included) is just the raw number of affected work areas.">ⓘ</span>
         </label>
       </div>
     </fieldset>

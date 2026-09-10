@@ -296,10 +296,10 @@ class TestEvaluateRunFloor:
         assert detail["own_ncf_form"] is True
         assert detail["own_inaccessible_form"] is False
 
-    def test_ncf_corroboration_is_informational_only_regardless_of_filter_state(self):
-        # NCF's own neighbor distance/count settings still compute an
-        # informational "is this part of a cluster" signal even though NCF's
-        # candidacy and filter-survival never depend on it.
+    def test_ncf_corroboration_is_informational_when_filter_disabled(self):
+        # With the filter off, NCF's own neighbor distance/count settings
+        # still compute an informational "is this part of a cluster" signal,
+        # but nothing is ever dropped on account of it.
         was = [_wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0)]
         candidates = ind.evaluate_run(
             was, {ind.NCF_INACCESSIBLE: {"enabled": True}}, _no_filter(min_affected_neighbors_ncf=1)
@@ -399,21 +399,36 @@ class TestEvaluateRunClusterAwareFilter:
         )
         assert candidates == []
 
-    def test_ncf_is_exempt_from_the_filter(self):
-        # "a" is the only WA -- no neighbors at all -- but NCF should still
-        # survive since it's exempt from cluster-aware entirely.
+    def test_ncf_is_dropped_when_isolated_and_filter_enabled(self):
+        # The filter now applies to NCF/inaccessible just like every other
+        # indicator -- "a" is the only WA (no neighbors at all), so it has
+        # nothing to corroborate it and gets dropped.
         was = [_wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0)]
         candidates = ind.evaluate_run(
             was,
             {ind.NCF_INACCESSIBLE: {"enabled": True}},
-            {"cluster_aware_filter_enabled": True},
+            {"cluster_aware_filter_enabled": True, "ncf_neighbor_distance_m": 200, "min_affected_neighbors_ncf": 1},
         )
-        assert len(candidates) == 1
+        assert candidates == []
 
-    def test_wa_with_ncf_and_uncorroborated_evc_survives_via_ncf_exemption(self):
-        # A WA triggered on BOTH NCF (exempt) and an isolated/uncorroborated
-        # EVC shortfall -- NCF's exemption keeps the whole WA, and nothing
-        # gets pruned from triggered_indicators (confirmed product decision).
+    def test_ncf_survives_the_filter_when_neighbors_corroborate(self):
+        was = [
+            _wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),
+            _wa("b", lat=12.0005, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0),  # ~55m away
+        ]
+        candidates = ind.evaluate_run(
+            was,
+            {ind.NCF_INACCESSIBLE: {"enabled": True}},
+            {"cluster_aware_filter_enabled": True, "ncf_neighbor_distance_m": 250, "min_affected_neighbors_ncf": 1},
+        )
+        assert {c["wa_id"] for c in candidates} == {"a", "b"}
+        detail = next(c for c in candidates if c["wa_id"] == "a")["detail"][ind.NCF_INACCESSIBLE]
+        assert detail["corroborated"] is True
+
+    def test_wa_with_ncf_and_uncorroborated_evc_is_dropped_when_neither_corroborates(self):
+        # "a" triggers on both NCF and EVC, but is the only WA -- no
+        # neighbors for either indicator to corroborate against -- so the
+        # whole WA is dropped now that NCF is no longer a blanket exemption.
         was = [
             _wa(
                 "a",
@@ -431,10 +446,59 @@ class TestEvaluateRunClusterAwareFilter:
                 ind.NCF_INACCESSIBLE: {"enabled": True},
                 ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5},
             },
-            {"cluster_aware_filter_enabled": True, "evc_neighbor_distance_m": 250, "evc_min_neighbor_count": 3},
+            {
+                "cluster_aware_filter_enabled": True,
+                "ncf_neighbor_distance_m": 200,
+                "min_affected_neighbors_ncf": 1,
+                "evc_neighbor_distance_m": 200,
+                "evc_min_neighbor_count": 1,
+            },
         )
-        assert len(candidates) == 1
-        assert set(candidates[0]["triggered_indicators"]) == {ind.NCF_INACCESSIBLE, ind.EVC_SHORTFALL}
+        assert candidates == []
+
+    def test_wa_survives_via_ncf_corroboration_even_when_evc_does_not_unpruned(self):
+        # "a" triggers on NCF (corroborated by "b", also NCF-affected) AND
+        # EVC (isolated -- "b" isn't EVC-flagged) -- since AT LEAST ONE
+        # indicator corroborates, "a" survives with BOTH indicators still
+        # listed, nothing pruned (same "Option 3" rule as every indicator).
+        was = [
+            _wa(
+                "a",
+                lat=12.0,
+                lon=8.0,
+                approved_hsd_count=0,
+                approved_ncf_count=1,
+                approved_inaccessible_count=0,
+                expected_visit_count=10,
+            ),
+            _wa(
+                "b",
+                lat=12.0005,
+                lon=8.0,
+                approved_hsd_count=9,
+                approved_ncf_count=1,
+                approved_inaccessible_count=0,
+                expected_visit_count=10,
+            ),
+        ]
+        candidates = ind.evaluate_run(
+            was,
+            {
+                ind.NCF_INACCESSIBLE: {"enabled": True},
+                ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5},
+            },
+            {
+                "cluster_aware_filter_enabled": True,
+                "ncf_neighbor_distance_m": 250,
+                "min_affected_neighbors_ncf": 1,
+                "evc_neighbor_distance_m": 250,
+                "evc_min_neighbor_count": 3,
+            },
+        )
+        a = next(c for c in candidates if c["wa_id"] == "a")
+        assert set(a["triggered_indicators"]) == {ind.NCF_INACCESSIBLE, ind.EVC_SHORTFALL}
+        assert a["detail"][ind.NCF_INACCESSIBLE]["corroborated"] is True
+        assert a["detail"][ind.EVC_SHORTFALL]["corroborated"] is False
 
     def test_one_corroborating_indicator_keeps_the_whole_wa_unpruned(self):
         # "a" triggers on EVC (corroborated by neighbors) AND deworming

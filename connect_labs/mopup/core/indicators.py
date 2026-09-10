@@ -48,9 +48,11 @@ now a single, optional, spatial-only, post-hoc FILTER (not a per-indicator
 candidacy gate) that can shorten an already-built candidate list: it keeps a
 candidate if it has enough spatially-nearby neighbors that are THEMSELVES
 floor-flagged on the same indicator, for at least one of its triggered
-indicators. NCF/inaccessible is exempt from this filter (a WA is always kept
-if NCF is among its triggered indicators) — same one-visit-only limitation
-that made cluster-aware's averaging approach never apply to it.
+indicators — applied uniformly to every indicator, NCF/inaccessible included
+(its "flagged" neighbor signal is presence, per `_ncf_affected`, rather than a
+rate breach, but the same keep-if-any-triggered-indicator-corroborates rule
+applies). When the filter is OFF, every indicator's count — NCF/inaccessible's
+included — is simply the raw count of floor-triggered work areas, unfiltered.
 
 The "Whole-FLW average" comparison scope, and the FLW-scoped variant of
 Cluster-aware (used previously by the three data-quality indicators), have
@@ -204,8 +206,9 @@ def build_neighbor_graph(work_areas: list[dict], distance_m: float) -> dict[str,
 def ncf_neighbor_affected_count(wa: dict, neighbor_ids: list[str], by_id: dict[str, dict], global_config: dict) -> int:
     """How many of `wa`'s spatial neighbors are themselves NCF/inaccessible
     -affected (per `_ncf_affected`). A gated-out neighbor (`None`) simply
-    doesn't count either way. Informational only today — NCF is exempt from
-    the cluster-aware filter — but exposed for the candidate-detail display."""
+    doesn't count either way. This is NCF/inaccessible's corroboration signal
+    for the cluster-aware filter (same role `flagged_neighbor_count` plays for
+    every other indicator) — also exposed for the candidate-detail display."""
     count = 0
     for nid in neighbor_ids:
         neighbor = by_id.get(nid)
@@ -259,8 +262,8 @@ DEFAULT_GLOBAL_CONFIG = {
     "tier2_min_neighbor_count": 2,
     "min_hsd_visits_floor": 5,
     # Optional, post-hoc, spatial-only list-shortening filter — NOT a
-    # candidacy gate (see module docstring). Defaults on per product
-    # decision; NCF/inaccessible is always exempt from it.
+    # candidacy gate (see module docstring). Applies uniformly to every
+    # indicator, including NCF/inaccessible. Defaults on per product decision.
     "cluster_aware_filter_enabled": True,
 }
 
@@ -275,8 +278,12 @@ DEFAULT_INDICATOR_CONFIGS = {
 }
 
 # Which global-config keys hold each indicator's own neighbor distance/count,
-# for the cluster-aware filter. NCF isn't listed — it's exempt from the
-# filter entirely.
+# for the cluster-aware filter. NCF isn't listed here — its own equivalent
+# settings (`ncf_neighbor_distance_m`/`min_affected_neighbors_ncf`) are read
+# directly in evaluate_run's NCF branch instead, since its corroboration
+# signal (presence, via `ncf_neighbor_affected_count`) isn't the generic
+# rate-threshold one `flagged_neighbor_count` computes for every other
+# indicator.
 _TIER2_NEIGHBOR_SETTINGS = ("tier2_neighbor_distance_m", "tier2_min_neighbor_count")
 _NEIGHBOR_SETTINGS_BY_INDICATOR = {
     EVC_SHORTFALL: ("evc_neighbor_distance_m", "evc_min_neighbor_count"),
@@ -303,10 +310,12 @@ def evaluate_run(
     Candidacy is now an unconditional per-WA floor (see module docstring) —
     the optional cluster-aware filter, if enabled, is applied AFTER the full
     floor-triggered list is built, and can only DROP a whole candidate (never
-    prune its `triggered_indicators`): a candidate survives the filter if NCF
-    is among its triggered indicators (always exempt), or if at least one of
-    its other triggered indicators has enough spatially-nearby neighbors that
-    are themselves floor-flagged on that same indicator.
+    prune its `triggered_indicators`): a candidate survives the filter if at
+    least one of its triggered indicators — any of them, NCF/inaccessible
+    included — has enough spatially-nearby neighbors that are themselves
+    floor-flagged (or, for NCF, themselves affected) on that same indicator.
+    When the filter is disabled, every indicator's count is simply its raw
+    floor-triggered count, NCF/inaccessible included.
 
     Each returned candidate carries `building_count`/`expected_visit_count`
     (straight copy-through from the input row) and `source` (always
@@ -347,10 +356,10 @@ def evaluate_run(
                     "own_affected": own_affected,
                     "own_ncf_form": wa.get("approved_ncf_count", 0) > 0,
                     "own_inaccessible_form": wa.get("approved_inaccessible_count", 0) > 0,
-                    # Informational only — NCF is exempt from the cluster-aware
-                    # filter (never dropped for lacking corroboration), but
-                    # whether it's part of a spatial cluster is still useful
-                    # context for reviewers.
+                    # Same corroboration signal every other indicator uses —
+                    # decides survival below when the cluster-aware filter is
+                    # enabled, and is purely informational (never drops
+                    # anything) when it's disabled, same as every indicator.
                     "affected_neighbor_count": neighbor_count,
                     "corroborated": neighbor_count >= config["min_affected_neighbors_ncf"],
                 }
@@ -380,7 +389,7 @@ def evaluate_run(
             continue
 
         survives_filter = True
-        if config["cluster_aware_filter_enabled"] and NCF_INACCESSIBLE not in triggered:
+        if config["cluster_aware_filter_enabled"]:
             survives_filter = any(detail[key]["corroborated"] for key in triggered)
 
         if not survives_filter:
