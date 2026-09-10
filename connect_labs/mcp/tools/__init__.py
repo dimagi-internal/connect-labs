@@ -24,6 +24,7 @@ from . import synthetic  # noqa: F401  -- registers synthetic_*, incl. synthetic
 from . import synthetic_tasks  # noqa: F401  -- registers task_create_synthetic
 from . import templates  # noqa: F401
 from . import workflow_create_run  # noqa: F401  -- registers workflow_create_run
+from . import workflow_history  # noqa: F401  -- registers workflow_rebuild_history, workflow_history_eligibility
 from . import workflow_resume_dual_track_run  # noqa: F401  -- registers workflow_resume_dual_track_run
 from . import workflow_run_default  # noqa: F401  -- registers workflow_run_default
 from . import workflow_snapshots  # noqa: F401  -- registers workflow_save_snapshot
