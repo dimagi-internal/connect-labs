@@ -52,6 +52,7 @@ measures:
     meta:
       {
         indicator: C02,
+        plain: 'Started cases: babies with at least one follow-up visit after registration (the workbook rule; the scorecard N03 requires two visits).',
         category: Scale,
         prominence: Top,
         unit: n,
@@ -158,6 +159,7 @@ measures:
     meta:
       {
         indicator: C09,
+        plain: 'Share of eligible babies (first visit at least 28 days ago, not an early death) whose weight series is computable and consistent, so an early growth rate can be trusted.',
         inputs: [weights],
         category: Program quality,
         prominence: Top,
@@ -265,6 +267,7 @@ measures:
     meta:
       {
         indicator: C13,
+        plain: 'Mean early growth rate in g per kg per day over babies with sufficient weight data: first weighing to the last weighing 21 to 35 days after the first visit, per kg of the first weight.',
         inputs: [weights],
         category: Program quality,
         prominence: Top,
@@ -294,6 +297,7 @@ measures:
     meta:
       {
         indicator: C14,
+        plain: 'Deaths as a share of eligible babies whose outcome is known. Two-sided: under about 2 percent usually means deaths are not being recorded. The headline pools only the organisations that record deaths credibly.',
         scope_note: All LLOs pooled,
         including the four the workbook says do not record deaths credibly. The headline card above is PIPN + EHA only,
         and reads higher because non-recorders add denominator without deaths.,
@@ -324,6 +328,7 @@ measures:
     meta:
       {
         indicator: C15,
+        plain: 'Eligible babies (first visit at least 28 days ago) whose outcome is unknown: neither died nor seen at least 28 days after the first visit.',
         category: Performance,
         prominence: Top,
         unit: '%',
@@ -346,6 +351,7 @@ measures:
     meta:
       {
         indicator: C16,
+        plain: 'Share of started babies with a hospital discharge date whose registration fell 0 to 3 days after discharge.',
         inputs: [days_discharge_to_reg],
         min_input_coverage: 0.45,
         coverage_denominator: c02,
@@ -598,6 +604,7 @@ measures:
     meta:
       {
         indicator: N01,
+        plain: 'Total cases: every baby with any registration or visit record.',
         category: Scale,
         prominence: Top,
         unit: n,
@@ -615,6 +622,7 @@ measures:
     meta:
       {
         indicator: N02,
+        plain: 'Registered: babies with a registration form.',
         category: Scale,
         prominence: Top,
         unit: n,
@@ -632,6 +640,7 @@ measures:
     meta:
       {
         indicator: N03,
+        plain: 'Started: babies with two or more visit submissions (registration excluded).',
         category: Scale,
         prominence: Top,
         unit: n,
@@ -649,6 +658,7 @@ measures:
     meta:
       {
         indicator: N04,
+        plain: 'Cumulative SVNs reached: the running total of started babies by registration month; the snapshot value equals total started.',
         category: Scale,
         prominence: Top,
         unit: n,
@@ -667,6 +677,7 @@ measures:
     meta:
       {
         indicator: N05,
+        plain: 'Median gestational age at birth in weeks, over babies with a plausible value (20 to 45 weeks).',
         category: Case mix,
         prominence: Top,
         unit: wks,
@@ -686,6 +697,7 @@ measures:
     meta:
       {
         indicator: N06,
+        plain: 'Median birthweight in grams, over babies with a recorded birthweight.',
         category: Case mix,
         prominence: Top,
         unit: g,
@@ -705,6 +717,7 @@ measures:
     meta:
       {
         indicator: N07,
+        plain: 'Mean number of visit submissions per baby, over babies whose first visit was at least 42 days ago.',
         category: Performance,
         prominence: Top,
         unit: n,
@@ -728,6 +741,7 @@ measures:
     meta:
       {
         indicator: N08,
+        plain: 'Share of started babies with a hospital discharge date whose registration fell 0 to 3 days after discharge. Footnote any organisation where under 45 percent of babies carry a discharge date.',
         category: Performance,
         prominence: Top,
         unit: '%',
@@ -755,6 +769,7 @@ measures:
     meta:
       {
         indicator: N09,
+        plain: 'Share of qualifying babies (first visit at least 42 days ago, birthweight band known) whose early weight velocity is below the plausible range for their birthweight band. N09 to N12 share one denominator and sum to 100.',
         category: Growth quality,
         prominence: Top,
         unit: '%',
@@ -778,6 +793,7 @@ measures:
     meta:
       {
         indicator: N10,
+        plain: 'Share of qualifying babies whose early weight velocity is within the plausible range for their birthweight band (healthy growth).',
         category: Growth quality,
         prominence: Top,
         unit: '%',
@@ -801,6 +817,7 @@ measures:
     meta:
       {
         indicator: N11,
+        plain: 'Share of qualifying babies whose early weight velocity is above the plausible range for their birthweight band.',
         category: Growth quality,
         prominence: Top,
         unit: '%',
@@ -824,6 +841,7 @@ measures:
     meta:
       {
         indicator: N12,
+        plain: 'Share of qualifying babies whose growth cannot be classified: velocity not computable, or the series is thin (under 3 weigh-days), inconsistent (first visit weight under 60 percent of birthweight) or contains an impossible step.',
         category: Growth quality,
         prominence: Top,
         unit: '%',
@@ -848,6 +866,7 @@ measures:
     meta:
       {
         indicator: N13,
+        plain: 'Deaths as a share of babies whose first visit was at least 28 days ago and whose outcome is known (died, or seen at least 28 days after the first visit). Two-sided: implausibly low means under-recording. Shown only where death recording is credible.',
         category: Outcome,
         prominence: Top,
         unit: '%',
@@ -871,6 +890,7 @@ measures:
     meta:
       {
         indicator: N14,
+        plain: 'Weight readings that are exact multiples of 100 g, as a share of all visit weight readings. High values mean coarse or estimated readings rather than a scale read.',
         category: Data quality,
         prominence: Top,
         unit: '%',
@@ -894,6 +914,7 @@ measures:
     meta:
       {
         indicator: N15,
+        plain: 'Babies with at least one impossible weight step (a visit-to-visit change outside minus 20 to plus 45 g per kg per day, between weighings 1 to 90 days apart, inside the first 21 days of the visit series), as a share of babies whose velocity is computable.',
         category: Data quality,
         prominence: Top,
         unit: '%',
