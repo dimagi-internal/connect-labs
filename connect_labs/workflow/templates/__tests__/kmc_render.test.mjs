@@ -106,6 +106,36 @@ function checks(file, src, ast) {
     assert.deepStrictEqual(dupes, []);
   });
 
+  test(`${file}: every <details> carries a controlled open prop`, () => {
+    // Every component in these renders is a function defined INSIDE WorkflowUI, so
+    // each state change hands React a new component identity and the subtree is
+    // remounted, not updated. A <details> element keeps its open/closed state in
+    // the DOM, and a remount throws that away: the indicator-definitions panel
+    // shut itself the instant a row was clicked (run 5623, 2026-09-10), because
+    // the row toggle set state. Holding `open` in React state and passing it as
+    // a prop is what survives the remount. An uncontrolled <details> here is
+    // that bug waiting for the next state change.
+    const offenders = [];
+    traverse(ast(), {
+      JSXOpeningElement(path) {
+        const n = path.node;
+        if (n.name.type !== 'JSXIdentifier' || n.name.name !== 'details')
+          return;
+        const attrs = n.attributes
+          .filter((a) => a.type === 'JSXAttribute')
+          .map((a) => a.name.name);
+        if (!attrs.includes('open')) offenders.push(n.loc.start.line);
+      },
+    });
+    assert.deepStrictEqual(
+      offenders,
+      [],
+      `uncontrolled <details> at line(s) ${offenders.join(
+        ', ',
+      )}: pass open={...} from WorkflowUI state`,
+    );
+  });
+
   test(`${file}: credibility is never derived in the render`, () => {
     // `<measure>_suppressed` is `(props.llo IS NULL OR props.llo NOT IN (credible))`,
     // and props.llo is NULL in every grouping set that does not group BY llo, so
