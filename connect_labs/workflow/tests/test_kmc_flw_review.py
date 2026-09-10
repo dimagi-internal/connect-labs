@@ -155,3 +155,29 @@ def test_a_worker_and_a_case_are_both_addressable():
     assert "setSelCase(c)" not in src.replace(
         "function openCase(c) {\n    setSelCase(c);", ""
     ), "case selection must go through openCase so the URL follows it"
+
+
+def test_the_programme_report_creates_this_workflow_as_its_companion():
+    """One "Create" gives the whole drill. The programme template declares this
+    one as a companion sharing its two pipelines, with its run minted and both
+    sides of the link written — so a report created BY HAND on a real programme
+    links from its first render, and the four-call runbook is gone."""
+    from connect_labs.workflow.templates.kmc_programme_metrics import TEMPLATE as METRICS_TEMPLATE
+
+    assert METRICS_TEMPLATE["companions"] == [
+        {
+            "template_key": "kmc_flw_review",
+            "config_key": "flw_review",
+            "share_pipelines": True,
+            "mint_run": True,
+            "back_reference": "source_workflow_id",
+        }
+    ]
+    # Written at create time, never a real id in the template: an id here would
+    # point every new report at one review workflow in one scope.
+    assert METRICS_DEFINITION["config"]["flw_review"] is None
+    assert DEFINITION["config"]["source_workflow_id"] is None
+    # The render reads exactly the shape the companion mechanism writes.
+    src = METRICS_RENDER.read_text()
+    assert "FLW_REVIEW.workflow_id" in src and "FLW_REVIEW.run_id" in src
+    assert "cfgAudit.flw_review" in src

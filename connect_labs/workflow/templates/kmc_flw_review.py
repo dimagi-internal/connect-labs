@@ -16,6 +16,13 @@ Linking is configuration, not code: the programme workflow's
 `config.flw_review = {workflow_id, run_id}` names the review workflow and its
 long-lived run, and each worker row becomes a link carrying `flw` and
 `source_run`. No run is created per click.
+
+That configuration is written for you. The programme template declares this one
+as a `companion`, so creating the report — from the "Create" button or the MCP —
+also creates this workflow in the same scope, points it at the report's own two
+pipeline records, mints its run, and sets both sides of the link. Created on its
+own, it still works: `config.source_workflow_id` is None and the page falls back
+to the newest saved programme report it can find.
 """
 
 from pathlib import Path
@@ -56,7 +63,8 @@ DEFINITION = {
         # `pipelines[alias]` being absent until then.
         "renderWhileLoading": True,
         # The programme workflow whose report this reads when opened without a
-        # `source_run`. Set on the instance (workflow_update_definition).
+        # `source_run`. Stamped at create time when this is made as the
+        # programme report's companion; otherwise workflow_update_definition.
         "source_workflow_id": None,
         # The audit action, routed exactly as the programme page routes it.
         "audit_enabled": True,

@@ -23,11 +23,59 @@ Each template is a single `.py` file in `connect_labs/workflow/templates/`. File
 | `PIPELINE_SCHEMA`  | `dict`       | Single pipeline schema (simple templates)                       |
 | `PIPELINE_SCHEMAS` | `list[dict]` | Multiple pipeline schemas with aliases (multi-source templates) |
 
-The `TEMPLATE` dict itself also accepts one optional key:
+The `TEMPLATE` dict itself also accepts these optional keys:
 
-| Key         | Type   | Default | Description                                                                                                |
-| ----------- | ------ | ------- | ---------------------------------------------------------------------------------------------------------- |
-| `multi_opp` | `bool` | `False` | Opt in to multi-opportunity support. See [§8 Multi-opportunity workflows](#8-multi-opportunity-workflows). |
+| Key          | Type         | Default | Description                                                                                                |
+| ------------ | ------------ | ------- | ---------------------------------------------------------------------------------------------------------- |
+| `multi_opp`  | `bool`       | `False` | Opt in to multi-opportunity support. See [§8 Multi-opportunity workflows](#8-multi-opportunity-workflows). |
+| `companions` | `list[dict]` | `[]`    | Templates created alongside this one and cross-linked by config. See [Companions](#companions) below.      |
+
+### Companions
+
+A feature can be two workflows. The KMC programme report drills programme → LLO →
+opportunity → worker, and a worker row opens the **KMC Worker Review** — a second
+workflow, linked by configuration: the report's `config.flw_review` names the review
+workflow and its long-lived run, the review's `config.source_workflow_id` names the
+report. Creating the report from its template used to give you half the feature; the
+review, its run and both config patches were a four-call runbook the "Create" button
+could not follow, so a hand-created report had worker rows that were not links.
+
+`companions` moves that runbook into the registry. Each entry is created right after
+the primary — same ownership scope, same `opportunity_ids` — and the two are
+cross-linked before `create_workflow_from_template` returns. The MCP tool and the
+web view both go through that function, so one "Create" gives the whole feature.
+
+```python
+TEMPLATE = {
+    "key": "kmc_programme_metrics",
+    ...
+    "companions": [
+        {
+            "template_key": "kmc_flw_review",        # a registered template
+            "config_key": "flw_review",              # primary.config[key] = {"workflow_id", "run_id"?}
+            "share_pipelines": True,                 # reuse the primary's pipeline records (one cache)
+            "mint_run": True,                        # create one long-lived run; its id joins the link
+            "back_reference": "source_workflow_id",  # companion.config[key] = the primary's id
+        }
+    ],
+}
+```
+
+Rules:
+
+- **Validated before anything is created.** An unknown or deprecated companion
+  template, an unknown key, or a cycle (A → B → A) raises `ValueError` up front, so a
+  failure cannot leave a primary with no link and a companion with no owner.
+- **`share_pipelines`** hands the companion the primary's `pipeline_sources` verbatim
+  and creates none of its own — the companion's `pipeline_schemas` are ignored on
+  this path (they still serve a stand-alone create).
+- **`mint_run`** creates a run owned by the same opportunity / program as the
+  workflows, dated today, and puts its id in the link. Use it for drill views the
+  primary opens with `?run_id=`; leave it off for companions that mint their own runs.
+- **`list_templates()`** exposes `companions` (a list of template keys) so a creation
+  surface can say "also creates X"; the workflows page shows a `+ N companion` badge.
+- The MCP `workflow_create_from_template` result carries `companions`, keyed by
+  `config_key`, e.g. `{"flw_review": {"workflow_id": 5618, "run_id": 5620}}`.
 
 ### Minimal Example (Single Pipeline)
 

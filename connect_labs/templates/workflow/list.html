@@ -222,6 +222,9 @@
                                                           class="ml-2 inline-block px-2 py-0.5 rounded text-xs font-normal bg-indigo-100 text-indigo-700">
                                                         Multi-opp
                                                     </span>
+                                                    <span x-show="t.companions && t.companions.length"
+                                                          class="ml-2 inline-block px-2 py-0.5 rounded text-xs font-normal bg-teal-100 text-teal-700"
+                                                          x-text="'+ ' + (t.companions || []).length + ' companion'"></span>
                                                 </h4>
                                                 <p class="text-sm text-gray-500 mt-1" x-text="t.description"></p>
                                             </div>
