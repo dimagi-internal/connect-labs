@@ -61,10 +61,16 @@
                 } catch (e) { console.error('Failed to load templates:', e); }
                 finally { this.loadingTemplates = false; }
             },
-            // The picker shows a template as a tag on the row that creates it
-            // (a companion), never as a card of its own.
+            // Every template is a row, companions included: a companion is created
+            // with its primary AND designed to stand alone (the KMC Worker Review,
+            // opened on its own, reads the newest saved programme report).
             pickable() {
-                return this.templates.filter(t => !(t.companion_of && t.companion_of.length));
+                return this.templates;
+            },
+            companionOfNames(t) {
+                return (t.companion_of || [])
+                    .map(k => (this.templates.find(x => x.key === k) || {}).name || k)
+                    .join(', ');
             },
             matchesFilter(t) {
                 const q = this.templateFilter.trim().toLowerCase();
@@ -226,8 +232,8 @@
                         </p>
 
                         {% comment %}
-                        One row per template, grouped by what it produces (TEMPLATE_GROUPS
-                        in workflow/templates/__init__.py). Descriptions clip to one line
+                        One row per template, grouped and ordered by TEMPLATE_GROUP_OF in
+                        workflow/templates/__init__.py. Descriptions clip to one line
                         and carry the full text as a tooltip; the whole registry fits a
                         laptop screen without scrolling, which the old three-line cards
                         did not.
@@ -274,6 +280,10 @@
                                                             <span x-show="t.companions && t.companions.length"
                                                                   class="flex-none px-1 py-px rounded text-[9.5px] font-semibold tracking-wide bg-teal-100 text-teal-700"
                                                                   x-text="'+ ' + companionNames(t)"></span>
+                                                            <span x-show="t.companion_of && t.companion_of.length"
+                                                                  class="flex-none px-1 py-px rounded text-[9.5px] font-medium tracking-wide bg-gray-100 text-gray-500"
+                                                                  :title="'Also created with ' + companionOfNames(t)"
+                                                                  x-text="'with ' + companionOfNames(t)"></span>
                                                         </div>
                                                         <div class="text-[11.5px] text-gray-500 truncate leading-snug" x-text="t.description"></div>
                                                     </div>

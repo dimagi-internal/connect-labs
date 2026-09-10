@@ -64,9 +64,10 @@ TEMPLATE = {
 **Where a template appears in the picker** is not a `TEMPLATE` key. The Create
 Workflow modal sections templates by what they produce, from one map,
 `TEMPLATE_GROUP_OF` in `workflow/templates/__init__.py` (groups and their order in
-`TEMPLATE_GROUPS`). Every registered template must be placed there — a test fails
-otherwise — and a template that is another's companion is shown as a tag on its
-primary's row, not as a card.
+`TEMPLATE_GROUPS`; the map's order is the order within a group). Every registered
+template must be placed there — a test fails otherwise. A companion keeps its own
+row, since it is designed to stand alone as well; its row says which template also
+creates it, and the primary's row says what it brings.
 
 Rules:
 
@@ -79,8 +80,9 @@ Rules:
 - **`mint_run`** creates a run owned by the same opportunity / program as the
   workflows, dated today, and puts its id in the link. Use it for drill views the
   primary opens with `?run_id=`; leave it off for companions that mint their own runs.
-- **`list_templates()`** exposes `companions` (a list of template keys) so a creation
-  surface can say "also creates X"; the workflows page shows a `+ N companion` badge.
+- **`list_templates()`** exposes `companions` and `companion_of` (lists of template
+  keys) so a creation surface can say "also creates X" on the primary and "with X" on
+  the companion; the workflows page does both.
 - The MCP `workflow_create_from_template` result carries `companions`, keyed by
   `config_key`, e.g. `{"flw_review": {"workflow_id": 5618, "run_id": 5620}}`.
 
