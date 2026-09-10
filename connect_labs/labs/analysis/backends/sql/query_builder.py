@@ -70,9 +70,27 @@ def _pipeline_scope_where(opportunity_id: int, pipeline_id: int | None, *, alias
     NULL). The check is `IS NULL` rather than `= NULL` because SQL.
     """
     prefix = f"{alias}." if alias else ""
+    # visit_count > 0 excludes an in-progress streaming generation (the
+    # store_raw_visits_start sentinel writes rows under a NEGATIVE visit_count
+    # until finalize flips them). The ORM readers have always excluded those
+    # (get_raw_visits_queryset: visit_count__gt=0); this SQL path did not, so a
+    # stream that never finalized -- a killed session, a timed-out request --
+    # left a complete second copy of the opp's visits that every extraction
+    # read alongside the real one. Downstream that is a duplicate visit_id in
+    # ComputedVisitCache's batch, which the unique constraint rejects and the
+    # store reports as "Concurrent write ... another run is in flight" -- on
+    # every request, for every workflow on that opportunity, for the sentinel
+    # rows' whole TTL. Seen live on opp 10019 / pipeline 5109 (2026-09-10):
+    # 11,619 rows under visit_count=-70363748 next to 11,619 finalized ones.
     if pipeline_id is None:
-        return f"{prefix}opportunity_id = {opportunity_id} AND {prefix}pipeline_id IS NULL"
-    return f"{prefix}opportunity_id = {opportunity_id} AND {prefix}pipeline_id = {pipeline_id}"
+        return (
+            f"{prefix}opportunity_id = {opportunity_id} AND {prefix}pipeline_id IS NULL "
+            f"AND {prefix}visit_count > 0"
+        )
+    return (
+        f"{prefix}opportunity_id = {opportunity_id} AND {prefix}pipeline_id = {pipeline_id} "
+        f"AND {prefix}visit_count > 0"
+    )
 
 
 def _date_window_where(config: AnalysisPipelineConfig, *, alias: str = "") -> str:
