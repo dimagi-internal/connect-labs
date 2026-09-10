@@ -50,6 +50,11 @@ DEFINITION = {
         "showFilters": False,
         "showSummaryCards": False,
         "templateType": "kmc_flw_review",
+        # The headline comes from the saved report, not the pipelines, so the page
+        # renders at once and the runner shows the pipeline stream's progress as a
+        # strip; only the weighings and photos wait for it. The render tolerates
+        # `pipelines[alias]` being absent until then.
+        "renderWhileLoading": True,
         # The programme workflow whose report this reads when opened without a
         # `source_run`. Set on the instance (workflow_update_definition).
         "source_workflow_id": None,
