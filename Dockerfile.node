@@ -6,7 +6,7 @@
 #   docker build -f Dockerfile.node -t labs-node .
 # Or trigger via .github/workflows/build-node.yml
 
-FROM node:18-bullseye
+FROM node:20-bookworm
 WORKDIR /app
 
 # Install npm deps first (layer cache on package files)
