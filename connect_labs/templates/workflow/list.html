@@ -4,7 +4,7 @@
 {% block title %}Workflows{% endblock %}
 
 {% block content %}
-{{ user_opportunities|json_script:"user-opportunities" }}
+{% if view_mode == "program" and program_member_opps %}{{ program_member_opps|json_script:"user-opportunities" }}{% else %}{{ user_opportunities|json_script:"user-opportunities" }}{% endif %}
 <style>[x-cloak] { display: none !important; }</style>
 <div class="max-w-6xl mx-auto px-4 py-6">
     <!-- Header -->
@@ -155,7 +155,12 @@
                 {% endif %}
             </div>
             {% endif %}
-            {% if can_create_workflow and view_mode != "program" %}
+            {% if can_create_workflow %}
+            {% comment %}
+            Program view included. It was read-only when it was built (#790) and
+            the button stayed hidden after program-owned creation landed; a
+            report for a whole programme is exactly what gets created here.
+            {% endcomment %}
             <button data-open-modal
                     type="button"
                     class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
