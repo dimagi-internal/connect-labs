@@ -1459,9 +1459,25 @@ Server-side write protection: while a run is `completed`, `update_state_api`, `s
 
 There is no "edit a completed run" path. The pattern is **re-run = new in_progress run**. The run picker's `Start Run` button creates a fresh run; the completed one stays in the history list. This matches what users actually want when they say "compare to last week."
 
+### Rebuilding history
+
+A periodic report's trend draws one point per saved run, so a report created last week has one point and no line. `workflow/history_rebuild.py` writes the runs that report **would** have if it had been running on its cadence all along: one completed run per period, each computed as of that period's end, all graded against the definitions in force **now**.
+
+Reach it through the MCP tools `workflow_rebuild_history` (writes) and `workflow_history_eligibility` (reads only). Both are generic — they resolve the definition's own snapshot contract, so any eligible workflow gets this without a line of template code.
+
+Three properties are worth knowing before using it:
+
+- **Rebuilt points can move, by design.** A saved run used to be evidence of what we said that week. A rebuilt one is what we would say _today_ about that week — later-syncing visits and current credibility judgements included. That is what you want while indicator definitions are still being settled (edit the registry, rebuild, and the whole series restates), and not what you want once they are settled. So rebuilding is an explicit operation a person invokes; nothing triggers it on a read.
+- **Only periodic builders are eligible.** A builder that ignores `period_end` returns the same payload for every date, which renders as a flat line across real dates — indistinguishable from a programme that did not move, with no error anywhere. Eligibility is therefore a declaration, `PERIODIC_BUILDERS` in `snapshot_builders.py`, kept beside the builders and proved by `tests/test_periodic_builders.py` rather than asserted.
+- **It only replaces its own output.** Every run it writes is stamped `state.generated_by = "history_rebuild"`, and only stamped runs are deleted. A run someone created and named by hand survives a rebuild of the same period. The new run is also built and completed _before_ the old one is deleted, so a failed build leaves the existing history intact — a transient duplicate costs nothing, because the trend keys its points by as-of date.
+
+Cost is the real constraint: an as-of date invalidates the whole evaluation chain, so nothing amortises across points and each period is a full pass (order 10s on a cohort of ~9,000 cases). A year of weekly history is minutes. The pipeline cache must already be warm; a cold cache stops at the first period rather than failing every one identically. `dry_run: true` reports the period count and the plan without writing.
+
 ### Action-shaped templates (opt-out)
 
-`audit_with_ai_review`, `bulk_image_audit`, `ocs_outreach`, `sam_followup`, and `kmc_*` dashboards are action-shaped — their artifacts persist in their own models (audit sessions, tasks, child records). They don't declare `supports_saved_runs`. The runner doesn't show a complete button; the run picker labels them as working sessions rather than reviews.
+`audit_with_ai_review`, `bulk_image_audit`, `ocs_outreach`, `sam_followup`, and most `kmc_*` dashboards are action-shaped — their artifacts persist in their own models (audit sessions, tasks, child records). They don't declare `supports_saved_runs`. The runner doesn't show a complete button; the run picker labels them as working sessions rather than reviews.
+
+`kmc_programme_metrics` is the exception among the KMC templates: it is a periodic report and does declare saved runs, via the `semantic_snapshot` builder. Its drill pages (`kmc_flw_review`, the case view) stay action-shaped and read the report run's snapshot through `&source_run=`, so the whole drill inherits one run's as-of rather than each page freezing its own.
 
 ### Size budget
 

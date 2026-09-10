@@ -264,6 +264,23 @@ def _is_synthetic(opportunity_ids: list[int]) -> bool | None:
 
 BUILDERS = {"semantic_snapshot": semantic_snapshot}
 
+# Builders whose payload is a FUNCTION OF `period_end` -- the ones for which
+# building a run dated in the past yields THAT date's figures rather than
+# today's. `semantic_snapshot` qualifies because its `as_of` cuts the visit set,
+# every maturity gate, the case index and the visit rows alike.
+#
+# This exists so `history_rebuild` can refuse the workflows it must not touch.
+# Rebuilding a period series against a builder that ignores the date writes N
+# identical snapshots, which the trend then draws as a flat line across real
+# dates -- a chart that looks like a programme which did not move, with nothing
+# anywhere to say otherwise. That is the only place the mistake is catchable, so
+# the declaration lives HERE, beside the builder it describes, rather than in
+# the rebuild code where it could drift from what the builder actually does.
+#
+# `test_periodic_builders.py` holds the proof, not just the claim: it asserts
+# each declared builder carries its run's period end into the evaluation.
+PERIODIC_BUILDERS = {"semantic_snapshot"}
+
 # The spec keys each builder accepts, declared BESIDE the builder so the two cannot
 # drift. `workflow_update_definition` validates an instance manifest against this,
 # which is what lets a builder spec be written to a definition at all -- and so what
