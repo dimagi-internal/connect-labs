@@ -79,3 +79,19 @@ def test_the_picker_template_compiles_and_reads_what_the_api_sends():
     src = template.template.source
     for needle in ("data.groups", "t.group", "companion_of", "templateFilter", "visibleGroups()"):
         assert needle in src, needle
+
+
+# The picker's colour map (colorClasses in templates/workflow/list.html). A
+# colour outside it falls through to gray with no error; an icon without the
+# `fa-` prefix draws nothing. Both happened (verified_monitoring), and both are
+# invisible everywhere but the modal.
+PICKER_COLOURS = {"green", "blue", "purple", "orange", "red", "indigo", "teal", "gray"}
+
+
+def test_every_template_icon_and_colour_resolve_in_the_picker():
+    bad = {
+        t["key"]: (t["icon"], t["color"])
+        for t in list_templates()
+        if not t["icon"].startswith("fa-") or t["color"] not in PICKER_COLOURS
+    }
+    assert not bad, f"icon must be fa-*, colour one of {sorted(PICKER_COLOURS)}: {bad}"
