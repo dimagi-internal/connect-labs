@@ -20,16 +20,38 @@ on:
   pull_request:
     branches: ['main']
 
-  # NOT `push: branches: [main]`. With the merge queue on, every merge produced
-  # THREE runs of this workflow -- pull_request, merge_group, and then push --
-  # and the third re-tested the exact tree the merge_group run had just
-  # certified. Over a recent 39-hour window that was 107 of 300 runs, a third of
-  # all CI spend, for no signal a required check had not already given.
+  # NOT an unconditional `push: branches: [main]`. With the merge queue on, every
+  # merge produced THREE runs of this workflow -- pull_request, merge_group, and
+  # then push -- and the third re-tested the exact tree the merge_group run had
+  # just certified. Over a recent 39-hour window that was 107 of 300 runs, a
+  # third of all CI spend, for no signal a required check had not already given.
   #
   # What push-on-main did still cover is a commit that reached main WITHOUT the
   # queue: an admin merge, or a direct push. The nightly below covers that at
   # 1/100th the spend, and unlike the push run it also catches main going red
   # from something outside the repo (a moved dependency, an expired fixture).
+  #
+  # But the push run was ALSO the only thing that ever wrote this workflow's
+  # caches under `main`, and that is the one scope every other run can read
+  # from. A cache saved by a pull_request run lives on `refs/pull/N/merge`; one
+  # saved by a merge_group run lives on the queue's throwaway ref. Neither is
+  # visible to the next PR. Measured 2026-09-10, ~17h after the push trigger was
+  # dropped: 46 of 48 caches in the repo sat on PR/queue refs, NONE of the venv,
+  # geo-deb or JSX-parser caches existed on main, and every pytest job was doing
+  # the full 60-70s dependency install and 16s apt path the caches exist to
+  # skip -- while still uploading ~950MB of caches per run that nothing would
+  # ever restore, pushing the repo to its 10GB cache cap.
+  #
+  # So push-on-main comes back for exactly the files that change a cache key,
+  # so a dependency bump re-seeds main within minutes instead of at the next
+  # nightly. A docs or code change still triggers nothing here.
+  push:
+    branches: ['main']
+    paths:
+      - 'requirements/**'
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/ci.yml'
+
   schedule:
     - cron: '0 7 * * *' # 07:00 UTC daily, against whatever main is by then
 
@@ -44,7 +66,7 @@ on:
   merge_group:
 
 concurrency:
-  # `head_ref` is empty for `merge_group` (and for `schedule`), so the group
+  # `head_ref` is empty for `merge_group` (and for `schedule` and `push`), so the group
   # falls back to the unique `run_id` and a queued build is never cancelled by a
   # sibling. That is the behaviour the queue needs — a cancelled required check
   # is a check that never reports — and it is why this expression is left alone
@@ -214,6 +236,7 @@ jobs:
           "
 
       - name: Set up Python
+        id: py
         uses: actions/setup-python@v7
         with:
           python-version: '3.11'
@@ -232,12 +255,20 @@ jobs:
       # content, so an unchanged dependency set is restored instead of rebuilt. A
       # venv's scripts hard-code absolute paths, which is fine here because the
       # workspace path is identical on every runner.
+      #
+      # The key carries the RESOLVED interpreter version, not the '3.11' we
+      # asked for. The venv's python is a symlink into the runner's toolcache
+      # (/opt/hostedtoolcache/Python/3.11.<patch>/x64), so the day setup-python
+      # moves to the next patch release, a cache keyed on '3.11' restores a venv
+      # whose interpreter no longer exists -- and every run fails on
+      # "No such file or directory" until someone works out that the fix is to
+      # bump a cache key.
       - name: Cache the installed environment
         id: venv
         uses: actions/cache@v6
         with:
           path: .venv
-          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements/base.txt', 'requirements/dev.txt') }}
+          key: venv-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-${{ hashFiles('requirements/base.txt', 'requirements/dev.txt') }}
 
       - name: Install Dependencies
         if: steps.venv.outputs.cache-hit != 'true'
