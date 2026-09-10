@@ -639,7 +639,7 @@ measures:
       }
   - name: n03_numerator
     type: count
-    filters: [{ sql: '{CUBE}.started' }]
+    filters: [{ sql: '{CUBE}.started_spec' }]
   - name: n03_denominator
     type: count
   - name: n04
@@ -657,7 +657,7 @@ measures:
       }
   - name: n04_numerator
     type: count
-    filters: [{ sql: '{CUBE}.started' }]
+    filters: [{ sql: '{CUBE}.started_spec' }]
   - name: n04_denominator
     type: count
   - name: n05
@@ -717,10 +717,10 @@ measures:
       }
   - name: n07_numerator
     type: sum
-    sql: 'CASE WHEN {CUBE}.eligible_42d THEN {CUBE}.num_visits ELSE 0 END'
+    sql: 'CASE WHEN {CUBE}.eligible_42d_spec THEN {CUBE}.visits_spec ELSE 0 END'
   - name: n07_denominator
     type: count
-    filters: [{ sql: '{CUBE}.eligible_42d' }]
+    filters: [{ sql: '{CUBE}.eligible_42d_spec' }]
   - name: n08
     title: '% first visit within 3 days of discharge'
     type: number
@@ -740,10 +740,14 @@ measures:
       }
   - name: n08_numerator
     type: count
-    filters: [{ sql: '{CUBE}.enrolled_within_3d' }]
+    filters:
+      [
+        { sql: '{CUBE}.enrolled_within_3d' },
+        { sql: '{CUBE}.started_spec AND {CUBE}.has_discharge_date' },
+      ]
   - name: n08_denominator
     type: count
-    filters: [{ sql: '{CUBE}.started AND {CUBE}.has_discharge_date' }]
+    filters: [{ sql: '{CUBE}.started_spec AND {CUBE}.has_discharge_date' }]
   - name: n09
     title: '% slow growth'
     type: number
@@ -763,10 +767,10 @@ measures:
       }
   - name: n09_numerator
     type: count
-    filters: [{ sql: "{CUBE}.growth_class_banded = 'slow'" }]
+    filters: [{ sql: "{CUBE}.growth_class_spec = 'slow'" }]
   - name: n09_denominator
     type: count
-    filters: [{ sql: '{CUBE}.qualifying_svn' }]
+    filters: [{ sql: '{CUBE}.qualifying_spec' }]
   - name: n10
     title: '% healthy growth'
     type: number
@@ -786,10 +790,10 @@ measures:
       }
   - name: n10_numerator
     type: count
-    filters: [{ sql: "{CUBE}.growth_class_banded = 'plausible'" }]
+    filters: [{ sql: "{CUBE}.growth_class_spec = 'plausible'" }]
   - name: n10_denominator
     type: count
-    filters: [{ sql: '{CUBE}.qualifying_svn' }]
+    filters: [{ sql: '{CUBE}.qualifying_spec' }]
   - name: n11
     title: '% fast growth'
     type: number
@@ -809,10 +813,10 @@ measures:
       }
   - name: n11_numerator
     type: count
-    filters: [{ sql: "{CUBE}.growth_class_banded = 'fast'" }]
+    filters: [{ sql: "{CUBE}.growth_class_spec = 'fast'" }]
   - name: n11_denominator
     type: count
-    filters: [{ sql: '{CUBE}.qualifying_svn' }]
+    filters: [{ sql: '{CUBE}.qualifying_spec' }]
   - name: n12
     title: '% incomplete growth data'
     type: number
@@ -833,10 +837,10 @@ measures:
   - name: n12_numerator
     type: count
     filters:
-      [{ sql: '{CUBE}.qualifying_svn AND {CUBE}.growth_class_banded IS NULL' }]
+      [{ sql: '{CUBE}.qualifying_spec AND {CUBE}.growth_class_spec IS NULL' }]
   - name: n12_denominator
     type: count
-    filters: [{ sql: '{CUBE}.qualifying_svn' }]
+    filters: [{ sql: '{CUBE}.qualifying_spec' }]
   - name: n13
     title: Mortality
     type: number
@@ -859,7 +863,7 @@ measures:
     filters: [{ sql: '{CUBE}.died' }]
   - name: n13_denominator
     type: count
-    filters: [{ sql: '{CUBE}.eligible_28d AND {CUBE}.outcome_known' }]
+    filters: [{ sql: '{CUBE}.eligible_28d_spec AND {CUBE}.outcome_known' }]
   - name: n14
     title: Weight rounding rate
     type: number
@@ -902,11 +906,10 @@ measures:
       }
   - name: n15_numerator
     type: count
-    filters:
-      [{ sql: '{CUBE}.weight_computable AND NOT {CUBE}.weight_consistent' }]
+    filters: [{ sql: '{CUBE}.flag_impossible AND {CUBE}.computable_spec' }]
   - name: n15_denominator
     type: count
-    filters: [{ sql: '{CUBE}.weight_computable' }]
+    filters: [{ sql: '{CUBE}.computable_spec' }]
 
   # ── Input-availability gates ─────────────────────────────────────────────
   # Not indicators (no `meta`), so they are emitted as columns but never treated
