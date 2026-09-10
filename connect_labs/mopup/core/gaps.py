@@ -55,31 +55,23 @@ from connect_labs.microplans.core.footprints import fetch_buildings
 logger = logging.getLogger(__name__)
 
 
-def buildings_not_covered(
+def buildings_within_ward(
     ward_boundary: BaseGeometry,
-    existing_wa_boundaries: list[dict],
+    buildings: pd.DataFrame | None = None,
     *,
     min_confidence: float | None = None,
     sources: list[str] | None = None,
-    buildings: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Buildings inside `ward_boundary` whose centroid does NOT fall inside
-    the union of `existing_wa_boundaries` — the "never covered by any
-    existing work area" remainder. Returns the same DataFrame shape
-    `microplans.core.footprints.fetch_buildings` returns
-    (`lon`/`lat`/`area_m2`/`confidence`/`dataset`), ready to feed straight
-    into `microplans.core.clustering.grid_clusters`.
+    """Buildings whose centroid falls inside `ward_boundary` — with NO
+    existing-work-area exclusion applied (see `buildings_not_covered` for
+    that). This is Step 2's own definition of "every building in this ward,"
+    used for the map's "uploaded buildings" layer (every uploaded building
+    actually inside the ward, whether or not an existing work area already
+    covers it) as well as the first stage of `buildings_not_covered`.
 
-    ``existing_wa_boundaries``: GeoJSON geometries (dicts) of EVERY existing
-    work area in the ward — not just the locked candidates, since a
-    candidate being revisited is itself an existing WA and its footprint is
-    already covered.
-
-    ``buildings``, if given, is used instead of calling `fetch_buildings` —
+    `buildings`, if given, is used instead of calling `fetch_buildings` —
     the seam Step 2's "upload your own building data" mode uses (see
-    `buildings_from_upload`): the exclusion/clipping logic below is
-    identical regardless of where the buildings came from, only the source
-    of the DataFrame differs. `min_confidence`/`sources` are ignored when
+    `buildings_from_upload`). `min_confidence`/`sources` are ignored when
     `buildings` is given (they're `fetch_buildings`-specific filters with no
     meaning for an already-built frame).
 
@@ -90,26 +82,65 @@ def buildings_not_covered(
     NOT guaranteed to already be confined to `ward_boundary`'s actual shape.
     This function clips it here — a row a reviewer's upload tags as this
     ward but that falls outside the boundary actually selected/reviewed for
-    this mop-up round never becomes a gap-fill work area, matching the
-    requirement that an upload may cover more ground than this run reviews,
-    but only the reviewed boundary's own area ever computes new cells.
+    this mop-up round is dropped, matching the requirement that an upload
+    may cover more ground than this run reviews, but only the reviewed
+    boundary's own area is ever shown/computed.
 
     Raises `ValueError` (the same `MAX_AREA_KM2` guard) via `fetch_buildings`
     — only when `buildings` is not given.
     """
     if buildings is None:
-        buildings = fetch_buildings(ward_boundary, min_confidence=min_confidence, sources=sources)
-    elif not buildings.empty:
-        prepared_ward = prep(ward_boundary)
-        inside = [prepared_ward.contains(Point(lon, lat)) for lon, lat in zip(buildings["lon"], buildings["lat"])]
-        buildings = buildings[pd.Series(inside, index=buildings.index)]
+        return fetch_buildings(ward_boundary, min_confidence=min_confidence, sources=sources)
+    if buildings.empty:
+        return buildings
+    prepared_ward = prep(ward_boundary)
+    inside = [prepared_ward.contains(Point(lon, lat)) for lon, lat in zip(buildings["lon"], buildings["lat"])]
+    return buildings[pd.Series(inside, index=buildings.index)]
 
+
+def _exclude_covered(buildings: pd.DataFrame, existing_wa_boundaries: list[dict]) -> pd.DataFrame:
+    """`buildings` minus whichever rows fall inside the union of
+    `existing_wa_boundaries` — the "never covered by any existing work
+    area" step of `buildings_not_covered`, split out so `planning_gap_features`
+    can apply it AFTER already keeping every within-ward building for the
+    map (see `buildings_within_ward`), rather than only the ones that
+    survive both filters."""
     if not existing_wa_boundaries or buildings.empty:
         return buildings
-
     covered = prep(unary_union([shape(g) for g in existing_wa_boundaries]))
     keep = [not covered.contains(Point(lon, lat)) for lon, lat in zip(buildings["lon"], buildings["lat"])]
     return buildings[pd.Series(keep, index=buildings.index)]
+
+
+def buildings_not_covered(
+    ward_boundary: BaseGeometry,
+    existing_wa_boundaries: list[dict],
+    *,
+    min_confidence: float | None = None,
+    sources: list[str] | None = None,
+    buildings: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Buildings inside `ward_boundary` whose centroid does NOT fall inside
+    the union of `existing_wa_boundaries` — the "never covered by any
+    existing work area" remainder that actually becomes new gap-fill work
+    areas. Returns the same DataFrame shape
+    `microplans.core.footprints.fetch_buildings` returns
+    (`lon`/`lat`/`area_m2`/`confidence`/`dataset`), ready to feed straight
+    into `microplans.core.clustering.grid_clusters`.
+
+    ``existing_wa_boundaries``: GeoJSON geometries (dicts) of EVERY existing
+    work area in the ward — not just the locked candidates, since a
+    candidate being revisited is itself an existing WA and its footprint is
+    already covered.
+
+    Composed from `buildings_within_ward` (the ward-boundary clip — see
+    that function for what `buildings`/`min_confidence`/`sources` do) then
+    `_exclude_covered` (the existing-WA exclusion). `planning_gap_features`
+    calls those two pieces directly instead of this function, so it can
+    keep the ward-clipped-but-not-yet-excluded set for the map too.
+    """
+    within_ward = buildings_within_ward(ward_boundary, buildings, min_confidence=min_confidence, sources=sources)
+    return _exclude_covered(within_ward, existing_wa_boundaries)
 
 
 def _normalize_name(s: str | None) -> str:
@@ -223,7 +254,7 @@ def planning_gap_features(
     target-spread group for the ward.
 
     `min_confidence`/`sources` are Phase 2 Step 2's building-source controls,
-    passed straight through to `buildings_not_covered`/`fetch_buildings` —
+    passed straight through to `buildings_within_ward`/`fetch_buildings` —
     ignored when `buildings` is given (Step 2's "upload your own" mode
     already has its buildings; see `buildings_from_upload`).
     `min_buildings_per_cell` drops any occupied grid cell with fewer
@@ -237,21 +268,25 @@ def planning_gap_features(
     unrelated to this estimate. `None` (the default) keeps the original
     building-count placeholder.
 
-    Returns `(features, building_points)` — `building_points` is every
-    individual building in the remainder (`{"lon": float, "lat": float}`),
-    BEFORE gridding, for Step 2's map to show real building positions inside
-    the gap-fill cells, not just the cells themselves. Always computed (it's
-    a byproduct of `remainder`, already in hand) — callers decide whether to
-    keep it (Step 2 only keeps this for "upload your own" mode, since an
-    Overture-fetched remainder can be far larger; see `tasks.preview_planning_gaps`).
+    Returns `(features, building_points)` — `building_points` is EVERY
+    building within the ward boundary (`{"lon": float, "lat": float}`),
+    regardless of whether an existing work area already covers it — the
+    map's "uploaded buildings" layer is meant to show the reviewer
+    everything that landed inside the ward they're reviewing, not just the
+    subset that became new gap-fill cells. Always computed (it's a
+    byproduct of `buildings_within_ward`, already in hand) — callers decide
+    whether to keep it (Step 2 only keeps this for "upload your own" mode,
+    since an Overture-fetched ward can be far larger; see
+    `tasks.preview_planning_gaps`).
     """
     from connect_labs.microplans.core import clustering
 
-    remainder = buildings_not_covered(
-        ward_boundary, existing_wa_boundaries, min_confidence=min_confidence, sources=sources, buildings=buildings
-    )
-    building_points = [{"lon": float(lon), "lat": float(lat)} for lon, lat in zip(remainder["lon"], remainder["lat"])]
+    within_ward = buildings_within_ward(ward_boundary, buildings, min_confidence=min_confidence, sources=sources)
+    building_points = [
+        {"lon": float(lon), "lat": float(lat)} for lon, lat in zip(within_ward["lon"], within_ward["lat"])
+    ]
 
+    remainder = _exclude_covered(within_ward, existing_wa_boundaries)
     out = clustering.grid_clusters(remainder, cell_size_m=cell_size_m)
     features = []
     for _, row in out.psu_frame.iterrows():
