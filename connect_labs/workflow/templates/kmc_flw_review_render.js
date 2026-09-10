@@ -489,7 +489,12 @@ function WorkflowUI({
   // a preterm standard uses), else days since birth, else days since the first
   // weighing. Every weighing is a point with its value; the dashed line is the
   // 15 g/kg/day target C13 is graded against, compounding from the first weight.
-  // A loss inside the first week is called out as expected, not painted red.
+  // The weight entered at registration (birth weight, hollow marker) is the
+  // series' first point and the line runs through it: it used to float apart
+  // from the weighings, which read as a gap in the record rather than a
+  // reported-not-measured value (Jon, 2026-09-10). The hollow marker keeps that
+  // distinction. A loss inside the first week is called out as expected, not
+  // painted red.
   function weighingPoints(visits, c) {
     var weighed = visits.filter(function (v) {
       return (
@@ -665,9 +670,6 @@ function WorkflowUI({
           strokeWidth="2.5"
           strokeLinejoin="round"
           points={pts
-            .filter(function (p) {
-              return !p.birth;
-            })
             .map(function (p) {
               return X(p.x) + ',' + Y(p.y);
             })
