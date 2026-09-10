@@ -815,6 +815,24 @@ def test_analysis_view_renders_saved_thresholds(client, django_user_model, monke
     assert b"0.42" in resp.content
 
 
+def test_analysis_view_fills_in_missing_global_config_keys_with_defaults(client, django_user_model, monkeypatch):
+    # A run saved before the tiered-indicator schema only has the
+    # old-compatible keys -- the new ones (e.g. cluster_aware_filter_enabled)
+    # must still render with their default, not blank/missing, or Recompute
+    # would silently collect 0/false for them instead of the intended default.
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    from connect_labs.mopup.core import indicators as ind
+
+    partial_global_config = {"min_hsd_visits_floor": 9}  # old-schema-compatible key, custom value
+    _seed_run(runs, thresholds={"global_config": partial_global_config})
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200
+    assert b'"min_hsd_visits_floor": 9' in resp.content  # saved value preserved
+    default_filter = str(ind.DEFAULT_GLOBAL_CONFIG["cluster_aware_filter_enabled"]).lower().encode()
+    assert b'"cluster_aware_filter_enabled": ' + default_filter in resp.content  # missing key defaulted
+
+
 def test_analysis_view_falls_back_to_defaults_when_no_thresholds_saved(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
