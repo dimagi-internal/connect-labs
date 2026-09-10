@@ -5,7 +5,8 @@ answer "show me the faltering-growth case", because a spread contains no case yo
 can name and mirror mode names its entities ``Beneficiary 47``.
 
 A showcase case is built rather than sampled. It takes one series from the corpus
-manifest — a real infant's real weight sequence — and emits one visit per point,
+manifest — a real infant's real weight sequence — and emits a registration form
+followed by one visit per point,
 each carrying the photo that series recorded and, for a passing case, that photo's
 gateway-confirmed reading as the entered weight. So the case is longitudinal by
 construction, every visit has an image, and the entered value agrees with the
@@ -101,6 +102,124 @@ def build_showcase_visits(
     return visits
 
 
+REGISTRATION_FORM_NAME = "Child Registration Form"
+FOLLOWUP_FORM_NAME = "Record Visit Details"
+
+# Gestational age at birth, by birthweight band -- the ordinary preterm picture,
+# so "weight for postmenstrual age" has an axis to draw on.
+_GA_BY_BIRTHWEIGHT = [(1000, 29.0), (1500, 31.0), (2000, 33.0), (2500, 35.0)]
+
+
+def _gestational_age_wks(birth_weight_g: float) -> float:
+    for ceiling, weeks in _GA_BY_BIRTHWEIGHT:
+        if birth_weight_g < ceiling:
+            return weeks
+    return 37.0
+
+
+def _registration_visit(
+    case: ShowcaseCase,
+    *,
+    entity_id: str,
+    first_reading: float,
+    female: bool,
+    opportunity_id: int,
+    start_date: dt.date,
+    deliver_unit_id: Any,
+) -> dict[str, Any]:
+    """The registration form every mirrored case opens with, and a showcase case
+    used to lack.
+
+    A cohort case is a mirror of a real infant: its first visit is the Child
+    Registration Form (DOB, sex, gestational age, birth and enrolment weight,
+    discharge date, KMC status), and the follow-ups carry a form name. A showcase
+    case was built from nothing -- a weight and a photo per visit -- so the KMC
+    case-properties pipeline saw no registration at all: the record rail rendered
+    dashes, the growth chart fell back to "days since first weighing" (no DOB, no
+    gestational age), the registration weight had nothing to plot, and the growth
+    class stayed ungraded for want of a birthweight band. Seen on run 5620,
+    2026-09-10.
+
+    Values are derived from the trajectory so the record fits the story: born six
+    days before the first weighing, discharged two days before it, registered the
+    day before it (so it counts as enrolled within three days), birth weight a
+    round 100 g below the first reading, enrolment weight equal to the first
+    reading (a seed reading distinct from the birth weight, so it is not a
+    birth-copy), gestational age by birthweight band. Written at the pipeline's
+    extraction paths (form.subcase_0.case.update.* and the child_details /
+    hosp_lbl / mothers_details mirrors), which is what the cohort's own
+    registration forms carry.
+    """
+    dob = start_date - dt.timedelta(days=6)
+    discharged = start_date - dt.timedelta(days=2)
+    registered = start_date - dt.timedelta(days=1)
+    birth_weight = max(500.0, round((first_reading - 100.0) / 5.0) * 5.0)
+    ga = _gestational_age_wks(birth_weight)
+    sex = "Female" if female else "Male"
+    created = dt.datetime.combine(registered, dt.time(9, 0))
+
+    form_json: dict[str, Any] = {}
+    for path, value in (
+        ("form.@name", REGISTRATION_FORM_NAME),
+        ("form.case.@case_id", entity_id),
+        ("form.case.update.child_alive", "yes"),
+        ("form.subcase_0.case.update.reg_date", registered.isoformat()),
+        ("form.subcase_0.case.update.child_DOB", dob.isoformat()),
+        ("form.subcase_0.case.update.child_gender", sex),
+        ("form.subcase_0.case.update.child_weight_birth", birth_weight),
+        ("form.subcase_0.case.update.child_weight_reg", first_reading),
+        ("form.subcase_0.case.update.gestational_age_at_birth_lmp", ga),
+        ("form.subcase_0.case.update.gestational_age_at_birth_preemie", ga),
+        ("form.subcase_0.case.update.date_hospital_discharge", discharged.isoformat()),
+        ("form.subcase_0.case.update.kmc_status", "enrolled"),
+        ("form.subcase_0.case.update.child_alive", "yes"),
+        ("form.child_details.birth_weight_group.child_weight_birth", birth_weight),
+        ("form.child_details.birth_weight_reg.child_weight_reg", first_reading),
+        ("form.child_details.child_gender", sex),
+        ("form.child_details.child_age_at_reg_discharge_date", float((registered - discharged).days)),
+        ("form.hosp_lbl.date_hospital_discharge", discharged.isoformat()),
+        ("form.mothers_details.gestational_age_at_birth_lmp", ga),
+    ):
+        _set_nested(form_json, path, value)
+
+    return {
+        "id": int.from_bytes(hashlib.sha256(f"{case.name}:registration".encode()).digest()[:7], "big"),
+        "xform_id": _stable_entity_id(f"{case.name}:xform:registration", opportunity_id),
+        "opportunity_id": opportunity_id,
+        "username": case.flw,
+        "deliver_unit": str(deliver_unit_id) if deliver_unit_id is not None else "",
+        "deliver_unit_id": deliver_unit_id,
+        "entity_id": entity_id,
+        "entity_name": case.name,
+        "visit_date": registered.isoformat(),
+        "status": "approved",
+        "reason": None,
+        "location": None,
+        "flagged": False,
+        "flag_reason": "",
+        "form_json": form_json,
+        "completed_work": "",
+        "status_modified_date": (created + dt.timedelta(hours=1)).isoformat(),
+        "review_status": "approved",
+        "review_created_on": (created + dt.timedelta(hours=1, minutes=30)).isoformat(),
+        "justification": None,
+        "date_created": created.isoformat(),
+        "completed_work_id": None,
+        # A registration carries no weighing, so no photo: the audit's
+        # "n of n weighings photographed" stays exact.
+        "images": [],
+        "showcase": {
+            "case": case.name,
+            "trajectory": case.trajectory,
+            "outcome": case.outcome,
+            "visit_seq": 0,
+            "form": "registration",
+            "birth_weight_g": birth_weight,
+            "gestational_age_wks": ga,
+        },
+    }
+
+
 def _entered_value(case: ShowcaseCase, true_reading: float, blob_id: str, bands: dict, factor: float) -> float:
     """The value the worker 'typed', given the outcome this case declares."""
     if case.outcome != "fail_number":
@@ -131,7 +250,17 @@ def _build_case(
         )
 
     entity_id = _stable_entity_id(case.name, opportunity_id)
-    out: list[dict[str, Any]] = []
+    out: list[dict[str, Any]] = [
+        _registration_visit(
+            case,
+            entity_id=entity_id,
+            first_reading=float(points[0]["reading_grams"]),
+            female=(case_index % 2 == 0),
+            opportunity_id=opportunity_id,
+            start_date=start_date,
+            deliver_unit_id=deliver_unit_id,
+        )
+    ]
 
     for i, point in enumerate(points):
         blob_id = point["blob_id"]
@@ -150,6 +279,17 @@ def _build_case(
         filename = f"{config.corpus}_showcase_{case_index:02d}_{i:02d}.jpg"
 
         form_json: dict[str, Any] = {}
+        # The follow-up form's identity and case-update fields, at the paths
+        # the KMC case-properties pipeline reads. Without them a showcase visit
+        # was a bare weight and a photo: the semantic layer could only count
+        # it (n_form_names = 0 falls back to "any visit"), and the worker
+        # review's record rail read as dashes.
+        _set_nested(form_json, "form.@name", FOLLOWUP_FORM_NAME)
+        _set_nested(form_json, "form.case.@case_id", entity_id)
+        _set_nested(form_json, "form.case.update.child_alive", "yes")
+        _set_nested(form_json, "form.case.update.kmc_status", "KMC visits in progress")
+        _set_nested(form_json, "form.child_alive", "yes")
+        _set_nested(form_json, "form.kmc_status_entered", "continue")
         _set_nested(form_json, config.question_path, filename)
         # A showcase visit is built from nothing, so unlike a cohort visit there
         # is no existing value to resolve the path against. Take the path the

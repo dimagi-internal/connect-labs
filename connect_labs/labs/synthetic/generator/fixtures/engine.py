@@ -511,7 +511,9 @@ def _assemble(
             visits.extend(showcase_visits)
             image_stats = dict(image_stats or {})
             image_stats["showcase_cases"] = len(manifest.image_config.showcase)
-            image_stats["showcase_visits"] = len(showcase_visits)
+            # The registration form each case opens with carries no weighing
+            # and no photo; the stat is photographed visits, as it reads.
+            image_stats["showcase_visits"] = sum(1 for v in showcase_visits if v.get("images"))
 
     persona_names = {p.id: p.display_name or p.id for p in personas}
     task_records = build_task_records(
