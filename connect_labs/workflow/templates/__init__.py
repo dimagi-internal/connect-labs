@@ -295,7 +295,11 @@ def schedule_options_for_definition(definition) -> list[dict]:
 TEMPLATE_GROUPS: list[dict] = [
     {"key": "reports", "label": "Programme reports", "blurb": "cross-opportunity, drillable, read-only"},
     {"key": "automatic", "label": "Automatic reports", "blurb": "computed on a schedule, nothing to decide"},
-    {"key": "reviews", "label": "Worker reviews", "blurb": "one scorecard per worker, you assign a status"},
+    {
+        "key": "reviews",
+        "label": "Worker reviews",
+        "blurb": "one worker at a time: their scorecard, and usually a decision",
+    },
     {"key": "audits", "label": "Audits", "blurb": "decide on photos and records, or create the audits"},
     {"key": "tracking", "label": "Beneficiary tracking", "blurb": "one child across follow-up visits"},
     {"key": "other", "label": "Outreach & demos", "blurb": "talk to workers, or show the platform"},
@@ -304,9 +308,6 @@ TEMPLATE_GROUPS: list[dict] = [
 TEMPLATE_GROUP_OF: dict[str, str] = {
     # Programme reports: read across opportunities and drill down.
     "kmc_programme_metrics": "reports",
-    # The report's drill page. Created WITH the report as its companion, and
-    # creatable on its own — opened alone it reads the newest saved report.
-    "kmc_flw_review": "reports",
     "program_admin_report": "reports",
     "audit_par": "reports",
     "chc_audit_history": "reports",
@@ -318,7 +319,11 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     "flw_weekly_audit_report": "automatic",
     "flw_daily_indicator_report": "automatic",
     "flw_daily_summary_report": "automatic",
-    # Worker reviews: one worker per row, a decision expected.
+    # Worker reviews: one worker at a time.
+    # The KMC review is the programme report's drill page — created WITH the
+    # report as its companion, and creatable on its own (opened alone it reads
+    # the newest saved report). It has no statuses; it is still a worker review.
+    "kmc_flw_review": "reviews",
     "performance_review": "reviews",
     "llo_weekly_review": "reviews",
     "chc_nutrition_analysis": "reviews",
