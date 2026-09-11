@@ -82,6 +82,7 @@ Clicking **Create Workflow** opens the **Choose a template** modal. The modal is
 | Audits | Weekly Dual-Track Image Audit, Muac Picture Audit |
 | Beneficiary tracking | Beneficiary-level dashboards |
 | Outreach & demos | Outreach and demonstration reports |
+| Visit verification | MBW Visit Verification |
 
 A **filter box** at the top of the modal lets you type to narrow the list. Each row shows the template's full name — names are never cut short — alongside a coloured icon and a short description on the line below. If a template is always created together with another template, both rows say so, so you know what you will get before you confirm.
 
@@ -96,6 +97,20 @@ Before this change, creating the KMC Programme Metrics report by hand left worke
 
 !!! note "The opportunity picker spans all programmes you can access"
     When you create a workflow from the programme-level Workflows page, the opportunity picker shows **every opportunity you have access to**, not only those belonging to the current programme. The current programme's own opportunities appear at the top of the list and are pre-ticked, so the default selection is correct for most reports. If your KMC report needs to span opportunities from several programmes — which is common for whole-programme KMC metrics — you can tick the additional opportunities from the same picker without navigating away.
+
+### MBW Visit Verification template
+
+The **MBW Visit Verification** template creates a single-table dashboard for opportunity 765. Each row represents one visit and shows whether GPS location, QR code scan, mother's signature, ANC card capture, and the mother-questions check each came back **Pass**, **Fail**, or **NA**, along with the visit's overall verification outcome and the field worker's pass rate on that mother's earlier visits. Only field workers flagged with the `visit_verification` property in CommCare appear as rows in the table.
+
+!!! warning "This template currently reads from a test app, not the live production app"
+    The verification questions that this dashboard depends on have not yet been deployed to opportunity 765's live production app — they exist only in a test CommCare app. Until the live app is updated, this template reads from that test app rather than live field data.
+
+    Once the verification questions are added to the live app, the dashboard will automatically show production data:
+
+    - For the **ANC Visit** form, which already has the verification questions, this happens as soon as the live app is updated — no further action needed.
+    - For the other five visit types (**Post delivery**, **1-week**, **1-month**, **3-month**, and **6-month**), production data appears as soon as those forms receive the same verification questions.
+
+    No engineering work is required for that transition. A small follow-up to re-point the template directly at the production domain (removing the need for test-domain access) is recommended once the live app is fully updated, but is not required for the dashboard to function.
 
 ### Selecting opportunities with the multi-opportunity picker
 
@@ -212,22 +227,4 @@ The custom name replaces the generic label everywhere the run appears: the workf
 
 ## Creating a Run
 
-When you click **Create Run** on a workflow, the button darkens immediately to confirm your click has been registered, then shows a spinner labelled **"Creating run..."** until the new run opens. This means you will always get a visible response the instant you press the button — there is no silent pause before anything happens.
-
-While the button is in its "Creating run..." state, pressing it again has no effect, so you cannot accidentally create two runs by clicking twice.
-
-Once the run opens, the runner reports its progress step by step as work actually happens: **"Loading workflow configuration..."**, then **"Checking data sources..."**, then **"Checking CommCare HQ access..."**, rather than sitting on a static **"Connecting to pipeline stream..."** message throughout. Nothing about how runs are created or how pipelines load has changed — only what you are shown while you wait.
-
----
-
-## Resuming an Audit Run
-
-Audit runs — such as the Weekly Dual-Track Image Audit and the Muac Picture Audit — can be interrupted mid-way through, most commonly when a system deployment restarts the background workers while AI review is in progress. You can resume an interrupted run to pick up exactly where it left off.
-
-### What resume does
-
-When you resume a run, the system:
-
-- **Completes any audits that were started but not finished.** If an audit was created and AI review began but did not finish, resume picks up image-by-image from where it stopped rather than skipping or restarting those audits.
-- **Skips work that is already fully done.** Opportunities and audits that were completed before the interruption are not redone.
-- **Creates any audits that were never started.** Previously, if a run asked for more than one audit — for example, the two tracks of a Weekly Dual-Track Image Audit, or a second audit on a Muac Picture Audit run
+When you click **Create Run** on a workflow, the button darkens immediately to confirm your click has been registered, then shows a spinner labelled **"Creating run..."** until the new run opens. This means you will always get
