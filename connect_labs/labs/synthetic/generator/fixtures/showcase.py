@@ -362,8 +362,9 @@ def _pick_template(
     n_followups: int,
     write_path: str | None,
 ) -> dict[str, Any] | None:
-    """One standard case to duplicate: a registration form plus at least
-    ``n_followups`` weighed follow-ups, the child alive throughout and nothing
+    """One standard case to duplicate: a registration form plus weighed
+    follow-ups (ideally ``n_followups`` of them; the last is reused when the
+    cohort is too young to offer that many), the child alive throughout and nothing
     eventful (no referral, danger sign or death) on any of its forms. The same
     worker's cases are preferred so the clone reads as that worker's ordinary
     work; any worker's will do, because the username is overridden anyway.
@@ -394,7 +395,12 @@ def _pick_template(
             and str(v.get("visit_date") or "") >= str(reg.get("visit_date") or "")
             and _has_weight(v, write_path)
         ]
-        if len(followups) < n_followups:
+        # A young cohort may hold no case with as many weighed follow-ups as
+        # the trajectory has points (opp 2166 was a month old when cloned: three
+        # of four demo cases found no template and fell back to synthesised
+        # forms). One weighed follow-up is enough to clone from; the last one is
+        # reused for the extra weighings.
+        if not followups:
             return None
         if not all(_is_alive(v) and _is_uneventful(v) for v in vs):
             return None
@@ -410,6 +416,8 @@ def _pick_template(
     pool = same_flw or others
     if not pool:
         return None
+    full = [c for c in pool if len(c[1][1]) >= n_followups]
+    pool = full or pool
     idx = int.from_bytes(hashlib.sha256(case.name.encode()).digest()[:4], "big") % len(pool)
     eid, (reg, followups) = pool[idx]
     return {"entity_id": eid, "registration": reg, "followups": followups}
@@ -555,7 +563,9 @@ def _clone_case(
     }
     out = [reg]
 
-    for i, (point, tmpl) in enumerate(zip(points, template["followups"])):
+    followups = template["followups"]
+    for i, point in enumerate(points):
+        tmpl = followups[min(i, len(followups) - 1)]
         blob_id = point["blob_id"]
         true_reading = float(point["reading_grams"])
         entered = _entered_value(case, true_reading, blob_id, bands, config.bad_reading_factor)
