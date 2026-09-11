@@ -119,14 +119,24 @@ def fetch_cchq_forms_as_visit_dicts(
             "convert the pipeline to a connect_csv data source."
         )
 
-    metadata = fetch_opportunity_metadata(access_token, opportunity_id)
-    cc_domain = metadata.get("cc_domain")
-    if not cc_domain:
-        raise ValueError(f"No cc_domain found for opportunity {opportunity_id}")
+    if data_source.domain:
+        # Explicit domain override -- pull from a CommCare domain the
+        # opportunity doesn't own (e.g. an unreleased app version under
+        # test). app_id is required in this mode (enforced in
+        # DataSourceConfig.__post_init__); there's no opportunity-linked
+        # app to resolve against a domain the opportunity doesn't own, so
+        # skip the metadata fetch entirely.
+        cc_domain = data_source.domain
+        app_id = data_source.app_id
+    else:
+        metadata = fetch_opportunity_metadata(access_token, opportunity_id)
+        cc_domain = metadata.get("cc_domain")
+        if not cc_domain:
+            raise ValueError(f"No cc_domain found for opportunity {opportunity_id}")
 
-    app_id = data_source.app_id
-    if not app_id and data_source.app_id_source == "opportunity":
-        app_id = metadata.get("cc_app_id", "")
+        app_id = data_source.app_id
+        if not app_id and data_source.app_id_source == "opportunity":
+            app_id = metadata.get("cc_app_id", "")
 
     client = CommCareDataAccess(request, cc_domain, cchq_access_token=cchq_access_token)
     if not client.check_token_valid():
@@ -217,14 +227,18 @@ def iter_cchq_forms_as_visit_dicts(
             "convert the pipeline to a connect_csv data source."
         )
 
-    metadata = fetch_opportunity_metadata(access_token, opportunity_id)
-    cc_domain = metadata.get("cc_domain")
-    if not cc_domain:
-        raise ValueError(f"No cc_domain found for opportunity {opportunity_id}")
+    if data_source.domain:
+        cc_domain = data_source.domain
+        app_id = data_source.app_id
+    else:
+        metadata = fetch_opportunity_metadata(access_token, opportunity_id)
+        cc_domain = metadata.get("cc_domain")
+        if not cc_domain:
+            raise ValueError(f"No cc_domain found for opportunity {opportunity_id}")
 
-    app_id = data_source.app_id
-    if not app_id and data_source.app_id_source == "opportunity":
-        app_id = metadata.get("cc_app_id", "")
+        app_id = data_source.app_id
+        if not app_id and data_source.app_id_source == "opportunity":
+            app_id = metadata.get("cc_app_id", "")
 
     client = CommCareDataAccess(request, cc_domain, cchq_access_token=cchq_access_token)
     if not client.check_token_valid():
