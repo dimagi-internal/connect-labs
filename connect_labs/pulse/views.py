@@ -19,7 +19,12 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views import View
 
+from connect_labs.pulse.management.commands.pulse_partner_import import DIRECTORY_ID
 from connect_labs.pulse.models import PulseOpportunity, PulsePublicToken, PulseReport, PulseScalar
+
+# The LLO Directory, which the partner import reads. Linked from the index so
+# a partner showing as a slug can be fixed where its identity actually lives.
+DIRECTORY_URL = f"https://docs.google.com/spreadsheets/d/{DIRECTORY_ID}/edit"
 
 # Registered layouts. A layout is an arrangement of cards; adding one is a
 # template plus an entry here, which is the point of the card/layout split.
@@ -136,6 +141,7 @@ class PulseIndexView(LoginRequiredMixin, View):
             "pulse/index.html",
             {
                 "layouts": LAYOUTS,
+                "directory_url": DIRECTORY_URL,
                 "ingest": _ingest_state(),
                 "scope": (PulseScalar.objects.filter(key="scope").first() or PulseScalar(value={})).value,
                 "tokens": PulsePublicToken.objects.filter(revoked=False).order_by("-created_at")[:20],
