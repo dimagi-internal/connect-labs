@@ -279,12 +279,12 @@ class SQLBackend:
                 # visits may have empty images arrays. In that case, fall through
                 # to re-fetch from API with images included.
                 if include_images:
-                    qs = cache_manager.get_raw_visits_queryset()
-                    if filter_visit_ids is not None:
-                        qs = qs.filter(visit_id__in=filter_visit_ids)
-                    has_images = qs.exclude(images=[]).exists()
-                    if not has_images:
-                        logger.info(f"[SQL] Cache has no images for opp {opportunity_id}, re-fetching with images")
+                    # Whether the SLOT was fetched with images -- not whether these
+                    # particular visits carry one. A case whose visits have no photo
+                    # is an ANSWER ("no photo"); reading it as "the cache cannot
+                    # answer" re-downloaded the whole opportunity on every open.
+                    if not cache_manager.slot_has_image_data():
+                        logger.info(f"[SQL] Cache was fetched without images for opp {opportunity_id}, re-fetching")
                     else:
                         logger.info(f"[SQL] Raw cache HIT (with images) for opp {opportunity_id}")
                         self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
@@ -417,9 +417,9 @@ class SQLBackend:
                 # we already have. The anomaly flag above still applies.
                 visit_dicts = low_fetch_dicts
         else:
-            # Store full data to SQL cache
+            # Store full data to SQL cache, recording whether photos were asked for.
             visit_count = len(visit_dicts)
-            cache_manager.store_raw_visits(visit_dicts, visit_count)
+            cache_manager.store_raw_visits(visit_dicts, visit_count, images_fetched=include_images)
             cache_manager.clear_pending_raw_fetch_anomaly()
             logger.info(f"[SQL] Stored {visit_count} visits to RawVisitCache")
 

@@ -61,6 +61,13 @@ class RawVisitCache(models.Model):
     date_created = models.DateTimeField(null=True, blank=True)
     completed_work_id = models.IntegerField(null=True, blank=True)
     images = models.JSONField(default=list, blank=True)
+    # Whether the fetch that wrote this row ASKED Connect for images. Without it,
+    # "no images on these rows" is ambiguous -- it means either "this visit has no
+    # photo" or "nobody asked for photos when this was cached" -- and the image
+    # reader resolved that ambiguity by re-downloading the whole opportunity. For a
+    # case whose visits have no photo that happened on EVERY open: measured
+    # 2026-09-11, 40s for one case on opp 524 (23s of it outbound).
+    images_fetched = models.BooleanField(default=False)
     user_id = models.CharField(
         max_length=64, blank=True, help_text="Connect user UUID, for building shareable visit links"
     )

@@ -445,6 +445,15 @@ def workflow_preview_as_of(
                 "maximum": 180,
                 "description": "How long to hold each opportunity's cached data (default 90).",
             },
+            "include_images": {
+                "type": "boolean",
+                "description": (
+                    "Also warm each opportunity's PHOTO slot -- the separate raw-cache slot the "
+                    "case drill-down reads. Off by default: it downloads each opportunity again "
+                    "WITH images, which is the slowest fetch there is. Worth it before a demo, "
+                    "so opening a case does not pay for it."
+                ),
+            },
         },
         "required": ["definition_id"],
         "additionalProperties": False,
@@ -461,6 +470,7 @@ def workflow_ensure_visit_cache(
     start_at: int = 0,
     limit: int = DEFAULT_CACHE_BATCH,
     hold_minutes: int | None = None,
+    include_images: bool = False,
     progress=NULL_PROGRESS,
 ) -> dict[str, Any]:
     from connect_labs.labs.integrations.connect.api_client import LabsAPIError
@@ -480,6 +490,7 @@ def workflow_ensure_visit_cache(
                 start_at=start_at,
                 limit=limit,
                 hold_minutes=hold_minutes or DEFAULT_HOLD_MINUTES,
+                include_images=include_images,
                 progress=progress,
             )
         except VisitCacheError as e:

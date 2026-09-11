@@ -256,13 +256,15 @@ class SQLCacheManager:
             ).update(expires_at=new_expiry)
         return held
 
-    def store_raw_visits(self, visit_dicts: list[dict], visit_count: int):
+    def store_raw_visits(self, visit_dicts: list[dict], visit_count: int, images_fetched: bool = False):
         """
         Store raw visit data to SQL cache.
 
         Args:
             visit_dicts: List of visit dicts (from `record_to_visit_dict`)
             visit_count: Total visit count for invalidation
+            images_fetched: True when the fetch asked Connect for images, so an
+                empty `images` on a row means the visit HAS no photo.
         """
         expires_at = self._get_expires_at()
 
@@ -275,6 +277,7 @@ class SQLCacheManager:
                     pipeline_id=self.pipeline_id,
                     visit_count=visit_count,
                     expires_at=expires_at,
+                    images_fetched=images_fetched,
                     visit_id=v.get("id", 0),
                     username=v.get("username") or "",
                     deliver_unit=v.get("deliver_unit") or "",
@@ -421,7 +424,7 @@ class SQLCacheManager:
         )
         return promoted_existing + promoted_new
 
-    def store_raw_visits_start(self, visit_count: int):
+    def store_raw_visits_start(self, visit_count: int, images_fetched: bool = False):
         """
         Delete existing raw cache and prepare for batched inserts.
 
@@ -438,6 +441,7 @@ class SQLCacheManager:
         # Unique negative sentinel per writer — prevents finalize cross-contamination
         self._pending_visit_count = -random.randint(1, 2**31 - 1)
         self._pending_expires_at = self._get_expires_at()
+        self._pending_images_fetched = bool(images_fetched)
         # Don't delete here — old rows remain visible to readers until finalize().
         # This prevents Writer B's start() from wiping Writer A's in-progress batches.
         logger.info(
@@ -460,6 +464,7 @@ class SQLCacheManager:
                     pipeline_id=self.pipeline_id,
                     visit_count=self._pending_visit_count,
                     expires_at=self._pending_expires_at,
+                    images_fetched=getattr(self, "_pending_images_fetched", False),
                     visit_id=v.get("id", 0),
                     username=v.get("username") or "",
                     deliver_unit=v.get("deliver_unit") or "",
@@ -555,6 +560,22 @@ class SQLCacheManager:
             f"pipeline {self.pipeline_id}: deleted {deleted} sentinel rows"
         )
         self._pending_visit_count = None
+
+    def slot_has_image_data(self) -> bool:
+        """Whether this slot was filled by a fetch that ASKED for images.
+
+        The image reader's question is "does this visit have a photo", and only a
+        slot fetched WITH images can answer it. Asking the rows instead -- "does any
+        requested row carry an image" -- cannot tell "no photo" from "photos were
+        never fetched", so a case with no photos re-downloaded its whole
+        opportunity every time it was opened.
+        """
+        return RawVisitCache.objects.filter(
+            **self._raw_filter(),
+            visit_count__gt=0,
+            expires_at__gt=timezone.now(),
+            images_fetched=True,
+        ).exists()
 
     def get_raw_visits_queryset(self):
         """Get queryset of cached raw visits (excludes in-progress sentinel rows)."""
