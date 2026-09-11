@@ -336,6 +336,7 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     "audit_with_ai_review": "audits",
     "program_audit_creator": "audits",
     "kmc_flw_flags": "audits",
+    "mbw_visit_verification": "audits",
     # Beneficiary tracking: keyed on a child, not a worker.
     "kmc_longitudinal": "tracking",
     "sam_followup": "tracking",
