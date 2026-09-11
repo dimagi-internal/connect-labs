@@ -25,20 +25,31 @@ from .snippets import build_mcp_json_snippet
 
 
 def _connected_mcp_clients(user):
-    """Apps this user has signed in to from an MCP client, newest sign-in first."""
-    tokens = (
+    """Apps this user has signed in to from an MCP client, newest sign-in first.
+
+    Built from unrevoked REFRESH tokens as well as live access tokens. An access
+    token lasts two weeks while a refresh token has no expiry of its own, so a
+    client whose access token has lapsed can still refresh straight back in.
+    Listing live access tokens alone would drop exactly that client off this page
+    while it kept its access — leaving the user no way to disconnect it.
+    """
+    access_tokens = (
         get_access_token_model()
         .objects.filter(user=user, application__mcp_client__isnull=False, expires__gt=timezone.now())
         .select_related("application")
-        .order_by("-created")
+    )
+    refresh_tokens = (
+        get_refresh_token_model()
+        .objects.filter(user=user, application__mcp_client__isnull=False, revoked__isnull=True)
+        .select_related("application")
     )
     connected: dict[int, dict] = {}
-    for token in tokens:
+    for token in list(access_tokens) + list(refresh_tokens):
         connected.setdefault(
             token.application_id,
-            {"application": token.application, "signed_in_at": token.created, "expires": token.expires},
+            {"application": token.application, "signed_in_at": token.created},
         )
-    return list(connected.values())
+    return sorted(connected.values(), key=lambda row: row["signed_in_at"], reverse=True)
 
 
 def _render_index(request, *, raw_token: str | None = None, raw_token_name: str | None = None):

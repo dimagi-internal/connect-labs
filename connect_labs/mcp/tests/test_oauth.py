@@ -45,10 +45,15 @@ def _clear_registration_rate_limit():
 # ---------------------------------------------------------------------------
 
 
-def _register(client, **overrides):
+def _register(client, headers=None, **overrides):
     body = {"client_name": "Test client", "redirect_uris": [LOOPBACK], "token_endpoint_auth_method": "none"}
     body.update(overrides)
-    return client.post(oauth.REGISTRATION_PATH, data=json.dumps(body), content_type="application/json")
+    return client.post(
+        oauth.REGISTRATION_PATH,
+        data=json.dumps(body),
+        content_type="application/json",
+        headers=headers or {},
+    )
 
 
 def _pkce():
@@ -611,3 +616,45 @@ def test_registration_is_capped_per_caller(client):
 
     assert resp.status_code == 429
     assert resp.json()["error"] == "too_many_requests"
+
+
+@pytest.mark.django_db
+def test_the_cap_is_not_evaded_by_a_forged_forwarded_header(client):
+    """The load balancer APPENDS the address it saw, so only the rightmost entry is ours.
+
+    Reading the leftmost one would let a caller send a different value per request
+    and never meet the cap at all.
+    """
+    for hop in range(oauth._REGISTRATIONS_PER_HOUR_PER_IP):
+        resp = _register(client, headers={"x-forwarded-for": f"10.0.0.{hop}, 203.0.113.7"})
+        assert resp.status_code == 201, resp.content
+
+    resp = _register(client, headers={"x-forwarded-for": "10.0.0.250, 203.0.113.7"})
+
+    assert resp.status_code == 429
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_client_whose_access_token_expired_is_still_listed_and_disconnectable(client):
+    """An expired access token does not end a client's access: the refresh token does.
+
+    So the page has to keep showing it, or the user cannot disconnect the very
+    client that can still sign itself back in.
+    """
+    user = User.objects.create(username="oauth-expired-access")
+    client_id, token = _sign_in(client, user)
+    application = get_application_model().objects.get(client_id=client_id)
+    get_access_token_model().objects.filter(user=user, application=application).update(
+        expires=timezone.now() - timedelta(minutes=1)
+    )
+
+    client.force_login(user)
+    page = client.get("/labs/mcp/tokens/").content.decode()
+    assert "Test client" in page, "a client that can still refresh vanished from the page"
+
+    client.post(f"/labs/mcp/clients/{application.pk}/disconnect/")
+
+    refreshed = client.post(
+        "/o/token/", {"grant_type": "refresh_token", "refresh_token": token["refresh_token"], "client_id": client_id}
+    )
+    assert refreshed.status_code == 400, "the refresh token outlived the disconnect"

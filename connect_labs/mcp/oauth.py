@@ -333,10 +333,18 @@ def _registration_error(code: str, description: str) -> JsonResponse:
     return JsonResponse({"error": code, "error_description": description}, status=400)
 
 
+#: Proxies that append to X-Forwarded-For between a client and this app -- the
+#: load balancer in front of labs. It APPENDS the address it saw, so the entry it
+#: added is the RIGHTMOST one; everything left of that is whatever the caller
+#: sent and is trivially forged. Reading the leftmost entry would let one caller
+#: rotate a header value per request and never meet the cap at all.
+_TRUSTED_PROXY_HOPS = 1
+
+
 def _client_ip(request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    forwarded = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
+    if len(forwarded) >= _TRUSTED_PROXY_HOPS:
+        return forwarded[-_TRUSTED_PROXY_HOPS]
     return request.META.get("REMOTE_ADDR", "") or "unknown"
 
 

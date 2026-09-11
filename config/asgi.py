@@ -289,6 +289,7 @@ _AUTHORIZATION_SERVER_METADATA_PATHS = [
 _OPENID_CONFIGURATION_PATHS = [
     "/.well-known/openid-configuration",
     "/.well-known/openid-configuration/mcp",
+    "/.well-known/openid-configuration/mcp/",
 ]
 
 
