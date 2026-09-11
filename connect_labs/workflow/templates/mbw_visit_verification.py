@@ -109,6 +109,18 @@ _VISIT_FIELDS = [
         "aggregation": "first",
     },
     {
+        # Scanned real submissions: whenever this answer is 'no', the FLW
+        # never got a QR code to scan, so qr_code_visit_verification is
+        # always blank -- not an error, just "not applicable this visit".
+        # Distinguishes that from a genuinely missing/unexpected blank.
+        "name": "mother_has_qr_code_available",
+        "path": (
+            "form.qr_code_verification.qr_code_scan."
+            "Does_the_mother_have__the_QR_code_photo_she_took_at_registration"
+        ),
+        "aggregation": "first",
+    },
+    {
         "name": "mother_initial_visit_verification",
         "path": "form.additional_visit_verification_block.mother_initial_visit_verification",
         "aggregation": "first",
