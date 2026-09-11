@@ -63,7 +63,7 @@ class HistoryRebuildError(Exception):
     """A rebuild could not run, with a stable code each caller maps to its own shape.
 
     codes: bad_cadence, bad_limit, no_definition, not_periodic, no_start, empty_range,
-           too_many_periods, cache_miss, cache_incomplete, build_failed, no_owner
+           too_many_periods, cache_miss, cache_incomplete, build_failed, no_owner, no_window
     """
 
     def __init__(self, code: str, message: str):
@@ -559,3 +559,120 @@ def _discard(data_access, run_id: int) -> None:
         data_access.delete_run(run_id)
     except Exception:  # noqa: BLE001
         logger.warning("could not delete workflow run %s during history rebuild", run_id, exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Reading and pruning a rebuilt history.
+#
+# A rebuild only ever ADDS or REPLACES periods, so choosing a shorter window after
+# a longer one left the old points on the chart -- and the trend spaces its points
+# evenly, not by date, so an old block followed by a gap reads as one continuous
+# line. These two make the window the caller's decision: export what is there
+# (a backup is just this with the snapshots), then prune what falls outside it.
+# Both touch ONLY runs this operation stamped; a hand-saved report is never read
+# for pruning and never deleted.
+# ---------------------------------------------------------------------------
+
+
+def _generated(run) -> bool:
+    return (run.state or {}).get("generated_by") == GENERATED_BY
+
+
+def _run_summary(run) -> dict:
+    return {
+        "run_id": run.id,
+        "period_start": str(run.period_start or "")[:10] or None,
+        "period_end": str(run.period_end or "")[:10] or None,
+        "status": run.status,
+        "completed_at": run.completed_at,
+        "generated": _generated(run),
+    }
+
+
+def history_runs(
+    data_access,
+    definition_id: int,
+    *,
+    generated_only: bool = True,
+    include_snapshot: bool = False,
+    start_at: int = 0,
+    limit: int | None = None,
+) -> dict:
+    """Every run of a definition in period order, optionally with its whole record.
+
+    `include_snapshot` returns each run's full stored data -- state and snapshot --
+    which is what a backup needs: enough to recreate the run exactly. Snapshots are
+    large, so it pages (`start_at`, `limit`, `next_start_at`).
+    """
+    if limit is not None and limit < 1:
+        raise HistoryRebuildError("bad_limit", f"limit must be a positive number of runs; got {limit}")
+    runs = [r for r in (data_access.list_runs(definition_id) or []) if not generated_only or _generated(r)]
+    runs.sort(key=lambda r: (str(r.period_end or ""), r.id))
+    page = runs[start_at:] if limit is None else runs[start_at : start_at + limit]
+    nxt = start_at + len(page)
+    out = []
+    for run in page:
+        entry = _run_summary(run)
+        if include_snapshot:
+            entry["opportunity_id"] = run.opportunity_id
+            entry["data"] = run.data
+        out.append(entry)
+    return {
+        "definition_id": definition_id,
+        "total": len(runs),
+        "runs": out,
+        "done": nxt >= len(runs),
+        "next_start_at": None if nxt >= len(runs) else nxt,
+    }
+
+
+def prune_history(
+    data_access,
+    definition_id: int,
+    *,
+    keep_from: date | None = None,
+    keep_to: date | None = None,
+    dry_run: bool = True,
+) -> dict:
+    """Delete the stamped runs whose period ends outside [keep_from, keep_to].
+
+    Only runs this operation created are candidates -- completed or not, since a
+    rebuild cut off mid-request can leave an unfinished one behind. At least one
+    bound is required: "delete every rebuilt run" is not a window, and is one typo
+    away from emptying a history.
+    """
+    if keep_from is None and keep_to is None:
+        raise HistoryRebuildError("no_window", "give keep_from and/or keep_to; pruning needs a window to keep")
+    if keep_from and keep_to and keep_from > keep_to:
+        raise HistoryRebuildError("empty_range", f"keep_from {keep_from} is after keep_to {keep_to}")
+
+    kept, pruned, failed = [], [], []
+    for run in sorted(data_access.list_runs(definition_id) or [], key=lambda r: (str(r.period_end or ""), r.id)):
+        if not _generated(run):
+            continue
+        entry = _run_summary(run)
+        end_raw = entry["period_end"]
+        end = date.fromisoformat(end_raw) if end_raw else None
+        inside = end is not None and (keep_from is None or end >= keep_from) and (keep_to is None or end <= keep_to)
+        if inside:
+            kept.append(entry)
+            continue
+        if not dry_run:
+            try:
+                data_access.delete_run(run.id)
+            except Exception as e:  # noqa: BLE001 -- report it, keep going
+                logger.warning("could not prune workflow run %s", run.id, exc_info=True)
+                entry["error"] = str(e)
+                failed.append(entry)
+                continue
+        pruned.append(entry)
+    return {
+        "definition_id": definition_id,
+        "keep_from": keep_from.isoformat() if keep_from else None,
+        "keep_to": keep_to.isoformat() if keep_to else None,
+        "dry_run": dry_run,
+        "kept": len(kept),
+        "pruned": len(pruned),
+        "failed": len(failed),
+        "runs": {"pruned" if not dry_run else "would_prune": pruned, "failed": failed},
+    }
