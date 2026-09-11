@@ -33,6 +33,46 @@ from pathlib import Path
 
 _RENDER = (Path(__file__).parent / "kmc_programme_metrics_render.js").read_text()
 
+# WHO THE BABY IS, shared by both pipelines so they cannot disagree about it.
+#
+# Neal's compute spec, section 1, keys a baby by a case id whose path depends on
+# the FORM, and a single "first present" list cannot express it: both candidate
+# paths are present on both registration designs and mean opposite things.
+#
+#   Register KMC Beneficiary (design A)  form.case.@case_id = the baby
+#                                        subcase_0          = another case
+#   Child Registration Form  (design B)  form.case.@case_id = the MOTHER
+#                                        subcase_0          = the baby
+#   Record Visit Details                 kmc_beneficiary_case_id (A) /
+#                                        child_case_id (B)  = the baby, and a
+#                                        fresh subcase_0 on every visit
+#
+# Observed on production 2026-09-11 (opps 523, 675, 1487, 1790). Each ordering of
+# one list fixed one design and split the other -- registration and visits on
+# different ids, so no baby carried both a birthweight and a weight series. GHI
+# opp 675 had zero qualifying babies; BERI counted every baby twice and blanked
+# the discharge metric. `conditional_paths` routes design B's registration to its
+# subcase; everything else takes the default list. entity_id stays last for
+# sources with no case block (synthetic clones) -- it is per-VISIT on real Connect
+# data, which is why it is only ever the fallback (connect-labs#1224).
+BABY_CASE_ID_FIELD = {
+    "name": "baby_case_id",
+    "paths": ["form.kmc_beneficiary_case_id", "form.child_case_id", "form.case.@case_id", "entity_id"],
+    "conditional_paths": [
+        {
+            "when_path": "form.@name",
+            "when_value": "Child Registration Form",
+            "paths": ["form.subcase_0.case.@case_id"],
+        }
+    ],
+    "aggregation": "first",
+    "description": (
+        "The baby's case id, by form design (Neal's compute spec section 1): the visit's "
+        "kmc_beneficiary_case_id / child_case_id; design B's registration subcase; design A's "
+        "form.case. entity_id only as the last resort -- it is per-visit on real data."
+    ),
+}
+
 # Per-baby properties, computed in SQL at entity stage. Terminal stage `entity`
 # groups by linking_field=entity_id, so one row per baby.
 CASE_PROPERTIES_SCHEMA = {
@@ -296,17 +336,7 @@ CASE_PROPERTIES_SCHEMA = {
             "paths": ["form.kmc_discontinuation.kmc_status_discharged", "form.kmc_discontinuation.discharged_logic"],
             "aggregation": "count",
         },
-        {
-            "name": "baby_case_id",
-            "paths": ["form.case.@case_id", "entity_id"],
-            "aggregation": "first",
-            "description": (
-                "The KMC beneficiary case, falling back to entity_id for sources with no case "
-                "block (synthetic clones). entity_id is per-VISIT on real Connect data, so "
-                "grouping on it alone scattered each baby across one row per visit and stranded "
-                "every registration-form field \u2014 connect-labs#1224."
-            ),
-        },
+        BABY_CASE_ID_FIELD,
         {
             "name": "form_names",
             "path": "form.@name",
@@ -341,17 +371,7 @@ WEIGHT_SERIES_SCHEMA = {
             "transform": "kg_to_g",
             "aggregation": "first",
         },
-        {
-            "name": "baby_case_id",
-            "paths": ["form.case.@case_id", "entity_id"],
-            "aggregation": "first",
-            "description": (
-                "The KMC beneficiary case, falling back to entity_id for sources with no case "
-                "block (synthetic clones). entity_id is per-VISIT on real Connect data, so "
-                "grouping on it alone scattered each baby across one row per visit and stranded "
-                "every registration-form field \u2014 connect-labs#1224."
-            ),
-        },
+        BABY_CASE_ID_FIELD,
     ],
     "data_source": {"type": "connect_csv"},
     "grouping_key": "username",
