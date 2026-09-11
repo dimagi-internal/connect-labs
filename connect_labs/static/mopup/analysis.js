@@ -714,6 +714,12 @@ window.MopupAnalysis = (function () {
       $(
         'status',
       ).textContent = `${data.total_work_areas} work area(s) evaluated.`;
+      if (data._debug_status_counts) {
+        console.log(
+          'MOPUP_DEBUG status_counts',
+          JSON.stringify(data._debug_status_counts),
+        );
+      }
     } catch (e) {
       showLoadingError('Failed to load data.');
     }
