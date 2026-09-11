@@ -240,3 +240,188 @@ def test_showcase_writes_the_path_the_cohort_resolved_to():
     default = build_showcase_visits(cfg, opportunity_id=874, start_date=dt.date(2026, 5, 4))
     for v in _weighings(default):
         assert "child_weight_visit" in v["form_json"]["form"]["anthropometric"]
+
+
+# ---------------------------------------------------------------------------
+# The clone path: a showcase case is a duplicate of a standard case in the same
+# cohort with the showcase specifics applied, not a form built from nothing.
+# ---------------------------------------------------------------------------
+
+
+def _template_case(entity_id, username, n_followups, reg_date=dt.date(2026, 1, 20), extra=None):
+    """A mirrored case as the engine holds it: a registration form followed by
+    weighed follow-ups, every form carrying fields the showcase never names."""
+    reg = {
+        "id": 1,
+        "xform_id": f"x-{entity_id}-reg",
+        "opportunity_id": 999,
+        "username": username,
+        "entity_id": entity_id,
+        "entity_name": "Beneficiary 7",
+        "visit_date": reg_date.isoformat(),
+        "status": "over_limit",
+        "flagged": True,
+        "flag_reason": "late",
+        "images": [],
+        "form_json": {
+            "form": {
+                "@name": "Child Registration Form",
+                "case": {"@case_id": entity_id, "update": {"child_alive": "yes"}},
+                "subcase_0": {
+                    "case": {
+                        "@case_id": entity_id,
+                        "update": {
+                            "reg_date": reg_date.isoformat(),
+                            "child_DOB": (reg_date - dt.timedelta(days=9)).isoformat(),
+                            "date_hospital_discharge": (reg_date - dt.timedelta(days=3)).isoformat(),
+                            "child_gender": "Male",
+                            "child_weight_birth": 2100.0,
+                            "child_weight_reg": 2150.0,
+                            "gestational_age_at_birth_lmp": 36.0,
+                            "kmc_status": "enrolled",
+                            "child_alive": "yes",
+                        },
+                    }
+                },
+                "mothers_details": {"mother_name": "Amina", "gestational_age_at_birth_lmp": 36.0},
+                "child_details": {"birth_weight_group": {"child_weight_birth": 2100.0}, "some_other_field": "kept"},
+                "meta": {"timeEnd": reg_date.isoformat() + "T10:15:00.000000Z"},
+            }
+        },
+    }
+    if extra:
+        reg["form_json"]["form"].update(extra)
+    followups = []
+    for i in range(n_followups):
+        d = reg_date + dt.timedelta(days=3 + 7 * i)
+        followups.append(
+            {
+                "id": 100 + i,
+                "xform_id": f"x-{entity_id}-{i}",
+                "opportunity_id": 999,
+                "username": username,
+                "entity_id": entity_id,
+                "entity_name": "Beneficiary 7",
+                "visit_date": d.isoformat(),
+                "status": "approved",
+                "flagged": False,
+                "flag_reason": "",
+                "images": [{"blob_id": "cohort-photo", "name": "cohort.jpg"}],
+                "form_json": {
+                    "form": {
+                        "@name": "Record Visit Details",
+                        "case": {
+                            "@case_id": entity_id,
+                            "update": {
+                                "child_alive": "yes",
+                                "child_weight_last_visit": 2000 + i,
+                                "kmc_status": "KMC visits in progress",
+                            },
+                        },
+                        "child_alive": "yes",
+                        "anthropometric": {
+                            "child_weight_visit": 2000 + i,
+                            "upload_weight_image": "cohort.jpg",
+                            "muac": 11.5,
+                        },
+                        "feeding_checklist": {"direct_breastfeeding": "yes"},
+                        "meta": {"timeEnd": d.isoformat() + "T09:00:00.000000Z"},
+                    }
+                },
+            }
+        )
+    return [reg] + followups
+
+
+def _clone_build(templates, case, **kw):
+    cfg = _cfg(showcase=[case])
+    return build_showcase_visits(
+        cfg, opportunity_id=10015, start_date=dt.date(2026, 3, 2), template_visits=templates, **kw
+    )
+
+
+def test_a_showcase_case_is_a_duplicate_of_a_standard_case_with_the_specifics_applied():
+    """Jon: "follow the clone path as much as possible (duplicate a standard case)
+    and then apply the showcase specifics". Fields the showcase never names come
+    along; identity, dates, weights and photos are the showcase's own."""
+    import copy
+
+    templates = _template_case("tmpl-1", "flw_001", 5)
+    frozen = copy.deepcopy(templates)
+    visits = _clone_build(templates, {"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"})
+    assert templates == frozen, "the template must not be mutated"
+    series = cm.trajectories(CORPUS)["normal_02"]
+    reg, weighings = visits[0], _weighings(visits)
+    assert len(weighings) == len(series)
+    form = reg["form_json"]["form"]
+    # the unnamed fields came along
+    assert form["mothers_details"]["mother_name"] == "Amina"
+    assert form["child_details"]["some_other_field"] == "kept"
+    assert weighings[0]["form_json"]["form"]["anthropometric"]["muac"] == 11.5
+    assert weighings[0]["form_json"]["form"]["feeding_checklist"]["direct_breastfeeding"] == "yes"
+    # identity is the showcase's
+    for v in visits:
+        assert v["entity_id"] == reg["entity_id"] != "tmpl-1"
+        assert v["entity_name"] == "Steady Gain"
+        assert v["username"] == "flw_001"
+        assert v["status"] == "approved" and not v["flagged"]
+        assert v["form_json"]["form"]["case"]["@case_id"] == v["entity_id"], "no template id may leak"
+    assert len({v["xform_id"] for v in visits}) == len(visits)
+    # dates: registration the day before the first weighing, weighings weekly,
+    # and the template's own offsets (birth -9, discharge -3) preserved
+    assert reg["visit_date"] == "2026-03-01"
+    assert [v["visit_date"] for v in weighings] == ["2026-03-02", "2026-03-09", "2026-03-16", "2026-03-23"]
+    upd = form["subcase_0"]["case"]["update"]
+    assert upd["reg_date"] == "2026-03-01"
+    assert upd["child_DOB"] == "2026-02-20" and upd["date_hospital_discharge"] == "2026-02-26"
+    assert form["meta"]["timeEnd"] == "2026-03-01T10:15:00.000000Z", "time suffixes survive the shift"
+    # weights and photos are the trajectory's, at every place the template kept a weight
+    for v, p in zip(weighings, series):
+        f = v["form_json"]["form"]
+        assert f["anthropometric"]["child_weight_visit"] == p["reading_grams"]
+        assert f["case"]["update"]["child_weight_last_visit"] == p["reading_grams"]
+        assert v["images"] == [{"blob_id": p["blob_id"], "name": f["anthropometric"]["upload_weight_image"]}]
+    # birth / enrolment weight and gestational age fit the trajectory, not the template
+    assert (
+        upd["child_weight_birth"] == 1250.0
+        and form["child_details"]["birth_weight_group"]["child_weight_birth"] == 1250.0
+    )
+    assert upd["child_weight_reg"] == 1350.0
+    assert (
+        upd["gestational_age_at_birth_lmp"] == 31.0 and form["mothers_details"]["gestational_age_at_birth_lmp"] == 31.0
+    )
+    assert reg["showcase"]["cloned_from"] == "tmpl-1"
+
+
+def test_the_template_is_picked_deterministically_and_from_the_same_worker_when_possible():
+    templates = (
+        _template_case("tmpl-a", "flw_009", 5)
+        + _template_case("tmpl-b", "flw_001", 5)
+        + _template_case("tmpl-c", "flw_001", 2)  # too short for a 4-point trajectory
+    )
+    case = {"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"}
+    a = _clone_build(templates, case)
+    b = _clone_build(templates, case)
+    assert a[0]["showcase"]["cloned_from"] == "tmpl-b", "the same worker's long-enough case wins"
+    assert [v["xform_id"] for v in a] == [v["xform_id"] for v in b], "same pick every run"
+    # a worker with no qualifying case borrows another worker's, and still gets the username
+    other = _clone_build(
+        templates, {"name": "Typo", "trajectory": "normal_05", "flw": "flw_007", "outcome": "fail_number"}
+    )
+    assert other[0]["showcase"]["cloned_from"] in {"tmpl-a", "tmpl-b"}, "any long-enough case, never the short one"
+    assert {v["username"] for v in other} == {"flw_007"}
+
+
+def test_a_dead_or_registration_less_case_is_never_a_template():
+    dead = _template_case("tmpl-dead", "flw_001", 5)
+    dead[3]["form_json"]["form"]["child_alive"] = "no"
+    no_reg = _template_case("tmpl-noreg", "flw_001", 5)[1:]
+    visits = _clone_build(dead + no_reg, {"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"})
+    assert "cloned_from" not in visits[0]["showcase"], "falls back to synthesised forms"
+    assert visits[0]["form_json"]["form"]["@name"] == "Child Registration Form"
+
+
+def test_without_templates_the_forms_are_synthesised_as_before():
+    visits = _build([{"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"}])
+    assert "cloned_from" not in visits[0]["showcase"]
+    assert visits[0]["form_json"]["form"]["subcase_0"]["case"]["update"]["child_weight_birth"] == 1250.0
