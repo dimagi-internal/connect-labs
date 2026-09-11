@@ -14,18 +14,27 @@
   /* Custom info tooltip — a native `title` attribute needs a ~1s hover dwell
      and is easy to trigger with no visible feedback, which real user
      testing this session found effectively invisible. This shows instantly
-     on hover/focus instead. */
+     on hover/focus instead.
+
+     Positioned via JS with `position: fixed` (see initTooltips in
+     analysis.js), not a CSS `::after` anchored to the icon itself — several
+     `.info-icon`s live inside scrolling containers (`overflow-x-auto` on
+     the indicators table, `overflow-y-auto` on the candidate work areas
+     table), and a browser quirk in the overflow spec means setting only
+     overflow-x (or only overflow-y) to non-`visible` computes the OTHER
+     axis to `auto` too — so an absolutely-positioned tooltip popping up
+     above the icon got clipped by its own container instead of overlaying
+     the page, confirmed live as both fully-invisible header tooltips and
+     tooltips with their top edge (first line) cut off. `position: fixed` is
+     relative to the viewport, not any scrolling ancestor, so it isn't
+     subject to that clipping. */
   .info-icon {
     position: relative;
     display: inline-block;
     cursor: help;
   }
-  .info-icon::after {
-    content: attr(data-tip);
-    position: absolute;
-    bottom: 125%;
-    left: 50%;
-    transform: translateX(-50%);
+  #global-tooltip {
+    position: fixed;
     background: #1f2937;
     color: #fff;
     padding: 6px 10px;
@@ -37,13 +46,12 @@
     white-space: normal;
     width: max-content;
     max-width: 260px;
-    z-index: 50;
+    z-index: 9999;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.1s ease;
   }
-  .info-icon:hover::after,
-  .info-icon:focus::after {
+  #global-tooltip.visible {
     opacity: 1;
   }
   /* Ward summary's three column groups (Geography / Connect Data / New
@@ -100,7 +108,10 @@
   </section>
 
   <section class="border border-gray-200 rounded p-4 space-y-4">
-    <h2 class="text-lg font-semibold text-gray-900">Indicators</h2>
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-gray-900">Indicators</h2>
+      <button type="button" id="recompute" class="button primary-dark">Recompute</button>
+    </div>
     <div class="overflow-x-auto">
     <table class="w-full text-sm">
       <thead>
@@ -110,7 +121,7 @@
           <th class="pb-2 pr-2">Threshold <span class="info-icon" tabindex="0" data-tip="The cutoff at which a work area is flagged as a mop-up candidate for this indicator — an unconditional floor, no neighbor/FLW corroboration required. NCF/inaccessible has no threshold: any NCF or Inaccessible visit floors it.">ⓘ</span></th>
           <th class="pb-2 pr-2">Neighbor distance (m) <span class="info-icon" tabindex="0" data-tip="How close two work areas' centroids need to be to count as 'neighbors' for the cluster-aware filter. Deworming/MUAC/vaccination share one value; EVC shortfall and NCF/inaccessible each have their own. Only used when the filter above is enabled.">ⓘ</span></th>
           <th class="pb-2 pr-2">Min neighbor count <span class="info-icon" tabindex="0" data-tip="The fewest spatially-nearby neighbors that must ALSO be flagged on the same indicator to corroborate it. Only used when the filter above is enabled.">ⓘ</span></th>
-          <th class="pb-2 pr-2"># WAs triggered <span class="info-icon" tabindex="0" data-tip="How many work areas this specific indicator flagged (after the optional cluster-aware filter, if enabled), under the current thresholds. Recomputed automatically whenever you change a setting.">ⓘ</span></th>
+          <th class="pb-2 pr-2"># WAs triggered <span class="info-icon" tabindex="0" data-tip="How many work areas this specific indicator flagged (after the optional cluster-aware filter, if enabled), under the current thresholds. Updates automatically a moment after you change a setting, or immediately if you hit Recompute.">ⓘ</span></th>
         </tr>
       </thead>
       <tbody id="indicator-rows"></tbody>
