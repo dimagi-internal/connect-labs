@@ -128,7 +128,16 @@ def wa_numerator_denominator(wa: dict, indicator_key: str, global_config: dict) 
             return None
         if wa.get("status") not in _CONCLUDED_STATUSES and not global_config.get("include_not_yet_visited", False):
             return None
-        return wa.get("approved_hsd_count", 0), wa.get("expected_visit_count", 0)
+        hsd_count = wa.get("approved_hsd_count", 0)
+        # A WA with zero HSD visits is already explained by something else --
+        # not-yet-visited (the check above), inaccessible, or NCF (a visit
+        # happened, but it wasn't an HSD delivery) -- so it isn't a genuine
+        # "we delivered less than expected" shortfall. Excluding it here (not
+        # scoring it as rate 0.0) keeps EVC shortfall scoped to WAs where HSD
+        # delivery actually happened, per product direction (2026-09-11).
+        if hsd_count == 0:
+            return None
+        return hsd_count, wa.get("expected_visit_count", 0)
 
     if indicator_key in _DQ_INDICATORS:
         min_hsd = global_config.get("min_hsd_visits_floor", 1)

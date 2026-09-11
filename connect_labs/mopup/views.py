@@ -542,6 +542,14 @@ class MopupCandidatesView(LoginRequiredMixin, View):
         gap_features = run.planning_gap_features
         gap_candidates = [gap_feature_to_candidate_row(f) for f in gap_features]
 
+        # TEMPORARY diagnostic for the "EVC shortfall always 0" investigation
+        # (2026-09-11) -- cheap, no PII (just the status enum value), removed
+        # once the root cause is confirmed. See core/indicators.py's
+        # _CONCLUDED_STATUSES for what these are being compared against.
+        from collections import Counter
+
+        _debug_status_counts = Counter(repr(wa.get("status")) for wa in rows).most_common(10)
+
         return JsonResponse(
             {
                 "status": "ok",
@@ -552,6 +560,7 @@ class MopupCandidatesView(LoginRequiredMixin, View):
                 "total_work_areas": len(rows),
                 "candidate_count": len(candidates),
                 "per_indicator_counts": per_indicator_counts,
+                "_debug_status_counts": _debug_status_counts,
                 "map_features": build_map_features(rows, candidates, gap_features, run.planning_gap_building_points),
             }
         )

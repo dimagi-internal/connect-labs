@@ -46,14 +46,29 @@ window.MopupAnalysis = (function () {
   let lastGapCandidates = [];
   let severitySortDesc = true;
 
-  // One flat table row per indicator now (design mockup, 2026-09) — EVC
-  // shortfall and NCF/inaccessible each get their own Neighbor distance/Min
-  // neighbor count cells; deworming/MUAC/vaccination share a single pair
-  // rendered as one rowspan=3 cell spanning their three rows. Everything
-  // else (Include-not-visited, WA min EVC count, WA min HSD-visits, Min
-  // building count) lives in the three scoped cards below the table
-  // (see analysis.html) since those aren't naturally table columns.
+  // One flat table row per indicator (design mockup, 2026-09, refined per
+  // follow-up feedback) — EVC shortfall and NCF/inaccessible each get their
+  // own Neighbor distance/Min neighbor count cells; deworming/MUAC/
+  // vaccination share ONE merged cell (colspan=2, rowspan=3) holding both
+  // inputs side by side plus a caption underneath -- a single overlapping
+  // label rather than repeating "Applies to deworming, MUAC, vaccination"
+  // in two separate columns. A light-grey sub-row directly under EVC's own
+  // row, NCF's own row, and the deworming/MUAC/vaccination group each hold
+  // the settings that only apply to that indicator (or group) -- same
+  // font/size as the rest of the table, just a tinted background, so they
+  // read as part of the table rather than a separate muted aside. The
+  // trio + its trailing sub-row get a border box so the shared-settings
+  // relationship is visible at a glance.
   const TIER2_KEYS = ['deworming', 'muac', 'vaccination'];
+  const TIER2_BORDER = 'border-gray-300';
+
+  function subRowHtml(key, innerHtml, extraTdClasses) {
+    return `<tr class="bg-gray-50 border-b border-gray-100" data-key="${key}">
+        <td class="py-2 pr-2 pl-8 ${
+          extraTdClasses || ''
+        }" colspan="6">${innerHtml}</td>
+      </tr>`;
+  }
 
   function neighborCellsHtml(def, rowDisabled, tier2State) {
     if (TIER2_KEYS.includes(def.key)) {
@@ -64,12 +79,12 @@ window.MopupAnalysis = (function () {
       // global filter (handled separately below), never by any one of the
       // three rows' own "On" state, since it belongs to all three at once.
       return `
-          <td class="py-2 pr-2 align-middle" rowspan="3">
-            <input type="number" id="cfg-tier2-neighbor-distance" class="base-input" style="width:5rem" min="1">
+          <td class="py-2 pr-2 align-middle border-t-2 ${TIER2_BORDER}" colspan="2" rowspan="3">
+            <div class="flex items-center gap-2">
+              <input type="number" id="cfg-tier2-neighbor-distance" class="base-input" style="width:5rem" min="1">
+              <input type="number" id="cfg-tier2-min-neighbor-count" class="base-input" style="width:5rem" min="1">
+            </div>
             <div class="text-[11px] text-gray-500 mt-1">Applies to deworming, MUAC, vaccination</div>
-          </td>
-          <td class="py-2 pr-2 align-middle" rowspan="3">
-            <input type="number" id="cfg-tier2-min-neighbor-count" class="base-input" style="width:5rem" min="1">
           </td>`;
     }
     const distanceId =
@@ -92,39 +107,95 @@ window.MopupAnalysis = (function () {
   function renderIndicatorRows() {
     const tb = $('indicator-rows');
     const tier2State = { rendered: false };
-    tb.innerHTML = indicatorDefs
-      .map((def) => {
-        const cfg = indicatorConfigs[def.key] || {
-          enabled: true,
-          threshold: 0.5,
-        };
-        const isNcf = def.key === 'ncf_inaccessible_rate';
-        const rowDisabled = !cfg.enabled;
-        const thresholdCell = isNcf
-          ? `<span class="text-gray-400 italic">n/a</span>`
-          : `<input type="number" step="0.01" min="0" max="1" class="ind-threshold base-input" style="width:6rem" value="${
-              cfg.threshold
-            }" ${rowDisabled ? 'disabled' : ''}>`;
-        return `<tr class="border-b border-gray-50 ${
-          rowDisabled ? 'opacity-50' : ''
-        }" data-key="${def.key}">
-          <td class="py-2 pr-2"><input type="checkbox" class="ind-enabled" ${
+    const rows = [];
+    indicatorDefs.forEach((def) => {
+      const cfg = indicatorConfigs[def.key] || {
+        enabled: true,
+        threshold: 0.5,
+      };
+      const isNcf = def.key === 'ncf_inaccessible_rate';
+      const isEvc = def.key === 'evc_shortfall';
+      const isTier2 = TIER2_KEYS.includes(def.key);
+      const rowDisabled = !cfg.enabled;
+      const thresholdCell = isNcf
+        ? `<span class="text-gray-400 italic">n/a</span>`
+        : `<input type="number" step="0.01" min="0" max="1" class="ind-threshold base-input" style="width:6rem" value="${
+            cfg.threshold
+          }" ${rowDisabled ? 'disabled' : ''}>`;
+      // Table borders only render per-cell (a <tr> border is a no-op without
+      // border-collapse), so the group box is built from border-t on every
+      // cell of the first (deworming) row, border-b on the trailing sub-row
+      // below, and border-l/border-r on just the first/last cell of every
+      // row in between -- same technique the ward-summary table already
+      // uses for its column groups.
+      const topBorder =
+        isTier2 && def.key === 'deworming' ? `border-t-2 ${TIER2_BORDER} ` : '';
+      const leftBorder = isTier2 ? `border-l-2 ${TIER2_BORDER} ` : '';
+      const rightBorder = isTier2 ? `border-r-2 ${TIER2_BORDER} ` : '';
+      const midBorder = isTier2 ? topBorder : '';
+      rows.push(`<tr class="border-b border-gray-50 ${
+        rowDisabled ? 'opacity-50' : ''
+      }" data-key="${def.key}">
+          <td class="py-2 pr-2 ${leftBorder}${topBorder}"><input type="checkbox" class="ind-enabled" ${
             cfg.enabled ? 'checked' : ''
           }></td>
-          <td class="py-2 pr-2">${esc(
+          <td class="py-2 pr-2 ${midBorder}">${esc(
             def.label,
           )} <span class="info-icon" tabindex="0" data-tip="${esc(
             INDICATOR_TOOLTIPS[def.key] || '',
           )}">ⓘ</span></td>
-          <td class="py-2 pr-2">${thresholdCell}</td>${neighborCellsHtml(
+          <td class="py-2 pr-2 ${midBorder}">${thresholdCell}</td>${neighborCellsHtml(
             def,
             rowDisabled,
             tier2State,
           )}
-          <td class="py-2 pr-2 ind-trigger-count">—</td>
-        </tr>`;
-      })
-      .join('');
+          <td class="py-2 pr-2 ind-trigger-count ${rightBorder}${topBorder}">—</td>
+        </tr>`);
+
+      if (isEvc) {
+        rows.push(
+          subRowHtml(
+            'evc_shortfall_settings',
+            `<label class="inline-flex items-center gap-1 mr-4">
+              <input type="checkbox" id="cfg-include-not-visited">
+              Include not-yet-visited in EVC <span class="info-icon" tabindex="0" data-tip="A work area that's not yet visited (or has a pending inaccessible request) is excluded from EVC-shortfall scoring by default, since the campaign may just not have reached it yet. Check this to score it anyway.">ⓘ</span>
+            </label>
+            <span class="inline-flex items-center gap-1">
+              WA min EVC count
+              <input type="number" id="cfg-min-evc-floor" class="base-input" style="width:5rem" min="0">
+              <span class="info-icon" tabindex="0" data-tip="Excludes a work area from EVC shortfall entirely if its own EXPECTED visit count is below this — a plain worth-visiting cutoff, so a WA with both a low HSD/EVC ratio AND a low total EVC isn't considered for mop-up.">ⓘ</span>
+            </span>`,
+          ),
+        );
+      }
+      if (isNcf) {
+        rows.push(
+          subRowHtml(
+            'ncf_inaccessible_rate_settings',
+            `<span class="inline-flex items-center gap-1">
+              Min building count
+              <input type="number" id="cfg-min-buildings" class="base-input" style="width:5rem" min="0">
+              <span class="info-icon" tabindex="0" data-tip="The fewest real buildings a work area needs before an NCF or Inaccessible result there is treated as meaningful.">ⓘ</span>
+            </span>`,
+          ),
+        );
+      }
+      if (def.key === 'vaccination') {
+        rows.push(
+          subRowHtml(
+            'tier2_settings',
+            `<span class="text-gray-600 mr-4">Applies to deworming, MUAC, vaccination only</span>
+            <span class="inline-flex items-center gap-1">
+              WA min HSD-visits
+              <input type="number" id="cfg-min-hsd" class="base-input" style="width:5rem" min="0">
+              <span class="info-icon" tabindex="0" data-tip="The fewest approved Health Service Delivery visits a work area needs before its deworming/MUAC/vaccination rate is trusted at all.">ⓘ</span>
+            </span>`,
+            `border-l-2 border-r-2 border-b-2 ${TIER2_BORDER}`,
+          ),
+        );
+      }
+    });
+    tb.innerHTML = rows.join('');
     applyIndicatorRowStates();
   }
 
@@ -620,6 +691,12 @@ window.MopupAnalysis = (function () {
       $(
         'status',
       ).textContent = `${data.total_work_areas} work area(s) evaluated.`;
+      // TEMPORARY diagnostic (2026-09-11), see views.py -- remove alongside it.
+      if (data._debug_status_counts)
+        console.log(
+          'MOPUP_DEBUG status_counts',
+          JSON.stringify(data._debug_status_counts),
+        );
     } catch (e) {
       showLoadingError('Failed to load data.');
     }

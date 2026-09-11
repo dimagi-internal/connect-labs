@@ -85,7 +85,6 @@
   <div id="analysis-body" class="hidden space-y-6">
 
   <section class="border border-gray-200 rounded p-4 space-y-2">
-    <h2 class="text-lg font-semibold text-gray-900">Map</h2>
     <div id="analysis-map"></div>
     <div id="map-legend" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600"></div>
     {% if boundary_source_caption %}
@@ -116,36 +115,6 @@
       </thead>
       <tbody id="indicator-rows"></tbody>
     </table>
-    </div>
-  </section>
-
-  <section class="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
-    <div class="border border-gray-200 rounded p-4 space-y-2">
-      <div class="text-xs font-semibold uppercase tracking-wide text-center text-blue-700">Applies to EVC shortfall only</div>
-      <label class="flex items-center gap-1">
-        <input type="checkbox" id="cfg-include-not-visited">
-        Include not-yet-visited in EVC <span class="info-icon" tabindex="0" data-tip="A work area that's not yet visited (or has a pending inaccessible request) is excluded from EVC-shortfall scoring by default, since the campaign may just not have reached it yet. Check this to score it anyway.">ⓘ</span>
-      </label>
-      <label class="flex items-center gap-2">
-        <span class="text-gray-600">WA min EVC count <span class="info-icon" tabindex="0" data-tip="Excludes a work area from EVC shortfall entirely if its own EXPECTED visit count is below this — a plain worth-visiting cutoff, so a WA with both a low HSD/EVC ratio AND a low total EVC isn't considered for mop-up.">ⓘ</span></span>
-        <input type="number" id="cfg-min-evc-floor" class="base-input" style="width:5rem" min="0">
-      </label>
-    </div>
-
-    <div class="border border-gray-200 rounded p-4 space-y-2">
-      <div class="text-xs font-semibold uppercase tracking-wide text-center text-blue-700">Applies to deworming, MUAC, vaccination only</div>
-      <label class="flex items-center gap-2">
-        <span class="text-gray-600">WA min HSD-visits <span class="info-icon" tabindex="0" data-tip="The fewest approved Health Service Delivery visits a work area needs before its deworming/MUAC/vaccination rate is trusted at all.">ⓘ</span></span>
-        <input type="number" id="cfg-min-hsd" class="base-input" style="width:5rem" min="0">
-      </label>
-    </div>
-
-    <div class="border border-gray-200 rounded p-4 space-y-2">
-      <div class="text-xs font-semibold uppercase tracking-wide text-center text-blue-700">Applies to NCF / inaccessible only</div>
-      <label class="flex items-center gap-2">
-        <span class="text-gray-600">Min building count <span class="info-icon" tabindex="0" data-tip="The fewest real buildings a work area needs before an NCF or Inaccessible result there is treated as meaningful.">ⓘ</span></span>
-        <input type="number" id="cfg-min-buildings" class="base-input" style="width:5rem" min="0">
-      </label>
     </div>
   </section>
 

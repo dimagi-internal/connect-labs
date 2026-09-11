@@ -77,8 +77,16 @@ class TestWaRateEvcShortfall:
         assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {"min_evc_floor": 5}) is None
 
     def test_not_gated_when_expected_meets_floor(self):
-        wa = _wa("wa-1", expected_visit_count=5, approved_hsd_count=0)
+        wa = _wa("wa-1", expected_visit_count=5, approved_hsd_count=2)
         assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {"min_evc_floor": 5}) is not None
+
+    def test_zero_hsd_is_excluded_entirely(self):
+        # Not-yet-visited, inaccessible, and NCF are all already covered
+        # elsewhere -- a concluded WA with zero HSD visits shouldn't also
+        # show up as an EVC "shortfall" (it never had any HSD delivery to
+        # fall short on).
+        wa = _wa("wa-1", status="VISITED", approved_hsd_count=0, expected_visit_count=10)
+        assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {}) is None
 
 
 class TestWaNumeratorDenominator:
@@ -429,12 +437,15 @@ class TestEvaluateRunClusterAwareFilter:
         # "a" triggers on both NCF and EVC, but is the only WA -- no
         # neighbors for either indicator to corroborate against -- so the
         # whole WA is dropped now that NCF is no longer a blanket exemption.
+        # approved_hsd_count=1 (not 0) so EVC's floor still applies -- a
+        # zero-HSD WA is excluded from EVC entirely (see TestEvaluateRunFloor
+        # ::test_zero_hsd_is_excluded_from_evc).
         was = [
             _wa(
                 "a",
                 lat=12.0,
                 lon=8.0,
-                approved_hsd_count=0,
+                approved_hsd_count=1,
                 approved_ncf_count=1,
                 approved_inaccessible_count=0,
                 expected_visit_count=10,
@@ -461,12 +472,13 @@ class TestEvaluateRunClusterAwareFilter:
         # EVC (isolated -- "b" isn't EVC-flagged) -- since AT LEAST ONE
         # indicator corroborates, "a" survives with BOTH indicators still
         # listed, nothing pruned (same "Option 3" rule as every indicator).
+        # approved_hsd_count=1 (not 0) so EVC's floor still applies.
         was = [
             _wa(
                 "a",
                 lat=12.0,
                 lon=8.0,
-                approved_hsd_count=0,
+                approved_hsd_count=1,
                 approved_ncf_count=1,
                 approved_inaccessible_count=0,
                 expected_visit_count=10,
