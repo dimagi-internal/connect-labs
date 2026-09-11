@@ -60,13 +60,16 @@ APP_ID_OVERRIDE = "00b59eb524884abc80c6a272a61cbc23"
 # Visit pipelines (one per visit-type form)
 # ---------------------------------------------------------------------------
 
-# The current app version only ever populates mother_case_id via one of these
-# per-next-visit-type "_logic" blocks (whichever next visit is being scheduled)
-# -- there is no single canonical "form.mother_case_id" path. Exactly one is
-# populated per submission, so a "first" aggregation over this fallback list
-# always resolves to the real value. Mirrors the pattern the (removed) V4
-# REGISTRATIONS_SCHEMA used for the analogous var_visit_1..6 fallback.
+# form.parents.parent.case.@case_id is the visit case's own parent-case
+# index -- verified present on 100/100 real ANC Visit submissions (scanned
+# via CommCare HQ's Form API directly). The "_logic" sub-block paths below
+# were the ORIGINAL (wrong) primary source: they only populate when a
+# next-visit-scheduling branch happens to fire, which produced blank
+# mother_case_id for plenty of real rows (e.g. the last scheduled visit,
+# where there's no next visit to schedule). Kept as trailing fallbacks in
+# case some other visit-type form's parent-index differs.
 _MOTHER_CASE_ID_PATHS = [
+    "form.parents.parent.case.@case_id",
     "form.confirm_visit_information.postnatal_visit_logic.mother_case_id",
     "form.confirm_visit_information.one_week_visit_logic.mother_case_id",
     "form.confirm_visit_information.one_month_visit_logic.mother_case_id",
@@ -126,8 +129,15 @@ _VISIT_FIELDS = [
         "aggregation": "first",
     },
     {
+        # Scanned real submissions: verification_properties is entirely
+        # absent on some forms, with visit_verification_outcome sitting at
+        # the top level of `form` directly instead (confirmed on 2 of 9
+        # forms that had any outcome at all). Both paths needed.
         "name": "visit_verification_outcome",
-        "path": "form.verification_properties.visit_verification_outcome",
+        "paths": [
+            "form.verification_properties.visit_verification_outcome",
+            "form.visit_verification_outcome",
+        ],
         "aggregation": "first",
     },
 ]
