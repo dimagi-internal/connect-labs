@@ -351,6 +351,20 @@ def _validate_pipeline_home_scope(home_scope, token: str, pipeline_id: int) -> d
     """
     from connect_labs.workflow.data_access import PIPELINE_HOME_SCOPE_KEYS, PipelineDataAccess
 
+    if home_scope == {"public": True}:
+        # A pipeline its owner shared: read by anyone signed in, from any scope.
+        pda = PipelineDataAccess(access_token=token).use_sources(
+            [{"pipeline_id": pipeline_id, "home_scope": {"public": True}}]
+        )
+        try:
+            found = pda.get_definition(pipeline_id)
+        finally:
+            pda.close()
+        if found is None:
+            raise MCPToolError(
+                "NOT_FOUND", f"pipeline {pipeline_id} is not shared (public); share it first with pipeline_set_shared"
+            )
+        return {"public": True}
     if (
         not isinstance(home_scope, dict)
         or len(home_scope) != 1
@@ -411,13 +425,21 @@ def _validate_registry_source(value, wda, *, opportunity_id=None, program_id=Non
         )
     from connect_labs.workflow.data_access import REGISTRY_HOME_SCOPE_KEYS
 
-    unknown = set(value) - {"name", "registry_id", *REGISTRY_HOME_SCOPE_KEYS}
+    unknown = set(value) - {"name", "registry_id", "public", *REGISTRY_HOME_SCOPE_KEYS}
     if unknown:
         raise MCPToolError("INVALID_SCHEMA", f"Unknown registry_source keys: {sorted(unknown)}")
     if "name" in value and "registry_id" in value:
         raise MCPToolError("INVALID_SCHEMA", "registry_source takes name OR registry_id, not both")
     if "name" in value and not isinstance(value["name"], str):
         raise MCPToolError("INVALID_SCHEMA", "registry_source.name must be a string")
+    if "public" in value:
+        # A SHARED record, read by anyone signed in: it names no scope of its own.
+        if value["public"] is not True:
+            raise MCPToolError("INVALID_SCHEMA", "registry_source.public, when given, must be true")
+        if "registry_id" not in value or any(value.get(k) is not None for k in REGISTRY_HOME_SCOPE_KEYS):
+            raise MCPToolError(
+                "INVALID_SCHEMA", "registry_source.public goes with a registry_id and no home scope key"
+            )
     home = {k: value[k] for k in REGISTRY_HOME_SCOPE_KEYS if value.get(k) is not None}
     if home and "registry_id" not in value:
         raise MCPToolError("INVALID_SCHEMA", f"registry_source scope keys {sorted(home)} only apply to a registry_id")
@@ -451,7 +473,13 @@ def _validate_registry_source(value, wda, *, opportunity_id=None, program_id=Non
         # Resolved exactly as the workflow will resolve it at load -- in the record's
         # HOME scope when one is named -- so a binding that validates here cannot fail
         # there for a scoping reason.
-        where = f" in {next(iter(home))}={next(iter(home.values()))}" if home else " in this workflow's scope"
+        if value.get("public") is True:
+            home = {"public": True}
+        where = (
+            " as a shared (public) record"
+            if value.get("public") is True
+            else (f" in {next(iter(home))}={next(iter(home.values()))}" if home else " in this workflow's scope")
+        )
         try:
             resolve_registry({"registry_id": registry_id, **home}, access)
         except SemanticRuntimeError as exc:
@@ -666,7 +694,8 @@ def workflow_update_definition(
                 "type": "object",
                 "description": (
                     "Where the pipeline record LIVES, when that is not this workflow's scope: exactly "
-                    "one of {opportunity_id}, {program_id}, {organization_id}. Lets a workflow reference "
+                    "one of {opportunity_id}, {program_id}, {organization_id} -- or {public: true} for a "
+                    "pipeline its owner shared, readable by any viewer. Lets a workflow reference "
                     "a pipeline owned elsewhere -- e.g. a synthetic report on the real report's pipeline -- "
                     "instead of a copy, so a fix to the pipeline reaches both. The pipeline is proven "
                     "readable there before the source is saved."

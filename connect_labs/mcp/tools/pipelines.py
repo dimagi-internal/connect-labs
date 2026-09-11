@@ -529,6 +529,43 @@ def pipeline_delete(user, pipeline_id: int, opportunity_id: int):
 
 
 @register(
+    name="pipeline_set_shared",
+    description=(
+        "Share (or unshare) a pipeline: sets its record PUBLIC, so any signed-in user can "
+        "read it -- while edits still need the pipeline's own scope. A workflow in another "
+        "scope, e.g. a synthetic report running on the real report's pipeline, can then "
+        "reference it with workflow_add_pipeline_source(home_scope={public: true}) and every "
+        "viewer can load it, whatever their memberships. Pipelines are definitions, not "
+        "data: sharing one exposes its extraction rules, never any visits."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "pipeline_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer", "description": "The pipeline's own (owning) opportunity."},
+            "shared": {"type": "boolean"},
+        },
+        "required": ["pipeline_id", "opportunity_id", "shared"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def pipeline_set_shared(user, pipeline_id: int, opportunity_id: int, shared: bool):
+    token = require_connect_token(user)
+    pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        if pda.get_definition(pipeline_id) is None:
+            raise MCPToolError("NOT_FOUND", f"No pipeline with id {pipeline_id} in opportunity {opportunity_id}")
+        updated = pda.share_pipeline(pipeline_id) if shared else pda.unshare_pipeline(pipeline_id)
+        if updated is None:
+            raise MCPToolError("UPSTREAM_ERROR", f"pipeline {pipeline_id} could not be updated")
+        return {"pipeline_id": pipeline_id, "shared": bool(shared)}
+    finally:
+        if hasattr(pda, "close"):
+            pda.close()
+
+
+@register(
     name="pipeline_sql",
     description=(
         "Return the SQL the pipeline would execute, without running it. "

@@ -190,6 +190,8 @@ def resolve_registry(
     from connect_labs.workflow.data_access import REGISTRY_HOME_SCOPE_KEYS
 
     home = {k: source[k] for k in REGISTRY_HOME_SCOPE_KEYS if source.get(k) is not None}
+    if source.get("public") is True:
+        home = {"public": True}
     record = registry_access.get_registry(int(registry_id), **home)
     if record is None:
         raise SemanticRuntimeError(f"no semantic registry with id {registry_id}")
