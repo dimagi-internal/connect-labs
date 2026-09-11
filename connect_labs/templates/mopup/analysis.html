@@ -110,15 +110,13 @@
           <th class="pb-2 pr-2">Threshold <span class="info-icon" tabindex="0" data-tip="The cutoff at which a work area is flagged as a mop-up candidate for this indicator — an unconditional floor, no neighbor/FLW corroboration required. NCF/inaccessible has no threshold: any NCF or Inaccessible visit floors it.">ⓘ</span></th>
           <th class="pb-2 pr-2">Neighbor distance (m) <span class="info-icon" tabindex="0" data-tip="How close two work areas' centroids need to be to count as 'neighbors' for the cluster-aware filter. Deworming/MUAC/vaccination share one value; EVC shortfall and NCF/inaccessible each have their own. Only used when the filter above is enabled.">ⓘ</span></th>
           <th class="pb-2 pr-2">Min neighbor count <span class="info-icon" tabindex="0" data-tip="The fewest spatially-nearby neighbors that must ALSO be flagged on the same indicator to corroborate it. Only used when the filter above is enabled.">ⓘ</span></th>
-          <th class="pb-2 pr-2"># WAs triggered <span class="info-icon" tabindex="0" data-tip="How many work areas this specific indicator flagged (after the optional cluster-aware filter, if enabled), under the current thresholds. Recomputed every time you hit Recompute.">ⓘ</span></th>
+          <th class="pb-2 pr-2"># WAs triggered <span class="info-icon" tabindex="0" data-tip="How many work areas this specific indicator flagged (after the optional cluster-aware filter, if enabled), under the current thresholds. Recomputed automatically whenever you change a setting.">ⓘ</span></th>
         </tr>
       </thead>
       <tbody id="indicator-rows"></tbody>
     </table>
     </div>
   </section>
-
-  <button type="button" id="recompute" class="button primary-dark">Recompute</button>
 
   <section class="space-y-2">
     <h2 class="text-lg font-semibold text-gray-900">Ward summary</h2>
