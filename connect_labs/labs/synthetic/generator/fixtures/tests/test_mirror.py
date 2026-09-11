@@ -277,6 +277,78 @@ def test_gen1_visits_are_not_shredded_by_their_per_visit_subcase():
     assert struct.transplant_pool[0]["visits"][0]["values"]["form.child_weight_birth"] == 1000
 
 
+def test_a_visit_that_names_its_baby_keys_to_it_even_when_its_own_case_is_per_visit():
+    """The early design-A apps submit each visit against a fresh case and name the
+    baby in kmc_beneficiary_case_id; the registration is submitted against the
+    baby itself. Keying on form.case split every such baby into a registration-
+    only and a visits-only series and the clones inherited the split (523: 103
+    + 74 of 322 series; 675: 164 of 342). The real report's key reads the
+    explicit reference first; so must the profiler."""
+    visits = [
+        {
+            "username": "flwA",
+            "visit_date": "2026-01-01",
+            "form_json": {
+                "form": {
+                    "@name": "Register KMC Beneficiary",
+                    "case": {"@case_id": "baby-1"},
+                    "child_weight_birth": 1000,
+                }
+            },
+        },
+    ]
+    for i in range(3):
+        visits.append(
+            {
+                "username": "flwA",
+                "visit_date": f"2026-01-0{i + 2}",
+                "form_json": {
+                    "form": {
+                        "@name": "Record Visit Details",
+                        "kmc_beneficiary_case_id": "baby-1",
+                        "case": {"@case_id": f"visit-case-{i}"},
+                        "subcase_0": {"case": {"@case_id": f"visit-sub-{i}"}},
+                        "child_weight_visit": 1100 + 100 * i,
+                    }
+                },
+            }
+        )
+    # design B: the registration creates the baby as subcase_0 and every visit
+    # names it as child_case_id while form.case stays the mother
+    visits.append(
+        {
+            "username": "flwB",
+            "visit_date": "2026-02-01",
+            "form_json": {
+                "form": {
+                    "@name": "Child Registration Form",
+                    "case": {"@case_id": "mother-2"},
+                    "subcase_0": {"case": {"@case_id": "baby-2"}},
+                    "child_weight_birth": 1500,
+                }
+            },
+        }
+    )
+    visits.append(
+        {
+            "username": "flwB",
+            "visit_date": "2026-02-08",
+            "form_json": {
+                "form": {
+                    "@name": "Record Visit Details",
+                    "child_case_id": "baby-2",
+                    "case": {"@case_id": "mother-2"},
+                    "subcase_0": {"case": {"@case_id": "baby-2"}},
+                    "child_weight_visit": 1600,
+                }
+            },
+        }
+    )
+    struct = profile_entity_structure(visits)
+    assert len(struct.transplant_pool) == 2, "one baby per registration, none split off"
+    assert struct.visits_per_entity == {4: 1, 2: 1}
+
+
 def test_entity_id_still_keys_sources_that_carry_no_case_block():
     """Synthetic clones have no case block at all, so entity_id must still work."""
     visits = [
