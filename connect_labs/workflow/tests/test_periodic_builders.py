@@ -130,6 +130,7 @@ def captured(monkeypatch):
     def fake_build(*, as_of=None, meta=None, **kw):
         seen["payload_as_of"] = as_of
         seen["meta_as_of"] = (meta or {}).get("as_of")
+        seen["meta_registry"] = (meta or {}).get("registry")
         return {"ok": True}
 
     monkeypatch.setattr(snap, "build", fake_build)
@@ -183,3 +184,11 @@ class TestSemanticSnapshotIsAFunctionOfPeriodEnd:
         # date must not get that far.
         _run_builder("not a date")
         assert captured["as_of"] == "CURRENT_DATE"
+
+
+@pytest.mark.django_db
+def test_every_snapshot_says_which_registry_graded_it(captured):
+    # A rebuilt history restates each point under the definitions in force when it
+    # ran; unbound means the on-disk registry. The point has to carry which.
+    _run_builder("2026-09-06")
+    assert captured["meta_registry"] == {"source": "disk", "name": "kmc"}

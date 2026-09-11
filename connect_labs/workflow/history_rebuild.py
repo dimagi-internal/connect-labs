@@ -478,7 +478,11 @@ def preview_as_of(
     state_key = ((built.get("contract") or {}).get("snapshot_inputs") or {}).get("state_key") or "snapshot"
     payload = state.get(state_key) or {}
 
-    out: dict = {"definition_id": definition_id, "as_of": as_of.isoformat()}
+    from connect_labs.semantic.workflow_binding import registry_binding
+
+    # Which definitions produced these figures -- a comparison against a reference is
+    # meaningless without knowing whether it ran on a bound record or the on-disk copy.
+    out: dict = {"definition_id": definition_id, "as_of": as_of.isoformat(), "registry": registry_binding(definition)}
     for key in _PREVIEW_KEYS:
         if key in payload:
             out["programme" if key == "programInd" else key] = payload[key]

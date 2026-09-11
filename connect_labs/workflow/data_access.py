@@ -119,6 +119,11 @@ def serialize_pipeline_row(row, extra: dict | None = None) -> dict:
     return row_dict
 
 
+# Where a bound registry record LIVES, when that is not the workflow's own scope.
+# At most one of these may accompany `registry_id` in a workflow's registry_source.
+REGISTRY_HOME_SCOPE_KEYS = ("organization_id", "program_id", "opportunity_id")
+
+
 class PipelineCacheMiss(Exception):
     """Raised by the cached-only pipeline read when a required pipeline has no
     usable processed cache for an opportunity. Callers (run completion) should
@@ -638,6 +643,11 @@ class WorkflowDataAccess(BaseDataAccess):
         # provided (an empty dict is meaningful: "capture everything").
         if kwargs.get("snapshot_inputs") is not None:
             data["snapshot_inputs"] = kwargs["snapshot_inputs"]
+        # The registry binding travels with the definition. Without it a clone of a
+        # workflow bound to a live registry record silently falls back to the on-disk
+        # registry -- same dashboard, different definitions, nothing to say so.
+        if kwargs.get("registry_source"):
+            data["registry_source"] = kwargs["registry_source"]
 
         record = self.labs_api.create_record(
             experiment=self.EXPERIMENT,
@@ -1911,12 +1921,23 @@ class SemanticRegistryDataAccess(BaseDataAccess):
                     records.append(r)
         return records
 
-    def get_registry(self, registry_id: int) -> SemanticRegistryRecord | None:
+    def get_registry(self, registry_id: int, **home_scope) -> SemanticRegistryRecord | None:
+        """Read a registry by id -- in its HOME scope when the binding names one.
+
+        `home_scope` is at most one of organization_id / program_id / opportunity_id,
+        taken from the workflow's `registry_source`. Without it the read runs in this
+        accessor's own scope, which is the workflow's -- and since reads are an exact
+        scope match, a registry owned by the organization is invisible from an
+        opportunity-owned workflow. That is why "shared" registries could be listed
+        (`list_registries` merges public records in) yet never bound.
+        """
+        scope = {k: v for k, v in home_scope.items() if k in REGISTRY_HOME_SCOPE_KEYS and v is not None}
         return self.labs_api.get_record_by_id(
             registry_id,
             experiment=self.EXPERIMENT,
             type=self.RECORD_TYPE,
             model_class=SemanticRegistryRecord,
+            **scope,
         )
 
     def create_registry(
