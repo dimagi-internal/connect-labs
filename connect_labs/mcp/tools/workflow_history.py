@@ -584,6 +584,16 @@ def workflow_history_runs(
             "program_id": {"type": "integer"},
             "keep_from": {"type": "string", "description": "ISO date. Keep runs whose period ends on or after it."},
             "keep_to": {"type": "string", "description": "ISO date. Keep runs whose period ends on or before it."},
+            "run_ids": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": (
+                    "Instead of a window: delete exactly these runs of this workflow, INCLUDING runs a "
+                    "person saved -- the only way to take a stale hand-made report off a trend. Ids that "
+                    "are not this workflow's runs are reported under `missing`, never deleted. Back up "
+                    "first with workflow_history_runs(generated_only=false, include_snapshot=true)."
+                ),
+            },
             "dry_run": {"type": "boolean", "description": "Default true: report only. False deletes."},
         },
         "required": ["definition_id"],
@@ -599,6 +609,7 @@ def workflow_prune_history(
     program_id: int | None = None,
     keep_from: str | None = None,
     keep_to: str | None = None,
+    run_ids: list[int] | None = None,
     dry_run: bool = True,
 ) -> dict[str, Any]:
     from connect_labs.labs.integrations.connect.api_client import LabsAPIError
@@ -615,6 +626,7 @@ def workflow_prune_history(
                 definition_id,
                 keep_from=_parse_date(keep_from, "keep_from"),
                 keep_to=_parse_date(keep_to, "keep_to"),
+                run_ids=run_ids,
                 dry_run=dry_run,
             )
         except HistoryRebuildError as e:
