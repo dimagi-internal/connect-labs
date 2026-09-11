@@ -632,15 +632,25 @@ def prune_history(
     *,
     keep_from: date | None = None,
     keep_to: date | None = None,
+    run_ids: list[int] | None = None,
     dry_run: bool = True,
 ) -> dict:
-    """Delete the stamped runs whose period ends outside [keep_from, keep_to].
+    """Delete the stamped runs whose period ends outside [keep_from, keep_to] -- or,
+    with `run_ids`, exactly the runs named.
 
-    Only runs this operation created are candidates -- completed or not, since a
-    rebuild cut off mid-request can leave an unfinished one behind. At least one
-    bound is required: "delete every rebuilt run" is not a window, and is one typo
-    away from emptying a history.
+    A window only ever touches runs this operation created -- completed or not,
+    since a rebuild cut off mid-request can leave an unfinished one behind. At least
+    one bound is required: "delete every rebuilt run" is not a window, and is one
+    typo away from emptying a history.
+
+    `run_ids` is the one way to remove a run a PERSON saved: a trend plots every
+    completed run, so a stale hand-made report sits on the line (on 2026-09-11 two
+    runs frozen before the synthetic data was regenerated dropped "healthy growth"
+    from 61% to 34% for one point). Naming the ids is the deliberate act; each must
+    belong to this workflow, and a name that does not is reported, never deleted.
     """
+    if run_ids is not None:
+        return _prune_named(data_access, definition_id, run_ids, dry_run=dry_run)
     if keep_from is None and keep_to is None:
         raise HistoryRebuildError("no_window", "give keep_from and/or keep_to; pruning needs a window to keep")
     if keep_from and keep_to and keep_from > keep_to:
@@ -674,5 +684,37 @@ def prune_history(
         "kept": len(kept),
         "pruned": len(pruned),
         "failed": len(failed),
+        "runs": {"pruned" if not dry_run else "would_prune": pruned, "failed": failed},
+    }
+
+
+def _prune_named(data_access, definition_id: int, run_ids: list[int], *, dry_run: bool) -> dict:
+    wanted = [int(r) for r in run_ids]
+    if not wanted:
+        raise HistoryRebuildError("no_window", "run_ids is empty; name the runs to delete")
+    runs = {r.id: r for r in (data_access.list_runs(definition_id) or [])}
+    pruned, failed, missing = [], [], []
+    for rid in wanted:
+        run = runs.get(rid)
+        if run is None:
+            missing.append(rid)
+            continue
+        entry = _run_summary(run)
+        if not dry_run:
+            try:
+                data_access.delete_run(rid)
+            except Exception as e:  # noqa: BLE001 -- report it, keep going
+                logger.warning("could not delete workflow run %s", rid, exc_info=True)
+                entry["error"] = str(e)
+                failed.append(entry)
+                continue
+        pruned.append(entry)
+    return {
+        "definition_id": definition_id,
+        "run_ids": wanted,
+        "dry_run": dry_run,
+        "pruned": len(pruned),
+        "failed": len(failed),
+        "missing": missing,
         "runs": {"pruned" if not dry_run else "would_prune": pruned, "failed": failed},
     }

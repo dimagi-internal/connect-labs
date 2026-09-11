@@ -891,3 +891,36 @@ class TestExportAndPrune:
         dao = _DAO(_Definition(), runs=self._history())
         assert 3 not in [r["run_id"] for r in hr.history_runs(dao, 1)["runs"]]
         assert 3 in [r["run_id"] for r in hr.history_runs(dao, 1, generated_only=False)["runs"]]
+
+
+class TestPruneNamedRuns:
+    """A stale hand-made report sits on a trend until someone removes it; the rebuild
+    and the window prune never touch runs a person saved. Naming ids is the way."""
+
+    def _history(self):
+        return [
+            _Run(1, "2026-09-06", "2026-09-06", state={"generated_by": hr.GENERATED_BY}, completed=True),
+            _Run(2, "2026-09-09", "2026-09-09", state={}, completed=True),  # hand-made, stale
+            _Run(3, "2026-09-10", "2026-09-10", state={}, completed=True),  # hand-made, stale
+            _Run(4, "2026-09-11", "2026-09-11", state={}, completed=True),  # hand-made, today's
+        ]
+
+    def test_exactly_the_named_runs_go_hand_made_included(self):
+        dao = _DAO(_Definition(), runs=self._history())
+        report = hr.prune_history(dao, 1, run_ids=[2, 3], dry_run=False)
+        assert sorted(r.id for r in dao._runs) == [1, 4]
+        assert report["pruned"] == 2 and report["missing"] == []
+
+    def test_an_id_that_is_not_this_workflows_run_is_reported_not_deleted(self):
+        dao = _DAO(_Definition(), runs=self._history())
+        report = hr.prune_history(dao, 1, run_ids=[3, 999], dry_run=False)
+        assert report["missing"] == [999] and sorted(r.id for r in dao._runs) == [1, 2, 4]
+
+    def test_named_pruning_is_a_dry_run_by_default(self):
+        dao = _DAO(_Definition(), runs=self._history())
+        report = hr.prune_history(dao, 1, run_ids=[2])
+        assert len(dao._runs) == 4 and [r["run_id"] for r in report["runs"]["would_prune"]] == [2]
+
+    def test_an_empty_list_is_refused(self):
+        with pytest.raises(hr.HistoryRebuildError):
+            hr.prune_history(_DAO(_Definition(), runs=self._history()), 1, run_ids=[], dry_run=False)
