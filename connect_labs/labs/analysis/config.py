@@ -187,6 +187,15 @@ class DataSourceConfig:
             rolling window to keep the fetch light for reports that only need
             recent forms — the full-history fetch does not scale to multi-opp
             reports.
+        domain: (cchq_forms and cchq_cases only) Explicit CommCare HQ domain,
+            overriding the domain normally derived from the owning
+            opportunity's metadata (cc_domain). For pulling from a CommCare
+            domain that isn't (yet) linked to any Connect opportunity — e.g.
+            an unreleased app version under test. Requires the user's
+            CommCare OAuth session to have access to this domain. For
+            cchq_forms, app_id must also be set explicitly when domain is set
+            (app_id_source="opportunity" has no opportunity-linked app to
+            resolve against a domain the opportunity doesn't own).
     """
 
     type: str = "connect_csv"
@@ -199,10 +208,19 @@ class DataSourceConfig:
     endpoint: str = ""
     case_type: str = ""
     form_lookback_days: int = 0
+    domain: str = ""
 
     def __post_init__(self):
         if self.type not in ("connect_csv", "cchq_forms", "ocs_sessions", "connect_export", "cchq_cases"):
             raise ValueError(f"Invalid data source type: {self.type}")
+        if self.domain and self.type not in ("cchq_forms", "cchq_cases"):
+            raise ValueError("data_source.domain is only valid for type='cchq_forms' or 'cchq_cases'")
+        if self.domain and self.type == "cchq_forms" and not self.app_id:
+            raise ValueError(
+                "data_source.domain requires an explicit app_id for cchq_forms -- there is "
+                "no opportunity-linked app to resolve against a domain the "
+                "opportunity doesn't own."
+            )
 
 
 @dataclass

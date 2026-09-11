@@ -116,10 +116,16 @@ def fetch_cchq_cases_as_visit_dicts(
             "UI, or pass a token from get_valid_cchq_access_token(user)."
         )
 
-    metadata = fetch_opportunity_metadata(access_token, opportunity_id)
-    cc_domain = metadata.get("cc_domain")
-    if not cc_domain:
-        raise ValueError(f"No cc_domain found for opportunity {opportunity_id}")
+    if data_source.domain:
+        # Explicit domain override -- see DataSourceConfig.domain. Pulls
+        # cases from a CommCare domain the opportunity doesn't own (e.g. an
+        # unreleased app version's commcare-user cases under test).
+        cc_domain = data_source.domain
+    else:
+        metadata = fetch_opportunity_metadata(access_token, opportunity_id)
+        cc_domain = metadata.get("cc_domain")
+        if not cc_domain:
+            raise ValueError(f"No cc_domain found for opportunity {opportunity_id}")
 
     client = CommCareDataAccess(request, cc_domain, cchq_access_token=cchq_access_token)
     if not client.check_token_valid():
