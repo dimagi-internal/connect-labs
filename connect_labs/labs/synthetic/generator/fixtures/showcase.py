@@ -12,17 +12,32 @@ gateway-confirmed reading as the entered weight. So the case is longitudinal by
 construction, every visit has an image, and the entered value agrees with the
 picture without any matching step: the trajectory IS the pairing.
 
-That is also why a showcase case does not come out of the mirror transplant pool.
-The pool has real weights but no photographs; the corpus has both. A demo case
-needs both at every point, so it is layered onto the clone rather than drawn from
-it — reproducible and named, at the cost of not descending from one specific real
-infant in that opportunity.
+The trajectory supplies the weights and the photographs; everything else about
+the case is CLONED from a standard case in the same cohort. A mirrored case opens
+with the Child Registration Form and continues with Record Visit Details forms,
+each carrying the full field set the real app writes (hundreds of fields). The
+showcase builder deep-copies one such case -- registration plus the first N
+weighed follow-ups -- and then applies only the showcase specifics: identity,
+dates (shifted so the internal offsets between birth, discharge, registration
+and visits are the template's own), the weights, the photos, and a birth /
+enrolment weight and gestational age consistent with the trajectory. Built from
+nothing, a showcase case was a weight and a photo per visit; the pipeline saw no
+registration, the record rail read as dashes and the growth chart had no age
+axis (run 5620, 2026-09-10). Jon: "follow the clone path as much as possible
+(duplicate a standard case) and then apply the showcase specifics".
+
+When the cohort offers no template (no case alive throughout with a registration
+and enough weighed follow-ups), the builder falls back to synthesising the forms
+at the pipeline's extraction paths, which is complete for everything the pages
+read but not field-for-field.
 """
 
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import hashlib
+import re
 import uuid
 from typing import Any
 
@@ -62,8 +77,14 @@ def build_showcase_visits(
     deliver_unit_id: Any = None,
     visit_gap_days: int = 7,
     reading_path: str | None = None,
+    template_visits: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Emit the visits for every showcase case declared on ``config``.
+
+    ``template_visits`` is the cohort's own visit list (the mirror clone, before
+    the showcase cases are appended). Each showcase case is a deep copy of one
+    standard case drawn from it, with the showcase specifics applied on top; see
+    the module docstring. Without it the forms are synthesised.
 
     ``reading_path`` overrides which of ``config.reading_paths`` the entered
     value is written to. The engine passes the path the COHORT was observed to
@@ -97,6 +118,7 @@ def build_showcase_visits(
                 deliver_unit_id=deliver_unit_id,
                 visit_gap_days=visit_gap_days,
                 reading_path=reading_path,
+                template_visits=template_visits,
             )
         )
     return visits
@@ -220,6 +242,304 @@ def _registration_visit(
     }
 
 
+# ── Clone path ────────────────────────────────────────────────────────────────
+
+_WEIGHT_KEYS = {"child_weight_visit", "child_weight", "child_weight_last_visit"}
+_BIRTH_WEIGHT_KEYS = {"child_weight_birth", "birth_weight"}
+_ENROL_WEIGHT_KEYS = {"child_weight_reg"}
+_GA_KEY = re.compile(r"^gestational_age")
+_ISO_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})(.*)$")
+_ALIVE_KEYS = {"child_alive"}
+
+
+def _form_name(visit: dict[str, Any]) -> str:
+    form = (visit.get("form_json") or {}).get("form") or {}
+    return str(form.get("@name") or "")
+
+
+def _walk(node: Any):
+    """Yield (parent, key) for every leaf in a nested dict/list."""
+    if isinstance(node, dict):
+        for k, v in list(node.items()):
+            if isinstance(v, (dict, list)):
+                yield from _walk(v)
+            else:
+                yield node, k
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            if isinstance(v, (dict, list)):
+                yield from _walk(v)
+            else:
+                yield node, i
+
+
+def _get_path(form_json: dict[str, Any], dotted: str) -> Any:
+    node: Any = form_json
+    for part in dotted.split("."):
+        if not isinstance(node, dict):
+            return None
+        node = node.get(part)
+    return node
+
+
+def _has_weight(visit: dict[str, Any], write_path: str | None) -> bool:
+    fj = visit.get("form_json") or {}
+    if write_path and _get_path(fj, write_path) not in (None, ""):
+        return True
+    return any(
+        k in _WEIGHT_KEYS and v not in (None, "")
+        for parent, k in _walk(fj)
+        if isinstance(parent, dict)
+        for v in [parent[k]]
+    )
+
+
+def _is_alive(visit: dict[str, Any]) -> bool:
+    fj = visit.get("form_json") or {}
+    vals = [parent[k] for parent, k in _walk(fj) if isinstance(parent, dict) and k in _ALIVE_KEYS]
+    return all(str(v).lower() != "no" for v in vals)
+
+
+def _pick_template(
+    template_visits: list[dict[str, Any]] | None,
+    case: ShowcaseCase,
+    *,
+    n_followups: int,
+    write_path: str | None,
+) -> dict[str, Any] | None:
+    """One standard case to duplicate: a registration form plus at least
+    ``n_followups`` weighed follow-ups, the child alive throughout. The same
+    worker's cases are preferred so the clone reads as that worker's ordinary
+    work; any worker's will do, because the username is overridden anyway.
+
+    Deterministic: candidates are ordered by entity id and the pick is keyed on
+    the case name, so a showcase case clones the same template every run and two
+    showcase cases in one cohort do not clone the same one unless they must.
+    """
+    if not template_visits:
+        return None
+    by_case: dict[str, list[dict[str, Any]]] = {}
+    for v in template_visits:
+        if v.get("showcase") or not v.get("entity_id"):
+            continue
+        by_case.setdefault(str(v["entity_id"]), []).append(v)
+
+    def qualifies(vs: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
+        vs = sorted(vs, key=lambda v: str(v.get("visit_date") or ""))
+        regs = [v for v in vs if "regist" in _form_name(v).lower()]
+        if not regs:
+            return None
+        reg = regs[0]
+        followups = [
+            v
+            for v in vs
+            if v is not reg
+            and "regist" not in _form_name(v).lower()
+            and str(v.get("visit_date") or "") >= str(reg.get("visit_date") or "")
+            and _has_weight(v, write_path)
+        ]
+        if len(followups) < n_followups:
+            return None
+        if not all(_is_alive(v) for v in vs):
+            return None
+        return reg, followups[:n_followups]
+
+    same_flw = []
+    others = []
+    for eid in sorted(by_case):
+        picked = qualifies(by_case[eid])
+        if picked is None:
+            continue
+        (same_flw if by_case[eid][0].get("username") == case.flw else others).append((eid, picked))
+    pool = same_flw or others
+    if not pool:
+        return None
+    idx = int.from_bytes(hashlib.sha256(case.name.encode()).digest()[:4], "big") % len(pool)
+    eid, (reg, followups) = pool[idx]
+    return {"entity_id": eid, "registration": reg, "followups": followups}
+
+
+def _shift_dates(node: Any, delta: dt.timedelta) -> None:
+    """Move every ISO date string in a form by ``delta``, in place, keeping any
+    time suffix. The template's own offsets (birth to discharge to registration
+    to each visit) are what make the record internally consistent."""
+    for parent, key in _walk(node):
+        v = parent[key]
+        if not isinstance(v, str):
+            continue
+        m = _ISO_DATE.match(v)
+        if not m:
+            continue
+        try:
+            d = dt.date.fromisoformat(m.group(1))
+        except ValueError:
+            continue
+        parent[key] = (d + delta).isoformat() + m.group(2)
+
+
+def _replace_values(node: Any, old: str, new: str) -> None:
+    for parent, key in _walk(node):
+        if parent[key] == old:
+            parent[key] = new
+
+
+def _set_keys(node: Any, keys: set[str], value: Any) -> int:
+    n = 0
+    for parent, key in _walk(node):
+        if isinstance(parent, dict) and key in keys:
+            parent[key] = value
+            n += 1
+    return n
+
+
+def _set_key_re(node: Any, pattern: re.Pattern, value: Any) -> int:
+    n = 0
+    for parent, key in _walk(node):
+        if isinstance(parent, dict) and isinstance(key, str) and pattern.match(key):
+            parent[key] = value
+            n += 1
+    return n
+
+
+def _stamp(
+    visit: dict[str, Any],
+    *,
+    case: ShowcaseCase,
+    tag: str,
+    entity_id: str,
+    template_entity_id: str,
+    opportunity_id: int,
+    deliver_unit_id: Any,
+    new_date: dt.date,
+) -> None:
+    """The identity and timing every cloned visit gets, whatever else it carries."""
+    old_date_s = str(visit.get("visit_date") or "")[:10]
+    try:
+        old_date = dt.date.fromisoformat(old_date_s)
+    except ValueError:
+        old_date = new_date
+    delta = new_date - old_date
+    created = dt.datetime.combine(new_date, dt.time(9, 0))
+    visit["id"] = int.from_bytes(hashlib.sha256(f"{case.name}:{tag}".encode()).digest()[:7], "big")
+    visit["xform_id"] = _stable_entity_id(f"{case.name}:xform:{tag}", opportunity_id)
+    visit["opportunity_id"] = opportunity_id
+    visit["username"] = case.flw
+    visit["deliver_unit"] = str(deliver_unit_id) if deliver_unit_id is not None else ""
+    visit["deliver_unit_id"] = deliver_unit_id
+    visit["entity_id"] = entity_id
+    visit["entity_name"] = case.name
+    visit["visit_date"] = new_date.isoformat()
+    # An over-limit or rejected visit never reaches review, so a demo case has
+    # to be ordinary approved work -- the AI reviewer decides its fate.
+    visit["status"] = "approved"
+    visit["reason"] = None
+    visit["flagged"] = False
+    visit["flag_reason"] = ""
+    visit["review_status"] = "approved"
+    visit["status_modified_date"] = (created + dt.timedelta(hours=1)).isoformat()
+    visit["review_created_on"] = (created + dt.timedelta(hours=1, minutes=30)).isoformat()
+    visit["date_created"] = created.isoformat()
+    visit["completed_work_id"] = None
+    visit.pop("location", None)
+    visit["location"] = None
+    fj = visit.setdefault("form_json", {})
+    _shift_dates(fj, delta)
+    _replace_values(fj, template_entity_id, entity_id)
+    _set_keys(fj, _ALIVE_KEYS, "yes")
+
+
+def _clone_case(
+    case: ShowcaseCase,
+    *,
+    template: dict[str, Any],
+    case_index: int,
+    config: ImageConfig,
+    points: list[dict[str, Any]],
+    bands: dict,
+    bad_count: int,
+    entity_id: str,
+    opportunity_id: int,
+    start_date: dt.date,
+    deliver_unit_id: Any,
+    visit_gap_days: int,
+    write_path: str | None,
+) -> list[dict[str, Any]]:
+    """Duplicate the template case, then apply the showcase specifics."""
+    first_reading = float(points[0]["reading_grams"])
+    birth_weight = max(500.0, round((first_reading - 100.0) / 5.0) * 5.0)
+    ga = _gestational_age_wks(birth_weight)
+    tid = str(template["entity_id"])
+
+    reg = copy.deepcopy(template["registration"])
+    reg.pop("images", None)
+    reg["images"] = []
+    _stamp(
+        reg,
+        case=case,
+        tag="registration",
+        entity_id=entity_id,
+        template_entity_id=tid,
+        opportunity_id=opportunity_id,
+        deliver_unit_id=deliver_unit_id,
+        new_date=start_date - dt.timedelta(days=1),
+    )
+    fj = reg["form_json"]
+    _set_keys(fj, _BIRTH_WEIGHT_KEYS, birth_weight)
+    _set_keys(fj, _ENROL_WEIGHT_KEYS, first_reading)
+    _set_key_re(fj, _GA_KEY, ga)
+    reg["showcase"] = {
+        "case": case.name,
+        "trajectory": case.trajectory,
+        "outcome": case.outcome,
+        "visit_seq": 0,
+        "form": "registration",
+        "cloned_from": tid,
+        "birth_weight_g": birth_weight,
+        "gestational_age_wks": ga,
+    }
+    out = [reg]
+
+    for i, (point, tmpl) in enumerate(zip(points, template["followups"])):
+        blob_id = point["blob_id"]
+        true_reading = float(point["reading_grams"])
+        entered = _entered_value(case, true_reading, blob_id, bands, config.bad_reading_factor)
+        if case.outcome == "fail_photo":
+            blob_id = f"synth-{config.corpus}-bad-{(i % max(bad_count, 1)) + 1:03d}"
+            entered = true_reading
+        filename = f"{config.corpus}_showcase_{case_index:02d}_{i:02d}.jpg"
+
+        v = copy.deepcopy(tmpl)
+        _stamp(
+            v,
+            case=case,
+            tag=str(i),
+            entity_id=entity_id,
+            template_entity_id=tid,
+            opportunity_id=opportunity_id,
+            deliver_unit_id=deliver_unit_id,
+            new_date=start_date + dt.timedelta(days=i * visit_gap_days),
+        )
+        fj = v["form_json"]
+        # The weight the worker "typed", at every place the template records a
+        # visit weight, and at the cohort's resolved path in case the template
+        # kept it somewhere else.
+        _set_keys(fj, _WEIGHT_KEYS, entered)
+        if write_path:
+            _set_nested(fj, write_path, entered)
+        _set_nested(fj, config.question_path, filename)
+        v["images"] = [{"blob_id": blob_id, "name": filename}]
+        v["showcase"] = {
+            "case": case.name,
+            "trajectory": case.trajectory,
+            "outcome": case.outcome,
+            "visit_seq": point["visit_seq"],
+            "cloned_from": tid,
+            "photo_shows_grams": true_reading,
+        }
+        out.append(v)
+    return out
+
+
 def _entered_value(case: ShowcaseCase, true_reading: float, blob_id: str, bands: dict, factor: float) -> float:
     """The value the worker 'typed', given the outcome this case declares."""
     if case.outcome != "fail_number":
@@ -241,6 +561,7 @@ def _build_case(
     deliver_unit_id: Any,
     visit_gap_days: int,
     reading_path: str | None = None,
+    template_visits: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     points = series.get(case.trajectory)
     if not points:
@@ -250,11 +571,32 @@ def _build_case(
         )
 
     entity_id = _stable_entity_id(case.name, opportunity_id)
+    first_reading = float(points[0]["reading_grams"])
+    write_path = reading_path or (config.reading_paths[0] if config.reading_paths else None)
+
+    template = _pick_template(template_visits, case, n_followups=len(points), write_path=write_path)
+    if template is not None:
+        return _clone_case(
+            case,
+            template=template,
+            case_index=case_index,
+            config=config,
+            points=points,
+            bands=bands,
+            bad_count=bad_count,
+            entity_id=entity_id,
+            opportunity_id=opportunity_id,
+            start_date=start_date,
+            deliver_unit_id=deliver_unit_id,
+            visit_gap_days=visit_gap_days,
+            write_path=write_path,
+        )
+
     out: list[dict[str, Any]] = [
         _registration_visit(
             case,
             entity_id=entity_id,
-            first_reading=float(points[0]["reading_grams"]),
+            first_reading=first_reading,
             female=(case_index % 2 == 0),
             opportunity_id=opportunity_id,
             start_date=start_date,
@@ -291,11 +633,10 @@ def _build_case(
         _set_nested(form_json, "form.child_alive", "yes")
         _set_nested(form_json, "form.kmc_status_entered", "continue")
         _set_nested(form_json, config.question_path, filename)
-        # A showcase visit is built from nothing, so unlike a cohort visit there
-        # is no existing value to resolve the path against. Take the path the
-        # cohort was observed to use when the caller supplies it, so the demo
-        # cases land in the SAME field an audit reads for everyone else.
-        write_path = reading_path or (config.reading_paths[0] if config.reading_paths else None)
+        # A synthesised visit has no existing value to resolve the path against.
+        # Take the path the cohort was observed to use when the caller supplies
+        # it, so the demo cases land in the SAME field an audit reads for
+        # everyone else.
         if write_path:
             _set_nested(form_json, write_path, entered)
 
