@@ -122,6 +122,16 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     return 'ERROR';
   }
 
+  function qrOutcome(row) {
+    if (row.qr_code_visit_verification) return row.qr_code_visit_verification;
+    // Confirmed by scanning real submissions: whenever the mother didn't
+    // have her QR code photo available at the visit, qr_code_visit_verification
+    // is always blank -- that's "not applicable this visit", not "NA" (which
+    // otherwise reads as "no data for this row").
+    if (row.mother_has_qr_code_available === 'no') return 'Not available';
+    return 'NA';
+  }
+
   function motherQuestionsOutcome(row) {
     if (row.show_mother_questions === '0') return 'NA';
     if (row.show_mother_questions === '1') return blankOrNA(row.mother_questions_visit_verification);
@@ -132,7 +142,7 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
   function outcomeColorClass(value) {
     if (value === 'Pass') return 'bg-green-100 text-green-800';
     if (value === 'Fail') return 'bg-red-100 text-red-800';
-    if (value === 'NA') return 'bg-gray-100 text-gray-600';
+    if (value === 'NA' || value === 'Not available') return 'bg-gray-100 text-gray-600';
     if (typeof value === 'string' && value.indexOf('Pending') !== -1) return 'bg-yellow-100 text-yellow-800';
     if (value === 'ERROR') return 'bg-orange-100 text-orange-800';
     return '';
@@ -166,7 +176,7 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 
   function cellValue(row, key) {
     if (key === 'gps_outcome') return gpsOutcome(row);
-    if (key === 'qr_outcome') return blankOrNA(row.qr_code_visit_verification);
+    if (key === 'qr_outcome') return qrOutcome(row);
     if (key === 'signature_outcome') return blankOrNA(row.mother_initial_visit_verification);
     if (key === 'mother_questions_outcome') return motherQuestionsOutcome(row);
     if (key === 'anc_card_outcome') return blankOrNA(row.capture_anc_card_visit_verification);
@@ -206,11 +216,94 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     [displayRows, sort],
   );
 
+  // --- Summary metrics (over the displayed/filtered set) ------------------
+  var summary = React.useMemo(
+    function () {
+      var total = displayRows.length;
+      var passCount = 0;
+      var failCount = 0;
+      var pendingCount = 0;
+      displayRows.forEach(function (row) {
+        if (row.visit_verification_outcome === 'Pass') passCount += 1;
+        else if (row.visit_verification_outcome === 'Fail') failCount += 1;
+        else if (row.visit_verification_outcome === 'Pending Audit') pendingCount += 1;
+      });
+      function pct(n) {
+        return total > 0 ? Math.round((n / total) * 100) : 0;
+      }
+      return {
+        total: total,
+        passCount: passCount,
+        failCount: failCount,
+        pendingCount: pendingCount,
+        passPct: pct(passCount),
+        failPct: pct(failCount),
+        pendingPct: pct(pendingCount),
+      };
+    },
+    [displayRows],
+  );
+
+  // --- CSV export -----------------------------------------------------------
+  function csvEscape(value) {
+    var s = value === null || value === undefined ? '' : String(value);
+    if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
+      s = '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  function handleExportCSV() {
+    var lines = [columns.map(function (c) { return csvEscape(c.label); }).join(',')];
+    sortedRows.forEach(function (row) {
+      lines.push(
+        columns
+          .map(function (col) {
+            return csvEscape(cellValue(row, col.key));
+          })
+          .join(','),
+      );
+    });
+    var csvContent = lines.join('\n');
+    var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'mbw_visit_verification_opp_' + (instance.opportunity_id || '') + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold">{definition.name}</h1>
-        <p className="text-gray-600">{definition.description}</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">{definition.name}</h1>
+          <p className="text-gray-600">{definition.description}</p>
+        </div>
+        <button
+          onClick={handleExportCSV}
+          className="whitespace-nowrap rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Export CSV
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="rounded-lg border border-green-200 bg-green-50 p-4 shadow-sm">
+          <div className="text-3xl font-bold text-green-700">{summary.passPct}%</div>
+          <div className="text-gray-600">Passed Verification (n={summary.passCount})</div>
+        </div>
+        <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 shadow-sm">
+          <div className="text-3xl font-bold text-yellow-700">{summary.pendingPct}%</div>
+          <div className="text-gray-600">Pending Audit (n={summary.pendingCount})</div>
+        </div>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 shadow-sm">
+          <div className="text-3xl font-bold text-red-700">{summary.failPct}%</div>
+          <div className="text-gray-600">Failed Verification (n={summary.failCount})</div>
+        </div>
       </div>
 
       <div className="text-sm text-gray-500">{sortedRows.length} visits shown</div>
