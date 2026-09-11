@@ -62,7 +62,8 @@ from .tool_registry import Tool as RegistryToolSpec
 logger = logging.getLogger(__name__)
 
 SERVER_INSTRUCTIONS = (
-    "Connect Labs MCP server. Tools run as the authenticated user " "(per-user Personal Access Token)."
+    "Connect Labs MCP server. Tools run as the authenticated user "
+    "(signed in through OAuth, or a per-user Personal Access Token)."
 )
 
 
@@ -141,30 +142,52 @@ def _verify_pat_sync(raw: str):
     return token.user
 
 
-class CommCarePATVerifier(TokenVerifier):
-    """Resolve a connect-labs Personal Access Token to an AccessToken.
+def _verify_bearer_sync(raw: str):
+    """Resolve a bearer to ``(user, auth_method, client_id, scopes)``, or None.
 
-    Mirrors the old ``auth.authenticate_request`` contract: a valid, active,
-    non-expired ``MCPAccessToken`` resolves to its user; anything else
-    (missing/garbage/revoked/expired) returns ``None``, which FastMCP turns
-    into a 401.
+    A Personal Access Token first -- unchanged, for scripts and headless agents --
+    then an OAuth access token from the standard MCP sign-in (``oauth.py``).
+    """
+    user = _verify_pat_sync(raw)
+    if user is not None:
+        return user, "pat", str(user.pk), PAT_SCOPES
+
+    from .oauth import MCP_SCOPE, resolve_mcp_access_token
+
+    resolved = resolve_mcp_access_token(raw)
+    if resolved is None:
+        return None
+    user, client_id = resolved
+    return user, "oauth", client_id, [MCP_SCOPE]
+
+
+class CommCarePATVerifier(TokenVerifier):
+    """Resolve a bearer -- a Personal Access Token or an OAuth access token -- to an AccessToken.
+
+    Mirrors the old ``auth.authenticate_request`` contract for PATs: a valid,
+    active, non-expired ``MCPAccessToken`` resolves to its user. An OAuth access
+    token resolves when it is live, carries the ``mcp`` scope and was issued to an
+    MCP client (``oauth.resolve_mcp_access_token``). Anything else
+    (missing/garbage/revoked/expired) returns ``None``, which FastMCP turns into a
+    401. Either way the tools run as the resolved user.
     """
 
     async def verify_token(self, token: str) -> AccessToken | None:
         if not token:
             return None
-        user = await sync_to_async(_closing_connections(_verify_pat_sync), thread_sensitive=True)(token)
-        if user is None:
+        resolved = await sync_to_async(_closing_connections(_verify_bearer_sync), thread_sensitive=True)(token)
+        if resolved is None:
             return None
+        user, auth_method, client_id, scopes = resolved
         return AccessToken(
             token=token,
-            client_id=str(user.pk),
-            scopes=PAT_SCOPES,
+            client_id=client_id,
+            scopes=scopes,
             claims={
                 "sub": str(user.pk),
                 "user_id": user.pk,
                 "username": getattr(user, "username", "") or "",
-                "auth_method": "pat",
+                "auth_method": auth_method,
             },
         )
 

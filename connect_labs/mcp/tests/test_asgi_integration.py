@@ -117,102 +117,101 @@ def test_streamable_http_rejects_missing_token(asgi_app):
         anyio.run(_run)
 
 
-@pytest.mark.django_db(transaction=True)
-def test_unauthenticated_challenge_is_plain_bearer_not_oauth(asgi_app):
-    """A bearer-less request must get a plain ``Bearer realm`` challenge.
-
-    FastMCP 3.x's TokenVerifier emits ``WWW-Authenticate: Bearer
-    error="invalid_token", ...`` on 401. The RFC 6750 ``error="invalid_token"``
-    marks the endpoint as an OAuth-protected resource, so a spec-compliant MCP
-    client (Claude Code) responds by probing ``/.well-known/oauth-protected-
-    resource`` — which Django answers with an HTML 404, crashing the client's
-    JSON parse on reconnect. We rewrite the challenge back to the pre-FastMCP
-    ``Bearer realm="labs-mcp"`` form, which clients satisfy by re-sending their
-    PAT. Regression guard for the connect-labs reconnect break.
-    """
+def _post_without_valid_auth(application, method="initialize", authorization=None):
+    """POST one MCP request that the verifier will reject; return the response."""
     import anyio
 
-    application = asgi_app
+    headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+    if authorization is not None:
+        headers["Authorization"] = authorization
+    payload = {"jsonrpc": "2.0", "id": 1, "method": method}
+    if method == "initialize":
+        payload["params"] = {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "regression-probe", "version": "0"},
+        }
 
     async def _run():
         async with application.router.lifespan_context(application):
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=application), base_url="http://testserver"
             ) as c:
-                return await c.post(
-                    "/mcp/",
-                    headers={
-                        "Accept": "application/json, text/event-stream",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "initialize",
-                        "params": {
-                            "protocolVersion": "2025-06-18",
-                            "capabilities": {},
-                            "clientInfo": {"name": "regression-probe", "version": "0"},
-                        },
-                    },
-                )
+                return await c.post("/mcp/", headers=headers, json=payload)
 
-    resp = anyio.run(_run)
+    return anyio.run(_run)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_unauthenticated_challenge_points_clients_at_the_sign_in(asgi_app):
+    """A bearer-less request gets the MCP spec's 401: where to sign in, and no error code.
+
+    A spec-compliant MCP client reads ``resource_metadata`` from this challenge
+    and starts the sign-in from it, so it must name the protected-resource
+    metadata this server actually serves. A request that carried no token gets
+    no ``error=`` at all (RFC 6750 section 3.1).
+
+    History: FastMCP's default challenge -- ``error="invalid_token"`` and no
+    ``resource_metadata`` -- sent clients to discovery paths Django answered with
+    an HTML 404, which broke reconnect (#431). Those paths now serve real JSON
+    metadata (see the discovery tests below), so pointing clients at them is
+    the fix rather than the fault.
+    """
+    from connect_labs.mcp import oauth
+
+    resp = _post_without_valid_auth(asgi_app)
 
     assert resp.status_code == 401
     challenge = resp.headers.get("www-authenticate", "")
-    # The OAuth-discovery trigger must be gone...
-    assert "error=" not in challenge, f"OAuth-style challenge leaked: {challenge!r}"
-    assert "invalid_token" not in challenge, f"OAuth-style challenge leaked: {challenge!r}"
-    # ...replaced by the plain realm challenge the old transport served.
-    assert 'realm="labs-mcp"' in challenge, f"expected plain Bearer realm, got: {challenge!r}"
+    assert 'realm="labs-mcp"' in challenge, challenge
+    assert f'resource_metadata="{oauth.protected_resource_metadata_url()}"' in challenge, challenge
+    assert "error=" not in challenge, f"a request with no token must carry no error code: {challenge!r}"
 
 
 @pytest.mark.django_db(transaction=True)
-def test_the_401_body_describes_a_PAT_server_not_an_oauth_one(asgi_app):
-    """The challenge header was fixed; the body kept FastMCP's OAuth prose.
+def test_a_rejected_token_is_told_invalid_token_and_where_to_sign_in(asgi_app):
+    from connect_labs.mcp import oauth
 
-    It told the reader to "clear authentication tokens in your MCP client and
-    reconnect. Your client should automatically re-register and obtain new
-    tokens." There is no registration here and nothing to obtain — following it
-    sends someone away from the only two real causes (no header arrived, or the
-    PAT is bad) toward an operation this server does not implement. A live
-    debugging session lost time to exactly that.
-    """
-    import anyio
-
-    application = asgi_app
-
-    async def _run():
-        async with application.router.lifespan_context(application):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=application), base_url="http://testserver"
-            ) as c:
-                return await c.post(
-                    "/mcp/",
-                    headers={
-                        "Accept": "application/json, text/event-stream",
-                        "Content-Type": "application/json",
-                    },
-                    json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
-                )
-
-    resp = anyio.run(_run)
+    resp = _post_without_valid_auth(asgi_app, authorization="Bearer not-a-real-token")
 
     assert resp.status_code == 401
-    body = resp.json()
-    described = body["error_description"]
-    # The advice that cannot work on a PAT-only server must be gone. These are
-    # FastMCP's exact words, not a paraphrase, so the assertion cannot drift.
-    assert "re-register" not in described
-    assert "clear authentication tokens" not in described
-    assert "obtain new tokens" not in described
-    # ...and replaced by what is actually true and actionable here.
-    assert "Personal Access Token" in described
-    assert "/labs/mcp/tokens/" in described
-    # The body must stay parseable and correctly framed after the rewrite.
-    assert resp.headers["content-type"].startswith("application/json")
-    assert int(resp.headers["content-length"]) == len(resp.content)
+    challenge = resp.headers.get("www-authenticate", "")
+    assert 'error="invalid_token"' in challenge, challenge
+    assert f'resource_metadata="{oauth.protected_resource_metadata_url()}"' in challenge, challenge
+    assert resp.json()["error"] == "invalid_token"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_401_body_says_which_failure_this_was_and_names_both_ways_in(asgi_app):
+    """FastMCP's 401 prose cannot tell a missing header from a rejected token.
+
+    A client whose PAT header helper fails silently sends NO header, and with
+    FastMCP's body that is indistinguishable from a revoked token -- a live
+    debugging session lost time to exactly that (#431). The body now says which
+    it was, and names both ways in: the sign-in, and a Personal Access Token.
+    """
+    from config.asgi import build_application
+
+    missing = _post_without_valid_auth(asgi_app, method="tools/list")
+    # A second request needs a second app: the session manager's lifespan runs once per instance.
+    rejected = _post_without_valid_auth(
+        build_application(), method="tools/list", authorization="Bearer revoked-or-typoed"
+    )
+
+    for resp in (missing, rejected):
+        assert resp.status_code == 401
+        described = resp.json()["error_description"]
+        # FastMCP's exact words, not a paraphrase, so the assertion cannot drift.
+        assert "clear authentication tokens" not in described
+        assert "Sign in through your MCP client" in described
+        assert "Personal Access Token" in described
+        assert "/labs/mcp/tokens/" in described
+        # The body must stay parseable and correctly framed after the rewrite.
+        assert resp.headers["content-type"].startswith("application/json")
+        assert int(resp.headers["content-length"]) == len(resp.content)
+
+    assert "no Authorization header" in missing.json()["error_description"]
+    assert "unknown, expired or revoked" in rejected.json()["error_description"]
 
 
 def test_mcp_mount_wrapped_with_closing_connections_middleware(asgi_app):
@@ -278,28 +277,8 @@ def test_real_mcp_request_closes_connections_at_boundary(asgi_app, monkeypatch):
     assert close_spy.called, "boundary close never ran — MCP request leaked its DB connection"
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "/.well-known/oauth-protected-resource",
-        "/.well-known/oauth-protected-resource/mcp",
-        "/.well-known/oauth-authorization-server",
-        "/.well-known/oauth-authorization-server/mcp",
-    ],
-)
-def test_oauth_discovery_paths_return_json_not_html(asgi_app, path):
-    """OAuth discovery probes must return parseable JSON, never Django's HTML.
-
-    The combined ASGI app mounts the MCP app under ``/mcp`` and Django as the
-    root catch-all. A client doing RFC 9728 discovery probes these root paths;
-    without an explicit route they fall through to Django's styled HTML 404,
-    which the client cannot parse as the expected JSON metadata (``Unrecognized
-    token '<'``). We serve a clean JSON 404 so discovery fails gracefully and
-    the client falls back to its configured PAT.
-    """
+def _get(application, path):
     import anyio
-
-    application = asgi_app
 
     async def _run():
         async with httpx.AsyncClient(
@@ -307,10 +286,92 @@ def test_oauth_discovery_paths_return_json_not_html(asgi_app, path):
         ) as c:
             return await c.get(path)
 
-    resp = anyio.run(_run)
+    return anyio.run(_run)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/mcp",
+        "/.well-known/oauth-protected-resource/mcp/",
+    ],
+)
+def test_protected_resource_metadata_is_served_as_json(asgi_app, path):
+    """RFC 9728 metadata: the document the 401 challenge points clients at.
+
+    These root paths sit outside every Django prefix; without an explicit route
+    they fall through to Django's styled HTML 404, which a client cannot parse
+    (``Unrecognized token '<'``, #431).
+    """
+    from connect_labs.mcp import oauth
+
+    resp = _get(asgi_app, path)
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json"), resp.headers.get("content-type")
+    assert resp.headers["access-control-allow-origin"] == "*"
+    body = resp.json()
+    assert body["resource"] == oauth.resource_url()
+    assert body["authorization_servers"] == [oauth.public_base_url()]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-authorization-server/mcp",
+    ],
+)
+def test_authorization_server_metadata_is_served_as_json(asgi_app, path):
+    from connect_labs.mcp import oauth
+
+    resp = _get(asgi_app, path)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["issuer"] == oauth.public_base_url()
+    assert body["registration_endpoint"].endswith(oauth.REGISTRATION_PATH)
+    assert body["code_challenge_methods_supported"] == ["S256"]
+
+
+@pytest.mark.parametrize("path", ["/.well-known/openid-configuration", "/.well-known/openid-configuration/mcp"])
+def test_openid_configuration_is_a_json_404_not_django_html(asgi_app, path):
+    resp = _get(asgi_app, path)
 
     assert resp.status_code == 404
     assert resp.headers["content-type"].startswith("application/json"), resp.headers.get("content-type")
-    # Must parse as JSON (would raise on Django's HTML 404 body).
-    body = resp.json()
-    assert body["error"] == "not_found"
+    assert resp.json()["error"] == "not_found"
+
+
+def test_metadata_answers_a_cors_preflight(asgi_app):
+    """A browser-based client reads the metadata cross-origin before anything else."""
+    import anyio
+
+    async def _run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=asgi_app), base_url="http://testserver") as c:
+            return await c.options("/.well-known/oauth-protected-resource/mcp")
+
+    resp = anyio.run(_run)
+
+    assert resp.status_code == 204
+    assert resp.headers["access-control-allow-origin"] == "*"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_an_instance_with_no_public_origin_offers_no_sign_in(asgi_app, settings):
+    """A dev or staging instance must not advertise production's sign-in.
+
+    Every endpoint in the discovery documents is absolute, so an instance that
+    does not know its own origin cannot describe itself — it stays PAT-only,
+    which is what labs was before the sign-in existed.
+    """
+    settings.LABS_PUBLIC_URL = ""
+
+    metadata = _get(asgi_app, "/.well-known/oauth-protected-resource/mcp")
+    challenged = _post_without_valid_auth(asgi_app)
+
+    assert metadata.status_code == 404
+    assert metadata.json()["error"] == "not_found"
+    assert "resource_metadata" not in challenged.headers.get("www-authenticate", "")
+    assert "Personal Access Token" in challenged.json()["error_description"]

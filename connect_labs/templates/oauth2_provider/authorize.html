@@ -1,0 +1,62 @@
+{% extends "oauth2_provider/base.html" %}
+
+{% load i18n %}
+{% block content %}
+    <div class="block-center">
+        {% if not error %}
+            <form id="authorizationForm" method="post">
+                <h3 class="block-center-heading">
+                    {% blocktrans with name=application.name %}Allow {{ name }} to use Connect Labs as you?{% endblocktrans %}
+                </h3>
+                {% csrf_token %}
+
+                {% for field in form %}
+                    {% if field.is_hidden %}
+                        {{ field }}
+                    {% endif %}
+                {% endfor %}
+
+                <p>{% blocktrans with username=request.user.username %}You are signed in as {{ username }}.{% endblocktrans %}</p>
+
+                {% if is_self_registered %}
+                    {# The name above is supplied by the app itself when it registers, and nobody checks it. #}
+                    {# What cannot be faked is where the sign-in is sent, so lead with that. #}
+                    <p>
+                        <strong>{% trans "Check where this sends you:" %}</strong>
+                        <strong>{{ redirect_origin }}</strong>
+                    </p>
+                    <p>
+                        {% blocktrans with name=application.name %}This app calls itself "{{ name }}", but it registered
+                        itself and no one has verified it. Approve it only if you just started connecting it yourself,
+                        and only if the address above is the app you expect.{% endblocktrans %}
+                    </p>
+                {% else %}
+                    <p>{% trans "After you approve, you will be sent to" %} <strong>{{ redirect_origin }}</strong></p>
+                {% endif %}
+
+                <p>{% trans "It will be able to:" %}</p>
+                <ul>
+                    {% for scope in scopes_descriptions %}
+                        <li>{{ scope }}</li>
+                    {% endfor %}
+                </ul>
+
+                <p>{% trans "You can revoke access at any time." %}</p>
+
+                {{ form.errors }}
+                {{ form.non_field_errors }}
+
+                <div class="control-group">
+                    <div class="controls">
+                        <input type="submit" class="btn btn-large" value="{% trans 'Cancel' %}"/>
+                        <input type="submit" class="btn btn-large btn-primary" name="allow" value="{% trans 'Approve' %}"/>
+                    </div>
+                </div>
+            </form>
+
+        {% else %}
+            <h2>{% trans "Error:" %} {{ error.error }}</h2>
+            <p>{{ error.description }}</p>
+        {% endif %}
+    </div>
+{% endblock %}
