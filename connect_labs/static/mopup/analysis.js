@@ -631,6 +631,17 @@ window.MopupAnalysis = (function () {
 
   let pollTimer = null;
   let dataReady = false;
+  let recomputeDebounceTimer = null;
+
+  // Every threshold/setting change recomputes automatically -- no explicit
+  // "Recompute" button. Debounced so a rapid-fire burst (holding down a
+  // number input's spinner, or a checkbox + its dependent fields both
+  // changing at once) collapses into one request rather than one per event.
+  function scheduleRecompute() {
+    if (!dataReady) return;
+    clearTimeout(recomputeDebounceTimer);
+    recomputeDebounceTimer = setTimeout(pollOrEvaluate, 300);
+  }
 
   function showLoadingPanel(message) {
     $('loading-panel').classList.remove('hidden');
@@ -664,6 +675,7 @@ window.MopupAnalysis = (function () {
     if (dataReady) {
       indicatorConfigs = collectIndicatorConfigs();
       globalConfig = collectGlobalConfig();
+      $('status').textContent = 'Updating…';
     }
     try {
       const resp = await fetch(CFG.candidatesUrl, {
@@ -940,14 +952,14 @@ window.MopupAnalysis = (function () {
     renderIndicatorRows();
     renderGlobalConfig();
     applyIndicatorRowStates(); // re-apply now that the real filter state is loaded
-    $('cfg-cluster-filter-enabled').addEventListener(
-      'change',
-      applyIndicatorRowStates,
-    );
+    $('cfg-cluster-filter-enabled').addEventListener('change', () => {
+      applyIndicatorRowStates();
+      scheduleRecompute();
+    });
     $('indicator-rows').addEventListener('change', (e) => {
       if (e.target.classList.contains('ind-enabled')) applyIndicatorRowStates();
+      scheduleRecompute();
     });
-    $('recompute').addEventListener('click', pollOrEvaluate);
     $('loading-retry').addEventListener('click', retryLoad);
     $('sort-severity').addEventListener('click', () => {
       severitySortDesc = !severitySortDesc;
