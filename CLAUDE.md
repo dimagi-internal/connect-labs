@@ -346,14 +346,26 @@ FastMCP 3.x Streamable-HTTP ASGI app mounted in `config/asgi.py`; the catalog
 registers **107 tools** (write tools are rate-limited and fully argument-logged
 to `MCPAuditLog`).
 
-**Auth:** Personal Access Tokens (PAT) — a deliberate permanent design, not a
-placeholder. Labs is a PAT-only resource server, **not** an OAuth authorization
-server: `config/asgi.py` actively suppresses OAuth discovery so clients never
-attempt that flow. Mint/rotate tokens self-service at `/labs/mcp/tokens/`
-(the `labs-token-setup` skill automates this).
+**Auth:** two ways in, both resolving to the same labs user (tools run as that
+user, audit rows attribute to them):
 
-**Setup:** see `docs/MCP_SETUP.md` (note: parts of that doc predate the
-current catalog and the self-service token UI).
+- **Standard MCP sign-in (OAuth 2.1)** — for people. Any MCP client adds the URL
+  and signs in through the browser; nothing is client-specific. The 401 names
+  the protected-resource metadata, labs' own OAuth server (django-oauth-toolkit
+  at `/o/`) issues the token, and clients self-register at `/o/register/`.
+  Tokens carry only the `mcp` scope and MCP clients can hold no other, so an MCP
+  sign-in never becomes a key to labs' other OAuth APIs. See
+  `connect_labs/mcp/oauth.py`; discovery routes are in `config/asgi.py`.
+- **Personal Access Tokens (PAT)** — for scripts and headless agents. Mint/rotate
+  self-service at `/labs/mcp/tokens/` (the `labs-token-setup` skill automates
+  this). The verifier tries a PAT first, then an OAuth token.
+
+Labs was PAT-only until 2026-09-11, with OAuth discovery deliberately suppressed
+(#431) because nothing stood behind it. It was changed so labs works like any
+other remote MCP server. Do not reintroduce the suppression: a client's 401
+must keep naming the metadata, or sign-in stops working for every client.
+
+**Setup:** see `docs/MCP_SETUP.md`.
 
 ### MCP-powered skills
 

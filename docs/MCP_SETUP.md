@@ -1,82 +1,113 @@
 # Labs MCP Setup
 
-> **Status (2026-07-25 doc-regen):** partially outdated — the catalog now registers 86 tools (not 'empty, Plan 1'), tokens are minted self-service at `/labs/mcp/tokens/` (create/revoke/rotate; no shell access needed), and the endpoint is a FastMCP Streamable-HTTP ASGI app. The `.claude/mcp.json` snippet and troubleshooting steps below still work.
+The labs MCP server is a standard remote MCP server at:
 
-This guide gets Claude Code connected to the labs MCP server so you can iterate
-on workflows and pipelines without copy-pasting through the web UI.
+    https://labs.connect.dimagi.com/mcp/
 
-## Prerequisites
+(Streamable HTTP.) Any MCP client can connect to it. Tools run as you, with
+your Connect permissions.
 
-- An account on labs (`labs.connect.dimagi.com`).
-- Claude Code installed (CLI, desktop, or IDE extension). Web (claude.ai/code)
-  also works.
-- Shell access to the labs host, *or* ask an admin to create a token for you.
+## Connect — people
 
-## 1. Create a Personal Access Token
+1. Add `https://labs.connect.dimagi.com/mcp/` to your MCP client as a remote
+   (HTTP) server.
+2. When the client says the server needs authentication, sign in. It opens the
+   labs login in your browser; sign in with Connect and approve the client.
 
-An admin (or you, if you have shell access) runs:
+That is the whole setup. The client does the rest by following the MCP
+authorization spec: it finds the sign-in from the server's 401, registers
+itself, and runs an OAuth 2.1 authorization-code flow with PKCE.
 
-    python manage.py mcp_create_token --user <your-username> --name <label>
+For example, in Claude Code:
 
-The command prints a `Token: <raw>` line **once**. Copy it immediately — it
-cannot be retrieved later. If you lose it, create a new one.
+    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/
 
-## 2. Add the server to `.claude/mcp.json`
+then run `/mcp`, pick `connect_labs` and authenticate.
 
-The `mcp_create_token` command prints a ready-to-paste snippet. Drop it into
-your `~/.claude/mcp.json` (or your project's `.claude/mcp.json`):
+To see or disconnect the apps you have signed in, visit
+`https://labs.connect.dimagi.com/labs/mcp/tokens/` — the same page that manages
+Personal Access Tokens. Use that rather than the OAuth toolkit's own
+`/o/authorized_tokens/` page: that one deletes the access token but leaves the
+refresh token, so the app signs itself back in.
 
-    {
-      "mcpServers": {
-        "connect_labs": {
-          "type": "http",
-          "url": "https://labs.connect.dimagi.com/mcp/",
-          "headers": {
-            "Authorization": "Bearer <your-raw-token>"
-          }
-        }
-      }
-    }
+## Connect — scripts and headless agents
 
-If you already have other MCP servers configured, merge under the same
-`mcpServers` key.
+A process with no browser uses a Personal Access Token (PAT) instead:
 
-## 3. Restart Claude Code
+1. Create one at `https://labs.connect.dimagi.com/labs/mcp/tokens/` (create,
+   rotate, revoke). The raw token is shown once — copy it then.
+2. Send it as `Authorization: Bearer <token>`. For a client that takes a JSON
+   config:
 
-Restart the CLI, desktop app, IDE, or reload the web tab. Check that Claude
-can list the labs tools:
+       {
+         "mcpServers": {
+           "connect_labs": {
+             "type": "http",
+             "url": "https://labs.connect.dimagi.com/mcp/",
+             "headers": {
+               "Authorization": "Bearer <your-raw-token>"
+             }
+           }
+         }
+       }
 
-> "List available labs MCP tools"
+   In Claude Code, add it with
+   `claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/ --header "Authorization: Bearer <token>"`
+   (user scope lives in `~/.claude.json`, project scope in `.mcp.json`;
+   `~/.claude/mcp.json` is not read). Or run `/labs-token-setup` from a
+   connect-labs checkout, which mints the token and registers the server.
 
-In Plan 1 the catalog is empty — you'll see no tools yet. Plan 2 (workflow +
-pipeline tools) is what actually enables iteration. This step just verifies
-connectivity and auth.
+## How the sign-in works
+
+- An unauthenticated request to `/mcp/` gets a 401 whose `WWW-Authenticate`
+  names `/.well-known/oauth-protected-resource/mcp` (RFC 9728).
+- That document names labs as the authorization server; its metadata is at
+  `/.well-known/oauth-authorization-server` (RFC 8414).
+- The client registers at `/o/register/` (RFC 7591) and signs the user in
+  through `/o/authorize/` and `/o/token/` — labs' existing OAuth server
+  (django-oauth-toolkit), whose login is the labs login.
+- The token it gets carries only the `mcp` scope, and MCP clients can hold no
+  other. Tokens for labs' other OAuth APIs are refused by the MCP server, and an
+  MCP token is refused by labs' REST API — the separation holds both ways.
+- Clients register themselves, so the name on the consent screen is whatever the
+  app called itself. The screen says so and shows where the sign-in will be
+  sent; approve only an app you just started connecting.
+- The token is bound to this server by scope and by the registered client, not
+  by an audience (`resource`) claim. Labs has one MCP resource today, so there
+  is nowhere else such a token could be replayed.
+
+Implementation: `connect_labs/mcp/oauth.py` (and the discovery routes in
+`config/asgi.py`).
 
 ## Troubleshooting
 
-**401 Unauthorized** — Token missing, typoed, expired, or revoked. Create
-a new one.
+**401 Unauthorized** — the body says which failure it was: no
+`Authorization` header at all (a PAT header helper that fails silently sends
+none), or a token that is unknown, expired or revoked. Sign in again, or
+rotate the PAT.
 
-**Cannot connect** — Confirm the URL. Some corporate networks block labs;
-try from a non-corp network to isolate.
+**Tools fail with "No Connect OAuth token stored"** — tools act on Connect as
+you, so labs needs your Connect login. Sign in at
+`https://labs.connect.dimagi.com/labs/login/` once in a browser.
 
-**Unexpected tool failures in Plan 2+** — Check `https://labs.connect.dimagi.com/admin/mcp/mcpauditlog/`
-(if you have admin access). Every tool call is logged with the error code.
+**A headless agent's PAT expired and its client offered to sign in** — that is
+the browser flow taking over, and whoever is signed in to that browser is who
+the agent would then act as. For an agent with its own identity, rotate the PAT
+rather than signing in: `https://labs.connect.dimagi.com/labs/mcp/tokens/`.
+
+**Cannot connect** — confirm the URL. Some corporate networks block labs; try
+from a non-corp network to isolate.
+
+**Unexpected tool failures** — check
+`https://labs.connect.dimagi.com/admin/mcp/mcpauditlog/` (if you have admin
+access). Every tool call is logged with the error code.
 
 ## Token hygiene
 
-- Treat your PAT like a password. Store it in a password manager or your
-  OS keychain. Do not commit to git.
-- Default lifetime is 90 days. Pass `--ttl-days 0` at creation for no expiry,
-  but rotate periodically.
-- Admins can revoke any token in the Django admin at
+- Treat a PAT like a password. Store it in a password manager or your OS
+  keychain. Do not commit it to git.
+- PATs default to 90 days and never exceed 365.
+- Sign-in access tokens last two weeks and the client refreshes them
+  indefinitely; disconnect an app at `/labs/mcp/tokens/` to end that.
+- Admins can revoke any PAT in the Django admin at
   `/admin/mcp/mcpaccesstoken/`.
-
-## Which MCP surface?
-
-| Surface | Supported? | Notes |
-|---|---|---|
-| Claude Code CLI | Yes | stdio + remote both work |
-| Claude Code desktop (Mac/Windows) | Yes | same `.claude/mcp.json` |
-| IDE extensions (VS Code, JetBrains) | Yes | same config |
-| Claude web (claude.ai/code) | Yes | this is the reason we went remote |

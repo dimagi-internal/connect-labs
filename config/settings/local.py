@@ -23,6 +23,11 @@ CSRF_TRUSTED_ORIGINS = ["https://*.127.0.0.1", "https://*.loca.lt"] + env.list("
 # }
 INTERNAL_IPS = ["127.0.0.1", "10.0.2.2"]
 
+# The origin MCP clients connect to, named in the sign-in's discovery documents.
+# Must be THIS instance: pointing it at production would send a local sign-in to
+# prod and return a token this server cannot accept.
+LABS_PUBLIC_URL = env("LABS_PUBLIC_URL", default="http://localhost:8000")
+
 # Celery
 # ------------------------------------------------------------------------------
 # Set CELERY_TASK_ALWAYS_EAGER=False in .env to use real async with a Celery worker

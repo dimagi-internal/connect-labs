@@ -42,6 +42,12 @@ MIDDLEWARE = list(MIDDLEWARE)  # noqa: F405
 _auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddleware")
 MIDDLEWARE.insert(_auth_idx + 1, "connect_labs.campaign.middleware.CampaignOAuthSessionMiddleware")
 
+# MCP sign-in
+# ------------------------------------------------------------------------------
+# A fixed origin so the discovery documents are assertable. Tests that care about
+# the unconfigured case set it to "" themselves.
+LABS_PUBLIC_URL = "https://labs.connect.dimagi.com"
+
 # CommCareConnect
 # ------------------------------------------------------------------------------
 
