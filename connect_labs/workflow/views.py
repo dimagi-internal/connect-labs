@@ -2213,12 +2213,22 @@ def run_history_api(request, definition_id):
     their member opportunities, so the history is complete wherever the page is
     opened from.
     """
+    from connect_labs.workflow import history_cache
     from connect_labs.workflow.snapshot_runtime import project_state
 
     keys = [k.strip() for k in (request.GET.get("keys") or "").split(",") if k.strip()]
     if not keys:
         return JsonResponse({"error": "keys is required: comma-separated paths under the snapshot state"}, status=400)
+    # The answer depends on the scope it was read in (list_runs fans out differently
+    # for a program), so that is part of the key.
+    labs_context = getattr(request, "labs_context", {}) or {}
+    opp = labs_context.get("opportunity_id") or request.GET.get("opportunity_id")
+    program = labs_context.get("program_id") or request.GET.get("program_id")
+    scope_key = f"opp{opp}" if opp else (f"prog{program}" if program else "none")
     try:
+        cached = history_cache.get(definition_id, scope_key, keys)
+        if cached is not None:
+            return JsonResponse({"runs": cached, "cached": True})
         wf_access = WorkflowDataAccess(request=request)
         try:
             runs = wf_access.list_runs(definition_id=definition_id)
@@ -2241,6 +2251,7 @@ def run_history_api(request, definition_id):
                 }
             )
         out.sort(key=lambda r: (str(r["period_end"] or ""), str(r["completed_at"] or "")))
+        history_cache.store(definition_id, scope_key, keys, out)
         return JsonResponse({"runs": out})
     except Exception:
         logger.exception("Failed to build run history for definition %s", definition_id)

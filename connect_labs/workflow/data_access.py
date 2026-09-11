@@ -1198,12 +1198,15 @@ class WorkflowDataAccess(BaseDataAccess):
         deleted_counts = {"run": 0, "audit_sessions": 0}
 
         ids_to_delete: list[int] = []
+        # Read once, BEFORE anything is deleted: the definition this run belonged
+        # to is what the history cache is keyed by.
+        doomed_run = self.get_run(run_id)
 
         if delete_linked:
             # Audits are gathered across every opportunity the run spans (a
             # multi-opp run creates audits in several opps), not just the
             # primary — otherwise non-primary opps' audits orphan on delete.
-            run = self.get_run(run_id)
+            run = doomed_run
             definition = self.get_definition(run.definition_id) if (run and run.definition_id) else None
             opp_ids = self._definition_opportunity_ids(definition)
             if run is not None and getattr(run, "opportunity_id", None) and run.opportunity_id not in opp_ids:
@@ -1222,6 +1225,11 @@ class WorkflowDataAccess(BaseDataAccess):
 
         # Single batch delete
         self.labs_api.delete_records(ids_to_delete)
+
+        # One point fewer on every trend that reads this definition.
+        from connect_labs.workflow.history_cache import invalidate
+
+        invalidate(getattr(doomed_run, "definition_id", None))
 
         return deleted_counts
 
@@ -1344,6 +1352,10 @@ class WorkflowDataAccess(BaseDataAccess):
             current_record=run,
         )
         if result:
+            # A new point on every trend that reads this definition.
+            from connect_labs.workflow.history_cache import invalidate
+
+            invalidate(run.definition_id)
             return WorkflowRunRecord(
                 {
                     "id": result.id,
