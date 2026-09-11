@@ -18,6 +18,12 @@ urlpatterns = [
     path("mcp/tokens/create/", mcp_token_views.tokens_create, name="mcp_tokens_create"),
     path("mcp/tokens/<int:pk>/revoke/", mcp_token_views.tokens_revoke, name="mcp_tokens_revoke"),
     path("mcp/tokens/<int:pk>/rotate/", mcp_token_views.tokens_rotate, name="mcp_tokens_rotate"),
+    # Signed-in MCP clients (the OAuth half of the same page)
+    path(
+        "mcp/clients/<int:pk>/disconnect/",
+        mcp_token_views.clients_disconnect,
+        name="mcp_clients_disconnect",
+    ),
     # Connect OAuth (for labs authentication)
     path("login/", connect_oauth_views.labs_login_page, name="login"),
     path("initiate/", connect_oauth_views.labs_oauth_login, name="oauth_initiate"),
