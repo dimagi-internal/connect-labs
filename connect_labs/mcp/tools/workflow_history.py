@@ -19,7 +19,14 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
+from ..progress import NULL_PROGRESS
 from ..tool_registry import MCPToolError, register
+
+# Periods per call. ~12s each on a ~9,000-case cohort, so a default batch finishes
+# in about a minute -- long enough to make real progress, short enough that no
+# client or load balancer gives up on it, and the per-period progress ping covers
+# the rest.
+DEFAULT_BATCH = 6
 
 
 def _wda_for_user(user, opportunity_id: int | None = None, program_id: int | None = None):
@@ -50,6 +57,7 @@ def _parse_date(value: str | None, field: str) -> dt.date | None:
 _ERROR_CLASS = {
     "no_definition": "NOT_FOUND",
     "cache_miss": "UPSTREAM_ERROR",
+    "build_failed": "UPSTREAM_ERROR",
 }
 
 
@@ -116,11 +124,17 @@ def _mcp_error(e) -> MCPToolError:
         "WHAT IT REPLACES. Only runs THIS operation previously created (stamped in run "
         "state). A run a person created by hand for the same period is left alone. Pass "
         "replace=false to skip any period that already has a run of any kind.\n\n"
-        "COST. Each period is a full evaluation of the cohort -- order 10s apiece, so a "
-        "year of weekly history is minutes, not seconds. The workflow's pipeline data "
-        "must already be cached; if it is not, the call stops at the first period rather "
-        "than failing every one. Use dry_run=true to see the plan and the period count "
-        "before paying for it.\n\n"
+        "ROLLING -- CALL IT REPEATEDLY. Each period is a full evaluation of the cohort, order "
+        "10s apiece, so a year of weekly history is ~70 of them: far too long for one request. "
+        "Each call therefore builds at most `limit` periods (default 6) and returns `done` and a "
+        "`next_start` cursor. Until `done` is true, call again with start=<next_start> and "
+        "end=<the end this report returned>, so every batch walks the same window. A batch is "
+        "idempotent, so one cut off mid-flight is simply re-run.\n\n"
+        "CHECK FIRST. Before writing a whole history, grade one date with "
+        "workflow_preview_as_of and compare it to the reference figures; it uses the same builder "
+        "and persists nothing. dry_run=true shows the full plan and period count without writing. "
+        "The pipeline data must already be cached; if it is not, the call stops at the first "
+        "period rather than failing every one.\n\n"
         "start defaults to the earliest dated row in the workflow's own case index, and "
         "end to the last COMPLETE period before today. Provide exactly one of "
         "opportunity_id / program_id, as for workflow_save_snapshot."
@@ -162,13 +176,23 @@ def _mcp_error(e) -> MCPToolError:
             },
             "dry_run": {
                 "type": "boolean",
-                "description": "Report the periods and what would happen to each, writing nothing.",
+                "description": "Report every period in the range and what would happen to each, writing nothing.",
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 26,
+                "description": (
+                    "Most periods to build in this call (default 6). The report's `next_start` is where "
+                    "the next call begins."
+                ),
             },
         },
         "required": ["definition_id"],
         "additionalProperties": False,
     },
     is_write=True,
+    wants_progress=True,
 )
 def workflow_rebuild_history(
     user,
@@ -181,6 +205,8 @@ def workflow_rebuild_history(
     end: str | None = None,
     replace: bool = True,
     dry_run: bool = False,
+    limit: int = DEFAULT_BATCH,
+    progress=NULL_PROGRESS,
 ) -> dict[str, Any]:
     from connect_labs.labs.integrations.connect.api_client import LabsAPIError
     from connect_labs.workflow.history_rebuild import HistoryRebuildError, rebuild_history
@@ -204,6 +230,8 @@ def workflow_rebuild_history(
                 program_id=program_id,
                 replace=replace,
                 dry_run=dry_run,
+                limit=limit,
+                progress=progress,
             )
         except HistoryRebuildError as e:
             raise _mcp_error(e) from e
@@ -281,5 +309,80 @@ def workflow_history_eligibility(
             "generated_runs": generated,
             "manual_runs": manual,
         }
+    finally:
+        wda.close()
+
+
+@register(
+    name="workflow_preview_as_of",
+    description=(
+        "Grade a periodic workflow's indicators AS OF a date, exactly as a rebuilt snapshot for "
+        "that date would, and PERSIST NOTHING -- no run is created, completed or deleted.\n\n"
+        "WHAT IT IS FOR. The check before workflow_rebuild_history: grade one date, compare the "
+        "figures to the reference you trust, and only write history once they agree. It runs the "
+        "same builder a rebuilt run uses, with an in-memory run dated `as_of`, so a match here is "
+        "a match in the snapshots -- not a parallel computation that could agree while they do "
+        "not.\n\n"
+        "WHAT COMES BACK. The programme and per-LLO cells for the primary series (`programme`, "
+        "`byLLO`) and for every further series under `series.<name>` -- e.g. `series.N` for the "
+        "KMC 15-metric scorecard. Each cell is {id, value, n, band}; `n` is the denominator. Plus "
+        "`meta` (cohort size as of the date) and `cache`: check cache.partial_cache before "
+        "trusting totals, because a partially cached cohort understates every count while "
+        "looking exactly like a genuine disagreement. The case index and per-worker cells are "
+        "left out -- they are most of a snapshot's size and none of a comparison. Pass "
+        "include_opportunities=true for per-opportunity cells.\n\n"
+        "Eligibility is the same as for workflow_rebuild_history. Provide exactly one of "
+        "opportunity_id / program_id."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "definition_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "program_id": {"type": "integer"},
+            "as_of": {"type": "string", "description": "ISO date (YYYY-MM-DD) to grade as of."},
+            "include_opportunities": {
+                "type": "boolean",
+                "description": "Also return per-opportunity cells. Default false.",
+            },
+        },
+        "required": ["definition_id", "as_of"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def workflow_preview_as_of(
+    user,
+    *,
+    definition_id: int,
+    as_of: str,
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
+    include_opportunities: bool = False,
+) -> dict[str, Any]:
+    from connect_labs.labs.integrations.connect.api_client import LabsAPIError
+    from connect_labs.workflow.history_rebuild import HistoryRebuildError, preview_as_of
+
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+    as_of_date = _parse_date(as_of, "as_of")
+    if as_of_date is None:
+        raise MCPToolError("INVALID_SCHEMA", "as_of is required (YYYY-MM-DD).")
+
+    wda = _wda_for_user(user, opportunity_id=opportunity_id, program_id=program_id)
+    try:
+        try:
+            return preview_as_of(
+                wda,
+                definition_id,
+                as_of=as_of_date,
+                opportunity_id=opportunity_id,
+                program_id=program_id,
+                include_opportunities=include_opportunities,
+            )
+        except HistoryRebuildError as e:
+            raise _mcp_error(e) from e
+        except LabsAPIError as e:
+            _reraise_unreadable(e, definition_id, opportunity_id, program_id)
     finally:
         wda.close()

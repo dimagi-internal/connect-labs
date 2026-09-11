@@ -769,7 +769,7 @@ measures:
     meta:
       {
         indicator: N09,
-        plain: 'Share of qualifying babies (first visit at least 42 days ago, birthweight band known) whose early weight velocity is below the plausible range for their birthweight band. N09 to N12 share one denominator and sum to 100.',
+        plain: 'Share of qualifying babies (first visit at least 42 days ago, birthweight band known, and an early growth velocity that can be computed) whose early weight velocity is below the plausible range for their birthweight band. N09 to N12 share one denominator and sum to 100.',
         category: Growth quality,
         prominence: Top,
         unit: '%',
@@ -778,7 +778,7 @@ measures:
         bands_source: 'the workbook C11 thresholds (0.15/0.3), rescaled. PROVISIONAL: C11 is of-assessable and this is of-qualifying, so the denominators differ',
         min_denominator: 20,
         flw_applicable: false,
-        note: 'Share of QUALIFYING SVNs (eligible_42d AND banded). N09-N12 share one denominator and sum to 100%.',
+        note: 'Share of QUALIFYING SVNs (eligible_42d AND banded AND velocity computable). Babies with no computable velocity are discarded, not counted. N09-N12 share one denominator and sum to 100%.',
       }
   - name: n09_numerator
     type: count
@@ -793,7 +793,7 @@ measures:
     meta:
       {
         indicator: N10,
-        plain: 'Share of qualifying babies whose early weight velocity is within the plausible range for their birthweight band (healthy growth).',
+        plain: 'Share of qualifying babies whose early weight velocity is within the plausible range for their birthweight band (healthy growth) -- a rate among babies whose growth could actually be measured.',
         category: Growth quality,
         prominence: Top,
         unit: '%',
@@ -802,7 +802,7 @@ measures:
         bands_source: 'the workbook C10 thresholds (0.7/0.5), rescaled. PROVISIONAL: C10 is of-assessable and this is of-qualifying, so the denominators differ',
         min_denominator: 20,
         flw_applicable: false,
-        note: 'Share of QUALIFYING SVNs (eligible_42d AND banded). N09-N12 share one denominator and sum to 100%.',
+        note: 'Share of QUALIFYING SVNs (eligible_42d AND banded AND velocity computable). Babies with no computable velocity are discarded, not counted. N09-N12 share one denominator and sum to 100%.',
       }
   - name: n10_numerator
     type: count
@@ -826,7 +826,7 @@ measures:
         bands_source: 'the workbook C12 thresholds (0.15/0.3), rescaled. PROVISIONAL: same denominator caveat as n09 and n10',
         min_denominator: 20,
         flw_applicable: false,
-        note: 'Share of QUALIFYING SVNs (eligible_42d AND banded). N09-N12 share one denominator and sum to 100%.',
+        note: 'Share of QUALIFYING SVNs (eligible_42d AND banded AND velocity computable). Babies with no computable velocity are discarded, not counted. N09-N12 share one denominator and sum to 100%.',
       }
   - name: n11_numerator
     type: count
@@ -841,16 +841,16 @@ measures:
     meta:
       {
         indicator: N12,
-        plain: 'Share of qualifying babies whose growth cannot be classified: velocity not computable, or the series is thin (under 3 weigh-days), inconsistent (first visit weight under 60 percent of birthweight) or contains an impossible step.',
+        plain: 'Share of qualifying babies whose weight series is present but unreliable -- thin (under 3 weigh-days), inconsistent (first visit weight under 60 percent of birthweight) or containing an impossible step -- so no growth class is assigned. Babies with no computable velocity are not counted here: they were discarded from the denominator.',
         category: Growth quality,
         prominence: Top,
         unit: '%',
         direction: lower,
         bands: [25, 45],
-        bands_source: 'derived from the spec section 5 table (observed 25-66 percent incomplete) - PROVISIONAL',
+        bands_source: 'derived from the v3 spec section 5 table (observed 10-50 percent incomplete, All 16) - PROVISIONAL',
         min_denominator: 20,
         flw_applicable: false,
-        note: 'Everything not slow/healthy/fast - unreliable or not computable. A DIFFERENT denominator from C10; do not mix them.',
+        note: 'Qualifying cases with no growth class, i.e. computable but not sufficient. NOT the discarded no-velocity babies and NOT missing-birthweight babies. Inside the N09-N12 100%.',
       }
   - name: n12_numerator
     type: count

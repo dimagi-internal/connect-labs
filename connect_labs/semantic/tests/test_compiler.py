@@ -202,6 +202,52 @@ def test_the_growth_quality_shares_share_one_denominator(registry):
     assert "qualifying" in dens.pop()
 
 
+def test_a_qualifying_svn_must_have_a_computable_velocity():
+    """Neal's compute spec v3, section 3: qualifying = eligible_42d AND banded AND
+    weight_gain_data_computable.
+
+    v1 of the spec -- and this registry until 2026-09-10 -- left out the third
+    term. That kept every baby with no usable weight series in the N09-N12
+    denominator and counted it as "incomplete", so it read as poor growth: PIPN's
+    healthy-growth share came out at 59 percent against v3's 72, and GHI's at 26
+    against 39. Nothing caught it, because nothing pinned the N-series to the spec;
+    this does.
+
+    Pinned against properties.yml, which seeds the live registry record -- so a
+    reseed from disk cannot quietly put the error back.
+    """
+    import yaml as _yaml
+
+    props = {p["name"]: p for p in _yaml.safe_load((REGISTRY / "properties.yml").read_text())["properties"]}
+    sql = props["qualifying_spec"]["sql"]
+    for term in ("eligible_42d_spec", "birthweight_band IS NOT NULL", "computable_spec"):
+        assert term in sql, f"qualifying_spec is missing {term!r}: {sql}"
+
+
+def test_incomplete_growth_data_is_only_the_unreliable_qualifying_cases(registry):
+    """v3 item 12: incomplete = computable AND NOT sufficient, over qualifying.
+
+    The numerator is written as `qualifying AND growth_class IS NULL`. That equals
+    v3's definition ONLY because qualifying now requires a computable velocity and
+    a birthweight band: growth_class is null exactly when a case is not sufficient
+    or has no band, and qualifying has already excluded no-band. Without the
+    computable term the same expression swept the discarded no-data babies back
+    into "incomplete". So the numerator and the denominator's definition are pinned
+    together -- change either alone and N09-N12 stop partitioning the right set.
+    """
+    import yaml as _yaml
+
+    by_name = {m["name"]: m for m in registry["measures"]}
+    num = by_name["n12_numerator"]["filters"][0]["sql"]
+    assert "qualifying_spec" in num and "growth_class_spec IS NULL" in num
+
+    props = {p["name"]: p for p in _yaml.safe_load((REGISTRY / "properties.yml").read_text())["properties"]}
+    growth = props["growth_class_spec"]["sql"]
+    assert "NOT sufficient_spec THEN NULL" in growth
+    assert "birthweight_band IS NULL THEN NULL" in growth
+    assert "computable_spec" in props["qualifying_spec"]["sql"]
+
+
 def test_the_banded_growth_table_is_neals_not_a_flat_guess(registry):
     """The C-series still carries a flat PLAUSIBLE_LO/HI 10-20 marked PROVISIONAL. The
     N-series must use the per-birthweight-band table, because a flat band is wrong at

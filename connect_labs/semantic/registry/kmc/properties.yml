@@ -412,8 +412,8 @@ properties:
 
   - name: qualifying_spec
     type: bool
-    sql: 'eligible_42d_spec AND birthweight_band IS NOT NULL'
-    notes: 'Spec 3: qualifying SVN = eligible_42d AND birthweight_band is not null. The one denominator of N09-N12.'
+    sql: 'eligible_42d_spec AND birthweight_band IS NOT NULL AND computable_spec'
+    notes: 'Spec v3 section 3: qualifying SVN = eligible_42d AND birthweight_band is not null AND weight_gain_data_computable. Babies with no computable velocity are DISCARDED before the growth question is asked -- not counted as incomplete. The one denominator of N09-N12, which partition it and sum to 100. (v1 omitted the computable gate, which counted no-data babies against healthy growth: PIPN read 59 percent instead of 72.)'
 
   - name: eligible_28d
     type: bool
