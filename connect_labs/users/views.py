@@ -14,13 +14,13 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 from django.views.generic import FormView, View
-from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from connect_labs.mcp.oauth import MCPAwareOAuth2Authentication
 from connect_labs.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from connect_labs.users.forms import ManualUserOTPForm
 from connect_labs.utils.db import get_object_or_list_by_uuid_or_int
@@ -58,7 +58,10 @@ create_user_link_view = CreateUserLinkView.as_view()
 
 @csrf_exempt
 @api_view(["POST"])
-@authentication_classes([OAuth2Authentication])
+# The MCP-aware class, not the toolkit's: a view-level decorator overrides
+# DEFAULT_AUTHENTICATION_CLASSES, so the plain one would accept an MCP token here
+# even though this API is not what an MCP sign-in consents to.
+@authentication_classes([MCPAwareOAuth2Authentication])
 def start_learn_app(request):
     opportunity_id = request.POST.get("opportunity")
     if opportunity_id is None:
