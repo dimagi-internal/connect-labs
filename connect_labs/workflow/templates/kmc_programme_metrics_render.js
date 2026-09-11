@@ -2351,6 +2351,8 @@ function WorkflowUI({
                         <a
                           className="inline-block px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 text-indigo-700 hover:bg-indigo-50 bg-white"
                           href={reviewUrl}
+                          target="_blank"
+                          rel="noopener"
                           onClick={function (ev) {
                             ev.stopPropagation();
                           }}
@@ -2427,6 +2429,8 @@ function WorkflowUI({
               <a
                 className="inline-block px-3 py-1.5 rounded-md text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700"
                 href={reviewUrl}
+                target="_blank"
+                rel="noopener"
               >
                 Open worker review →
               </a>
@@ -2498,7 +2502,12 @@ function WorkflowUI({
             </div>
             {reviewUrl ? (
               <div className="px-4 py-2 text-xs border-t border-gray-100">
-                <a className="text-indigo-600 hover:underline" href={reviewUrl}>
+                <a
+                  className="text-indigo-600 hover:underline"
+                  href={reviewUrl}
+                  target="_blank"
+                  rel="noopener"
+                >
                   {'All ' +
                     caseRows.length +
                     ' cases, growth charts and the image audit in the worker review →'}

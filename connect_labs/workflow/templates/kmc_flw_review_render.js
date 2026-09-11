@@ -966,6 +966,15 @@ function WorkflowUI({
   var sCaseRows = React.useState({ status: 'idle', byCase: {}, error: null });
   var caseRows = sCaseRows[0],
     setCaseRows = sCaseRows[1];
+  // Retry is a new request, not a re-render: bumping this re-runs the effect.
+  var sCaseTry = React.useState(0);
+  var caseTry = sCaseTry[0],
+    setCaseTry = sCaseTry[1];
+  // Seconds since the request went out, so a slow table says it is working
+  // rather than looking empty.
+  var sCaseElapsed = React.useState(0);
+  var caseElapsed = sCaseElapsed[0],
+    setCaseElapsed = sCaseElapsed[1];
   var flwKeyForRows = flw ? flw.key : null;
   var asOfForRows = (P.meta && P.meta.as_of) || '';
   React.useEffect(
@@ -983,6 +992,12 @@ function WorkflowUI({
       }
       var cancelled = false;
       setCaseRows({ status: 'loading', byCase: {}, error: null });
+      setCaseElapsed(0);
+      var started = Date.now();
+      var tick = window.setInterval(function () {
+        if (!cancelled)
+          setCaseElapsed(Math.round((Date.now() - started) / 1000));
+      }, 1000);
       var sp = scopeParams();
       fetch(
         '/labs/workflow/api/' +
@@ -996,9 +1011,23 @@ function WorkflowUI({
         { credentials: 'same-origin' },
       )
         .then(function (r) {
-          return r.json().then(function (j) {
-            return { ok: r.ok, j: j };
-          });
+          // A gateway timeout comes back as an HTML page, not JSON; say what
+          // happened instead of surfacing a JSON parse error.
+          return r
+            .json()
+            .catch(function () {
+              return {
+                error:
+                  r.status === 504 || r.status === 502
+                    ? 'the server took too long to compute the case figures (HTTP ' +
+                      r.status +
+                      ')'
+                    : 'the server answered HTTP ' + r.status,
+              };
+            })
+            .then(function (j) {
+              return { ok: r.ok, j: j };
+            });
         })
         .then(function (res) {
           if (cancelled) return;
@@ -1008,9 +1037,11 @@ function WorkflowUI({
           (res.j.rows || []).forEach(function (r) {
             if (r.scope === 'case' && r.case_id) m[String(r.case_id)] = r;
           });
+          window.clearInterval(tick);
           setCaseRows({ status: 'ready', byCase: m, error: null });
         })
         .catch(function (e) {
+          window.clearInterval(tick);
           if (!cancelled)
             setCaseRows({
               status: 'error',
@@ -1020,9 +1051,16 @@ function WorkflowUI({
         });
       return function () {
         cancelled = true;
+        window.clearInterval(tick);
       };
     },
-    [flwKeyForRows, cfg.source_workflow_id, report.status, asOfForRows],
+    [
+      flwKeyForRows,
+      cfg.source_workflow_id,
+      report.status,
+      asOfForRows,
+      caseTry,
+    ],
   );
   function caseScopeRow(c) {
     return caseRows.byCase[c.opportunity_id + '|' + c.entity_id] || null;
@@ -1695,17 +1733,28 @@ function WorkflowUI({
             case&rsquo;s contribution to the column above &middot; click a case
             to open it
           </span>
-          {caseRows.status === 'loading' && (
-            <span className="ml-2 text-xs font-normal text-gray-400">
-              &middot; reading contributions…
-            </span>
-          )}
-          {caseRows.status === 'error' && (
-            <span className="ml-2 text-xs font-normal text-red-600">
-              &middot; {caseRows.error}
-            </span>
-          )}
         </div>
+        {caseRows.status === 'loading' && (
+          <div className="px-4 py-2 text-sm bg-indigo-50 text-indigo-800 border-b border-indigo-100 flex items-center gap-2">
+            <span className="inline-block w-3 h-3 rounded-full border-2 border-indigo-300 border-t-indigo-700 animate-spin" />
+            Computing each case&rsquo;s figures for this worker&hellip;{' '}
+            <span className="tabular-nums text-indigo-500">{caseElapsed}s</span>
+          </div>
+        )}
+        {caseRows.status === 'error' && (
+          <div className="px-4 py-2 text-sm bg-red-50 text-red-800 border-b border-red-100 flex items-center justify-between gap-3">
+            <span>Could not load the case figures: {caseRows.error}</span>
+            <button
+              type="button"
+              className="px-2.5 py-1 rounded-md text-xs font-medium border border-red-200 bg-white text-red-700 hover:bg-red-100"
+              onClick={function () {
+                setCaseTry(caseTry + 1);
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <ScorecardHead

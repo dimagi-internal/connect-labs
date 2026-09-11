@@ -32,12 +32,29 @@ MARKER_BOOLEANS: dict[str, tuple[str, str]] = {
 }
 
 
+# `visit_filter` keys that are real columns of labs_raw_visit_cache, and so can be
+# applied in the extraction's own WHERE. A computed key (baby_case_id) cannot; the
+# compiler applies it after Layer 1, as it applies every key.
+_SCAN_FILTER_COLUMNS = ("opportunity_id", "username")
+
+
+def _scan_filter_sql(visit_filter: dict[str, Any] | None) -> str:
+    if not visit_filter:
+        return ""
+    from connect_labs.semantic.compiler import visit_filter_sql
+
+    scan = {k: v for k, v in visit_filter.items() if k in _SCAN_FILTER_COLUMNS}
+    # The compiler's own clause builder: whitelisted keys, escaped values.
+    return visit_filter_sql(scan)
+
+
 def build_visit_sql(
     pipeline_schema: dict[str, Any],
     opportunity_ids: Iterable[int],
     *,
     generate_sql_preview=None,
     extra_fields: dict[str, Any] | None = None,
+    visit_filter: dict[str, Any] | None = None,
 ) -> str:
     """Return the visit-level SQL for a set of opportunities.
 
@@ -50,7 +67,17 @@ def build_visit_sql(
          pipeline that has cached it, and counting it twice inflates everything,
       3. adds `opportunity_id` (the extraction does not select it) and the marker
          booleans above,
-      4. merges fields from OTHER pipelines via `extra_fields`.
+      4. merges fields from OTHER pipelines via `extra_fields`,
+      5. applies `visit_filter`'s base-column keys (opportunity, worker) in the scan.
+
+    (5) is what makes a one-worker evaluation cost one worker. The compiler also
+    applies the filter, but after this subquery -- and Postgres cannot push a
+    `username` predicate below the DISTINCT ON (it is not a DISTINCT key), so the
+    whole opportunity's visits were extracted, every form path pulled out of every
+    copy, sorted and de-duplicated, only to keep one worker's rows. On the real
+    KMC cohort that put a worker's case table past a minute. In the WHERE, the
+    rows are dropped before the extraction runs. It is the same set: every cached
+    copy of a visit carries the same worker.
 
     (4) is not a convenience. The KMC dashboard reads its weight series from a
     SECOND pipeline ("KMC Weight Series", 5109) whose `weight_g` has five fallback
@@ -103,7 +130,7 @@ def build_visit_sql(
     # statuses -- so what the indicators saw depended on what else existed.
     ex = (
         head
-        + f"WHERE opportunity_id IN ({opp_list}) AND visit_count > 0{filters}\n"
+        + f"WHERE opportunity_id IN ({opp_list}) AND visit_count > 0{filters}{_scan_filter_sql(visit_filter)}\n"
         + "ORDER BY opportunity_id, visit_id, expires_at DESC, pipeline_id"
     )
 
