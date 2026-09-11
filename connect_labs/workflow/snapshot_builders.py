@@ -56,7 +56,7 @@ def semantic_snapshot(
     """
     from connect_labs.semantic import snapshot as snap
     from connect_labs.semantic.runtime import evaluate, filter_to_series, measure_catalog
-    from connect_labs.semantic.workflow_binding import build_evaluate_inputs, resolve_registry_for
+    from connect_labs.semantic.workflow_binding import build_evaluate_inputs, registry_binding, resolve_registry_for
     from connect_labs.workflow.data_access import PipelineDataAccess, SemanticRegistryDataAccess, WorkflowDataAccess
 
     definition_id = context.get("definition_id")
@@ -151,6 +151,10 @@ def semantic_snapshot(
         "llos": len({c.get("llo") for c in cases if c.get("llo")}),
         # The date every figure is AS OF. None means "the day it was built".
         "as_of": as_of_date,
+        # WHICH REGISTRY graded these figures -- a bound record, or the on-disk
+        # built-in. A rebuilt history restates every point under the definitions in
+        # force when it ran, so a point has to be able to say which those were.
+        "registry": {k: v for k, v in registry_binding(definition).items() if k != "note"},
     }
     synthetic = _is_synthetic(opportunity_ids)
     if synthetic is not None:

@@ -185,7 +185,12 @@ def resolve_registry(
             f"this is an error rather than a default."
         )
 
-    record = registry_access.get_registry(int(registry_id))
+    # Read the record where it LIVES when the binding says so (an org-owned registry
+    # bound by an opportunity-owned workflow); otherwise in the accessor's own scope.
+    from connect_labs.workflow.data_access import REGISTRY_HOME_SCOPE_KEYS
+
+    home = {k: source[k] for k in REGISTRY_HOME_SCOPE_KEYS if source.get(k) is not None}
+    record = registry_access.get_registry(int(registry_id), **home)
     if record is None:
         raise SemanticRuntimeError(f"no semantic registry with id {registry_id}")
 

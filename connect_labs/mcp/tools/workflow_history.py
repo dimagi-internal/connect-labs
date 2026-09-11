@@ -301,10 +301,14 @@ def workflow_history_eligibility(
             else:
                 manual += 1
 
+        from connect_labs.semantic.workflow_binding import registry_binding
+
         return {
             "definition_id": definition_id,
             "eligible": ok,
             "reason": reason,
+            # A rebuild restates history under whatever this resolves to -- so say it.
+            "registry": registry_binding(definition),
             "completed_runs": generated + manual,
             "generated_runs": generated,
             "manual_runs": manual,

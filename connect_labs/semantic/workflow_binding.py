@@ -126,3 +126,27 @@ def build_evaluate_inputs(definition, pipeline_access_factory) -> tuple[Any, dic
         pipeline_access.close()
 
     return pipeline_config, extra_fields
+
+
+def registry_binding(definition) -> dict:
+    """Which registry a workflow's indicators come from, stated so a reader cannot miss it.
+
+    `{"source": "record", "registry_id": N, <home scope>}` for a bound record, else
+    `{"source": "disk", "name": <name>, "note": ...}`. The note matters: an unbound
+    workflow reads the on-disk registry, so an indicator edit made to any record
+    does not reach it, and its definitions change only on a deploy. That was the
+    whole failure -- real KMC reports on disk, edits going to a record bound only to
+    the synthetic workflow -- and it was invisible because no surface said which.
+    """
+    source = dict(getattr(definition, "registry_source", None) or {}) if definition else {}
+    if source.get("registry_id") is not None:
+        return {"source": "record", **source}
+    return {
+        "source": "disk",
+        "name": source.get("name") or "kmc",
+        "note": (
+            "Unbound: computes from the on-disk registry, which changes only on a deploy. "
+            "Edits to a registry record do not reach this workflow until it is bound to one "
+            "(workflow_update_definition patch registry_source)."
+        ),
+    }

@@ -742,3 +742,12 @@ class TestPreviewAsOf:
         with pytest.raises(hr.HistoryRebuildError) as e:
             hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10)
         assert e.value.code == "cache_miss"
+
+
+def test_a_preview_states_the_registry_it_graded_with(monkeypatch):
+    # A comparison against a reference means nothing without knowing whether it ran
+    # on a bound record or on the on-disk copy.
+    dao = _DAO(_Definition())
+    _stub_preview_build(monkeypatch, {})
+    out = hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10)
+    assert out["registry"]["source"] == "disk"

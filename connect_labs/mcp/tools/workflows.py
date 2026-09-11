@@ -160,6 +160,8 @@ def workflow_get(
     user, workflow_id: int, opportunity_id: int = None, program_id: int = None, include_render_code: bool = True
 ):
     """Fetch one workflow with all the context needed to edit it."""
+    from connect_labs.semantic.workflow_binding import registry_binding
+
     if (opportunity_id is None) == (program_id is None):
         raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
     token = require_connect_token(user)
@@ -205,6 +207,12 @@ def workflow_get(
         "template_type": definition.template_type,
         "render_code_version": render_code.version if render_code else None,
         "pipeline_sources": enriched_sources,
+        # WHERE THIS WORKFLOW'S INDICATOR DEFINITIONS COME FROM. Unbound means the
+        # built-in on-disk registry, which changes only on a deploy -- and nothing
+        # used to say so: the real KMC reports ran on the on-disk copy for weeks
+        # while edits went to a record that only the synthetic workflow was bound
+        # to. Stated here so the question "which registry is this?" has an answer.
+        "registry": registry_binding(definition),
     }
 
     # Saved-runs metadata — resolved the same way completion resolves it: the
@@ -349,15 +357,28 @@ def _validate_registry_source(value, wda, *, opportunity_id=None, program_id=Non
         raise MCPToolError(
             "INVALID_SCHEMA",
             'registry_source must be a dict: {} for the built-in, {"name": "kmc"} for a '
-            'named on-disk registry, or {"registry_id": <int>} for a live record',
+            'named on-disk registry, or {"registry_id": <int>} for a live record -- optionally with '
+            "the scope the record lives in (organization_id, program_id or opportunity_id)",
         )
-    unknown = set(value) - {"name", "registry_id"}
+    from connect_labs.workflow.data_access import REGISTRY_HOME_SCOPE_KEYS
+
+    unknown = set(value) - {"name", "registry_id", *REGISTRY_HOME_SCOPE_KEYS}
     if unknown:
         raise MCPToolError("INVALID_SCHEMA", f"Unknown registry_source keys: {sorted(unknown)}")
     if "name" in value and "registry_id" in value:
         raise MCPToolError("INVALID_SCHEMA", "registry_source takes name OR registry_id, not both")
     if "name" in value and not isinstance(value["name"], str):
         raise MCPToolError("INVALID_SCHEMA", "registry_source.name must be a string")
+    home = {k: value[k] for k in REGISTRY_HOME_SCOPE_KEYS if value.get(k) is not None}
+    if home and "registry_id" not in value:
+        raise MCPToolError("INVALID_SCHEMA", f"registry_source scope keys {sorted(home)} only apply to a registry_id")
+    if len(home) > 1:
+        raise MCPToolError(
+            "INVALID_SCHEMA", f"registry_source names one home scope for its record, not several: {sorted(home)}"
+        )
+    for k, v in home.items():
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise MCPToolError("INVALID_SCHEMA", f"registry_source.{k} must be an integer")
     if "registry_id" in value:
         try:
             registry_id = int(value["registry_id"])
@@ -376,10 +397,23 @@ def _validate_registry_source(value, wda, *, opportunity_id=None, program_id=Non
             opportunity_id=opportunity_id,
             program_id=program_id,
         )
+        from connect_labs.labs.integrations.connect.api_client import LabsAPIError
+
+        # Resolved exactly as the workflow will resolve it at load -- in the record's
+        # HOME scope when one is named -- so a binding that validates here cannot fail
+        # there for a scoping reason.
+        where = f" in {next(iter(home))}={next(iter(home.values()))}" if home else " in this workflow's scope"
         try:
-            resolve_registry({"registry_id": registry_id}, access)
+            resolve_registry({"registry_id": registry_id, **home}, access)
         except SemanticRuntimeError as exc:
             raise MCPToolError("INVALID_SCHEMA", f"registry_id {registry_id} is not usable: {exc}") from exc
+        except LabsAPIError as exc:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                f"registry_id {registry_id} cannot be read{where}. Reads are an exact scope match, so a "
+                "registry owned by an organization must be bound with that organization_id. "
+                f"Upstream said: {exc}",
+            ) from exc
         finally:
             access.close()
 
@@ -1274,6 +1308,12 @@ def workflow_clone(
             config=new_data.get("config"),
             pipeline_sources=new_data.get("pipeline_sources", []),
             opportunity_ids=new_data.get("opportunity_ids", []),
+            # The comment above promised "any extra fields", but only the four above
+            # were ever passed -- so a clone lost its completion contract and its
+            # registry binding, and computed from different definitions than its
+            # source while looking identical to it.
+            snapshot_inputs=new_data.get("snapshot_inputs"),
+            registry_source=new_data.get("registry_source"),
         )
         render_code_version = None
         if source_render is not None:

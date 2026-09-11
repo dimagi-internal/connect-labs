@@ -344,8 +344,16 @@ class LabsRecordAPIClient:
         type: str | None = None,
         model_class: type[LocalLabsRecord] | None = None,
         opportunity_id: int | None = None,
+        organization_id: int | None = None,
+        program_id: int | None = None,
     ) -> LocalLabsRecord | None:
         """Get a single record by ID.
+
+        `organization_id` / `program_id` override the client's scope for this one
+        call, exactly as `opportunity_id` does: the override is the ONLY scope sent.
+        That is what lets a workflow owned by an opportunity read a record owned by
+        its ORGANIZATION -- reads are an exact scope match, not hierarchical, so
+        without it a registry shared across an org could be listed but never bound.
 
         Uses server-side id filtering for O(1) lookup instead of fetching
         all records and scanning.
@@ -365,8 +373,11 @@ class LabsRecordAPIClient:
             LocalLabsRecord instance (or proxy model) or None if not found
         """
         effective_opportunity_id = self._effective_opportunity_id(opportunity_id)
+        # An org/program override names a record in real Connect: those scopes are
+        # integers there, and labs-only (synthetic) records are addressed by opportunity.
+        home_override = opportunity_id is None and (organization_id is not None or program_id is not None)
 
-        if self._is_labs_only(opportunity_id):
+        if not home_override and self._is_labs_only(opportunity_id):
             return _local_backend.get_record_by_id(
                 record_id=record_id,
                 opportunity_id=effective_opportunity_id,
@@ -390,6 +401,10 @@ class LabsRecordAPIClient:
             # the wrong scope.
             if opportunity_id is not None:
                 params["opportunity_id"] = effective_opportunity_id
+            elif program_id is not None:
+                params["program_id"] = int(program_id)
+            elif organization_id is not None:
+                params["organization_id"] = int(organization_id)
             else:
                 if self.organization_id and isinstance(self.organization_id, int):
                     params["organization_id"] = self.organization_id
