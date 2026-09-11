@@ -496,3 +496,249 @@ class TestRebuild:
 
         # 2026-09-16 is a Wednesday; the last COMPLETE week ended Sunday the 13th.
         assert report["runs"][-1]["period_end"] == "2026-09-13"
+
+
+# ---------------------------------------------------------------------------
+# Rolling. A year of weekly history is ~70 full evaluations at ~12s each, so one
+# call that walks the whole range is a single request held open for fifteen
+# minutes -- longer than any client or load balancer will wait for it. A client
+# idle timeout already killed an 11-opportunity synthetic clone whose work had
+# fully succeeded (connect-labs#1220). So a call does a BOUNDED batch and hands
+# back a cursor; the caller rolls forward until `done`.
+# ---------------------------------------------------------------------------
+
+
+class TestRolling:
+    def _rebuild(self, dao, **kw):
+        kw.setdefault("cadence", "weekly")
+        kw.setdefault("opportunity_id", 10)
+        return hr.rebuild_history(dao, 1, **kw)
+
+    def test_a_limit_builds_only_the_first_batch_and_returns_a_cursor(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+
+        report = self._rebuild(dao, start=date(2026, 8, 3), end=date(2026, 9, 6), limit=2)
+
+        assert report["periods"] == 5, "the whole range is still reported"
+        assert report["batch"] == 2
+        assert [r["period_end"] for r in report["runs"]] == ["2026-08-09", "2026-08-16"]
+        assert report["done"] is False
+        assert report["next_start"] == "2026-08-17", "the Monday the next batch begins on"
+        assert report["end"] == "2026-09-06", "echoed so every batch walks the same window"
+        assert len([c for c in dao.calls if c[0] == "create"]) == 2
+
+    def test_rolling_to_the_end_covers_every_period_exactly_once(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+
+        seen, start, calls = [], date(2026, 8, 3), 0
+        while True:
+            report = self._rebuild(dao, start=start, end=date(2026, 9, 6), limit=2)
+            seen += [r["period_end"] for r in report["runs"]]
+            calls += 1
+            if report["done"]:
+                assert report["next_start"] is None
+                break
+            start = date.fromisoformat(report["next_start"])
+
+        assert seen == ["2026-08-09", "2026-08-16", "2026-08-23", "2026-08-30", "2026-09-06"]
+        assert calls == 3
+        assert len(dao.list_runs(1)) == 5, "no period built twice across batch boundaries"
+
+    def test_the_last_partial_batch_is_done(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+
+        report = self._rebuild(dao, start=date(2026, 8, 31), end=date(2026, 9, 6), limit=5)
+
+        assert report["batch"] == 1
+        assert report["done"] is True
+        assert report["next_start"] is None
+
+    def test_no_limit_still_walks_the_whole_range(self, monkeypatch):
+        # The in-process caller (a test, a shell) may still want one pass.
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+
+        report = self._rebuild(dao, start=date(2026, 8, 3), end=date(2026, 9, 6))
+
+        assert report["batch"] == 5
+        assert report["done"] is True
+
+    def test_the_cap_is_checked_against_the_whole_range_not_the_batch(self, monkeypatch):
+        # Otherwise a mistyped start sails through one small batch at a time and
+        # the cap never fires.
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+
+        with pytest.raises(hr.HistoryRebuildError) as e:
+            self._rebuild(dao, cadence="daily", start=date(2020, 1, 1), end=date(2026, 9, 6), limit=3)
+        assert e.value.code == "too_many_periods"
+
+    def test_a_dry_run_reports_the_whole_plan_regardless_of_limit(self, monkeypatch):
+        # The point of a dry run is to see the size of the walk before paying for it.
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+
+        report = self._rebuild(dao, start=date(2026, 8, 3), end=date(2026, 9, 6), limit=2, dry_run=True)
+
+        assert len(report["runs"]) == 5
+        assert report["done"] is True
+        assert dao.calls == []
+
+    def test_progress_is_reported_once_per_period(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+        ticks = []
+
+        self._rebuild(
+            dao,
+            start=date(2026, 8, 3),
+            end=date(2026, 9, 6),
+            limit=3,
+            progress=lambda done, total=None, message=None: ticks.append((done, total)),
+        )
+
+        assert ticks == [(1, 3), (2, 3), (3, 3)]
+
+    def test_a_progress_callback_that_raises_cannot_fail_the_rebuild(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+
+        def broken(*a, **kw):
+            raise RuntimeError("client went away")
+
+        report = self._rebuild(dao, start=date(2026, 8, 31), end=date(2026, 9, 6), progress=broken)
+        assert report["created"] == 1
+
+    def test_a_non_positive_limit_is_refused(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+
+        with pytest.raises(hr.HistoryRebuildError) as e:
+            self._rebuild(dao, start=date(2026, 8, 31), end=date(2026, 9, 6), limit=0)
+        assert e.value.code == "bad_limit"
+
+
+# ---------------------------------------------------------------------------
+# Preview as of a date. The check that has to come BEFORE writing any history:
+# grade the registry at one date exactly as a rebuilt snapshot would -- same
+# builder, same binding -- and persist nothing, so the figures can be compared
+# against the reference before a single run is written.
+# ---------------------------------------------------------------------------
+
+
+def _payload(as_of):
+    cell = lambda v, n: {"id": "x", "value": v, "n": n, "band": "green"}  # noqa: E731
+    return {
+        "state": {
+            "snapshot": {
+                "meta": {"as_of": as_of, "cases": 8823},
+                "programInd": {"C01": cell(8776, 8776)},
+                "byLLO": [{"llo": "PIPN", "ind": {"C01": cell(5389, 5389)}, "n": 5399, "opps": [1, 2]}],
+                "byOpp": [{"opp": 524, "ind": {}}],
+                "byFLW": [{"key": "a"}] * 50,
+                "cases": [{"entity_id": i} for i in range(500)],
+                "monthly": [1, 2, 3],
+                "series": {
+                    "N": {
+                        "measures": [{"indicator": "N10"}],
+                        "programme": {"N10": cell(65.0, 4924)},
+                        "byLLO": [{"llo": "PIPN", "ind": {"N10": cell(72.0, 3238)}, "n": 5399}],
+                        "byOpp": [{"opp": 524}],
+                        "byFLW": [{"key": "a"}] * 50,
+                    }
+                },
+            }
+        }
+    }
+
+
+def _stub_preview_build(monkeypatch, seen):
+    def fake(dao, run, **kw):
+        seen["run"] = run
+        seen["kw"] = kw
+        return {
+            "payload": _payload(run.period_end),
+            "contract": {"source": "definition", "snapshot_inputs": {"builder": "semantic_snapshot"}},
+            "definition": dao.get_definition(1),
+            "opportunity_id": 10,
+            "opportunity_ids": [10, 11],
+        }
+
+    monkeypatch.setattr(hr, "build_snapshot_for_run", fake)
+    monkeypatch.setattr(hr, "cache_state", lambda ids: {"cold_cache": False, "partial_cache": False})
+
+
+class TestPreviewAsOf:
+    def test_it_builds_as_of_the_requested_date_and_writes_nothing(self, monkeypatch):
+        dao = _DAO(_Definition())
+        seen = {}
+        _stub_preview_build(monkeypatch, seen)
+
+        out = hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10)
+
+        assert seen["run"].period_end == "2026-09-10", "the builder's as-of is the requested date"
+        assert seen["run"].data["definition_id"] == 1
+        assert dao.calls == [], "a preview creates, completes and deletes nothing"
+        assert out["as_of"] == "2026-09-10"
+        assert out["meta"]["as_of"] == "2026-09-10"
+
+    def test_it_returns_the_graded_cells_a_comparison_needs(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_preview_build(monkeypatch, {})
+
+        out = hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10)
+
+        assert out["programme"]["C01"]["value"] == 8776
+        assert out["byLLO"][0]["llo"] == "PIPN"
+        n = out["series"]["N"]
+        assert n["programme"]["N10"]["value"] == 65.0
+        assert n["byLLO"][0]["ind"]["N10"] == {"id": "x", "value": 72.0, "n": 3238, "band": "green"}
+        assert out["cache"] == {"cold_cache": False, "partial_cache": False}
+
+    def test_it_drops_the_bulk_a_comparison_does_not_need(self, monkeypatch):
+        # A KMC snapshot is megabytes, almost all of it the case index and the
+        # per-worker cells. None of that is needed to check a figure.
+        dao = _DAO(_Definition())
+        _stub_preview_build(monkeypatch, {})
+
+        out = hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10)
+
+        for heavy in ("cases", "byFLW", "monthly", "byOpp"):
+            assert heavy not in out
+        assert "byFLW" not in out["series"]["N"] and "byOpp" not in out["series"]["N"]
+
+    def test_opportunity_cells_are_available_on_request(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_preview_build(monkeypatch, {})
+
+        out = hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10, include_opportunities=True)
+
+        assert out["byOpp"] == [{"opp": 524, "ind": {}}]
+        assert out["series"]["N"]["byOpp"] == [{"opp": 524}]
+
+    def test_an_ineligible_workflow_is_refused(self, monkeypatch):
+        # A preview of a builder that ignores the date would show today's figures
+        # labelled as the requested date -- the same lie a flat rebuilt series tells.
+        dao = _DAO(_Definition(builder="copy_rows"))
+        _stub_preview_build(monkeypatch, {})
+
+        with pytest.raises(hr.HistoryRebuildError) as e:
+            hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10)
+        assert e.value.code == "not_periodic"
+
+    def test_a_cold_cache_is_refused_by_name(self, monkeypatch):
+        from connect_labs.workflow.snapshot_runtime import SnapshotBuildError
+
+        dao = _DAO(_Definition())
+
+        def cold(dao, run, **kw):
+            raise SnapshotBuildError("cache_miss", "no cached data for pipeline 'children'")
+
+        monkeypatch.setattr(hr, "build_snapshot_for_run", cold)
+
+        with pytest.raises(hr.HistoryRebuildError) as e:
+            hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10)
+        assert e.value.code == "cache_miss"

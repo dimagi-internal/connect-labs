@@ -35,7 +35,7 @@ import logging
 from datetime import date, datetime, timedelta
 
 from connect_labs.workflow.snapshot_builders import PERIODIC_BUILDERS
-from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run
+from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run, cache_state
 from connect_labs.workflow.templates import resolve_snapshot_contract
 
 logger = logging.getLogger(__name__)
@@ -61,8 +61,8 @@ ACTIVITY_DATE_FIELDS = ("reg_date", "first_visit_date", "visit_date", "date")
 class HistoryRebuildError(Exception):
     """A rebuild could not run, with a stable code each caller maps to its own shape.
 
-    codes: bad_cadence, no_definition, not_periodic, no_start, empty_range,
-           too_many_periods, cache_miss, no_owner
+    codes: bad_cadence, bad_limit, no_definition, not_periodic, no_start, empty_range,
+           too_many_periods, cache_miss, build_failed, no_owner
     """
 
     def __init__(self, code: str, message: str):
@@ -204,6 +204,8 @@ def rebuild_history(
     program_id: int | None = None,
     replace: bool = True,
     dry_run: bool = False,
+    limit: int | None = None,
+    progress=None,
     request=None,
     today: date | None = None,
 ) -> dict:
@@ -215,9 +217,24 @@ def rebuild_history(
     conditions that would fail EVERY period identically (an ineligible builder,
     a cold cache), which raise immediately instead of being reported once per
     period.
+
+    ROLLING. `limit` bounds how many periods this call builds. The report then
+    carries `done` and a `next_start` cursor, and the caller rolls forward --
+    passing `next_start` as `start` and the report's own `end` back as `end` --
+    until `done`. A year of weekly history is ~70 full evaluations at ~12s each;
+    one call walking all of it is a request held open for a quarter of an hour,
+    which no client or load balancer waits for (a client idle timeout already
+    killed a fully-successful 11-opportunity call, connect-labs#1220). Batches
+    are idempotent -- every run is stamped and a replace touches only stamped
+    runs -- so a batch cut off mid-flight is simply re-run.
+
+    `progress(done, total)` is called once per period, which is what resets a
+    client's idle timer inside a batch. It can never fail the rebuild.
     """
     if (opportunity_id is None) == (program_id is None):
         raise HistoryRebuildError("no_owner", "provide exactly one of opportunity_id / program_id")
+    if limit is not None and limit < 1:
+        raise HistoryRebuildError("bad_limit", f"limit must be a positive number of periods; got {limit}")
 
     definition = data_access.get_definition(definition_id)
     if definition is None:
@@ -254,12 +271,24 @@ def rebuild_history(
             f"exceeds the {MAX_PERIODS} cap; narrow the range",
         )
 
+    # The cap above is checked against the WHOLE range, never the batch: checked
+    # per batch, a mistyped start would sail through three periods at a time and
+    # the cap would never fire. A dry run is a plan, so it always shows all of it.
+    batch = window if (dry_run or limit is None) else window[:limit]
+    rest = window[len(batch) :]
+
     report: dict = {
         "definition_id": definition_id,
         "cadence": cadence,
         "start": start.isoformat(),
         "end": end.isoformat(),
         "periods": len(window),
+        "batch": len(batch),
+        "done": not rest,
+        # The Monday (or day) the next batch begins on. Pass it back as `start`,
+        # with this report's `end`, so every batch walks the same window even if
+        # a Sunday passes while the caller is rolling.
+        "next_start": rest[0][0].isoformat() if rest else None,
         "created": 0,
         "replaced": 0,
         "skipped": 0,
@@ -272,7 +301,9 @@ def rebuild_history(
     for run in data_access.list_runs(definition_id) or []:
         existing.setdefault(_period_key(run.period_end), []).append(run)
 
-    for period_start, period_end in window:
+    for index, (period_start, period_end) in enumerate(batch, start=1):
+        if progress is not None and not dry_run:
+            _tick(progress, index, len(batch), period_end)
         key = period_end.isoformat()
         prior = existing.get(key, [])
         mine = [r for r in prior if (r.state or {}).get("generated_by") == GENERATED_BY]
@@ -359,6 +390,108 @@ def rebuild_history(
         )
 
     return report
+
+
+def _tick(progress, done: int, total: int, period_end: date) -> None:
+    """Report one period, never letting a dead client fail the rebuild."""
+    try:
+        progress(done, total, f"building period ending {period_end.isoformat()}")
+    except Exception:  # noqa: BLE001 -- telemetry must never fail the work it reports on
+        logger.debug("progress callback raised; continuing", exc_info=True)
+
+
+class _EphemeralRun:
+    """A run that exists only in memory, so a preview can use the real build path.
+
+    `build_snapshot_for_run` reads a run's definition id, state, window and owner.
+    Handing it one of these computes exactly what completing a run dated `as_of`
+    would store -- through the same builder a rebuilt snapshot uses -- while
+    creating no record at all.
+    """
+
+    id = None
+    is_completed = False
+    snapshot = None
+
+    def __init__(self, definition_id: int, as_of: date, opportunity_id: int | None):
+        self.opportunity_id = opportunity_id
+        self.data = {"definition_id": definition_id, "state": {}}
+        self.period_start = as_of.isoformat()
+        self.period_end = as_of.isoformat()
+
+    @property
+    def state(self):
+        return self.data["state"]
+
+
+# What a preview returns out of a payload. Everything else -- the case index, the
+# per-worker cells, the monthly series -- is most of a snapshot's megabytes and
+# none of what checking a figure needs.
+_PREVIEW_KEYS = ("meta", "programInd", "byLLO", "pooledOverCredible", "credibility")
+_SERIES_KEYS = ("programme", "byLLO")
+
+
+def preview_as_of(
+    data_access,
+    definition_id: int,
+    *,
+    as_of: date,
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
+    include_opportunities: bool = False,
+    request=None,
+) -> dict:
+    """Grade a workflow's registry as of `as_of`, exactly as a rebuilt run would, and persist nothing.
+
+    This is the check that belongs BEFORE writing history: compare these figures
+    against the reference, and only rebuild once they agree. It goes through the
+    same `build_snapshot_for_run` the rebuild does, with an in-memory run dated
+    `as_of`, so what it shows is what a snapshot for that date will contain --
+    not a parallel computation that could agree with the reference while the
+    snapshots do not.
+
+    Returns the programme and per-LLO cells for the primary series and every
+    extra series (each cell is `{id, value, n, band}`, `n` being its
+    denominator), the payload's `meta`, and `cache` -- because a partial cache
+    understates every total while looking like a genuine disagreement.
+    """
+    if (opportunity_id is None) == (program_id is None):
+        raise HistoryRebuildError("no_owner", "provide exactly one of opportunity_id / program_id")
+
+    definition = data_access.get_definition(definition_id)
+    if definition is None:
+        raise HistoryRebuildError("no_definition", f"workflow definition {definition_id} not found")
+    ok, reason = eligibility(definition)
+    if not ok:
+        raise HistoryRebuildError("not_periodic", reason or "workflow cannot be graded at a past date")
+
+    run = _EphemeralRun(definition_id, as_of, opportunity_id)
+    try:
+        built = build_snapshot_for_run(
+            data_access, run, requested_opportunity_id=opportunity_id, request=request, program_id=program_id
+        )
+    except SnapshotBuildError as e:
+        code = "cache_miss" if e.code == "cache_miss" else "build_failed"
+        raise HistoryRebuildError(code, e.message) from e
+
+    state = (built["payload"] or {}).get("state") or {}
+    state_key = ((built.get("contract") or {}).get("snapshot_inputs") or {}).get("state_key") or "snapshot"
+    payload = state.get(state_key) or {}
+
+    out: dict = {"definition_id": definition_id, "as_of": as_of.isoformat()}
+    for key in _PREVIEW_KEYS:
+        if key in payload:
+            out["programme" if key == "programInd" else key] = payload[key]
+    if include_opportunities:
+        out["byOpp"] = payload.get("byOpp")
+    out["series"] = {}
+    for name, series in (payload.get("series") or {}).items():
+        keep = {k: series[k] for k in _SERIES_KEYS if k in series}
+        if include_opportunities and "byOpp" in series:
+            keep["byOpp"] = series["byOpp"]
+        out["series"][name] = keep
+    out["cache"] = cache_state(built.get("opportunity_ids"))
+    return out
 
 
 def _discard(data_access, run_id: int) -> None:

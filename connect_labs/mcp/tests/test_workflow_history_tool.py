@@ -314,3 +314,134 @@ def test_an_upstream_failure_that_is_not_a_404_is_not_reported_as_not_found(user
     with pytest.raises(MCPToolError) as e:
         get_tool("workflow_rebuild_history").handler(user=user, definition_id=5626, opportunity_id=523)
     assert e.value.code == "UPSTREAM_ERROR"
+
+
+# ---------------------------------------------------------------------------
+# Rolling + progress on the rebuild tool.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_rebuild_defaults_to_a_bounded_batch(user, monkeypatch):
+    # An unbounded default is exactly the fifteen-minute request this exists to avoid.
+    from connect_labs.mcp.tools import workflow_history as wh
+    from connect_labs.workflow import history_rebuild
+
+    _patch_wda(monkeypatch, MagicMock())
+    seen = {}
+    monkeypatch.setattr(history_rebuild, "rebuild_history", lambda dao, did, **kw: (seen.update(kw), {"runs": []})[1])
+
+    get_tool("workflow_rebuild_history").handler(user=user, definition_id=1, opportunity_id=10)
+
+    assert seen["limit"] == wh.DEFAULT_BATCH
+    assert 1 <= wh.DEFAULT_BATCH <= 26
+
+
+@pytest.mark.django_db
+def test_rebuild_passes_the_limit_and_the_progress_callback_through(user, monkeypatch):
+    from connect_labs.workflow import history_rebuild
+
+    _patch_wda(monkeypatch, MagicMock())
+    seen = {}
+    monkeypatch.setattr(history_rebuild, "rebuild_history", lambda dao, did, **kw: (seen.update(kw), {"runs": []})[1])
+    reporter = lambda *a, **k: None  # noqa: E731
+
+    get_tool("workflow_rebuild_history").handler(
+        user=user, definition_id=1, opportunity_id=10, limit=3, progress=reporter
+    )
+
+    assert seen["limit"] == 3
+    assert seen["progress"] is reporter
+
+
+def test_rebuild_opts_into_progress_and_keeps_it_out_of_the_schema():
+    # `progress` is passed out of band by the server. In the schema it would be a
+    # caller-suppliable argument, and it would land in the audit log.
+    tool = get_tool("workflow_rebuild_history")
+    assert tool.wants_progress is True
+    assert "progress" not in tool.input_schema["properties"]
+    assert tool.input_schema["properties"]["limit"]["maximum"] >= tool.input_schema["properties"]["limit"]["minimum"]
+
+
+# ---------------------------------------------------------------------------
+# workflow_preview_as_of
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_preview_passes_the_date_through_and_returns_the_cells(user, monkeypatch):
+    from connect_labs.workflow import history_rebuild
+
+    fake_wda = MagicMock()
+    _patch_wda(monkeypatch, fake_wda)
+    seen = {}
+
+    def fake_preview(dao, did, **kw):
+        seen["did"] = did
+        seen.update(kw)
+        return {"as_of": kw["as_of"].isoformat(), "series": {"N": {"programme": {"N10": {"value": 65.0}}}}}
+
+    monkeypatch.setattr(history_rebuild, "preview_as_of", fake_preview)
+
+    out = get_tool("workflow_preview_as_of").handler(
+        user=user, definition_id=5626, program_id=176, as_of="2026-09-10", include_opportunities=True
+    )
+
+    assert out["series"]["N"]["programme"]["N10"]["value"] == 65.0
+    assert seen["did"] == 5626
+    assert seen["as_of"].isoformat() == "2026-09-10"
+    assert seen["program_id"] == 176 and seen["opportunity_id"] is None
+    assert seen["include_opportunities"] is True
+    fake_wda.close.assert_called_once()
+
+
+def test_preview_is_a_read():
+    assert get_tool("workflow_preview_as_of").is_write is False
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("bad", ["", "10 September", "2026/09/10"])
+def test_preview_requires_a_real_date(user, monkeypatch, bad):
+    _patch_wda(monkeypatch, MagicMock())
+
+    with pytest.raises(MCPToolError) as e:
+        get_tool("workflow_preview_as_of").handler(user=user, definition_id=1, opportunity_id=10, as_of=bad)
+    assert e.value.code == "INVALID_SCHEMA"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "code,expected",
+    [("not_periodic", "INVALID_SCHEMA"), ("cache_miss", "UPSTREAM_ERROR"), ("build_failed", "UPSTREAM_ERROR")],
+)
+def test_preview_refusals_arrive_as_error_classes(user, monkeypatch, code, expected):
+    from connect_labs.workflow import history_rebuild
+
+    _patch_wda(monkeypatch, MagicMock())
+
+    def boom(dao, did, **kw):
+        raise HistoryRebuildError(code, f"reason for {code}")
+
+    monkeypatch.setattr(history_rebuild, "preview_as_of", boom)
+
+    with pytest.raises(MCPToolError) as e:
+        get_tool("workflow_preview_as_of").handler(user=user, definition_id=1, opportunity_id=10, as_of="2026-09-10")
+    assert e.value.code == expected
+
+
+@pytest.mark.django_db
+def test_preview_on_an_unreadable_definition_is_not_found_naming_the_scope(user, monkeypatch):
+    from connect_labs.labs.integrations.connect.api_client import LabsAPIError
+    from connect_labs.workflow import history_rebuild
+
+    _patch_wda(monkeypatch, MagicMock())
+
+    def boom(dao, did, **kw):
+        raise LabsAPIError("Failed to fetch record 5626: Client error '404 Not Found'")
+
+    monkeypatch.setattr(history_rebuild, "preview_as_of", boom)
+
+    with pytest.raises(MCPToolError) as e:
+        get_tool("workflow_preview_as_of").handler(user=user, definition_id=5626, program_id=176, as_of="2026-09-10")
+    assert e.value.code == "NOT_FOUND"
+    assert "program_id=176" in str(e.value)
