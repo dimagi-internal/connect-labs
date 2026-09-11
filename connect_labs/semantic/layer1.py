@@ -91,7 +91,21 @@ def build_visit_sql(
     # so rule 0 (only approved and over_limit visits are valid) reached the
     # pipeline's rows and none of the metrics built from them.
     filters = "".join(f" AND {p}" for p in preview.get("visit_filter_predicates") or [])
-    ex = head + f"WHERE opportunity_id IN ({opp_list}){filters}\n" + "ORDER BY opportunity_id, visit_id, pipeline_id"
+    # `visit_count > 0` excludes an in-progress streaming generation -- rows written
+    # under a NEGATIVE visit_count until the download finalizes (#1684). The scope
+    # predicate carries it, and cutting the WHERE at the scope dropped it, so Layer 1
+    # could read a half-written second copy of an opportunity's visits.
+    #
+    # The dedupe keeps the most recently fetched copy of each visit (latest expiry),
+    # not the lowest pipeline_id: the raw cache holds one copy per pipeline that has
+    # cached the opportunity, and picking by id read whichever OTHER workflow happened
+    # to own the lowest-numbered pipeline -- possibly a stale copy, with outdated
+    # statuses -- so what the indicators saw depended on what else existed.
+    ex = (
+        head
+        + f"WHERE opportunity_id IN ({opp_list}) AND visit_count > 0{filters}\n"
+        + "ORDER BY opportunity_id, visit_id, expires_at DESC, pipeline_id"
+    )
 
     extra_cols = ""
     if extra_fields:

@@ -445,3 +445,90 @@ def test_preview_on_an_unreadable_definition_is_not_found_naming_the_scope(user,
         get_tool("workflow_preview_as_of").handler(user=user, definition_id=5626, program_id=176, as_of="2026-09-10")
     assert e.value.code == "NOT_FOUND"
     assert "program_id=176" in str(e.value)
+
+
+# ---------------------------------------------------------------------------
+# workflow_ensure_visit_cache
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_ensure_passes_the_cursor_limit_hold_and_progress_through(user, monkeypatch):
+    from connect_labs.workflow import visit_cache
+
+    _patch_wda(monkeypatch, MagicMock())
+    seen = {}
+
+    def fake(dao, did, **kw):
+        seen["did"] = did
+        seen.update(kw)
+        return {"done": False, "next_start_at": 4, "opportunities": []}
+
+    monkeypatch.setattr(visit_cache, "ensure_visit_cache", fake)
+    reporter = lambda *a, **k: None  # noqa: E731
+
+    out = get_tool("workflow_ensure_visit_cache").handler(
+        user=user, definition_id=19778, opportunity_id=523, start_at=0, limit=4, hold_minutes=120, progress=reporter
+    )
+
+    assert out["next_start_at"] == 4
+    assert seen["did"] == 19778 and seen["opportunity_id"] == 523 and seen["program_id"] is None
+    assert seen["start_at"] == 0 and seen["limit"] == 4 and seen["hold_minutes"] == 120
+    assert seen["progress"] is reporter
+
+
+@pytest.mark.django_db
+def test_ensure_defaults_to_a_bounded_batch_and_hold(user, monkeypatch):
+    from connect_labs.mcp.tools import workflow_history as wh
+    from connect_labs.workflow import visit_cache
+
+    _patch_wda(monkeypatch, MagicMock())
+    seen = {}
+    monkeypatch.setattr(visit_cache, "ensure_visit_cache", lambda dao, did, **kw: (seen.update(kw), {})[1])
+
+    get_tool("workflow_ensure_visit_cache").handler(user=user, definition_id=1, opportunity_id=10)
+
+    assert seen["limit"] == wh.DEFAULT_CACHE_BATCH
+    assert seen["hold_minutes"] == visit_cache.DEFAULT_HOLD_MINUTES
+
+
+def test_ensure_opts_into_progress_and_bounds_its_inputs():
+    tool = get_tool("workflow_ensure_visit_cache")
+    assert tool.wants_progress is True and "progress" not in tool.input_schema["properties"]
+    assert tool.input_schema["properties"]["hold_minutes"]["maximum"] == 180
+
+
+def test_the_preview_reports_progress_because_it_may_download():
+    assert get_tool("workflow_preview_as_of").wants_progress is True
+
+
+@pytest.mark.django_db
+def test_ensure_refusals_arrive_as_error_classes(user, monkeypatch):
+    from connect_labs.workflow import visit_cache
+
+    _patch_wda(monkeypatch, MagicMock())
+
+    def boom(dao, did, **kw):
+        raise visit_cache.VisitCacheError("bad_hold", "hold_minutes must be 1-180")
+
+    monkeypatch.setattr(visit_cache, "ensure_visit_cache", boom)
+    with pytest.raises(MCPToolError) as e:
+        get_tool("workflow_ensure_visit_cache").handler(
+            user=user, definition_id=1, opportunity_id=10, hold_minutes=999
+        )
+    assert e.value.code == "INVALID_SCHEMA"
+
+
+@pytest.mark.django_db
+def test_a_partial_cohort_reaches_the_caller_as_upstream_error(user, monkeypatch):
+    from connect_labs.workflow import history_rebuild
+
+    _patch_wda(monkeypatch, MagicMock())
+
+    def boom(dao, did, **kw):
+        raise HistoryRebuildError("cache_incomplete", "visit data could not be cached for opportunities [524]")
+
+    monkeypatch.setattr(history_rebuild, "preview_as_of", boom)
+    with pytest.raises(MCPToolError) as e:
+        get_tool("workflow_preview_as_of").handler(user=user, definition_id=1, opportunity_id=10, as_of="2026-09-10")
+    assert e.value.code == "UPSTREAM_ERROR" and "524" in str(e.value)

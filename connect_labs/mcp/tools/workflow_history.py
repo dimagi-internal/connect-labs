@@ -28,6 +28,10 @@ from ..tool_registry import MCPToolError, register
 # the rest.
 DEFAULT_BATCH = 6
 
+# Opportunities per ensure call. A cold opportunity can take tens of seconds to
+# download, so a handful per call keeps each well inside a client's patience.
+DEFAULT_CACHE_BATCH = 4
+
 
 def _wda_for_user(user, opportunity_id: int | None = None, program_id: int | None = None):
     """Build a WorkflowDataAccess scoped to ``opportunity_id`` or ``program_id``.
@@ -57,6 +61,7 @@ def _parse_date(value: str | None, field: str) -> dt.date | None:
 _ERROR_CLASS = {
     "no_definition": "NOT_FOUND",
     "cache_miss": "UPSTREAM_ERROR",
+    "cache_incomplete": "UPSTREAM_ERROR",
     "build_failed": "UPSTREAM_ERROR",
 }
 
@@ -354,6 +359,8 @@ def workflow_history_eligibility(
         "additionalProperties": False,
     },
     is_write=False,
+    # It ensures the visit cache first, which can mean downloading a cold cohort.
+    wants_progress=True,
 )
 def workflow_preview_as_of(
     user,
@@ -363,6 +370,7 @@ def workflow_preview_as_of(
     opportunity_id: int | None = None,
     program_id: int | None = None,
     include_opportunities: bool = False,
+    progress=NULL_PROGRESS,
 ) -> dict[str, Any]:
     from connect_labs.labs.integrations.connect.api_client import LabsAPIError
     from connect_labs.workflow.history_rebuild import HistoryRebuildError, preview_as_of
@@ -383,9 +391,99 @@ def workflow_preview_as_of(
                 opportunity_id=opportunity_id,
                 program_id=program_id,
                 include_opportunities=include_opportunities,
+                progress=progress,
             )
         except HistoryRebuildError as e:
             raise _mcp_error(e) from e
+        except LabsAPIError as e:
+            _reraise_unreadable(e, definition_id, opportunity_id, program_id)
+    finally:
+        wda.close()
+
+
+@register(
+    name="workflow_ensure_visit_cache",
+    description=(
+        "Make a workflow's visit data present, explicitly, one opportunity at a time -- and "
+        "hold it for a bounded window so a long job cannot outlive it.\n\n"
+        "WHY. A workflow's figures come from two caches with different lifetimes. The "
+        "indicators read the RAW visit cache (one copy per opportunity and pipeline); the "
+        "pipelines answer from a COMPUTED cache built from it. Both expire in about an hour "
+        "and are then deleted, and the computed one can outlive the raw rows it came from -- "
+        "so running the pipelines (opening the page, previewing a pipeline) can succeed while "
+        "the raw rows the indicators need are gone, and the figures come back partial or zero "
+        "with nothing failing. This is the explicit alternative to that guesswork.\n\n"
+        "WHAT IT DOES, per opportunity in the workflow's scope and per pipeline it reads: fetch "
+        "the raw visits through the backend's own path (a cache hit if valid, a top-up if only "
+        "new visits are missing, a full download if expired), run the pipeline so its computed "
+        "cache is current, then hold both for `hold_minutes` (default 90, max 180 -- expiry is "
+        "what re-reads a visit's status after review, so the hold is bounded).\n\n"
+        "ROLLING. At most `limit` opportunities per call (default 4); until `done`, call again "
+        "with start_at=<next_start_at>. Each opportunity reports raw held|refreshed and "
+        "computed held|recomputed per pipeline, or its error -- one failing export does not "
+        "cost the rest. workflow_rebuild_history and workflow_preview_as_of call this "
+        "themselves before computing; call it directly to warm a cohort ahead of time or to "
+        "see which opportunity is failing.\n\n"
+        "Provide exactly one of opportunity_id / program_id (the workflow's owner)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "definition_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "program_id": {"type": "integer"},
+            "start_at": {"type": "integer", "minimum": 0, "description": "Cursor from the previous call."},
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "description": "Opportunities per call (default 4).",
+            },
+            "hold_minutes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 180,
+                "description": "How long to hold each opportunity's cached data (default 90).",
+            },
+        },
+        "required": ["definition_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+    wants_progress=True,
+)
+def workflow_ensure_visit_cache(
+    user,
+    *,
+    definition_id: int,
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
+    start_at: int = 0,
+    limit: int = DEFAULT_CACHE_BATCH,
+    hold_minutes: int | None = None,
+    progress=NULL_PROGRESS,
+) -> dict[str, Any]:
+    from connect_labs.labs.integrations.connect.api_client import LabsAPIError
+    from connect_labs.workflow.visit_cache import DEFAULT_HOLD_MINUTES, VisitCacheError, ensure_visit_cache
+
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+
+    wda = _wda_for_user(user, opportunity_id=opportunity_id, program_id=program_id)
+    try:
+        try:
+            return ensure_visit_cache(
+                wda,
+                definition_id,
+                opportunity_id=opportunity_id,
+                program_id=program_id,
+                start_at=start_at,
+                limit=limit,
+                hold_minutes=hold_minutes or DEFAULT_HOLD_MINUTES,
+                progress=progress,
+            )
+        except VisitCacheError as e:
+            raise MCPToolError("NOT_FOUND" if e.code == "no_definition" else "INVALID_SCHEMA", e.message) from e
         except LabsAPIError as e:
             _reraise_unreadable(e, definition_id, opportunity_id, program_id)
     finally:

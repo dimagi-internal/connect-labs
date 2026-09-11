@@ -209,6 +209,21 @@ def _stub_build(monkeypatch, fail_on=None, error=None):
         }
 
     monkeypatch.setattr(hr, "build_snapshot_for_run", fake)
+    _stub_ensure(monkeypatch)
+
+
+ENSURED: list = []
+
+
+def _stub_ensure(monkeypatch, failed=()):
+    """The cache step, recorded rather than run: it talks to the real backend."""
+    ENSURED.clear()
+
+    def fake(dao, definition_id, **kw):
+        ENSURED.append(kw)
+        return {"failed": list(failed), "hold_until": "2026-09-11T03:00:00+00:00"}
+
+    monkeypatch.setattr(hr, "ensure_visit_cache", fake)
 
 
 # ---------------------------------------------------------------------------
@@ -669,6 +684,7 @@ def _stub_preview_build(monkeypatch, seen):
 
     monkeypatch.setattr(hr, "build_snapshot_for_run", fake)
     monkeypatch.setattr(hr, "cache_state", lambda ids: {"cold_cache": False, "partial_cache": False})
+    _stub_ensure(monkeypatch)
 
 
 class TestPreviewAsOf:
@@ -738,6 +754,7 @@ class TestPreviewAsOf:
             raise SnapshotBuildError("cache_miss", "no cached data for pipeline 'children'")
 
         monkeypatch.setattr(hr, "build_snapshot_for_run", cold)
+        _stub_ensure(monkeypatch)  # ensure succeeded; the miss comes at build time
 
         with pytest.raises(hr.HistoryRebuildError) as e:
             hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10)
@@ -751,3 +768,56 @@ def test_a_preview_states_the_registry_it_graded_with(monkeypatch):
     _stub_preview_build(monkeypatch, {})
     out = hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10)
     assert out["registry"]["source"] == "disk"
+
+
+# ---------------------------------------------------------------------------
+# The visit cache is ensured before anything is built from it.
+# ---------------------------------------------------------------------------
+
+
+class TestTheCacheIsEnsuredFirst:
+    def test_a_batch_ensures_the_whole_cohort_before_building(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+        report = hr.rebuild_history(
+            dao, 1, cadence="weekly", start=date(2026, 8, 31), end=date(2026, 9, 6), opportunity_id=10
+        )
+        assert len(ENSURED) == 1
+        assert ENSURED[0]["opportunity_id"] == 10 and ENSURED[0]["hold_minutes"] >= 60
+        assert report["visit_cache"] == "2026-09-11T03:00:00+00:00", "the report says how long the data is held"
+
+    def test_an_opportunity_that_cannot_be_cached_stops_the_batch_and_writes_nothing(self, monkeypatch):
+        # A partial cohort would publish plausible, understated figures -- the failure
+        # this step exists to end. So it stops, naming the opportunities.
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+        _stub_ensure(monkeypatch, failed=[524, 874])
+        with pytest.raises(hr.HistoryRebuildError) as e:
+            hr.rebuild_history(
+                dao, 1, cadence="weekly", start=date(2026, 8, 31), end=date(2026, 9, 6), opportunity_id=10
+            )
+        assert e.value.code == "cache_incomplete"
+        assert "524" in e.value.message and "874" in e.value.message
+        assert dao.calls == []
+
+    def test_a_dry_run_does_not_download_anything(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+        hr.rebuild_history(
+            dao, 1, cadence="weekly", start=date(2026, 8, 31), end=date(2026, 9, 6), opportunity_id=10, dry_run=True
+        )
+        assert ENSURED == []
+
+    def test_a_preview_ensures_the_cache_too(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_preview_build(monkeypatch, {})
+        hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10)
+        assert len(ENSURED) == 1
+
+    def test_a_preview_over_a_partial_cohort_is_refused(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_preview_build(monkeypatch, {})
+        _stub_ensure(monkeypatch, failed=[1487])
+        with pytest.raises(hr.HistoryRebuildError) as e:
+            hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10)
+        assert e.value.code == "cache_incomplete"

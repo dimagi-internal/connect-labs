@@ -228,6 +228,34 @@ class SQLCacheManager:
             expires_at__lt=new_expiry,
         ).update(expires_at=new_expiry)
 
+    def hold_computed_caches(self, minutes: int) -> int:
+        """Push out expiry on this slot's LIVE computed caches -- visit, entity and FLW.
+
+        The computed caches outlive the raw cache they were built from, and are what a
+        pipeline answers from; a job that reads them across an hour-long walk (a
+        history rebuild) otherwise watches them expire and get deleted mid-walk. Only
+        rows still unexpired are touched, so this never resurrects stale results, and
+        only forward (`expires_at__lt`), so it never shortens a longer-lived entry.
+        Returns the number of rows held.
+        """
+        from connect_labs.labs.analysis.backends.sql.models import (
+            ComputedEntityCache,
+            ComputedFLWCache,
+            ComputedVisitCache,
+        )
+
+        now = timezone.now()
+        new_expiry = now + timedelta(minutes=minutes)
+        held = 0
+        for model in (ComputedVisitCache, ComputedEntityCache, ComputedFLWCache):
+            held += model.objects.filter(
+                opportunity_id=self.opportunity_id,
+                pipeline_id=self.pipeline_id,
+                expires_at__gt=now,
+                expires_at__lt=new_expiry,
+            ).update(expires_at=new_expiry)
+        return held
+
     def store_raw_visits(self, visit_dicts: list[dict], visit_count: int):
         """
         Store raw visit data to SQL cache.

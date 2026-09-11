@@ -61,7 +61,8 @@ def test_dedupes_across_cache_partitions():
     """
     sql = build_visit_sql({}, [10042], generate_sql_preview=_gen)
     assert "DISTINCT ON (opportunity_id, visit_id)" in sql
-    assert "ORDER BY opportunity_id, visit_id, pipeline_id" in sql
+    # The freshest copy wins, not the lowest pipeline id -- see the freshness test below.
+    assert "ORDER BY opportunity_id, visit_id, expires_at DESC, pipeline_id" in sql
 
 
 def test_selects_opportunity_id_which_the_extraction_omits():
@@ -103,13 +104,13 @@ FILTERED_EXTRACTION = {
 
 def test_declared_row_filters_are_reapplied_to_the_widened_where():
     sql = build_visit_sql({}, [10042, 10016], generate_sql_preview=lambda s, o: FILTERED_EXTRACTION)
-    assert "WHERE opportunity_id IN (10042,10016) AND status IN ('approved', 'over_limit')" in sql
+    assert "WHERE opportunity_id IN (10042,10016) AND visit_count > 0 AND status IN ('approved', 'over_limit')" in sql
 
 
 def test_no_declared_filters_leaves_the_rewrite_unchanged():
     # Every KMC pipeline before this change declared none; their SQL must not move.
     sql = build_visit_sql({}, [10042, 10016], generate_sql_preview=_gen)
-    assert "WHERE opportunity_id IN (10042,10016)\nORDER BY" in sql
+    assert "WHERE opportunity_id IN (10042,10016) AND visit_count > 0\nORDER BY" in sql
 
 
 @pytest.mark.django_db
@@ -149,3 +150,47 @@ def test_rejected_and_pending_visits_never_reach_the_metrics():
         cur.execute(f"SELECT visit_id FROM ({sql}) q ORDER BY visit_id")
         got = [r[0] for r in cur.fetchall()]
     assert got == ["70000", "70001"], "only approved and over_limit visits are valid data"
+
+
+@pytest.mark.django_db
+def test_the_freshest_copy_of_a_visit_wins_and_half_written_copies_are_ignored():
+    """One visit cached by three pipelines: an OLD copy under the lowest pipeline id
+    (another workflow's, with a stale status), a FRESH copy, and an in-progress
+    sentinel copy (negative visit_count). Layer 1 must read the fresh one."""
+    from datetime import timedelta
+
+    from django.db import connection
+    from django.utils import timezone
+
+    from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+    from connect_labs.labs.analysis.config import AnalysisPipelineConfig, FieldComputation
+
+    opp, now = 976544, timezone.now()
+    rows = [
+        # (pipeline_id, visit_count, expires_at, status) -- the same visit_id throughout
+        (5, 1, now + timedelta(minutes=1), "pending"),  # old copy, lowest id
+        (99, 1, now + timedelta(minutes=55), "approved"),  # fresh copy
+        (3, -7, now + timedelta(minutes=58), "rejected"),  # in-progress sentinel
+    ]
+    for pid, count, expires, status in rows:
+        RawVisitCache.objects.create(
+            opportunity_id=opp,
+            pipeline_id=pid,
+            visit_count=count,
+            expires_at=expires,
+            visit_id="80000",
+            username="flw",
+            status=status,
+            form_json={"form": {"@name": "Record Visit Details"}},
+            visit_date="2026-09-01",
+        )
+    marker_cols = sorted({col for col, _word in MARKER_BOOLEANS.values()} | {"ebf_visits", "form_names"})
+    config = AnalysisPipelineConfig(
+        grouping_key="username", fields=[FieldComputation(name=c, path="form.@name") for c in marker_cols]
+    )
+    config.pipeline_id = 99
+    sql = build_visit_sql(config, [opp])
+    with connection.cursor() as cur:
+        cur.execute(f"SELECT pipeline_id FROM ({sql}) q")
+        got = [r[0] for r in cur.fetchall()]
+    assert got == [99], "the most recently fetched finalized copy, not the lowest id or a half-written one"

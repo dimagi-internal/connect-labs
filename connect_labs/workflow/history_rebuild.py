@@ -37,6 +37,7 @@ from datetime import date, datetime, timedelta
 from connect_labs.workflow.snapshot_builders import PERIODIC_BUILDERS
 from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run, cache_state
 from connect_labs.workflow.templates import resolve_snapshot_contract
+from connect_labs.workflow.visit_cache import DEFAULT_HOLD_MINUTES, ensure_visit_cache
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class HistoryRebuildError(Exception):
     """A rebuild could not run, with a stable code each caller maps to its own shape.
 
     codes: bad_cadence, bad_limit, no_definition, not_periodic, no_start, empty_range,
-           too_many_periods, cache_miss, build_failed, no_owner
+           too_many_periods, cache_miss, cache_incomplete, build_failed, no_owner
     """
 
     def __init__(self, code: str, message: str):
@@ -189,6 +190,34 @@ def _case_index_rows(data_access, definition, contract, definition_id, opportuni
     return ((pipelines or {}).get(alias) or {}).get("rows") or []
 
 
+def _ensure_cache(data_access, definition_id, *, opportunity_id, program_id, progress, hold_minutes):
+    """Make every opportunity's visit data present and held before anything reads it.
+
+    The indicators read the raw visit cache, which expires in an hour and is then
+    deleted, while the pipelines keep answering from a computed cache that outlives
+    it. Without this, a build could read a cohort with most of its raw rows gone and
+    publish the result -- 1,681 cases for a cohort of 8,823, measured 2026-09-11 --
+    with nothing failing. A slot that still cannot be cached stops the build, naming
+    the opportunities, rather than letting a partial cohort through.
+    """
+    report = ensure_visit_cache(
+        data_access,
+        definition_id,
+        opportunity_id=opportunity_id,
+        program_id=program_id,
+        hold_minutes=hold_minutes,
+        progress=progress,
+    )
+    if report.get("failed"):
+        raise HistoryRebuildError(
+            "cache_incomplete",
+            f"visit data could not be cached for opportunities {report['failed']}, so any figure built now "
+            "would silently cover only part of the cohort. Retry, or run workflow_ensure_visit_cache to see "
+            "each opportunity's error.",
+        )
+    return report
+
+
 def _period_key(value) -> str:
     return str(value or "")[:10]
 
@@ -208,6 +237,7 @@ def rebuild_history(
     progress=None,
     request=None,
     today: date | None = None,
+    ensure_cache: bool = True,
 ) -> dict:
     """Write one completed run per period, each computed as of that period's end.
 
@@ -296,6 +326,19 @@ def rebuild_history(
         "dry_run": dry_run,
         "runs": [],
     }
+
+    # Every batch first makes the whole cohort's visit data present, and holds it for
+    # longer than the batch takes -- so a walk that outlives one cache lifetime cannot
+    # read a cohort half of whose rows have been deleted under it.
+    if ensure_cache and not dry_run and batch:
+        report["visit_cache"] = _ensure_cache(
+            data_access,
+            definition_id,
+            opportunity_id=opportunity_id,
+            program_id=program_id,
+            progress=progress,
+            hold_minutes=DEFAULT_HOLD_MINUTES,
+        )["hold_until"]
 
     existing: dict[str, list] = {}
     for run in data_access.list_runs(definition_id) or []:
@@ -440,6 +483,8 @@ def preview_as_of(
     program_id: int | None = None,
     include_opportunities: bool = False,
     request=None,
+    progress=None,
+    ensure_cache: bool = True,
 ) -> dict:
     """Grade a workflow's registry as of `as_of`, exactly as a rebuilt run would, and persist nothing.
 
@@ -464,6 +509,16 @@ def preview_as_of(
     ok, reason = eligibility(definition)
     if not ok:
         raise HistoryRebuildError("not_periodic", reason or "workflow cannot be graded at a past date")
+
+    if ensure_cache:
+        _ensure_cache(
+            data_access,
+            definition_id,
+            opportunity_id=opportunity_id,
+            program_id=program_id,
+            progress=progress,
+            hold_minutes=DEFAULT_HOLD_MINUTES,
+        )
 
     run = _EphemeralRun(definition_id, as_of, opportunity_id)
     try:
