@@ -62,6 +62,11 @@ DEFINITION = {
         # strip; only the weighings and photos wait for it. The render tolerates
         # `pipelines[alias]` being absent until then.
         "renderWhileLoading": True,
+        # This page fetches the rows it needs -- one worker's cases, one case's
+        # weighings -- through the `pipeline-rows` endpoint, so the framework must
+        # not also stream every pipeline's rows for all twelve opportunities
+        # (~30 MB on the KMC cohort, ~20s warm and minutes cold).
+        "noPipelineStream": True,
         # The programme workflow whose report this reads when opened without a
         # `source_run`. Stamped at create time when this is made as the
         # programme report's companion; otherwise workflow_update_definition.

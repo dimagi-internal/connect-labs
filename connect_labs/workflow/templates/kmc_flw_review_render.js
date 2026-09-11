@@ -259,11 +259,54 @@ function WorkflowUI({
   // referrals, KMC status, discharge), and the visits pipeline carries every
   // weighing. Keyed on (opportunity, entity_id): a synthetic cohort reuses entity
   // ids across cloned opportunities.
-  var childRows =
-    (pipelines && pipelines.children && pipelines.children.rows) || [];
-  var visitRows =
-    (pipelines && pipelines.visits && pipelines.visits.rows) || [];
-  var pipelinesLoaded = !!(pipelines && pipelines.children);
+  // Fetched for THIS worker, not streamed for the whole cohort: the page needs
+  // one worker's ~250 cases and one case's weighings, and the framework default
+  // handed it every opportunity's rows (~30 MB on the KMC cohort) to filter in
+  // the browser. `config.noPipelineStream` turns that stream off; these two
+  // fetches replace it, through the `pipeline-rows` endpoint which filters where
+  // the data already is.
+  var sChildRows = React.useState({ status: 'idle', rows: [] });
+  var childState = sChildRows[0],
+    setChildState = sChildRows[1];
+  var childRows = childState.rows;
+  var pipelinesLoaded = childState.status === 'ready';
+  var sVisitRows = React.useState({ status: 'idle', key: null, rows: [] });
+  var visitState = sVisitRows[0],
+    setVisitState = sVisitRows[1];
+  React.useEffect(
+    function () {
+      if (!flw) return;
+      var cancelled = false;
+      setChildState({ status: 'loading', rows: [] });
+      var sp = scopeParams();
+      fetch(
+        '/labs/workflow/api/' +
+          (definition && definition.id) +
+          '/pipeline-rows/' +
+          sp +
+          (sp ? '&' : '?') +
+          'alias=children&opportunity_id=' +
+          encodeURIComponent(flw.opp) +
+          '&username=' +
+          encodeURIComponent(flw.flw),
+        { credentials: 'same-origin' },
+      )
+        .then(function (r) {
+          return r.ok ? r.json() : { rows: [] };
+        })
+        .then(function (j) {
+          if (!cancelled)
+            setChildState({ status: 'ready', rows: j.rows || [] });
+        })
+        .catch(function () {
+          if (!cancelled) setChildState({ status: 'ready', rows: [] });
+        });
+      return function () {
+        cancelled = true;
+      };
+    },
+    [definition && definition.id, flw && flw.opp, flw && flw.flw],
+  );
   var childByKey = React.useMemo(
     function () {
       var m = {};
@@ -324,25 +367,59 @@ function WorkflowUI({
     },
     [cases, caseParam, selCase],
   );
-  function visitsFor(c) {
-    if (!c) return [];
-    return visitRows
-      .filter(function (v) {
-        return (
-          String(v.opportunity_id) === String(c.opportunity_id) &&
-          String(v.baby_case_id || v.entity_id) === String(c.entity_id) &&
-          v.visit_date
-        );
-      })
-      .sort(function (a, b) {
-        return String(a.visit_date).localeCompare(String(b.visit_date));
-      });
-  }
+  var caseKey = selCase
+    ? selCase.opportunity_id + '|' + selCase.entity_id
+    : null;
+  React.useEffect(
+    function () {
+      if (!selCase) return;
+      var cancelled = false;
+      var key = selCase.opportunity_id + '|' + selCase.entity_id;
+      setVisitState({ status: 'loading', key: key, rows: [] });
+      var sp = scopeParams();
+      fetch(
+        '/labs/workflow/api/' +
+          (definition && definition.id) +
+          '/pipeline-rows/' +
+          sp +
+          (sp ? '&' : '?') +
+          'alias=visits&opportunity_id=' +
+          encodeURIComponent(selCase.opportunity_id) +
+          '&case_ids=' +
+          encodeURIComponent(selCase.entity_id),
+        { credentials: 'same-origin' },
+      )
+        .then(function (r) {
+          return r.ok ? r.json() : { rows: [] };
+        })
+        .then(function (j) {
+          if (!cancelled)
+            setVisitState({ status: 'ready', key: key, rows: j.rows || [] });
+        })
+        .catch(function () {
+          if (!cancelled)
+            setVisitState({ status: 'ready', key: key, rows: [] });
+        });
+      return function () {
+        cancelled = true;
+      };
+    },
+    [definition && definition.id, caseKey],
+  );
+  var weighingsLoaded =
+    visitState.status === 'ready' && visitState.key === caseKey;
   var caseVisits = React.useMemo(
     function () {
-      return visitsFor(selCase);
+      if (!selCase || !weighingsLoaded) return [];
+      return (visitState.rows || [])
+        .filter(function (v) {
+          return v.visit_date;
+        })
+        .sort(function (a, b) {
+          return String(a.visit_date).localeCompare(String(b.visit_date));
+        });
     },
-    [selCase, visitRows],
+    [selCase, visitState, weighingsLoaded],
   );
   // The weighing photos. Visit rows carry the visit id; the framework's
   // visit-images endpoint returns each visit's images (blob ids), and the audit
@@ -1406,7 +1483,7 @@ function WorkflowUI({
                   </span>
                 </div>
               </div>
-              {pipelinesLoaded ? (
+              {weighingsLoaded ? (
                 <GrowthChart
                   pts={pts}
                   gaWks={c.gestational_age_wks}
@@ -1473,7 +1550,7 @@ function WorkflowUI({
                 })}
                 {!weighed.length && (
                   <div className="col-span-6 text-xs text-gray-400 py-4 text-center">
-                    {pipelinesLoaded ? 'No weighings recorded.' : 'Loading…'}
+                    {weighingsLoaded ? 'No weighings recorded.' : 'Loading…'}
                   </div>
                 )}
               </div>
