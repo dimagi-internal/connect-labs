@@ -257,7 +257,7 @@ groq==1.1.1
     # via pydantic-ai-slim
 grpcio==1.78.0
     # via xai-sdk
-gunicorn[gevent]==25.1.0
+gunicorn[gevent]==26.2.0
     # via -r base.in
 h11==0.16.0
     # via
