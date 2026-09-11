@@ -27,7 +27,10 @@ curate: true
 # transplant pool so each clone reproduces its source opp's exact visits/case,
 # cases/FLW, timing, and per-child weight-vs-age growth curve — not just marginals.
 mirror: true
-opportunity_ids: [523, 524, 675, 874, 938, 1234, 1236, 1487, 1488, 1739, 1790]
+# 2166 (PIPN) was in the LLO map from the start but never in the clone list, so
+# the programme had eleven synthetic sites for twelve real ones (Jon, 2026-09-10).
+opportunity_ids:
+  [523, 524, 675, 874, 938, 1234, 1236, 1487, 1488, 1739, 1790, 2166]
 # Phase-2 image behaviour. Applied at replay time, never baked into a bundle:
 # a bundle is a MEASUREMENT of the real opp, and the real opp says nothing about
 # which photo corpus we want or which demo cases to stage.
