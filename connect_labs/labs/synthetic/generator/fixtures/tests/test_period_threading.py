@@ -65,19 +65,83 @@ def test_mirror_visits_carry_a_case_block_and_form_name():
     planned = plan_mirror_visits(spec, seed=1)
 
     assert len(planned) == 2
-    # the beneficiary case is stable across the series ...
+    # "Child Registration Form" is design B: form.case is the MOTHER, stable
+    # across the series and never the baby's own id ...
     case_ids = {p.forced_values["form.case.@case_id"] for p in planned}
     assert len(case_ids) == 1
-    assert case_ids == {planned[0].entity_id}
-    # ... while the per-visit subcase is distinct every visit
+    assert case_ids != {planned[0].entity_id}
+    # ... the baby lives on subcase_0 on every form, and the visit names it
+    # again as child_case_id (test_conditional_paths.py, observed on 1487/1790)
     subs = {p.forced_values["form.subcase_0.case.@case_id"] for p in planned}
-    assert len(subs) == 2
-    assert subs.isdisjoint(case_ids)
+    assert subs == {planned[0].entity_id}
+    assert "form.child_case_id" not in planned[0].forced_values, "a registration carries no child_case_id"
+    assert planned[1].forced_values["form.child_case_id"] == planned[0].entity_id
+    assert "form.kmc_beneficiary_case_id" not in planned[1].forced_values
     # and the form name is replayed
     assert [p.forced_values["form.@name"] for p in planned] == [
         "Child Registration Form",
         "Record Visit Details",
     ]
+
+
+def test_design_a_sources_keep_the_baby_on_form_case():
+    """ "Register KMC Beneficiary" is design A: the baby is form.case on every
+    form, subcase_0 is a fresh throwaway case per visit, and visits name the
+    baby again as kmc_beneficiary_case_id. Writing every source as one shape
+    split design-B babies in two under the real key (BERI 613 -> 1,182)."""
+    from connect_labs.labs.synthetic.generator.fixtures.entities import plan_mirror_visits
+    from connect_labs.labs.synthetic.generator.fixtures.manifest import LongitudinalSpec
+
+    spec = LongitudinalSpec(
+        mode="mirror",
+        jitter_frac=0.0,
+        transplant_pool=[
+            {
+                "owner": "flw_001",
+                "start_date": "2026-01-01",
+                "visits": [
+                    {"day": 0, "values": {"form.w": 1000.0}, "form": "Register KMC Beneficiary"},
+                    {"day": 7, "values": {"form.w": 1100.0}, "form": "Record Visit Details"},
+                    {"day": 14, "values": {"form.w": 1200.0}, "form": "Record Visit Details"},
+                ],
+            }
+        ],
+    )
+    planned = plan_mirror_visits(spec, seed=1)
+    baby = planned[0].entity_id
+    assert {p.forced_values["form.case.@case_id"] for p in planned} == {baby}
+    subs = [p.forced_values["form.subcase_0.case.@case_id"] for p in planned]
+    assert len(set(subs)) == 3 and baby not in subs
+    assert "form.kmc_beneficiary_case_id" not in planned[0].forced_values
+    assert all(p.forced_values["form.kmc_beneficiary_case_id"] == baby for p in planned[1:])
+    assert all("form.child_case_id" not in p.forced_values for p in planned)
+
+
+def test_design_is_inferred_from_where_the_case_updates_live_when_names_are_unknown():
+    from connect_labs.labs.synthetic.generator.fixtures.entities import _registration_design
+
+    b_pool = [
+        {
+            "owner": "f",
+            "start_date": "2026-01-01",
+            "visits": [
+                {"day": 0, "values": {"form.subcase_0.case.update.child_weight_birth": 1000.0}, "form": "Enrolment"},
+                {"day": 7, "values": {"form.anthropometric.child_weight_visit": 1100.0}, "form": "Follow-up"},
+            ],
+        }
+    ]
+    a_pool = [
+        {
+            "owner": "f",
+            "start_date": "2026-01-01",
+            "visits": [
+                {"day": 0, "values": {"form.case.update.child_weight_birth": 1000.0}, "form": "Enrolment"},
+                {"day": 7, "values": {"form.anthropometric.child_weight_visit": 1100.0}, "form": "Follow-up"},
+            ],
+        }
+    ]
+    assert _registration_design(b_pool) == "B"
+    assert _registration_design(a_pool) == "A"
 
 
 def test_app_calculated_values_are_replayed_exactly_not_jittered():

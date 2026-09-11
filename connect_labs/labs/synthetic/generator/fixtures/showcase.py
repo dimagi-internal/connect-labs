@@ -42,6 +42,7 @@ import uuid
 from typing import Any
 
 from . import corpus_manifest as cm
+from .entities import mother_case_id
 from .fields import _set_nested
 from .images import failing_value
 from .manifest import ImageConfig, ShowcaseCase
@@ -487,6 +488,7 @@ def _stamp(
     deliver_unit_id: Any,
     new_date: dt.date,
     delta: dt.timedelta,
+    template_mother_id: str | None = None,
 ) -> None:
     """The identity and timing every cloned visit gets, whatever else it carries.
 
@@ -525,6 +527,10 @@ def _stamp(
     if old_date_s:
         _replace_dates(fj, (dt.date.fromisoformat(old_date_s) + delta).isoformat(), new_date.isoformat())
     _replace_values(fj, template_entity_id, entity_id)
+    if template_mother_id:
+        # A design-B template keeps the MOTHER on form.case; two showcase cases
+        # cloned from one template must not share her.
+        _replace_values(fj, template_mother_id, mother_case_id(entity_id))
     _set_keys(fj, _ALIVE_KEYS, "yes")
 
 
@@ -553,6 +559,9 @@ def _clone_case(
     reg = copy.deepcopy(template["registration"])
     reg.pop("images", None)
     reg["images"] = []
+    # On a design-B template form.case is the mother, not the baby.
+    tmpl_case = _get_path(template["registration"].get("form_json") or {}, "form.case.@case_id")
+    template_mother_id = str(tmpl_case) if tmpl_case and str(tmpl_case) != tid else None
     reg_date = start_date - dt.timedelta(days=1)
     try:
         delta = reg_date - dt.date.fromisoformat(str(template["registration"].get("visit_date") or "")[:10])
@@ -568,6 +577,7 @@ def _clone_case(
         deliver_unit_id=deliver_unit_id,
         new_date=reg_date,
         delta=delta,
+        template_mother_id=template_mother_id,
     )
 
     def fit_record(fj: dict[str, Any]) -> None:
@@ -622,6 +632,7 @@ def _clone_case(
             deliver_unit_id=deliver_unit_id,
             new_date=start_date + dt.timedelta(days=i * visit_gap_days),
             delta=delta,
+            template_mother_id=template_mother_id,
         )
         fj = v["form_json"]
         fit_record(fj)
