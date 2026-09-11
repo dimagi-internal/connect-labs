@@ -41,6 +41,11 @@ def get_config_hash(config) -> str:
     # still perturbs the hash. Reading `field.path` alone missed both cases.
     for field in config.fields:
         parts.append(f"field:{field.name}:{','.join(field.get_paths())}:{field.aggregation}")
+        # A conditional path changes which value a row yields exactly as a path does.
+        # Left out of the hash, editing a condition would keep serving rows computed
+        # under the old one for the life of the cache.
+        for when_path, values, cond_paths in field.conditional_entries():
+            parts.append(f"cond:{field.name}:{when_path}={'|'.join(values)}:{','.join(cond_paths)}")
         # Include transform function bytecode if present (detects lambda changes)
         if field.transform:
             try:

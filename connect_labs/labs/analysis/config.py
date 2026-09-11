@@ -258,6 +258,18 @@ class FieldComputation:
     transform: Callable[[Any], Any] | None = None
     description: str = ""
     paths: list[str] | None = None
+    # Paths that apply only on rows where another path has a given value -- for a
+    # field whose correct source depends on WHICH FORM the row is. Each entry is
+    # `{"when_path": ..., "when_value": <str or list of str>, "paths": [...]}`; on a
+    # row where `when_path` matches, that entry's paths are tried first, and if they
+    # yield nothing (or no entry matches) the ordinary `paths` apply.
+    #
+    # A "first present" list cannot do this when every candidate path is present
+    # on every form and means different things on each. The KMC baby's case id is
+    # that case: `form.case.@case_id` is the baby on one registration design and
+    # the mother on the other, and `subcase_0` the reverse -- so a registration
+    # and its visits land on different ids under any single ordering.
+    conditional_paths: list[dict] | None = None
     extractor: Callable[[dict], Any] | None = None  # Custom extractor receives full visit dict
     filter_path: str = ""  # Optional: path for FILTER (WHERE ...) clause
     # Optional: list of paths to try via COALESCE (mirrors `paths` for the value
@@ -312,8 +324,19 @@ class FieldComputation:
         """Validate configuration."""
         if not self.name:
             raise ValueError("Field name is required")
-        if not self.path and not self.paths and not self.extractor:
-            raise ValueError("Field requires path, paths, or extractor")
+        if not self.path and not self.paths and not self.extractor and not self.conditional_paths:
+            raise ValueError("Field requires path, paths, conditional_paths, or extractor")
+        for i, entry in enumerate(self.conditional_paths or []):
+            where = f"FieldComputation {self.name!r}: conditional_paths[{i}]"
+            if not isinstance(entry, dict):
+                raise ValueError(f"{where} must be a dict")
+            if not entry.get("when_path"):
+                raise ValueError(f"{where} needs a when_path")
+            if entry.get("when_value") in (None, "", []):
+                raise ValueError(f"{where} needs a when_value (a string or a list of strings)")
+            entry_paths = entry.get("paths")
+            if not isinstance(entry_paths, list) or not entry_paths:
+                raise ValueError(f"{where} needs a non-empty list of paths")
         if self.aggregation not in VALID_AGGREGATIONS:
             raise ValueError(f"Invalid aggregation type: {self.aggregation}")
         if self.pre_aggregate_by and self.pre_aggregation not in VALID_AGGREGATIONS:
@@ -337,6 +360,15 @@ class FieldComputation:
         if self.paths:
             return self.paths
         return [self.path] if self.path else []
+
+    def conditional_entries(self) -> list[tuple[str, list[str], list[str]]]:
+        """`conditional_paths` normalised to `(when_path, when_values, paths)`."""
+        out = []
+        for entry in self.conditional_paths or []:
+            values = entry["when_value"]
+            values = values if isinstance(values, list) else [values]
+            out.append((entry["when_path"], [str(v) for v in values], list(entry["paths"])))
+        return out
 
     @property
     def uses_extractor(self) -> bool:

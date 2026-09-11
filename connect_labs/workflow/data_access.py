@@ -2862,6 +2862,7 @@ class PipelineDataAccess(BaseDataAccess):
                     name=field_def["name"],
                     path=field_def.get("path", ""),
                     paths=field_def.get("paths"),
+                    conditional_paths=field_def.get("conditional_paths"),
                     aggregation=field_def.get("aggregation", "first"),
                     transform=get_transform(field_def.get("transform")),
                     description=field_def.get("description", ""),

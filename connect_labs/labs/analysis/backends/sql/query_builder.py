@@ -346,6 +346,31 @@ def _paths_to_coalesce_sql(paths: list[str], column: str = "form_json") -> str:
     return f"COALESCE({', '.join(sql_paths)})"
 
 
+def _field_value_sql(field: FieldComputation, column: str = "form_json") -> str:
+    """The SQL for a field's raw value: its `paths`, preceded by any `conditional_paths`.
+
+    Every extraction site builds a field's value through here, so a conditional
+    path is honoured everywhere the field is read -- not only at the one site
+    someone remembered. A matching condition's paths win; if they yield nothing,
+    or no condition matches, the ordinary paths apply:
+
+        COALESCE(CASE WHEN <when> THEN COALESCE(<its paths>) ... END, COALESCE(<paths>))
+
+    The condition's value is read the way any path is (`_paths_to_coalesce_sql`),
+    so a `when_path` may name a base column as well as a form_json path.
+    """
+    default = _paths_to_coalesce_sql(field.get_paths(), column)
+    entries = field.conditional_entries()
+    if not entries:
+        return default
+    whens = []
+    for when_path, values, paths in entries:
+        subject = _paths_to_coalesce_sql([when_path], column)
+        in_list = ", ".join(f"'{_sql_str(v)}'" for v in values)
+        whens.append(f"WHEN {subject} IN ({in_list}) THEN {_paths_to_coalesce_sql(paths, column)}")
+    return f"COALESCE(CASE {' '.join(whens)} END, {default})"
+
+
 def _get_transform_pattern(field: FieldComputation | HistogramComputation) -> str | None:
     """Identify the transform pattern from the field."""
     if field.transform is None:
@@ -854,8 +879,7 @@ def _pre_aggregated_field_sql(
     if field.pre_aggregate_attribute_to == "last_username":
         return _pre_aggregated_field_sql_via_per_mother_cte(field)
 
-    paths = field.paths if field.paths else [field.path]
-    value_expr = _paths_to_coalesce_sql(paths)
+    value_expr = _field_value_sql(field)
     transformed_expr = _transform_to_sql(field, value_expr)
     pre_path_sql = _jsonb_path_to_sql(field.pre_aggregate_by)
     inner_collapse = _inner_agg_expr(field.pre_aggregation, transformed_expr)
@@ -1099,8 +1123,7 @@ def _build_per_mother_cte(
         f"{cte_alias_owners}.owner_username AS owner_username",
     ]
     for f in fields:
-        paths = f.paths if f.paths else [f.path]
-        value_expr = _paths_to_coalesce_sql(paths, column="sub.form_json")
+        value_expr = _field_value_sql(f, column="sub.form_json")
         transformed_expr = _transform_to_sql(f, value_expr)
         # Apply the field's per-row filter, if any, inside the inner collapse.
         # Mirrors what `_pre_aggregated_field_sql` did pre-refactor.
@@ -1284,8 +1307,7 @@ def build_flw_aggregation_query(
             select_parts.append(f"{pre_agg_sql} as {_sql_ident(field.name)}")
             continue
 
-        paths = field.paths if field.paths else [field.path]
-        value_expr = _paths_to_coalesce_sql(paths)
+        value_expr = _field_value_sql(field)
         transformed_expr = _transform_to_sql(field, value_expr)
 
         if field.aggregation == "list":
@@ -1507,8 +1529,7 @@ def build_entity_aggregation_query(
                 "Track at the FLW-stage two-pass primitive — extend if needed."
             )
 
-        paths = field.paths if field.paths else [field.path]
-        value_expr = _paths_to_coalesce_sql(paths)
+        value_expr = _field_value_sql(field)
         transformed_expr = _transform_to_sql(field, value_expr)
 
         if field.aggregation == "list":
@@ -1675,8 +1696,7 @@ def build_visit_extraction_query(
                 computed_field_names.append(field.name)
                 continue
 
-        paths = field.paths if field.paths else [field.path]
-        value_expr = _paths_to_coalesce_sql(paths)
+        value_expr = _field_value_sql(field)
         transformed_expr = _transform_to_sql(field, value_expr)
         select_parts.append(f"{transformed_expr} as {_sql_ident(field.name)}")
         computed_field_names.append(field.name)
@@ -1893,11 +1913,11 @@ def generate_sql_preview(
 
     # Generate field extraction expressions
     for field in config.fields:
-        paths = field.paths if field.paths else [field.path]
-        value_expr = _paths_to_coalesce_sql(paths)
+        value_expr = _field_value_sql(field)
         transformed_expr = _transform_to_sql(field, value_expr)
         result["field_expressions"][field.name] = {
-            "paths": paths,
+            "paths": field.get_paths(),
+            "conditional_paths": field.conditional_paths or [],
             "extraction_sql": value_expr,
             "transformed_sql": transformed_expr,
             "aggregation": field.aggregation,

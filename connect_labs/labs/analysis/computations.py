@@ -21,6 +21,16 @@ def _extract_field_value(form_json: dict, field_comp: FieldComputation) -> Any:
     Note: This does NOT handle custom extractors - those need the full visit dict.
     Use _extract_field_value_from_visit for fields that may have extractors.
     """
+    # A matching condition's paths win; if they yield nothing, or none matches,
+    # the ordinary paths apply. Mirrors `_field_value_sql` exactly -- the two
+    # engines must not disagree about which path a row reads.
+    for when_path, values, cond_paths in field_comp.conditional_entries():
+        subject = extract_json_path(form_json, when_path)
+        if subject not in (None, "") and str(subject) in values:
+            value = extract_json_path_multi(form_json, cond_paths)
+            if value not in (None, ""):
+                return value
+            break
     paths = field_comp.get_paths()
     if len(paths) > 1:
         return extract_json_path_multi(form_json, paths)
