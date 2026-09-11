@@ -124,7 +124,9 @@ def _row_logic(r, area) -> str:
     else:
         steps.append(r.source or "")
 
-    if r.inherited and r.measured_at is not None:
+    if r.regional_proxy:
+        steps.append(f"no national estimate; {r.measured_at_label} applied")
+    elif r.inherited and r.measured_at is not None:
         steps.append(f"national figure applied from {r.measured_at.name}")
     if area.is_whole_country:
         steps.append(f"rolled up from {area.units_covered} regions")
@@ -501,9 +503,7 @@ class SelectionView(OpenLocallyMixin, View):
                             else ""
                         ),
                         "inherited": bool(r and r.inherited),
-                        "measured_at": (
-                            f"{r.measured_at.name} (ADM{r.measured_at.admin_level})" if r and r.inherited else None
-                        ),
+                        "measured_at": (r.measured_at_label if r and r.inherited else None),
                         "expected_deaths": _round_or_none(a.counts.get("expected_deaths")),
                         "ors_gap_children": _round_or_none(a.counts.get("ors_gap_children")),
                         "gap": _round_or_none(a.counts.get(f"{indicator}_gap")),

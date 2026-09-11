@@ -25,6 +25,12 @@ reads off the page:
     built mostly that way is a national figure repeated, not a subnational one.
   * ``countries_unsupported`` — countries the method cannot answer at all,
     listed rather than silently dropped.
+  * ``regional_proxy_units`` — per count, units whose figure rests on a
+    regional aggregate rather than a national one (low-birthweight births in a
+    country with no national LBW estimate). Part of the total, disclosed.
+  * ``births_implausible_units`` — units whose births cannot belong to the
+    under-fives beside them. Non-zero means the births total, and everything
+    derived from it, should not be quoted until those units are explained.
   * ``countries_supported`` + ``empty_because_unanswerable`` — whether an empty
     answer is a finding. Zero rows because nowhere crossed the threshold and
     zero rows because nothing in scope had data are opposite conclusions, and
@@ -185,10 +191,18 @@ def targeting_indicators(user, *, indicator=None):
         "repeated across regions; 'small_sample_units' says how many rest on a "
         "survey estimate the source itself flags as too thin to rely on (DHS "
         "suppresses below 25 unweighted cases and brackets below 50); and "
-        "'countries_unsupported' lists countries the method cannot answer at all; and "
+        "'countries_unsupported' lists countries the method cannot answer at all; "
+        "'regional_proxy_units' says, per count, how many units rest on a REGIONAL "
+        "aggregate rather than a national figure (e.g. births_lbw in Nigeria and "
+        "Ethiopia, which publish no national low-birthweight estimate) -- quote such a "
+        "total as including regional estimates; 'births_implausible_units' counts units "
+        "whose births/under-5 ratio is outside 0.12-0.32 -- non-zero means do not quote "
+        "the births total; and "
         "'empty_because_unanswerable' is true when a zero-row answer means the question "
         "could not be asked anywhere in scope rather than that nowhere crossed the "
-        "threshold — do not report that case as a finding."
+        "threshold — do not report that case as a finding. Newborn indicators (u5mr, nmr, "
+        "the maternal & newborn group) also carry births_lbw, the low-birthweight births "
+        "a KMC-type programme is sized on."
     ),
     input_schema={
         "type": "object",
@@ -284,6 +298,12 @@ def targeting_select(
                 # needs to see which line is thin, not just how many are.
                 "small_sample": bool(resolved and resolved.small_sample),
                 "sample_unweighted": resolved.sample_unweighted if resolved else None,
+                # Where the rate was measured, when not here -- a region, or a
+                # regional aggregate for a country with no estimate of its own.
+                "measured_at": resolved.measured_at_label if resolved and resolved.inherited else None,
+                # Counts on this row that rest on a regional aggregate.
+                "regional_proxy_counts": sorted(c for c, n in area.regional_proxy_units.items() if n),
+                "births_implausible_units": area.births_implausible_units,
                 **{k: (round(v) if v is not None else None) for k, v in area.counts.items()},
             }
         )
@@ -306,6 +326,8 @@ def targeting_select(
         "coverage": {k: {"with_value": got, "of": total} for k, (got, total) in selection.coverage.items()},
         "inherited_units": selection.inherited_units,
         "small_sample_units": selection.small_sample_units,
+        "regional_proxy_units": selection.regional_proxy_units,
+        "births_implausible_units": selection.births_implausible_units,
         "projected_to": selection.projected_to,
         "projected_without_rate": selection.projected_without_rate,
         "countries_fully_above": selection.countries_fully_above,
@@ -403,10 +425,12 @@ def targeting_methodology(
         "Cost a selection. Two things must be fixed and neither can be inferred from the "
         "data: what one unit costs, and what a unit IS — a birth, a child under 5, a "
         "person, a household, or a case of disease. Which applies is a property of the "
-        "programme (KMC is priced per newborn, a bednet per child, a water connection per "
-        "household), so it is chosen, not guessed. Returns the absorbable spend, the unit "
-        "count behind it, and any caveat. Where an indicator implies no case count the "
-        "'case' basis is declined rather than approximated."
+        "programme (KMC is priced per LOW-BIRTHWEIGHT newborn -- 'lbw_birth' -- a bednet per "
+        "child, a water connection per household), so it is chosen, not guessed. Returns "
+        "the absorbable spend, the unit count behind it, and any caveat -- including how "
+        "many units rest on a regional rather than national rate ('regional_proxy_units'). "
+        "Where an indicator implies no case count the 'case' basis is declined rather "
+        "than approximated."
     ),
     input_schema={
         "type": "object",
@@ -422,9 +446,13 @@ def targeting_methodology(
                 # 10.8M against 215.1M. Costing a year of supply on the fortnight figure
                 # under-prices it roughly twentyfold, and the enum offered only the
                 # fortnight.
-                "enum": ["birth", "under_5", "person", "household", "case", "case_year"],
+                "enum": ["birth", "lbw_birth", "under_5", "person", "household", "case", "case_year"],
                 "description": (
-                    "What one unit of cost buys. 'case' counts a survey recall window "
+                    "What one unit of cost buys. 'lbw_birth' counts births under 2,500 g "
+                    "(births x the UNICEF-WHO national low-birthweight rate) -- the KMC "
+                    "denominator, roughly a seventh of 'birth'; it includes small-for-"
+                    "gestational-age term babies and most preterm babies but not preterm "
+                    "babies of 2,500 g or more. 'case' counts a survey recall window "
                     "(a fortnight); 'case_year' counts a year of the same episodes -- "
                     "pick deliberately, they differ by more than an order of magnitude."
                 ),
@@ -519,6 +547,25 @@ def targeting_scenario(
     # costing at 100% prices a programme nobody has run.
     units = None if present is None else present * reach
     got, of = selection.coverage.get(cases_measure, (0, 0))
+    proxied = selection.regional_proxy_units.get(cases_measure, 0)
+    caveats = []
+    if of and got < of:
+        caveats.append(
+            f"{of - got} of {of} selected units carry no {cases_measure} figure and contribute "
+            "nothing, so this is a floor rather than a total."
+        )
+    if proxied:
+        caveats.append(
+            f"{proxied} of {of} selected units' {cases_measure} rest on a REGIONAL aggregate rate: "
+            "their country publishes no national estimate, so its UN subregion's figure is applied. "
+            "Included in the total, not a national measurement."
+        )
+    if selection.births_implausible_units:
+        caveats.append(
+            f"{selection.births_implausible_units} selected units carry a births figure outside the "
+            "plausible range for their under-five population; any births-based count here is suspect "
+            "until they are explained."
+        )
     return {
         "indicator": indicator,
         "threshold": selection.threshold,
@@ -533,12 +580,9 @@ def targeting_scenario(
         "absorbable_usd": round(units * unit_cost) if units is not None else None,
         "coverage": {"units_with_a_figure": got, "of_units_selected": of},
         "is_floor": bool(of and got < of),
-        "caveat": (
-            f"{of - got} of {of} selected units carry no {cases_measure} figure and contribute "
-            "nothing, so this is a floor rather than a total."
-        )
-        if of and got < of
-        else None,
+        "regional_proxy_units": proxied,
+        "births_implausible_units": selection.births_implausible_units,
+        "caveat": " ".join(caveats) or None,
     }
 
 

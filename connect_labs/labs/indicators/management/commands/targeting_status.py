@@ -15,6 +15,30 @@ from django.core.management.base import BaseCommand
 from connect_labs.labs.indicators import availability, boundaries, measures, methods
 from connect_labs.labs.indicators.africa import ISO_CODES, name_for
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun
+from connect_labs.labs.indicators.resolve import BulkResolver
+from connect_labs.labs.indicators.sources import derive
+
+
+def births_plausibility() -> tuple[int, list[tuple[str, int, str, float]]]:
+    """Every ADM1/ADM2 unit whose resolved births cannot belong to its under-fives.
+
+    Resolved exactly as a selection resolves them, so this checks the number a
+    reader would actually be shown rather than whichever row happens to be
+    stored. Returns (units checked, [(iso, level, name, ratio)]).
+    """
+    units = list(boundaries.owned().filter(admin_level__in=(1, 2), iso_code__in=ISO_CODES))
+    bulk = BulkResolver(units)
+    checked = 0
+    bad: list[tuple[str, int, str, float]] = []
+    for b in units:
+        births, u5 = bulk.get("births", b), bulk.get("pop_u5", b)
+        if not (births and u5) or u5.value <= 0:
+            continue
+        checked += 1
+        if derive.births_implausible(births.value, u5.value):
+            bad.append((b.iso_code, b.admin_level, b.name, births.value / u5.value))
+    return checked, sorted(bad)
+
 
 #: Indicator -> the stage that produces it, for the "what to run" hints.
 STAGE_OF = {
@@ -28,6 +52,9 @@ STAGE_OF = {
     "pop_f_15_49": "population",
     "births": "births",
     "expected_deaths": "births",
+    "lbw_rate": "lbw",
+    "births_lbw": "lbw",
+    "facility_delivery": "lbw",
     "households": "child_health",
     "diarrhoea_prevalence": "child_health",
     "malaria_prevalence": "child_health",
@@ -70,6 +97,28 @@ class Command(BaseCommand):
         for code, n in sorted(counts.items()):
             if 0 < n < 50 and code in STAGE_OF:
                 self.stdout.write(self.style.WARNING(f"  thin: {code} has only {n} values"))
+
+        self.stdout.write(self.style.MIGRATE_HEADING("\nBirths plausibility"))
+        checked, implausible = births_plausibility()
+        lo, hi = derive.BIRTHS_PER_UNDER5
+        self.stdout.write(f"  {checked} units carry births and under-fives; births/pop_u5 expected {lo}-{hi}")
+        if implausible:
+            ok = False
+            by_iso = collections.Counter(iso for iso, *_ in implausible)
+            self.stdout.write(
+                self.style.ERROR(
+                    f"  {len(implausible)} units outside it: "
+                    + ", ".join(f"{iso} {n}" for iso, n in by_iso.most_common())
+                )
+            )
+            for iso, level, name, ratio in implausible[:10]:
+                self.stdout.write(self.style.ERROR(f"    {iso} ADM{level} {name:<28} {ratio:.3f}"))
+            self.stdout.write(
+                self.style.ERROR(
+                    "  -> usually a stale derivation outranking a current one. Re-run: "
+                    'make manage CMD="load_indicators --stage births" (it now sweeps what it no longer produces)'
+                )
+            )
 
         self.stdout.write(self.style.MIGRATE_HEADING("\nMethods"))
         for code, m in methods.METHODS.items():

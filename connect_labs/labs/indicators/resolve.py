@@ -88,8 +88,38 @@ class Resolved:
         return "factor" in self.extra
 
     @property
+    def regional_proxy(self) -> bool:
+        """True when the figure describes a region wider than any boundary we hold.
+
+        A UN subregion's low-birthweight aggregate, applied to a country that
+        publishes no estimate of its own. There is no boundary for "Western
+        Africa" to walk up to, so the row is stored on the country — and this is
+        what stops it reading as the country's own measurement. It is carried
+        through derivations too: a count built on a regional rate says so.
+        """
+        return bool((self.extra or {}).get("regional_proxy"))
+
+    @property
     def inherited(self) -> bool:
-        return self.measured_at is not None and self.measured_at.pk != self.boundary.pk
+        """Measured somewhere coarser than here, and applied here.
+
+        Two ways that happens. Walking up the boundary hierarchy to an ancestor
+        that holds a value; or a row that was measured for a region wider than
+        the country it is stored on (``regional_proxy``). Both are the same
+        claim to a reader — "not measured here" — so both count, and every
+        selection's ``inherited_units`` includes them.
+        """
+        walked = self.measured_at is not None and self.measured_at.pk != self.boundary.pk
+        return walked or self.regional_proxy
+
+    @property
+    def measured_at_label(self) -> str:
+        """Where the figure was actually measured, in words a table can carry."""
+        if self.regional_proxy:
+            return f"{(self.extra or {}).get('proxy_region_name') or 'regional aggregate'} (regional aggregate)"
+        if self.measured_at is not None and self.measured_at.pk != self.boundary.pk:
+            return f"{self.measured_at.name} (ADM{self.measured_at.admin_level})"
+        return "this area"
 
     @property
     def sample_unweighted(self) -> int | None:
@@ -112,6 +142,8 @@ class Resolved:
     def provenance(self) -> str:
         """One line fit for a table cell or a tooltip."""
         base = f"{self.source_ref or self.source} ({self.year})"
+        if self.regional_proxy:
+            return f"{base} — measured for {self.measured_at_label}, applied here"
         if self.inherited:
             lvl = f"ADM{self.measured_at.admin_level}"
             return f"{base} — measured at {self.measured_at.name} [{lvl}], applied here"
@@ -440,6 +472,16 @@ class Area:
     #: Units whose rate the source itself flags as resting on too few cases.
     #: Same reason for recording it here: a country row averages the flag away.
     small_sample_units: int = 0
+    #: Per count measure, units whose count rests on a REGIONAL aggregate rather
+    #: than a national figure -- low-birthweight births in a country with no
+    #: national LBW estimate. ``inherited_units`` covers the rate being
+    #: targeted; this covers the counts carried beside it, which is where an
+    #: eligible-baby total actually comes from.
+    regional_proxy_units: dict[str, int] = field(default_factory=dict)
+    #: Units whose births figure cannot belong to the under-fives beside it
+    #: (see ``derive.BIRTHS_PER_UNDER5``). Coverage says whether a births
+    #: figure exists; this says whether it is believable.
+    births_implausible_units: int = 0
 
     def get(self, indicator: str) -> float | None:
         if indicator in self.counts:
@@ -563,6 +605,34 @@ class Selection:
         """
         return sum(area.small_sample_units for area in self.areas)
 
+    @property
+    def regional_proxy_units(self) -> dict[str, int]:
+        """Per count, units whose figure rests on a regional rather than national rate.
+
+        Only counts that have any are listed, so an empty dict means none do.
+        Where it is non-zero, part of that total is a regional average applied
+        to a country that publishes no figure of its own — defensible, and
+        disclosed per row, but not a national measurement.
+        """
+        out: dict[str, int] = defaultdict(int)
+        for area in self.areas:
+            for code, n in area.regional_proxy_units.items():
+                if n:
+                    out[code] += n
+        return dict(out)
+
+    @property
+    def births_implausible_units(self) -> int:
+        """Units whose births/under-five ratio falls outside the plausible band.
+
+        Found because every other honesty field passed a births figure six times
+        too small: Rwanda's provinces carried 64,370 births against 1.9M
+        under-fives, with births coverage complete and nothing inherited. A
+        non-zero here means a births total, and everything derived from it, is
+        not to be quoted until the units are explained.
+        """
+        return sum(area.births_implausible_units for area in self.areas)
+
 
 #: Counts carried on every selection regardless of indicator.
 CARRIED_COUNTS = (
@@ -602,7 +672,36 @@ def carried_for(indicator: str, extra: tuple[str, ...] = ()) -> tuple[str, ...]:
         wanted.append(annual)
     if indicator in ("diarrhoea_prevalence", "ors_coverage"):
         wanted.append("ors_gap_children")
+    # Newborn questions carry the low-birthweight count, because the births
+    # beside them overstate the babies a newborn programme like KMC is for by
+    # roughly sevenfold.
+    if indicator in NEWBORN_INDICATORS:
+        wanted.append("births_lbw")
     return CARRIED_COUNTS + tuple(dict.fromkeys(wanted))
+
+
+#: Indicators whose selection is a question about newborns, so it carries the
+#: low-birthweight count beside births. Derived from the menu groups, so a
+#: newborn measure added to either group brings the count with it.
+NEWBORN_INDICATORS = frozenset(
+    measures.GROUPS.get("Child survival", ()) + measures.GROUPS.get("Maternal & newborn", ()) + ("imr",)
+)
+
+
+def _units_proxied(values: list[Resolved | None]) -> int:
+    return sum(1 for v in values if v is not None and v.regional_proxy)
+
+
+def _implausible_births(bulk: BulkResolver, units: list[AdminBoundary]) -> int:
+    # Imported here: sources.derive imports this module.
+    from connect_labs.labs.indicators.sources.derive import births_implausible
+
+    n = 0
+    for u in units:
+        births, u5 = bulk.get("births", u), bulk.get("pop_u5", u)
+        if births and u5 and births_implausible(births.value, u5.value):
+            n += 1
+    return n
 
 
 def _country_name(iso: str, adm0: AdminBoundary | None) -> str:
@@ -817,11 +916,14 @@ def select_above(
                     values={indicator: r},
                     inherited_units=max(len(children), 1) if r is not None and r.inherited else 0,
                     small_sample_units=max(len(children), 1) if r is not None and r.small_sample else 0,
+                    births_implausible_units=_implausible_births(bulk, children),
                 )
                 for c in carried:
-                    got = [_count(v) for ch in children if (v := bulk.get(c, ch)) is not None]
+                    resolved = [bulk.get(c, ch) for ch in children]
+                    got = [_count(v) for v in resolved if v is not None]
                     area.counts[c] = sum(got) if got else None
                     area.coverage[c] = (len(got), max(len(children), 1))
+                    area.regional_proxy_units[c] = _units_proxied(resolved)
                 areas.append(area)
             continue
 
@@ -838,11 +940,14 @@ def select_above(
                 values={indicator: _rollup_rate(indicator, above, bulk)},
                 inherited_units=sum(1 for _, r in above if r is not None and r.inherited),
                 small_sample_units=sum(1 for _, r in above if r is not None and r.small_sample),
+                births_implausible_units=_implausible_births(bulk, [b for b, _ in above]),
             )
             for c in carried:
-                got = [_count(r) for b, _ in above if (r := bulk.get(c, b)) is not None]
+                resolved = [bulk.get(c, b) for b, _ in above]
+                got = [_count(r) for r in resolved if r is not None]
                 area.counts[c] = sum(got) if got else None
                 area.coverage[c] = (len(got), len(above))
+                area.regional_proxy_units[c] = _units_proxied(resolved)
             areas.append(area)
         else:
             # Measured against every region, not every evaluated one — same
@@ -859,11 +964,13 @@ def select_above(
                     values={indicator: r},
                     inherited_units=1 if r is not None and r.inherited else 0,
                     small_sample_units=1 if r is not None and r.small_sample else 0,
+                    births_implausible_units=_implausible_births(bulk, [b]),
                 )
                 for c in carried:
                     got = bulk.get(c, b)
                     area.counts[c] = _count(got) if got else None
                     area.coverage[c] = (1 if got else 0, 1)
+                    area.regional_proxy_units[c] = _units_proxied([got])
                 areas.append(area)
 
     totals: dict[str, float | None] = {}
