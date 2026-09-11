@@ -194,3 +194,73 @@ def test_the_freshest_copy_of_a_visit_wins_and_half_written_copies_are_ignored()
         cur.execute(f"SELECT pipeline_id FROM ({sql}) q")
         got = [r[0] for r in cur.fetchall()]
     assert got == [99], "the most recently fetched finalized copy, not the lowest id or a half-written one"
+
+
+def test_a_worker_filter_is_applied_in_the_scan_and_a_computed_key_is_not():
+    sql = build_visit_sql(
+        {},
+        [10042, 10016],
+        generate_sql_preview=_gen,
+        visit_filter={"opportunity_id": 10042, "username": "o'brien", "baby_case_id": "B1"},
+    )
+    where = sql[sql.index("WHERE opportunity_id IN") : sql.index("ORDER BY")]
+    assert "opportunity_id = 10042" in where and "username = 'o''brien'" in where, "escaped, in the scan"
+    assert "baby_case_id" not in where, "a computed key is not a column of the raw cache; the compiler applies it"
+
+
+@pytest.mark.django_db
+def test_one_workers_evaluation_scans_only_that_workers_visits():
+    """The worker review's case table is the case scope for ONE worker.
+
+    The filter used to be applied after Layer 1's DISTINCT ON, which Postgres cannot
+    push a `username` predicate below -- so every visit of the opportunity was
+    extracted and de-duplicated to keep one worker's rows, and a real worker's case
+    table ran past a minute. The plan must show the predicate AT the scan of the
+    raw cache, and the rows must be exactly that worker's.
+    """
+    import json
+
+    from django.db import connection
+    from django.utils import timezone
+
+    from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+    from connect_labs.labs.analysis.config import AnalysisPipelineConfig, FieldComputation
+
+    opp, future = 976545, timezone.now() + timezone.timedelta(days=1)
+    for i in range(6):
+        for pid in (1, 2):  # two cached copies of every visit
+            RawVisitCache.objects.create(
+                opportunity_id=opp,
+                pipeline_id=pid,
+                visit_count=6,
+                expires_at=future,
+                visit_id=str(90000 + i),
+                username="flw_a" if i < 2 else "flw_b",
+                status="approved",
+                form_json={"form": {"@name": "Record Visit Details"}},
+                visit_date="2026-09-01",
+            )
+    marker_cols = sorted({col for col, _word in MARKER_BOOLEANS.values()} | {"ebf_visits", "form_names"})
+    config = AnalysisPipelineConfig(
+        grouping_key="username", fields=[FieldComputation(name=c, path="form.@name") for c in marker_cols]
+    )
+    config.pipeline_id = 1
+    sql = build_visit_sql(config, [opp], visit_filter={"opportunity_id": opp, "username": "flw_a"})
+    with connection.cursor() as cur:
+        cur.execute(f"SELECT visit_id, username FROM ({sql}) q ORDER BY visit_id")
+        assert cur.fetchall() == [("90000", "flw_a"), ("90001", "flw_a")]
+        cur.execute(f"EXPLAIN (FORMAT JSON) {sql}")
+        plan = cur.fetchone()[0]
+        plan = json.loads(plan) if isinstance(plan, str) else plan
+
+    def scans(node):
+        if node.get("Relation Name") == "labs_raw_visit_cache":
+            yield node
+        for child in node.get("Plans", []):
+            yield from scans(child)
+
+    found = list(scans(plan[0]["Plan"]))
+    assert found, "the raw cache is scanned"
+    for node in found:
+        conds = " ".join(str(node.get(k, "")) for k in ("Filter", "Index Cond", "Recheck Cond"))
+        assert "flw_a" in conds, f"the worker predicate must be applied at the scan, got: {conds}"

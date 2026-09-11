@@ -417,7 +417,9 @@ def evaluate(
                 "explicit visit_sql"
             )
         try:
-            visit_sql = build_visit_sql(pipeline_schema, opportunity_ids, extra_fields=extra_fields)
+            visit_sql = build_visit_sql(
+                pipeline_schema, opportunity_ids, extra_fields=extra_fields, visit_filter=visit_filter
+            )
         except SemanticRuntimeError:
             raise
         except Exception as exc:
