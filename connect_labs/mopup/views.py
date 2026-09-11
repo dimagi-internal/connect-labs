@@ -37,7 +37,7 @@ from connect_labs.mopup.core.candidates import (
 )
 from connect_labs.mopup.core.data_access import MopupRunDataAccess
 from connect_labs.mopup.core.models import STATUS_LOCKED
-from connect_labs.mopup.core.work_areas import list_work_areas, summarize_wards
+from connect_labs.mopup.core.work_areas import fetch_connect_implementation_areas, list_work_areas, summarize_wards
 
 logger = logging.getLogger(__name__)
 
@@ -401,13 +401,18 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
             {"key": ind.VACCINATION, "label": "Vaccination-given rate", "tier": 2},
         ]
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
-        ward_boundaries, boundary_source_caption = self._ward_boundaries_geojson(run.selected_wards)
+        access_token = self.request.session.get("labs_oauth", {}).get("access_token")
+        ward_boundaries, boundary_source_caption = self._ward_boundaries_geojson(
+            run.selected_wards, run.target_opportunity_id, access_token
+        )
         context["ward_boundaries"] = ward_boundaries
         context["boundary_source_caption"] = boundary_source_caption
         return context
 
     @staticmethod
-    def _ward_boundaries_geojson(selected_wards: list[dict]) -> tuple[dict, str | None]:
+    def _ward_boundaries_geojson(
+        selected_wards: list[dict], opportunity_id: int | None, access_token: str | None
+    ) -> tuple[dict, str | None]:
         """Static, fetched once at page load (mopup's wards are fixed by
         Phase 1's picker, not viewport-panned like microplans' own admin
         boundary layer) — one Feature per selected ward, skipping any that
@@ -415,21 +420,51 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         the opportunity") intentionally yields no boundaries — resolving
         every ward's boundary just for the map isn't worth the cost.
 
+        Tries the opportunity's own Connect-native Implementation Area
+        boundary first (ground truth — what this opportunity's microplanning
+        was actually built against; live since commcare-connect#1517,
+        2026-09-10), matching by name (labs itself writes
+        `implementation_area = ward` on upload, so this is normally an exact
+        match). Falls back to the third-party name-matched resolver
+        (`microplans.core.admin_boundaries`'s labs/Overture blend) for any
+        ward the Connect-native set doesn't cover — an opportunity that never
+        uploaded Implementation Areas, or with no `access_token` available,
+        falls back for every ward, unchanged from before this endpoint
+        existed.
+
         Also returns a caption naming which boundary source(s) actually
-        resolved (`None` if nothing did) — Connect's own API doesn't yet
-        expose a ward-level boundary at all (only per-work-area polygons),
-        so every ward shape shown here comes from a name-matched public/
-        curated source (`microplans.core.admin_boundaries`'s labs/Overture
-        resolver), which can disagree with what's actually uploaded in
-        Connect for that ward. Surfacing the real source is a deliberately
-        small, paused-scope fix — see the plan this shipped under for why
-        a deeper fix (an upload override, or deriving from existing work
-        areas) is on hold pending a Connect API change."""
+        resolved (`None` if nothing did)."""
         from connect_labs.microplans.core.admin_boundaries import SOURCE_LABELS, find_ward_boundary
+
+        def _norm(s: str) -> str:
+            return " ".join((s or "").strip().casefold().split())
+
+        connect_areas_by_name: dict[str, dict] = {}
+        if opportunity_id and access_token:
+            for area in fetch_connect_implementation_areas(opportunity_id, access_token):
+                name = _norm(area.get("name"))
+                if name:
+                    connect_areas_by_name[name] = area
 
         features = []
         sources_seen: set[str] = set()
         for sw in selected_wards:
+            connect_area = connect_areas_by_name.get(_norm(sw.get("ward", "")))
+            if connect_area is not None:
+                sources_seen.add("connect")
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": connect_area["boundary"],
+                        "properties": {
+                            "ward": sw.get("ward", ""),
+                            "lga": sw.get("lga", ""),
+                            "state": sw.get("state", ""),
+                            "source": "connect",
+                        },
+                    }
+                )
+                continue
             boundary = find_ward_boundary(sw.get("state", ""), sw.get("lga", ""), sw.get("ward", ""))
             if boundary is None or boundary.geometry is None:
                 continue
@@ -448,8 +483,15 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
             )
         caption = None
         if sources_seen:
-            labels = sorted(SOURCE_LABELS.get(s, s) for s in sources_seen)
-            caption = f"Boundary source: {', '.join(labels)} — pending native Connect boundary support."
+            labels_map = {**SOURCE_LABELS, "connect": "Connect (native Implementation Area for this opportunity)"}
+            labels = sorted(labels_map.get(s, s) for s in sources_seen)
+            if sources_seen - {"connect"}:
+                caption = (
+                    f"Boundary source: {', '.join(labels)} — some ward(s) fell back to third-party "
+                    "matching, pending a Connect Implementation Area upload for those wards."
+                )
+            else:
+                caption = f"Boundary source: {', '.join(labels)}."
         return {"type": "FeatureCollection", "features": features}, caption
 
 
