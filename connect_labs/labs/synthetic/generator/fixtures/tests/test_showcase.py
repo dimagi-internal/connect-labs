@@ -495,6 +495,31 @@ def test_gestational_age_is_written_where_the_pipeline_reads_it():
     assert form["child_details"]["ga_preemie_labels"]["gestational_age_at_birth_preemie"] == 31.0
 
 
+def test_a_design_b_template_gets_its_own_mother():
+    """On a design-B template form.case is the MOTHER; two showcase cases cloned
+    from one template must not share her, and the baby id must land on
+    subcase_0 and child_case_id, never on form.case."""
+    from connect_labs.labs.synthetic.generator.fixtures.entities import mother_case_id
+
+    t = _template_case("tmpl-b", "flw_001", 5)
+    for v in t:
+        form = v["form_json"]["form"]
+        form["case"]["@case_id"] = "mother-b"
+        form["subcase_0"] = {"case": {"@case_id": "tmpl-b"}}
+        if form["@name"] != "Child Registration Form":
+            form["child_case_id"] = "tmpl-b"
+    visits = _clone_build(t, {"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"})
+    baby = visits[0]["entity_id"]
+    for v in visits:
+        form = v["form_json"]["form"]
+        assert form["case"]["@case_id"] == mother_case_id(baby)
+        assert form["subcase_0"]["case"]["@case_id"] == baby
+        if form["@name"] != "Child Registration Form":
+            assert form["child_case_id"] == baby
+    other = _clone_build(t, {"name": "Faltering", "trajectory": "slow_03", "flw": "flw_001"})
+    assert other[0]["form_json"]["form"]["case"]["@case_id"] != visits[0]["form_json"]["form"]["case"]["@case_id"]
+
+
 def test_without_templates_the_forms_are_synthesised_as_before():
     visits = _build([{"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"}])
     assert "cloned_from" not in visits[0]["showcase"]
