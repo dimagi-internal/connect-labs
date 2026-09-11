@@ -441,6 +441,14 @@ def _shift_dates(node: Any, delta: dt.timedelta) -> None:
         parent[key] = (d + delta).isoformat() + m.group(2)
 
 
+def _replace_dates(node: Any, old_day: str, new_day: str) -> None:
+    """Every ISO date equal to ``old_day`` becomes ``new_day``, time suffix kept."""
+    for parent, key in _walk(node):
+        v = parent[key]
+        if isinstance(v, str) and v[:10] == old_day and _ISO_DATE.match(v):
+            parent[key] = new_day + v[10:]
+
+
 def _replace_values(node: Any, old: str, new: str) -> None:
     for parent, key in _walk(node):
         if parent[key] == old:
@@ -475,14 +483,17 @@ def _stamp(
     opportunity_id: int,
     deliver_unit_id: Any,
     new_date: dt.date,
+    delta: dt.timedelta,
 ) -> None:
-    """The identity and timing every cloned visit gets, whatever else it carries."""
+    """The identity and timing every cloned visit gets, whatever else it carries.
+
+    ``delta`` is ONE shift for the whole case (the registration's), so the
+    case-level dates a follow-up form repeats -- DOB, discharge, registration --
+    land on the same day in every form. The visit's own date fields are then
+    rewritten to ``new_date``: shifting each visit by its own delta moved the
+    DOB inside visit 3 a week away from the DOB inside visit 2 (seen on opp
+    10062, 2026-09-11)."""
     old_date_s = str(visit.get("visit_date") or "")[:10]
-    try:
-        old_date = dt.date.fromisoformat(old_date_s)
-    except ValueError:
-        old_date = new_date
-    delta = new_date - old_date
     created = dt.datetime.combine(new_date, dt.time(9, 0))
     visit["id"] = int.from_bytes(hashlib.sha256(f"{case.name}:{tag}".encode()).digest()[:7], "big")
     visit["xform_id"] = _stable_entity_id(f"{case.name}:xform:{tag}", opportunity_id)
@@ -508,6 +519,8 @@ def _stamp(
     visit["location"] = None
     fj = visit.setdefault("form_json", {})
     _shift_dates(fj, delta)
+    if old_date_s:
+        _replace_dates(fj, (dt.date.fromisoformat(old_date_s) + delta).isoformat(), new_date.isoformat())
     _replace_values(fj, template_entity_id, entity_id)
     _set_keys(fj, _ALIVE_KEYS, "yes")
 
@@ -537,6 +550,11 @@ def _clone_case(
     reg = copy.deepcopy(template["registration"])
     reg.pop("images", None)
     reg["images"] = []
+    reg_date = start_date - dt.timedelta(days=1)
+    try:
+        delta = reg_date - dt.date.fromisoformat(str(template["registration"].get("visit_date") or "")[:10])
+    except ValueError:
+        delta = dt.timedelta(0)
     _stamp(
         reg,
         case=case,
@@ -545,12 +563,26 @@ def _clone_case(
         template_entity_id=tid,
         opportunity_id=opportunity_id,
         deliver_unit_id=deliver_unit_id,
-        new_date=start_date - dt.timedelta(days=1),
+        new_date=reg_date,
+        delta=delta,
     )
+
+    def fit_record(fj: dict[str, Any]) -> None:
+        # The record values that must agree with the trajectory, wherever a
+        # form repeats them. A follow-up form carries the case's birth weight
+        # too, and the pipeline takes the MIN over visits: overriding only the
+        # registration left the template baby's 710 g on the case row (opp
+        # 10062, 2026-09-11).
+        _set_keys(fj, _BIRTH_WEIGHT_KEYS, birth_weight)
+        _set_keys(fj, _ENROL_WEIGHT_KEYS, first_reading)
+        _set_key_re(fj, _GA_KEY, ga)
+
     fj = reg["form_json"]
-    _set_keys(fj, _BIRTH_WEIGHT_KEYS, birth_weight)
-    _set_keys(fj, _ENROL_WEIGHT_KEYS, first_reading)
-    _set_key_re(fj, _GA_KEY, ga)
+    fit_record(fj)
+    if not _set_key_re(fj, _GA_KEY, ga):
+        # The template's app never asked for gestational age; the chart needs
+        # it for its postmenstrual-age axis, so write it where the pipeline reads.
+        _set_nested(fj, "form.subcase_0.case.update.gestational_age_at_birth_lmp", ga)
     reg["showcase"] = {
         "case": case.name,
         "trajectory": case.trajectory,
@@ -584,8 +616,10 @@ def _clone_case(
             opportunity_id=opportunity_id,
             deliver_unit_id=deliver_unit_id,
             new_date=start_date + dt.timedelta(days=i * visit_gap_days),
+            delta=delta,
         )
         fj = v["form_json"]
+        fit_record(fj)
         # The weight the worker "typed", at every place the template records a
         # visit weight, and at the cohort's resolved path in case the template
         # kept it somewhere else.
