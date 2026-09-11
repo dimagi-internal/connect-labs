@@ -124,6 +124,78 @@ def _series_constants(
     return const_values, const_dates, const_cats
 
 
+# ── Case shape ─────────────────────────────────────────────────────────────────
+# The two KMC app generations put the baby in different places, and both
+# candidate paths exist on both, meaning opposite things
+# (connect_labs/labs/analysis/backends/sql/tests/test_conditional_paths.py,
+# observed on production 2026-09-11: 523 and 675 are A, 1487 and 1790 are B):
+#
+#   design A  "Register KMC Beneficiary"  form.case = the BABY, subcase_0 = another case
+#             "Record Visit Details"      form.case = the BABY, kmc_beneficiary_case_id = the BABY,
+#                                         subcase_0 = a fresh case per visit
+#   design B  "Child Registration Form"   form.case = the MOTHER, subcase_0 = the BABY
+#             "Record Visit Details"      form.case = the MOTHER, child_case_id = the BABY,
+#                                         subcase_0 = the BABY
+#
+# The design is a property of the SOURCE, read off the registration form's name
+# in the transplant pool (the profiler replays form names verbatim), with a
+# fallback on where the pool keeps its case-update paths.
+
+_MOTHER_NS = uuid.UUID("6a1f7b2e-2c1d-4a6f-9b0e-7d3c5f1a9e42")
+
+
+def _is_registration(form_name: str | None) -> bool:
+    return bool(form_name) and "regist" in form_name.lower()
+
+
+def _registration_design(pool: list[dict]) -> str:
+    """'A' or 'B' for the whole pool, decided from its registration form."""
+    names = {str(v.get("form") or "") for series in pool for v in series.get("visits") or []}
+    reg = [n for n in names if _is_registration(n)]
+    if any("child registration" in n.lower() for n in reg):
+        return "B"
+    if any("register kmc" in n.lower() for n in reg):
+        return "A"
+    # No recognisable registration name: a source whose case-update fields live
+    # under subcase_0 keeps its baby there, i.e. design B.
+    sub = main = 0
+    for series in pool:
+        for v in series.get("visits") or []:
+            keys = list((v.get("values") or {}).keys()) + list((v.get("dates") or {}).keys())
+            keys += list((v.get("cats") or {}).keys())
+            for path in keys:
+                if path.startswith("form.subcase_0.case.update."):
+                    sub += 1
+                elif path.startswith("form.case.update."):
+                    main += 1
+    return "B" if sub > main else "A"
+
+
+def mother_case_id(entity_id: str) -> str:
+    """The mother's case id for a design-B baby: stable per baby, never colliding
+    with a baby id. Twins are not modelled -- one mother per baby."""
+    return str(uuid.uuid5(_MOTHER_NS, f"{entity_id}:mother"))
+
+
+def _case_shape(design: str, *, entity_id: str, is_registration: bool, rng) -> dict[str, str]:
+    """The case-id fields one form carries, per design (see the table above)."""
+    if design == "B":
+        shape = {
+            "form.case.@case_id": mother_case_id(entity_id),
+            "form.subcase_0.case.@case_id": entity_id,
+        }
+        if not is_registration:
+            shape["form.child_case_id"] = entity_id
+        return shape
+    shape = {
+        "form.case.@case_id": entity_id,
+        "form.subcase_0.case.@case_id": str(uuid.UUID(int=rng.getrandbits(128))),
+    }
+    if not is_registration:
+        shape["form.kmc_beneficiary_case_id"] = entity_id
+    return shape
+
+
 def plan_mirror_visits(
     spec: LongitudinalSpec, *, seed: int, no_jitter_paths: set[str] | None = None
 ) -> list[PlannedVisit]:
@@ -144,6 +216,7 @@ def plan_mirror_visits(
     # (visit-counter median gap 1.0, child_age 0.10-0.17).
     no_jitter = no_jitter_paths or set()
     time_varying = _time_varying_paths(spec.transplant_pool)
+    design = _registration_design(spec.transplant_pool)
     planned: list[PlannedVisit] = []
     for idx, series in enumerate(spec.transplant_pool, start=1):
         entity_id = str(uuid.UUID(int=rng.getrandbits(128)))  # one stable id per case
@@ -192,12 +265,23 @@ def plan_mirror_visits(
             # were null on every synthetic row. That makes a whole class of pipeline
             # logic untestable on synthetic data, and it is the reason every
             # entity-join defect this cohort hit had to be found against production
-            # (connect-labs#1224). Emit the same shape the source has:
-            #   form.case.@case_id      the beneficiary, stable across its series
-            #   form.subcase_0...       a per-visit case, distinct every visit
-            if series_form_names:
-                forced["form.@name"] = visit.get("form") or series_form_names[0]
-            forced["form.case.@case_id"] = entity_id
-            forced["form.subcase_0.case.@case_id"] = str(uuid.UUID(int=rng.getrandbits(128)))
+            # (connect-labs#1224). Emit the same shape the SOURCE has -- and the
+            # source has one of two shapes (see _registration_design), which the
+            # first version of this wrote as one: every form got the baby on
+            # form.case and a random subcase_0. Under the real key that splits every
+            # design-B baby into a registration-only row and a visits-only row
+            # (synthetic BERI 613 -> 1,182 babies, Kikapu 154 -> 294; measured
+            # 2026-09-11 against the form-conditional key of #1725).
+            form_name = visit.get("form") or (series_form_names[0] if series_form_names else None)
+            if form_name:
+                forced["form.@name"] = form_name
+            forced.update(
+                _case_shape(
+                    design,
+                    entity_id=entity_id,
+                    is_registration=_is_registration(form_name),
+                    rng=rng,
+                )
+            )
             planned.append(PlannedVisit(entity_id, entity_name, idx, owner, vdate, vj, forced))
     return planned
