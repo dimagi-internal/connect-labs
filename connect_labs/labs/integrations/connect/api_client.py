@@ -426,6 +426,46 @@ class LabsRecordAPIClient:
             logger.error(f"Failed to fetch record {record_id}: {e}", exc_info=True)
             raise _wrap_http_error(f"Failed to fetch record {record_id}: {e}", e) from e
 
+    @_audited(_AuditAction.READ)
+    def get_public_record_by_id(
+        self,
+        record_id: int,
+        experiment: str | None = None,
+        type: str | None = None,
+        model_class: type[LocalLabsRecord] | None = None,
+    ) -> LocalLabsRecord | None:
+        """A PUBLIC record, read from production Connect with no scope at all.
+
+        This is what "shared" has to mean for something referenced across scopes: a
+        record its owner marked public, readable by anyone signed in, whatever their
+        memberships -- while writes still need the owner's scope. It always goes to
+        production, even from a labs-only (synthetic) client: public records are
+        production's, and routing by the client's own scope would look in the local
+        store and find nothing.
+
+        With no scope the server answers public records only, so asking by id cannot
+        leak a private one. If the by-id form returns nothing, it falls back to the
+        public listing filtered by id -- the read `copy_workflow` already relies on.
+        """
+        url = f"{self.base_url}/export/labs_record/"
+        base = {k: v for k, v in (("experiment", experiment), ("type", type)) if v}
+        record_class = model_class if model_class else LocalLabsRecord
+        try:
+            try:
+                response = self.http_client.get(url, params={"id": record_id, **base})
+                response.raise_for_status()
+                hit = next((r for r in response.json() or [] if r.get("id") == record_id), None)
+            except httpx.HTTPStatusError:
+                hit = None
+            if hit is None:
+                response = self.http_client.get(url, params=base)
+                response.raise_for_status()
+                hit = next((r for r in response.json() or [] if r.get("id") == record_id), None)
+            return record_class(hit) if hit else None
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to fetch public record {record_id}: {e}", exc_info=True)
+            raise _wrap_http_error(f"Failed to fetch public record {record_id}: {e}", e) from e
+
     @_audited(_AuditAction.CREATE)
     def create_record(
         self,

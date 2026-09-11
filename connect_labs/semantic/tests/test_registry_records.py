@@ -34,7 +34,7 @@ class _FakeLabsAPI:
         self.rows: dict[int, dict] = {}
         self._next = 1
 
-    def create_record(self, experiment, type, data):
+    def create_record(self, experiment, type, data, public=False):
         rid = self._next
         self._next += 1
         self.rows[rid] = {
@@ -43,16 +43,24 @@ class _FakeLabsAPI:
             "type": type,
             "data": data,
             "opportunity_id": None,
+            "public": public,
         }
         return SemanticRegistryRecord(self.rows[rid])
 
-    def update_record(self, record_id, experiment, type, data):
+    def update_record(self, record_id, experiment, type, data, public=None):
         self.rows[record_id]["data"] = data
+        if public is not None:
+            self.rows[record_id]["public"] = public
         return SemanticRegistryRecord(self.rows[record_id])
 
     def get_record_by_id(self, record_id, experiment, type, model_class):
         row = self.rows.get(record_id)
         return model_class(row) if row else None
+
+    def get_public_record_by_id(self, record_id, experiment, type, model_class):
+        # Anyone may read a PUBLIC record; a private one is invisible here.
+        row = self.rows.get(record_id)
+        return model_class(row) if row and row.get("public") else None
 
     def get_records(self, experiment, type, model_class, **kwargs):
         return [model_class(r) for r in self.rows.values()]
@@ -251,3 +259,55 @@ class TestReseedFromDisk:
         assert refreshed.id == record.id, "a refresh must not create a second record"
         assert (refreshed.deployment or {}).get("app_asks"), "the refresh did not carry app_asks forward"
         assert any((m.get("meta") or {}).get("inputs") for m in refreshed.indicators_doc["measures"])
+
+
+class TestSharingMakesTheRecordReadableEverywhere:
+    """`is_shared` used to be a data flag only: a "shared" registry was listed but could
+    not be READ from any other scope, so a synthetic report could not compute from the
+    real report's registry for a viewer outside the real programme -- it needed a copy.
+    Sharing now sets the record's public flag, and a `public` binding reads it there."""
+
+    def _seeded(self, store, shared):
+        from connect_labs.semantic.seed import registry_payload
+
+        payload = registry_payload("kmc")
+        return store.create_registry(
+            name="KMC",
+            properties=payload["properties"],
+            indicators=payload["indicators"],
+            deployment=payload["deployment"],
+            is_shared=shared,
+        )
+
+    def test_a_shared_registry_is_created_public_and_readable_by_anyone(self):
+        store = _store()
+        rec = self._seeded(store, shared=True)
+        assert store.labs_api.rows[rec.id]["public"] is True
+        assert store.get_registry(rec.id, public=True) is not None
+
+    def test_an_unshared_registry_cannot_be_read_as_public(self):
+        store = _store()
+        rec = self._seeded(store, shared=False)
+        assert store.get_registry(rec.id, public=True) is None
+
+    def test_sharing_later_sets_the_flag_and_unsharing_clears_it(self):
+        store = _store()
+        rec = self._seeded(store, shared=False)
+        store.update_registry(rec.id, is_shared=True)
+        assert store.get_registry(rec.id, public=True) is not None
+        store.update_registry(rec.id, is_shared=False)
+        assert store.get_registry(rec.id, public=True) is None
+
+    def test_an_edit_that_does_not_mention_sharing_leaves_it_alone(self):
+        store = _store()
+        rec = self._seeded(store, shared=True)
+        store.update_registry(rec.id, description="new words")
+        assert store.labs_api.rows[rec.id]["public"] is True
+
+    def test_the_resolver_reads_a_public_binding_as_public(self):
+        from connect_labs.semantic.runtime import resolve_registry
+
+        store = _store()
+        rec = self._seeded(store, shared=True)
+        props, inds, *_ = resolve_registry({"registry_id": rec.id, "public": True}, store)
+        assert props["properties"] and inds["measures"]

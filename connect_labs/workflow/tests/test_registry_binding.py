@@ -247,3 +247,24 @@ class TestTheBindingSurvivesCreationAndClone:
         kwargs = dst.create_definition.call_args.kwargs
         assert kwargs["registry_source"] == {"registry_id": 19784, "organization_id": 179}
         assert kwargs["snapshot_inputs"] == {"builder": "semantic_snapshot"}
+
+
+class TestAPublicBinding:
+    @pytest.mark.parametrize(
+        "value,needle",
+        [
+            ({"registry_id": 1, "public": False}, "must be true"),
+            ({"public": True}, "goes with a registry_id"),
+            ({"registry_id": 1, "public": True, "organization_id": 179}, "no home scope key"),
+        ],
+    )
+    def test_a_malformed_public_binding_is_refused(self, value, needle, monkeypatch):
+        from connect_labs.mcp.tool_registry import MCPToolError
+
+        with pytest.raises(MCPToolError) as e:
+            TestBindingValidation()._validate(value, monkeypatch)
+        assert needle in str(e.value)
+
+    def test_a_public_binding_is_resolved_as_public(self, monkeypatch):
+        seen = TestBindingValidation()._validate({"registry_id": 19784, "public": True}, monkeypatch)
+        assert seen["source"] == {"registry_id": 19784, "public": True}

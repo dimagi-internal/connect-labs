@@ -150,3 +150,59 @@ class TestAddingASourceRecordsItsHome:
             {"pipeline_id": 5110, "alias": "children"},
             {"pipeline_id": 5109, "alias": "visits"},
         ]
+
+
+# ---------------------------------------------------------------------------
+# Shared (public) references: readable by any viewer, whatever their scope.
+# ---------------------------------------------------------------------------
+
+
+class TestPublicReferences:
+    def test_a_public_home_is_kept_as_a_flag(self):
+        assert pipeline_homes_for([{"pipeline_id": 7, "home_scope": {"public": True}}]) == {7: {"public": True}}
+
+    def test_a_public_pipeline_is_read_through_the_public_path(self):
+        pda = PipelineDataAccess.__new__(PipelineDataAccess)
+        pda.labs_api = MagicMock()
+        pda.use_sources([{"pipeline_id": 19776, "home_scope": {"public": True}}])
+        pda.get_definition(19776)
+        pda.labs_api.get_public_record_by_id.assert_called_once()
+        pda.labs_api.get_record_by_id.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestThePublicReadSendsNoScopeAndAlwaysReachesProduction:
+    def _client(self, monkeypatch, by_id_rows, list_rows=()):
+        from connect_labs.labs.integrations.connect import api_client as ac
+
+        client = ac.LabsRecordAPIClient.__new__(ac.LabsRecordAPIClient)
+        client.base_url = "https://connect.example"
+        # A SYNTHETIC client: its own reads go to the local store.
+        client.opportunity_id, client.program_id, client.organization_id = 10042, None, 5
+        local = MagicMock()
+        monkeypatch.setattr(ac, "_local_backend", local)
+        responses = [MagicMock(), MagicMock()]
+        responses[0].json.return_value = list(by_id_rows)
+        responses[1].json.return_value = list(list_rows)
+        client.http_client = MagicMock()
+        client.http_client.get.side_effect = responses
+        return client, local
+
+    def test_no_scope_is_sent_and_the_local_store_is_never_asked(self, monkeypatch):
+        row = {"id": 19784, "experiment": "semantic", "type": "semantic_registry", "data": {}, "opportunity_id": None}
+        client, local = self._client(monkeypatch, [row])
+        got = client.get_public_record_by_id(19784, experiment="semantic", type="semantic_registry")
+        assert got is not None
+        params = client.http_client.get.call_args_list[0].kwargs["params"]
+        assert params == {"id": 19784, "experiment": "semantic", "type": "semantic_registry"}
+        local.get_record_by_id.assert_not_called()
+
+    def test_it_falls_back_to_the_public_listing(self, monkeypatch):
+        row = {"id": 19784, "experiment": "semantic", "type": "semantic_registry", "data": {}, "opportunity_id": None}
+        client, _local = self._client(monkeypatch, [], [{"id": 1, "data": {}, "opportunity_id": None}, row])
+        assert client.get_public_record_by_id(19784, experiment="semantic", type="semantic_registry") is not None
+        assert "id" not in client.http_client.get.call_args_list[1].kwargs["params"]
+
+    def test_a_record_not_in_the_public_answer_is_not_returned(self, monkeypatch):
+        client, _local = self._client(monkeypatch, [], [{"id": 1, "data": {}}])
+        assert client.get_public_record_by_id(19784) is None
