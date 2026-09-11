@@ -782,7 +782,8 @@ measures:
       }
   - name: n09_numerator
     type: count
-    filters: [{ sql: "{CUBE}.growth_class_spec = 'slow'" }]
+    filters:
+      [{ sql: "{CUBE}.qualifying_spec AND {CUBE}.growth_class_spec = 'slow'" }]
   - name: n09_denominator
     type: count
     filters: [{ sql: '{CUBE}.qualifying_spec' }]
@@ -806,7 +807,12 @@ measures:
       }
   - name: n10_numerator
     type: count
-    filters: [{ sql: "{CUBE}.growth_class_spec = 'plausible'" }]
+    filters:
+      [
+        {
+          sql: "{CUBE}.qualifying_spec AND {CUBE}.growth_class_spec = 'plausible'",
+        },
+      ]
   - name: n10_denominator
     type: count
     filters: [{ sql: '{CUBE}.qualifying_spec' }]
@@ -830,7 +836,8 @@ measures:
       }
   - name: n11_numerator
     type: count
-    filters: [{ sql: "{CUBE}.growth_class_spec = 'fast'" }]
+    filters:
+      [{ sql: "{CUBE}.qualifying_spec AND {CUBE}.growth_class_spec = 'fast'" }]
   - name: n11_denominator
     type: count
     filters: [{ sql: '{CUBE}.qualifying_spec' }]
@@ -879,7 +886,12 @@ measures:
       }
   - name: n13_numerator
     type: count
-    filters: [{ sql: '{CUBE}.died' }]
+    filters:
+      [
+        {
+          sql: '{CUBE}.died AND {CUBE}.eligible_28d_spec AND {CUBE}.outcome_known',
+        },
+      ]
   - name: n13_denominator
     type: count
     filters: [{ sql: '{CUBE}.eligible_28d_spec AND {CUBE}.outcome_known' }]

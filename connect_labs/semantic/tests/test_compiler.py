@@ -460,3 +460,37 @@ def test_every_indicator_has_english_rendered_from_its_sql(props_doc, registry):
     assert "## N15" in md and "## C14" in md and "```sql" in md and "flag_impossible" in md
     sql = to_sql(exps, registry_label="test")
     assert sql.startswith("-- Indicator definitions") and "pipeline_visit_rows" in sql and "-- N15" in sql
+
+
+def test_every_count_share_counts_only_rows_inside_its_denominator(registry):
+    """A share's numerator must be a subset of its denominator.
+
+    Four N-series numerators were not: N09-N11 counted every case with a growth
+    class and N13 every death, each over a narrower denominator. So babies whose
+    first visit was under 42 days ago were counted as slow / healthy / fast
+    without being in the qualifying set, and deaths among unstarted or immature
+    cases were counted without being in the mortality denominator. The four
+    growth shares summed to up to 118 percent instead of partitioning the
+    qualifying set, and mortality read high -- 8.0 percent against 6.1 on the
+    synthetic cohort, EHA 7.0 against 3.4. Found by summing N09-N12 at full
+    precision on 2026-09-10; nothing structural had ever checked it.
+
+    The convention this enforces is the one the rest of the registry already
+    follows: write a count numerator as `<every denominator term> AND <event>`.
+    It checks count-over-count shares only -- medians, means and sums carry their
+    filter inside the aggregate (e.g. `CASE WHEN eligible_42d_spec THEN ...`).
+    """
+    by_name = {m["name"]: m for m in registry["measures"]}
+    leaks = []
+    for name, num in by_name.items():
+        if not name.endswith("_numerator") or num.get("type") != "count":
+            continue
+        den = by_name.get(name[: -len("_numerator")] + "_denominator")
+        if not den or den.get("type") != "count":
+            continue
+        num_sql = " AND ".join(f["sql"] for f in num.get("filters") or [])
+        for f in den.get("filters") or []:
+            for term in (t.strip() for t in f["sql"].split(" AND ")):
+                if term not in num_sql:
+                    leaks.append(f"{name} omits denominator term {term!r}")
+    assert not leaks, "numerators counting rows outside their denominator:\n  " + "\n  ".join(leaks)
