@@ -821,9 +821,15 @@ def create_workflow_from_template(
     request=None,
     opportunity_ids: list[int] | None = None,
     program_id: int | None = None,
+    registry_source: dict | None = None,
 ) -> tuple:
     """
     Create a workflow from a template using the data access layer.
+
+    A template that computes semantic indicators (it declares ``semantic_registry``)
+    always produces a workflow BOUND to a live registry record: the one named by
+    ``registry_source``, or else a new record seeded from the template's on-disk
+    registry in the workflow's own scope. See ``_bind_registry``.
 
     If the template includes a pipeline_schema, a pipeline will also be created
     and linked to the workflow.
@@ -892,10 +898,67 @@ def create_workflow_from_template(
             template_key=template_key,
             request=request,
             opportunity_ids=opportunity_ids,
+            registry_source=registry_source,
         )
     finally:
         if owns_data_access:
             data_access.close()
+
+
+def _bind_registry(data_access, registry_name: str, workflow_name: str, registry_source: dict | None) -> dict:
+    """The registry binding a new semantic workflow is born with -- always a RECORD.
+
+    An unbound workflow computes from the on-disk registry, whose definitions change
+    only on a deploy; an edit to any registry record never reaches it. Every template
+    creation used to produce exactly that, so a report created from the KMC template
+    ignored every indicator change until someone found it and bound it by hand
+    (connect-labs, 2026-09-11: the real and synthetic reports were both bound
+    manually). So creation binds, one of two ways:
+
+      * ``registry_source`` names a record (``{registry_id, <home scope>?}``) -- bind
+        it. This is how several reports share one set of indicator definitions.
+      * nothing named -- seed a NEW record from the template's on-disk registry, in
+        the workflow's own scope, and bind that. Still live: edit it with
+        ``semantic_registry_update``.
+
+    A disk binding (``{}`` or ``{"name": ...}``) is refused here rather than
+    persisted: it is precisely the static state this exists to prevent.
+    """
+    if registry_source:
+        if registry_source.get("registry_id") is None:
+            raise ValueError(
+                "registry_source must name a registry record ({'registry_id': <int>}); a workflow "
+                "created from a template computes from a live record, never the on-disk copy."
+            )
+        return dict(registry_source)
+
+    from connect_labs.semantic.seed import registry_payload
+    from connect_labs.workflow.data_access import SemanticRegistryDataAccess
+
+    payload = registry_payload(registry_name)
+    access = SemanticRegistryDataAccess(
+        access_token=getattr(data_access, "access_token", None),
+        opportunity_id=getattr(data_access, "opportunity_id", None),
+        program_id=getattr(data_access, "program_id", None),
+    )
+    try:
+        record = access.create_registry(
+            name=f"{workflow_name} indicators",
+            description=(
+                f"Seeded from the on-disk '{registry_name}' registry when '{workflow_name}' was created "
+                "from its template. The workflow computes from THIS record: edit it to change indicators "
+                "without a deploy."
+            ),
+            properties=payload["properties"],
+            indicators=payload["indicators"],
+            deployment=payload["deployment"],
+        )
+    finally:
+        if hasattr(access, "close"):
+            access.close()
+    # Created in the workflow's own scope, so the workflow's own read finds it: no
+    # home-scope key is needed.
+    return {"registry_id": int(record.id)}
 
 
 def _create_workflow_from_template_scoped(
@@ -906,6 +969,7 @@ def _create_workflow_from_template_scoped(
     opportunity_ids: list[int] | None = None,
     pipeline_sources_override: list[dict] | None = None,
     config_overrides: dict | None = None,
+    registry_source: dict | None = None,
     _ancestry: tuple[str, ...] = (),
 ) -> tuple:
     """Inner body of ``create_workflow_from_template`` — runs against an
@@ -920,6 +984,11 @@ def _create_workflow_from_template_scoped(
     """
 
     _validate_companions(template, template_key, _ancestry)
+    registry_name = template.get("semantic_registry")
+    if registry_source and not registry_name:
+        raise ValueError(
+            f"Template '{template_key}' computes no semantic indicators, so registry_source does not apply."
+        )
 
     template_def = template["definition"]
     pipeline_schema = template.get("pipeline_schema")
@@ -1040,6 +1109,10 @@ def _create_workflow_from_template_scoped(
         # editing the instance manifest. Hook templates stay registry-resolved
         # (their snapshot is computed Python, which can't live on the record).
         extra_definition_kwargs["snapshot_inputs"] = dict(template.get("snapshot_inputs") or {})
+    if registry_name:
+        extra_definition_kwargs["registry_source"] = _bind_registry(
+            data_access, registry_name, template_def["name"], registry_source
+        )
     definition = data_access.create_definition(
         name=template_def["name"],
         description=template_def["description"],

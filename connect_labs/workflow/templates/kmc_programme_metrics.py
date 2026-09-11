@@ -667,6 +667,10 @@ TEMPLATE = {
     "supports_saved_runs": True,
     "snapshot_inputs": SNAPSHOT_INPUTS,
     "snapshot_schema": SNAPSHOT_SCHEMA,
+    # The indicators come from a semantic registry. Creation binds the new workflow
+    # to a live record -- the one the caller names, or a fresh one seeded from this
+    # on-disk registry -- so an indicator edit reaches it without a deploy.
+    "semantic_registry": "kmc",
     "definition": DEFINITION,
     "render_code": _RENDER,
     "pipeline_schemas": [

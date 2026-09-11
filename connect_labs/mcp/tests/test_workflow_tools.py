@@ -1853,3 +1853,98 @@ class TestSnapshotInputsAcceptsABuilderSpec:
         src = Path(snapshot_builders.__file__).read_text() + Path(snap.__file__).read_text()
         for key in BUILDER_SPEC_KEYS["semantic_snapshot"]:
             assert f'spec.get("{key}")' in src, f"{key} is allowed on the spec but nothing reads spec[{key!r}]"
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows._validate_registry_source")
+@patch("connect_labs.mcp.tools.workflows._create_workflow_from_template")
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_create_from_template_binds_the_named_registry_and_says_so(
+    mock_wda_cls, mock_create, mock_validate, client, auth_user
+):
+    """The named record is proven readable BEFORE creation, reaches the factory, and
+    the response states the binding -- so nobody has to go and look."""
+    _, raw = auth_user
+    source = {"registry_id": 5500}
+    mock_def = MagicMock(id=301, description="", data={"name": "KMC", "version": 1, "registry_source": source})
+    mock_def.name = "KMC"
+    mock_def.registry_source = source
+    mock_create.return_value = (mock_def, MagicMock(version=1), None)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create_from_template",
+        {"template_key": "kmc_programme_metrics", "opportunity_id": 10042, "registry_source": source},
+    )
+    assert data["result"]["isError"] is False, data
+    mock_validate.assert_called_once()
+    assert mock_create.call_args.kwargs["registry_source"] == source
+    assert data["result"]["structuredContent"]["registry"] == {"source": "record", "registry_id": 5500}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("disk", [{"name": "kmc"}, {}])
+@patch("connect_labs.mcp.tools.workflows._create_workflow_from_template")
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_create_from_template_refuses_a_disk_binding_before_creating_anything(
+    mock_wda_cls, mock_create, disk, client, auth_user
+):
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create_from_template",
+        {"template_key": "kmc_programme_metrics", "opportunity_id": 10042, "registry_source": disk},
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_SCHEMA"
+    mock_create.assert_not_called()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("static", [None, {}, {"name": "kmc"}])
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_a_semantic_workflow_cannot_be_moved_back_onto_static_definitions(mock_wda_cls, static, client, auth_user):
+    """Unbinding a semantic workflow, or naming the on-disk copy, would freeze its
+    indicators until the next deploy while edits to its record went nowhere."""
+    _, raw = auth_user
+    current = MagicMock(
+        id=42,
+        data={
+            "version": 3,
+            "name": "KMC",
+            "config": {"templateType": "kmc_programme_metrics"},
+            "registry_source": {"registry_id": 19784, "organization_id": 179},
+        },
+    )
+    current.name = "KMC"
+    mock_wda_cls.return_value.get_definition.return_value = current
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_definition",
+        {"workflow_id": 42, "opportunity_id": 523, "patch": {"registry_source": static}, "expected_version": 3},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "INVALID_SCHEMA" and "registry record" in err["message"]
+    mock_wda_cls.return_value.update_definition.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_a_workflow_with_no_indicators_can_still_drop_its_binding(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    current = MagicMock(
+        id=43,
+        data={"version": 3, "name": "Perf", "config": {"templateType": "performance_review"}, "registry_source": {}},
+    )
+    current.name = "Perf"
+    mock_wda_cls.return_value.get_definition.return_value = current
+    mock_wda_cls.return_value.update_definition.return_value = MagicMock(data={"version": 4})
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_definition",
+        {"workflow_id": 43, "opportunity_id": 100, "patch": {"registry_source": None}, "expected_version": 3},
+    )
+    assert data["result"]["isError"] is False, data
