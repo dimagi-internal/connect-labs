@@ -143,11 +143,11 @@ def pipeline_homes_for(sources) -> dict[int, dict]:
     for source in sources or []:
         if not isinstance(source, dict) or source.get("pipeline_id") is None:
             continue
-        home = {
-            k: int(v)
-            for k, v in (source.get("home_scope") or {}).items()
-            if k in PIPELINE_HOME_SCOPE_KEYS and v is not None
-        }
+        raw = source.get("home_scope") or {}
+        if raw.get("public") is True:
+            homes[int(source["pipeline_id"])] = {"public": True}
+            continue
+        home = {k: int(v) for k, v in raw.items() if k in PIPELINE_HOME_SCOPE_KEYS and v is not None}
         if home:
             homes[int(source["pipeline_id"])] = home
     return homes
@@ -1969,6 +1969,13 @@ class SemanticRegistryDataAccess(BaseDataAccess):
         opportunity-owned workflow. That is why "shared" registries could be listed
         (`list_registries` merges public records in) yet never bound.
         """
+        if home_scope.get("public") is True:
+            # Shared by its owner: readable by anyone signed in, editable only in its
+            # home scope. This is what lets a synthetic report compute from the real
+            # report's registry for a viewer with no access to the real programme.
+            return self.labs_api.get_public_record_by_id(
+                registry_id, experiment=self.EXPERIMENT, type=self.RECORD_TYPE, model_class=SemanticRegistryRecord
+            )
         scope = {k: v for k, v in home_scope.items() if k in REGISTRY_HOME_SCOPE_KEYS and v is not None}
         return self.labs_api.get_record_by_id(
             registry_id,
@@ -2001,10 +2008,13 @@ class SemanticRegistryDataAccess(BaseDataAccess):
             "is_shared": is_shared,
             "shared_scope": "global",
         }
+        # `is_shared` is only meaningful if the RECORD is public: the data flag alone
+        # listed a registry nobody outside its scope could read.
         result = self.labs_api.create_record(
             experiment=self.EXPERIMENT,
             type=self.RECORD_TYPE,
             data=data,
+            public=bool(is_shared),
         )
         return SemanticRegistryRecord(
             {
@@ -2062,6 +2072,9 @@ class SemanticRegistryDataAccess(BaseDataAccess):
             experiment=self.EXPERIMENT,
             type=self.RECORD_TYPE,
             data=data,
+            # Sharing sets the record's public flag, so a shared registry can be READ by
+            # the workflows that bind it from other scopes; unsharing clears it.
+            **({"public": bool(is_shared)} if is_shared is not None else {}),
         )
         return SemanticRegistryRecord(
             {
@@ -2134,6 +2147,14 @@ class PipelineDataAccess(BaseDataAccess):
     def get_definition(self, definition_id: int) -> PipelineDefinitionRecord | None:
         """Get a pipeline definition by ID -- in its home scope when a source named one."""
         home = self.pipeline_homes.get(int(definition_id)) if definition_id is not None else None
+        if home and home.get("public"):
+            # Shared by its owner: read by anyone signed in, whatever their scope.
+            return self.labs_api.get_public_record_by_id(
+                definition_id,
+                experiment=self.EXPERIMENT,
+                type="pipeline_definition",
+                model_class=PipelineDefinitionRecord,
+            )
         return self.labs_api.get_record_by_id(
             definition_id,
             experiment=self.EXPERIMENT,
