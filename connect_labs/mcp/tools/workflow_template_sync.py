@@ -116,6 +116,20 @@ def workflow_sync_from_template_file(
         if current_def is None:
             raise MCPToolError("NOT_FOUND", f"No workflow with id {workflow_id}")
 
+        # Pushing a LOCAL template into a workflow that follows the DEPLOYED one would
+        # write a copy the page never shows. Preview against a workflow that holds its
+        # own copy (render_source null) instead.
+        from connect_labs.workflow.render_source import followed_template
+
+        following = followed_template(current_def)
+        if following:
+            raise MCPToolError(
+                "CONFLICT",
+                f"workflow {workflow_id} follows the deployed '{following}' template, so a pushed render "
+                "would never be shown. Push to a preview workflow with its own render copy, or set its "
+                "render_source to null first.",
+            )
+
         current_render = wda.get_render_code(workflow_id)
         if current_render is None:
             raise MCPToolError(

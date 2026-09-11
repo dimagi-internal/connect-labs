@@ -2014,3 +2014,99 @@ def test_add_pipeline_source_stores_a_readable_home(mock_wda_cls, _get, client, 
     )
     assert data["result"]["isError"] is False, data
     assert mock_wda_cls.return_value.add_pipeline_source.call_args.kwargs["home_scope"] == {"opportunity_id": 523}
+
+
+# =============================================================================
+# render_source: following the deployed template
+# =============================================================================
+
+
+def _follower(mock_wda_cls, template_key="kmc_programme_metrics", version=3):
+    current = MagicMock(
+        id=19778,
+        data={"version": version, "name": "KMC", "config": {"templateType": template_key}},
+    )
+    current.name = "KMC"
+    current.data["render_source"] = {"template": template_key}
+    mock_wda_cls.return_value.get_definition.return_value = current
+    return current
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_render_code_is_refused_for_a_follower(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    _follower(mock_wda_cls)
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_render_code",
+        {"workflow_id": 19778, "opportunity_id": 523, "component_code": "function X(){}", "expected_version": 3},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "CONFLICT" and "follows the deployed" in err["message"]
+    mock_wda_cls.return_value.save_render_code.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_sync_from_deployed_template_is_a_no_op_for_a_follower(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    _follower(mock_wda_cls)
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_sync_from_deployed_template",
+        {"workflow_id": 19778, "opportunity_id": 523, "expected_version": 3},
+    )
+    content = data["result"]["structuredContent"]
+    assert content["follows_template"] is True and content["identical"] is True
+    mock_wda_cls.return_value.save_render_code.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_a_workflow_can_be_set_to_follow_its_own_template(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    current = MagicMock(
+        id=19778, data={"version": 3, "name": "KMC", "config": {"templateType": "kmc_programme_metrics"}}
+    )
+    current.name = "KMC"
+    mock_wda_cls.return_value.get_definition.return_value = current
+    mock_wda_cls.return_value.update_definition.return_value = MagicMock(data={"version": 4})
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_definition",
+        {
+            "workflow_id": 19778,
+            "opportunity_id": 523,
+            "patch": {"render_source": {"template": "kmc_programme_metrics"}},
+            "expected_version": 3,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    written = mock_wda_cls.return_value.update_definition.call_args.kwargs["data"]
+    assert written["render_source"] == {"template": "kmc_programme_metrics"}
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_forking_seeds_the_copy_with_what_the_page_shows_now(mock_wda_cls, client, auth_user):
+    from connect_labs.workflow.templates import get_template
+
+    _, raw = auth_user
+    _follower(mock_wda_cls)
+    mock_wda_cls.return_value.update_definition.return_value = MagicMock(data={"version": 4})
+    mock_wda_cls.return_value.get_render_code.return_value = MagicMock(version=9)
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_definition",
+        {"workflow_id": 19778, "opportunity_id": 523, "patch": {"render_source": None}, "expected_version": 3},
+    )
+    assert data["result"]["isError"] is False, data
+    assert "render_source" not in mock_wda_cls.return_value.update_definition.call_args.kwargs["data"]
+    saved = mock_wda_cls.return_value.save_render_code.call_args.kwargs
+    assert saved["component_code"] == get_template("kmc_programme_metrics")["render_code"]
+    assert saved["version"] == 10
