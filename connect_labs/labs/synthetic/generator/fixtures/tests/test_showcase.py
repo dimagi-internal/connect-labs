@@ -316,6 +316,10 @@ def _template_case(entity_id, username, n_followups, reg_date=dt.date(2026, 1, 2
                                 "child_alive": "yes",
                                 "child_weight_last_visit": 2000 + i,
                                 "kmc_status": "KMC visits in progress",
+                                # a follow-up repeats the case record, as the real app's does
+                                "child_weight_birth": 2100.0,
+                                "child_DOB": (reg_date - dt.timedelta(days=9)).isoformat(),
+                                "visit_date_entered": d.isoformat(),
                             },
                         },
                         "child_alive": "yes",
@@ -381,6 +385,13 @@ def test_a_showcase_case_is_a_duplicate_of_a_standard_case_with_the_specifics_ap
         assert f["anthropometric"]["child_weight_visit"] == p["reading_grams"]
         assert f["case"]["update"]["child_weight_last_visit"] == p["reading_grams"]
         assert v["images"] == [{"blob_id": p["blob_id"], "name": f["anthropometric"]["upload_weight_image"]}]
+    # case-level dates repeated inside a follow-up agree with the registration,
+    # while the follow-up's own date fields move with the visit
+    for v in weighings:
+        cu = v["form_json"]["form"]["case"]["update"]
+        assert cu["child_DOB"] == upd["child_DOB"], "one shift for the whole case"
+        assert cu["visit_date_entered"] == v["visit_date"], "the visit's own date follows the visit"
+        assert cu["child_weight_birth"] == 1250.0, "the record is fitted on every form, not just the registration"
     # birth / enrolment weight and gestational age fit the trajectory, not the template
     assert (
         upd["child_weight_birth"] == 1250.0
@@ -465,6 +476,19 @@ def test_a_young_cohort_still_clones_reusing_the_last_follow_up_form():
     full = _template_case("tmpl-full", "flw_001", 5)
     both = _clone_build(short + full, {"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"})
     assert both[0]["showcase"]["cloned_from"] == "tmpl-full"
+
+
+def test_a_template_without_gestational_age_gets_one_at_the_pipeline_path():
+    """The chart's postmenstrual-age axis needs a gestational age; an app that
+    never asks for it (opp 2166's) leaves the clone with none, so it is written
+    where the pipeline reads it."""
+    t = _template_case("tmpl-noga", "flw_001", 5)
+    for v in t:
+        form = v["form_json"]["form"]
+        form.get("subcase_0", {}).get("case", {}).get("update", {}).pop("gestational_age_at_birth_lmp", None)
+        form.get("mothers_details", {}).pop("gestational_age_at_birth_lmp", None)
+    visits = _clone_build(t, {"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"})
+    assert visits[0]["form_json"]["form"]["subcase_0"]["case"]["update"]["gestational_age_at_birth_lmp"] == 31.0
 
 
 def test_without_templates_the_forms_are_synthesised_as_before():
