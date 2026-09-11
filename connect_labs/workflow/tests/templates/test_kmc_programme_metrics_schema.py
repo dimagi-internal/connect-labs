@@ -88,3 +88,13 @@ def test_the_baby_key_builds_as_a_field_computation():
     assert field.conditional_entries() == [
         ("form.@name", ["Child Registration Form"], ["form.subcase_0.case.@case_id"])
     ]
+
+
+def test_both_pipelines_keep_only_valid_visits():
+    """Neal's rule 0: approved and over_limit only. On BOTH pipelines, so the case
+    index and the indicators count the same visits."""
+    from connect_labs.workflow.templates.kmc_programme_metrics import VALID_VISIT_FILTER
+
+    assert VALID_VISIT_FILTER == {"status": ["approved", "over_limit"]}
+    for schema in (CASE_PROPERTIES_SCHEMA, WEIGHT_SERIES_SCHEMA):
+        assert schema["filters"] is VALID_VISIT_FILTER

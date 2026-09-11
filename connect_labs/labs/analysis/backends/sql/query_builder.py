@@ -346,6 +346,38 @@ def _paths_to_coalesce_sql(paths: list[str], column: str = "form_json") -> str:
     return f"COALESCE({', '.join(sql_paths)})"
 
 
+def _visit_filter_predicates(config: AnalysisPipelineConfig) -> list[str]:
+    """The row filters a schema's `filters` declares: every predicate in a visit
+    extraction's WHERE except its pipeline scope.
+
+    Separate from the scope on purpose. Semantic Layer 1 re-scopes the extraction
+    to a SET of opportunities and used to do it by cutting the WHERE at the scope
+    predicate and writing its own -- which dropped every row filter after it. A
+    pipeline declaring Neal's rule 0 (`status: [approved, over_limit]`) filtered its
+    own rows and none of the metrics built from them. Exposed through
+    `generate_sql_preview` so Layer 1 can re-apply exactly these.
+    """
+    predicates: list[str] = []
+    if "entity_id" in config.filters:
+        predicates.append(f"entity_id = '{_sql_str(config.filters['entity_id'])}'")
+    if "status" in config.filters:
+        statuses = config.filters["status"]
+        if not isinstance(statuses, list):
+            statuses = [statuses]
+        status_list = ", ".join([f"'{_sql_str(s)}'" for s in statuses])
+        predicates.append(f"status IN ({status_list})")
+    if "flagged" in config.filters:
+        flagged = config.filters["flagged"]
+        # Emit a literal boolean, never the raw value, so a string filter can't inject.
+        flagged_sql = "true" if flagged in (True, 1, "true", "True", "1") else "false"
+        predicates.append(f"flagged = {flagged_sql}")
+    if "date_from" in config.filters:
+        predicates.append(f"visit_date >= '{_sql_str(config.filters['date_from'])}'")
+    if "date_to" in config.filters:
+        predicates.append(f"visit_date <= '{_sql_str(config.filters['date_to'])}'")
+    return predicates
+
+
 def _field_value_sql(field: FieldComputation, column: str = "form_json") -> str:
     """The SQL for a field's raw value: its `paths`, preceded by any `conditional_paths`.
 
@@ -1705,37 +1737,7 @@ def build_visit_extraction_query(
 
     # Build WHERE clause with filters. Pipeline-id scope is required so we
     # don't read another pipeline's rows for the same opp (#116).
-    where_clauses = [_pipeline_scope_where(opportunity_id, config.pipeline_id)]
-
-    # Add entity_id filter if present
-    if "entity_id" in config.filters:
-        entity_id = config.filters["entity_id"]
-        where_clauses.append(f"entity_id = '{_sql_str(entity_id)}'")
-
-    # Add status filter if present
-    if "status" in config.filters:
-        statuses = config.filters["status"]
-        if not isinstance(statuses, list):
-            statuses = [statuses]
-        status_list = ", ".join([f"'{_sql_str(s)}'" for s in statuses])
-        where_clauses.append(f"status IN ({status_list})")
-
-    # Add flagged filter if present
-    if "flagged" in config.filters:
-        flagged = config.filters["flagged"]
-        # Emit a literal boolean, never the raw value, so a string filter can't inject.
-        flagged_sql = "true" if flagged in (True, 1, "true", "True", "1") else "false"
-        where_clauses.append(f"flagged = {flagged_sql}")
-
-    # Add date range filters if present
-    if "date_from" in config.filters:
-        date_from = config.filters["date_from"]
-        where_clauses.append(f"visit_date >= '{_sql_str(date_from)}'")
-
-    if "date_to" in config.filters:
-        date_to = config.filters["date_to"]
-        where_clauses.append(f"visit_date <= '{_sql_str(date_to)}'")
-
+    where_clauses = [_pipeline_scope_where(opportunity_id, config.pipeline_id), *_visit_filter_predicates(config)]
     where_clause = " AND ".join(where_clauses)
 
     # If joins are configured, swap in the join-extended source for both the
@@ -1909,6 +1911,9 @@ def generate_sql_preview(
         "terminal_stage": config.terminal_stage.value,
         "field_expressions": {},
         "histogram_expressions": {},
+        # The extraction's row filters, apart from its scope -- for a caller that
+        # re-scopes the extraction (semantic Layer 1) and must keep them.
+        "visit_filter_predicates": _visit_filter_predicates(config),
     }
 
     # Generate field extraction expressions

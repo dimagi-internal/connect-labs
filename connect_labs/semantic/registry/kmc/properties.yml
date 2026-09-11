@@ -183,13 +183,21 @@ weight_series:
     # between them -- outside IMPOSSIBLE_LO..HI, checked only inside the window and
     # only between weighings 1-90 days apart. The enrolment weight is not in this
     # series, so the spec's enrolment->visit-1 exclusion holds by construction.
+    # A step's g/kg/day is taken per kg of the MEAN of its two readings -- the spec's
+    # "(per mean weight)" convention, as its velocity uses. Per kg of the PREVIOUS
+    # reading, which this used, overstates every gain (the smaller weight is the
+    # divisor) and ran 2-6 points high on every LLO. Verified 2026-09-11 against
+    # Neal's v3 section 5 on real data: with the pair mean, %impossible matched to
+    # one decimal on all seven rows (PIPN 9.3, EHA 4.2 vs 4.3, NAMA 15.9 vs 15.7,
+    # GHI 3.1, Kikapu 42.5, BERI 12.2, All 10.0). His prose does not say which
+    # weight; his numbers do.
     - name: any_impossible_step
       sql: >-
         BOOL_OR(NOT is_seed AND prev_day IS NOT NULL
                 AND series_day <= :SERIES_WINDOW_DAYS
                 AND (day - prev_day) BETWEEN :IMPOSSIBLE_GAP_MIN AND :IMPOSSIBLE_GAP_MAX
                 AND prev_w > 0
-                AND ((w - prev_w) / (prev_w / 1000.0) / (day - prev_day))
+                AND ((w - prev_w) / (((w + prev_w) / 2.0) / 1000.0) / (day - prev_day))
                     NOT BETWEEN :IMPOSSIBLE_LO AND :IMPOSSIBLE_HI)
 
 # ---------------------------------------------------------------------------

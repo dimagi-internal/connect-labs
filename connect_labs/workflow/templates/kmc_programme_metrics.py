@@ -33,6 +33,15 @@ from pathlib import Path
 
 _RENDER = (Path(__file__).parent / "kmc_programme_metrics_render.js").read_text()
 
+# NEAL'S RULE 0, on both pipelines: only approved and over_limit visits are valid
+# data. over_limit is paid work mislabelled by a platform glitch (excluding it
+# undercounts visits and weight series by 40-130%); rejected, pending, duplicate
+# and trial are not. Declared here as a pipeline filter so the case index, the
+# drill and the indicators all see the same visits -- semantic Layer 1 used to
+# drop a pipeline's row filters, which would have applied this to the pipeline's
+# own rows and to no indicator (fixed alongside this).
+VALID_VISIT_FILTER = {"status": ["approved", "over_limit"]}
+
 # WHO THE BABY IS, shared by both pipelines so they cannot disagree about it.
 #
 # Neal's compute spec, section 1, keys a baby by a case id whose path depends on
@@ -350,6 +359,7 @@ CASE_PROPERTIES_SCHEMA = {
         },
     ],
     "data_source": {"type": "connect_csv"},
+    "filters": VALID_VISIT_FILTER,
     "grouping_key": "username",
     "linking_field": "entity_id",
     "terminal_stage": "entity",
@@ -374,6 +384,7 @@ WEIGHT_SERIES_SCHEMA = {
         BABY_CASE_ID_FIELD,
     ],
     "data_source": {"type": "connect_csv"},
+    "filters": VALID_VISIT_FILTER,
     "grouping_key": "username",
     "linking_field": "entity_id",
     "terminal_stage": "visit_level",

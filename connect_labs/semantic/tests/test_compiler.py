@@ -494,3 +494,16 @@ def test_every_count_share_counts_only_rows_inside_its_denominator(registry):
                 if term not in num_sql:
                     leaks.append(f"{name} omits denominator term {term!r}")
     assert not leaks, "numerators counting rows outside their denominator:\n  " + "\n  ".join(leaks)
+
+
+def test_an_impossible_step_is_rated_per_kg_of_the_pair_mean():
+    """Per kg of the PREVIOUS reading overstated every gain and ran 2-6 points high
+    on every LLO; per kg of the pair mean matched Neal's v3 %impossible to one
+    decimal on all seven rows of his section 5 (verified on real data 2026-09-11)."""
+    import yaml as _yaml
+
+    derived = _yaml.safe_load((REGISTRY / "properties.yml").read_text())["weight_series"]["derived"]
+    [rule] = [d for d in derived if d["name"] == "any_impossible_step"]
+    sql = " ".join(rule["sql"].split())
+    assert "(((w + prev_w) / 2.0) / 1000.0)" in sql
+    assert "(prev_w / 1000.0)" not in sql
