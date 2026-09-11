@@ -1736,7 +1736,10 @@ function WorkflowUI({
         </div>
         {caseRows.status === 'loading' && (
           <div className="px-4 py-2 text-sm bg-indigo-50 text-indigo-800 border-b border-indigo-100 flex items-center gap-2">
-            <span className="inline-block w-3 h-3 rounded-full border-2 border-indigo-300 border-t-indigo-700 animate-spin" />
+            <span
+              className="inline-block w-3 h-3 rounded-full border-2 border-indigo-300 animate-spin"
+              style={{ borderTopColor: '#4338ca' }}
+            />
             Computing each case&rsquo;s figures for this worker&hellip;{' '}
             <span className="tabular-nums text-indigo-500">{caseElapsed}s</span>
           </div>
