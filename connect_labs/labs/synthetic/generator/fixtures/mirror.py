@@ -158,6 +158,19 @@ def _subcase_id(visit: dict) -> str | None:
     return v if isinstance(v, str) and v else None
 
 
+def _beneficiary_ref(visit: dict) -> str | None:
+    """The baby a VISIT form names explicitly -- `kmc_beneficiary_case_id` on the
+    design-A apps, `child_case_id` on design B: the same two fields the real
+    report's form-conditional key reads first (#1725). A registration form
+    carries neither."""
+    fj = visit.get("form_json") or {}
+    for path in ("form.kmc_beneficiary_case_id", "form.child_case_id"):
+        v = _extract_nested(fj, path)
+        if isinstance(v, str) and v:
+            return v
+    return None
+
+
 def build_entity_resolver(visits: list[dict]):
     """Return ``visit -> beneficiary id``, decided from the whole cohort.
 
@@ -182,14 +195,27 @@ def build_entity_resolver(visits: list[dict]):
     V3 opportunities' case counts (BERI 553 -> 1173) and halved their per-field
     coverage, because each baby split into a registration-only row and a
     visits-only row (connect-labs#1224/#1225).
+
+    Before any of that: a VISIT that names its baby outright, as
+    ``kmc_beneficiary_case_id`` (design A) or ``child_case_id`` (design B), is
+    that baby's. On the early design-A apps the registration is submitted
+    against the baby but every visit against a per-visit case, so keying on
+    ``case`` split each baby into a registration-only and a visits-only series
+    and the clones replayed the split: 523 profiled 103 + 74 of 322 series that
+    way, 675 164 of 342 (GHI clone 833 babies for 666 real, 75% registered for
+    99.7%). The real key never splits them because it reads these fields first;
+    so must the profiler, or the two disagree on what a baby is.
     """
     submitted_against: set[str] = set()
     for v in visits:
-        cid = _case_id(v)
-        if cid:
-            submitted_against.add(cid)
+        for cid in (_case_id(v), _beneficiary_ref(v)):
+            if cid:
+                submitted_against.add(cid)
 
     def by_case(visit: dict) -> str | None:
+        ref = _beneficiary_ref(visit)
+        if ref:
+            return ref
         sub = _subcase_id(visit)
         if sub and sub in submitted_against:
             return sub
