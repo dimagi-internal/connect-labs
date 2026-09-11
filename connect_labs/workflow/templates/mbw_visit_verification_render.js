@@ -136,7 +136,7 @@ function WorkflowUI({
   var columns = [
     { key: 'username', label: 'FLW ID' },
     { key: 'mother_case_id', label: 'Mother ID' },
-    { key: 'visit_id', label: 'Visit ID' },
+    { key: 'form_instance_id', label: 'Visit ID' },
     { key: 'visit_date', label: 'Visit date' },
     { key: 'form_name', label: 'Visit type' },
     { key: 'visit_number', label: 'Visit #' },
@@ -193,7 +193,7 @@ function WorkflowUI({
           <tbody className="divide-y divide-gray-100 bg-white">
             {displayRows.map(function (row, i) {
               return (
-                <tr key={row.visit_id || i}>
+                <tr key={row.form_instance_id || i}>
                   {columns.map(function (col) {
                     return (
                       <td

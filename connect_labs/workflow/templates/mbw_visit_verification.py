@@ -78,7 +78,7 @@ _MOTHER_CASE_ID_PATHS = [
 
 _VISIT_FIELDS = [
     {"name": "mother_case_id", "paths": _MOTHER_CASE_ID_PATHS, "aggregation": "first"},
-    {"name": "visit_id", "path": "form.meta.instanceID", "aggregation": "first"},
+    {"name": "form_instance_id", "path": "form.meta.instanceID", "aggregation": "first"},
     {"name": "form_name", "path": "form.@name", "aggregation": "first"},
     {
         "name": "where_is_the_visit_being_conducted",
