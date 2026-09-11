@@ -411,3 +411,33 @@ def test_an_unknown_column_is_still_caught(props_doc, registry):
     """The pre-existing check must survive the new one."""
     problems = _probe(props_doc, registry, "{CUBE}.not_a_real_column")
     assert problems and "unknown column" in problems[0]
+
+
+def test_every_cohort_source_and_one_clone_of_it_is_mapped_to_its_llo():
+    """The seed's LLO map covers the synthetic KMC cohort: each source opportunity,
+    and one labs clone per source with the same organisation mix.
+
+    The clone ids are allocated at generation time, so they cannot be listed in the
+    cohort file; what CAN be checked is that the map carries as many clones as the
+    cohort has sources, in the same organisations. 2166 joined the cohort on
+    2026-09-10 and its clone 10062 reached the live synthetic registry but not this
+    seed -- so a KMC workflow created from the template, which computes from this
+    seed until it is bound to a record, would have left 10062's babies with no LLO.
+    """
+    from collections import Counter
+    from pathlib import Path
+
+    import yaml
+
+    import connect_labs.labs.synthetic as synthetic_pkg
+
+    cohort = yaml.safe_load((Path(synthetic_pkg.__file__).parent / "cohorts" / "kmc.yaml").read_text())
+    sources = [int(o) for o in cohort["opportunity_ids"]]
+    seed = yaml.safe_load((Path(__file__).resolve().parents[1] / "registry" / "kmc" / "deployment.yml").read_text())
+    llo_map = {int(k): v for k, v in seed["llo_map"].items()}
+
+    missing = [o for o in sources if o not in llo_map]
+    assert not missing, f"cohort sources with no LLO in the seed: {missing}"
+    source_mix = Counter(llo_map[o] for o in sources)
+    clone_mix = Counter(v for k, v in llo_map.items() if k >= 10000)
+    assert clone_mix == source_mix, f"clones {dict(clone_mix)} vs sources {dict(source_mix)}"

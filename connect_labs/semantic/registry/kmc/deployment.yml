@@ -45,6 +45,8 @@ llo_map:
   10016: EHA
   10013: Kikapu
   10042: BERI
+  # PIPN Aug-26: the labs clone of 2166, added to the synthetic cohort 2026-09-11.
+  10062: PIPN
 
 # Keyed by the `setting` name each suppression rule in indicators.yml names.
 #
@@ -329,6 +331,18 @@ app_asks:
     self_referral_visits: false
     weights: true
   10042:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
+  # As recorded on the live synthetic registry (5500) for the 2166 clone.
+  10062:
     birth_weight_g: true
     danger_visits: true
     days_discharge_to_reg: true
