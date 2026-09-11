@@ -72,6 +72,22 @@ class TestWaRateEvcShortfall:
         wa = _wa("wa-1", status=status, approved_hsd_count=5, expected_visit_count=10)
         assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {}) == pytest.approx(0.5)
 
+    @pytest.mark.parametrize("status", ["visited", "Visited", "inaccessible", "expected_visit_reached"])
+    def test_concluded_status_matching_is_case_insensitive(self, status):
+        # Real production bug, found live 2026-09-11: the real `wa_status`
+        # case property uses lowercase "visited" for a completed WA, not
+        # "VISITED" -- confirmed against a real CHC deliver app's own form
+        # logic. The comparison must not be a case-sensitive exact match.
+        wa = _wa("wa-1", status=status, approved_hsd_count=5, expected_visit_count=10)
+        assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {}) == pytest.approx(0.5)
+
+    def test_blank_status_is_not_concluded(self):
+        # The other half of the same bug: a genuinely missing/blank status
+        # (e.g. a field-path mismatch upstream) must NOT be silently treated
+        # as concluded -- it should behave exactly like "not yet visited".
+        wa = _wa("wa-1", status="", approved_hsd_count=5, expected_visit_count=10)
+        assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {}) is None
+
     def test_gated_by_min_evc_floor(self):
         wa = _wa("wa-1", expected_visit_count=3, approved_hsd_count=0)
         assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {"min_evc_floor": 5}) is None

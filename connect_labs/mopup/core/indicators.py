@@ -101,7 +101,18 @@ _DQ_INDICATORS = TIER_2_INDICATORS
 # Concluded statuses for the not-yet-visited EVC exclusion. A WA still
 # NOT_VISITED or with a pending REQUEST_FOR_INACCESSIBLE hasn't necessarily
 # failed — the campaign may just not have reached it yet.
+#
+# Compared case-insensitively (see `_is_concluded_status`) -- confirmed live
+# (2026-09-11, a real CHC deliver app's own form logic) that the real
+# `wa_status` case property uses lowercase "visited" for a completed WA,
+# not "VISITED". EXPECTED_VISIT_REACHED didn't appear in that same app at
+# all; kept here defensively since this module serves multiple CHC campaign
+# app versions/opportunities, not just the one checked.
 _CONCLUDED_STATUSES = {"VISITED", "EXPECTED_VISIT_REACHED", "INACCESSIBLE"}
+
+
+def _is_concluded_status(status: str | None) -> bool:
+    return bool(status) and status.upper() in _CONCLUDED_STATUSES
 
 
 def _safe_div(numerator: float, denominator: float) -> float | None:
@@ -126,7 +137,7 @@ def wa_numerator_denominator(wa: dict, indicator_key: str, global_config: dict) 
     if indicator_key == EVC_SHORTFALL:
         if wa.get("expected_visit_count", 0) < global_config.get("min_evc_floor", 0):
             return None
-        if wa.get("status") not in _CONCLUDED_STATUSES and not global_config.get("include_not_yet_visited", False):
+        if not _is_concluded_status(wa.get("status")) and not global_config.get("include_not_yet_visited", False):
             return None
         hsd_count = wa.get("approved_hsd_count", 0)
         # A WA with zero HSD visits is already explained by something else --

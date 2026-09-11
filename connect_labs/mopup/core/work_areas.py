@@ -20,14 +20,24 @@ from django.http import HttpRequest
 
 logger = logging.getLogger(__name__)
 
-# CommCare work-area case property -> our field name.
+# CommCare work-area case property -> our field name. ward/lga/state/
+# building_count/expected_visit_count are set once at work-area creation
+# time (microplans' CSV import direct to Connect's WorkArea model), so they
+# never show up in this app's own `case_properties` (that list only reflects
+# what the mobile app's OWN forms reference). `status`, by contrast, is
+# entirely FLW-driven -- confirmed live (get_opportunity_apps against a real
+# CHC deliver app, 2026-09-11) that the mobile app's own check-in/NCF/
+# inaccessible forms read and write a case property named `wa_status`, not
+# `status` -- the wrong path here silently returned "" for every real work
+# area, which is why EVC shortfall's status gate excluded every WA
+# regardless of its threshold/floor/filter settings.
 _CASE_PROPERTY_PATHS = {
     "ward": "case.properties.ward",
     "lga": "case.properties.lga",
     "state": "case.properties.state",
     "building_count": "case.properties.building_count",
     "expected_visit_count": "case.properties.expected_visit_count",
-    "status": "case.properties.status",
+    "status": "case.properties.wa_status",
 }
 # Not a case property — a base case field (Connect's internal FLW id, the
 # grouping key for §6b's within-FLW clustering + the whole-FLW-average view).
