@@ -178,6 +178,7 @@ def workflow_get(
 
         # Fetch each linked pipeline's summary.
         pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
+        pda.use_sources(pipeline_sources)
         try:
             enriched_sources = []
             for src in pipeline_sources:
@@ -187,6 +188,9 @@ def workflow_get(
                     {
                         "pipeline_id": pid,
                         "alias": src.get("alias"),
+                        # Set when the pipeline is REFERENCED from another scope (e.g. a
+                        # synthetic workflow on a real pipeline): edits to it happen there.
+                        **({"home_scope": src["home_scope"]} if src.get("home_scope") else {}),
                         "name": pdef.name if pdef else None,
                         "schema_summary": {
                             "field_count": len(pdef.data.get("schema", {}).get("fields", [])) if pdef else 0,
@@ -336,6 +340,43 @@ from connect_labs.workflow.templates import (  # noqa: E402
 _DEFINITION_PATCH_ALLOWED = {"name", "description", "statuses", "config", "snapshot_inputs", "registry_source"}
 
 _SNAPSHOT_INPUTS_ALLOWED_KEYS = {"pipelines", "workers", "state_keys"}
+
+
+def _validate_pipeline_home_scope(home_scope, token: str, pipeline_id: int) -> dict:
+    """One home-scope key, an integer, and the pipeline actually readable there.
+
+    A reference that cannot be read would break the workflow at its next load, for
+    whoever opens it -- so it is proven on the write path, the same rule a registry
+    binding follows.
+    """
+    from connect_labs.workflow.data_access import PIPELINE_HOME_SCOPE_KEYS, PipelineDataAccess
+
+    if (
+        not isinstance(home_scope, dict)
+        or len(home_scope) != 1
+        or next(iter(home_scope)) not in PIPELINE_HOME_SCOPE_KEYS
+    ):
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            f"home_scope must be exactly one of {list(PIPELINE_HOME_SCOPE_KEYS)} with an integer id",
+        )
+    key, value = next(iter(home_scope.items()))
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise MCPToolError("INVALID_SCHEMA", f"home_scope.{key} must be an integer")
+    pda = PipelineDataAccess(access_token=token, **{key: value}).use_sources(
+        [{"pipeline_id": pipeline_id, "home_scope": {key: value}}]
+    )
+    try:
+        found = pda.get_definition(pipeline_id)
+    except Exception as exc:  # noqa: BLE001 -- surfaced as a sentence, not a traceback
+        found, detail = None, f" ({exc})"
+    else:
+        detail = ""
+    finally:
+        pda.close()
+    if found is None:
+        raise MCPToolError("NOT_FOUND", f"pipeline {pipeline_id} cannot be read in {key}={value}{detail}")
+    return {key: value}
 
 
 def _is_semantic_workflow(data: dict) -> bool:
@@ -621,6 +662,16 @@ def workflow_update_definition(
             },
             "pipeline_id": {"type": "integer"},
             "alias": {"type": "string"},
+            "home_scope": {
+                "type": "object",
+                "description": (
+                    "Where the pipeline record LIVES, when that is not this workflow's scope: exactly "
+                    "one of {opportunity_id}, {program_id}, {organization_id}. Lets a workflow reference "
+                    "a pipeline owned elsewhere -- e.g. a synthetic report on the real report's pipeline -- "
+                    "instead of a copy, so a fix to the pipeline reaches both. The pipeline is proven "
+                    "readable there before the source is saved."
+                ),
+            },
         },
         "required": ["workflow_id", "pipeline_id", "alias"],
         "additionalProperties": False,
@@ -628,7 +679,13 @@ def workflow_update_definition(
     is_write=True,
 )
 def workflow_add_pipeline_source(
-    user, workflow_id: int, pipeline_id: int, alias: str, opportunity_id: int = None, program_id: int = None
+    user,
+    workflow_id: int,
+    pipeline_id: int,
+    alias: str,
+    opportunity_id: int = None,
+    program_id: int = None,
+    home_scope: dict = None,
 ):
     if not alias:
         raise MCPToolError("INVALID_SCHEMA", "alias is required and must be non-empty")
@@ -636,9 +693,11 @@ def workflow_add_pipeline_source(
         raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
 
     token = require_connect_token(user)
+    if home_scope is not None:
+        home_scope = _validate_pipeline_home_scope(home_scope, token, int(pipeline_id))
     wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
-        updated = wda.add_pipeline_source(workflow_id, int(pipeline_id), alias)
+        updated = wda.add_pipeline_source(workflow_id, int(pipeline_id), alias, home_scope=home_scope)
         if updated is None:
             raise MCPToolError("NOT_FOUND", f"No workflow with id {workflow_id}")
         return {

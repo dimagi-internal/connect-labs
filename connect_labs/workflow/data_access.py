@@ -123,6 +123,35 @@ def serialize_pipeline_row(row, extra: dict | None = None) -> dict:
 # At most one of these may accompany `registry_id` in a workflow's registry_source.
 REGISTRY_HOME_SCOPE_KEYS = ("organization_id", "program_id", "opportunity_id")
 
+# Where a referenced PIPELINE record lives, when that is not the scope of the
+# workflow reading it: `pipeline_sources` entries may carry
+# `home_scope: {opportunity_id: N}` (or program_id / organization_id).
+#
+# Reads are an exact scope match, and synthetic (labs-only) records live in labs'
+# own store while real ones live in production Connect -- so a workflow could only
+# ever reference pipelines owned in its own scope, and "the same pipeline" across
+# real and synthetic had to be a copy that drifted. With a home scope, a synthetic
+# workflow references the real pipeline itself: it is read where it lives, and it
+# runs over each opportunity's own data (checked 2026-09-11: production pipeline
+# 19776 over synthetic opp 10042 returns the same 613 babies as the synthetic copy).
+PIPELINE_HOME_SCOPE_KEYS = ("opportunity_id", "program_id", "organization_id")
+
+
+def pipeline_homes_for(sources) -> dict[int, dict]:
+    """`{pipeline_id: home scope}` for every source that names where its record lives."""
+    homes: dict[int, dict] = {}
+    for source in sources or []:
+        if not isinstance(source, dict) or source.get("pipeline_id") is None:
+            continue
+        home = {
+            k: int(v)
+            for k, v in (source.get("home_scope") or {}).items()
+            if k in PIPELINE_HOME_SCOPE_KEYS and v is not None
+        }
+        if home:
+            homes[int(source["pipeline_id"])] = home
+    return homes
+
 
 class PipelineCacheMiss(Exception):
     """Raised by the cached-only pipeline read when a required pipeline has no
@@ -1328,20 +1357,27 @@ class WorkflowDataAccess(BaseDataAccess):
     # Pipeline Source Methods
     # -------------------------------------------------------------------------
 
-    def add_pipeline_source(self, definition_id: int, pipeline_id: int, alias: str) -> WorkflowDefinitionRecord | None:
-        """Add a pipeline as a data source for a workflow."""
+    def add_pipeline_source(
+        self, definition_id: int, pipeline_id: int, alias: str, home_scope: dict | None = None
+    ) -> WorkflowDefinitionRecord | None:
+        """Add a pipeline as a data source for a workflow.
+
+        ``home_scope`` names where the pipeline record lives when that is not this
+        workflow's scope -- a synthetic workflow referencing a real pipeline, say.
+        Re-pointing an alias replaces its home scope too, so a stale one cannot linger.
+        """
         definition = self.get_definition(definition_id)
         if not definition:
             return None
 
-        sources = definition.data.get("pipeline_sources", [])
-        # Check if already exists
-        for source in sources:
-            if source.get("alias") == alias:
-                source["pipeline_id"] = pipeline_id
-                break
-        else:
-            sources.append({"pipeline_id": pipeline_id, "alias": alias})
+        entry = {"pipeline_id": pipeline_id, "alias": alias}
+        if home_scope:
+            entry["home_scope"] = dict(home_scope)
+        sources = [s for s in definition.data.get("pipeline_sources", []) if s.get("alias") != alias]
+        existing = [s.get("alias") for s in definition.data.get("pipeline_sources", [])]
+        # Keep the alias where it was, so a re-point does not reorder the sources.
+        position = existing.index(alias) if alias in existing else len(sources)
+        sources.insert(position, entry)
 
         updated_data = {**definition.data, "pipeline_sources": sources}
         return self.update_definition(definition_id, updated_data)
@@ -1402,6 +1438,7 @@ class WorkflowDataAccess(BaseDataAccess):
             access_token=self.access_token,
             opportunity_id=opportunity_id,
         )
+        pipeline_access.use_sources(sources)
 
         # Pre-resolve cross-pipeline JOIN config_hashes and topologically sort
         # so dependencies run before dependents. Mirrors what the SSE pipeline
@@ -1509,6 +1546,7 @@ class WorkflowDataAccess(BaseDataAccess):
             access_token=self.access_token,
             opportunity_id=opportunity_id,
         )
+        pipeline_access.use_sources(sources)
 
         # Same JOIN-hash resolution as the execute path: cache keys are
         # config-hash-addressed, so the cached read must build configs the
@@ -2048,6 +2086,17 @@ class PipelineDataAccess(BaseDataAccess):
 
     EXPERIMENT = "pipeline"
 
+    # `{pipeline_id: home scope}` -- pipelines this accessor reads where they LIVE
+    # rather than in its own scope. Set with `use_sources()` from a workflow's
+    # pipeline_sources; every definition read goes through `get_definition`, so
+    # execution, cached reads and config building all honour it.
+    pipeline_homes: dict[int, dict] = {}
+
+    def use_sources(self, sources) -> "PipelineDataAccess":
+        """Read each referenced pipeline in its home scope. Returns self, for chaining."""
+        self.pipeline_homes = pipeline_homes_for(sources)
+        return self
+
     # -------------------------------------------------------------------------
     # Pipeline Definition Methods
     # -------------------------------------------------------------------------
@@ -2083,12 +2132,14 @@ class PipelineDataAccess(BaseDataAccess):
         return records
 
     def get_definition(self, definition_id: int) -> PipelineDefinitionRecord | None:
-        """Get a pipeline definition by ID."""
+        """Get a pipeline definition by ID -- in its home scope when a source named one."""
+        home = self.pipeline_homes.get(int(definition_id)) if definition_id is not None else None
         return self.labs_api.get_record_by_id(
             definition_id,
             experiment=self.EXPERIMENT,
             type="pipeline_definition",
             model_class=PipelineDefinitionRecord,
+            **(home or {}),
         )
 
     def create_definition(

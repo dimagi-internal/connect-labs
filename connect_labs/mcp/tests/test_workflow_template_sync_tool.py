@@ -440,3 +440,43 @@ def test_pipeline_alias_missing_from_workflow_rejects_pre_write(mock_wda, client
     # No writes should have happened.
     instance.update_definition.assert_not_called()
     instance.save_render_code.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflow_template_sync.PipelineDataAccess")
+@patch("connect_labs.mcp.tools.workflow_template_sync.WorkflowDataAccess")
+def test_a_referenced_pipeline_is_skipped_not_rewritten(mock_wda, mock_pda, client, auth_user):
+    """A pipeline this workflow REFERENCES from another scope belongs to its owner;
+    syncing the referencing workflow must not rewrite it from here."""
+    _, raw = auth_user
+    current_def = MagicMock()
+    current_def.data = {
+        "name": "X",
+        "statuses": [],
+        "pipeline_sources": [{"pipeline_id": 19777, "alias": "visits", "home_scope": {"opportunity_id": 523}}],
+        "version": 7,
+    }
+    current_def.template_type = "x"
+    current_render = MagicMock(version=11, component_code="old")
+    wda_instance = MagicMock()
+    wda_instance.get_definition.return_value = current_def
+    wda_instance.get_render_code.return_value = current_render
+    wda_instance.save_render_code.return_value = MagicMock(version=12)
+    mock_wda.return_value = wda_instance
+
+    data = _call_tool(
+        client,
+        raw,
+        {
+            "workflow_id": 42,
+            "opportunity_id": 10042,
+            "template_source": _TEMPLATE_WITH_PIPELINE,
+            "expected_render_code_version": 11,
+            "expected_definition_version": 7,
+            "dry_run": False,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    p = data["result"]["structuredContent"]["pipelines"][0]
+    assert p["skipped"] == "referenced" and p["home_scope"] == {"opportunity_id": 523}
+    mock_pda.return_value.update_definition.assert_not_called()

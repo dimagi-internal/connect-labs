@@ -102,6 +102,7 @@ def _resolve_pipeline_definition(pipeline_access, pipeline_id, opp_ids=None, req
         if opp_id == pipeline_access.opportunity_id:
             continue
         retry_access = PipelineDataAccess(request=request, access_token=access_token, opportunity_id=int(opp_id))
+        retry_access.pipeline_homes = pipeline_access.pipeline_homes
         definition = retry_access.get_definition(pipeline_id)
         if definition:
             return definition
@@ -327,6 +328,9 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             run.display_period_end = state.get("window_end") or run.period_end
 
         pipelines = []
+        # A source may name where its pipeline lives (a synthetic workflow on a real
+        # pipeline); read it there. Set per row -- the accessor is shared by the list.
+        pipeline_access.use_sources(definition.pipeline_sources)
         for source in definition.pipeline_sources:
             pipeline_id = source.get("pipeline_id")
             alias = source.get("alias")
@@ -5223,6 +5227,7 @@ class PipelineDataStreamView(BaseSSEStreamView):
                 access_token=labs_oauth.get("access_token"),
                 opportunity_id=int(opportunity_id),
             )
+            pipeline_access.use_sources(definition.pipeline_sources)
 
             # Pre-resolve cross-pipeline JOIN config hashes and topologically
             # sort so dependencies run before dependents. Without this, the
@@ -5471,6 +5476,7 @@ class PipelineDataStreamView(BaseSSEStreamView):
                 continue
             try:
                 pa = PipelineDataAccess(request=request, access_token=access_token, opportunity_id=opportunity_id)
+                pa.use_sources(definition.pipeline_sources)
                 try:
                     pdef = pa.get_definition(sid)
                 finally:

@@ -1948,3 +1948,69 @@ def test_a_workflow_with_no_indicators_can_still_drop_its_binding(mock_wda_cls, 
         {"workflow_id": 43, "opportunity_id": 100, "patch": {"registry_source": None}, "expected_version": 3},
     )
     assert data["result"]["isError"] is False, data
+
+
+# =============================================================================
+# Pipeline sources that REFERENCE a pipeline living in another scope
+# =============================================================================
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "bad",
+    [{"opportunity_id": 523, "program_id": 1}, {"workspace": 3}, {"opportunity_id": "523"}, {"opportunity_id": True}],
+)
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_add_pipeline_source_refuses_a_malformed_home(mock_wda_cls, bad, client, auth_user):
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_add_pipeline_source",
+        {"workflow_id": 5456, "opportunity_id": 10042, "pipeline_id": 19776, "alias": "children", "home_scope": bad},
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_SCHEMA"
+    mock_wda_cls.return_value.add_pipeline_source.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("connect_labs.workflow.data_access.PipelineDataAccess.get_definition", return_value=None)
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_add_pipeline_source_refuses_a_home_where_the_pipeline_cannot_be_read(mock_wda_cls, _get, client, auth_user):
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_add_pipeline_source",
+        {
+            "workflow_id": 5456,
+            "opportunity_id": 10042,
+            "pipeline_id": 19776,
+            "alias": "children",
+            "home_scope": {"opportunity_id": 523},
+        },
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+    mock_wda_cls.return_value.add_pipeline_source.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("connect_labs.workflow.data_access.PipelineDataAccess.get_definition", return_value=MagicMock(name="p"))
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_add_pipeline_source_stores_a_readable_home(mock_wda_cls, _get, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.add_pipeline_source.return_value = MagicMock(pipeline_sources=[])
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_add_pipeline_source",
+        {
+            "workflow_id": 5456,
+            "opportunity_id": 10042,
+            "pipeline_id": 19776,
+            "alias": "children",
+            "home_scope": {"opportunity_id": 523},
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    assert mock_wda_cls.return_value.add_pipeline_source.call_args.kwargs["home_scope"] == {"opportunity_id": 523}

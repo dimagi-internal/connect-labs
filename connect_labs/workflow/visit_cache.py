@@ -80,7 +80,7 @@ def workflow_opportunity_ids(definition, owner_opportunity_id: int | None) -> li
     return ids
 
 
-def _default_slot(access_token: str | None, owner_scope: dict[str, Any]):
+def _default_slot(access_token: str | None, owner_scope: dict[str, Any], sources=None):
     """The production wiring: a cache manager, a raw fetch and a pipeline run per slot."""
     from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline
@@ -108,7 +108,9 @@ def _default_slot(access_token: str | None, owner_scope: dict[str, Any]):
         # Pipelines are owned by the workflow's owner, so the definition is read in
         # THAT scope while the data runs for `opp` -- the same shape a multi-opp
         # workflow's own read has.
+        # A referenced pipeline is read where it lives (its source's home_scope).
         pda = PipelineDataAccess(access_token=access_token, **owner_scope)
+        pda.use_sources(sources)
         try:
             return pda.execute_pipeline(pipeline_id, opp)
         finally:
@@ -163,7 +165,9 @@ def ensure_visit_cache(
 
     owner_scope = {"program_id": program_id} if program_id is not None else {"opportunity_id": opportunity_id}
     manager, fetch_raw, run_pipeline = (slot_factory or _default_slot)(
-        getattr(data_access, "access_token", None), owner_scope
+        getattr(data_access, "access_token", None),
+        owner_scope,
+        getattr(definition, "pipeline_sources", None) or (definition.data or {}).get("pipeline_sources"),
     )
 
     batch = opps[start_at:] if limit is None else opps[start_at : start_at + limit]
