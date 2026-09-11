@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from connect_labs.mopup.core.work_areas import list_work_areas, summarize_wards
+from connect_labs.mopup.core.work_areas import fetch_connect_implementation_areas, list_work_areas, summarize_wards
 
 
 class _FakeRow:
@@ -184,3 +184,37 @@ class TestSummarizeWards:
 
     def test_empty_input_returns_empty(self):
         assert summarize_wards([]) == []
+
+
+class TestFetchConnectImplementationAreas:
+    """The read side of commcare-connect#1517 (2026-09-10) — Connect's own
+    Implementation Area boundaries, previously write-only from labs."""
+
+    def test_returns_records_from_the_export_client(self, monkeypatch):
+        records = [{"id": 1, "name": "Sabon Gari", "centroid": {}, "boundary": {}}]
+
+        class _FakeClient:
+            def fetch_all(self, endpoint):
+                return records
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return None
+
+        monkeypatch.setattr(
+            "connect_labs.labs.integrations.connect.factory.get_export_client",
+            lambda **kwargs: _FakeClient(),
+        )
+        result = fetch_connect_implementation_areas(2154, "tok")
+        assert result == records
+
+    def test_export_api_error_returns_empty_list_not_raises(self, monkeypatch):
+        from connect_labs.labs.integrations.connect.export_client import ExportAPIError
+
+        def _raise(**kwargs):
+            raise ExportAPIError("boom")
+
+        monkeypatch.setattr("connect_labs.labs.integrations.connect.factory.get_export_client", _raise)
+        assert fetch_connect_implementation_areas(2154, "tok") == []
