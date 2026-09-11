@@ -1421,6 +1421,36 @@ def workflow_set_template_flag(
         wda.close()
 
 
+def _linked_sources(sources, source_scope: dict, token: str) -> list[dict]:
+    """The source workflow's pipelines, REFERENCED rather than re-pointed.
+
+    A clone already shares its source's pipeline ids, but a read is an exact scope
+    match -- so the same ids are invisible from another scope (a synthetic twin of
+    a real report), and the twin needed copies that then drifted. Each source
+    keeps whatever home it already had; otherwise it gains one: `public` when the
+    pipeline record is shared, else the source workflow's own scope.
+    """
+    from connect_labs.workflow.data_access import PipelineDataAccess
+
+    out = []
+    for source in sources or []:
+        entry = dict(source)
+        pid = entry.get("pipeline_id")
+        if pid is not None and not entry.get("home_scope"):
+            shared = False
+            pda = PipelineDataAccess(access_token=token)
+            pda.use_sources([{"pipeline_id": pid, "home_scope": {"public": True}}])
+            try:
+                shared = pda.get_definition(int(pid)) is not None
+            except Exception:  # noqa: BLE001 -- not shared, or unreadable as public
+                shared = False
+            finally:
+                pda.close()
+            entry["home_scope"] = {"public": True} if shared else dict(source_scope)
+        out.append(entry)
+    return out
+
+
 @register(
     name="workflow_clone",
     description=(
@@ -1454,6 +1484,17 @@ def workflow_set_template_flag(
                 "description": "New workflow's owning program. Provide this OR target_opportunity_id.",
             },
             "new_name": {"type": "string"},
+            "linked": {
+                "type": "boolean",
+                "description": (
+                    "Default false: a fork -- its own copy of the render, and the same pipeline ids "
+                    "(only readable from the source's own scope). True: a twin that stays IN SYNC -- "
+                    "the source's pipelines referenced where they live (shared/public when they are, "
+                    "else the source's scope), its registry binding resolvable from the new scope, and "
+                    "a render that follows the deployed template. Use it for the same report over "
+                    "another dataset, e.g. a synthetic twin of a real programme report."
+                ),
+            },
         },
         "required": [
             "source_workflow_id",
@@ -1470,6 +1511,7 @@ def workflow_clone(
     target_opportunity_id: int = None,
     target_program_id: int = None,
     new_name: str = None,
+    linked: bool = False,
 ):
     if (source_opportunity_id is None) == (source_program_id is None):
         raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of source_opportunity_id / source_program_id.")
@@ -1497,6 +1539,31 @@ def workflow_clone(
     new_data["version"] = 1
     cloned_name = new_name or f"{source_def.name} (copy)"
 
+    if linked:
+        # In sync with the source rather than a fork of it: the same pipelines
+        # (referenced where they live), the same registry, and a render that
+        # follows the deployed template instead of a copy that needs syncing.
+        source_scope = (
+            {"opportunity_id": source_opportunity_id}
+            if source_opportunity_id is not None
+            else {"program_id": source_program_id}
+        )
+        new_data["pipeline_sources"] = _linked_sources(new_data.get("pipeline_sources"), source_scope, token)
+        binding = dict(new_data.get("registry_source") or {})
+        if binding.get("registry_id") is not None and not binding.get("public"):
+            home = {k: v for k, v in binding.items() if k != "registry_id"}
+            if not home:
+                # The record lives in the source's scope; say so, or the clone
+                # cannot read it from its own.
+                binding.update(source_scope)
+                new_data["registry_source"] = binding
+        template_key = (new_data.get("config") or {}).get("templateType")
+        if template_key:
+            from connect_labs.workflow.templates import get_template
+
+            if get_template(template_key):
+                new_data["render_source"] = {"template": template_key}
+
     dst_wda = WorkflowDataAccess(
         access_token=token, opportunity_id=target_opportunity_id, program_id=target_program_id
     )
@@ -1522,6 +1589,9 @@ def workflow_clone(
             render_source=new_data.get("render_source"),
         )
         render_code_version = None
+        if linked and new_data.get("render_source"):
+            # It follows the template; a stored copy would only go stale.
+            source_render = None
         if source_render is not None:
             new_render = dst_wda.save_render_code(
                 definition_id=new_def.id,
@@ -1536,6 +1606,10 @@ def workflow_clone(
         "new_workflow_id": new_def.id,
         "source_workflow_id": source_workflow_id,
         "name": cloned_name,
+        "linked": bool(linked),
+        "pipeline_sources": new_data.get("pipeline_sources", []),
+        "registry": new_data.get("registry_source") if linked else None,
+        "render_source": new_data.get("render_source") if linked else None,
         "render_code_version": render_code_version,
         "_version_before": None,
         "_version_after": 1,
