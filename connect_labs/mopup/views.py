@@ -542,6 +542,16 @@ class MopupCandidatesView(LoginRequiredMixin, View):
         gap_features = run.planning_gap_features
         gap_candidates = [gap_feature_to_candidate_row(f) for f in gap_features]
 
+        # TEMPORARY diagnostic (remove before merging further work) -- user
+        # reported EVC shortfall's # WAs triggered looks stuck regardless of
+        # threshold/neighbor settings on a real run. Suspect the real
+        # wa_status values on THIS opportunity's app don't match our
+        # hardcoded _CONCLUDED_STATUSES set, so the not-yet-visited gate
+        # excludes every row by default. Confirm live before changing code.
+        from collections import Counter
+
+        _debug_status_counts = Counter(repr(wa.get("status")) for wa in rows).most_common(10)
+
         return JsonResponse(
             {
                 "status": "ok",
@@ -553,6 +563,7 @@ class MopupCandidatesView(LoginRequiredMixin, View):
                 "candidate_count": len(candidates),
                 "per_indicator_counts": per_indicator_counts,
                 "map_features": build_map_features(rows, candidates, gap_features, run.planning_gap_building_points),
+                "_debug_status_counts": _debug_status_counts,
             }
         )
 
