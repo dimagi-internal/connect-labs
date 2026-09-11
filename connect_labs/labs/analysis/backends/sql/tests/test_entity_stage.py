@@ -584,3 +584,79 @@ class TestEntityStageIntegration:
             assert flw.total_visits == entity.total_visits
             assert flw.first_visit_date == entity.first_visit_date
             assert flw.last_visit_date == entity.last_visit_date
+
+
+class TestLinkingFieldHonoursConditionalPaths:
+    """The GROUP BY key and the field's own value are one expression.
+
+    KMC design B: the registration's form.case is the MOTHER and its subcase_0 is
+    the baby; visits name the baby in child_case_id. The baby key routes the
+    registration to its subcase with a conditional path. The linking field used to
+    compile only the default paths, so the case pipeline grouped a registration
+    under the mother -- a phantom "baby" with a birthweight and no visits, beside a
+    real one with visits and no birthweight -- while every indicator (keyed on the
+    field, conditional included) counted one baby. Measured 2026-09-11: the report
+    header read 9,183 babies against the indicators' 8,823.
+    """
+
+    BABY = FieldComputation(
+        name="baby_case_id",
+        paths=["form.child_case_id", "form.case.@case_id", "entity_id"],
+        conditional_paths=[
+            {
+                "when_path": "form.@name",
+                "when_value": "Child Registration Form",
+                "paths": ["form.subcase_0.case.@case_id"],
+            }
+        ],
+        aggregation="first",
+    )
+
+    def _config(self):
+        return AnalysisPipelineConfig(
+            grouping_key="username",
+            terminal_stage=CacheStage.ENTITY,
+            linking_field="baby_case_id",
+            fields=[self.BABY],
+        )
+
+    def test_the_group_expression_carries_the_condition(self):
+        expr = _resolve_linking_field_outer_expr(self._config())
+        assert "CASE WHEN" in expr and "Child Registration Form" in expr and "subcase_0" in expr
+
+    def test_a_design_b_registration_and_its_visits_are_one_entity(self, raw_visits_factory):
+        opp_id = 9100
+        raw_visits_factory(
+            opp_id,
+            [
+                {  # registration: form.case = mother, subcase_0 = the baby
+                    "visit_id": 1,
+                    "entity_id": "connect-entity-1",
+                    "visit_date": date(2026, 4, 1),
+                    "form_json": {
+                        "form": {
+                            "@name": "Child Registration Form",
+                            "case": {"@case_id": "MOTHER"},
+                            "subcase_0": {"case": {"@case_id": "BABY"}},
+                        }
+                    },
+                },
+                {  # visits name the baby directly
+                    "visit_id": 2,
+                    "entity_id": "connect-entity-2",
+                    "visit_date": date(2026, 4, 3),
+                    "form_json": {"form": {"@name": "Record Visit Details", "child_case_id": "BABY"}},
+                },
+                {
+                    "visit_id": 3,
+                    "entity_id": "connect-entity-3",
+                    "visit_date": date(2026, 4, 6),
+                    "form_json": {"form": {"@name": "Record Visit Details", "child_case_id": "BABY"}},
+                },
+            ],
+        )
+        config = self._config()
+        result = SQLBackend()._process_entity_level(
+            config, opp_id, visit_count=3, cache_manager=SQLCacheManager(opp_id, config)
+        )
+        assert [(r.entity_id, r.total_visits) for r in result.rows] == [("BABY", 3)]
