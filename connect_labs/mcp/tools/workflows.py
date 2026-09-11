@@ -338,6 +338,14 @@ _DEFINITION_PATCH_ALLOWED = {"name", "description", "statuses", "config", "snaps
 _SNAPSHOT_INPUTS_ALLOWED_KEYS = {"pipelines", "workers", "state_keys"}
 
 
+def _is_semantic_workflow(data: dict) -> bool:
+    """Whether a workflow's template computes semantic indicators (declares a registry)."""
+    from connect_labs.workflow.templates import get_template
+
+    template = get_template(((data or {}).get("config") or {}).get("templateType") or "")
+    return bool(template and template.get("semantic_registry"))
+
+
 def _validate_registry_source(value, wda, *, opportunity_id=None, program_id=None) -> None:
     """Validate a registry binding, and prove the registry is actually readable.
 
@@ -537,9 +545,21 @@ def workflow_update_definition(
         if "statuses" in patch:
             new_data["statuses"] = patch["statuses"]  # replace wholesale
         if "registry_source" in patch:
-            # null reverts to the built-in on-disk registry, the same escape hatch
-            # snapshot_inputs has.
-            if patch["registry_source"] is None:
+            # A workflow built on a semantic template stays on a live record. Unbinding
+            # it (null, {}) or binding the on-disk copy ({"name": ...}) would freeze its
+            # indicators until the next deploy while every edit to its record went
+            # nowhere -- the state template creation now refuses to produce.
+            rs = patch["registry_source"]
+            if _is_semantic_workflow(new_data) and not (isinstance(rs, dict) and rs.get("registry_id") is not None):
+                raise MCPToolError(
+                    "INVALID_SCHEMA",
+                    "this workflow computes semantic indicators and must stay bound to a registry record "
+                    "({registry_id: <int>}); unbinding it or naming the on-disk copy would stop indicator "
+                    "edits reaching it.",
+                )
+            # For any other workflow, null reverts to the built-in on-disk registry,
+            # the same escape hatch snapshot_inputs has.
+            if rs is None:
                 new_data.pop("registry_source", None)
             else:
                 _validate_registry_source(
@@ -807,6 +827,13 @@ def workflow_update_opportunity_ids(
             wda.close()
 
 
+def _binding_or_none(definition):
+    """The registry binding for a semantic workflow; None for one with no indicators."""
+    from connect_labs.semantic.workflow_binding import registry_binding
+
+    return registry_binding(definition) if getattr(definition, "registry_source", None) else None
+
+
 @register(
     name="workflow_create_from_template",
     description=(
@@ -822,12 +849,28 @@ def workflow_update_opportunity_ids(
         "or program_id (program-owned workflow — a program's Creator/Report, "
         "owned by the program with no owning opportunity). opportunity_ids is "
         "orthogonal — it is the list of opportunities the workflow spans, stored "
-        "as data regardless of who owns the record."
+        "as data regardless of who owns the record.\n\n"
+        "INDICATORS. A template that computes semantic indicators (e.g. "
+        "kmc_programme_metrics) is ALWAYS created bound to a live registry record, so "
+        "an indicator edit reaches it without a deploy. Pass registry_source="
+        "{registry_id: N} (plus the record's home scope -- organization_id, program_id "
+        "or opportunity_id -- if it lives elsewhere) to share an existing record, e.g. "
+        "the one your other reports use. Omit it and a new record is seeded from the "
+        "template's on-disk registry in this workflow's scope. The response's "
+        "`registry` says which."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "template_key": {"type": "string"},
+            "registry_source": {
+                "type": "object",
+                "description": (
+                    "Semantic templates only: the registry record to bind, {registry_id: N} with an "
+                    "optional home scope key. Omit to seed a new record from the template's on-disk "
+                    "registry. Never binds the on-disk copy itself."
+                ),
+            },
             "opportunity_id": {
                 "type": "integer",
                 "description": (
@@ -868,6 +911,7 @@ def workflow_create_from_template(
     program_id: int = None,
     name: str = None,
     opportunity_ids: list[int] = None,
+    registry_source: dict = None,
 ):
     # Record ownership is exactly one of opportunity / program.
     if (opportunity_id is None) == (program_id is None):
@@ -913,6 +957,17 @@ def workflow_create_from_template(
         program_id=program_id,
     )
     try:
+        if registry_source is not None:
+            # Proven readable BEFORE anything is created, so a bad id cannot leave a
+            # half-made workflow behind. Only a record: the on-disk copy is the static
+            # state template creation no longer produces.
+            if not isinstance(registry_source, dict) or registry_source.get("registry_id") is None:
+                raise MCPToolError(
+                    "INVALID_SCHEMA",
+                    "registry_source must name a registry record: {registry_id: <int>} with an optional "
+                    "home scope key. Omit it to seed a new record from the template's on-disk registry.",
+                )
+            _validate_registry_source(registry_source, wda, opportunity_id=opportunity_id, program_id=program_id)
         try:
             # request=None means we go through the access_token path.
             # Pipelines are created via data_access.access_token forwarding.
@@ -922,6 +977,7 @@ def workflow_create_from_template(
                 request=None,
                 opportunity_ids=cleaned_opp_ids or None,
                 program_id=program_id,
+                registry_source=registry_source,
             )
         except ValueError as e:
             # create_workflow_from_template raises ValueError on unknown template.
@@ -947,6 +1003,9 @@ def workflow_create_from_template(
             # {"flw_review": {"workflow_id": 5618, "run_id": 5620}}. Empty for
             # templates that declare none.
             "companions": companion_links(definition),
+            # Which indicator definitions this workflow computes from -- a record for
+            # every semantic template, stated so nobody has to go and look.
+            "registry": _binding_or_none(definition),
             "_version_before": None,
             "_version_after": 1,
         }
