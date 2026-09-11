@@ -49,6 +49,19 @@ class TestListWorkAreas:
         list_work_areas(1, pipeline=pipeline)
         assert pipeline.last_config.pipeline_id == 12965
 
+    def test_status_field_reads_wa_status_not_status(self):
+        # Real production bug, found live 2026-09-11: the work-area case's
+        # own `status` property doesn't exist -- confirmed against a real
+        # CHC deliver app's structure that the mobile app's own check-in/
+        # NCF/inaccessible forms read and write `wa_status` instead. The old
+        # `case.properties.status` path silently extracted "" for every
+        # real work area, which made EVC shortfall's not-yet-visited gate
+        # exclude every WA regardless of any other setting.
+        pipeline = _FakePipeline([])
+        list_work_areas(1, pipeline=pipeline)
+        fields_by_name = {f.name: f.path for f in pipeline.last_config.fields}
+        assert fields_by_name["status"] == "case.properties.wa_status"
+
     def test_terminal_stage_is_the_real_enum_not_a_string(self):
         # See the identical test/comment in test_geometry.py — same
         # string-vs-enum dispatch bug, same fix.

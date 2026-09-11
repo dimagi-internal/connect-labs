@@ -691,12 +691,6 @@ window.MopupAnalysis = (function () {
       $(
         'status',
       ).textContent = `${data.total_work_areas} work area(s) evaluated.`;
-      // TEMPORARY diagnostic (2026-09-11), see views.py -- remove alongside it.
-      if (data._debug_status_counts)
-        console.log(
-          'MOPUP_DEBUG status_counts',
-          JSON.stringify(data._debug_status_counts),
-        );
     } catch (e) {
       showLoadingError('Failed to load data.');
     }
