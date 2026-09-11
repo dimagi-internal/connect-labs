@@ -174,6 +174,9 @@ def workflow_get(
 
         # get_render_code is the actual method name (not get_latest_render_code)
         render_code = wda.get_render_code(workflow_id)
+        from connect_labs.workflow.render_source import resolve_render_code
+
+        resolved_code, render_source = resolve_render_code(wda, definition)
         pipeline_sources = definition.data.get("pipeline_sources", [])
 
         # Fetch each linked pipeline's summary.
@@ -210,6 +213,10 @@ def workflow_get(
         "config": definition.data.get("config", {}),
         "template_type": definition.template_type,
         "render_code_version": render_code.version if render_code else None,
+        # Where the page's render comes from: this workflow's stored copy, or the
+        # deployed template it follows (render_source) -- in which case the stored
+        # copy is not what anyone sees.
+        "render_source": render_source,
         "pipeline_sources": enriched_sources,
         # WHERE THIS WORKFLOW'S INDICATOR DEFINITIONS COME FROM. Unbound means the
         # built-in on-disk registry, which changes only on a deploy -- and nothing
@@ -284,7 +291,8 @@ def workflow_get(
         }
 
     if include_render_code:
-        out["render_code"] = render_code.component_code if render_code else None
+        # What the page actually renders -- the template's code for a follower.
+        out["render_code"] = resolved_code
     return out
 
 
@@ -337,7 +345,15 @@ from connect_labs.workflow.templates import (  # noqa: E402
     create_workflow_from_template as _create_workflow_from_template,
 )
 
-_DEFINITION_PATCH_ALLOWED = {"name", "description", "statuses", "config", "snapshot_inputs", "registry_source"}
+_DEFINITION_PATCH_ALLOWED = {
+    "name",
+    "description",
+    "statuses",
+    "config",
+    "snapshot_inputs",
+    "registry_source",
+    "render_source",
+}
 
 _SNAPSHOT_INPUTS_ALLOWED_KEYS = {"pipelines", "workers", "state_keys"}
 
@@ -540,7 +556,11 @@ def _validate_snapshot_inputs(value) -> None:
     name="workflow_update_definition",
     description=(
         "Update fields on a workflow definition. Accepts a patch dict. "
-        "Allowed keys: name, description, statuses, config, snapshot_inputs, registry_source. "
+        "Allowed keys: name, description, statuses, config, snapshot_inputs, registry_source, "
+        "render_source. `render_source: {template: <this workflow's template key>}` makes the "
+        "workflow FOLLOW the deployed template -- a deploy updates it, nothing to sync, and "
+        "edits to its stored render are refused; null forks it back onto a stored copy "
+        "(seeded with the template's current code, so the page does not change). "
         "`statuses` replaces wholesale; `config` shallow-merges; "
         "`snapshot_inputs` (the instance-owned completion-snapshot manifest: "
         "{pipelines: [aliases]|null, workers: bool, state_keys: [keys]|null}) "
@@ -650,10 +670,36 @@ def workflow_update_definition(
                 new_data["snapshot_inputs"] = patch["snapshot_inputs"]
         new_data["version"] = expected_version + 1
 
+        fork_from = None
+        if "render_source" in patch:
+            from connect_labs.workflow.render_source import followed_template, validate_render_source
+
+            try:
+                chosen = validate_render_source(patch["render_source"], current)
+            except ValueError as exc:
+                raise MCPToolError("INVALID_SCHEMA", str(exc)) from exc
+            if chosen is None:
+                # Forking: the stored copy becomes the render, so seed it with what the
+                # page shows NOW -- the template's code -- or it would jump to whatever
+                # stale copy was saved before the workflow started following.
+                fork_from = followed_template(current)
+                new_data.pop("render_source", None)
+            else:
+                new_data["render_source"] = chosen
+
         updated = wda.update_definition(
             definition_id=workflow_id,
             data=new_data,
         )
+        if fork_from:
+            from connect_labs.workflow.templates import get_template
+
+            stored = wda.get_render_code(workflow_id)
+            wda.save_render_code(
+                definition_id=workflow_id,
+                component_code=get_template(fork_from)["render_code"],
+                version=(stored.version if stored else 0) + 1,
+            )
         new_version = updated.data.get("version", expected_version + 1)
         return {
             "workflow_id": workflow_id,
@@ -913,6 +959,17 @@ def workflow_update_opportunity_ids(
     finally:
         if hasattr(wda, "close"):
             wda.close()
+
+
+def _refuse_if_render_follows(wda, workflow_id: int) -> None:
+    """A workflow that follows its template renders the template; an edit to its stored
+    copy would be accepted and never shown, so it is refused with the way out."""
+    from connect_labs.workflow.render_source import RenderFollowsTemplate, refuse_edit_if_following
+
+    try:
+        refuse_edit_if_following(wda.get_definition(workflow_id))
+    except RenderFollowsTemplate as exc:
+        raise MCPToolError("CONFLICT", str(exc), details={"follows_template": exc.template_key}) from exc
 
 
 def _binding_or_none(definition):
@@ -1461,6 +1518,8 @@ def workflow_clone(
             # source while looking identical to it.
             snapshot_inputs=new_data.get("snapshot_inputs"),
             registry_source=new_data.get("registry_source"),
+            # A clone of a follower follows the same template: in sync is the point.
+            render_source=new_data.get("render_source"),
         )
         render_code_version = None
         if source_render is not None:
@@ -1528,6 +1587,7 @@ def workflow_update_render_code(
     token = require_connect_token(user)
     wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
+        _refuse_if_render_follows(wda, workflow_id)
         current = wda.get_render_code(workflow_id)
         if current is None:
             raise MCPToolError(
@@ -1616,6 +1676,7 @@ def workflow_patch_render_code(
     token = require_connect_token(user)
     wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
+        _refuse_if_render_follows(wda, workflow_id)
         current = wda.get_render_code(workflow_id)
         if current is None:
             raise MCPToolError("NOT_FOUND", f"No render_code for workflow {workflow_id}.")
@@ -1744,6 +1805,21 @@ def workflow_sync_from_deployed_template(
         definition = wda.get_definition(workflow_id)
         if not definition:
             raise MCPToolError("NOT_FOUND", f"No workflow {workflow_id}.")
+
+        # A workflow that FOLLOWS its template renders the deployed code already;
+        # there is no copy to bring forward (workflow/render_source.py).
+        from connect_labs.workflow.render_source import followed_template
+
+        following = followed_template(definition)
+        if following:
+            return {
+                "workflow_id": workflow_id,
+                "template_key": following,
+                "follows_template": True,
+                "identical": True,
+                "dry_run": dry_run,
+                "note": "follows the deployed template; nothing to sync",
+            }
 
         # template_type is what the workflow itself records; name detection is the
         # older heuristic and stays only as a fallback, because a renamed workflow

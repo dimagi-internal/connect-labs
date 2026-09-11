@@ -677,6 +677,8 @@ class WorkflowDataAccess(BaseDataAccess):
         # registry -- same dashboard, different definitions, nothing to say so.
         if kwargs.get("registry_source"):
             data["registry_source"] = kwargs["registry_source"]
+        if kwargs.get("render_source"):
+            data["render_source"] = kwargs["render_source"]
 
         record = self.labs_api.create_record(
             experiment=self.EXPERIMENT,

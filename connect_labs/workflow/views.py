@@ -971,8 +971,11 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # confusing way. Iteration loop for render-code edits is now:
             # edit .js → `inv push-render` → reload page (works against any
             # environment, including labs.connect.dimagi.com).
-            render_code = data_access.get_render_code(definition_id)
-            context["render_code"] = render_code.data.get("component_code") if render_code else None
+            # ...unless the workflow FOLLOWS its template (render_source), in which case
+            # the deployed template's code is the render -- see workflow/render_source.py.
+            from connect_labs.workflow.render_source import resolve_render_code
+
+            context["render_code"], context["render_source"] = resolve_render_code(data_access, definition)
 
             # Determine effective opportunity list. Program-owned runs have no
             # owning opportunity — the opps come from the definition's
@@ -2736,6 +2739,15 @@ def save_render_code_api(request, definition_id):
 
         data_access = WorkflowDataAccess(request=request)
 
+        # A workflow that follows its template renders the template: a save here would
+        # be accepted and never shown, so it is refused with the way out.
+        from connect_labs.workflow.render_source import RenderFollowsTemplate, refuse_edit_if_following
+
+        try:
+            refuse_edit_if_following(data_access.get_definition(definition_id))
+        except RenderFollowsTemplate as exc:
+            return JsonResponse({"error": str(exc)}, status=409)
+
         # Save render code
         render_code_record = data_access.save_render_code(
             definition_id=definition_id,
@@ -2792,6 +2804,13 @@ def sync_template_render_code_api(request, definition_id):
         definition = data_access.get_definition(definition_id)
         if not definition:
             return JsonResponse({"error": "Workflow not found"}, status=404)
+
+        # Following its template already IS synced -- there is no copy to update.
+        from connect_labs.workflow.render_source import followed_template
+
+        following = followed_template(definition)
+        if following:
+            return JsonResponse({"success": True, "follows_template": following, "changed": False})
 
         # Auto-detect template from definition name if not provided
         if not template_key:
