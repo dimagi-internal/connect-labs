@@ -488,3 +488,138 @@ def workflow_ensure_visit_cache(
             _reraise_unreadable(e, definition_id, opportunity_id, program_id)
     finally:
         wda.close()
+
+
+@register(
+    name="workflow_history_runs",
+    description=(
+        "List a workflow's saved runs in period order -- by default only the ones "
+        "workflow_rebuild_history created -- and optionally export each run's full stored "
+        "record.\n\n"
+        "BACKUP. include_snapshot=true returns each run's complete data (state and saved "
+        "snapshot): enough to recreate it exactly. Snapshots are large, so it pages: at most "
+        "`limit` runs per call (default 10); until `done`, call again with "
+        "start_at=<next_start_at>. Take this before workflow_prune_history.\n\n"
+        "Reads only. Provide exactly one of opportunity_id / program_id."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "definition_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "program_id": {"type": "integer"},
+            "generated_only": {
+                "type": "boolean",
+                "description": "Default true: only runs workflow_rebuild_history created. False: every run.",
+            },
+            "include_snapshot": {
+                "type": "boolean",
+                "description": "Return each run's full stored data (for a backup). Default false.",
+            },
+            "start_at": {"type": "integer", "minimum": 0, "description": "Cursor from the previous call."},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Runs per call (default 10)."},
+        },
+        "required": ["definition_id"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def workflow_history_runs(
+    user,
+    *,
+    definition_id: int,
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
+    generated_only: bool = True,
+    include_snapshot: bool = False,
+    start_at: int = 0,
+    limit: int = 10,
+) -> dict[str, Any]:
+    from connect_labs.labs.integrations.connect.api_client import LabsAPIError
+    from connect_labs.workflow.history_rebuild import HistoryRebuildError, history_runs
+
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+
+    wda = _wda_for_user(user, opportunity_id=opportunity_id, program_id=program_id)
+    try:
+        try:
+            return history_runs(
+                wda,
+                definition_id,
+                generated_only=generated_only,
+                include_snapshot=include_snapshot,
+                start_at=start_at,
+                limit=limit,
+            )
+        except HistoryRebuildError as e:
+            raise _mcp_error(e) from e
+        except LabsAPIError as e:
+            _reraise_unreadable(e, definition_id, opportunity_id, program_id)
+    finally:
+        wda.close()
+
+
+@register(
+    name="workflow_prune_history",
+    description=(
+        "Delete the rebuilt runs whose period ends OUTSIDE a window, so a workflow's history "
+        "is exactly the window you chose.\n\n"
+        "WHY. workflow_rebuild_history only adds or replaces periods, so rebuilding a shorter "
+        "window after a longer one leaves the old points behind -- and a trend chart spaces "
+        "its points evenly, not by date, so an old block followed by a gap reads as one "
+        "continuous line.\n\n"
+        "WHAT IT TOUCHES. Only runs workflow_rebuild_history created (completed or not -- a "
+        "rebuild cut off mid-request can leave an unfinished one). A report someone saved by "
+        "hand is never deleted. At least one of keep_from / keep_to is required.\n\n"
+        "dry_run defaults to TRUE: it lists what would go and deletes nothing. Back up first "
+        "with workflow_history_runs(include_snapshot=true), then pass dry_run=false. Provide "
+        "exactly one of opportunity_id / program_id."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "definition_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "program_id": {"type": "integer"},
+            "keep_from": {"type": "string", "description": "ISO date. Keep runs whose period ends on or after it."},
+            "keep_to": {"type": "string", "description": "ISO date. Keep runs whose period ends on or before it."},
+            "dry_run": {"type": "boolean", "description": "Default true: report only. False deletes."},
+        },
+        "required": ["definition_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_prune_history(
+    user,
+    *,
+    definition_id: int,
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
+    keep_from: str | None = None,
+    keep_to: str | None = None,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    from connect_labs.labs.integrations.connect.api_client import LabsAPIError
+    from connect_labs.workflow.history_rebuild import HistoryRebuildError, prune_history
+
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+
+    wda = _wda_for_user(user, opportunity_id=opportunity_id, program_id=program_id)
+    try:
+        try:
+            return prune_history(
+                wda,
+                definition_id,
+                keep_from=_parse_date(keep_from, "keep_from"),
+                keep_to=_parse_date(keep_to, "keep_to"),
+                dry_run=dry_run,
+            )
+        except HistoryRebuildError as e:
+            raise _mcp_error(e) from e
+        except LabsAPIError as e:
+            _reraise_unreadable(e, definition_id, opportunity_id, program_id)
+    finally:
+        wda.close()

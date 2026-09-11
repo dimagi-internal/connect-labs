@@ -144,6 +144,14 @@ class _Run:
     def is_completed(self):
         return self.data["status"] == "completed"
 
+    @property
+    def status(self):
+        return self.data["status"]
+
+    @property
+    def completed_at(self):
+        return self.data.get("completed_at")
+
 
 class _DAO:
     """Records every mutation in order, so tests can assert on the SEQUENCE."""
@@ -821,3 +829,65 @@ class TestTheCacheIsEnsuredFirst:
         with pytest.raises(hr.HistoryRebuildError) as e:
             hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10)
         assert e.value.code == "cache_incomplete"
+
+
+class TestExportAndPrune:
+    """Choosing a window is the caller's decision: back it up, then keep only the window.
+
+    A rebuild only adds or replaces periods, so a shorter window after a longer one
+    left the old block on the chart -- and the trend spaces points evenly, not by
+    date, so the old block and the new one read as one continuous line.
+    """
+
+    def _history(self):
+        mine = lambda i, end: _Run(i, end, end, state={"generated_by": hr.GENERATED_BY}, completed=True)  # noqa: E731
+        return [
+            mine(1, "2025-05-25"),
+            mine(2, "2025-06-01"),
+            _Run(3, "2025-06-01", "2025-06-01", state={}, completed=True),  # saved by hand
+            mine(4, "2026-04-26"),
+            mine(5, "2026-09-06"),
+            _Run(6, "2025-10-12", "2025-10-12", state={"generated_by": hr.GENERATED_BY}),  # cut off mid-build
+        ]
+
+    def test_prune_deletes_only_stamped_runs_outside_the_window(self):
+        dao = _DAO(_Definition(), runs=self._history())
+        report = hr.prune_history(dao, 1, keep_from=date(2026, 4, 20), dry_run=False)
+        assert sorted(r.id for r in dao._runs) == [3, 4, 5], "the hand-saved run and the window survive"
+        assert report["pruned"] == 3 and report["kept"] == 2
+
+    def test_an_unfinished_stamped_run_outside_the_window_is_pruned(self):
+        # A rebuild cut off mid-request leaves one behind; it must not be immortal.
+        dao = _DAO(_Definition(), runs=self._history())
+        hr.prune_history(dao, 1, keep_from=date(2026, 4, 20), dry_run=False)
+        assert 6 not in [r.id for r in dao._runs]
+
+    def test_prune_is_a_dry_run_by_default(self):
+        dao = _DAO(_Definition(), runs=self._history())
+        report = hr.prune_history(dao, 1, keep_from=date(2026, 4, 20))
+        assert len(dao._runs) == 6 and not [c for c in dao.calls if c[0] == "delete"]
+        assert [r["run_id"] for r in report["runs"]["would_prune"]] == [1, 2, 6]
+
+    def test_prune_refuses_to_run_without_a_window(self):
+        with pytest.raises(hr.HistoryRebuildError) as e:
+            hr.prune_history(_DAO(_Definition(), runs=self._history()), 1, dry_run=False)
+        assert e.value.code == "no_window"
+
+    def test_keep_to_bounds_the_other_end(self):
+        dao = _DAO(_Definition(), runs=self._history())
+        hr.prune_history(dao, 1, keep_from=date(2025, 5, 1), keep_to=date(2026, 5, 1), dry_run=False)
+        assert sorted(r.id for r in dao._runs) == [1, 2, 3, 4, 6]
+
+    def test_export_pages_in_period_order_with_the_full_record(self):
+        dao = _DAO(_Definition(), runs=self._history())
+        first = hr.history_runs(dao, 1, include_snapshot=True, limit=2)
+        assert [r["run_id"] for r in first["runs"]] == [1, 2]
+        assert first["runs"][0]["data"]["state"]["generated_by"] == hr.GENERATED_BY
+        assert first["done"] is False and first["next_start_at"] == 2
+        rest = hr.history_runs(dao, 1, include_snapshot=True, start_at=first["next_start_at"])
+        assert [r["run_id"] for r in rest["runs"]] == [6, 4, 5] and rest["done"] is True
+
+    def test_export_lists_hand_saved_runs_only_when_asked(self):
+        dao = _DAO(_Definition(), runs=self._history())
+        assert 3 not in [r["run_id"] for r in hr.history_runs(dao, 1)["runs"]]
+        assert 3 in [r["run_id"] for r in hr.history_runs(dao, 1, generated_only=False)["runs"]]
