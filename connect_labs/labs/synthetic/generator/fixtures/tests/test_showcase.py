@@ -447,6 +447,26 @@ def test_a_case_with_a_referral_or_danger_sign_is_never_a_template():
     assert visits[0]["showcase"]["cloned_from"] == "tmpl-clean", "the uneventful case wins even from another worker"
 
 
+def test_a_young_cohort_still_clones_reusing_the_last_follow_up_form():
+    """Opp 2166 was a month old when cloned: no case had four weighed follow-ups,
+    so three of four demo cases fell back to synthesised forms. One weighed
+    follow-up is enough; the last one is reused for the extra weighings."""
+    short = _template_case("tmpl-short", "flw_001", 2)
+    short[2]["form_json"]["form"]["anthropometric"]["muac"] = 12.25  # marks the LAST follow-up
+    visits = _clone_build(short, {"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"})
+    series = cm.trajectories(CORPUS)["normal_02"]
+    weighings = _weighings(visits)
+    assert visits[0]["showcase"]["cloned_from"] == "tmpl-short"
+    assert len(weighings) == len(series) == 4
+    assert [w["form_json"]["form"]["anthropometric"]["muac"] for w in weighings] == [11.5, 12.25, 12.25, 12.25]
+    assert [_weight(w) for w in weighings] == [p["reading_grams"] for p in series]
+    assert len({w["xform_id"] for w in weighings}) == 4
+    # a full-length case is still preferred when one exists
+    full = _template_case("tmpl-full", "flw_001", 5)
+    both = _clone_build(short + full, {"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"})
+    assert both[0]["showcase"]["cloned_from"] == "tmpl-full"
+
+
 def test_without_templates_the_forms_are_synthesised_as_before():
     visits = _build([{"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"}])
     assert "cloned_from" not in visits[0]["showcase"]
