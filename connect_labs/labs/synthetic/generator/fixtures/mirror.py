@@ -207,8 +207,12 @@ def build_entity_resolver(visits: list[dict]):
     so must the profiler, or the two disagree on what a baby is.
     """
     submitted_against: set[str] = set()
+    named: set[str] = set()
     for v in visits:
-        for cid in (_case_id(v), _beneficiary_ref(v)):
+        ref = _beneficiary_ref(v)
+        if ref:
+            named.add(ref)
+        for cid in (_case_id(v), ref):
             if cid:
                 submitted_against.add(cid)
 
@@ -216,10 +220,17 @@ def build_entity_resolver(visits: list[dict]):
         ref = _beneficiary_ref(visit)
         if ref:
             return ref
+        cid = _case_id(visit)
+        # A case some visit names outright IS the baby, whatever else this
+        # form created: on opp 675 the registration is filed against the baby
+        # and opens a follow-up subcase, and the visits are filed against that
+        # subcase while naming the baby -- so the subcase rule below would key
+        # the registration to the subcase and split every baby in two.
+        if cid and cid in named:
+            return cid
         sub = _subcase_id(visit)
         if sub and sub in submitted_against:
             return sub
-        cid = _case_id(visit)
         if cid:
             return cid
         eid = visit.get("entity_id")

@@ -481,3 +481,48 @@ def test_pool_carries_the_form_name():
 
     names = [v.get("form") for v in struct.transplant_pool[0]["visits"]]
     assert names == ["Child Registration Form", "Record Visit Details"]
+
+
+def test_a_registration_keys_to_the_case_its_visits_name_not_the_subcase_they_are_filed_against():
+    """Opp 675's shape (production, 2026-09-11): the registration is submitted
+    against the baby and also creates a subcase; each visit is submitted
+    against that subcase and names the baby in kmc_beneficiary_case_id.
+
+    "A subcase someone submitted against is the beneficiary" then picks the
+    subcase for the registration while the visits key to the baby they name,
+    so every baby split into a registration-only and a visits-only series
+    (675 re-profiled after #1740: 178 + 163 of 341). The real key reads
+    form.case for a registration, so the case a visit names outright wins."""
+    visits = [
+        {
+            "username": "flwA",
+            "visit_date": "2026-01-01",
+            "form_json": {
+                "form": {
+                    "@name": "Register KMC Beneficiary",
+                    "case": {"@case_id": "baby-1"},
+                    "subcase_0": {"case": {"@case_id": "followup-1"}},
+                    "child_weight_birth": 1000,
+                }
+            },
+        },
+    ]
+    for i in range(3):
+        visits.append(
+            {
+                "username": "flwA",
+                "visit_date": f"2026-01-0{i + 2}",
+                "form_json": {
+                    "form": {
+                        "@name": "Record Visit Details",
+                        "kmc_beneficiary_case_id": "baby-1",
+                        "case": {"@case_id": "followup-1" if i == 0 else f"visit-case-{i}"},
+                        "child_weight_visit": 1100 + 100 * i,
+                    }
+                },
+            }
+        )
+
+    struct = profile_entity_structure(visits)
+
+    assert struct.visits_per_entity == {4: 1}
