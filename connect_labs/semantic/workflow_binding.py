@@ -92,6 +92,10 @@ def build_evaluate_inputs(definition, pipeline_access_factory) -> tuple[Any, dic
         raise SemanticBindingError("workflow has no entity pipeline source (alias 'children')")
 
     pipeline_access = pipeline_access_factory()
+    # A source may name where its pipeline lives -- a synthetic workflow on a real
+    # pipeline -- and Layer 1 must read the same record the pipelines run.
+    if hasattr(pipeline_access, "use_sources"):
+        pipeline_access.use_sources(sources)
     try:
         pipeline_def = pipeline_access.get_definition(entity_source["pipeline_id"])
     except Exception as exc:

@@ -41,8 +41,9 @@ class _Slots:
         self.from_cache = from_cache
         self.calls: list[tuple] = []
 
-    def factory(self, access_token, owner_scope):
+    def factory(self, access_token, owner_scope, sources=None):
         self.owner_scope = owner_scope
+        self.sources = sources
         slots = self
 
         class _Mgr:

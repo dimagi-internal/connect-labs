@@ -195,6 +195,15 @@ def workflow_sync_from_template_file(
             for src in current_def.data.get("pipeline_sources", [])
             if src.get("alias")
         }
+        # Pipelines this workflow REFERENCES from another scope belong to the workflow
+        # that owns them; a sync of this one must not rewrite them from here. They are
+        # reported as skipped, and change when their owner is synced -- which is the
+        # point of referencing rather than copying.
+        referenced = {
+            src.get("alias"): src.get("home_scope")
+            for src in current_def.data.get("pipeline_sources", [])
+            if src.get("alias") and src.get("home_scope")
+        }
         if parsed.pipeline_schemas:
             missing = [ps["alias"] for ps in parsed.pipeline_schemas if ps["alias"] not in pipeline_sources_map]
             if missing:
@@ -229,6 +238,17 @@ def workflow_sync_from_template_file(
                 for ps in parsed.pipeline_schemas:
                     alias = ps["alias"]
                     pipeline_id = pipeline_sources_map[alias]
+                    if alias in referenced:
+                        result["pipelines"].append(
+                            {
+                                "alias": alias,
+                                "pipeline_id": pipeline_id,
+                                "skipped": "referenced",
+                                "home_scope": referenced[alias],
+                                "changed": False,
+                            }
+                        )
+                        continue
                     try:
                         current_pipe = pda.get_definition(pipeline_id)
                         if current_pipe is None:
