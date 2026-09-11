@@ -1,8 +1,18 @@
-function WorkflowUI({ definition, instance, workers, pipelines, links, actions, onUpdateState }) {
+function WorkflowUI({
+  definition,
+  instance,
+  workers,
+  pipelines,
+  links,
+  actions,
+  onUpdateState,
+}) {
   // --- Eligible-FLW set (commcare-user cases, visit_verification='yes') ---
   // entity_name is the built-in row field cchq_cases populates from each
   // case's case_name, which for commcare-user cases is the FLW's username.
-  var eligibleRows = (pipelines && pipelines.eligible_flws && pipelines.eligible_flws.rows) || [];
+  var eligibleRows =
+    (pipelines && pipelines.eligible_flws && pipelines.eligible_flws.rows) ||
+    [];
   var eligibleUsernames = React.useMemo(
     function () {
       var set = {};
@@ -62,7 +72,9 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
         group.forEach(function (row, idx) {
           var denom = passCount + failCount;
           var priorPassRate =
-            denom > 0 ? Math.round((passCount / denom) * 100) + '% (' + denom + ')' : 'N/A (0)';
+            denom > 0
+              ? Math.round((passCount / denom) * 100) + '% (' + denom + ')'
+              : 'N/A (0)';
 
           result.push(
             Object.assign({}, row, {
@@ -105,8 +117,8 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
       locType === 'mothers_home'
         ? row.visit_location_has_prev_home_gps
         : locType === 'health_facility'
-          ? row.visit_location_has_prev_health_facility_gps
-          : null;
+        ? row.visit_location_has_prev_health_facility_gps
+        : null;
 
     if (hasPrevGps === 'no') return 'NA';
     if (row.gps_visit_verification_matches === 'no') return 'Fail';
@@ -116,7 +128,8 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 
   function motherQuestionsOutcome(row) {
     if (row.show_mother_questions === '0') return 'NA';
-    if (row.show_mother_questions === '1') return blankOrNA(row.mother_questions_visit_verification);
+    if (row.show_mother_questions === '1')
+      return blankOrNA(row.mother_questions_visit_verification);
     return 'NA';
   }
 
@@ -134,15 +147,20 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     { key: 'mother_questions_outcome', label: 'Mother questions outcome' },
     { key: 'anc_card_outcome', label: 'ANC card outcome' },
     { key: 'visit_verification_outcome', label: 'Final verification outcome' },
-    { key: 'prior_verification_pass_rate', label: 'Previous verification pass rate' },
+    {
+      key: 'prior_verification_pass_rate',
+      label: 'Previous verification pass rate',
+    },
   ];
 
   function cellValue(row, key) {
     if (key === 'gps_outcome') return gpsOutcome(row);
     if (key === 'qr_outcome') return blankOrNA(row.qr_code_visit_verification);
-    if (key === 'signature_outcome') return blankOrNA(row.mother_initial_visit_verification);
+    if (key === 'signature_outcome')
+      return blankOrNA(row.mother_initial_visit_verification);
     if (key === 'mother_questions_outcome') return motherQuestionsOutcome(row);
-    if (key === 'anc_card_outcome') return blankOrNA(row.capture_anc_card_visit_verification);
+    if (key === 'anc_card_outcome')
+      return blankOrNA(row.capture_anc_card_visit_verification);
     return row[key];
   }
 
@@ -153,14 +171,19 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
         <p className="text-gray-600">{definition.description}</p>
       </div>
 
-      <div className="text-sm text-gray-500">{displayRows.length} visits shown</div>
+      <div className="text-sm text-gray-500">
+        {displayRows.length} visits shown
+      </div>
       <div className="overflow-x-auto rounded border border-gray-200">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
             <tr>
               {columns.map(function (col) {
                 return (
-                  <th key={col.key} className="whitespace-nowrap px-3 py-2 text-left font-medium text-gray-700">
+                  <th
+                    key={col.key}
+                    className="whitespace-nowrap px-3 py-2 text-left font-medium text-gray-700"
+                  >
                     {col.label}
                   </th>
                 );
@@ -173,7 +196,10 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
                 <tr key={row.visit_id || i}>
                   {columns.map(function (col) {
                     return (
-                      <td key={col.key} className="whitespace-nowrap px-3 py-2 text-gray-800">
+                      <td
+                        key={col.key}
+                        className="whitespace-nowrap px-3 py-2 text-gray-800"
+                      >
                         {(function () {
                           var v = cellValue(row, col.key);
                           return v === null || v === undefined ? '' : String(v);
