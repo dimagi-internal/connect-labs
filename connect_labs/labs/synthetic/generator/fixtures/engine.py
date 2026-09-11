@@ -506,6 +506,9 @@ def _assemble(
             # reading_path cannot split the demo cases off into a field the
             # audit does not read (#1602).
             reading_path=(image_stats or {}).get("resolved_reading_path"),
+            # The cohort's own cases are the templates a showcase case is cloned
+            # from, so it carries every field a standard case does.
+            template_visits=visits,
         )
         if showcase_visits:
             visits.extend(showcase_visits)
