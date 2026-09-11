@@ -1,18 +1,8 @@
-function WorkflowUI({
-  definition,
-  instance,
-  workers,
-  pipelines,
-  links,
-  actions,
-  onUpdateState,
-}) {
+function WorkflowUI({ definition, instance, workers, pipelines, links, actions, onUpdateState }) {
   // --- Eligible-FLW set (commcare-user cases, visit_verification='yes') ---
   // entity_name is the built-in row field cchq_cases populates from each
   // case's case_name, which for commcare-user cases is the FLW's username.
-  var eligibleRows =
-    (pipelines && pipelines.eligible_flws && pipelines.eligible_flws.rows) ||
-    [];
+  var eligibleRows = (pipelines && pipelines.eligible_flws && pipelines.eligible_flws.rows) || [];
   var eligibleUsernames = React.useMemo(
     function () {
       var set = {};
@@ -54,6 +44,9 @@ function WorkflowUI({
 
   var enrichedRows = React.useMemo(
     function () {
+      // Grouped by mother_case_id -- visit_number and the prior-pass-rate are
+      // per MOTHER (how many times has this mother been visited, and what was
+      // her prior verification track record), not per FLW.
       var byMother = {};
       allVisitRows.forEach(function (row) {
         var key = row.mother_case_id || '';
@@ -72,9 +65,7 @@ function WorkflowUI({
         group.forEach(function (row, idx) {
           var denom = passCount + failCount;
           var priorPassRate =
-            denom > 0
-              ? Math.round((passCount / denom) * 100) + '% (' + denom + ')'
-              : 'N/A (0)';
+            denom > 0 ? Math.round((passCount / denom) * 100) + '% (' + denom + ')' : 'N/A (0)';
 
           result.push(
             Object.assign({}, row, {
@@ -113,12 +104,17 @@ function WorkflowUI({
 
   function gpsOutcome(row) {
     var locType = row.where_is_the_visit_being_conducted;
+    // 'other' (neither the mother's home nor a health facility) has no
+    // applicable prior-GPS field at all -- GPS verification doesn't apply
+    // there, same as a missing prior GPS at home/health-facility.
+    if (locType === 'other') return 'NA';
+
     var hasPrevGps =
       locType === 'mothers_home'
         ? row.visit_location_has_prev_home_gps
         : locType === 'health_facility'
-        ? row.visit_location_has_prev_health_facility_gps
-        : null;
+          ? row.visit_location_has_prev_health_facility_gps
+          : null;
 
     if (hasPrevGps === 'no') return 'NA';
     if (row.gps_visit_verification_matches === 'no') return 'Fail';
@@ -128,10 +124,28 @@ function WorkflowUI({
 
   function motherQuestionsOutcome(row) {
     if (row.show_mother_questions === '0') return 'NA';
-    if (row.show_mother_questions === '1')
-      return blankOrNA(row.mother_questions_visit_verification);
+    if (row.show_mother_questions === '1') return blankOrNA(row.mother_questions_visit_verification);
     return 'NA';
   }
+
+  // --- Cell coloring: NA grey, Pass green, Fail red, Pending* yellow -----
+  function outcomeColorClass(value) {
+    if (value === 'Pass') return 'bg-green-100 text-green-800';
+    if (value === 'Fail') return 'bg-red-100 text-red-800';
+    if (value === 'NA') return 'bg-gray-100 text-gray-600';
+    if (typeof value === 'string' && value.indexOf('Pending') !== -1) return 'bg-yellow-100 text-yellow-800';
+    if (value === 'ERROR') return 'bg-orange-100 text-orange-800';
+    return '';
+  }
+
+  var OUTCOME_COLUMN_KEYS = {
+    gps_outcome: true,
+    qr_outcome: true,
+    signature_outcome: true,
+    mother_questions_outcome: true,
+    anc_card_outcome: true,
+    visit_verification_outcome: true,
+  };
 
   var columns = [
     { key: 'username', label: 'FLW ID' },
@@ -147,22 +161,50 @@ function WorkflowUI({
     { key: 'mother_questions_outcome', label: 'Mother questions outcome' },
     { key: 'anc_card_outcome', label: 'ANC card outcome' },
     { key: 'visit_verification_outcome', label: 'Final verification outcome' },
-    {
-      key: 'prior_verification_pass_rate',
-      label: 'Previous verification pass rate',
-    },
+    { key: 'prior_verification_pass_rate', label: 'Previous verification pass rate' },
   ];
 
   function cellValue(row, key) {
     if (key === 'gps_outcome') return gpsOutcome(row);
     if (key === 'qr_outcome') return blankOrNA(row.qr_code_visit_verification);
-    if (key === 'signature_outcome')
-      return blankOrNA(row.mother_initial_visit_verification);
+    if (key === 'signature_outcome') return blankOrNA(row.mother_initial_visit_verification);
     if (key === 'mother_questions_outcome') return motherQuestionsOutcome(row);
-    if (key === 'anc_card_outcome')
-      return blankOrNA(row.capture_anc_card_visit_verification);
+    if (key === 'anc_card_outcome') return blankOrNA(row.capture_anc_card_visit_verification);
     return row[key];
   }
+
+  // --- Sortable columns ---------------------------------------------------
+  var _sort = React.useState({ key: null, dir: 'asc' });
+  var sort = _sort[0];
+  var setSort = _sort[1];
+
+  function handleSortClick(key) {
+    setSort(function (prev) {
+      if (prev.key !== key) return { key: key, dir: 'asc' };
+      return { key: key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
+    });
+  }
+
+  var sortedRows = React.useMemo(
+    function () {
+      if (!sort.key) return displayRows;
+      var key = sort.key;
+      var dir = sort.dir === 'asc' ? 1 : -1;
+      return displayRows.slice().sort(function (a, b) {
+        var av = cellValue(a, key);
+        var bv = cellValue(b, key);
+        var an = typeof av === 'number' ? av : parseFloat(av);
+        var bn = typeof bv === 'number' ? bv : parseFloat(bv);
+        if (!isNaN(an) && !isNaN(bn) && av !== null && bv !== null && av !== '' && bv !== '') {
+          return (an - bn) * dir;
+        }
+        var as = av === null || av === undefined ? '' : String(av);
+        var bs = bv === null || bv === undefined ? '' : String(bv);
+        return as.localeCompare(bs) * dir;
+      });
+    },
+    [displayRows, sort],
+  );
 
   return (
     <div className="space-y-4">
@@ -171,39 +213,39 @@ function WorkflowUI({
         <p className="text-gray-600">{definition.description}</p>
       </div>
 
-      <div className="text-sm text-gray-500">
-        {displayRows.length} visits shown
-      </div>
+      <div className="text-sm text-gray-500">{sortedRows.length} visits shown</div>
       <div className="overflow-x-auto rounded border border-gray-200">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
             <tr>
               {columns.map(function (col) {
+                var isSorted = sort.key === col.key;
                 return (
                   <th
                     key={col.key}
-                    className="whitespace-nowrap px-3 py-2 text-left font-medium text-gray-700"
+                    onClick={function () {
+                      handleSortClick(col.key);
+                    }}
+                    className="cursor-pointer select-none whitespace-nowrap px-3 py-2 text-left font-medium text-gray-700 hover:bg-gray-100"
                   >
                     {col.label}
+                    {isSorted ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
                   </th>
                 );
               })}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
-            {displayRows.map(function (row, i) {
+            {sortedRows.map(function (row, i) {
               return (
                 <tr key={row.form_instance_id || i}>
                   {columns.map(function (col) {
+                    var v = cellValue(row, col.key);
+                    var text = v === null || v === undefined ? '' : String(v);
+                    var colorClass = OUTCOME_COLUMN_KEYS[col.key] ? outcomeColorClass(v) : '';
                     return (
-                      <td
-                        key={col.key}
-                        className="whitespace-nowrap px-3 py-2 text-gray-800"
-                      >
-                        {(function () {
-                          var v = cellValue(row, col.key);
-                          return v === null || v === undefined ? '' : String(v);
-                        })()}
+                      <td key={col.key} className={'whitespace-nowrap px-3 py-2 text-gray-800 ' + colorClass}>
+                        {text}
                       </td>
                     );
                   })}
