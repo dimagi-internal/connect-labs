@@ -294,6 +294,61 @@ def _has_weight(visit: dict[str, Any], write_path: str | None) -> bool:
     )
 
 
+_EVENT_KEY = re.compile(r"referr|danger|death|died", re.I)
+# Procedural leaves that live inside an event group without being an event:
+# consent, an equipment check, the image-capture confirmation, labels. On the
+# KMC cohort three such fields read "yes" on nearly every case, which made
+# every case eventful and left nothing to clone.
+_PROCEDURAL_LEAF = re.compile(r"consent|equipment|capture|check(ed|list)?$|_lbl$|^space", re.I)
+
+
+def _walk_paths(node: Any, prefix: str = ""):
+    """Yield (dotted path, value) for every leaf, so a group name such as
+    ``Danger_Signs_Checklist`` counts even when the leaf is just ``jaundice``."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            path = f"{prefix}.{k}" if prefix else str(k)
+            if isinstance(v, (dict, list)):
+                yield from _walk_paths(v, path)
+            else:
+                yield path, v
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            path = f"{prefix}[{i}]"
+            if isinstance(v, (dict, list)):
+                yield from _walk_paths(v, path)
+            else:
+                yield path, v
+
+
+def _is_uneventful(visit: dict[str, Any]) -> bool:
+    """No referral, danger sign or death answered on this form.
+
+    A showcase case tells one story -- the growth and the photos -- and the
+    template supplies everything else. The first template the BERI cohort
+    offered for "Steady Gain" had a positive danger sign and a hospital referral
+    on its second visit, so the clean-growth demo read "Referrals 5" (run 5620,
+    2026-09-10). Keyed on field NAMES so it holds for any form vocabulary: a
+    key naming a referral, danger sign or death whose value reads yes / true
+    or names a referral state disqualifies the case; the match is on the full
+    dotted path, so a group named for danger signs covers its leaves.
+    """
+    fj = visit.get("form_json") or {}
+    for path, v in _walk_paths(fj):
+        if not _EVENT_KEY.search(path):
+            continue
+        if _PROCEDURAL_LEAF.search(path.rsplit(".", 1)[-1]):
+            continue
+        if isinstance(v, bool):
+            if v:
+                return False
+            continue
+        sv = str(v).strip().lower()
+        if sv in ("yes", "true", "1") or "referr" in sv:
+            return False
+    return True
+
+
 def _is_alive(visit: dict[str, Any]) -> bool:
     fj = visit.get("form_json") or {}
     vals = [parent[k] for parent, k in _walk(fj) if isinstance(parent, dict) and k in _ALIVE_KEYS]
@@ -308,7 +363,8 @@ def _pick_template(
     write_path: str | None,
 ) -> dict[str, Any] | None:
     """One standard case to duplicate: a registration form plus at least
-    ``n_followups`` weighed follow-ups, the child alive throughout. The same
+    ``n_followups`` weighed follow-ups, the child alive throughout and nothing
+    eventful (no referral, danger sign or death) on any of its forms. The same
     worker's cases are preferred so the clone reads as that worker's ordinary
     work; any worker's will do, because the username is overridden anyway.
 
@@ -340,7 +396,7 @@ def _pick_template(
         ]
         if len(followups) < n_followups:
             return None
-        if not all(_is_alive(v) for v in vs):
+        if not all(_is_alive(v) and _is_uneventful(v) for v in vs):
             return None
         return reg, followups[:n_followups]
 

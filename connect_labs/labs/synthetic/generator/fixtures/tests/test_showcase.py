@@ -421,6 +421,32 @@ def test_a_dead_or_registration_less_case_is_never_a_template():
     assert visits[0]["form_json"]["form"]["@name"] == "Child Registration Form"
 
 
+def test_a_case_with_a_referral_or_danger_sign_is_never_a_template():
+    """The template supplies everything the showcase does not say, so it must
+    say nothing eventful: "Steady Gain" cloned from a referred infant read
+    "Referrals 5" on the record rail."""
+    referred = _template_case("tmpl-ref", "flw_001", 5)
+    referred[2]["form_json"]["form"]["danger_signs_checklist"] = {
+        "child_referred": "yes",
+        "referral_status": "Referred",
+    }
+    danger = _template_case("tmpl-danger", "flw_001", 5)
+    danger[4]["form_json"]["form"]["child_details"] = {"Danger_Signs_Checklist": {"jaundice_grp": {"jaundice": "yes"}}}
+    clean = _template_case("tmpl-clean", "flw_009", 5)
+    clean[1]["form_json"]["form"]["danger_signs_checklist"] = {
+        "child_referred": "no",
+        "referral_status": "",
+        "conv_lbl": "OK",
+        # procedural fields inside the event group answer yes on every visit
+        "llo_consent": "yes",
+        "equipment_image_capture_checklist": {"equipment_check": "yes", "live_equipment_capture_done_or_no": "Yes"},
+    }
+    visits = _clone_build(
+        referred + danger + clean, {"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"}
+    )
+    assert visits[0]["showcase"]["cloned_from"] == "tmpl-clean", "the uneventful case wins even from another worker"
+
+
 def test_without_templates_the_forms_are_synthesised_as_before():
     visits = _build([{"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"}])
     assert "cloned_from" not in visits[0]["showcase"]
