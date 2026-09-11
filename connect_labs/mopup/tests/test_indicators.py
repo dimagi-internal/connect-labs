@@ -56,37 +56,19 @@ class TestWaRateEvcShortfall:
         wa = _wa("wa-1", expected_visit_count=0)
         assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {}) is None
 
-    @pytest.mark.parametrize("status", ["NOT_VISITED", "REQUEST_FOR_INACCESSIBLE"])
-    def test_excluded_by_default_for_not_yet_visited_statuses(self, status):
-        wa = _wa("wa-1", status=status)
-        assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {}) is None
-
-    @pytest.mark.parametrize("status", ["NOT_VISITED", "REQUEST_FOR_INACCESSIBLE"])
-    def test_override_includes_not_yet_visited(self, status):
-        wa = _wa("wa-1", status=status, approved_hsd_count=5, expected_visit_count=10)
-        rate = ind.wa_rate(wa, ind.EVC_SHORTFALL, {"include_not_yet_visited": True})
-        assert rate == pytest.approx(0.5)
-
-    @pytest.mark.parametrize("status", ["VISITED", "EXPECTED_VISIT_REACHED", "INACCESSIBLE"])
-    def test_concluded_statuses_always_computed(self, status):
+    @pytest.mark.parametrize("status", ["NOT_VISITED", "REQUEST_FOR_INACCESSIBLE", "", None])
+    def test_status_never_gates_evc_shortfall(self, status):
+        # Real production bug, found live 2026-09-11 (program 217): a work
+        # area's own `status`/`wa_status` case property is NOT a reliable
+        # signal for "has this WA actually been reached" -- confirmed across
+        # multiple real opportunities that it can sit at NOT_VISITED (or come
+        # back blank) even after real HSD delivery happened, and can be blank
+        # entirely on data that predates a schema change. `approved_hsd_count`
+        # is the reliable signal (see `test_zero_hsd_is_excluded_entirely`
+        # below), so status must never gate this indicator either way,
+        # regardless of its value.
         wa = _wa("wa-1", status=status, approved_hsd_count=5, expected_visit_count=10)
         assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {}) == pytest.approx(0.5)
-
-    @pytest.mark.parametrize("status", ["visited", "Visited", "inaccessible", "expected_visit_reached"])
-    def test_concluded_status_matching_is_case_insensitive(self, status):
-        # Real production bug, found live 2026-09-11: the real `wa_status`
-        # case property uses lowercase "visited" for a completed WA, not
-        # "VISITED" -- confirmed against a real CHC deliver app's own form
-        # logic. The comparison must not be a case-sensitive exact match.
-        wa = _wa("wa-1", status=status, approved_hsd_count=5, expected_visit_count=10)
-        assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {}) == pytest.approx(0.5)
-
-    def test_blank_status_is_not_concluded(self):
-        # The other half of the same bug: a genuinely missing/blank status
-        # (e.g. a field-path mismatch upstream) must NOT be silently treated
-        # as concluded -- it should behave exactly like "not yet visited".
-        wa = _wa("wa-1", status="", approved_hsd_count=5, expected_visit_count=10)
-        assert ind.wa_rate(wa, ind.EVC_SHORTFALL, {}) is None
 
     def test_gated_by_min_evc_floor(self):
         wa = _wa("wa-1", expected_visit_count=3, approved_hsd_count=0)
@@ -111,7 +93,7 @@ class TestWaNumeratorDenominator:
         assert ind.wa_numerator_denominator(wa, ind.EVC_SHORTFALL, {}) == (5, 10)
 
     def test_gated_out_returns_none_same_as_wa_rate(self):
-        wa = _wa("wa-1", status="NOT_VISITED")
+        wa = _wa("wa-1", approved_hsd_count=0)
         assert ind.wa_numerator_denominator(wa, ind.EVC_SHORTFALL, {}) is None
 
     def test_dq_pair_is_given_over_hsd_count(self):
