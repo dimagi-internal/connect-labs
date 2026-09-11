@@ -125,6 +125,9 @@ def build_showcase_visits(
 
 
 REGISTRATION_FORM_NAME = "Child Registration Form"
+# The registration case-update path the KMC case-properties pipeline reads
+# gestational age from (one of its three candidates).
+GA_PIPELINE_PATH = "form.subcase_0.case.update.gestational_age_at_birth_lmp"
 FOLLOWUP_FORM_NAME = "Record Visit Details"
 
 # Gestational age at birth, by birthweight band -- the ordinary preterm picture,
@@ -579,10 +582,12 @@ def _clone_case(
 
     fj = reg["form_json"]
     fit_record(fj)
-    if not _set_key_re(fj, _GA_KEY, ga):
-        # The template's app never asked for gestational age; the chart needs
-        # it for its postmenstrual-age axis, so write it where the pipeline reads.
-        _set_nested(fj, "form.subcase_0.case.update.gestational_age_at_birth_lmp", ga)
+    # Gestational age where the case-properties pipeline reads it, whatever the
+    # template's app did with it. Opp 2166's app keeps it only under a label
+    # group (`ga_preemie_labels.gestational_age_at_birth_preemie`), which the
+    # pipeline does not read, so the chart had no postmenstrual-age axis and the
+    # case row no GA even though the form carried the value (10062, 2026-09-11).
+    _set_nested(fj, GA_PIPELINE_PATH, ga)
     reg["showcase"] = {
         "case": case.name,
         "trajectory": case.trajectory,

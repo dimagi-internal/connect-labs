@@ -478,17 +478,21 @@ def test_a_young_cohort_still_clones_reusing_the_last_follow_up_form():
     assert both[0]["showcase"]["cloned_from"] == "tmpl-full"
 
 
-def test_a_template_without_gestational_age_gets_one_at_the_pipeline_path():
-    """The chart's postmenstrual-age axis needs a gestational age; an app that
-    never asks for it (opp 2166's) leaves the clone with none, so it is written
-    where the pipeline reads it."""
+def test_gestational_age_is_written_where_the_pipeline_reads_it():
+    """The chart's postmenstrual-age axis needs a gestational age at one of the
+    pipeline's paths. Opp 2166's app keeps it only under a label group the
+    pipeline never reads, so the clone must write it at the pipeline's path
+    whatever the template did with it -- and still fit any GA key it has."""
     t = _template_case("tmpl-noga", "flw_001", 5)
     for v in t:
         form = v["form_json"]["form"]
         form.get("subcase_0", {}).get("case", {}).get("update", {}).pop("gestational_age_at_birth_lmp", None)
         form.get("mothers_details", {}).pop("gestational_age_at_birth_lmp", None)
+    t[0]["form_json"]["form"]["child_details"]["ga_preemie_labels"] = {"gestational_age_at_birth_preemie": 38.0}
     visits = _clone_build(t, {"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"})
-    assert visits[0]["form_json"]["form"]["subcase_0"]["case"]["update"]["gestational_age_at_birth_lmp"] == 31.0
+    form = visits[0]["form_json"]["form"]
+    assert form["subcase_0"]["case"]["update"]["gestational_age_at_birth_lmp"] == 31.0
+    assert form["child_details"]["ga_preemie_labels"]["gestational_age_at_birth_preemie"] == 31.0
 
 
 def test_without_templates_the_forms_are_synthesised_as_before():
