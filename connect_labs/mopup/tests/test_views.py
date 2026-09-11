@@ -15,6 +15,20 @@ from django.urls import reverse
 pytestmark = pytest.mark.django_db
 
 
+@pytest.fixture(autouse=True)
+def _no_connect_implementation_areas_by_default(monkeypatch):
+    """Every analysis-view test renders through `_ward_boundaries_geojson`,
+    which attempts a real Connect Implementation Area API call whenever a
+    truthy access_token + opportunity id are both present -- true for every
+    test here via `_login`'s fake token and `_seed_run`'s default
+    `target_opportunity_id`. Default that to "opportunity has none
+    configured" (an empty list, same as a real 404/network failure) so
+    tests exercise the existing third-party-fallback path -- unchanged from
+    before this fetch existed -- unless a test explicitly overrides this to
+    test the Connect-native path itself."""
+    monkeypatch.setattr("connect_labs.mopup.views.fetch_connect_implementation_areas", lambda *a, **k: [])
+
+
 def _login(client, django_user_model):
     user = django_user_model.objects.create(username="tester", email="t@example.com")
     client.force_login(user)
@@ -863,7 +877,7 @@ def test_analysis_view_embeds_ward_boundaries_and_mapbox_token(client, django_us
     assert b"testtoken123" in resp.content
     assert b"Sabon Gari" in resp.content
     assert b"GeoPoDe" in resp.content
-    assert b"pending native Connect boundary support" in resp.content
+    assert b"pending a Connect Implementation Area upload" in resp.content
 
 
 def test_analysis_view_caption_lists_each_distinct_source_once(client, django_user_model, monkeypatch, settings):
@@ -897,7 +911,7 @@ def test_analysis_view_caption_lists_each_distinct_source_once(client, django_us
     # Two distinct sources across three wards -> the caption names each once,
     # not once per ward (three wards, two sources).
     body = resp.content.decode()
-    assert "Boundary source: GeoPoDe / WHO (wards + pop), Overture" in body
+    assert "Boundary source: GeoPoDe / WHO (wards + pop), Overture —" in body
     assert body.count("Boundary source:") == 1
 
 
@@ -915,6 +929,79 @@ def test_analysis_view_skips_wards_with_no_boundary_match(client, django_user_mo
     resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
     assert resp.status_code == 200
     assert b"pending native Connect boundary support" not in resp.content
+
+
+def test_analysis_view_prefers_connect_native_implementation_area_boundary(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs, target_opportunity_id=2154)
+    run.data["selected_wards"] = [{"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"}]
+
+    connect_boundary = {"type": "Polygon", "coordinates": [[[9, 12], [10, 12], [10, 13], [9, 13], [9, 12]]]}
+    calls = []
+
+    def fake_fetch(opportunity_id, access_token):
+        calls.append((opportunity_id, access_token))
+        return [
+            {
+                "id": 1,
+                "name": "Sabon Gari",
+                "centroid": {"type": "Point", "coordinates": [9.5, 12.5]},
+                "boundary": connect_boundary,
+            }
+        ]
+
+    monkeypatch.setattr("connect_labs.mopup.views.fetch_connect_implementation_areas", fake_fetch)
+    # This must never be reached -- the Connect-native match should win outright.
+    monkeypatch.setattr(
+        "connect_labs.microplans.core.admin_boundaries.find_ward_boundary",
+        lambda state, lga, ward: (_ for _ in ()).throw(AssertionError("fallback should not run")),
+    )
+
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200
+    assert calls == [(2154, "test-token")]
+    body = resp.content.decode()
+    assert "Boundary source: Connect (native Implementation Area for this opportunity)." in body
+    assert "pending a Connect Implementation Area upload" not in body
+
+
+def test_analysis_view_mixes_connect_native_and_fallback_captions(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    run.data["selected_wards"] = [
+        {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"},
+        {"ward": "Fagge", "lga": "Fagge", "state": "Kano"},
+    ]
+
+    connect_boundary = {"type": "Polygon", "coordinates": [[[9, 12], [10, 12], [10, 13], [9, 13], [9, 12]]]}
+    monkeypatch.setattr(
+        "connect_labs.mopup.views.fetch_connect_implementation_areas",
+        lambda opportunity_id, access_token: [
+            {
+                "id": 1,
+                "name": "Sabon Gari",
+                "centroid": {"type": "Point", "coordinates": [9.5, 12.5]},
+                "boundary": connect_boundary,
+            }
+        ],
+    )
+    fallback_geojson = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]}
+    monkeypatch.setattr(
+        "connect_labs.microplans.core.admin_boundaries.find_ward_boundary",
+        lambda state, lga, ward: SimpleNamespace(
+            source="overture", geometry=SimpleNamespace(geojson=json.dumps(fallback_geojson))
+        ),
+    )
+
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert (
+        "Boundary source: Connect (native Implementation Area for this opportunity), Overture — some ward(s) fell back"
+        in body
+    )
 
 
 # --- MopupLockView -----------------------------------------------------------

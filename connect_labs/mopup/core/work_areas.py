@@ -14,7 +14,11 @@ A Phase 1 "refresh wards" button just needs to re-request with that param.
 
 from __future__ import annotations
 
+import logging
+
 from django.http import HttpRequest
+
+logger = logging.getLogger(__name__)
 
 # CommCare work-area case property -> our field name.
 _CASE_PROPERTY_PATHS = {
@@ -141,3 +145,31 @@ def summarize_wards(work_areas: list[dict]) -> list[dict]:
         row["building_count"] += wa["building_count"]
         row["expected_visit_count"] += wa["expected_visit_count"]
     return sorted(by_ward.values(), key=lambda r: (r["state"], r["lga"], r["ward"]))
+
+
+def fetch_connect_implementation_areas(opportunity_id: int, access_token: str, timeout: float = 30.0) -> list[dict]:
+    """This opportunity's own uploaded Implementation Area boundaries — the
+    ground-truth ward shape Connect's own microplanning actually used to
+    define its work areas, as opposed to a third-party name-matched guess
+    (see `microplans.core.admin_boundaries`). Only possible since Connect
+    shipped a read endpoint for `ImplementationArea` on 2026-09-10
+    (commcare-connect#1517) — previously Implementation Area data was
+    write-only from labs' side.
+
+    Returns `[{"id", "name", "centroid": geojson, "boundary": geojson}, ...]`
+    — `name` is the same value labs itself wrote as `implementation_area`
+    when uploading work areas (confirmed same as `ward`, see
+    `microplans.core.workarea`/`plan.py`), so callers match on it directly.
+    Returns `[]` (never raises) on any API failure — this enriches the map,
+    it doesn't gate it; a failure here should silently fall back to the
+    existing third-party boundary resolver, not break the page."""
+    from connect_labs.labs.integrations.connect.export_client import ExportAPIError
+    from connect_labs.labs.integrations.connect.factory import get_export_client
+
+    endpoint = f"/export/opportunity/{opportunity_id}/implementation_areas/"
+    try:
+        with get_export_client(opportunity_id=opportunity_id, access_token=access_token, timeout=timeout) as client:
+            return client.fetch_all(endpoint)
+    except ExportAPIError as e:
+        logger.warning(f"Failed to fetch Connect implementation areas for opportunity {opportunity_id}: {e}")
+        return []
