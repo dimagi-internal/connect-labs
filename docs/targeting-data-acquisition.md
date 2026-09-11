@@ -283,6 +283,46 @@ the only redistributable state table is still Annex 2.1 of the 2022 Assessment,
 carrying 2018/19 numbers.
 
 ---
+
+### 28 — low birthweight, for Kangaroo Mother Care ✅ landed 2026-09-11
+
+KMC was priced per **birth** and serves **low-birthweight** newborns, roughly a
+seventh of them, so every KMC figure overstated eligible babies about sevenfold.
+The intervention's own docstring had said so since the first build.
+
+| measure | source | coverage |
+|---|---|---|
+| `lbw_rate` | UNICEF-WHO Global Low Birthweight Estimates (July 2023), UNICEF SDMX `GLOBAL_DATAFLOW` / `NT_BW_LBW`, CC BY 3.0 IGO | 38 countries national; 16 on their UN M49 subregion's aggregate |
+| `births_lbw` | derived, births x `lbw_rate` | every unit with births |
+| `facility_delivery` | DHS `RH_DELP_C_DHF` — a registry entry, as this register predicted | 39 countries, 481 regions |
+
+**The missing sixteen.** Nigeria, Ethiopia, Egypt, Uganda, Sudan, Niger, Mali,
+Somalia, Chad, Guinea, South Sudan, Mauritania, Equatorial Guinea, Djibouti,
+Cabo Verde and Libya have no national estimate in any year (the API returns
+404 for them). The regional aggregates report 100% population coverage, so these
+countries are inside them. Each carries its subregion's figure under a separate
+source, flagged inherited everywhere it surfaces. See `sources/unicef_lbw.py`
+for why that beats leaving them blank. M49 subregions rather than UNICEF's
+reporting regions: Western Africa reads 14.26% where West and Central Africa
+reads 13.42%.
+
+**Trap recorded.** The release name sits in `SERIES_FOOTNOTE`; `DATA_SOURCE` is
+the literal filename `CMRS_SERIES_LBW.csv`. Filtering on `DATA_SOURCE` loses
+every country.
+
+**Trap recorded, DHS.** Place of delivery and skilled attendance come back once
+per recall window (two and three years before the survey). The loader kept
+whichever the API listed last; it now takes the one DHS marks `IsPreferred`.
+Already-loaded `skilled_birth_attendance` values were read the old way and pick
+up the fix on their next load.
+
+**Found on the way: stale derivations.** Rwanda's births read 64,370 against a
+true ~400,000, because a derived row keyed on an older input's year outranked
+the current one. 196 of 2,294 units were outside a plausible
+births-per-under-five band. Every derivation now sweeps; see the indicators
+README.
+
+---
 ### 25 — Western Sahara ❌ closed, not actionable
 
 geoBoundaries publishes 230 ADM0 countries and **ESH is not among them** — a

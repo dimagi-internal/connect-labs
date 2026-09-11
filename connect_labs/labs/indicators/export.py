@@ -48,6 +48,10 @@ COLUMNS = [
     # episode duration, so no honest conversion exists.
     ("gap_annual", "Unreached per year (annualised)"),
     ("births", "Est. annual births"),
+    # The KMC denominator, beside the births it is a share of. Carried on
+    # newborn indicators only, so it is dropped when empty like the gap columns.
+    ("births_lbw", "Est. annual low-birthweight births"),
+    ("births_lbw_basis", "Low-birthweight rate from"),
     ("pop_u5", "Population under 5"),
     ("pop_total", "Total population"),
     ("births_complete", "Births complete for all regions"),
@@ -122,17 +126,37 @@ def _rows(selection: Selection):
                 else ""
             ),
             "u5mr_source_url": (r.source_url or "") if r else "",
-            "u5mr_measured_at": (
-                f"{r.measured_at.name} (ADM{r.measured_at.admin_level})" if r and r.inherited else "this area"
-            ),
+            # A regional aggregate is stored on the country but was measured for a
+            # wider region, so the label comes from the value rather than from
+            # the boundary it happens to sit on.
+            "u5mr_measured_at": r.measured_at_label if r else "this area",
             "expected_deaths": _cell(a.counts.get("expected_deaths")),
             "ors_gap_children": _cell(a.counts.get("ors_gap_children")),
             "gap_annual": _cell(a.counts.get(f"{selection.indicator}_gap_annual")),
             "births": _cell(a.counts.get("births")),
+            "births_lbw": _cell(a.counts.get("births_lbw")),
+            "births_lbw_basis": _lbw_basis(a),
             "pop_u5": _cell(a.counts.get("pop_u5")),
             "pop_total": _cell(a.counts.get("pop_total")),
             "births_complete": "yes" if a.is_complete("births") else "no",
         }
+
+
+def _lbw_basis(area) -> str:
+    """Whether a row's low-birthweight count rests on a national or a regional rate.
+
+    Per row, in words, because this is the column a funder reads without the
+    page beside it -- and "regional aggregate" is the thing they must not miss.
+    """
+    if area.counts.get("births_lbw") is None:
+        return ""
+    proxied = area.regional_proxy_units.get("births_lbw", 0)
+    got, _ = area.coverage.get("births_lbw", (0, 0))
+    if not proxied:
+        return "national estimate"
+    if proxied >= got:
+        return "regional aggregate (no national estimate)"
+    return f"regional aggregate for {proxied} of {got} units"
 
 
 def columns_for(selection: Selection) -> list[tuple[str, str]]:
@@ -164,7 +188,7 @@ def to_csv(selection: Selection) -> str:
 #: blank "Confidence interval" is itself the finding that the source published
 #: no interval. Dropping those would quietly make the artifact look tidier and
 #: less answerable at the same time.
-_MEASURE_SPECIFIC = frozenset({"ors_gap_children", "gap_annual"})
+_MEASURE_SPECIFIC = frozenset({"ors_gap_children", "gap_annual", "births_lbw", "births_lbw_basis"})
 
 
 def _carries_anything(key: str, rows: list[dict]) -> bool:
@@ -189,6 +213,8 @@ def _sources_used(selection: Selection) -> list[IndicatorValue]:
     """Distinct (source, ref, licence) actually behind this selection."""
     boundary_ids = [a.boundary.pk for a in selection.areas]
     wanted = [selection.indicator, *CARRIED_COUNTS, "imr", "pop_u1"]
+    if any(a.counts.get("births_lbw") is not None for a in selection.areas):
+        wanted += ["births_lbw", "lbw_rate"]
     seen: dict[tuple, IndicatorValue] = {}
     for v in IndicatorValue.objects.filter(boundary_id__in=boundary_ids, indicator__in=wanted).order_by(
         "indicator", "source"
@@ -328,6 +354,31 @@ def to_methodology(selection: Selection, *, alternatives: bool = True) -> str:
     else:
         add("No derived quantities in this selection.\n")
 
+    lbw_total = selection.totals.get("births_lbw")
+    if lbw_total:
+        add("**Annual low-birthweight births** is derived from births and a national rate:\n")
+        add("```")
+        add("births_lbw = births x low-birthweight rate (UNICEF-WHO, % of live births under 2,500 g)")
+        add("```")
+        add(
+            "The rate is the UNICEF-WHO modelled national estimate, latest year 2020, and "
+            "every region carries its country's figure. Under 2,500 g counts term babies "
+            "born small for gestational age and most preterm babies; it does **not** count "
+            "preterm babies weighing 2,500 g or more, who are also eligible for Kangaroo "
+            "Mother Care.\n"
+        )
+        proxied = selection.regional_proxy_units.get("births_lbw", 0)
+        if proxied:
+            countries = sorted({a.country_name for a in selection.areas if a.regional_proxy_units.get("births_lbw")})
+            add(
+                f"**{proxied} of {selection.coverage.get('births_lbw', (0, 0))[1]} units rest on a "
+                f"regional aggregate, not a national estimate** — {_join_names(countries)}. "
+                "UNICEF-WHO publish no national low-birthweight estimate for these countries, "
+                "so each carries its UN M49 subregion's aggregate, which UNICEF-WHO compute "
+                "over every country in the region including the unpublished ones. The "
+                "`Low-birthweight rate from` column says which rows this applies to.\n"
+            )
+
     got, total_units = selection.coverage.get("births", (0, 0))
     if total_units and got < total_units:
         add("## This total is a floor, not a measurement\n")
@@ -342,6 +393,16 @@ def to_methodology(selection: Selection, *, alternatives: bool = True) -> str:
             "Rows where this applies are marked `no` in the "
             "**Births complete for all regions** column, and their births cell is "
             "blank rather than zero.\n"
+        )
+
+    if selection.births_implausible_units:
+        add("## Births that do not fit the population\n")
+        add(
+            f"**{selection.births_implausible_units} selected units** carry a births estimate "
+            "that cannot belong to the under-five population beside it: births divided by "
+            "under-fives falls outside 0.12-0.32, where five birth cohorts put it near 0.2. "
+            "Treat the births total, and every count derived from it, as unreliable until "
+            "those units are explained.\n"
         )
 
     adjusted = [a for a in selection.areas if (v := a.values.get(selection.indicator)) and v.adjusted]
@@ -457,6 +518,11 @@ def to_methodology(selection: Selection, *, alternatives: bool = True) -> str:
         "Boundaries: geoBoundaries (CC BY 4.0). Population: WorldPop (CC BY 4.0). "
         "Mortality and fertility: The DHS Program; UN IGME via UNICEF.\n"
     )
+    if lbw_total:
+        add(
+            "Low birthweight: UNICEF-WHO Global Low Birthweight Estimates (July 2023), via "
+            "UNICEF SDMX (CC BY 3.0 IGO).\n"
+        )
 
     return "\n".join(out)
 

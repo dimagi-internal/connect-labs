@@ -64,6 +64,16 @@ class Source(models.TextChoices):
     # countries DHS has never surveyed. See sources/unicef_sdmx.py.
     UNICEF_SDMX = "unicef_sdmx", "UNICEF (subnational SDMX)"
     CHIRPS = "chirps", "CHIRPS x WorldPop"
+    # The UNICEF-WHO low birthweight estimates, national. Also served over
+    # UNICEF SDMX (GLOBAL_DATAFLOW), but a modelled national series rather
+    # than the subnational survey pooling above, so it gets its own code.
+    UNICEF_LBW = "unicef_lbw", "UNICEF-WHO low birthweight (national)"
+    # The same estimates' UN SDG subregional aggregate, applied to a country
+    # that has no national estimate of its own. A different CLAIM from the row
+    # above -- measured for the region, applied to the country -- and so a
+    # different source code, so that no query, policy or reader can mistake
+    # one for the other. See sources/unicef_lbw.py.
+    UNICEF_LBW_REGIONAL = "unicef_lbw_region", "UNICEF-WHO low birthweight (regional aggregate)"
     DERIVED = "derived", "Derived"
 
 

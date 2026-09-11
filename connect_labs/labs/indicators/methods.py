@@ -124,6 +124,33 @@ register(
 
 register(
     Method(
+        code="national_modelled",
+        label="National modelled estimate (UNICEF-WHO)",
+        resolution=Resolution.NATIONAL,
+        # Both codes, national first. The policy for each indicator decides
+        # eligibility and order; this only says the evidence wanted is a
+        # modelled national series. The regional row is included because
+        # excluding it would drop Nigeria and Ethiopia from every national
+        # low-birthweight answer while their figure sat in the table -- and it
+        # is flagged inherited wherever it is used, so it cannot pass as
+        # national.
+        source_order=("unicef_lbw", "unicef_lbw_region"),
+        description=(
+            "The UNICEF-WHO modelled national series — today, low birthweight. "
+            "Reconciles surveys, registration and facility records onto one "
+            "definition, one number per country, latest year 2020."
+        ),
+        caveat=(
+            "Sixteen African countries have no published national estimate and carry "
+            "their UN subregion's aggregate instead. Those rows are marked inherited, "
+            "and count towards inherited_units, because the number describes the region."
+        ),
+    )
+)
+
+
+register(
+    Method(
         code="national_surface",
         label="National estimate from gridded surfaces",
         resolution=Resolution.NATIONAL,

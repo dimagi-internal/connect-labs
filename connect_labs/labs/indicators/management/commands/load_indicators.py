@@ -33,6 +33,7 @@ from connect_labs.labs.indicators.sources import (
     malaria_atlas,
     rainfall,
     settlement,
+    unicef_lbw,
     unicef_sdmx,
     worldbank,
     worldpop,
@@ -46,6 +47,7 @@ STAGES = (
     "fertility",
     "population",
     "births",
+    "lbw",
     "child_health",
     "malaria",
     "population_raster",
@@ -254,27 +256,72 @@ class Command(BaseCommand):
                 ctx["detail"] = f"{len(failures)} boundaries returned no data: " + ", ".join(failures[:50])
                 self.stdout.write(self.style.WARNING(f"  {len(failures)} boundaries returned no population"))
 
+    def _derive(self, indicator, loader, codes, **kwargs):
+        """Write one derived measure and sweep what this run no longer produces.
+
+        Every derivation sweeps, not only the coverage gaps. A derived row's
+        natural key includes its YEAR, and the year is its inputs' vintage — so
+        when an input moves (WorldPop 2020 to the 2022 raster, a fertility
+        fallback to the infant-cohort method) the new row lands beside the old
+        one instead of replacing it. The resolver then prefers the most recent
+        year, which is whichever derivation happened to read the newest input,
+        not whichever ran last.
+
+        That is how Rwanda's births read 64,370 against a true ~400,000: a
+        fertility-method row from HAPI's 2023 table outranked the current
+        infant-cohort row from WorldPop's 2022 grid on year alone, and 700
+        boundaries across the continent did the same. See derive.sweep_derived.
+        """
+        with self._run(Source.DERIVED, indicator) as ctx:
+            rows = loader(iso_codes=codes, **kwargs)
+            ctx["rows"] = base.upsert(rows)
+            ctx["countries"] = len({r.boundary.iso_code for r in rows})
+            ctx["swept"] = derive.sweep_derived(rows, [indicator], iso_codes=codes)
+            if ctx["swept"]:
+                self.stdout.write(f"  swept {ctx['swept']} {indicator} rows the derivation no longer produces")
+        return rows
+
     def _stage_births(self, codes, opts):
-        with self._run(Source.DERIVED, "births") as ctx:
-            rows = derive.load(iso_codes=codes)
-            ctx["rows"] = base.upsert(rows)
-            ctx["countries"] = len({r.boundary.iso_code for r in rows})
+        self._derive("births", derive.load, codes)
+        self._derive("births_fertility_check", derive.load_fertility_crosscheck, codes)
 
-        with self._run(Source.DERIVED, "births_fertility_check") as ctx:
-            rows = derive.load_fertility_crosscheck(iso_codes=codes)
-            ctx["rows"] = base.upsert(rows)
-            ctx["countries"] = len({r.boundary.iso_code for r in rows})
-
-        # Depends on births, so it runs last in this stage.
-        with self._run(Source.DERIVED, "expected_deaths") as ctx:
-            rows = derive.load_expected_deaths(iso_codes=codes)
-            ctx["rows"] = base.upsert(rows)
-            ctx["countries"] = len({r.boundary.iso_code for r in rows})
+        # Depend on births, so they run last in this stage.
+        self._derive("expected_deaths", derive.load_expected_deaths, codes)
+        self._derive("births_lbw", derive.load_lbw_births, codes)
 
         div = derive.births_divergence(iso_codes=codes)
         if div:
             wide = sum(1 for d in div.values() if d > 0.25)
             self.stdout.write(f"  births cross-check: {wide} of {len(div)} regions disagree by >25%")
+
+    def _stage_lbw(self, codes, opts):
+        """Low birthweight, the facility-delivery signal beside it, and their counts.
+
+        What Kangaroo Mother Care is sized on. Additive by construction: it
+        writes lbw_rate, facility_delivery, births_lbw and facility_delivery_gap,
+        and its sweeps are scoped to those measures alone, so it can be run
+        against a populated database without touching anything else in it.
+        Needs births, so it follows the births stage.
+        """
+        with self._run(Source.UNICEF_LBW, "lbw_rate") as ctx:
+            rows = unicef_lbw.load(iso_codes=codes)
+            ctx["rows"] = base.upsert(rows)
+            ctx["countries"] = len({r.boundary.iso_code for r in rows})
+            regional = sorted(r.boundary.iso_code for r in rows if r.extra.get("regional_proxy"))
+            ctx["detail"] = f"regional proxy for: {', '.join(regional) or 'none'}"
+            self.stdout.write(f"  regional proxy (no national estimate): {', '.join(regional) or 'none'}")
+
+        with self._run(Source.DHS, "facility_delivery") as ctx:
+            rows = dhs.load("facility_delivery", iso_codes=codes)
+            ctx["rows"] = base.upsert(rows)
+            ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
+        self._derive("births_lbw", derive.load_lbw_births, codes)
+        self._derive(
+            "facility_delivery_gap",
+            lambda iso_codes: derive.load_coverage_gaps(iso_codes=iso_codes, only=["facility_delivery"]),
+            codes,
+        )
 
     def _stage_child_health(self, codes, opts):
         """Diarrhoea, ORS and breastfeeding — and the ORS gap they imply.
@@ -300,6 +347,7 @@ class Command(BaseCommand):
             "ari_antibiotics",
             "zinc_coverage",
             "skilled_birth_attendance",
+            "facility_delivery",
             "anc4",
             "mean_household_size",
             "improved_water",
@@ -331,15 +379,8 @@ class Command(BaseCommand):
                 ctx["rows"] = base.upsert(rows)
                 ctx["countries"] = len({r.boundary.iso_code for r in rows})
 
-        with self._run(Source.DERIVED, "ors_gap_children") as ctx:
-            rows = derive.load_ors_gap(iso_codes=codes)
-            ctx["rows"] = base.upsert(rows)
-            ctx["countries"] = len({r.boundary.iso_code for r in rows})
-
-        with self._run(Source.DERIVED, "households") as ctx:
-            rows = derive.load_households(iso_codes=codes)
-            ctx["rows"] = base.upsert(rows)
-            ctx["countries"] = len({r.boundary.iso_code for r in rows})
+        self._derive("ors_gap_children", derive.load_ors_gap, codes)
+        self._derive("households", derive.load_households, codes)
 
         # One row per coverage measure, driven by the registry, and a sweep --
         # a derived row is a function of other rows, so one the derivation no

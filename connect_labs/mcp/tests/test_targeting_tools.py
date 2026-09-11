@@ -195,7 +195,7 @@ class TestScenario:
 
         message = str(err.value)
         assert "not_a_basis" in message
-        for legal in ("birth", "under_5", "person", "household", "case", "case_year"):
+        for legal in ("birth", "lbw_birth", "under_5", "person", "household", "case", "case_year"):
             assert legal in message
 
     def test_a_count_field_name_is_accepted_as_a_basis(self):
@@ -214,6 +214,93 @@ class TestScenario:
 
         assert by_column["basis"] == "under_5"
         assert by_column["absorbable_usd"] == by_basis["absorbable_usd"] == 6000
+
+
+class TestLowBirthweightBasis:
+    """KMC is priced per low-birthweight newborn, and a model reading the scenario
+    has to be told when part of that count is a regional figure."""
+
+    def _nigeria_on_a_regional_rate(self):
+        from connect_labs.labs.indicators.sources import base, derive
+
+        country, region, _ = _nigeria()
+        set_value(region, "u5mr", 150, source=Source.DHS)
+        set_value(region, "births", 1000)
+        lbw = set_value(country, "lbw_rate", 14.26, year=2020, source=Source.UNICEF_LBW_REGIONAL)
+        lbw.extra = {"regional_proxy": True, "proxy_region_name": "Western Africa (UNSDG)"}
+        lbw.save()
+        base.upsert(derive.load_lbw_births(iso_codes=["NGA"]))
+
+    def test_lbw_birth_prices_the_low_birthweight_count(self):
+        self._nigeria_on_a_regional_rate()
+
+        got = targeting.targeting_scenario(
+            None, indicator="u5mr", threshold=80, basis="lbw_birth", unit_cost=60, method="subnational_survey"
+        )
+
+        assert got["counts_measure"] == "births_lbw"
+        assert got["units"] == 143  # 1,000 births x 14.26%
+        assert got["absorbable_usd"] == round(1000 * 0.1426 * 60)
+
+    def test_a_regional_rate_is_disclosed_in_the_scenario(self):
+        self._nigeria_on_a_regional_rate()
+
+        got = targeting.targeting_scenario(
+            None, indicator="u5mr", threshold=80, basis="lbw_birth", unit_cost=60, method="subnational_survey"
+        )
+
+        assert got["regional_proxy_units"] == 1
+        assert "REGIONAL" in got["caveat"]
+
+    def test_the_plain_birth_basis_still_works_and_is_not_flagged(self):
+        self._nigeria_on_a_regional_rate()
+
+        got = targeting.targeting_scenario(
+            None, indicator="u5mr", threshold=80, basis="birth", unit_cost=60, method="subnational_survey"
+        )
+
+        assert got["counts_measure"] == "births"
+        assert got["units"] == 1000
+        assert got["regional_proxy_units"] == 0
+
+    def test_the_count_field_name_is_accepted_as_the_basis(self):
+        self._nigeria_on_a_regional_rate()
+        got = targeting.targeting_scenario(
+            None, indicator="u5mr", threshold=80, basis="births_lbw", unit_cost=60, method="subnational_survey"
+        )
+        assert got["basis"] == "lbw_birth"
+
+    def test_select_carries_the_count_and_both_honesty_fields(self):
+        self._nigeria_on_a_regional_rate()
+
+        got = targeting.targeting_select(None, indicator="u5mr", threshold=80, method="subnational_survey")
+
+        assert got["totals"]["births_lbw"] == 143
+        assert got["regional_proxy_units"] == {"births_lbw": 1}
+        assert got["rows"][0]["regional_proxy_counts"] == ["births_lbw"]
+        # 1,000 births and no under-five figure: nothing to judge, so not flagged.
+        assert got["births_implausible_units"] == 0
+
+    def test_an_implausible_births_figure_is_flagged_in_select(self):
+        _, region, _ = _nigeria()
+        set_value(region, "u5mr", 150, source=Source.DHS)
+        set_value(region, "births", 1000)
+        set_value(region, "pop_u5", 100_000)  # 0.01 births per under-five
+
+        got = targeting.targeting_select(None, indicator="u5mr", threshold=80, method="subnational_survey")
+
+        assert got["births_implausible_units"] == 1
+
+    def test_lbw_rate_is_listed_and_answerable_nationally(self):
+        country, _, _ = _nigeria()
+        set_value(country, "lbw_rate", 14.26, year=2020, source=Source.UNICEF_LBW_REGIONAL)
+
+        listed = {i["indicator"]: i for i in targeting.targeting_indicators(None)["indicators"]}
+
+        assert listed["lbw_rate"]["unit"] == "% of live births"
+        assert listed["lbw_rate"]["methods_that_can_answer"] == [
+            {"method": "national_modelled", "countries": 1, "resolution": "national"}
+        ]
 
 
 class TestAdminLevelsSelectability:

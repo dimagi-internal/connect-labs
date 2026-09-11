@@ -205,6 +205,25 @@ register(
 
 register(
     Measure(
+        code="births_lbw",
+        label="Annual low-birthweight births",
+        kind=Kind.COUNT,
+        unit="births/year",
+        agg=Agg.SUM,
+        description=(
+            "Estimated live births under 2,500 g per year: births x the low-birthweight "
+            "rate. The eligible population for Kangaroo Mother Care. Counts term babies "
+            "born small for gestational age and most preterm babies; preterm babies "
+            "weighing 2,500 g or more are NOT counted. The rate is national (UNICEF-WHO), "
+            "so every region carries its country's figure; where a country publishes no "
+            "national estimate the rate is its UN subregion's and the row says so -- see "
+            "sources/unicef_lbw.py."
+        ),
+    )
+)
+
+register(
+    Measure(
         code="births_fertility_check",
         label="Annual births (fertility cross-check)",
         kind=Kind.COUNT,
@@ -270,6 +289,29 @@ register(
         weight_by="births",
         downscale=True,
         description="Deaths in the first 28 days per 1,000 live births.",
+    )
+)
+
+register(
+    Measure(
+        code="lbw_rate",
+        threshold_min=5,
+        threshold_max=25,
+        threshold_default=12,
+        label="Low birthweight",
+        kind=Kind.RATE,
+        unit="% of live births",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="births",
+        downscale=True,
+        description=(
+            "Share of live births weighing under 2,500 g, from the UNICEF-WHO modelled "
+            "national estimates (latest year 2020). National only, so a region always "
+            "carries its country's rate. Sixteen African countries -- Nigeria and "
+            "Ethiopia among them -- have no published national estimate and carry their "
+            "UN M49 subregion's aggregate instead, under a separate source and flagged as "
+            "inherited. Weighted by births: it is a property of a birth cohort."
+        ),
     )
 )
 
@@ -1305,6 +1347,26 @@ _coverage(
     ),
 )
 
+# Where a birth happens decides whether the baby is weighed, and a weighed
+# facility birth is where Kangaroo Mother Care identification starts. So this is
+# the absorptive-capacity signal beside the KMC denominator: a place with many
+# low-birthweight births and few facility deliveries needs community
+# identification before it can use facility KMC at all.
+_coverage(
+    "facility_delivery",
+    "Delivery in a health facility",
+    "births",
+    "births",
+    "% of live births",
+    (
+        "Live births delivered in a health facility, public or private. The unreached "
+        "count is births at home -- babies nobody weighed, whom a facility-based KMC "
+        "programme cannot find without community identification. DHS reports it for "
+        "the two years before the survey in recent rounds; the loader takes the "
+        "recall window DHS itself marks as preferred."
+    ),
+)
+
 # WASH, at the resolution a programme acts on.
 _coverage(
     "handwashing",
@@ -1468,8 +1530,10 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "min_meal_frequency",
     ),
     "Maternal & newborn": (
+        "lbw_rate",
         "anc4",
         "skilled_birth_attendance",
+        "facility_delivery",
         "postnatal_2days",
         "iron_pregnancy",
     ),
