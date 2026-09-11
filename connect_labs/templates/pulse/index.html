@@ -139,6 +139,25 @@
     {% endfor %}
   </div>
 
+  <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Partners</h2>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+    <div class="bg-white rounded-lg shadow-sm p-4 flex flex-col">
+      <h3 class="font-medium text-brand-deep-purple">Partner network</h3>
+      <p class="text-xs text-gray-500 mt-1 mb-4 flex-grow">How the network grew, where every partner is, and a table by country.</p>
+      <a class="button button-md bg-brand-indigo hover:bg-brand-deep-purple text-white text-center"
+         href="{% url 'pulse:network' %}">Open</a>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4 flex flex-col">
+      <h3 class="font-medium text-brand-deep-purple">LLO Directory</h3>
+      <p class="text-xs text-gray-500 mt-1 mb-4 flex-grow">
+        The spreadsheet partner names, locations and join dates come from. Edits
+        show up here after the daily import.
+      </p>
+      <a class="button button-md bg-brand-indigo hover:bg-brand-deep-purple text-white text-center"
+         href="{{ directory_url }}" target="_blank" rel="noopener">Open spreadsheet</a>
+    </div>
+  </div>
+
   <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Opportunity dossiers</h2>
   <div class="bg-white rounded-lg shadow-sm p-4 mb-8">
     <p class="text-xs text-gray-500 mb-3 max-w-2xl">
