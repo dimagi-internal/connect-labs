@@ -56,11 +56,12 @@ window.MopupAnalysis = (function () {
   // row, NCF's own row, and the deworming/MUAC/vaccination group each hold
   // the settings that only apply to that indicator (or group) -- same
   // font/size as the rest of the table, just a tinted background, so they
-  // read as part of the table rather than a separate muted aside. The
-  // trio + its trailing sub-row get a border box so the shared-settings
-  // relationship is visible at a glance.
+  // read as part of the table rather than a separate muted aside. Each of
+  // the three groups (EVC + its sub-row, NCF + its sub-row, the trio + its
+  // trailing sub-row) gets a border box so its shared-settings relationship
+  // is visible at a glance.
   const TIER2_KEYS = ['deworming', 'muac', 'vaccination'];
-  const TIER2_BORDER = 'border-gray-300';
+  const GROUP_BORDER = 'border-gray-300';
 
   function subRowHtml(key, innerHtml, extraTdClasses) {
     return `<tr class="bg-gray-50 border-b border-gray-100" data-key="${key}">
@@ -70,7 +71,7 @@ window.MopupAnalysis = (function () {
       </tr>`;
   }
 
-  function neighborCellsHtml(def, rowDisabled, tier2State) {
+  function neighborCellsHtml(def, rowDisabled, tier2State, topBorder) {
     if (TIER2_KEYS.includes(def.key)) {
       if (tier2State.rendered) return '';
       tier2State.rendered = true;
@@ -79,7 +80,7 @@ window.MopupAnalysis = (function () {
       // global filter (handled separately below), never by any one of the
       // three rows' own "On" state, since it belongs to all three at once.
       return `
-          <td class="py-2 pr-2 align-middle border-t-2 ${TIER2_BORDER}" colspan="2" rowspan="3">
+          <td class="py-2 pr-2 align-middle border-t-2 ${GROUP_BORDER}" colspan="2" rowspan="3">
             <div class="flex items-center gap-2">
               <input type="number" id="cfg-tier2-neighbor-distance" class="base-input" style="width:5rem" min="1">
               <input type="number" id="cfg-tier2-min-neighbor-count" class="base-input" style="width:5rem" min="1">
@@ -96,10 +97,14 @@ window.MopupAnalysis = (function () {
         ? 'cfg-evc-min-neighbor-count'
         : 'cfg-min-affected-neighbors-ncf';
     return `
-          <td class="py-2 pr-2"><input type="number" id="${distanceId}" class="base-input ind-neighbor-distance" style="width:5rem" min="1" ${
+          <td class="py-2 pr-2 ${
+            topBorder || ''
+          }"><input type="number" id="${distanceId}" class="base-input ind-neighbor-distance" style="width:5rem" min="1" ${
             rowDisabled ? 'disabled' : ''
           }></td>
-          <td class="py-2 pr-2"><input type="number" id="${countId}" class="base-input ind-neighbor-count" style="width:5rem" min="1" ${
+          <td class="py-2 pr-2 ${
+            topBorder || ''
+          }"><input type="number" id="${countId}" class="base-input ind-neighbor-count" style="width:5rem" min="1" ${
             rowDisabled ? 'disabled' : ''
           }></td>`;
   }
@@ -123,16 +128,19 @@ window.MopupAnalysis = (function () {
             cfg.threshold
           }" ${rowDisabled ? 'disabled' : ''}>`;
       // Table borders only render per-cell (a <tr> border is a no-op without
-      // border-collapse), so the group box is built from border-t on every
-      // cell of the first (deworming) row, border-b on the trailing sub-row
+      // border-collapse), so each group's box is built from border-t on
+      // every cell of its first row, border-b on its trailing sub-row
       // below, and border-l/border-r on just the first/last cell of every
       // row in between -- same technique the ward-summary table already
-      // uses for its column groups.
-      const topBorder =
-        isTier2 && def.key === 'deworming' ? `border-t-2 ${TIER2_BORDER} ` : '';
-      const leftBorder = isTier2 ? `border-l-2 ${TIER2_BORDER} ` : '';
-      const rightBorder = isTier2 ? `border-r-2 ${TIER2_BORDER} ` : '';
-      const midBorder = isTier2 ? topBorder : '';
+      // uses for its column groups. EVC and NCF are single-row groups (top
+      // row IS the only row); the deworming/MUAC/vaccination trio's top row
+      // is just "deworming".
+      const isGroupTop = isEvc || isNcf || (isTier2 && def.key === 'deworming');
+      const isGroupMember = isEvc || isNcf || isTier2;
+      const topBorder = isGroupTop ? `border-t-2 ${GROUP_BORDER} ` : '';
+      const leftBorder = isGroupMember ? `border-l-2 ${GROUP_BORDER} ` : '';
+      const rightBorder = isGroupMember ? `border-r-2 ${GROUP_BORDER} ` : '';
+      const midBorder = isGroupTop ? topBorder : '';
       rows.push(`<tr class="border-b border-gray-50 ${
         rowDisabled ? 'opacity-50' : ''
       }" data-key="${def.key}">
@@ -148,6 +156,7 @@ window.MopupAnalysis = (function () {
             def,
             rowDisabled,
             tier2State,
+            midBorder,
           )}
           <td class="py-2 pr-2 ind-trigger-count ${rightBorder}${topBorder}">—</td>
         </tr>`);
@@ -165,6 +174,7 @@ window.MopupAnalysis = (function () {
               <input type="number" id="cfg-min-evc-floor" class="base-input" style="width:5rem" min="0">
               <span class="info-icon" tabindex="0" data-tip="Excludes a work area from EVC shortfall entirely if its own EXPECTED visit count is below this — a plain worth-visiting cutoff, so a WA with both a low HSD/EVC ratio AND a low total EVC isn't considered for mop-up.">ⓘ</span>
             </span>`,
+            `border-l-2 border-r-2 border-b-2 ${GROUP_BORDER}`,
           ),
         );
       }
@@ -177,6 +187,7 @@ window.MopupAnalysis = (function () {
               <input type="number" id="cfg-min-buildings" class="base-input" style="width:5rem" min="0">
               <span class="info-icon" tabindex="0" data-tip="The fewest real buildings a work area needs before an NCF or Inaccessible result there is treated as meaningful.">ⓘ</span>
             </span>`,
+            `border-l-2 border-r-2 border-b-2 ${GROUP_BORDER}`,
           ),
         );
       }
@@ -190,7 +201,7 @@ window.MopupAnalysis = (function () {
               <input type="number" id="cfg-min-hsd" class="base-input" style="width:5rem" min="0">
               <span class="info-icon" tabindex="0" data-tip="The fewest approved Health Service Delivery visits a work area needs before its deworming/MUAC/vaccination rate is trusted at all.">ⓘ</span>
             </span>`,
-            `border-l-2 border-r-2 border-b-2 ${TIER2_BORDER}`,
+            `border-l-2 border-r-2 border-b-2 ${GROUP_BORDER}`,
           ),
         );
       }
@@ -620,6 +631,17 @@ window.MopupAnalysis = (function () {
 
   let pollTimer = null;
   let dataReady = false;
+  let recomputeDebounceTimer = null;
+
+  // Every threshold/setting change recomputes automatically -- no explicit
+  // "Recompute" button. Debounced so a rapid-fire burst (holding down a
+  // number input's spinner, or a checkbox + its dependent fields both
+  // changing at once) collapses into one request rather than one per event.
+  function scheduleRecompute() {
+    if (!dataReady) return;
+    clearTimeout(recomputeDebounceTimer);
+    recomputeDebounceTimer = setTimeout(pollOrEvaluate, 300);
+  }
 
   function showLoadingPanel(message) {
     $('loading-panel').classList.remove('hidden');
@@ -653,6 +675,7 @@ window.MopupAnalysis = (function () {
     if (dataReady) {
       indicatorConfigs = collectIndicatorConfigs();
       globalConfig = collectGlobalConfig();
+      $('status').textContent = 'Updating…';
     }
     try {
       const resp = await fetch(CFG.candidatesUrl, {
@@ -691,6 +714,12 @@ window.MopupAnalysis = (function () {
       $(
         'status',
       ).textContent = `${data.total_work_areas} work area(s) evaluated.`;
+      if (data._debug_status_counts) {
+        console.log(
+          'MOPUP_DEBUG status_counts',
+          JSON.stringify(data._debug_status_counts),
+        );
+      }
     } catch (e) {
       showLoadingError('Failed to load data.');
     }
@@ -929,14 +958,14 @@ window.MopupAnalysis = (function () {
     renderIndicatorRows();
     renderGlobalConfig();
     applyIndicatorRowStates(); // re-apply now that the real filter state is loaded
-    $('cfg-cluster-filter-enabled').addEventListener(
-      'change',
-      applyIndicatorRowStates,
-    );
+    $('cfg-cluster-filter-enabled').addEventListener('change', () => {
+      applyIndicatorRowStates();
+      scheduleRecompute();
+    });
     $('indicator-rows').addEventListener('change', (e) => {
       if (e.target.classList.contains('ind-enabled')) applyIndicatorRowStates();
+      scheduleRecompute();
     });
-    $('recompute').addEventListener('click', pollOrEvaluate);
     $('loading-retry').addEventListener('click', retryLoad);
     $('sort-severity').addEventListener('click', () => {
       severitySortDesc = !severitySortDesc;
