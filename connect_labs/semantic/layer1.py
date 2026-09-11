@@ -86,7 +86,12 @@ def build_visit_sql(
     if idx == -1:
         raise ValueError("could not locate the extraction's WHERE clause to widen")
     head = ex[:idx]
-    ex = head + f"WHERE opportunity_id IN ({opp_list})\n" + "ORDER BY opportunity_id, visit_id, pipeline_id"
+    # Re-apply the pipeline's own row filters. Cutting the WHERE at the scope
+    # predicate dropped everything after it -- including a declared status filter,
+    # so rule 0 (only approved and over_limit visits are valid) reached the
+    # pipeline's rows and none of the metrics built from them.
+    filters = "".join(f" AND {p}" for p in preview.get("visit_filter_predicates") or [])
+    ex = head + f"WHERE opportunity_id IN ({opp_list}){filters}\n" + "ORDER BY opportunity_id, visit_id, pipeline_id"
 
     extra_cols = ""
     if extra_fields:
