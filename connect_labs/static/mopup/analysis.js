@@ -26,7 +26,7 @@ window.MopupAnalysis = (function () {
 
   const INDICATOR_TOOLTIPS = {
     evc_shortfall:
-      'How far the number of children actually served (approved Health Service Delivery visits) falls short of the expected number for this work area. A low ratio can mean the area was under-delivered — or that the expected-count estimate itself was too high for this specific cell.',
+      'How far the number of children actually served (approved Health Service Delivery visits) falls short of the expected number for this work area. A low ratio can mean the area was under-delivered — or that the expected-count estimate itself was too high for this specific cell. Only scored for work areas that have had at least one approved HSD visit — a work area with zero is excluded entirely (it’s already covered by NCF/inaccessible), not counted as a 0% rate.',
     ncf_inaccessible_rate:
       "The share of visits to this work area that came back 'No Children Found' or 'Inaccessible' instead of a completed service visit. A high rate can mean the area genuinely has few children — or that it was skipped.",
     deworming:
@@ -178,7 +178,8 @@ window.MopupAnalysis = (function () {
         rows.push(
           subRowHtml(
             'ncf_inaccessible_rate_settings',
-            `<span class="inline-flex items-center gap-1">
+            `<span class="text-gray-600 mr-4">Applies to NCF/inaccessible only</span>
+            <span class="inline-flex items-center gap-1">
               Min building count
               <input type="number" id="cfg-min-buildings" class="base-input" style="width:5rem" min="0">
               <span class="info-icon" tabindex="0" data-tip="The fewest real buildings a work area needs before an NCF or Inaccessible result there is treated as meaningful.">ⓘ</span>
@@ -211,6 +212,55 @@ window.MopupAnalysis = (function () {
     document.querySelectorAll('#indicator-rows tr').forEach((tr) => {
       const cell = tr.querySelector('.ind-trigger-count');
       if (cell) cell.textContent = counts[tr.dataset.key] ?? '—';
+    });
+  }
+
+  // A single shared tooltip element, positioned in JS with `position: fixed`
+  // rather than the `.info-icon`'s own CSS `::after` (see analysis.html's
+  // comment on `#global-tooltip` for why -- scrolling ancestors clip an
+  // absolutely-positioned tooltip anchored to the icon itself). Delegated on
+  // `document` via `mouseover`/`mouseout`/`focusin`/`focusout` (which bubble,
+  // unlike `mouseenter`/`mouseleave`) so it keeps working after
+  // `renderIndicatorRows`/`renderCandidates`/etc. replace `.info-icon`
+  // elements wholesale -- no per-element re-binding needed.
+  function initTooltips() {
+    const tip = document.createElement('div');
+    tip.id = 'global-tooltip';
+    document.body.appendChild(tip);
+
+    function show(el) {
+      const text = el.getAttribute('data-tip');
+      if (!text) return;
+      tip.textContent = text;
+      const iconRect = el.getBoundingClientRect();
+      const tipRect = tip.getBoundingClientRect();
+      let top = iconRect.top - tipRect.height - 8;
+      if (top < 4) top = iconRect.bottom + 8; // flip below if it'd go off the top
+      let left = iconRect.left + iconRect.width / 2 - tipRect.width / 2;
+      left = Math.max(4, Math.min(left, window.innerWidth - tipRect.width - 4));
+      tip.style.top = `${top}px`;
+      tip.style.left = `${left}px`;
+      tip.classList.add('visible');
+    }
+    function hide() {
+      tip.classList.remove('visible');
+    }
+
+    document.addEventListener('mouseover', (e) => {
+      const el = e.target.closest('.info-icon');
+      if (el) show(el);
+    });
+    document.addEventListener('mouseout', (e) => {
+      const el = e.target.closest('.info-icon');
+      if (el) hide();
+    });
+    document.addEventListener('focusin', (e) => {
+      const el = e.target.closest('.info-icon');
+      if (el) show(el);
+    });
+    document.addEventListener('focusout', (e) => {
+      const el = e.target.closest('.info-icon');
+      if (el) hide();
     });
   }
 
@@ -626,10 +676,13 @@ window.MopupAnalysis = (function () {
   let dataReady = false;
   let recomputeDebounceTimer = null;
 
-  // Every threshold/setting change recomputes automatically -- no explicit
-  // "Recompute" button. Debounced so a rapid-fire burst (holding down a
+  // Every threshold/setting change recomputes automatically, ~300ms after
+  // the last change (debounced so a rapid-fire burst -- holding down a
   // number input's spinner, or a checkbox + its dependent fields both
-  // changing at once) collapses into one request rather than one per event.
+  // changing at once -- collapses into one request rather than one per
+  // event). The Recompute button (`init`'s click listener) bypasses this
+  // debounce for an immediate update, for reviewers who'd rather not wait
+  // out the ~300ms + round-trip.
   function scheduleRecompute() {
     if (!dataReady) return;
     clearTimeout(recomputeDebounceTimer);
@@ -953,6 +1006,10 @@ window.MopupAnalysis = (function () {
       if (e.target.classList.contains('ind-enabled')) applyIndicatorRowStates();
       scheduleRecompute();
     });
+    $('recompute').addEventListener('click', () => {
+      clearTimeout(recomputeDebounceTimer);
+      pollOrEvaluate();
+    });
     $('loading-retry').addEventListener('click', retryLoad);
     $('sort-severity').addEventListener('click', () => {
       severitySortDesc = !severitySortDesc;
@@ -966,6 +1023,7 @@ window.MopupAnalysis = (function () {
       .forEach((r) => r.addEventListener('change', updateGapModeVisibility));
     updateGapModeVisibility();
     $('gap-upload-button').addEventListener('click', uploadBuildingsFile);
+    initTooltips();
     showLoadingPanel(
       'Loading work-area, visit, and geometry data for this opportunity…',
     );
