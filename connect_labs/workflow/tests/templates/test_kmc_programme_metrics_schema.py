@@ -98,3 +98,14 @@ def test_both_pipelines_keep_only_valid_visits():
     assert VALID_VISIT_FILTER == {"status": ["approved", "over_limit"]}
     for schema in (CASE_PROPERTIES_SCHEMA, WEIGHT_SERIES_SCHEMA):
         assert schema["filters"] is VALID_VISIT_FILTER
+
+
+def test_the_case_pipeline_groups_by_the_baby_key():
+    """One row per BABY, keyed exactly as the indicators and the weight series are.
+
+    Grouping by Connect's entity_id gave 9,183 rows for the indicators' 8,823 babies
+    (2026-09-11), and the drill -- which joins a case to its weight series on the
+    baby key -- lost the series of every case whose entity_id differed.
+    """
+    assert CASE_PROPERTIES_SCHEMA["linking_field"] == "baby_case_id"
+    assert "baby_case_id" in _field_names(CASE_PROPERTIES_SCHEMA)

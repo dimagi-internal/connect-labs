@@ -329,7 +329,7 @@ def _paths_to_coalesce_sql(paths: list[str], column: str = "form_json") -> str:
 
     A path naming a base column on labs_raw_visit_cache is emitted as the bare
     column rather than a form_json lookup — the same resolution `linking_field`
-    has always had (`_linking_paths_to_coalesce_sql`). Without it a `field` could
+    has always had (`_resolve_linking_field_outer_expr`). Without it a `field` could
     name `flag_reason` and silently extract NULL, since every path was compiled
     to `form_json->'...'` unconditionally (#1198). Only applies to the default
     form_json column, so join-scoped lookups are unaffected.
@@ -1398,10 +1398,19 @@ def _resolve_linking_field_outer_expr(config: AnalysisPipelineConfig) -> str:
     1. If linking_field is the name of a base column on labs_raw_visit_cache, use
        that column directly.
     2. Otherwise, look up linking_field as the name of a FieldComputation in
-       config.fields and build a coalesced JSONB path expression from it.
+       config.fields and build its value the way every other extraction does
+       (`_field_value_sql`): its paths, base columns allowed alongside form_json
+       paths, preceded by any `conditional_paths`.
     3. If neither matches, raise.
 
-    The expression is unqualified — bare column references (`form_json`, `username`)
+    Why a field and not a base column: on real KMC data the baby is a case id whose
+    path depends on the FORM, and Connect's `entity_id` is not the baby (#1224).
+    Why the SAME value builder: this expression and the field's own column must
+    agree. The linking field used to compile its paths separately and ignored
+    `conditional_paths`, so a design-B registration grouped under the mother while
+    its field -- and every indicator keyed on it -- said the baby.
+
+    The expression is unqualified -- bare column references (`form_json`, `username`)
     resolve to the implicit FROM table at SQL evaluation time. This is the same
     convention `build_flw_aggregation_query` uses.
     """
@@ -1424,34 +1433,7 @@ def _resolve_linking_field_outer_expr(config: AnalysisPipelineConfig) -> str:
         raise ValueError(
             f"linking_field FieldComputation {name!r} has no path or paths set; " f"cannot use as GROUP BY column."
         )
-    return _linking_paths_to_coalesce_sql(paths)
-
-
-def _linking_paths_to_coalesce_sql(paths: list[str]) -> str:
-    """COALESCE for a linking field, allowing base columns alongside form_json paths.
-
-    A linking field often has to survive two differently-shaped sources. The KMC
-    case is the motivating one: on real Connect data the entity is the beneficiary
-    case (`form.case.@case_id`) because `entity_id` is per-VISIT there, while
-    synthetic clones carry no case block at all and only have `entity_id`. Without
-    a mixed coalesce, one pipeline config cannot serve both — grouping on
-    `entity_id` scatters each real baby across one row per visit (and strands every
-    registration-form field), and grouping on the case path collapses every
-    synthetic row into a single NULL bucket. See connect-labs#1224.
-
-    Entries naming a base column on labs_raw_visit_cache are emitted as the bare
-    column; everything else is treated as a form_json path.
-    """
-    if not paths:
-        return "NULL"
-
-    parts = []
-    for p in paths:
-        if p in RAW_VISIT_BASE_COLUMNS:
-            parts.append(f"NULLIF({p}::text, '')")
-        else:
-            parts.append(f"NULLIF({_jsonb_path_to_sql(p, 'form_json')}, '')")
-    return f"COALESCE({', '.join(parts)})"
+    return _field_value_sql(field_comp)
 
 
 def _entity_stage_filters_where(config: AnalysisPipelineConfig) -> list[str]:

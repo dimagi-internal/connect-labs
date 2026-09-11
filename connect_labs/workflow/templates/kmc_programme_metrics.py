@@ -82,8 +82,13 @@ BABY_CASE_ID_FIELD = {
     ),
 }
 
-# Per-baby properties, computed in SQL at entity stage. Terminal stage `entity`
-# groups by linking_field=entity_id, so one row per baby.
+# Per-baby properties, computed in SQL at entity stage, one row per BABY: the
+# entity stage groups by `baby_case_id` -- the same key every indicator and the
+# weight series use. Grouping by Connect's entity_id (the earlier setting) is not
+# the baby: measured 2026-09-11 it gave 9,183 rows for the indicators' 8,823
+# babies, off in both directions per organisation (PIPN +660, EHA -147), and a
+# case whose entity_id differed lost its weight series in the drill, which joins
+# the two on the baby key.
 CASE_PROPERTIES_SCHEMA = {
     "fields": [
         {
@@ -361,7 +366,7 @@ CASE_PROPERTIES_SCHEMA = {
     "data_source": {"type": "connect_csv"},
     "filters": VALID_VISIT_FILTER,
     "grouping_key": "username",
-    "linking_field": "entity_id",
+    "linking_field": "baby_case_id",
     "terminal_stage": "entity",
 }
 

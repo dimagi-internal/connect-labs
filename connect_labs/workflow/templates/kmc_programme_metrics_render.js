@@ -221,6 +221,17 @@ function WorkflowUI({
   // measure; a position does not. The fallback keeps a label on screen while
   // the payload is in flight.
   function indOf(id) {
+    var nm = N_BY_ID && N_BY_ID[id];
+    if (!C_BY_ID[id] && nm)
+      return {
+        id: id,
+        measure: nm.id,
+        name: nm.title,
+        unit: nm.unit,
+        kind: nm.kind,
+        dir: nm.direction,
+        bands: nm.bands,
+      };
     return (
       C_BY_ID[id] || {
         id: id,
@@ -924,7 +935,16 @@ function WorkflowUI({
       var cancelled = false;
       // Paths are under the snapshot's own state key (`state.snapshot.*`), and
       // the page's scope travels the same way the preview fetch sends it.
-      var keys = ['programInd', 'byLLO', 'byOpp', 'pooledOverCredible', 'meta']
+      var keys = [
+        'programInd',
+        'byLLO',
+        'byOpp',
+        'pooledOverCredible',
+        'meta',
+        'series.N.programme',
+        'series.N.byLLO',
+        'series.N.byOpp',
+      ]
         .map(function (k) {
           return 'snapshot.' + k;
         })
@@ -960,7 +980,37 @@ function WorkflowUI({
   // live run as of today, a saved one via the history (deduplicated by date).
   var historyPoints = React.useMemo(
     function () {
+      // The scorecard's N cells for the same scope, merged in beside the C cells
+      // so a tile or trend can chart either series. Ids never collide (C.. / N..).
+      function scorecardCellsOf(st) {
+        if (oppFilter) {
+          var o = (st['series.N.byOpp'] || []).filter(function (x) {
+            return String(x.opp) === String(oppFilter);
+          })[0];
+          return o ? o.ind : null;
+        }
+        if (selLLO) {
+          var l = (st['series.N.byLLO'] || []).filter(function (x) {
+            return x.llo === selLLO;
+          })[0];
+          return l ? l.ind : null;
+        }
+        return st['series.N.programme'] || null;
+      }
       function cellsOf(st) {
+        var c = cCellsOf(st);
+        var n = st ? scorecardCellsOf(st) : null;
+        if (!n) return c;
+        var out = {};
+        Object.keys(c || {}).forEach(function (k) {
+          out[k] = c[k];
+        });
+        Object.keys(n).forEach(function (k) {
+          if (!(k in out)) out[k] = n[k];
+        });
+        return out;
+      }
+      function cCellsOf(st) {
         if (!st) return null;
         if (oppFilter) {
           var o = (st.byOpp || []).filter(function (x) {
@@ -1010,6 +1060,9 @@ function WorkflowUI({
         byOpp: P.byOpp,
         pooledOverCredible: P.pooledOverCredible,
         meta: P.meta,
+        'series.N.programme': SC && SC.programme,
+        'series.N.byLLO': SC && SC.byLLO,
+        'series.N.byOpp': SC && SC.byOpp,
       };
       var ownDate =
         (P.meta && P.meta.as_of) ||
@@ -1431,11 +1484,11 @@ function WorkflowUI({
   var TILES = [
     { id: 'C02', label: 'Started cases', count: true, sub: '' },
     {
-      id: 'C09',
-      label: 'Weight data sufficient',
+      id: 'N10',
+      label: 'Healthy growth',
       pct: true,
-      target: 0.6,
-      sub: 'target 60%',
+      target: 0.7,
+      sub: 'target 70% · of qualifying babies',
     },
     {
       id: 'C13',
@@ -1475,6 +1528,7 @@ function WorkflowUI({
   // workbook's C02 (one follow-up) is the fallback for an older run.
   function tileEntry(id) {
     if (id === 'C14' && !selLLO && !oppFilter) return mortalityCredible.ind;
+    if (id.charAt(0) === 'N') return entryOf(nScopeInd(), id);
     if (id === 'C02') {
       var n = nScopeInd();
       if (n && n.N03) return n.N03;
@@ -1944,7 +1998,7 @@ function WorkflowUI({
             </div>
             <ActivityChart weeks={weekly} />
           </div>
-          <SmallTrend id="C09" label="Weight data" pct={true} target={0.6} />
+          <SmallTrend id="N10" label="Healthy growth" pct={true} target={0.7} />
           <SmallTrend id="C13" label="Growth rate" pct={false} target={15} />
           <SmallTrend id="C14" label="Mortality" pct={true} target={0.04} />
           <SmallTrend id="C15" label="Lost by d28" pct={true} target={0.1} />
