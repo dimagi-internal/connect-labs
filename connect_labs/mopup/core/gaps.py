@@ -364,15 +364,15 @@ def ward_visits_per_building(all_rows: list[dict], ward: str) -> float:
     `core.areas.ward_children_per_building`'s same convention.
 
     Deliberately gates on `approved_hsd_count > 0` rather than the work
-    area's own `status` property (e.g. `_CONCLUDED_STATUSES`, used
-    elsewhere in this app for EVC-shortfall) — confirmed live against real
-    program-217 data that a work area's CommCare HQ case `status` can stay
-    `NOT_VISITED` even after real HSD/NCF visit forms were submitted for it
-    (the case property and the visit-form record apparently don't always
-    move together), which made this return a false 0.0 for a ward where
-    real delivery had clearly happened (hundreds of approved visits).
-    Actual visit activity is the more reliable signal for "has this WA got
-    a real rate to contribute."
+    area's own `status` property — confirmed live against real program-217
+    data that a work area's CommCare HQ case `status` can stay `NOT_VISITED`
+    even after real HSD/NCF visit forms were submitted for it (the case
+    property and the visit-form record apparently don't always move
+    together), which made this return a false 0.0 for a ward where real
+    delivery had clearly happened (hundreds of approved visits). Actual
+    visit activity is the more reliable signal for "has this WA got a real
+    rate to contribute" — `core/indicators.py`'s EVC-shortfall gate was
+    changed to the same rule after the same finding recurred there.
 
     Deliberately NOT `ward_children_per_building` (registered-CHILDREN per
     building, from CommCare HQ case data) — that formula still drives the

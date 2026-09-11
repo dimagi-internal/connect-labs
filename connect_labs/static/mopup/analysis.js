@@ -165,11 +165,7 @@ window.MopupAnalysis = (function () {
         rows.push(
           subRowHtml(
             'evc_shortfall_settings',
-            `<label class="inline-flex items-center gap-1 mr-4">
-              <input type="checkbox" id="cfg-include-not-visited">
-              Include not-yet-visited in EVC <span class="info-icon" tabindex="0" data-tip="A work area that's not yet visited (or has a pending inaccessible request) is excluded from EVC-shortfall scoring by default, since the campaign may just not have reached it yet. Check this to score it anyway.">ⓘ</span>
-            </label>
-            <span class="inline-flex items-center gap-1">
+            `<span class="inline-flex items-center gap-1">
               WA min EVC count
               <input type="number" id="cfg-min-evc-floor" class="base-input" style="width:5rem" min="0">
               <span class="info-icon" tabindex="0" data-tip="Excludes a work area from EVC shortfall entirely if its own EXPECTED visit count is below this — a plain worth-visiting cutoff, so a WA with both a low HSD/EVC ratio AND a low total EVC isn't considered for mop-up.">ⓘ</span>
@@ -245,8 +241,6 @@ window.MopupAnalysis = (function () {
   }
 
   function renderGlobalConfig() {
-    $('cfg-include-not-visited').checked =
-      !!globalConfig.include_not_yet_visited;
     $('cfg-min-evc-floor').value = globalConfig.min_evc_floor;
     $('cfg-evc-neighbor-distance').value = globalConfig.evc_neighbor_distance_m;
     $('cfg-evc-min-neighbor-count').value = globalConfig.evc_min_neighbor_count;
@@ -285,7 +279,6 @@ window.MopupAnalysis = (function () {
 
   function collectGlobalConfig() {
     return {
-      include_not_yet_visited: $('cfg-include-not-visited').checked,
       min_evc_floor: parseInt($('cfg-min-evc-floor').value, 10) || 0,
       evc_neighbor_distance_m:
         parseFloat($('cfg-evc-neighbor-distance').value) || 0,
@@ -714,12 +707,6 @@ window.MopupAnalysis = (function () {
       $(
         'status',
       ).textContent = `${data.total_work_areas} work area(s) evaluated.`;
-      if (data._debug_status_counts) {
-        console.log(
-          'MOPUP_DEBUG status_counts',
-          JSON.stringify(data._debug_status_counts),
-        );
-      }
     } catch (e) {
       showLoadingError('Failed to load data.');
     }

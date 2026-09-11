@@ -98,22 +98,6 @@ _DIRECTION = {
 
 _DQ_INDICATORS = TIER_2_INDICATORS
 
-# Concluded statuses for the not-yet-visited EVC exclusion. A WA still
-# NOT_VISITED or with a pending REQUEST_FOR_INACCESSIBLE hasn't necessarily
-# failed — the campaign may just not have reached it yet.
-#
-# Compared case-insensitively (see `_is_concluded_status`) -- confirmed live
-# (2026-09-11, a real CHC deliver app's own form logic) that the real
-# `wa_status` case property uses lowercase "visited" for a completed WA,
-# not "VISITED". EXPECTED_VISIT_REACHED didn't appear in that same app at
-# all; kept here defensively since this module serves multiple CHC campaign
-# app versions/opportunities, not just the one checked.
-_CONCLUDED_STATUSES = {"VISITED", "EXPECTED_VISIT_REACHED", "INACCESSIBLE"}
-
-
-def _is_concluded_status(status: str | None) -> bool:
-    return bool(status) and status.upper() in _CONCLUDED_STATUSES
-
 
 def _safe_div(numerator: float, denominator: float) -> float | None:
     if not denominator:
@@ -137,15 +121,25 @@ def wa_numerator_denominator(wa: dict, indicator_key: str, global_config: dict) 
     if indicator_key == EVC_SHORTFALL:
         if wa.get("expected_visit_count", 0) < global_config.get("min_evc_floor", 0):
             return None
-        if not _is_concluded_status(wa.get("status")) and not global_config.get("include_not_yet_visited", False):
-            return None
         hsd_count = wa.get("approved_hsd_count", 0)
         # A WA with zero HSD visits is already explained by something else --
-        # not-yet-visited (the check above), inaccessible, or NCF (a visit
-        # happened, but it wasn't an HSD delivery) -- so it isn't a genuine
-        # "we delivered less than expected" shortfall. Excluding it here (not
-        # scoring it as rate 0.0) keeps EVC shortfall scoped to WAs where HSD
-        # delivery actually happened, per product direction (2026-09-11).
+        # not-yet-visited, inaccessible, or NCF (a visit happened, but it
+        # wasn't an HSD delivery) -- so it isn't a genuine "we delivered less
+        # than expected" shortfall. Excluding it here (not scoring it as rate
+        # 0.0) keeps EVC shortfall scoped to WAs where HSD delivery actually
+        # happened, per product direction (2026-09-11).
+        #
+        # This is deliberately the ONLY "has this WA actually been reached"
+        # check -- there used to also be a gate on the WA's own `status`
+        # case property (VISITED/NOT_VISITED/etc, optionally overridden by an
+        # "include not-yet-visited" toggle), removed after confirming live
+        # against real program-217 data that `status` can stay NOT_VISITED
+        # even after real HSD/NCF visit forms were submitted for it (the
+        # case property and the visit-form record don't reliably move
+        # together -- same finding `gaps.py`'s `ward_visits_per_building`
+        # already documented and worked around). `approved_hsd_count` is a
+        # strictly more reliable signal for real delivery, and it already
+        # subsumes what the status gate was trying to do.
         if hsd_count == 0:
             return None
         return hsd_count, wa.get("expected_visit_count", 0)
@@ -274,7 +268,6 @@ DEFAULT_GLOBAL_CONFIG = {
     # adjustment — excludes work areas whose EXPECTED count itself is too
     # small for a shortfall there to mean anything.
     "min_evc_floor": 5,
-    "include_not_yet_visited": False,
     "min_building_count": 1,
     "ncf_neighbor_distance_m": 200,
     "min_affected_neighbors_ncf": 2,
