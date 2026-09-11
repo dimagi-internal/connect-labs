@@ -195,6 +195,102 @@ def load_expected_deaths(iso_codes: list[str] | None = None, year: int | None = 
     return rows
 
 
+def load_lbw_births(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
+    """Annual low-birthweight births: births x the low-birthweight rate.
+
+        births_lbw = births x lbw_rate / 100
+
+    The eligible population for Kangaroo Mother Care, and the reason this
+    measure exists rather than a factor buried in the KMC intervention: the one
+    number a funder asks about has to carry the same provenance as everything
+    else in the table.
+
+    What it counts is set by the rate, not by the programme. Under 2,500 g
+    includes term babies born small for gestational age and most preterm
+    babies; a preterm baby weighing 2,500 g or more is not counted. So it is
+    close to, but not the same as, "babies KMC is indicated for".
+
+    The rate is national, so every region carries its country's figure and
+    ``lbw_inherited`` records that. Where the country has no national estimate
+    the rate is a regional aggregate, and ``regional_proxy`` travels onto this
+    row so a selection can say how much of its eligible-baby total rests on a
+    regional figure. The year is the births figure's: that is the count being
+    scaled, and the one a projection to a delivery year grows. The rate's own
+    year is in ``extra`` and in ``method``.
+    """
+    rows: list[Row] = []
+    proxied = 0
+    for boundary in _boundaries(iso_codes):
+        births = resolve("births", boundary, year)
+        lbw = resolve("lbw_rate", boundary, year)
+        if not (births and lbw):
+            continue
+        regional = bool((lbw.extra or {}).get("regional_proxy"))
+        region_name = (lbw.extra or {}).get("proxy_region_name")
+        proxied += regional
+        rows.append(
+            Row(
+                indicator="births_lbw",
+                boundary=boundary,
+                year=births.year,
+                value=births.value * lbw.value / 100.0,
+                source=Source.DERIVED,
+                source_ref=f"births x LBW rate ({births.source} + {lbw.source})",
+                license_code=License.DERIVED,
+                method=(
+                    f"Derived: low-birthweight births = births x low-birthweight rate / 100. "
+                    f"Inputs: births {births.value:,.0f} from {births.source_ref or births.source}; "
+                    f"LBW rate {lbw.value:.1f}% ({lbw.year}) from {lbw.provenance}."
+                    + (
+                        f" The rate is the {region_name} REGIONAL aggregate: no national "
+                        "estimate is published for this country."
+                        if regional
+                        else ""
+                    )
+                ),
+                extra={
+                    "births": births.value,
+                    "lbw_rate": lbw.value,
+                    "lbw_year": lbw.year,
+                    "lbw_source": lbw.source,
+                    "lbw_inherited": lbw.inherited,
+                    "regional_proxy": regional,
+                    "proxy_region_name": region_name,
+                },
+            )
+        )
+    logger.info("derive: %d low-birthweight rows, %d on a regional proxy rate", len(rows), proxied)
+    return rows
+
+
+#: A plausible range for annual births per child under five. The under-five
+#: population is five birth cohorts less the children who died, so the ratio
+#: sits near 0.2 across the continent: 0.21-0.23 across high-fertility West
+#: and East Africa, ~0.18 where fertility has fallen furthest. The band is wide
+#: on purpose -- it is not a model of fertility, it is a tripwire for a births
+#: figure that belongs to a different place or a different arithmetic.
+#:
+#: It exists because one did. Rwanda's five provinces summed to 64,370 births
+#: against 1.9M under-fives -- a ratio of 0.034, against ~400,000 births in
+#: truth -- and every honesty field passed: births coverage was complete,
+#: nothing was inherited. The figure was the right SHAPE of number, from a
+#: stale derivation built on a HAPI table that had put single districts'
+#: populations under province names.
+BIRTHS_PER_UNDER5 = (0.12, 0.32)
+
+
+def births_implausible(births: float | None, pop_u5: float | None) -> bool:
+    """True when a births figure cannot belong to the under-fives beside it.
+
+    Missing inputs are not implausible -- they are missing, and ``coverage``
+    already says so.
+    """
+    if not births or not pop_u5 or pop_u5 <= 0:
+        return False
+    lo, hi = BIRTHS_PER_UNDER5
+    return not lo <= births / pop_u5 <= hi
+
+
 def load_ors_gap(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
     """Under-5s with diarrhoea who are not getting ORS.
 
@@ -352,8 +448,14 @@ def sweep_derived(produced: list[Row], indicators: list[str], iso_codes: list[st
     return len(doomed)
 
 
-def load_coverage_gaps(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
+def load_coverage_gaps(
+    iso_codes: list[str] | None = None, year: int | None = None, only: list[str] | None = None
+) -> list[Row]:
     """Unreached population for every coverage measure, generically.
+
+    ``only`` restricts it to the named coverage measures, so a stage that adds
+    one measure can derive that measure's gap without re-deriving -- and
+    re-sweeping -- every other gap in the table.
 
         unreached = denominator x (1 - coverage)
 
@@ -371,6 +473,8 @@ def load_coverage_gaps(iso_codes: list[str] | None = None, year: int | None = No
     boundaries = _boundaries(iso_codes)
 
     for measure in _measures.coverage_measures():
+        if only is not None and measure.code not in only:
+            continue
         denominator = measure.coverage_of
         made = 0
         for boundary in boundaries:

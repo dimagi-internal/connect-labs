@@ -29,10 +29,17 @@ a loader and provenance like everything else, and the intervention points at it.
 Otherwise the one number a funder actually asks about would be the one number
 with no traceable derivation.
 
-That restraint has a visible cost. KMC's real denominator is low-birthweight or
-preterm newborns, and DHS's birth-weight indicators are too thin subnationally
-to support it — so KMC currently counts *all* births and says so, rather than
-silently applying a global 15% and calling it measured. See ``caveat``.
+That restraint had a visible cost for a while: KMC's real denominator is
+low-birthweight or preterm newborns, DHS's birth-weight indicators are too thin
+subnationally to support it, and so KMC counted *all* births and said so rather
+than silently applying a global 15% and calling it measured — an overstatement
+of eligible babies of roughly sevenfold.
+
+It was paid the way the restraint says it should be. ``births_lbw`` is now a
+measure with its own loader and provenance: births x the UNICEF-WHO
+low-birthweight rate, derived in ``sources/derive.py`` and loaded by the ``lbw``
+stage. KMC points at it through the ``lbw_birth`` basis. Nothing here
+multiplies anything.
 """
 
 from __future__ import annotations
@@ -63,6 +70,9 @@ class UnitBasis(str, Enum):
     """
 
     BIRTH = "birth"
+    #: A newborn under 2,500 g. What Kangaroo Mother Care is priced per, and
+    #: roughly a seventh of births in sub-Saharan Africa.
+    LBW_BIRTH = "lbw_birth"
     UNDER_5 = "under_5"
     PERSON = "person"
     HOUSEHOLD = "household"
@@ -73,6 +83,7 @@ class UnitBasis(str, Enum):
     def label(self) -> str:
         return {
             "birth": "per birth",
+            "lbw_birth": "per low-birthweight birth",
             "under_5": "per child under 5",
             "person": "per person",
             "household": "per household",
@@ -84,6 +95,7 @@ class UnitBasis(str, Enum):
     def noun(self) -> str:
         return {
             "birth": "newborn",
+            "lbw_birth": "low-birthweight newborn",
             "under_5": "child",
             "person": "person",
             "household": "household",
@@ -95,6 +107,7 @@ class UnitBasis(str, Enum):
 #: Fixed bases map straight to a count.
 _FIXED: dict[UnitBasis, str] = {
     UnitBasis.BIRTH: "births",
+    UnitBasis.LBW_BIRTH: "births_lbw",
     UnitBasis.UNDER_5: "pop_u5",
     UnitBasis.PERSON: "pop_total",
     UnitBasis.HOUSEHOLD: "households",
@@ -188,17 +201,22 @@ register(
     Intervention(
         slug="kmc",
         label="Kangaroo Mother Care",
-        basis=UnitBasis.BIRTH,
+        basis=UnitBasis.LBW_BIRTH,
         unit_cost_usd=60.0,
         targets="u5mr",
         description=(
             "Skin-to-skin care for low-birthweight and preterm newborns, " "targeted where newborn survival is worst."
         ),
         caveat=(
-            "Priced per birth, but KMC serves only the low-birthweight subset — "
-            "roughly a seventh of them. DHS birth-weight data is too thin "
-            "subnationally to carry that denominator, so this is an upper bound "
-            "on eligible newborns, not an estimate of them."
+            "Priced per low-birthweight birth: births x the UNICEF-WHO national "
+            "low-birthweight rate (under 2,500 g, latest year 2020). That counts term "
+            "babies born small for gestational age and most preterm babies, but NOT "
+            "preterm babies of 2,500 g or more, who are also KMC-eligible, so it "
+            "somewhat understates the preterm half. The rate is national, so every "
+            "region carries its country's figure. Sixteen countries publish no national "
+            "estimate, Nigeria and Ethiopia among them, and carry their UN subregion's "
+            "aggregate instead; regional_proxy_units says how much of a total rests on "
+            "those."
         ),
     )
 )

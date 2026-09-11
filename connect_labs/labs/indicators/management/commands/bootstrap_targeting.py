@@ -37,6 +37,7 @@ STAGE_ORDER = [
     ("fertility", "DHS TFR plus the World Bank national fallback"),
     ("population", "HAPI first (minutes), then WorldPop (hours, quota-limited)"),
     ("births", "derived from population and mortality, so it must follow both"),
+    ("lbw", "UNICEF-WHO low birthweight and DHS place of delivery; the LBW count needs births"),
     ("child_health", "diarrhoea, malaria, nutrition, immunisation, WASH, and the gaps they imply"),
 ]
 

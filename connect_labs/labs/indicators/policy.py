@@ -187,6 +187,26 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
         Eligible(Source.DERIVED, "The fertility-based figure, kept so the cohort-based one can be checked."),
     ),
     "expected_deaths": (Eligible(Source.DERIVED, "Births multiplied by the resolved mortality rate."),),
+    "births_lbw": (Eligible(Source.DERIVED, "Births multiplied by the resolved low-birthweight rate."),),
+    # Low birthweight. National only: no source here publishes it below the
+    # country, and DHS's birth-weight questions are too thin subnationally to
+    # carry it (most African births are never weighed, so a survey's
+    # reported-weight subsample is not the birth cohort).
+    "lbw_rate": (
+        Eligible(
+            Source.UNICEF_LBW,
+            "The UNICEF-WHO modelled national estimate, reconciling survey, registration "
+            "and facility data onto one definition. First wherever it exists.",
+        ),
+        Eligible(
+            Source.UNICEF_LBW_REGIONAL,
+            "The same estimates' UN M49 subregional aggregate, for the sixteen African "
+            "countries with no national estimate. Strictly second, so it can never displace "
+            "a national figure, and flagged as inherited on every row that uses it: the "
+            "country is inside the aggregate, but the number describes the region.",
+        ),
+    ),
+    "facility_delivery": _survey("where the birth took place"),
     "households": (Eligible(Source.DERIVED, "Population divided by mean household size."),),
     "pop_growth_rate": (
         Eligible(Source.WORLDBANK, "The World Bank's national series. No other source here publishes it."),

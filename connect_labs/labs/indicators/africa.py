@@ -70,6 +70,68 @@ AFRICA: dict[str, str] = {
 
 ISO_CODES = sorted(AFRICA)
 
+#: UN M49 geographic subregion of every country above, as the code UNICEF's
+#: SDMX warehouse uses for that subregion's aggregate. Stated rather than
+#: fetched for the same reason as the country list: M49 is a published
+#: standard that changes rarely, and a lookup that silently lost a country
+#: would drop it from every regional fallback without saying so.
+#:
+#: Used where a country publishes no national estimate of its own and the
+#: regional aggregate is the best available figure -- see
+#: sources/unicef_lbw.py. M49 subregions rather than UNICEF's reporting
+#: regions because they are finer (five African subregions against two
+#: UNICEF regions that split the continent roughly in half) and because every
+#: country belongs to exactly one.
+M49_SUBREGION: dict[str, str] = {
+    **dict.fromkeys(("DZA", "EGY", "LBY", "MAR", "SDN", "TUN", "ESH"), "UNSDG_NORTHAFR"),
+    **dict.fromkeys(
+        (
+            "BDI",
+            "COM",
+            "DJI",
+            "ERI",
+            "ETH",
+            "KEN",
+            "MDG",
+            "MWI",
+            "MUS",
+            "MOZ",
+            "RWA",
+            "SYC",
+            "SOM",
+            "SSD",
+            "TZA",
+            "UGA",
+            "ZMB",
+            "ZWE",
+        ),
+        "UNSDG_EASTERNAFR",
+    ),
+    **dict.fromkeys(("AGO", "CMR", "CAF", "TCD", "COG", "COD", "GNQ", "GAB", "STP"), "UNSDG_MIDDLEAFR"),
+    **dict.fromkeys(("BWA", "SWZ", "LSO", "NAM", "ZAF"), "UNSDG_SOUTHERNAFR"),
+    **dict.fromkeys(
+        (
+            "BEN",
+            "BFA",
+            "CPV",
+            "CIV",
+            "GMB",
+            "GHA",
+            "GIN",
+            "GNB",
+            "LBR",
+            "MLI",
+            "MRT",
+            "NER",
+            "NGA",
+            "SEN",
+            "SLE",
+            "TGO",
+        ),
+        "UNSDG_WESTERNAFR",
+    ),
+}
+
 
 def name_for(iso_code: str) -> str:
     return AFRICA.get(iso_code.upper(), iso_code.upper())

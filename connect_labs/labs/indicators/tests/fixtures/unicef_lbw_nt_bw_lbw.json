@@ -1,0 +1,648 @@
+{
+  "meta": {
+    "note": "Recorded 2026-09-11 from GET https://sdmx.data.unicef.org/ws/public/sdmxapi/rest/data/UNICEF,GLOBAL_DATAFLOW,1.0/.NT_BW_LBW._T?format=sdmx-json&startPeriod=2015&dimensionAtObservation=AllDimensions, trimmed to 7 areas x 2019-2020 with dimension and attribute indices remapped. Values untouched. CC BY 3.0 IGO."
+  },
+  "data": {
+    "structure": {
+      "dimensions": {
+        "observation": [
+          {
+            "id": "REF_AREA",
+            "name": "Geographic area",
+            "keyPosition": 0,
+            "role": null,
+            "values": [
+              {
+                "id": "DEU",
+                "name": "Germany"
+              },
+              {
+                "id": "UNICEF_WCA",
+                "name": "West and Central Africa (UNICEF Rep.Regions)"
+              },
+              {
+                "id": "UNSDG_WESTERNAFR",
+                "name": "Western Africa (UNSDG)"
+              },
+              {
+                "id": "KEN",
+                "name": "Kenya"
+              },
+              {
+                "id": "MOZ",
+                "name": "Mozambique"
+              },
+              {
+                "id": "RWA",
+                "name": "Rwanda"
+              },
+              {
+                "id": "UNSDG_EASTERNAFR",
+                "name": "Eastern Africa (UNSDG)"
+              }
+            ]
+          },
+          {
+            "id": "INDICATOR",
+            "name": "Indicator",
+            "keyPosition": 1,
+            "role": null,
+            "values": [
+              {
+                "id": "NT_BW_LBW",
+                "name": "Prevalence of low birth weight among new-borns",
+                "description": "Percentage of live births under 2500 g out of the total number of live births during the same period."
+              }
+            ]
+          },
+          {
+            "id": "SEX",
+            "name": "Sex",
+            "keyPosition": 2,
+            "role": null,
+            "values": [
+              {
+                "id": "_T",
+                "name": "Total",
+                "description": "Used for expressing totals."
+              }
+            ]
+          },
+          {
+            "id": "TIME_PERIOD",
+            "name": "Time period",
+            "keyPosition": 3,
+            "role": "time",
+            "values": [
+              {
+                "start": "2019-01-01T00:00:00",
+                "end": "2019-12-31T23:59:59",
+                "id": "2019",
+                "name": "2019"
+              },
+              {
+                "start": "2020-01-01T00:00:00",
+                "end": "2020-12-31T23:59:59",
+                "id": "2020",
+                "name": "2020"
+              }
+            ]
+          }
+        ]
+      },
+      "attributes": {
+        "observation": [
+          {
+            "id": "UNIT_MULTIPLIER",
+            "name": "Unit multiplier",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": [
+              {
+                "id": "0",
+                "name": "Units",
+                "description": "In scientific notation, expressed as ten raised to the\n            power of zero (10^0)"
+              }
+            ]
+          },
+          {
+            "id": "UNIT_MEASURE",
+            "name": "Unit of measure",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": [
+              {
+                "id": "PCNT",
+                "name": "%"
+              }
+            ]
+          },
+          {
+            "id": "OBS_STATUS",
+            "name": "Observation Status",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": []
+          },
+          {
+            "id": "OBS_CONF",
+            "name": "Observation confidentaility",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": [
+              {
+                "id": "F",
+                "name": "Free",
+                "description": "It is used for observations for which there are no special sensitivity considerations and which can be freely shared. Please note: In some institutional environments the term \"unclassified\" is used in a sense that still denotes implied restrictions in the circulation of information. If this is the case, this organisation may probably consider that \"free\" (value F) is not the appropriate corresponding tag for this kind of \"unclassified\" category and it may be that \"non-publishable / restricted\" (value N) may be more appropriate. The focus of this code is not to describe and anticipate all potential permissible uses (e.g. permission to re-disseminate). Thus, the use of \"F\" does not allow safe assumptions with respect to the permission to \"re-disseminate\" (freely or at a price) the received or accessed information (e.g. on web or paper), especially on a massive and regular basis (legal and copyright constraints may apply). Usually, source organisations provide information and guidance on re-dissemination issues, either on their websites or on their paper publications."
+              }
+            ]
+          },
+          {
+            "id": "LOWER_BOUND",
+            "name": "Lower Bound",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": [
+              {
+                "id": "6.5609",
+                "name": "6.5609"
+              },
+              {
+                "id": "6.5408",
+                "name": "6.5408"
+              },
+              {
+                "id": "8.6565",
+                "name": "8.6565"
+              },
+              {
+                "id": "8.4990",
+                "name": "8.4990"
+              },
+              {
+                "id": "15.2717",
+                "name": "15.2717"
+              },
+              {
+                "id": "15.1252",
+                "name": "15.1252"
+              },
+              {
+                "id": "8.4907",
+                "name": "8.4907"
+              },
+              {
+                "id": "8.4531",
+                "name": "8.4531"
+              }
+            ]
+          },
+          {
+            "id": "UPPER_BOUND",
+            "name": "Upper Bound",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": [
+              {
+                "id": "6.8830",
+                "name": "6.8830"
+              },
+              {
+                "id": "6.8895",
+                "name": "6.8895"
+              },
+              {
+                "id": "11.7207",
+                "name": "11.7207"
+              },
+              {
+                "id": "11.6829",
+                "name": "11.6829"
+              },
+              {
+                "id": "20.5725",
+                "name": "20.5725"
+              },
+              {
+                "id": "20.7098",
+                "name": "20.7098"
+              },
+              {
+                "id": "10.3670",
+                "name": "10.3670"
+              },
+              {
+                "id": "10.4475",
+                "name": "10.4475"
+              }
+            ]
+          },
+          {
+            "id": "WGTD_SAMPL_SIZE",
+            "name": "Weighted Sample Size",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": []
+          },
+          {
+            "id": "OBS_FOOTNOTE",
+            "name": "Observation footnote",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": [
+              {
+                "id": "Analysis is based on _T estimates in year 2019. 24/24 countries (100% population coverage). Regional groupings as of April 8 2026; population weights use 2024 WPP population data.",
+                "name": "Analysis is based on _T estimates in year 2019. 24/24 countries (100% population coverage). Regional groupings as of April 8 2026; population weights use 2024 WPP population data."
+              },
+              {
+                "id": "Analysis is based on _T estimates in year 2020. 24/24 countries (100% population coverage). Regional groupings as of April 8 2026; population weights use 2024 WPP population data.",
+                "name": "Analysis is based on _T estimates in year 2020. 24/24 countries (100% population coverage). Regional groupings as of April 8 2026; population weights use 2024 WPP population data."
+              },
+              {
+                "id": "Analysis is based on _T estimates in year 2019. 16/17 countries (100% population coverage). Regional groupings as of April 8 2026; population weights use 2024 WPP population data.",
+                "name": "Analysis is based on _T estimates in year 2019. 16/17 countries (100% population coverage). Regional groupings as of April 8 2026; population weights use 2024 WPP population data."
+              },
+              {
+                "id": "Analysis is based on _T estimates in year 2020. 16/17 countries (100% population coverage). Regional groupings as of April 8 2026; population weights use 2024 WPP population data.",
+                "name": "Analysis is based on _T estimates in year 2020. 16/17 countries (100% population coverage). Regional groupings as of April 8 2026; population weights use 2024 WPP population data."
+              },
+              {
+                "id": "Analysis is based on _T estimates in year 2019. 18/22 countries (100% population coverage). Regional groupings as of April 8 2026; population weights use 2024 WPP population data.",
+                "name": "Analysis is based on _T estimates in year 2019. 18/22 countries (100% population coverage). Regional groupings as of April 8 2026; population weights use 2024 WPP population data."
+              },
+              {
+                "id": "Analysis is based on _T estimates in year 2020. 18/22 countries (100% population coverage). Regional groupings as of April 8 2026; population weights use 2024 WPP population data.",
+                "name": "Analysis is based on _T estimates in year 2020. 18/22 countries (100% population coverage). Regional groupings as of April 8 2026; population weights use 2024 WPP population data."
+              }
+            ]
+          },
+          {
+            "id": "SERIES_FOOTNOTE",
+            "name": "Series footnote",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": [
+              {
+                "id": "UNICEF-WHO Global Low Birthweight Estimates Databases, July 2023",
+                "name": "UNICEF-WHO Global Low Birthweight Estimates Databases, July 2023"
+              }
+            ]
+          },
+          {
+            "id": "DATA_SOURCE",
+            "name": "Data Source",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": [
+              {
+                "id": "CMRS_SERIES_LBW.csv",
+                "name": "CMRS_SERIES_LBW.csv"
+              }
+            ]
+          },
+          {
+            "id": "SOURCE_LINK",
+            "name": "Citation of or link to the data source",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": [
+              {
+                "id": "https://data.unicef.org/topic/nutrition/low-birthweight/",
+                "name": "https://data.unicef.org/topic/nutrition/low-birthweight/"
+              }
+            ]
+          },
+          {
+            "id": "CUSTODIAN",
+            "name": "Custodian",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": [
+              {
+                "id": "UNICEF Office of Strategy and Evidence - Innocenti; World Health Organization (WHO)",
+                "name": "UNICEF Office of Strategy and Evidence - Innocenti; World Health Organization (WHO)"
+              }
+            ]
+          },
+          {
+            "id": "TIME_PERIOD_METHOD",
+            "name": "Time period activity related to when the data are collected",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": []
+          },
+          {
+            "id": "REF_PERIOD",
+            "name": "Reference Period",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": []
+          },
+          {
+            "id": "COVERAGE_TIME",
+            "name": "The period of time for which data are provided",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": []
+          },
+          {
+            "id": "AGE",
+            "name": "Current age",
+            "relationship": {
+              "primaryMeasure": "OBS_VALUE"
+            },
+            "role": null,
+            "values": [
+              {
+                "id": "_T",
+                "name": "Total"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "dataSets": [
+      {
+        "observations": {
+          "0:0:0:0": [
+            "6.7210",
+            0,
+            0,
+            null,
+            0,
+            0,
+            0,
+            null,
+            null,
+            0,
+            0,
+            0,
+            0,
+            null,
+            null,
+            null,
+            0
+          ],
+          "0:0:0:1": [
+            "6.7141",
+            0,
+            0,
+            null,
+            0,
+            1,
+            1,
+            null,
+            null,
+            0,
+            0,
+            0,
+            0,
+            null,
+            null,
+            null,
+            0
+          ],
+          "1:0:0:0": [
+            "13.5029",
+            0,
+            0,
+            null,
+            0,
+            null,
+            null,
+            null,
+            0,
+            null,
+            null,
+            0,
+            null,
+            null,
+            null,
+            null,
+            0
+          ],
+          "1:0:0:1": [
+            "13.4190",
+            0,
+            0,
+            null,
+            0,
+            null,
+            null,
+            null,
+            1,
+            null,
+            null,
+            0,
+            null,
+            null,
+            null,
+            null,
+            0
+          ],
+          "2:0:0:0": [
+            "14.3607",
+            0,
+            0,
+            null,
+            0,
+            null,
+            null,
+            null,
+            2,
+            null,
+            null,
+            0,
+            null,
+            null,
+            null,
+            null,
+            0
+          ],
+          "2:0:0:1": [
+            "14.2631",
+            0,
+            0,
+            null,
+            0,
+            null,
+            null,
+            null,
+            3,
+            null,
+            null,
+            0,
+            null,
+            null,
+            null,
+            null,
+            0
+          ],
+          "3:0:0:0": [
+            "10.0802",
+            0,
+            0,
+            null,
+            0,
+            2,
+            2,
+            null,
+            null,
+            0,
+            0,
+            0,
+            0,
+            null,
+            null,
+            null,
+            0
+          ],
+          "3:0:0:1": [
+            "9.9711",
+            0,
+            0,
+            null,
+            0,
+            3,
+            3,
+            null,
+            null,
+            0,
+            0,
+            0,
+            0,
+            null,
+            null,
+            null,
+            0
+          ],
+          "4:0:0:0": [
+            "17.7887",
+            0,
+            0,
+            null,
+            0,
+            4,
+            4,
+            null,
+            null,
+            0,
+            0,
+            0,
+            0,
+            null,
+            null,
+            null,
+            0
+          ],
+          "4:0:0:1": [
+            "17.7602",
+            0,
+            0,
+            null,
+            0,
+            5,
+            5,
+            null,
+            null,
+            0,
+            0,
+            0,
+            0,
+            null,
+            null,
+            null,
+            0
+          ],
+          "5:0:0:0": [
+            "9.3851",
+            0,
+            0,
+            null,
+            0,
+            6,
+            6,
+            null,
+            null,
+            0,
+            0,
+            0,
+            0,
+            null,
+            null,
+            null,
+            0
+          ],
+          "5:0:0:1": [
+            "9.3985",
+            0,
+            0,
+            null,
+            0,
+            7,
+            7,
+            null,
+            null,
+            0,
+            0,
+            0,
+            0,
+            null,
+            null,
+            null,
+            0
+          ],
+          "6:0:0:0": [
+            "14.1843",
+            0,
+            0,
+            null,
+            0,
+            null,
+            null,
+            null,
+            4,
+            null,
+            null,
+            0,
+            null,
+            null,
+            null,
+            null,
+            0
+          ],
+          "6:0:0:1": [
+            "14.1087",
+            0,
+            0,
+            null,
+            0,
+            null,
+            null,
+            null,
+            5,
+            null,
+            null,
+            0,
+            null,
+            null,
+            null,
+            null,
+            0
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -283,6 +283,56 @@ at all rather than assuming zero coverage.
 At 15% prevalence this finds **6.35M children** across 183 regions in 36
 countries.
 
+## Low birthweight, and a regional figure that says so
+
+KMC is priced per **low-birthweight** newborn, not per birth — roughly a seventh
+of births in sub-Saharan Africa. Pricing it per birth overstated eligible babies
+about sevenfold, so the count now exists as a measure:
+
+```
+births_lbw = births x lbw_rate / 100
+```
+
+`lbw_rate` is the UNICEF-WHO modelled national estimate (July 2023 release,
+latest year 2020), loaded by `sources/unicef_lbw.py`. It is national only, so
+every region carries its country's rate. Under 2,500 g counts term babies born
+small for gestational age and most preterm babies; **preterm babies weighing
+2,500 g or more are not counted.**
+
+Sixteen African countries publish no national estimate: Nigeria, Ethiopia, Egypt,
+Uganda, Sudan, Niger, Mali, Somalia, Chad, Guinea, South Sudan, Mauritania,
+Equatorial Guinea, Djibouti, Cabo Verde and Libya. Leaving them without a rate
+would make every eligible-baby total a floor that silently omits two of the
+three largest birth cohorts on the continent. They carry their **UN M49
+subregion's** aggregate instead, which UNICEF-WHO compute over every country in
+the region, the unpublished ones included. That is only honest because it
+cannot be mistaken for a national figure:
+
+- its own source code, `unicef_lbw_region`, strictly second in `policy.py`;
+- `Resolved.inherited` is true for it, so `inherited_units` counts it and every
+  row says `inherited`, with the region named as where it was measured;
+- counts built on it carry the flag, and every selection reports
+  `regional_proxy_units` per count; the CSV has a `Low-birthweight rate from`
+  column and the methodology names the countries.
+
+`facility_delivery` (DHS `RH_DELP_C_DHF`) sits beside it as the capacity signal:
+KMC identification starts with a weighed facility birth, and its unreached count
+is births at home. `load_indicators --stage lbw` loads all four measures and
+touches nothing else.
+
+## Derived rows are swept, every one of them
+
+A derived row's natural key includes its year, and the year is its **inputs'**
+vintage. So when an input moves, the new row lands beside the old one instead
+of replacing it, and the resolver, which prefers the most recent year, can pick
+the stale one. Rwanda's births read 64,370 against a true ~400,000 that way: a
+fertility-method row from HAPI's 2023 table outranked the current infant-cohort
+row from WorldPop's 2022 grid, and 196 of 2,294 units across Africa were in the
+same position. Every derivation in `load_indicators` now sweeps what it no
+longer produces, and every selection reports `births_implausible_units`, the
+units whose births fall outside 0.12-0.32 per child under five, because
+`coverage` and `inherited_units` both passed Rwanda.
+
 ## Burden, not just rate
 
 `expected_deaths` = `u5mr × births ÷ 1000`. Targeting on rate alone excluded
@@ -427,13 +477,14 @@ applies is a property of the programme — KMC is priced per newborn, a bednet p
 child, a water connection per household, a treatment per case of disease — so
 the basis is chosen, not guessed.
 
-| basis             | resolves to              |
-| ----------------- | ------------------------ |
-| per birth         | `births`                 |
-| per child under 5 | `pop_u5`                 |
-| per person        | `pop_total`              |
-| per household     | `households`             |
-| per case          | depends on the indicator |
+| basis                     | resolves to              |
+| ------------------------- | ------------------------ |
+| per birth                 | `births`                 |
+| per low-birthweight birth | `births_lbw`             |
+| per child under 5         | `pop_u5`                 |
+| per person                | `pop_total`              |
+| per household             | `households`             |
+| per case                  | depends on the indicator |
 
 **"Per case" is contextual and that is the point.** Targeting diarrhoea, a case
 is a child with untreated diarrhoea; targeting measles, an unvaccinated child;

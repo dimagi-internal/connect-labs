@@ -62,6 +62,10 @@ INDICATORS = {
     "zinc_coverage": {"value": "CH_DIAT_C_ZNC", "lo": None, "hi": None},
     # Maternal care
     "skilled_birth_attendance": {"value": "RH_DELA_C_SKP", "lo": None, "hi": None},
+    # Place of delivery. A weighed facility birth is where Kangaroo Mother
+    # Care identification starts, so this is the capacity signal beside the
+    # low-birthweight count.
+    "facility_delivery": {"value": "RH_DELP_C_DHF", "lo": None, "hi": None},
     "anc4": {"value": "RH_ANCN_W_N4P", "lo": None, "hi": None},
     # Household composition. DHS supplies the RATIO only — population counts
     # come from WorldPop and national statistics via HAPI, never from a survey.
@@ -201,7 +205,13 @@ def _fetch(indicator_ids: list[str], breakdown: str) -> list[dict]:
                     # publishes these and they cost nothing extra to ask for;
                     # without them every regional figure arrives looking equally
                     # solid, and some of them rest on twenty-one cases.
-                    "DenominatorUnweighted,DenominatorWeighted"
+                    "DenominatorUnweighted,DenominatorWeighted,"
+                    # Some indicators come back once per recall window --
+                    # place of delivery and skilled attendance are reported for
+                    # births in the two AND three years before the survey. DHS
+                    # marks one of them preferred; without asking, the loader
+                    # kept whichever happened to arrive last.
+                    "ByVariableLabel,IsPreferred"
                 ),
             },
         )
@@ -236,8 +246,20 @@ def _latest_survey_per_country(records: list[dict]) -> dict[tuple[str, str], dic
         code = r["DHS_CountryCode"]
         if int(r["SurveyYear"]) != latest_year[code]:
             continue
-        best[(code, r["CharacteristicLabel"])] = r
+        key = (code, r["CharacteristicLabel"])
+        # One survey can report the same region more than once, once per recall
+        # window ("two years preceding the survey", "three years ..."). DHS
+        # marks the one it publishes as preferred; take that one rather than
+        # whichever the API happened to list last. A record that does not say
+        # counts as preferred, which is what DHS means by leaving it out.
+        if key in best and _preferred(best[key]) and not _preferred(r):
+            continue
+        best[key] = r
     return best
+
+
+def _preferred(rec: dict) -> bool:
+    return str(rec.get("IsPreferred", 1)) not in ("0", "False", "false")
 
 
 def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]:
@@ -298,6 +320,7 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
                         "sample_unweighted": _int(rec.get("DenominatorUnweighted")),
                         "sample_weighted": _int(rec.get("DenominatorWeighted")),
                         "category": rec.get("CharacteristicCategory"),
+                        "recall_window": rec.get("ByVariableLabel") or None,
                         "survey_id": survey_id,
                         "fieldwork": f"{meta.get('FieldworkStart', '')} to {meta.get('FieldworkEnd', '')}".strip(
                             " to"

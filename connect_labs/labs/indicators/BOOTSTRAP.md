@@ -343,6 +343,8 @@ boundaries      geoBoundaries ADM0/1, plus ADM2 where IGME models that deep
       └ fertility     DHS TFR + World Bank national fallback
           └ population    HAPI (minutes) then WorldPop (hours)
               └ births        derived from population AND mortality
+                  └ lbw            UNICEF-WHO low birthweight + DHS place of
+                                   delivery, and the LBW count built on births
                   └ child_health   diarrhoea, malaria, nutrition, immunisation,
                                    WASH, households, and the gaps they imply
 ```
