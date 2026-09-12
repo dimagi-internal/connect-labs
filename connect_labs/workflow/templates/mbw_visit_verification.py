@@ -83,6 +83,9 @@ _VISIT_FIELDS = [
     {"name": "mother_case_id", "paths": _MOTHER_CASE_ID_PATHS, "aggregation": "first"},
     {"name": "form_instance_id", "path": "form.meta.instanceID", "aggregation": "first"},
     {"name": "form_name", "path": "form.@name", "aggregation": "first"},
+    # Built-in visit_date is date-only (always midnight) -- this carries the
+    # real submission time-of-day for display.
+    {"name": "visit_datetime", "path": "form.meta.timeEnd", "aggregation": "first"},
     {
         "name": "where_is_the_visit_being_conducted",
         "path": "form.visit_location.where_is_the_visit_being_conducted",
