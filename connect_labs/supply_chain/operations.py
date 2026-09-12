@@ -527,3 +527,30 @@ def checks_list(access, opportunity_id=None, kinds=None, categories=None):
         "by_category": {category: sum(1 for f in found if f["category"] == category) for category in CATEGORIES},
         "checks": found,
     }
+
+
+@register_operation(
+    name="chain_summary",
+    summary=(
+        "Stage counts across the whole chain: source (rounds, RFQs issued, quotations, "
+        "comparable of total, awards), order (contracts by buyer of record, shipments in "
+        "transit, receipts, invoices unpaid), and deliver (supply points, on hand, in transit, "
+        "distribution runs, consumption, and cover against each point's OWN min/max band).\n\n"
+        "These are STATES -- counts of rows -- which is a different kind of thing from "
+        "checks_list, which reports gaps and contradictions. '6 of 7 awaiting a reply' is a "
+        "fact; whether that is a problem depends on when they were sent, which is your call.\n\n"
+        "Quantities appear only when you name a commodity_slug, because a unit is not knowable "
+        "before then: three rounds for three commodities have no meaningful total, and adding "
+        "cartons to vials is the failure this domain exists to refuse."
+    ),
+    input_schema=obj({"commodity_slug": {"type": "string"}, "opportunity_id": ID}),
+)
+def chain_summary(access, commodity_slug=None, opportunity_id=None):
+    from connect_labs.supply_chain.summary import chain_summary as build
+
+    summary = build(access, commodity_slug=commodity_slug, opportunity_id=opportunity_id)
+    deliver = summary["deliver"]
+    for key in ("on_hand", "in_transit", "consumed"):
+        if deliver[key] is not None:
+            deliver[key] = figure(deliver[key])
+    return summary

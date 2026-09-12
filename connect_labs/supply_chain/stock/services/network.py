@@ -15,7 +15,7 @@ goes unnoticed.
 
 from django.db.models import Sum
 
-from connect_labs.supply_chain.models import Movement, StockCount, SupplyPoint
+from connect_labs.supply_chain.models import Item, Movement, StockCount, SupplyPoint
 from connect_labs.supply_chain.stock.services import ledger, resupply
 from connect_labs.supply_chain.values import Quantity, Unconfirmed
 
@@ -34,11 +34,18 @@ def _latest_counts(program_id, points, item=None):
 
 
 def _balances(program_id, points, item=None, on_date=None):
-    """{supply_point_id: {unit: Decimal}} for every point, in two queries.
+    """{supply_point_id: ({unit: Decimal}, {item_id})} for every point, in two queries.
 
     One grouped aggregate for everything moving in and one for everything
     moving out, rather than a query per point. `MovementQuerySet` owns the
     sign convention; this only fans the result out by point.
+
+    The item ids come back alongside the units because a balance spanning
+    cartons and sachets is convertible when the point holds ONE item that
+    states its pack size, and is genuinely not convertible when it holds
+    several. Without that, every point holding one item plus a consumption
+    record in base units reported "cannot be computed" -- alarming, and
+    wrong.
     """
     movements = Movement.objects.for_program(program_id).as_of(on_date)
     if item is not None:
@@ -47,24 +54,23 @@ def _balances(program_id, points, item=None, on_date=None):
 
     inbound = (
         movements.filter(to_supply_point_id__in=ids)
-        .values("to_supply_point_id", "quantity_unit")
+        .values("to_supply_point_id", "quantity_unit", "item_id")
         .annotate(total=Sum("quantity"))
     )
     outbound = (
         movements.filter(from_supply_point_id__in=ids)
-        .values("from_supply_point_id", "quantity_unit")
+        .values("from_supply_point_id", "quantity_unit", "item_id")
         .annotate(total=Sum("quantity"))
     )
 
-    by_point: dict[int, dict[str, object]] = {point_id: {} for point_id in ids}
-    for row in inbound:
-        bucket = by_point[row["to_supply_point_id"]]
-        unit = row["quantity_unit"]
-        bucket[unit] = bucket.get(unit, 0) + row["total"]
-    for row in outbound:
-        bucket = by_point[row["from_supply_point_id"]]
-        unit = row["quantity_unit"]
-        bucket[unit] = bucket.get(unit, 0) - row["total"]
+    by_point: dict[int, tuple[dict, set]] = {point_id: ({}, set()) for point_id in ids}
+    for rows, key, sign in ((inbound, "to_supply_point_id", 1), (outbound, "from_supply_point_id", -1)):
+        for row in rows:
+            units, items = by_point[row[key]]
+            unit = row["quantity_unit"]
+            units[unit] = units.get(unit, 0) + sign * row["total"]
+            if row["item_id"] is not None:
+                items.add(row["item_id"])
     return by_point
 
 
@@ -92,12 +98,28 @@ def network_stock(
 
     balances = _balances(program_id, points, item=item, on_date=on_date)
     counts = _latest_counts(program_id, points, item=item)
+    items_by_id = {i.pk: i for i in Item.objects.filter(scope_key__isnull=False)} if item is None else {}
 
     rows = []
     for point in points:
-        on_hand = ledger.collapse(balances.get(point.pk, {}), item, None)
+        units, item_ids = balances.get(point.pk, ({}, set()))
+        # Convert using the point's own item when it holds exactly one. With
+        # several, a single figure spanning them is not a quantity anyone can
+        # act on, and `collapse` says so.
+        for_conversion = item
+        if for_conversion is None and len(item_ids) == 1:
+            for_conversion = items_by_id.get(next(iter(item_ids)))
+        # Report the whole column in one unit where the item states a pack
+        # size: a table mixing cartons and sachets row by row is not
+        # comparable by eye, which is the only thing a network view is for.
+        display_unit = for_conversion.pack_unit if for_conversion is not None else None
+        on_hand = ledger.collapse(units, for_conversion, display_unit)
         count = counts.get(point.pk)
-        plan = resupply.plan(program_id, point, item=item, as_of=on_date, window_days=window_days)
+        # The RESOLVED item, not the caller's: cover divides a carton balance
+        # by a sachet consumption rate, which needs the pack size. Without it
+        # every point reported "unknown" for a reason that was not about the
+        # data at all.
+        plan = resupply.plan(program_id, point, item=for_conversion, as_of=on_date, window_days=window_days)
         rows.append(
             {
                 "supply_point_id": point.pk,

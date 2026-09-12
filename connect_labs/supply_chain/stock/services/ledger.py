@@ -22,6 +22,12 @@ from connect_labs.supply_chain.values import Quantity, unconfirmed
 
 ZERO = Decimal("0")
 
+# The scale quantities are stored at (models.QTY). A conversion divides, so
+# without quantizing, 340 sachets at 144 to the carton reports
+# 2.36111111111111111111111111 cartons -- 27 digits of false precision on a
+# figure nobody can count to a millionth of a carton.
+QUANTITY_SCALE = Decimal("0.0001")
+
 
 def _sum_by_unit(lines) -> dict[str, Decimal]:
     """{unit: total} over any queryset with quantity and quantity_unit, summed in SQL."""
@@ -62,7 +68,7 @@ def convert(amount: Decimal, from_unit: str, to_unit: str, item):
         )
     factor = Decimal(base_per_pack)
     if from_unit == base_unit and to_unit == pack_unit:
-        return Quantity(amount / factor, to_unit)
+        return Quantity((amount / factor).quantize(QUANTITY_SCALE), to_unit)
     if from_unit == pack_unit and to_unit == base_unit:
         return Quantity(amount * factor, to_unit)
     return unconfirmed(f"no stated relationship between {from_unit} and {to_unit} for {label}")

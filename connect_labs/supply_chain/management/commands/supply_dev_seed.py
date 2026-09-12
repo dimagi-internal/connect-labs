@@ -303,6 +303,13 @@ class Command(BaseCommand):
         )
 
         snapshot = op("round_compare", round_id=round_id, commodity_slug="rutf")
+
+        # --- downstream: order, stock, distribution -------------------------
+        # Everything below the award, so the screens have a chain to show and
+        # the fulfilment and stock tiers are exercised end to end. The shapes
+        # are the real ones; the numbers are invented.
+        downstream = self._seed_downstream(op, round_id, item_150, item_144, suppliers)
+
         self.stdout.write(self.style.SUCCESS("\nSeeded."))
         self.stdout.write(f"  user            {DEV_USERNAME} / {DEV_PASSWORD}  (view_synthetic_opps on)")
         self.stdout.write(f"  programme       {PROGRAMME_ID}")
@@ -311,9 +318,292 @@ class Command(BaseCommand):
             f"  comparison      {snapshot['comparable_count']} of {snapshot['total_count']} comparable, "
             f"provisional={snapshot['provisional']}, ranked_by={snapshot['ranked_by']}"
         )
+        self.stdout.write(
+            f"  order           contract {downstream['contract_id']} "
+            f"(bought by the LLO) - {downstream['match_status']}"
+        )
+        self.stdout.write(
+            f"  network         {downstream['points']} supply points, "
+            f"{downstream['workers']} of them field workers"
+        )
+        self.stdout.write(f"  checks          {downstream['checks']} open")
         self.stdout.write("")
         self.stdout.write(f"  open  http://localhost:8000/supply/?program_id={PROGRAMME_ID}")
         self.stdout.write(f"  login http://localhost:8000/admin/  ({DEV_USERNAME}/{DEV_PASSWORD}) first")
+
+    def _seed_downstream(self, op, round_id, item_150, item_144, suppliers):
+        """Award the round, let the LLO buy it, and run the goods out to workers.
+
+        The arrangement this exists to demonstrate: we source, the local
+        partner contracts and pays so the consignment clears under local duty
+        relief, and every fact from the purchase order onwards reaches us
+        second-hand -- which is why each write below names its `source`.
+
+        Deliberately left imperfect, because the imperfections are the point:
+        no purchase-order reference, no exemption certificate behind the
+        claimed relief, one shipment still at customs, an invoice for the full
+        order when only part of it arrived, and one worker whose reported
+        stock does not match the ledger.
+        """
+        winner = op("quote_list", round_id=round_id)
+        winner = next(q for q in winner if q["supplier_id"] == suppliers["Harmattan Foods"])
+        award = op(
+            "award_create",
+            round_id=round_id,
+            quote_id=winner["id"],
+            rationale="Only quote comparable on a like-for-like basis; three others blocked.",
+            decided_by="dev",
+        )
+
+        llo = op(
+            "party_upsert",
+            data={
+                "slug": "llo-kano",
+                "name": "Connect-RUTF local partner (Kano)",
+                "kind": "partner_org",
+                "roles": ["buyer", "receiver", "distributor", "payer"],
+                "country": "NG",
+            },
+        )
+
+        contract = op(
+            "contract_create",
+            data={
+                "round_id": round_id,
+                "award_id": award["id"],
+                "supplier_id": suppliers["Harmattan Foods"],
+                "item_id": item_144["id"],
+                "commodity_slug": "rutf",
+                # The fork: we awarded it, the partner buys it.
+                "buyer_of_record": "partner_org",
+                "buyer_party_id": llo["id"],
+                "quantity": "2000",
+                "quantity_unit": "carton",
+                "unit_price": "50.00",
+                "unit_price_unit": "per_pack",
+                "currency": "USD",
+                "freight_basis": "included",
+                # Claimed, with nothing attached. The landed total therefore
+                # comes back Unconfirmed rather than looking like a bargain.
+                "duty_relief_claimed": True,
+                "duties_basis": "excluded",
+                "vat_basis": "excluded",
+                "incoterm": "DDP",
+                "promised_lead_time_days": 45,
+                "status": "placed",
+                "signed_on": "2026-06-02",
+                "source": "partner_reported",
+                "recorded_by_party_id": llo["id"],
+            },
+        )
+
+        store = op(
+            "supply_point_upsert",
+            data={
+                "slug": "central-store-kano",
+                "name": "Central store, Kano",
+                "kind": "central_store",
+                "managed_by_party_id": llo["id"],
+                "admin_area": "Kano Municipal",
+                "min_months_of_stock": "2",
+                "max_months_of_stock": "6",
+                "source": "we_recorded",
+            },
+        )
+        op("contract_update", contract_id=contract["id"], data={"delivery_supply_point_id": store["id"]})
+
+        # Two shipments: one delivered, one held at customs with no
+        # certificate -- so in-transit stock stays out of cover.
+        op(
+            "shipment_record",
+            data={
+                "contract_id": contract["id"],
+                "reference": "SH-1",
+                "status": "delivered",
+                "dispatched_on": "2026-06-04",
+                "carrier": "Overland freight",
+                "source": "supplier_reported",
+                "lines": [
+                    {
+                        "item_id": item_144["id"],
+                        "batch": "HF-2606-A",
+                        "expiry": "2028-06-30",
+                        "quantity": "1200",
+                        "quantity_unit": "carton",
+                    }
+                ],
+            },
+        )
+        op(
+            "shipment_record",
+            data={
+                "contract_id": contract["id"],
+                "reference": "SH-2",
+                "status": "at_customs",
+                "dispatched_on": "2026-07-04",
+                "source": "supplier_reported",
+                "lines": [
+                    {
+                        "item_id": item_144["id"],
+                        "batch": "HF-2607-B",
+                        "expiry": "2028-07-31",
+                        "quantity": "800",
+                        "quantity_unit": "carton",
+                    }
+                ],
+            },
+        )
+
+        op(
+            "receipt_record",
+            data={
+                "contract_id": contract["id"],
+                "supply_point_id": store["id"],
+                "reference": "GRN-001",
+                "received_on": "2026-06-18",
+                "source": "partner_reported",
+                "recorded_by_party_id": llo["id"],
+                "lines": [
+                    {
+                        "item_id": item_144["id"],
+                        "batch": "HF-2606-A",
+                        "expiry": "2028-06-30",
+                        "quantity_accepted": "1185",
+                        "quantity_rejected": "15",
+                        "rejection_reason": "cartons crushed in transit",
+                        "quantity_unit": "carton",
+                    }
+                ],
+            },
+        )
+
+        # Billed for the whole order while 800 cartons sit at a border.
+        op(
+            "invoice_record",
+            data={
+                "contract_id": contract["id"],
+                "reference": "INV-2026-118",
+                "issued_on": "2026-06-20",
+                "amount": "100000.00",
+                "quantity_billed": "2000",
+                "quantity_unit": "carton",
+                "source": "supplier_reported",
+            },
+        )
+
+        workers = []
+        for slug, name, lga in [
+            ("flw-dala-01", "Field worker, Dala", "Dala"),
+            ("flw-fagge-01", "Field worker, Fagge", "Fagge"),
+            ("flw-gwale-01", "Field worker, Gwale", "Gwale"),
+            ("flw-kumbotso-01", "Field worker, Kumbotso", "Kumbotso"),
+        ]:
+            workers.append(
+                op(
+                    "supply_point_upsert",
+                    data={
+                        "slug": slug,
+                        "name": name,
+                        "kind": "user_held",
+                        "opportunity_id": PROGRAMME_ID,
+                        "connect_username": slug,
+                        "parent_supply_point_id": store["id"],
+                        "admin_area": lga,
+                        "min_months_of_stock": "1",
+                        "max_months_of_stock": "2",
+                        "source": "we_recorded",
+                    },
+                )
+            )
+
+        # One run out to three of the four. Kumbotso gets nothing, which is
+        # what makes its later dispensing unaccounted for.
+        op(
+            "distribution_record",
+            data={
+                "supply_point_id": store["id"],
+                "opportunity_id": PROGRAMME_ID,
+                "commodity_slug": "rutf",
+                "distributed_on": "2026-08-02",
+                "reference": "DIST-2026-08",
+                "source": "partner_reported",
+                "recorded_by_party_id": llo["id"],
+                "lines": [
+                    {
+                        "to_supply_point_id": workers[0]["id"],
+                        "item_id": item_144["id"],
+                        "batch": "HF-2606-A",
+                        "quantity": "18",
+                        "quantity_unit": "carton",
+                    },
+                    {
+                        "to_supply_point_id": workers[1]["id"],
+                        "item_id": item_144["id"],
+                        "batch": "HF-2606-A",
+                        "quantity": "12",
+                        "quantity_unit": "carton",
+                    },
+                    {
+                        "to_supply_point_id": workers[2]["id"],
+                        "item_id": item_144["id"],
+                        "batch": "HF-2606-A",
+                        "quantity": "15",
+                        "quantity_unit": "carton",
+                    },
+                ],
+            },
+        )
+
+        # Dispensing, as it arrives from the deliver form. Kumbotso dispenses
+        # stock it was never issued.
+        for worker, sachets in zip(workers, (2180, 1640, 1420, 460), strict=True):
+            for week in range(12):
+                op(
+                    "movement_record",
+                    data={
+                        "kind": "consumption",
+                        "occurred_on": f"2026-0{6 + week // 5}-{1 + (week % 4) * 7:02d}",
+                        "commodity_slug": "rutf",
+                        "item_id": item_144["id"],
+                        "from_supply_point_id": worker["id"],
+                        "quantity": str(round(sachets / 12)),
+                        "quantity_unit": "sachet",
+                        "source": "connect_visit",
+                    },
+                )
+
+        # One worker's self-report disagrees with the ledger.
+        op(
+            "stock_report_ingest",
+            rows=[
+                {
+                    "connect_username": "flw-dala-01",
+                    "quantity": "2",
+                    "counted_on": "2026-09-10",
+                    "form_submission_id": "demo-sub-1",
+                },
+                {
+                    "connect_username": "flw-fagge-01",
+                    "quantity": "0",
+                    "counted_on": "2026-09-10",
+                    "form_submission_id": "demo-sub-2",
+                },
+            ],
+            commodity_slug="rutf",
+            quantity_unit="carton",
+            opportunity_id=PROGRAMME_ID,
+            item_id=item_144["id"],
+        )
+
+        match = op("contract_match", contract_id=contract["id"])
+        checks = op("checks_list")
+        return {
+            "contract_id": contract["id"],
+            "match_status": match["status"],
+            "points": 1 + len(workers),
+            "workers": len(workers),
+            "checks": checks["count"],
+        }
 
     def _dev_user(self):
         User = get_user_model()

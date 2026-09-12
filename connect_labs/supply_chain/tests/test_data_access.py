@@ -343,3 +343,92 @@ class TestSyntheticScopes:
 
         assert len(other.list_rounds()) == 1
         assert other.get_commodity("rutf") is not None
+
+    def test_purge_clears_a_fully_seeded_chain_including_its_distributions(self, da, open_round):
+        """The ledger and the events that produced it PROTECT each other in
+        both directions, so there is no delete order that works -- a movement
+        points at its distribution and that distribution's lines point back at
+        the movement. An earlier purge deleted in dependency order and raised
+        ProtectedError the second time a programme was re-seeded. The previous
+        purge test only had movements and rounds, which is exactly why it
+        passed.
+        """
+        supplier = da.create_supplier({"name": "Harmattan Foods"})
+        partner = da.upsert_party({"slug": "llo", "name": "Partner", "kind": "partner_org"})
+        item = da.upsert_item({"sku": "hf", "name": "HF RUTF", "commodity_slug": "rutf", "base_per_pack": 144})
+        store = da.upsert_supply_point(
+            {"slug": "store", "name": "Store", "kind": "central_store", "source": "we_recorded"}
+        )
+        worker = da.upsert_supply_point(
+            {
+                "slug": "flw",
+                "name": "Worker",
+                "kind": "user_held",
+                "opportunity_id": SYNTHETIC_PROGRAM,
+                "connect_username": "flw",
+                "source": "we_recorded",
+                # A parent, because SupplyPoint.parent is PROTECTed too and a
+                # network is a tree in practice.
+                "parent_supply_point_id": store.pk,
+            }
+        )
+        contract = da.create_contract(
+            {
+                "round_id": open_round.pk,
+                "commodity_slug": "rutf",
+                "supplier_id": supplier.pk,
+                "buyer_of_record": "partner_org",
+                "buyer_party_id": partner.pk,
+                "source": "partner_reported",
+                "quantity": "100",
+                "quantity_unit": "carton",
+                "unit_price": "50.00",
+                "unit_price_unit": "per_pack",
+            }
+        )
+        da.record_receipt(
+            {
+                "contract_id": contract.pk,
+                "supply_point_id": store.pk,
+                "received_on": "2026-06-18",
+                "source": "partner_reported",
+                "lines": [{"item_id": item.pk, "quantity_accepted": "100", "quantity_unit": "carton"}],
+            }
+        )
+        da.record_distribution(
+            {
+                "supply_point_id": store.pk,
+                "opportunity_id": SYNTHETIC_PROGRAM,
+                "commodity_slug": "rutf",
+                "distributed_on": "2026-08-02",
+                "source": "partner_reported",
+                "lines": [
+                    {"to_supply_point_id": worker.pk, "item_id": item.pk, "quantity": "10", "quantity_unit": "carton"}
+                ],
+            }
+        )
+        da.record_stock_count(
+            {
+                "supply_point_id": worker.pk,
+                "commodity_slug": "rutf",
+                "item_id": item.pk,
+                "kind": "override",
+                "counted_on": "2026-09-10",
+                "quantity": "8",
+                "quantity_unit": "carton",
+                "reason": "counted on a visit",
+                "source": "we_recorded",
+            }
+        )
+
+        counts = da.purge()
+
+        assert counts["distributions"] == 1
+        assert counts["contracts"] == 1
+        assert counts["receipts"] == 1
+        assert counts["stock counts"] == 1
+        assert counts["movements"] >= 2
+        assert counts["supply points"] == 2
+        assert Movement.objects.count() == 0
+        assert da.list_contracts() == []
+        assert da.list_supply_points() == []

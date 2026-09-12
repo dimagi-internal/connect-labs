@@ -70,7 +70,10 @@ def average_monthly_consumption(program_id, supply_point, item=None, as_of=None,
         return total
     if total.amount == 0:
         return unconfirmed("no consumption recorded in the window, so there is no rate to project")
-    return Quantity(total.amount / Decimal(observed_days) * DAYS_PER_MONTH, total.unit)
+    # Quantized for the same reason conversions are: a rate carried to 27
+    # digits is false precision on a figure derived from counted cartons.
+    rate = (total.amount / Decimal(observed_days) * DAYS_PER_MONTH).quantize(ledger.QUANTITY_SCALE)
+    return Quantity(rate, total.unit)
 
 
 def _ratio(numerator: Quantity, denominator: Quantity, item):
@@ -126,7 +129,13 @@ def plan(program_id, supply_point, item=None, as_of=None, window_days=DEFAULT_WI
     maximum = supply_point.max_months_of_stock
 
     status = "ok"
-    if on_hand.amount <= 0:
+    if on_hand.amount < 0:
+        # More has left this point than ever arrived. Not a level to
+        # replenish -- a movement nobody recorded. checks_list reports it as
+        # a conflict; the status says so too rather than calling it a
+        # stockout, which would invite a resupply that fixes nothing.
+        status = "negative"
+    elif on_hand.amount == 0:
         status = "stockout"
     elif minimum is not None and months < minimum:
         status = "below_min"
