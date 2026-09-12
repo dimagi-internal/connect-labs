@@ -451,6 +451,18 @@ def _load_round(op, row, spec, round_id, supplier, commodity_slug, refusals):
     return counts
 
 
+def _no_write_op(name, **payload):
+    """Every operation a dry run reaches, with the write taken out.
+
+    A `_list` answers "nothing exists yet" so the traversal takes its create
+    branch, and a create answers with the one key its caller reads. Nothing
+    reaches the database.
+    """
+    if name.endswith("_list"):
+        return []
+    return {"id": 0}
+
+
 def describe(rows) -> list[str]:
     """What a dry run reports: what would be imported, and what would not."""
     out = []
@@ -494,16 +506,15 @@ def import_tracker(
             ensure_rutf(access)
 
     rows = _read_rows(spreadsheet_id)
-    if dry_run:
-        return {
-            "dry_run": True,
-            "rows": len(rows),
-            "would_import": describe(rows),
-            "imported": {},
-            "refused": [],
-        }
 
-    op = lambda name, **payload: call_operation(name, access, payload)  # noqa: E731
+    # A dry run walks the SAME traversal with the write stubbed out, rather
+    # than taking a separate preview path. `refused` is the half of the report
+    # the caller is told to read, and it used to be hardcoded empty here -- so
+    # previewing a sheet that refuses five things reported none. An empty list
+    # is not an absence of information; it asserts that nothing was refused,
+    # which is the substitution of a confident zero for an unknown that the
+    # rest of this domain exists to refuse.
+    op = _no_write_op if dry_run else lambda name, **payload: call_operation(name, access, payload)  # noqa: E731
     refusals: list[str] = []
     imported = {"suppliers": 0, "rounds": 0, "invitations": 0, "quotes": 0}
 
@@ -519,6 +530,14 @@ def import_tracker(
             imported["invitations"] += counts["invitations"]
             imported["quotes"] += counts["quotes"]
 
+    if dry_run:
+        return {
+            "dry_run": True,
+            "rows": len(rows),
+            "would_import": describe(rows),
+            "imported": {},
+            "refused": sorted(set(refusals)),
+        }
     return {
         "dry_run": False,
         "rows": len(rows),

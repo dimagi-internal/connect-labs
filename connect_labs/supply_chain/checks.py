@@ -124,6 +124,7 @@ def _sourcing(access, as_of):
             quotes = [q for q in access.list_quotes(round_id=round_.pk) if q.commodity_id == commodity.pk]
             if not quotes:
                 continue
+            quotes_by_id = {q.pk: q for q in quotes}
             comparison = compare_round(
                 round_,
                 commodity,
@@ -153,6 +154,11 @@ def _sourcing(access, as_of):
                                 {"key": q.key, "question": q.question, "audience": q.audience} for q in row.questions
                             ],
                         },
+                        # How long the question has gone unanswered. Nullable
+                        # on the quote, and left None rather than defaulted
+                        # when the sheet gave no date -- an age of 0 would
+                        # read as "arrived today".
+                        since=quotes_by_id[row.quote_id].received_on,
                         as_of=as_of,
                     )
                 )

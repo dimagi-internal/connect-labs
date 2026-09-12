@@ -57,7 +57,14 @@ class TestShape:
             assert item["category"] in CATEGORIES
             assert item["subject"]["type"] and item["subject"]["id"]
             assert item["audience"] in ("supplier", "partner", "internal")
+            # `"days_open" in item` was the whole assertion here, which held
+            # while every quote check reported None -- a test named for age
+            # that never read one. The pair has to agree instead.
             assert "days_open" in item
+            if item["since"]:
+                assert item["days_open"] == (TODAY - date.fromisoformat(item["since"])).days
+            else:
+                assert item["days_open"] is None
 
     def test_nothing_is_ranked_or_worded(self, da, rutf_without_course):
         """No priority, no severity, no drafted message. Prioritising and
@@ -495,3 +502,83 @@ class TestStock:
         negative = next(c for c in checks if c["kind"] == "stock_negative")
         assert negative["category"] == "conflict"
         assert negative["facts"]["balance"].startswith("-")
+
+
+class TestAge:
+    def test_a_quote_that_cannot_be_compared_is_flagged_against_the_date_it_arrived(self, da, rutf_without_course):
+        """How long a supplier question has gone unanswered is a fact, and the
+        one a follow-up decision turns on: a quote blocked for two days and one
+        blocked for six months are not the same worklist.
+
+        Award, contract, shipment and stock checks all carried their age. This
+        one -- three of the four findings on the real imported tracker -- never
+        passed `since`, so it reported None while `Quote.received_on` sat right
+        there. The importer goes to the trouble of parsing quote dates and
+        flagging the ambiguous ones precisely because they drive this figure.
+        """
+        arrived = TODAY - timedelta(days=45)
+        supplier = op(da, "supplier_create", data={"name": "DABS"})
+        round_ = op(
+            da,
+            "round_create",
+            data={
+                "label": "Round 1",
+                "delivery_point": {"city": "Kano"},
+                "lines": [{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}],
+            },
+        )
+        op(da, "round_open", round_id=round_["id"])
+        op(
+            da,
+            "quote_record",
+            data={
+                "round_id": round_["id"],
+                "commodity_slug": "rutf",
+                "supplier_id": supplier["id"],
+                "as_quoted_amount": "52.42",
+                "as_quoted_unit": "per_pack",
+                "quantity_basis": "500",
+                "quantity_basis_unit": "carton",
+                "pack_spec_source": "not_stated",
+                "received_on": arrived.isoformat(),
+            },
+        )
+
+        found = [e for e in _read(da)["checks"] if e["kind"] == "quote_not_comparable"]
+        assert len(found) == 1
+        assert found[0]["since"] == arrived.isoformat()
+        assert found[0]["days_open"] == 45
+
+    def test_a_quote_with_no_recorded_date_has_no_age_rather_than_a_guessed_one(self, da, rutf_without_course):
+        """`received_on` is nullable and the tracker leaves it blank where the
+        sheet gave no date. An age of 0 would read as "arrived today"."""
+        supplier = op(da, "supplier_create", data={"name": "DABS"})
+        round_ = op(
+            da,
+            "round_create",
+            data={
+                "label": "Round 1",
+                "delivery_point": {"city": "Kano"},
+                "lines": [{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}],
+            },
+        )
+        op(da, "round_open", round_id=round_["id"])
+        op(
+            da,
+            "quote_record",
+            data={
+                "round_id": round_["id"],
+                "commodity_slug": "rutf",
+                "supplier_id": supplier["id"],
+                "as_quoted_amount": "52.42",
+                "as_quoted_unit": "per_pack",
+                "quantity_basis": "500",
+                "quantity_basis_unit": "carton",
+                "pack_spec_source": "not_stated",
+            },
+        )
+
+        found = [e for e in _read(da)["checks"] if e["kind"] == "quote_not_comparable"]
+        assert len(found) == 1
+        assert found[0]["since"] is None
+        assert found[0]["days_open"] is None
