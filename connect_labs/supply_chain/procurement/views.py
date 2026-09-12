@@ -52,7 +52,7 @@ def _days_waiting(sent_on):
 
 # The quote-entry form submits every field as a plain string, but the
 # quote_record operation's schema declares these as JSON integers (see
-# operations._ID / _NON_NEGATIVE_INT). jsonschema does not coerce "5" to 5,
+# operations.ID / _NON_NEGATIVE_INT). jsonschema does not coerce "5" to 5,
 # so passing request.POST straight through 400s on every real submission
 # that names a round, supplier, or item — i.e. every one of them.
 _QUOTE_INT_FIELDS = {

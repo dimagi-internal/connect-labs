@@ -104,7 +104,7 @@ def test_quote_entry_post_with_a_malformed_amount_does_not_500(client, sophie):
     someone transcribing a supplier's quote by hand, not a reason to 500.
 
     Dispatches "quote_record" to the REAL call_operation, so this exercises
-    the actual _MONEY pattern in operations.py rather than a guess at what it
+    the actual MONEY_NONZERO pattern in operations.py rather than a guess at what it
     rejects — and confirms the rejection happens before anything is written
     (SupplyDataAccess.create_quote is never reached: jsonschema.validate
     raises first).

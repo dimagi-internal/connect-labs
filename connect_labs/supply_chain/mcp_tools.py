@@ -48,7 +48,14 @@ def _schema_with_scope(schema: dict) -> dict:
             **schema["properties"],
             "organization_id": {
                 "type": "integer",
-                "description": "Organisation that owns the commodity and supplier registries.",
+                "description": (
+                    "Organisation that owns the commodity and supplier registries. "
+                    "Omitting this on a supplier/commodity/item call does not fall back to "
+                    "some org-wide default -- it reads a DIFFERENT, program-scoped registry "
+                    "instead, which is empty until something has been written to it. Pass the "
+                    "organisation_id whenever one is known, or supplier_list/commodity_list can "
+                    "come back empty when the supplier genuinely exists."
+                ),
             },
             "program_id": {
                 "type": "integer",

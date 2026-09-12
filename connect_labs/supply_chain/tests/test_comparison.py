@@ -128,10 +128,16 @@ def test_the_cheaper_landed_total_sorts_first(rutf, round_2000_cartons):
     ]
 
 
-def test_ranked_by_falls_back_to_per_pack_when_the_round_has_no_line_for_the_commodity(rutf):
+def test_ranked_by_is_none_when_the_round_has_no_line_for_the_commodity(rutf):
+    """Ruling 22: the old "usd_per_pack_normalized" fallback was dead code --
+    a round with no line for this commodity makes landed_total_for_round_quantity
+    Unconfirmed for every quote, so nothing is ever comparable in this case and
+    the fallback key never actually ranked anything. Nothing comparable means
+    nothing to rank by: ranked_by is None, not a quieter figure standing in."""
     round_no_line = wrap(RoundRecord, {"lines": []})
     comparison = compare_round(round_no_line, rutf, [quote(supplier_id=1)], suppliers())
-    assert comparison.ranked_by == "usd_per_pack_normalized"
+    assert comparison.comparable_count == 0
+    assert comparison.ranked_by is None
 
 
 def test_provisional_is_true_when_anything_is_blocked(rutf, round_2000_cartons):

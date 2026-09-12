@@ -4,14 +4,14 @@ Handlers take a SupplyDataAccess first and return JSON-serialisable dicts.
 """
 
 from connect_labs.supply_chain.operations import (
-    _ID,
     _OUTREACH_DATA,
     _PURCHASE_DATA,
     _QUOTE_DATA,
     _ROUND_DATA,
-    _figure,
-    _obj,
-    _record,
+    ID,
+    figure,
+    obj,
+    record,
     register_operation,
 )
 from connect_labs.supply_chain.procurement.services.comparison import compare_round
@@ -26,20 +26,20 @@ from connect_labs.supply_chain.procurement.services.render import render_followu
 @register_operation(
     name="round_list",
     summary="List quote rounds for this programme with their status and lines.",
-    input_schema=_obj({}),
+    input_schema=obj({}),
 )
 def round_list(access):
-    return [_record(r) for r in access.list_rounds()]
+    return [record(r) for r in access.list_rounds()]
 
 
 @register_operation(
     name="round_get",
     summary="Fetch one round by id, with its commodity lines and delivery point.",
-    input_schema=_obj({"round_id": _ID}, required=("round_id",)),
+    input_schema=obj({"round_id": ID}, required=("round_id",)),
 )
 def round_get(access, round_id):
     round_ = access.get_round(round_id)
-    return _record(round_) if round_ else None
+    return record(round_) if round_ else None
 
 
 @register_operation(
@@ -48,21 +48,21 @@ def round_get(access, round_id):
         "Create a quote round in draft. Needs lines (commodity_slug, quantity, "
         "quantity_unit) and a delivery_point before it can be opened."
     ),
-    input_schema=_obj({"data": _ROUND_DATA}, required=("data",)),
+    input_schema=obj({"data": _ROUND_DATA}, required=("data",)),
     is_write=True,
 )
 def round_create(access, data):
-    return _record(access.create_round(data))
+    return record(access.create_round(data))
 
 
 @register_operation(
     name="round_update",
     summary="Update a round's label, lines, delivery point, deadline or notes.",
-    input_schema=_obj({"round_id": _ID, "data": _ROUND_DATA}, required=("round_id", "data")),
+    input_schema=obj({"round_id": ID, "data": _ROUND_DATA}, required=("round_id", "data")),
     is_write=True,
 )
 def round_update(access, round_id, data):
-    return _record(access.update_round(round_id, data))
+    return record(access.update_round(round_id, data))
 
 
 @register_operation(
@@ -72,21 +72,21 @@ def round_update(access, round_id, data):
         "point, because suppliers will not quote without knowing where the "
         "goods go."
     ),
-    input_schema=_obj({"round_id": _ID}, required=("round_id",)),
+    input_schema=obj({"round_id": ID}, required=("round_id",)),
     is_write=True,
 )
 def round_open(access, round_id):
-    return _record(access.open_round(round_id))
+    return record(access.open_round(round_id))
 
 
 @register_operation(
     name="round_close",
     summary="Close a round to further quotes.",
-    input_schema=_obj({"round_id": _ID}, required=("round_id",)),
+    input_schema=obj({"round_id": ID}, required=("round_id",)),
     is_write=True,
 )
 def round_close(access, round_id):
-    return _record(access.close_round(round_id))
+    return record(access.close_round(round_id))
 
 
 @register_operation(
@@ -95,8 +95,8 @@ def round_close(access, round_id):
         "Render the quote-request text for one supplier on one round. Asks "
         "for exactly the facts needed to make the reply comparable."
     ),
-    input_schema=_obj(
-        {"round_id": _ID, "supplier_id": _ID, "commodity_slug": {"type": "string"}},
+    input_schema=obj(
+        {"round_id": ID, "supplier_id": ID, "commodity_slug": {"type": "string"}},
         required=("round_id", "supplier_id", "commodity_slug"),
     ),
 )
@@ -110,7 +110,7 @@ def request_render(access, round_id, supplier_id, commodity_slug):
 @register_operation(
     name="followup_render",
     summary="Render a follow-up email for a quote, asking only for the facts still missing before it can be compared.",
-    input_schema=_obj({"quote_id": _ID}, required=("quote_id",)),
+    input_schema=obj({"quote_id": ID}, required=("quote_id",)),
 )
 def followup_render(access, quote_id):
     quote = access.get_quote(quote_id)
@@ -124,30 +124,30 @@ def followup_render(access, quote_id):
 @register_operation(
     name="outreach_list",
     summary="List outreach rows — who was asked, when, and whether they replied.",
-    input_schema=_obj({"round_id": _ID}),
+    input_schema=obj({"round_id": ID}),
 )
 def outreach_list(access, round_id=None):
-    return [_record(o) for o in access.list_outreach(round_id=round_id)]
+    return [record(o) for o in access.list_outreach(round_id=round_id)]
 
 
 @register_operation(
     name="outreach_log",
     summary="Record that a quote request was sent to a supplier on a round.",
-    input_schema=_obj({"data": _OUTREACH_DATA}, required=("data",)),
+    input_schema=obj({"data": _OUTREACH_DATA}, required=("data",)),
     is_write=True,
 )
 def outreach_log(access, data):
-    return _record(access.create_outreach(data))
+    return record(access.create_outreach(data))
 
 
 @register_operation(
     name="outreach_update",
     summary="Update an outreach row — typically to record that a supplier responded, and how.",
-    input_schema=_obj({"outreach_id": _ID, "data": _OUTREACH_DATA}, required=("outreach_id", "data")),
+    input_schema=obj({"outreach_id": ID, "data": _OUTREACH_DATA}, required=("outreach_id", "data")),
     is_write=True,
 )
 def outreach_update(access, outreach_id, data):
-    return _record(access.update_outreach(outreach_id, data))
+    return record(access.update_outreach(outreach_id, data))
 
 
 # ---- quotes ------------------------------------------------------------
@@ -156,10 +156,10 @@ def outreach_update(access, outreach_id, data):
 @register_operation(
     name="quote_list",
     summary="List quotes, optionally for one round. Includes voided and superseded versions.",
-    input_schema=_obj({"round_id": _ID}),
+    input_schema=obj({"round_id": ID}),
 )
 def quote_list(access, round_id=None):
-    return [_record(q) for q in access.list_quotes(round_id=round_id)]
+    return [record(q) for q in access.list_quotes(round_id=round_id)]
 
 
 @register_operation(
@@ -168,7 +168,7 @@ def quote_list(access, round_id=None):
         "Fetch one quote with its as-quoted figures and basis flags, plus "
         "the derived figures and what is still missing."
     ),
-    input_schema=_obj({"quote_id": _ID}, required=("quote_id",)),
+    input_schema=obj({"quote_id": ID}, required=("quote_id",)),
 )
 def quote_get(access, quote_id):
     quote = access.get_quote(quote_id)
@@ -179,9 +179,9 @@ def quote_get(access, quote_id):
     item = access.get_item(quote.item_id) if quote.item_id else None
     figures = compute_figures(quote, commodity, round_, item=item)
     return {
-        "quote": _record(quote),
-        "item": _record(item) if item else None,
-        "figures": {key: _figure(value) for key, value in figures.as_dict().items()},
+        "quote": record(quote),
+        "item": record(item) if item else None,
+        "figures": {key: figure(value) for key, value in figures.as_dict().items()},
         "compliance": [
             {
                 "field": r.field,
@@ -193,7 +193,8 @@ def quote_get(access, quote_id):
             for r in check_compliance(quote, commodity, item=item)
         ],
         "missing": [
-            {"key": f.key, "question": f.question} for f in missing_facts(quote, commodity, round_, item=item)
+            {"key": f.key, "question": f.question, "audience": f.audience}
+            for f in missing_facts(quote, commodity, round_, item=item)
         ],
     }
 
@@ -211,11 +212,11 @@ def quote_get(access, quote_id):
         "figures are derived, "
         "and a guessed input produces a confident wrong answer."
     ),
-    input_schema=_obj({"data": _QUOTE_DATA}, required=("data",)),
+    input_schema=obj({"data": _QUOTE_DATA}, required=("data",)),
     is_write=True,
 )
 def quote_record(access, data):
-    return _record(access.create_quote(data))
+    return record(access.create_quote(data))
 
 
 @register_operation(
@@ -225,14 +226,14 @@ def quote_record(access, data):
         "a reason. The original stays readable so past comparisons remain "
         "reproducible."
     ),
-    input_schema=_obj(
-        {"quote_id": _ID, "data": _QUOTE_DATA, "reason": {"type": "string", "minLength": 1}},
+    input_schema=obj(
+        {"quote_id": ID, "data": _QUOTE_DATA, "reason": {"type": "string", "minLength": 1}},
         required=("quote_id", "data", "reason"),
     ),
     is_write=True,
 )
 def quote_correct(access, quote_id, data, reason):
-    return _record(access.supersede_quote(quote_id, data, reason))
+    return record(access.supersede_quote(quote_id, data, reason))
 
 
 @register_operation(
@@ -242,14 +243,14 @@ def quote_correct(access, quote_id, data, reason):
         "withdrawn offer. It stays readable and drops out of comparisons. "
         "This is how a caller cleans up after itself."
     ),
-    input_schema=_obj(
-        {"quote_id": _ID, "reason": {"type": "string", "minLength": 1}},
+    input_schema=obj(
+        {"quote_id": ID, "reason": {"type": "string", "minLength": 1}},
         required=("quote_id", "reason"),
     ),
     is_write=True,
 )
 def quote_void(access, quote_id, reason):
-    return _record(access.void_quote(quote_id, reason))
+    return record(access.void_quote(quote_id, reason))
 
 
 @register_operation(
@@ -258,14 +259,17 @@ def quote_void(access, quote_id, reason):
         "The facts still missing before this quote could be compared "
         "honestly — the questions to send back to the supplier."
     ),
-    input_schema=_obj({"quote_id": _ID}, required=("quote_id",)),
+    input_schema=obj({"quote_id": ID}, required=("quote_id",)),
 )
 def quote_questions(access, quote_id):
     quote = access.get_quote(quote_id)
     round_ = access.get_round(quote.round_id)
     commodity = access.get_commodity(quote.commodity_slug)
     item = access.get_item(quote.item_id) if quote.item_id else None
-    return [{"key": f.key, "question": f.question} for f in missing_facts(quote, commodity, round_, item=item)]
+    return [
+        {"key": f.key, "question": f.question, "audience": f.audience}
+        for f in missing_facts(quote, commodity, round_, item=item)
+    ]
 
 
 # ---- comparison and award ---------------------------------------------
@@ -279,8 +283,8 @@ def quote_questions(access, quote_id):
         "naming the suppliers responsible — the honest answer to 'who is "
         "cheapest' is often 'not yet, ask these questions'."
     ),
-    input_schema=_obj(
-        {"round_id": _ID, "commodity_slug": {"type": "string"}},
+    input_schema=obj(
+        {"round_id": ID, "commodity_slug": {"type": "string"}},
         required=("round_id", "commodity_slug"),
     ),
 )
@@ -295,8 +299,8 @@ def round_compare(access, round_id, commodity_slug):
 @register_operation(
     name="round_outstanding_questions",
     summary="Every outstanding question on a round, grouped by supplier — the follow-up worklist.",
-    input_schema=_obj(
-        {"round_id": _ID, "commodity_slug": {"type": "string"}},
+    input_schema=obj(
+        {"round_id": ID, "commodity_slug": {"type": "string"}},
         required=("round_id", "commodity_slug"),
     ),
 )
@@ -315,10 +319,10 @@ def round_outstanding_questions(access, round_id, commodity_slug):
         "Award a round to a quote. Requires a rationale and freezes the "
         "comparison as it stood at the moment of decision."
     ),
-    input_schema=_obj(
+    input_schema=obj(
         {
-            "round_id": _ID,
-            "quote_id": _ID,
+            "round_id": ID,
+            "quote_id": ID,
             "rationale": {"type": "string", "minLength": 1},
             "decided_by": {"type": "string"},
         },
@@ -327,9 +331,41 @@ def round_outstanding_questions(access, round_id, commodity_slug):
     is_write=True,
 )
 def award_create(access, round_id, quote_id, rationale, decided_by=None):
+    """The decision of record — validate at least as hard as every other write.
+
+    Every other write operation reference-checks what it points at
+    (_require_round, _require_commodity); award_create is the one that
+    freezes a comparison_snapshot into a permanent record, so a bad
+    reference here is a permanent record of the wrong thing. Three checks
+    a round-trip through round_compare would not itself catch:
+      - the quote exists at all (a bad id would otherwise crash inside
+        round_compare on `quote.commodity_slug`, a confusing AttributeError
+        instead of a 400 naming the missing quote);
+      - the quote belongs to THIS round -- without this, round 1 could be
+        awarded to a quote that only ever quoted on round 2, and the frozen
+        snapshot (built from round_id's own comparison) would never contain
+        the quote it claims to have chosen;
+      - the quote is live -- a voided or superseded quote's row is already
+        filtered out of compare_round's snapshot by `_is_live`, so awarding
+        one would freeze a comparison that does not even list the "winner".
+    """
     quote = access.get_quote(quote_id)
+    if quote is None:
+        raise ValueError(f"quote {quote_id} not found")
+    if quote.round_id != round_id:
+        raise ValueError(
+            f"quote {quote_id} belongs to round {quote.round_id}, not round {round_id} — "
+            "a quote can only be awarded on the round it was quoted for"
+        )
+    if quote.voided:
+        raise ValueError(f"quote {quote_id} is voided and cannot be awarded")
+    if quote.superseded_by_quote_id:
+        raise ValueError(
+            f"quote {quote_id} has been superseded by quote {quote.superseded_by_quote_id} — "
+            "award the current version instead"
+        )
     snapshot = round_compare(access, round_id, quote.commodity_slug)
-    return _record(
+    return record(
         access.create_award(
             {
                 "round_id": round_id,
@@ -345,10 +381,10 @@ def award_create(access, round_id, quote_id, rationale, decided_by=None):
 @register_operation(
     name="award_list",
     summary="List awards for this programme, each with its frozen comparison snapshot and rationale.",
-    input_schema=_obj({"round_id": _ID}),
+    input_schema=obj({"round_id": ID}),
 )
 def award_list(access, round_id=None):
-    return [_record(a) for a in access.list_awards(round_id=round_id)]
+    return [record(a) for a in access.list_awards(round_id=round_id)]
 
 
 # ---- purchases ---------------------------------------------------------
@@ -359,17 +395,17 @@ def award_list(access, round_id=None):
     summary=(
         "Record what an LLO actually paid — the fact behind cost per course, " "as opposed to the quoted intention."
     ),
-    input_schema=_obj({"data": _PURCHASE_DATA}, required=("data",)),
+    input_schema=obj({"data": _PURCHASE_DATA}, required=("data",)),
     is_write=True,
 )
 def purchase_record(access, data):
-    return _record(access.create_purchase(data))
+    return record(access.create_purchase(data))
 
 
 @register_operation(
     name="purchase_list",
     summary="List recorded purchases for this programme.",
-    input_schema=_obj({}),
+    input_schema=obj({}),
 )
 def purchase_list(access):
-    return [_record(p) for p in access.list_purchases()]
+    return [record(p) for p in access.list_purchases()]

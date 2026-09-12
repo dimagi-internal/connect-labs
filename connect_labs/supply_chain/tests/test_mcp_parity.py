@@ -92,7 +92,7 @@ def test_mcp_handler_does_not_forward_scope_into_the_operation_payload():
     fake_operation = operations_module.Operation(
         name="fake_probe",
         summary="test probe for scope-stripping, not a real capability",
-        input_schema=operations_module._obj({"foo": {"type": "string"}}),
+        input_schema=operations_module.obj({"foo": {"type": "string"}}),
         handler=_fake_handler,
     )
 

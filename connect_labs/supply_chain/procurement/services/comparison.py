@@ -56,7 +56,7 @@ class Comparison:
     comparable: list[ComparisonRow]
     blocked: list[ComparisonRow]
     generated_at: str
-    ranked_by: str
+    ranked_by: str | None
     provisional: bool
 
     @property
@@ -142,20 +142,25 @@ def _is_live(quote: QuoteRecord) -> bool:
     return not quote.voided and not quote.superseded_by_quote_id
 
 
-def _ranking_key(round_: RoundRecord, commodity: CommodityRecord) -> str:
-    """Which figure decides the leader — a declared, round-level decision.
+def _ranking_key(comparable: list[ComparisonRow]) -> str | None:
+    """Which figure decided the leader — a declared, round-level fact.
 
-    Landed total for this round's own quantity is the honest "what would we
-    actually pay" figure, so it wins whenever the round has a line for this
-    commodity. When it does not (nobody has told this round how much of this
-    commodity it needs yet), that figure is Unconfirmed for every quote, so
-    ranking on it would rank nothing; the per-pack price is the next best
-    apples-to-apples figure and becomes the declared key instead. Deciding
-    this once, structurally, means the snapshot can say what it ranked by —
-    an award record can't leave that to whichever template rendered it.
+    Landed total for this round's own quantity is the only figure the
+    ranking is ever chosen on, and it doubles as the comparability gate:
+    `is_comparable` requires every one of FIGURE_FIELDS to be confirmed,
+    landed_total_for_round_quantity among them, and that figure is
+    Unconfirmed for every quote whenever the round has no line for this
+    commodity. So a nonempty `comparable` list already proves the round has
+    a line — there is no reachable case where something is comparable AND
+    the round is missing one (Ruling 22 dropped the "usd_per_pack_normalized"
+    fallback that used to cover that case: it was dead, because whenever the
+    round had no line, `comparable` was always empty and the fallback ranked
+    nothing). When `comparable` IS empty, the honest answer is that there is
+    nothing to rank by — `None`, not a quieter figure that never had a
+    chance to actually order anything.
     """
-    if round_.quantity_for(commodity.slug) is None:
-        return "usd_per_pack_normalized"
+    if not comparable:
+        return None
     return "landed_total_for_round_quantity"
 
 
@@ -199,13 +204,15 @@ def compare_round(
         )
         (comparable if row.is_comparable else blocked).append(row)
 
-    ranked_by = _ranking_key(round_, commodity)
+    ranked_by = _ranking_key(comparable)
     # Cheapest first: comparable[0] is the leader the screen names, and it is
     # provisional (below) whenever anything was left out of the ranking. Every
     # comparable row is guaranteed a Money here — is_comparable already
-    # required all of FIGURE_FIELDS, which includes both candidate keys, to be
-    # confirmed.
-    comparable.sort(key=lambda row: row.figures[ranked_by].amount)
+    # required all of FIGURE_FIELDS, to be confirmed. Sorting an empty list
+    # never evaluates the key function, so a `None` ranked_by (nothing
+    # comparable) is never actually indexed.
+    if ranked_by is not None:
+        comparable.sort(key=lambda row: row.figures[ranked_by].amount)
 
     columns: list[ComparisonColumn] = []
     for key in FIGURE_FIELDS:
