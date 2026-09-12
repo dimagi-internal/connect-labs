@@ -10,7 +10,7 @@ def supplier():
 def test_the_initial_request_states_quantity_destination_and_every_question(rutf, round_2000_cartons):
     text = render_initial_request(rutf, round_2000_cartons, supplier())
     assert "Northwind Nutrition" in text
-    assert "2000" in text
+    assert "2,000" in text
     assert "Kano" in text
     assert "minimum order quantity" in text
     assert "shelf life" in text.lower()

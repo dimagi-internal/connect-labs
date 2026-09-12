@@ -81,19 +81,35 @@ def metric_tonnes_to_base_units(tonnes: Decimal, base_unit_grams: int) -> Decima
     return (grams / Decimal(base_unit_grams)).to_integral_value(rounding="ROUND_DOWN")
 
 
-def plural_unit(unit: str, count) -> str:
+def _plural_unit(unit: str, count) -> str:
     """Naive English pluralisation for a unit noun (carton, sachet, tonne, ...).
 
-    One shared rule so a quantity's unit cannot be pluralised two different
-    ways in the same message — procurement's render.py and questions.py both
-    call this rather than each appending an "s" of its own. Handles count == 1
-    so a single-carton round reads "carton", not "1 cartons". No unit in this
-    domain's vocabulary takes an irregular plural.
+    Handles count == 1 so a single-carton round reads "carton", not "1
+    cartons". No unit in this domain's vocabulary takes an irregular plural.
+    Private: composed into quantity_phrase() below rather than called on its
+    own, so a quantity's digits and its unit noun cannot drift apart into two
+    separately-formatted pieces.
     """
     return unit if count == 1 else f"{unit}s"
 
 
-def format_quantity(quantity: Decimal) -> str:
-    """A quantity written the way commercial correspondence writes it, e.g.
-    2000 -> "2,000"."""
+def _format_quantity(quantity) -> str:
+    """A quantity's digits written the way commercial correspondence writes
+    them, e.g. 2000 -> "2,000". Private for the same reason as _plural_unit."""
     return f"{quantity:,}"
+
+
+def quantity_phrase(count, unit: str) -> str:
+    """A quantity and its unit as one piece of prose: quantity_phrase(2000,
+    "carton") -> "2,000 cartons"; quantity_phrase(1, "carton") -> "1 carton".
+
+    The single source for how a quantity is written in a sentence. An earlier
+    version had render.py and questions.py each call plural_unit() and
+    format_quantity() separately at their own call sites — two coordinated
+    calls instead of one, which is exactly the shape that let the digits and
+    the unit noun be formatted consistently with each other but drift out of
+    step between the two messages (one showing "2,000", the other "2000").
+    Composing both here means there is nothing left for a caller to get
+    inconsistent.
+    """
+    return f"{_format_quantity(count)} {_plural_unit(unit, count)}"

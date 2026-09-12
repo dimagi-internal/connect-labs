@@ -7,7 +7,7 @@ Phase 1c sends the same text over SES.
 
 from connect_labs.supply_chain.models import CommodityRecord, QuoteRecord, RoundRecord, SupplierRecord
 from connect_labs.supply_chain.procurement.services.questions import initial_request_facts, missing_facts
-from connect_labs.supply_chain.values import format_quantity, plural_unit
+from connect_labs.supply_chain.values import quantity_phrase
 
 
 def _numbered(facts) -> str:
@@ -30,9 +30,7 @@ def render_initial_request(
     supplier: SupplierRecord,
 ) -> str:
     quantity = round_.quantity_for(commodity.slug)
-    quantity_text = (
-        f"{format_quantity(quantity[0])} {plural_unit(quantity[1], quantity[0])}" if quantity else "the quantity below"
-    )
+    quantity_text = quantity_phrase(quantity[0], quantity[1]) if quantity else "the quantity below"
     incoterm = (round_.delivery_point or {}).get("incoterm_requested")
 
     lines = [
