@@ -221,6 +221,30 @@
                value="{{ submitted|dictkey:'shelf_life_months_stated'|default:'' }}"
                class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
       </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_moq">
+          Minimum order quantity
+        </label>
+        <input type="text" id="id_moq" name="moq" placeholder="e.g. 500"
+               value="{{ submitted|dictkey:'moq'|default:'' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_moq_unit">
+          MOQ unit
+        </label>
+        <input type="text" id="id_moq_unit" name="moq_unit" placeholder="e.g. carton"
+               value="{{ submitted|dictkey:'moq_unit'|default:'' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_validity_until">
+          Quotation valid until
+        </label>
+        <input type="date" id="id_validity_until" name="validity_until"
+               value="{{ submitted|dictkey:'validity_until'|default:'' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
     </div>
 
     <div class="flex justify-end">

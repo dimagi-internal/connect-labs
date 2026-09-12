@@ -2,28 +2,32 @@
 {% load supply_chain_extras %}
 {% block supply_content %}
 {% if not commodity_slug %}
-  <h1>Comparison — round {{ round_id }}{% if round.label %}, {{ round.label }}{% endif %}</h1>
-  <p>Which commodity do you want to compare?</p>
-  <ul>
+  <h1 class="text-xl font-semibold text-gray-900 mb-1">
+    Comparison — round {{ round_id }}{% if round.label %}, {{ round.label }}{% endif %}
+  </h1>
+  <p class="text-sm text-gray-600 mb-4">Which commodity do you want to compare?</p>
+  <ul class="flex flex-col gap-2">
     {% for line in round.lines %}
       <li>
-        <a href="?commodity={{ line.commodity_slug }}">
+        <a href="?commodity={{ line.commodity_slug }}"
+           class="inline-block px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md text-brand-indigo hover:bg-gray-50">
           {{ line.commodity_slug }}{% if line.quantity %} — {{ line.quantity }} {{ line.quantity_unit }}{% endif %}
         </a>
       </li>
     {% empty %}
-      <li>This round has no commodity lines yet — there is nothing to compare.</li>
+      <li class="text-sm text-gray-500">This round has no commodity lines yet — there is nothing to compare.</li>
     {% endfor %}
   </ul>
 {% else %}
-<h1>Comparison — round {{ round_id }}, {{ commodity_slug }}</h1>
+<h1 class="text-xl font-semibold text-gray-900 mb-4">Comparison — round {{ round_id }}, {{ commodity_slug }}</h1>
 
-{% if comparison.comparable_count < comparison.total_count %}
-  <div class="alert alert-warning">
-    <strong>{{ comparison.comparable_count }} of {{ comparison.total_count }}
-    comparable.</strong>
+{% if comparison.provisional %}
+  <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-sm text-amber-900">
+    <strong>{{ comparison.comparable_count }} of {{ comparison.total_count }} comparable.</strong>
     The ranking below is
-    <strong style="background-color:#fff3cd;color:#7a5b00;padding:1px 6px;border-radius:3px;">PROVISIONAL</strong>
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+      PROVISIONAL
+    </span>
     —
     {% for row in comparison.blocked %}{{ row.supplier_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
     {% if comparison.blocked|length == 1 %}has{% else %}have{% endif %}
@@ -32,78 +36,89 @@
 {% endif %}
 
 {% if award_error %}
-  <div class="alert alert-danger">
+  <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 text-sm text-red-800">
     Could not award: {{ award_error }}
   </div>
 {% endif %}
 
 {% if comparison.comparable %}
-  <h2>Comparable</h2>
-  <table class="table">
-    <thead>
-      <tr>
-        <th>#</th><th>Supplier</th>
-        {% for column in comparison.columns %}<th>{{ column.label }}</th>{% endfor %}
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in comparison.comparable %}
-        <tr>
-          <td>{{ forloop.counter }}</td>
-          <td>{{ row.supplier_name }}</td>
-          {% for column in comparison.columns %}
-            {% with cell=row.figures|dictkey:column.key %}
-              <td>{{ cell.currency }} {{ cell.amount|floatformat:4 }}</td>
-            {% endwith %}
+  <div class="flex items-baseline justify-between mb-2">
+    <h2 class="text-lg font-semibold text-gray-900">Comparable</h2>
+    <p class="text-sm text-gray-600">
+      {% if ranked_by_label %}Ranked by {{ ranked_by_label }}{% else %}Not yet ranked{% endif %}
+    </p>
+  </div>
+  <div class="table-container flex flex-col gap-2 mb-1">
+    <div class="w-full overflow-x-auto">
+      <table class="base-table">
+        <thead>
+          <tr>
+            <th>#</th><th>Supplier</th>
+            {% for column in comparison.columns %}<th>{{ column.label }}</th>{% endfor %}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in comparison.comparable %}
+            <tr>
+              <td>{{ forloop.counter }}</td>
+              <td class="font-medium text-gray-900">{{ row.supplier_name }}</td>
+              {% for column in comparison.columns %}
+                {% with cell=row.figures|dictkey:column.key %}
+                  <td>{{ cell.currency }} {{ cell.amount|floatformat:4 }}</td>
+                {% endwith %}
+              {% endfor %}
+              <td>
+                <form method="post" action="" class="flex items-center gap-2">
+                  {% csrf_token %}
+                  <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
+                  <input type="text" name="rationale" placeholder="Why this supplier?" required
+                         class="w-40 border border-gray-300 rounded-md px-2 py-1 text-sm">
+                  <button class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
+                          type="submit">
+                    Award
+                  </button>
+                </form>
+                {% include "supply_chain/procurement/_row_questions.html" with row=row %}
+              </td>
+            </tr>
           {% endfor %}
-          <td>
-            <form method="post" action="" class="d-flex gap-1">
-              {% csrf_token %}
-              <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
-              <input type="text" name="rationale" placeholder="Why this supplier?" required
-                     class="form-control form-control-sm" style="width: 160px;">
-              <button class="btn btn-sm btn-primary" type="submit">
-                Award
-              </button>
-            </form>
-          </td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+        </tbody>
+      </table>
+    </div>
+  </div>
 {% else %}
-  <p class="text-muted">Nothing is comparable yet. Every quote is missing something —
+  <p class="text-gray-500 mb-4">Nothing is comparable yet. Every quote is missing something —
   the questions below are the whole job right now.</p>
 {% endif %}
 
 {% if comparison.blocked %}
-  <h2>Needs info — {{ comparison.blocked|length }} supplier{{ comparison.blocked|pluralize }}</h2>
+  <h2 class="text-lg font-semibold text-gray-900 mt-6 mb-2">
+    Needs info — {{ comparison.blocked|length }} supplier{{ comparison.blocked|pluralize }}
+  </h2>
   {% for row in comparison.blocked %}
-    <h3>{{ row.supplier_name }}</h3>
-    <ol>{% for q in row.questions %}<li>{{ q.question }}</li>{% endfor %}</ol>
-    {% for column in comparison.columns %}
-      {% with cell=row.figures|dictkey:column.key %}
-        {% if cell.unconfirmed %}
-          <p class="text-muted small">
-            <strong>{{ column.label }}:</strong>
-            {% for reason in cell.unconfirmed %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+      <h3 class="font-semibold text-gray-900 mb-2">{{ row.supplier_name }}</h3>
+      {% for column in comparison.columns %}
+        {% with cell=row.figures|dictkey:column.key %}
+          {% if cell.unconfirmed %}
+            <p class="text-sm text-gray-500 mb-1">
+              <strong class="text-gray-700">{{ column.label }}:</strong>
+              {% for reason in cell.unconfirmed %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}
+            </p>
+          {% endif %}
+        {% endwith %}
+      {% endfor %}
+      {% include "supply_chain/procurement/_row_questions.html" with row=row %}
+      {% for c in row.compliance %}
+        {% if c.claim_conflict %}
+          <p class="text-sm text-red-700 mt-2">
+            {{ c.field }}: the item specification and this supplier's claim disagree —
+            {{ c.message }}
           </p>
         {% endif %}
-      {% endwith %}
-    {% endfor %}
-    <a class="btn btn-sm btn-outline-primary"
-       href="{% url 'supply_chain:procurement_followup_draft' %}?quote_id={{ row.quote_id }}">
-      Draft follow-up
-    </a>
-    {% for c in row.compliance %}
-      {% if c.claim_conflict %}
-        <p class="text-danger small">
-          {{ c.field }}: the item specification and this supplier's claim disagree —
-          {{ c.message }}
-        </p>
-      {% endif %}
-    {% endfor %}
+      {% endfor %}
+    </div>
   {% endfor %}
 {% endif %}
 {% endif %}

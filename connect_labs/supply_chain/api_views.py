@@ -23,6 +23,23 @@ def _access(request) -> SupplyDataAccess:
     return SupplyDataAccess(access_token=token, request=request)
 
 
+def has_program_context(request) -> bool:
+    """Whether the request carries a programme scope.
+
+    Unlike solicitations' dual org/program scoping (see
+    solicitations/views.py's _has_context), procurement's rounds, quotes,
+    awards and purchases are programme-scoped ONLY: SupplyDataAccess's
+    program_experiment property raises ValueError without a program_id, no
+    matter what organization_id is set to. `labs_context = {}` -- no
+    programme selected yet -- is a normal state on a fresh '/supply/' or
+    '/supply/procurement/' visit, not a bug: check this before calling a
+    programme-scoped operation and render a "select a programme" state
+    instead of letting that ValueError raise uncaught through the view.
+    """
+    labs_context = getattr(request, "labs_context", {})
+    return bool(labs_context.get("program_id"))
+
+
 @method_decorator(login_required, name="dispatch")
 class OperationListView(View):
     """Discovery: what can be done here, and with what arguments."""

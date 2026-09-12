@@ -24,6 +24,64 @@ def test_the_round_board_renders(client, sophie):
     assert response.status_code == 200
 
 
+def test_the_item_master_shows_status_and_a_computed_spec_verdict(client, sophie):
+    """Finding 15: the column headed 'Specification' actually rendered
+    item.status -- mislabelled, and design doc section 12's 'spec verdict'
+    content was entirely absent. Now there are two distinct columns."""
+    items = [
+        {
+            "id": 1,
+            "sku": "sku-1",
+            "name": "Item One",
+            "commodity_slug": "infant-scale",
+            "spec_attributes": {"minimum_graduation_g": 10},
+            "status": "active",
+        }
+    ]
+    commodities = [
+        {
+            "slug": "infant-scale",
+            "name": "Infant scale",
+            "spec_requirements": [{"field": "minimum_graduation_g", "operator": "<=", "value": 20, "unit": "g"}],
+        }
+    ]
+
+    def _dispatch(name, access, payload):
+        if name == "item_list":
+            return items
+        if name == "commodity_list":
+            return commodities
+        raise AssertionError(name)
+
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_dispatch):
+        response = client.get(reverse("supply_chain:items"))
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert "Spec verdict" in body
+    assert "Meets all 1" in body
+
+
+# --- Finding 3: '/supply/' and '/supply/procurement/' must not 500 with no
+# programme selected. labs_context = {} is a normal state (labs/context.py)
+# for a freshly-authenticated user with nothing auto-selectable -- exactly
+# `sophie`, who has no organisations or programmes. Neither test below mocks
+# call_operation: the point is that a REAL SupplyDataAccess is never even
+# constructed on this path, let alone asked to read program_experiment with
+# no program_id.
+
+
+def test_the_domain_home_does_not_500_with_no_programme_selected(client, sophie):
+    response = client.get(reverse("supply_chain:home"))
+    assert response.status_code == 200
+    assert "No programme selected" in response.content.decode()
+
+
+def test_the_round_board_does_not_500_with_no_programme_selected(client, sophie):
+    response = client.get(reverse("supply_chain:procurement_round_board"))
+    assert response.status_code == 200
+    assert "No programme selected" in response.content.decode()
+
+
 def test_the_comparison_page_shows_an_unconfirmed_reason_rather_than_a_number(client, sophie):
     # Shaped like the real round_compare operation's snapshot (comparison.py,
     # Comparison.to_snapshot()) — comparable/blocked/all_rows, not a flat
@@ -36,7 +94,7 @@ def test_the_comparison_page_shows_an_unconfirmed_reason_rather_than_a_number(cl
         "is_comparable": False,
         "figures": {"usd_per_base_unit": {"unconfirmed": ["pack spec not stated on the quote"]}},
         "compliance": [],
-        "questions": [{"key": "pack_spec", "question": "How many sachets are in one carton?"}],
+        "questions": [{"key": "pack_spec", "question": "How many sachets are in one carton?", "audience": "supplier"}],
     }
     snapshot = {
         "round_id": 1,
@@ -62,6 +120,106 @@ def test_the_comparison_page_shows_an_unconfirmed_reason_rather_than_a_number(cl
     body = response.content.decode()
     assert "pack spec not stated" in body
     assert "Harmattan Foods" in body
+
+
+def test_the_comparison_page_uses_house_tailwind_not_bootstrap(client, sophie):
+    """Finding 6: the centrepiece screen was rendering unstyled HTML because
+    it used Bootstrap classes that do not exist in this Tailwind-only
+    project's CSS. `.base-table` is the house table class. Needs at least one
+    comparable row -- an all-blocked snapshot never renders the table at all."""
+    comparable_row = {
+        "quote_id": 5,
+        "supplier_id": 1,
+        "supplier_name": "Northwind Nutrition",
+        "is_comparable": True,
+        "figures": {"usd_per_base_unit": {"amount": "0.3333", "currency": "USD"}},
+        "compliance": [],
+        "questions": [],
+    }
+    blocked_row = {
+        "quote_id": 1,
+        "supplier_id": 2,
+        "supplier_name": "Harmattan Foods",
+        "is_comparable": False,
+        "figures": {"usd_per_base_unit": {"unconfirmed": ["pack spec not stated on the quote"]}},
+        "compliance": [],
+        "questions": [{"key": "pack_spec", "question": "How many sachets are in one carton?", "audience": "supplier"}],
+    }
+    snapshot = {
+        "round_id": 1,
+        "generated_at": "2026-09-11T00:00:00+00:00",
+        "comparable_count": 1,
+        "total_count": 2,
+        "ranked_by": "usd_per_base_unit",
+        "provisional": True,
+        "columns": [
+            {
+                "key": "usd_per_base_unit",
+                "label": "USD per sachet",
+                "rankable": True,
+                "blocked_by": ["Harmattan Foods"],
+            }
+        ],
+        "comparable": [comparable_row],
+        "blocked": [blocked_row],
+        "all_rows": [comparable_row, blocked_row],
+    }
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=snapshot):
+        response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
+    body = response.content.decode()
+    for bootstrap_class in (
+        "alert alert-warning",
+        "btn btn-sm btn-primary",
+        "form-control",
+        "text-muted",
+        "d-flex gap-1",
+    ):
+        assert bootstrap_class not in body
+    assert "base-table" in body
+
+
+def test_the_comparison_page_shows_outstanding_questions_for_a_comparable_row(client, sophie):
+    """Finding 7: acceptance facts (shelf life, MOQ, lead time, validity)
+    don't block a figure, so a fully-priced Comparable row can still be
+    missing one -- that must not be swallowed just because the row is
+    comparable. Also proves comparison.provisional (not a re-derived
+    comparable_count < total_count) and ranked_by drive the page."""
+    comparable_row = {
+        "quote_id": 7,
+        "supplier_id": 3,
+        "supplier_name": "Northwind Nutrition",
+        "is_comparable": True,
+        "figures": {"usd_per_base_unit": {"amount": "0.3333", "currency": "USD"}},
+        "compliance": [],
+        "questions": [
+            {
+                "key": "shelf_life",
+                "question": "What is the shelf life from date of manufacture?",
+                "audience": "supplier",
+            }
+        ],
+    }
+    snapshot = {
+        "round_id": 1,
+        "generated_at": "2026-09-11T00:00:00+00:00",
+        "comparable_count": 1,
+        "total_count": 1,
+        "ranked_by": "usd_per_base_unit",
+        "provisional": False,
+        "columns": [{"key": "usd_per_base_unit", "label": "USD per sachet", "rankable": True, "blocked_by": []}],
+        "comparable": [comparable_row],
+        "blocked": [],
+        "all_rows": [comparable_row],
+    }
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=snapshot):
+        response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert "Northwind Nutrition" in body
+    assert "What is the shelf life from date of manufacture?" in body
+    assert "Ranked by USD per sachet" in body
+    # provisional is False -- the PROVISIONAL badge must not render.
+    assert "PROVISIONAL" not in body
 
 
 def test_award_post_calls_the_operation(client, sophie):
@@ -261,13 +419,16 @@ def test_no_view_mutates_a_record_outside_an_operation():
 
     A view that reaches for data_access directly could grow a capability the
     API and MCP surfaces do not have.
+
+    Globbed rather than a hardcoded pair of paths (finding 16): a future
+    sub-component's views.py (e.g. tracking/views.py) would otherwise sit
+    silently outside this guard until someone remembered to add it here too.
     """
     called = set()
-    for path in (
-        "connect_labs/supply_chain/views.py",
-        "connect_labs/supply_chain/procurement/views.py",
-    ):
-        tree = ast.parse(pathlib.Path(path).read_text())
+    view_files = sorted(pathlib.Path(".").glob("connect_labs/supply_chain/**/views.py"))
+    assert view_files, "the glob found no views.py files -- check the pattern or the cwd pytest runs from"
+    for path in view_files:
+        tree = ast.parse(path.read_text())
         called |= {
             node.func.attr
             for node in ast.walk(tree)
