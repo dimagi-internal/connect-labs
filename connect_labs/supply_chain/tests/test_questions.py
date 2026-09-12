@@ -68,7 +68,7 @@ def test_the_initial_request_asks_for_everything(rutf, round_2000_cartons):
 
 def test_the_initial_request_quotes_the_round_quantity_and_destination(rutf, round_2000_cartons):
     text = " ".join(f.question for f in initial_request_facts(rutf, round_2000_cartons))
-    assert "2000" in text
+    assert "2,000" in text
     assert "Kano" in text
 
 

@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from connect_labs.supply_chain.models import CommodityRecord, QuoteRecord, RoundRecord
 from connect_labs.supply_chain.procurement.services.compliance import NOT_STATED, check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
-from connect_labs.supply_chain.values import Unconfirmed, plural_unit
+from connect_labs.supply_chain.values import Unconfirmed, quantity_phrase
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
     (
         "round is",
         "quantity_basis_mismatch",
-        "Can you quote for {quantity} {quantity_unit} specifically?",
+        "Can you quote for {quantity_phrase} specifically?",
         SUPPLIER,
     ),
     (
@@ -172,8 +172,7 @@ def _context(commodity: CommodityRecord, round_: RoundRecord) -> dict:
         "pack_unit": commodity.pack_unit or "pack",
         "commodity": commodity.name or commodity.slug,
         "destination": where or "the delivery point",
-        "quantity": quantity[0] if quantity else "",
-        "quantity_unit": plural_unit(quantity[1], quantity[0]) if quantity else "",
+        "quantity_phrase": quantity_phrase(quantity[0], quantity[1]) if quantity else "",
         "shelf_life": round_.shelf_life_months_minimum or commodity.shelf_life_months_minimum or "",
     }
 
@@ -298,8 +297,8 @@ def initial_request_facts(
     for key, template in (
         ("amount", _QUESTION_BY_KEY["amount"]),
         ("pack_spec", _QUESTION_BY_KEY["pack_spec"]),
-        # "quantity_basis_mismatch"'s wording ("Can you quote for {quantity}
-        # {quantity_unit} specifically?") is the one that actually names the
+        # "quantity_basis_mismatch"'s wording ("Can you quote for {quantity_phrase}
+        # specifically?") is the one that actually names the
         # round's target quantity, which is what the initial ask needs to
         # state up front — reused verbatim rather than authoring a third
         # wording of the same question. The fact's own key stays the plain
