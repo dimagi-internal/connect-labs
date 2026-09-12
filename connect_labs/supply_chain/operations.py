@@ -14,7 +14,34 @@ from typing import Any
 
 import jsonschema
 
+from connect_labs.supply_chain import models, records, serializers
 from connect_labs.supply_chain.values import to_wire
+
+# The published wire shape, per model. See serializers.py for why these are
+# a contract and not an implementation detail.
+_SERIALIZERS = {
+    models.Party: serializers.party,
+    models.Commodity: serializers.commodity,
+    models.Item: serializers.item,
+    models.Supplier: serializers.supplier,
+    models.Round: serializers.round_,
+    models.Outreach: serializers.outreach,
+    models.Quote: serializers.quote,
+    models.Award: serializers.award,
+    models.Contract: serializers.contract,
+    models.Shipment: serializers.shipment,
+    models.Receipt: serializers.receipt,
+    models.Invoice: serializers.invoice,
+    models.Document: serializers.document,
+    models.SupplyPoint: serializers.supply_point,
+    models.Movement: serializers.movement,
+    models.StockCount: serializers.stock_count,
+    models.Distribution: serializers.distribution,
+}
+
+# Re-exported for the tier modules that build on them (see
+# fulfilment/operations.py); declared here so one money/quantity contract
+# binds every surface.
 
 
 @dataclass(frozen=True)
@@ -67,8 +94,23 @@ def figure(value):
     return to_wire(value)
 
 
-def record(rec) -> dict:
-    return {"id": rec.id, **rec.data}
+def record(obj) -> dict:
+    """One model instance as its published wire dict.
+
+    Dispatches on the model class rather than taking a serializer argument,
+    so a handler cannot accidentally serialise a quote as a contract and so
+    adding a model without a serializer fails loudly here instead of
+    returning a half-empty object to a caller.
+    """
+    if obj is None:
+        return None
+    serialize = _SERIALIZERS.get(type(obj))
+    if serialize is None:
+        raise TypeError(
+            f"no serializer for {type(obj).__name__}: add one to serializers.py rather than "
+            "returning a model instance, which is not JSON"
+        )
+    return serialize(obj)
 
 
 def obj(properties: dict, required: tuple[str, ...] = ()) -> dict:
@@ -186,7 +228,11 @@ _QUOTE_DATA = _data_with(
 # into the record, corrupting the field the caller never meant to touch.
 # So only the create-shaped schema carries the requirement; quote_correct
 # keeps using the unrequired _QUOTE_DATA above.
-_QUOTE_DATA_CREATE = {**_QUOTE_DATA, "required": ["round_id", "commodity_slug"]}
+# supplier_id joined round_id and commodity_slug when quotes became a real
+# table: the column is NOT NULL because a quote nobody can attribute cannot
+# be compared, ranked or awarded. Requiring it here turns a Postgres
+# constraint violation (a 500 naming a column) into a 400 naming the field.
+_QUOTE_DATA_CREATE = {**_QUOTE_DATA, "required": ["round_id", "commodity_slug", "supplier_id"]}
 
 _ROUND_DATA = _data_with(
     label={"type": "string", "minLength": 1},
@@ -220,14 +266,39 @@ _ITEM_DATA = _data_with(
     status={"enum": ["active", "discontinued"]},
 )
 
-_PURCHASE_DATA = _data_with(
-    ("round_id", "commodity_slug"),
+# A contract is the commitment. buyer_of_record is required and has no
+# default: import duty and VAT depend on who imports, so a landed cost
+# derived without knowing the buyer carries an invisible assumption -- the
+# exact failure this domain exists to refuse. See the design doc, 17.1.
+_CONTRACT_DATA = _data_with(
+    ("commodity_slug", "supplier_id", "buyer_of_record", "buyer_party_id", "source"),
     round_id=ID,
+    award_id=ID,
     supplier_id=ID,
+    item_id=ID,
     commodity_slug={"type": "string", "minLength": 1},
-    quantity=QUANTITY,
-    amount_paid=MONEY_NONZERO,
+    buyer_of_record={"enum": list(records.BUYER_OF_RECORD)},
+    buyer_party_id=ID,
+    reference={"type": "string"},
+    status={"enum": list(records.CONTRACT_STATUSES)},
     currency={"type": "string", "minLength": 3, "maxLength": 3},
+    quantity=QUANTITY,
+    quantity_unit={"type": "string", "minLength": 1},
+    unit_price=MONEY_NONZERO,
+    unit_price_unit={"enum": ["per_base_unit", "per_pack", "per_lot_total", "per_metric_tonne"]},
+    freight_basis={"enum": list(records.BASIS)},
+    freight_amount=MONEY,
+    duties_basis={"enum": list(records.BASIS)},
+    duties_amount=MONEY,
+    vat_basis={"enum": list(records.BASIS)},
+    vat_amount=MONEY,
+    duty_relief_claimed={"type": "boolean"},
+    duty_relief_document_id=ID,
+    incoterm={"type": "string"},
+    delivery_supply_point_id=ID,
+    promised_lead_time_days=_NON_NEGATIVE_INT,
+    source={"enum": list(records.SOURCES)},
+    recorded_by_party_id=ID,
 )
 
 _COMMODITY_DATA = _data_with(

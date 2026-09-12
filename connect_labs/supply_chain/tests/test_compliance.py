@@ -1,11 +1,11 @@
+from connect_labs.supply_chain.models import Commodity
 from connect_labs.supply_chain.procurement.services.compliance import check_compliance, spec_verdict
-from connect_labs.supply_chain.proxies import CommodityRecord
 from connect_labs.supply_chain.tests.conftest import quote, wrap
 
 
 def scale(requirements):
     return wrap(
-        CommodityRecord,
+        Commodity,
         {
             "slug": "infant-scale",
             "name": "Infant scale",
@@ -44,10 +44,10 @@ def test_a_silent_quote_is_not_stated_rather_than_failing():
 
 
 def _scale_item(graduation):
-    from connect_labs.supply_chain.proxies import ItemRecord
+    from connect_labs.supply_chain.models import Item
 
     return wrap(
-        ItemRecord,
+        Item,
         {
             "sku": "bx-10",
             "name": "BX-10 infant scale",

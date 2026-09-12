@@ -11,9 +11,15 @@ THIS REPOSITORY IS PUBLIC. Every supplier name, contact and price here is
 invented. Real supplier data goes in through the UI or the API, never into a
 committed file.
 
-Writes land in the LOCAL database: a labs-only programme id (>= 10_000) makes
-LabsRecordAPIClient short-circuit to the in-process records backend, so nothing
-here touches production Connect.
+Writes land in the LOCAL database, which is the supply domain's system of
+record. The labs-only programme id (>= 10_000) marks this data as synthetic
+(see supply_chain/scopes.py): that is what permits `--reset` to purge the
+programme wholesale, and `SupplyDataAccess.purge()` refuses to do it for any
+real programme.
+
+Everything here goes in through `call_operation`, with the same schemas the
+HTTP API and the MCP server enforce. A seeder with a private write path can
+produce a demo of a system that does not exist.
 
     make manage CMD="supply_dev_seed"
     make manage CMD="supply_dev_seed --reset"
@@ -22,7 +28,7 @@ here touches production Connect.
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
-from connect_labs.labs.synthetic.models import LabsLocalRecord, SyntheticOpportunity
+from connect_labs.labs.synthetic.models import SyntheticOpportunity
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
 
@@ -41,12 +47,12 @@ class Command(BaseCommand):
         self._dev_user()
         self._synthetic_programme()
 
-        if options["reset"]:
-            deleted, _ = LabsLocalRecord.objects.filter(program_id=PROGRAMME_ID).delete()
-            LabsLocalRecord.objects.filter(experiment="supply:reference").delete()
-            self.stdout.write(f"reset: deleted {deleted} record(s)")
-
         access = SupplyDataAccess(access_token="local-dev", program_id=PROGRAMME_ID)
+
+        if options["reset"]:
+            counts = access.purge()
+            summary = ", ".join(f"{n} {label}" for label, n in sorted(counts.items())) or "nothing to delete"
+            self.stdout.write(f"reset: {summary}")
         op = lambda name, **payload: call_operation(name, access, payload)  # noqa: E731
 
         # --- reference data -------------------------------------------------

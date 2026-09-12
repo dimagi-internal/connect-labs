@@ -23,10 +23,10 @@ frozen at all.
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from connect_labs.supply_chain.models import Commodity, Quote, Round
 from connect_labs.supply_chain.procurement.services.compliance import check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import FIGURE_FIELDS, FIGURE_LABELS, compute_figures
 from connect_labs.supply_chain.procurement.services.questions import missing_facts
-from connect_labs.supply_chain.proxies import CommodityRecord, QuoteRecord, RoundRecord
 from connect_labs.supply_chain.values import Unconfirmed, to_wire
 
 
@@ -133,7 +133,7 @@ class Comparison:
         }
 
 
-def _is_live(quote: QuoteRecord) -> bool:
+def _is_live(quote: Quote) -> bool:
     return not quote.voided and not quote.superseded_by_quote_id
 
 
@@ -160,9 +160,9 @@ def _ranking_key(comparable: list[ComparisonRow]) -> str | None:
 
 
 def compare_round(
-    round_: RoundRecord,
-    commodity: CommodityRecord,
-    quotes: list[QuoteRecord],
+    round_: Round,
+    commodity: Commodity,
+    quotes: list[Quote],
     suppliers_by_id: dict,
     items_by_id: dict | None = None,
 ) -> Comparison:

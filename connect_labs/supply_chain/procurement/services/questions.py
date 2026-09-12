@@ -32,9 +32,9 @@ can show both.
 import logging
 from dataclasses import dataclass
 
+from connect_labs.supply_chain.models import Commodity, Quote, Round
 from connect_labs.supply_chain.procurement.services.compliance import NOT_STATED, check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
-from connect_labs.supply_chain.proxies import CommodityRecord, QuoteRecord, RoundRecord
 from connect_labs.supply_chain.values import Unconfirmed, destination_phrase, quantity_phrase
 
 logger = logging.getLogger(__name__)
@@ -180,7 +180,7 @@ def _always_asked_fact(key: str, context: dict) -> MissingFact:
     return _fact(key, _ALWAYS_ASKED_BY_KEY[key], context)
 
 
-def _context(commodity: CommodityRecord, round_: RoundRecord) -> dict:
+def _context(commodity: Commodity, round_: Round) -> dict:
     quantity = round_.quantity_for(commodity.slug)
     return {
         "base_unit": commodity.base_unit or "unit",
@@ -227,9 +227,9 @@ def _spec_fact(field_name: str, requirement: dict) -> MissingFact:
 
 
 def missing_facts(
-    quote: QuoteRecord,
-    commodity: CommodityRecord,
-    round_: RoundRecord,
+    quote: Quote,
+    commodity: Commodity,
+    round_: Round,
     item=None,
 ) -> list[MissingFact]:
     """Every fact still needed before this quote could be compared honestly.
@@ -300,8 +300,8 @@ def missing_facts(
 
 
 def initial_request_facts(
-    commodity: CommodityRecord,
-    round_: RoundRecord,
+    commodity: Commodity,
+    round_: Round,
 ) -> list[MissingFact]:
     """Everything a supplier must answer for a round, before any quote exists.
 

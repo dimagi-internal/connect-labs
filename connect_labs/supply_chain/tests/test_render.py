@@ -1,10 +1,10 @@
+from connect_labs.supply_chain.models import Supplier
 from connect_labs.supply_chain.procurement.services.render import render_followup, render_initial_request
-from connect_labs.supply_chain.proxies import SupplierRecord
 from connect_labs.supply_chain.tests.conftest import quote, wrap
 
 
 def supplier():
-    return wrap(SupplierRecord, {"name": "Northwind Nutrition", "country": "KE"})
+    return wrap(Supplier, {"name": "Northwind Nutrition", "country": "KE"})
 
 
 def test_the_initial_request_states_quantity_destination_and_every_question(rutf, round_2000_cartons):

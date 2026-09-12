@@ -8,9 +8,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from connect_labs.supply_chain.models import Award, Supplier
 from connect_labs.supply_chain.procurement.operations import award_create, quote_get, quote_questions
 from connect_labs.supply_chain.procurement.services.comparison import compare_round
-from connect_labs.supply_chain.proxies import SupplierRecord
 from connect_labs.supply_chain.tests.conftest import quote, wrap
 
 
@@ -114,8 +114,11 @@ def test_award_create_freezes_a_snapshot_a_later_quote_does_not_retroactively_ch
     round/commodity AFTER the award must not retroactively alter the
     snapshot object already handed to access.create_award."""
     winner = quote(round_id=1, supplier_id=1, as_quoted_amount="50.00")
-    northwind = wrap(SupplierRecord, {"name": "Northwind Nutrition"}, record_id=1)
+    northwind = wrap(Supplier, {"name": "Northwind Nutrition"}, record_id=1)
     access = _access_for(round_2000_cartons, rutf, [winner], suppliers=[northwind], quote_by_id={winner.id: winner})
+    # The handler serialises what data access hands back, so it must be a
+    # real model rather than a mock -- a mock is not JSON.
+    access.create_award.return_value = Award(id=1, commodity=rutf)
 
     award_create(access, round_id=1, quote_id=winner.id, rationale="cheapest defensible option")
 

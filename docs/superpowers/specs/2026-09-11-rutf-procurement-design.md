@@ -898,3 +898,76 @@ proposed tasks are stored is a separate decision, deliberately not made here.
 
 This keeps §9 honest: if the built-in UI cannot rank a worklist, no client
 is privileged, and the agentic path is the same path.
+
+## 23. Where the data lives, and what "synthetic" means now
+
+**The labs database is the system of record for supply.** Part 1 built the
+procurement tier on `LabsRecord`s written through to production Connect,
+which is the right default for a labs app: the data belongs to Connect and
+labs is a client of it. Supply is the exception, on three counts.
+
+1. It is **primary data that originates here** — a stock ledger, a contract,
+   a receipt, a worker's reported count. Nothing in Connect is its source.
+2. It carries **no PII**. The reason labs round-trips data through Connect is
+   so person-level data lives where its access controls live. A carton count
+   does not need that.
+3. It needs **real relational work**. A balance is an aggregate over a ledger
+   filtered by point, item and batch; average monthly consumption is a
+   windowed aggregate; a three-way match is a join. Over JSON blobs fetched
+   by HTTP, those are the wrong tool.
+
+Connect's own entities stay **integer ids, not foreign keys**: the
+`opportunity` / `program` / `organization` tables exist in the labs database
+only to satisfy migrations and are empty, so a FK would fail on every real
+id. Indexed integers keep the query plans and drop integrity we cannot
+honour. Every model carries those ids, so a later sync upward is open, not
+foreclosed.
+
+**Whether and how any of this syncs back to Connect is deliberately not
+decided here.** It is a separate question with its own trade-offs (what
+Connect would do with a stock ledger, who owns the write, what happens on
+conflict), and answering it early would constrain the schema for no present
+benefit.
+
+### 23.1 Synthetic scopes
+
+Labs has one convention for made-up data: an id at or above
+`LABS_ONLY_OPP_ID_FLOOR` (10,000). Elsewhere that floor decides whether the
+record client talks to production or to an in-process backend. Supply has no
+such fork any more — every row is in the labs database either way — so the
+floor means something narrower here, and `supply_chain/scopes.py` says
+exactly what:
+
+- a synthetic programme's supply data may be **purged wholesale**, which is
+  what a seeder's `--reset` needs and what no real programme may ever permit;
+- a synthetic programme's data may be **excluded from aggregates**, so a demo
+  round cannot inflate a real figure.
+
+It does **not** mean "less validated". Synthetic data is written through the
+same operations with the same schemas as everything else. A seeder with a
+private write path produces a convincing demo of a system that does not
+exist — which is worse than no demo.
+
+The guard lives on `SupplyDataAccess.purge()`, at the single place that can
+enforce it, and it fails closed: a scope that cannot be parsed as a number is
+not synthetic, because "we could not read the scope" must never be the reason
+a destructive operation is allowed.
+
+### 23.2 Consequences for the operation surface
+
+Two schema changes fell out of tables having constraints that a JSON blob did
+not:
+
+- `quote_record` now requires `supplier_id`, and `contract_create` requires
+  `supplier_id`, `buyer_of_record`, `buyer_party_id` and `source`. These
+  columns are `NOT NULL` because a quote nobody can attribute cannot be
+  compared, ranked or awarded, and a contract without a buyer of record hides
+  a tax assumption inside its landed cost. Declaring them in the schema turns
+  a Postgres constraint violation — a 500 naming a column — into a 400 naming
+  the field.
+- `purchase_record` and `purchase_list` are **gone**, replaced by
+  `contract_create` / `contract_list` / `contract_get` / `contract_update`
+  plus invoices and payments. A purchase collapsed three facts with three
+  different dates (a commitment, a bill, a settlement) into one row, so the
+  system could not answer "what have we committed but not paid" — and could
+  not represent somebody else raising the purchase order at all.
