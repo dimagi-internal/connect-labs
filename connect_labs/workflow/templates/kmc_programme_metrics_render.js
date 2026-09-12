@@ -1112,6 +1112,21 @@ function WorkflowUI({
     return (map && map[id]) || { id: id, n: 0, value: null, band: 'nodata' };
   }
 
+  // The headline "N babies" has to be the INDICATOR, not the snapshot's row
+  // count. They are different grains and they disagree: the case rows come from
+  // the pipeline (its own cache partition, grouped its own way), while every
+  // indicator on the page counts Layer 2's per-baby rows, keyed
+  // (opportunity, baby_case_id) and skipping a null key. Measured 2026-09-11 on
+  // the real cohort: the subline read 8,850 while C05 -- and Neal's workbook,
+  // exactly -- said 8,823. A header that contradicts its own scorecard is read
+  // as the page being wrong, and it was the header that was wrong.
+  // `fallback` covers a saved run from before the scorecard carried C05.
+  function totalCases(ind, fallback) {
+    var e = ind && ind['C05'];
+    if (e && e.n !== null && e.n !== undefined) return e.n;
+    return fallback;
+  }
+
   // Neal's "parenthesize" for a thin, biased denominator. Rendering it as a value
   // like any other is the failure he is warning about: 96.5% off 20% coverage looks
   // like the best performer in the table.
@@ -2692,7 +2707,9 @@ function WorkflowUI({
     if (!selLLO)
       return (
         <span>
-          <b className="font-semibold text-gray-900">{nCount(meta.cases)}</b>{' '}
+          <b className="font-semibold text-gray-900">
+            {nCount(totalCases(programInd, meta.cases))}
+          </b>{' '}
           babies ·{' '}
           <b className="font-semibold text-gray-900">{nCount(meta.visits)}</b>{' '}
           visits · <b className="font-semibold text-gray-900">{byLLO.length}</b>{' '}
@@ -2707,7 +2724,7 @@ function WorkflowUI({
     return (
       <span>
         <b className="font-semibold text-gray-900">
-          {nCount(entryOf(scopeLLO && scopeLLO.ind, 'C01').n)}
+          {nCount(totalCases(scopeLLO && scopeLLO.ind, null))}
         </b>{' '}
         babies ·{' '}
         <b className="font-semibold text-gray-900">
