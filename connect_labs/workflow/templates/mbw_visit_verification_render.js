@@ -57,7 +57,7 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
       var result = [];
       Object.keys(byMother).forEach(function (key) {
         var group = byMother[key].slice().sort(function (a, b) {
-          return (a.visit_date || '').localeCompare(b.visit_date || '');
+          return (a.visit_datetime || a.visit_date || '').localeCompare(b.visit_datetime || b.visit_date || '');
         });
 
         var passCount = 0;
@@ -102,6 +102,15 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     return value === null || value === undefined || value === '' ? 'NA' : value;
   }
 
+  // visit_datetime is form.meta.timeEnd, an ISO string (e.g.
+  // "2026-09-11T14:32:07.123000Z") -- slice rather than parse as a Date to
+  // avoid any local-timezone shift, since the raw value is already in
+  // whatever timezone the form was submitted in.
+  function formatVisitDateTime(iso) {
+    if (!iso || typeof iso !== 'string' || iso.length < 19) return 'NA';
+    return iso.slice(0, 10) + ' ' + iso.slice(11, 19);
+  }
+
   function gpsOutcome(row) {
     var locType = row.where_is_the_visit_being_conducted;
     // 'other' (neither the mother's home nor a health facility) has no
@@ -138,6 +147,23 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     return 'NA';
   }
 
+  // 'Attempted' = the FLW provided information for that method AND it
+  // produced an outcome of Pass, Fail, or Pending Audit -- NA/Not
+  // available/ERROR/blank all mean the method wasn't meaningfully attempted.
+  function wasAttempted(value) {
+    return value === 'Pass' || value === 'Fail' || (typeof value === 'string' && value.indexOf('Pending') !== -1);
+  }
+
+  function finalVerificationMethods(row) {
+    var methods = [];
+    if (wasAttempted(gpsOutcome(row))) methods.push('GPS');
+    if (wasAttempted(qrOutcome(row))) methods.push('QR');
+    if (wasAttempted(blankOrNA(row.mother_initial_visit_verification))) methods.push('Signature');
+    if (wasAttempted(motherQuestionsOutcome(row))) methods.push('Mother Questions');
+    if (wasAttempted(blankOrNA(row.capture_anc_card_visit_verification))) methods.push('ANC Card');
+    return methods.length > 0 ? methods.join(', ') : 'NA';
+  }
+
   // --- Cell coloring: NA grey, Pass green, Fail red, Pending* yellow -----
   function outcomeColorClass(value) {
     if (value === 'Pass') return 'bg-green-100 text-green-800';
@@ -161,7 +187,7 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     { key: 'username', label: 'FLW ID' },
     { key: 'mother_case_id', label: 'Mother ID' },
     { key: 'form_instance_id', label: 'Visit ID' },
-    { key: 'visit_date', label: 'Visit date' },
+    { key: 'visit_datetime', label: 'Visit date' },
     { key: 'form_name', label: 'Visit type' },
     { key: 'visit_number', label: 'Visit #' },
     { key: 'where_is_the_visit_being_conducted', label: 'GPS location' },
@@ -170,16 +196,19 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     { key: 'signature_outcome', label: 'Signature outcome' },
     { key: 'mother_questions_outcome', label: 'Mother questions outcome' },
     { key: 'anc_card_outcome', label: 'ANC card outcome' },
+    { key: 'final_verification_methods', label: 'Final verification method(s)' },
     { key: 'visit_verification_outcome', label: 'Final verification outcome' },
     { key: 'prior_verification_pass_rate', label: 'Previous verification pass rate' },
   ];
 
   function cellValue(row, key) {
+    if (key === 'visit_datetime') return formatVisitDateTime(row.visit_datetime);
     if (key === 'gps_outcome') return gpsOutcome(row);
     if (key === 'qr_outcome') return qrOutcome(row);
     if (key === 'signature_outcome') return blankOrNA(row.mother_initial_visit_verification);
     if (key === 'mother_questions_outcome') return motherQuestionsOutcome(row);
     if (key === 'anc_card_outcome') return blankOrNA(row.capture_anc_card_visit_verification);
+    if (key === 'final_verification_methods') return finalVerificationMethods(row);
     return row[key];
   }
 
