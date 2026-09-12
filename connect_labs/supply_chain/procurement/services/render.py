@@ -6,22 +6,12 @@ Phase 1c sends the same text over SES.
 """
 
 from connect_labs.supply_chain.models import CommodityRecord, QuoteRecord, RoundRecord, SupplierRecord
-from connect_labs.supply_chain.procurement.services.questions import initial_request_facts, missing_facts
-from connect_labs.supply_chain.values import quantity_phrase
+from connect_labs.supply_chain.procurement.services.questions import SUPPLIER, initial_request_facts, missing_facts
+from connect_labs.supply_chain.values import destination_phrase, quantity_phrase
 
 
 def _numbered(facts) -> str:
     return "\n".join(f"{index}. {fact.question}" for index, fact in enumerate(facts, start=1))
-
-
-def _destination(round_: RoundRecord) -> str:
-    point = round_.delivery_point or {}
-    # Prefer the human-typed country name over the bare ISO code — see
-    # questions.py's _context(), which applies the same preference so a
-    # destination doesn't read as a code in one place and a name in another.
-    country = point.get("country_name") or point.get("country")
-    parts = [point.get("name"), point.get("city"), country]
-    return ", ".join(part for part in parts if part) or "the delivery point"
 
 
 def render_initial_request(
@@ -37,7 +27,7 @@ def render_initial_request(
         f"Dear {supplier.name},",
         "",
         f"We are seeking a quotation for {quantity_text} of "
-        f"{commodity.name or commodity.slug}, delivered to {_destination(round_)}"
+        f"{commodity.name or commodity.slug}, delivered to {destination_phrase(round_.delivery_point)}"
         + (f" on {incoterm} terms" if incoterm else "")
         + ".",
     ]
@@ -67,7 +57,7 @@ def render_followup(
     `item` is threaded to missing_facts so a supplier who already identified
     their trade item is not asked for its pack configuration again.
     """
-    facts = [fact for fact in missing_facts(quote, commodity, round_, item=item) if fact.audience == "supplier"]
+    facts = [fact for fact in missing_facts(quote, commodity, round_, item=item) if fact.audience == SUPPLIER]
     if not facts:
         return (
             f"Dear {supplier.name},\n\n" "Thank you — your quotation is complete and there is nothing outstanding.\n"

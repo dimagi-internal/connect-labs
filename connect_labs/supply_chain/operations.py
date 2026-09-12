@@ -14,7 +14,7 @@ from typing import Any
 
 import jsonschema
 
-from connect_labs.supply_chain.values import Money
+from connect_labs.supply_chain.values import to_wire
 
 
 @dataclass(frozen=True)
@@ -64,9 +64,7 @@ def call_operation(name: str, access, payload: dict | None = None) -> Any:
 
 
 def figure(value):
-    if isinstance(value, Money):
-        return {"amount": str(value.amount), "currency": value.currency}
-    return {"unconfirmed": list(value.reasons)}
+    return to_wire(value)
 
 
 def record(rec) -> dict:

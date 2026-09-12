@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from connect_labs.supply_chain.models import CommodityRecord, QuoteRecord, RoundRecord
 from connect_labs.supply_chain.procurement.services.compliance import NOT_STATED, check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
-from connect_labs.supply_chain.values import Unconfirmed, quantity_phrase
+from connect_labs.supply_chain.values import Unconfirmed, destination_phrase, quantity_phrase
 
 logger = logging.getLogger(__name__)
 
@@ -145,12 +145,21 @@ _ACCEPTANCE_CHECKS: tuple[tuple[str, str], ...] = (
     ("validity", "validity_until"),
 )
 
+_SHELF_LIFE_QUESTION = (
+    "What is the shelf life from date of manufacture, and the production date "
+    "of the batch you would supply? We need at least {shelf_life} months."
+)
+# Neither the round nor the commodity is guaranteed to carry a minimum --
+# _context()'s "shelf_life" is "" in that case, and formatting the template
+# above would put a broken sentence ("We need at least  months.") in the
+# RFQ. Used instead of _SHELF_LIFE_QUESTION whenever there is no minimum to
+# name (finding 8).
+_SHELF_LIFE_QUESTION_NO_MINIMUM = (
+    "What is the shelf life from date of manufacture, and the production date " "of the batch you would supply?"
+)
+
 _ALWAYS_ASKED: tuple[tuple[str, str], ...] = (
-    (
-        "shelf_life",
-        "What is the shelf life from date of manufacture, and the production date "
-        "of the batch you would supply? We need at least {shelf_life} months.",
-    ),
+    ("shelf_life", _SHELF_LIFE_QUESTION),
     ("moq", "What is your minimum order quantity?"),
     ("lead_time", "How many days from order to delivery at {destination}?"),
     ("validity", "How long is this quotation valid?"),
@@ -159,19 +168,25 @@ _ALWAYS_ASKED: tuple[tuple[str, str], ...] = (
 _ALWAYS_ASKED_BY_KEY: dict[str, str] = dict(_ALWAYS_ASKED)
 
 
+def _always_asked_fact(key: str, context: dict) -> MissingFact:
+    """The MissingFact for one of the acceptance questions asked on every
+    quote/round regardless of what pricing or compliance found missing.
+
+    shelf_life is the one whose wording depends on data that might not
+    exist -- see _SHELF_LIFE_QUESTION_NO_MINIMUM.
+    """
+    if key == "shelf_life" and not context["shelf_life"]:
+        return _fact(key, _SHELF_LIFE_QUESTION_NO_MINIMUM, context)
+    return _fact(key, _ALWAYS_ASKED_BY_KEY[key], context)
+
+
 def _context(commodity: CommodityRecord, round_: RoundRecord) -> dict:
-    destination = round_.delivery_point or {}
-    # A human-typed country name reads as a person wrote this; the ISO code
-    # (kept for later integration) is the fallback for a delivery point that
-    # hasn't been given one yet.
-    country = destination.get("country_name") or destination.get("country")
-    where = ", ".join(part for part in (destination.get("city"), country) if part)
     quantity = round_.quantity_for(commodity.slug)
     return {
         "base_unit": commodity.base_unit or "unit",
         "pack_unit": commodity.pack_unit or "pack",
         "commodity": commodity.name or commodity.slug,
-        "destination": where or "the delivery point",
+        "destination": destination_phrase(round_.delivery_point),
         "quantity_phrase": quantity_phrase(quantity[0], quantity[1]) if quantity else "",
         "shelf_life": round_.shelf_life_months_minimum or commodity.shelf_life_months_minimum or "",
     }
@@ -275,11 +290,11 @@ def missing_facts(
     for key, attr in _ACCEPTANCE_CHECKS:
         if key not in seen and getattr(quote, attr) is None:
             seen.add(key)
-            facts.append(_fact(key, _ALWAYS_ASKED_BY_KEY[key], context))
+            facts.append(_always_asked_fact(key, context))
 
     if "moq" not in seen and (quote.moq is None or quote.moq_unit is None):
         seen.add("moq")
-        facts.append(_fact("moq", _ALWAYS_ASKED_BY_KEY["moq"], context))
+        facts.append(_always_asked_fact("moq", context))
 
     return facts
 
@@ -316,10 +331,10 @@ def initial_request_facts(
         seen.add(key)
         facts.append(_fact(key, template, context))
 
-    for key, template in _ALWAYS_ASKED:
+    for key, _template in _ALWAYS_ASKED:
         if key not in seen:
             seen.add(key)
-            facts.append(_fact(key, template, context))
+            facts.append(_always_asked_fact(key, context))
 
     for requirement in commodity.spec_requirements:
         req_field = requirement.get("field")
