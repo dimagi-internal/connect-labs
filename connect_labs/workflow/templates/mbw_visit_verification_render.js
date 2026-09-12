@@ -1,11 +1,25 @@
-function WorkflowUI({ definition, instance, workers, pipelines, links, actions, onUpdateState }) {
+function WorkflowUI({
+  definition,
+  instance,
+  workers,
+  pipelines,
+  links,
+  actions,
+  onUpdateState,
+}) {
   // --- Eligible-FLW set (commcare-user cases, visit_verification='yes') ---
   // entity_name is the built-in row field cchq_cases populates from each
   // case's case_name, which for commcare-user cases is the FLW's username.
   // Two pipelines -- test domain and opp 765's real production domain --
   // merged the same way the visit pipelines are below.
-  var eligibleRows = ((pipelines && pipelines.eligible_flws && pipelines.eligible_flws.rows) || []).concat(
-    (pipelines && pipelines.eligible_flws_prod && pipelines.eligible_flws_prod.rows) || [],
+  var eligibleRows = (
+    (pipelines && pipelines.eligible_flws && pipelines.eligible_flws.rows) ||
+    []
+  ).concat(
+    (pipelines &&
+      pipelines.eligible_flws_prod &&
+      pipelines.eligible_flws_prod.rows) ||
+      [],
   );
   var eligibleUsernames = React.useMemo(
     function () {
@@ -71,7 +85,9 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
       var result = [];
       Object.keys(byMother).forEach(function (key) {
         var group = byMother[key].slice().sort(function (a, b) {
-          return (a.visit_datetime || a.visit_date || '').localeCompare(b.visit_datetime || b.visit_date || '');
+          return (a.visit_datetime || a.visit_date || '').localeCompare(
+            b.visit_datetime || b.visit_date || '',
+          );
         });
 
         var passCount = 0;
@@ -79,7 +95,9 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
         group.forEach(function (row, idx) {
           var denom = passCount + failCount;
           var priorPassRate =
-            denom > 0 ? Math.round((passCount / denom) * 100) + '% (' + denom + ')' : 'N/A (0)';
+            denom > 0
+              ? Math.round((passCount / denom) * 100) + '% (' + denom + ')'
+              : 'N/A (0)';
 
           result.push(
             Object.assign({}, row, {
@@ -136,8 +154,8 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
       locType === 'mothers_home'
         ? row.visit_location_has_prev_home_gps
         : locType === 'health_facility'
-          ? row.visit_location_has_prev_health_facility_gps
-          : null;
+        ? row.visit_location_has_prev_health_facility_gps
+        : null;
 
     if (hasPrevGps === 'no') return 'NA';
     if (row.gps_visit_verification_matches === 'no') return 'Fail';
@@ -161,7 +179,8 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 
   function motherQuestionsOutcome(row) {
     if (row.show_mother_questions === '0') return 'NA';
-    if (row.show_mother_questions === '1') return blankOrNA(row.mother_questions_visit_verification);
+    if (row.show_mother_questions === '1')
+      return blankOrNA(row.mother_questions_visit_verification);
     return 'NA';
   }
 
@@ -184,7 +203,11 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
   // produced an outcome of Pass, Fail, or Pending Audit -- NA/Not
   // available/ERROR/blank all mean the method wasn't meaningfully attempted.
   function wasAttempted(value) {
-    return value === 'Pass' || value === 'Fail' || (typeof value === 'string' && value.indexOf('Pending') !== -1);
+    return (
+      value === 'Pass' ||
+      value === 'Fail' ||
+      (typeof value === 'string' && value.indexOf('Pending') !== -1)
+    );
   }
 
   function finalVerificationMethods(row) {
@@ -199,8 +222,10 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
   function outcomeColorClass(value) {
     if (value === 'Pass') return 'bg-green-100 text-green-800';
     if (value === 'Fail') return 'bg-red-100 text-red-800';
-    if (value === 'NA' || value === 'Not available') return 'bg-gray-100 text-gray-600';
-    if (typeof value === 'string' && value.indexOf('Pending') !== -1) return 'bg-yellow-100 text-yellow-800';
+    if (value === 'NA' || value === 'Not available')
+      return 'bg-gray-100 text-gray-600';
+    if (typeof value === 'string' && value.indexOf('Pending') !== -1)
+      return 'bg-yellow-100 text-yellow-800';
     if (value === 'ERROR') return 'bg-orange-100 text-orange-800';
     return '';
   }
@@ -227,19 +252,27 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     { key: 'signature_outcome', label: 'Signature outcome' },
     { key: 'mother_questions_outcome', label: 'Mother questions outcome' },
     { key: 'anc_card_outcome', label: 'ANC card outcome' },
-    { key: 'final_verification_methods', label: 'Final verification method(s)' },
+    {
+      key: 'final_verification_methods',
+      label: 'Final verification method(s)',
+    },
     { key: 'visit_verification_outcome', label: 'Final verification outcome' },
-    { key: 'prior_verification_pass_rate', label: 'Previous verification pass rate' },
+    {
+      key: 'prior_verification_pass_rate',
+      label: 'Previous verification pass rate',
+    },
   ];
 
   function cellValue(row, key) {
-    if (key === 'visit_datetime') return formatVisitDateTime(row.visit_datetime);
+    if (key === 'visit_datetime')
+      return formatVisitDateTime(row.visit_datetime);
     if (key === 'gps_outcome') return gpsOutcome(row);
     if (key === 'qr_outcome') return qrOutcome(row);
     if (key === 'signature_outcome') return signatureOutcome(row);
     if (key === 'mother_questions_outcome') return motherQuestionsOutcome(row);
     if (key === 'anc_card_outcome') return ancCardOutcome(row);
-    if (key === 'final_verification_methods') return finalVerificationMethods(row);
+    if (key === 'final_verification_methods')
+      return finalVerificationMethods(row);
     return row[key];
   }
 
@@ -265,7 +298,14 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
         var bv = cellValue(b, key);
         var an = typeof av === 'number' ? av : parseFloat(av);
         var bn = typeof bv === 'number' ? bv : parseFloat(bv);
-        if (!isNaN(an) && !isNaN(bn) && av !== null && bv !== null && av !== '' && bv !== '') {
+        if (
+          !isNaN(an) &&
+          !isNaN(bn) &&
+          av !== null &&
+          bv !== null &&
+          av !== '' &&
+          bv !== ''
+        ) {
           return (an - bn) * dir;
         }
         var as = av === null || av === undefined ? '' : String(av);
@@ -286,7 +326,8 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
       displayRows.forEach(function (row) {
         if (row.visit_verification_outcome === 'Pass') passCount += 1;
         else if (row.visit_verification_outcome === 'Fail') failCount += 1;
-        else if (row.visit_verification_outcome === 'Pending Audit') pendingCount += 1;
+        else if (row.visit_verification_outcome === 'Pending Audit')
+          pendingCount += 1;
       });
       function pct(n) {
         return total > 0 ? Math.round((n / total) * 100) : 0;
@@ -315,7 +356,8 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
           var v = m.getOutcome(row);
           if (v === 'Pass') pass += 1;
           else if (v === 'Fail') fail += 1;
-          else if (typeof v === 'string' && v.indexOf('Pending') !== -1) pending += 1;
+          else if (typeof v === 'string' && v.indexOf('Pending') !== -1)
+            pending += 1;
         });
         return { label: m.label, pass: pass, pending: pending, fail: fail };
       });
@@ -326,14 +368,24 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
   // --- CSV export -----------------------------------------------------------
   function csvEscape(value) {
     var s = value === null || value === undefined ? '' : String(value);
-    if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
+    if (
+      s.indexOf(',') !== -1 ||
+      s.indexOf('"') !== -1 ||
+      s.indexOf('\n') !== -1
+    ) {
       s = '"' + s.replace(/"/g, '""') + '"';
     }
     return s;
   }
 
   function handleExportCSV() {
-    var lines = [columns.map(function (c) { return csvEscape(c.label); }).join(',')];
+    var lines = [
+      columns
+        .map(function (c) {
+          return csvEscape(c.label);
+        })
+        .join(','),
+    ];
     sortedRows.forEach(function (row) {
       lines.push(
         columns
@@ -348,7 +400,8 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = 'mbw_visit_verification_opp_' + (instance.opportunity_id || '') + '.csv';
+    a.download =
+      'mbw_visit_verification_opp_' + (instance.opportunity_id || '') + '.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -426,16 +479,28 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
   var summaryCards = (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <div className="rounded-lg border border-green-200 bg-green-50 p-4 shadow-sm">
-        <div className="text-3xl font-bold text-green-700">{summary.passPct}%</div>
-        <div className="text-gray-600">Passed Verification (n={summary.passCount})</div>
+        <div className="text-3xl font-bold text-green-700">
+          {summary.passPct}%
+        </div>
+        <div className="text-gray-600">
+          Passed Verification (n={summary.passCount})
+        </div>
       </div>
       <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 shadow-sm">
-        <div className="text-3xl font-bold text-yellow-700">{summary.pendingPct}%</div>
-        <div className="text-gray-600">Pending Audit (n={summary.pendingCount})</div>
+        <div className="text-3xl font-bold text-yellow-700">
+          {summary.pendingPct}%
+        </div>
+        <div className="text-gray-600">
+          Pending Audit (n={summary.pendingCount})
+        </div>
       </div>
       <div className="rounded-lg border border-red-200 bg-red-50 p-4 shadow-sm">
-        <div className="text-3xl font-bold text-red-700">{summary.failPct}%</div>
-        <div className="text-gray-600">Failed Verification (n={summary.failCount})</div>
+        <div className="text-3xl font-bold text-red-700">
+          {summary.failPct}%
+        </div>
+        <div className="text-gray-600">
+          Failed Verification (n={summary.failCount})
+        </div>
       </div>
     </div>
   );
@@ -485,7 +550,9 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
       {activeTab === 'table' && (
         <div className="space-y-4">
           <div className="flex items-start justify-between">
-            <div className="text-sm text-gray-500">{sortedRows.length} visits shown</div>
+            <div className="text-sm text-gray-500">
+              {sortedRows.length} visits shown
+            </div>
             <button
               onClick={handleExportCSV}
               className="whitespace-nowrap rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -520,10 +587,19 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
                     <tr key={row.form_instance_id || i}>
                       {columns.map(function (col) {
                         var v = cellValue(row, col.key);
-                        var text = v === null || v === undefined ? '' : String(v);
-                        var colorClass = OUTCOME_COLUMN_KEYS[col.key] ? outcomeColorClass(v) : '';
+                        var text =
+                          v === null || v === undefined ? '' : String(v);
+                        var colorClass = OUTCOME_COLUMN_KEYS[col.key]
+                          ? outcomeColorClass(v)
+                          : '';
                         return (
-                          <td key={col.key} className={'whitespace-nowrap px-3 py-2 text-gray-800 ' + colorClass}>
+                          <td
+                            key={col.key}
+                            className={
+                              'whitespace-nowrap px-3 py-2 text-gray-800 ' +
+                              colorClass
+                            }
+                          >
                             {text}
                           </td>
                         );
