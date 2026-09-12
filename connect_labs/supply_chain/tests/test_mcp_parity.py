@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import jsonschema
 import pytest
 
 from connect_labs.mcp import tool_registry
@@ -118,12 +119,41 @@ def test_mcp_handler_does_not_forward_scope_into_the_operation_payload():
 # proven repro: a float money amount, a value outside an enum, and an
 # undeclared top-level key all used to sail through on this surface while the
 # identical payload 400s on the HTTP API.
+#
+# Two things a first draft of these got wrong (final review, item B):
+#
+# 1. `pytest.raises(Exception)` is too wide to prove anything: on the
+#    UNFIXED handler (operation.handler(access, **payload), no validation),
+#    a real SupplyDataAccess built from a real (if fake) token goes on to
+#    make a live outbound HTTP call to connect.dimagi.com inside
+#    access.create_quote -- which 401s and raises LabsAPIError, an Exception
+#    like any other. `pytest.raises(Exception)` swallows that too, so these
+#    tests passed on the unfixed code AND made live network calls from CI in
+#    the process. Narrowed to jsonschema.ValidationError, which only the
+#    FIXED path (call_operation validating before the handler runs) can
+#    raise.
+# 2. Patching SupplyDataAccess out entirely (mirroring the sibling finding-4/
+#    13 tests' MagicMock-access shape) means no real network object is ever
+#    constructed here, so no test in this file can reach the network no
+#    matter what exception type ends up being raised.
+#
+# Verified directly: simulating the unfixed handler (operation.handler(access,
+# **payload) called directly on a MagicMock access, skipping call_operation)
+# raises no exception at all for any of these three payloads -- record()
+# happily builds {"id": <MagicMock>} from a MagicMock access.create_quote()
+# return value -- so `pytest.raises(jsonschema.ValidationError)` genuinely
+# fails ("DID NOT RAISE") against the unfixed code, and passes only because
+# the fix's call_operation validates first.
 
 
 def test_the_mcp_path_rejects_a_float_money_amount():
     handler = _make_handler(get_operation("quote_record"))
-    with patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"):
-        with pytest.raises(Exception):
+    fake_access = MagicMock()
+    with (
+        patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"),
+        patch("connect_labs.supply_chain.mcp_tools.SupplyDataAccess", return_value=fake_access),
+    ):
+        with pytest.raises(jsonschema.ValidationError):
             handler(
                 user=MagicMock(),
                 program_id=9,
@@ -135,12 +165,17 @@ def test_the_mcp_path_rejects_a_float_money_amount():
                     "as_quoted_amount": 12.50,
                 },
             )
+    assert not fake_access.create_quote.called
 
 
 def test_the_mcp_path_rejects_a_value_outside_the_enum():
     handler = _make_handler(get_operation("quote_record"))
-    with patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"):
-        with pytest.raises(Exception):
+    fake_access = MagicMock()
+    with (
+        patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"),
+        patch("connect_labs.supply_chain.mcp_tools.SupplyDataAccess", return_value=fake_access),
+    ):
+        with pytest.raises(jsonschema.ValidationError):
             handler(
                 user=MagicMock(),
                 program_id=9,
@@ -152,14 +187,19 @@ def test_the_mcp_path_rejects_a_value_outside_the_enum():
                     "as_quoted_amount": "12.50",
                 },
             )
+    assert not fake_access.create_quote.called
 
 
 def test_the_mcp_path_rejects_an_undeclared_top_level_key():
     """The exact proven repro: additionalProperties: False on the operation's
     top-level schema must bind on the MCP surface too."""
     handler = _make_handler(get_operation("quote_record"))
-    with patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"):
-        with pytest.raises(Exception):
+    fake_access = MagicMock()
+    with (
+        patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"),
+        patch("connect_labs.supply_chain.mcp_tools.SupplyDataAccess", return_value=fake_access),
+    ):
+        with pytest.raises(jsonschema.ValidationError):
             handler(
                 user=MagicMock(),
                 program_id=9,
@@ -172,3 +212,4 @@ def test_the_mcp_path_rejects_an_undeclared_top_level_key():
                 },
                 undeclared_key="x",
             )
+    assert not fake_access.create_quote.called

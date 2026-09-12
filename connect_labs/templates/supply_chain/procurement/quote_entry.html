@@ -9,6 +9,14 @@
   was silent about them — a guessed input produces a confident wrong answer.
 </p>
 
+{% if not has_program_context %}
+<div class="bg-blue-50 border border-blue-200 rounded-lg shadow-sm p-8 text-center">
+  <i class="fa-solid fa-building text-4xl text-blue-400 mb-3"></i>
+  <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+  <p class="text-blue-700 text-sm">Select a programme from the context selector before recording a quote.</p>
+</div>
+{% else %}
+
 {% if quote_error %}
   <div class="mb-4 p-4 rounded-lg border border-red-200 bg-red-50 text-red-800 text-sm max-w-3xl">
     <strong>Could not record this quote:</strong> {{ quote_error }}
@@ -254,6 +262,7 @@
     </div>
   </form>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block inline_javascript %}
