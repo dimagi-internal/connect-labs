@@ -1,9 +1,12 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from connect_labs.mcp import tool_registry
 from connect_labs.mcp.tool_registry import get_tool
+from connect_labs.supply_chain import operations as operations_module
 from connect_labs.supply_chain.mcp_tools import _make_handler
-from connect_labs.supply_chain.operations import all_operations
+from connect_labs.supply_chain.operations import all_operations, get_operation
 
 
 def test_every_operation_is_exposed_as_an_mcp_tool():
@@ -70,25 +73,102 @@ def test_mcp_schemas_add_only_the_two_scope_properties():
 def test_mcp_handler_does_not_forward_scope_into_the_operation_payload():
     """organization_id/program_id are consumed by the generated handler's own
     signature to build SupplyDataAccess -- they must never reach
-    operation.handler's **payload, which the operation's own (closed) schema
-    does not declare them in.
+    call_operation's payload, which the operation's own (closed) schema does
+    not declare them in.
+
+    Routed through the real registry (via patch.dict, restored automatically)
+    rather than a bare handler stub: _make_handler now calls call_operation by
+    name (finding 1's fix), which does its own get_operation(name) lookup, so
+    a fake operation object with no real schema no longer exercises the real
+    path. Assertions are unchanged from before that fix.
     """
     captured = {}
 
-    class _FakeOperation:
+    def _fake_handler(access, **payload):
+        captured["access"] = access
+        captured["payload"] = payload
+        return {"ok": True}
+
+    fake_operation = operations_module.Operation(
+        name="fake_probe",
+        summary="test probe for scope-stripping, not a real capability",
+        input_schema=operations_module._obj({"foo": {"type": "string"}}),
+        handler=_fake_handler,
+    )
+
+    class _FakeOperationRef:
         name = "fake_probe"
 
-        @staticmethod
-        def handler(access, **payload):
-            captured["access"] = access
-            captured["payload"] = payload
-            return {"ok": True}
-
-    handler = _make_handler(_FakeOperation)
-
-    with patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"):
-        handler(user=MagicMock(), organization_id=7, program_id=9, foo="bar")
+    with patch.dict(operations_module._REGISTRY, {"fake_probe": fake_operation}):
+        handler = _make_handler(_FakeOperationRef)
+        with patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"):
+            handler(user=MagicMock(), organization_id=7, program_id=9, foo="bar")
 
     assert captured["payload"] == {"foo": "bar"}
     assert captured["access"].organization_id == 7
     assert captured["access"].program_id == 9
+
+
+# --- Finding 1: the MCP path must enforce the same schema the HTTP API does -----
+#
+# Before the fix, _make_handler called operation.handler(access, **payload)
+# directly, skipping call_operation's jsonschema.validate() entirely. FastMCP's
+# own validation lives in FunctionTool.run, which RegistryTool overrides and
+# never calls -- so nothing downstream validated either. These three pin the
+# proven repro: a float money amount, a value outside an enum, and an
+# undeclared top-level key all used to sail through on this surface while the
+# identical payload 400s on the HTTP API.
+
+
+def test_the_mcp_path_rejects_a_float_money_amount():
+    handler = _make_handler(get_operation("quote_record"))
+    with patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"):
+        with pytest.raises(Exception):
+            handler(
+                user=MagicMock(),
+                program_id=9,
+                data={
+                    "round_id": 1,
+                    "supplier_id": 2,
+                    "commodity_slug": "rutf",
+                    "as_quoted_unit": "per_pack",
+                    "as_quoted_amount": 12.50,
+                },
+            )
+
+
+def test_the_mcp_path_rejects_a_value_outside_the_enum():
+    handler = _make_handler(get_operation("quote_record"))
+    with patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"):
+        with pytest.raises(Exception):
+            handler(
+                user=MagicMock(),
+                program_id=9,
+                data={
+                    "round_id": 1,
+                    "supplier_id": 2,
+                    "commodity_slug": "rutf",
+                    "as_quoted_unit": "per_banana",
+                    "as_quoted_amount": "12.50",
+                },
+            )
+
+
+def test_the_mcp_path_rejects_an_undeclared_top_level_key():
+    """The exact proven repro: additionalProperties: False on the operation's
+    top-level schema must bind on the MCP surface too."""
+    handler = _make_handler(get_operation("quote_record"))
+    with patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"):
+        with pytest.raises(Exception):
+            handler(
+                user=MagicMock(),
+                program_id=9,
+                data={
+                    "round_id": 1,
+                    "supplier_id": 2,
+                    "commodity_slug": "rutf",
+                    "as_quoted_unit": "per_pack",
+                    "as_quoted_amount": "12.50",
+                },
+                undeclared_key="x",
+            )
