@@ -176,3 +176,43 @@ def test_blocked_by_dedupes_a_supplier_with_two_blocked_quotes(rutf, round_2000_
     comparison = compare_round(round_2000_cartons, rutf, quotes, suppliers())
     column = _column(comparison, "usd_per_base_unit")
     assert column.blocked_by.count("Harmattan Foods") == 1
+
+
+def test_our_own_missing_ration_table_does_not_block_a_supplier(rutf_without_course, round_2000_cartons):
+    """A supplier who answered every question we could ask used to come back
+    BLOCKED, because comparability was gated on cost per course -- which needs
+    the commodity's ration table, our treatment protocol, not anything a
+    supplier states. They had no way to close that gap, and the only
+    outstanding question on the row had audience `internal`.
+
+    Measured before the fix: a fully specified quote against a commodity with
+    no ration table reported 0 of 1 comparable.
+    """
+    comparison = compare_round(round_2000_cartons, rutf_without_course, [quote(supplier_id=1)], suppliers())
+
+    assert comparison.comparable_count == 1, "a perfect quote was blocked by our own gap"
+    assert comparison.blocked == []
+    assert comparison.provisional is False
+
+
+def test_the_uncomputable_columns_are_reported_once_as_ours(rutf_without_course, round_2000_cartons):
+    """The signal is not lost, only re-attributed: a figure no row can compute
+    is stated at the top as our gap, instead of appearing as every supplier's
+    fault."""
+    comparison = compare_round(round_2000_cartons, rutf_without_course, [quote(supplier_id=1)], suppliers())
+
+    assert set(comparison.unavailable) == {"usd_per_course", "usd_per_child_treated"}
+    reasons = comparison.unavailable["usd_per_course"]["reasons"]
+    assert any("course definition" in reason for reason in reasons)
+    assert comparison.to_snapshot()["unavailable"], "the frozen snapshot should carry it too"
+
+
+def test_a_figure_missing_on_only_one_row_is_that_suppliers_gap_not_ours(rutf, round_2000_cartons):
+    """The distinction the two reports rest on. One supplier's silence is
+    theirs; a figure nobody can compute is ours."""
+    quotes = [quote(supplier_id=1), quote(supplier_id=2, pack_spec_source="not_stated", base_per_pack_stated=None)]
+    comparison = compare_round(round_2000_cartons, rutf, quotes, suppliers())
+
+    assert comparison.comparable_count == 1
+    assert len(comparison.blocked) == 1
+    assert comparison.unavailable == {}, "a per-supplier gap was reported as ours"
