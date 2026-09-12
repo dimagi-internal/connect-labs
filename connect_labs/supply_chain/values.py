@@ -27,7 +27,10 @@ class Quantity:
     """
 
     amount: Decimal
-    unit: str
+    # None where a zero balance's unit is genuinely unknown: no movements to
+    # read one from, no item stating a pack unit, and no caller asking for
+    # one. Naming a unit there would invent a fact.
+    unit: str | None
 
 
 @dataclass(frozen=True)

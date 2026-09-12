@@ -486,3 +486,61 @@ def _plain(value):
     if isinstance(value, Decimal):
         return str(value.quantize(Decimal("0.01")))
     return figure(value)
+
+
+@register_operation(
+    name="stock_report_ingest",
+    summary=(
+        "Record a batch of worker-reported stock figures, as submitted on a CommCare deliver "
+        "form and read back through Connect. Idempotent on form_submission_id, so re-reading "
+        "the same export does not double-post. A username with no user_held supply point comes "
+        "back in `unmatched` rather than creating one, because a typo would become a phantom "
+        "worker holding phantom stock — pass create_missing_points only when the usernames are "
+        "known to be right. Every row lands as a self_reported count: it sits beside the ledger "
+        "so the variance is visible, and does not move it."
+    ),
+    input_schema=obj(
+        {
+            "rows": {
+                "type": "array",
+                "minItems": 1,
+                "items": _data_with(
+                    ("connect_username", "quantity", "counted_on"),
+                    connect_username={"type": "string"},
+                    quantity={"anyOf": [{"type": "string"}, {"type": "number", "minimum": 0}]},
+                    counted_on=_DATE,
+                    batch={"type": "string"},
+                    form_submission_id={"type": "string"},
+                    visit_id={"type": "string"},
+                ),
+            },
+            "commodity_slug": {"type": "string", "minLength": 1},
+            "quantity_unit": {"type": "string", "minLength": 1},
+            "opportunity_id": ID,
+            "item_id": ID,
+            "create_missing_points": {"type": "boolean"},
+        },
+        required=("rows", "commodity_slug", "quantity_unit", "opportunity_id"),
+    ),
+    is_write=True,
+)
+def stock_report_ingest(
+    access,
+    rows,
+    commodity_slug,
+    quantity_unit,
+    opportunity_id,
+    item_id=None,
+    create_missing_points=False,
+):
+    from connect_labs.supply_chain.stock.services import ingest
+
+    return ingest.ingest_stock_reports(
+        access,
+        rows=rows,
+        commodity_slug=commodity_slug,
+        quantity_unit=quantity_unit,
+        opportunity_id=opportunity_id,
+        item_id=item_id,
+        create_missing_points=create_missing_points,
+    )

@@ -501,3 +501,165 @@ class TestNetworkView:
         assert "unconfirmed" in row["on_hand"]
         assert any("carton" in reason for reason in row["on_hand"]["unconfirmed"])
         assert result["summary"]["unconfirmed_on_hand"] == 1
+
+
+class TestStockReportIngest:
+    def _rows(self, *usernames, quantity="8", submission_prefix="sub"):
+        return [
+            {
+                "connect_username": username,
+                "quantity": quantity,
+                "counted_on": TODAY.isoformat(),
+                "form_submission_id": f"{submission_prefix}-{username}",
+            }
+            for username in usernames
+        ]
+
+    def test_a_worker_report_lands_as_a_self_reported_count(self, da, rutf, item_144, worker):
+        result = op(
+            da,
+            "stock_report_ingest",
+            rows=self._rows("flw-amina"),
+            commodity_slug="rutf",
+            quantity_unit="carton",
+            opportunity_id=OPP,
+            item_id=item_144["id"],
+        )
+        assert result["created"] == 1
+        counts = op(da, "stock_count_list", supply_point_id=worker["id"])
+        assert counts[0]["kind"] == "self_reported"
+        assert counts[0]["source"] == "commcare_form"
+        assert counts[0]["quantity"] == "8"
+
+    def test_re_reading_the_same_export_does_not_double_post(self, da, rutf, item_144, worker):
+        payload = dict(
+            rows=self._rows("flw-amina"),
+            commodity_slug="rutf",
+            quantity_unit="carton",
+            opportunity_id=OPP,
+            item_id=item_144["id"],
+        )
+        first = op(da, "stock_report_ingest", **payload)
+        second = op(da, "stock_report_ingest", **payload)
+        assert first["created"] == 1
+        assert second["created"] == 0
+        assert second["skipped_already_ingested"] == 1
+        assert len(op(da, "stock_count_list", supply_point_id=worker["id"])) == 1
+
+    def test_a_duplicate_inside_one_batch_is_also_caught(self, da, rutf, item_144, worker):
+        rows = self._rows("flw-amina") + self._rows("flw-amina")
+        result = op(
+            da,
+            "stock_report_ingest",
+            rows=rows,
+            commodity_slug="rutf",
+            quantity_unit="carton",
+            opportunity_id=OPP,
+            item_id=item_144["id"],
+        )
+        assert result["created"] == 1
+        assert result["skipped_already_ingested"] == 1
+
+    def test_an_unknown_worker_is_named_not_invented(self, da, rutf, item_144, worker):
+        result = op(
+            da,
+            "stock_report_ingest",
+            rows=self._rows("flw-amina", "flw-typo"),
+            commodity_slug="rutf",
+            quantity_unit="carton",
+            opportunity_id=OPP,
+            item_id=item_144["id"],
+        )
+        assert result["created"] == 1
+        assert [u["connect_username"] for u in result["unmatched"]] == ["flw-typo"]
+        assert op(da, "supply_point_list", opportunity_id=OPP, kind="user_held") != []
+        assert len(op(da, "supply_point_list", kind="user_held")) == 1, "a phantom worker was created"
+
+    def test_missing_points_are_created_only_when_asked(self, da, rutf, item_144, worker):
+        result = op(
+            da,
+            "stock_report_ingest",
+            rows=self._rows("flw-new"),
+            commodity_slug="rutf",
+            quantity_unit="carton",
+            opportunity_id=OPP,
+            item_id=item_144["id"],
+            create_missing_points=True,
+        )
+        assert result["created"] == 1
+        assert len(result["created_supply_points"]) == 1
+        created = op(da, "supply_point_list", opportunity_id=OPP, kind="user_held")
+        assert "flw-new" in [p["connect_username"] for p in created]
+
+    def test_a_report_does_not_move_the_ledger(self, da, rutf, item_144, store, worker):
+        _stock_the_store(da, store, item_144, cartons=20)
+        op(
+            da,
+            "distribution_record",
+            data={
+                "supply_point_id": store["id"],
+                "opportunity_id": OPP,
+                "commodity_slug": "rutf",
+                "distributed_on": TODAY.isoformat(),
+                "source": "we_recorded",
+                "lines": [
+                    {
+                        "to_supply_point_id": worker["id"],
+                        "item_id": item_144["id"],
+                        "quantity": "12",
+                        "quantity_unit": "carton",
+                    }
+                ],
+            },
+        )
+        op(
+            da,
+            "stock_report_ingest",
+            rows=self._rows("flw-amina", quantity="8"),
+            commodity_slug="rutf",
+            quantity_unit="carton",
+            opportunity_id=OPP,
+            item_id=item_144["id"],
+        )
+        soh = op(da, "stock_on_hand", supply_point_id=worker["id"], item_id=item_144["id"])
+        assert soh["ledger"]["amount"] == "12", "an ingested report moved the ledger"
+        assert soh["reported"]["amount"] == "8"
+        assert soh["variance"]["amount"] == "-4"
+        assert Movement.objects.filter(kind="adjustment").count() == 0
+
+    def test_a_zero_report_is_a_stockout_not_a_missing_answer(self, da, rutf, item_144, worker):
+        result = op(
+            da,
+            "stock_report_ingest",
+            rows=self._rows("flw-amina", quantity="0"),
+            commodity_slug="rutf",
+            quantity_unit="carton",
+            opportunity_id=OPP,
+            item_id=item_144["id"],
+        )
+        assert result["created"] == 1
+        assert op(da, "stock_count_list", supply_point_id=worker["id"])[0]["quantity"] == "0"
+
+
+class TestExtractRows:
+    def test_a_visit_that_did_not_answer_is_skipped_not_read_as_zero(self):
+        from connect_labs.supply_chain.stock.services.ingest import extract_rows
+
+        visits = [
+            {"id": 1, "username": "a", "visit_date": "2026-09-01", "form": {"stock": {"cartons_on_hand": "6"}}},
+            {"id": 2, "username": "b", "visit_date": "2026-09-01", "form": {"stock": {}}},
+            {"id": 3, "username": "c", "visit_date": "2026-09-01"},
+        ]
+        rows = extract_rows(visits, quantity_path="form.stock.cartons_on_hand")
+        assert [r["connect_username"] for r in rows] == ["a"]
+        assert rows[0]["quantity"] == "6"
+        assert rows[0]["form_submission_id"] == "1"
+
+    def test_a_reported_zero_is_kept(self):
+        from connect_labs.supply_chain.stock.services.ingest import extract_rows
+
+        rows = extract_rows(
+            [{"id": 4, "username": "d", "visit_date": "2026-09-01", "form": {"stock": {"cartons_on_hand": 0}}}],
+            quantity_path="form.stock.cartons_on_hand",
+        )
+        assert rows[0]["quantity"] == 0
