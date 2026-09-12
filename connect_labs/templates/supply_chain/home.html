@@ -94,7 +94,16 @@ therefore a fact, rather than by urgency, which would be an opinion.
 
 <h2 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mt-8 mb-2">Rounds</h2>
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-  <table class="min-w-full text-sm">
+  {% comment %}
+  A scroll container is not focusable by default, so a keyboard-only user
+  cannot reach the columns it hides -- which re-creates the
+  unreachable-column bug for the people least able to work around it.
+  tabindex makes it a tab stop; the labelled region tells a screen reader
+  what it is once focused.
+  {% endcomment %}
+  <div class="overflow-x-auto" tabindex="0" role="region"
+       aria-label="Table, scrolls sideways">
+  <table class="min-w-[44rem] w-full text-sm">
     <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
       <tr>
         <th class="text-left px-4 py-2">Round</th>
@@ -123,6 +132,7 @@ therefore a fact, rather than by urgency, which would be an opinion.
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 {% if contracts %}
@@ -133,7 +143,16 @@ therefore a fact, rather than by urgency, which would be an opinion.
     </span>
   </h2>
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-    <table class="min-w-full text-sm">
+    {% comment %}
+    A scroll container is not focusable by default, so a keyboard-only user
+    cannot reach the columns it hides -- which re-creates the
+    unreachable-column bug for the people least able to work around it.
+    tabindex makes it a tab stop; the labelled region tells a screen reader
+    what it is once focused.
+    {% endcomment %}
+    <div class="overflow-x-auto" tabindex="0" role="region"
+         aria-label="Table, scrolls sideways">
+    <table class="min-w-[44rem] w-full text-sm">
       <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
         <tr>
           <th class="text-left px-4 py-2">Reference</th>
@@ -169,6 +188,7 @@ therefore a fact, rather than by urgency, which would be an opinion.
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 {% endif %}
 
