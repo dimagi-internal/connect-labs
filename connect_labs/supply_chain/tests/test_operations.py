@@ -264,3 +264,25 @@ def test_outreach_update_succeeds_with_a_partial_payload_naming_only_the_respons
         {"outreach_id": 1, "data": {"responded": True, "response_kind": "quote"}},
     )
     assert access.update_outreach.called
+
+
+def test_a_none_valued_parameter_is_treated_as_not_supplied():
+    """A caller computing `commodity_slug = request.GET.get(...)` and passing
+    it through should not have to strip its own Nones, and widening every
+    optional parameter to accept null would weaken the contract an agent
+    reads to say the same thing."""
+    access = MagicMock()
+    access.list_contracts.return_value = []
+    assert call_operation("contract_list", access, {"round_id": None, "status": None}) == []
+    access.list_contracts.assert_called_once_with(round_id=None, status=None)
+
+
+def test_a_none_inside_a_data_payload_is_still_passed_through():
+    """Only the top level is stripped. A None inside `data` is meaningful
+    where the schema says so: detaching a document wrongly attached as a duty
+    exemption is a real operation, and `duty_relief_document_id` is declared
+    NULLABLE_ID for it."""
+    access = MagicMock()
+    access.update_contract.return_value = Contract(id=1, commodity=_RUTF)
+    call_operation("contract_update", access, {"contract_id": 1, "data": {"duty_relief_document_id": None}})
+    assert access.update_contract.call_args[0][1] == {"duty_relief_document_id": None}

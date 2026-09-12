@@ -28,7 +28,7 @@ def last_count(program_id, supply_point, item=None, on_date=None):
     return counts.order_by("-counted_on", "-id").first()
 
 
-def stock_on_hand(program_id, supply_point, item=None, unit=None, on_date=None) -> dict:
+def stock_on_hand(program_id, supply_point, item=None, unit=None, on_date=None) -> dict:  # noqa: C901
     """{ledger, reported, variance, basis, as_of, reported_kind, reported_source}.
 
     `basis` names which figure a planner should use, and it is never a silent
@@ -37,6 +37,10 @@ def stock_on_hand(program_id, supply_point, item=None, unit=None, on_date=None) 
     `disagreement` when both exist and differ -- in which case the caller is
     told rather than handed one of them.
     """
+    # Resolve the point's own item when the caller did not name one, so a
+    # variance between a pack balance and a base-unit count is computed
+    # rather than refused. See ledger.sole_item.
+    item = item or ledger.sole_item(program_id, supply_point)
     balance = ledger.balance(program_id, supply_point, item=item, unit=unit, on_date=on_date)
     count = last_count(program_id, supply_point, item=item, on_date=on_date)
 

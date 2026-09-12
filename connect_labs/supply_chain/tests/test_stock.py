@@ -363,3 +363,18 @@ class TestSupplyPoint:
 
     def test_a_store_needs_no_user(self, store):
         store.full_clean()
+
+
+class TestNegativeBalance:
+    def test_a_negative_balance_refuses_a_resupply_plan(self, rutf, specified_item, worker):
+        """More has left than ever arrived, so cover and a send quantity are
+        both meaningless. A number here would invite a resupply that does not
+        fix the missing movement."""
+        _move("consumption", rutf, 720, "sachet", item=specified_item, frm=worker)
+
+        plan = resupply.plan(PROGRAM, worker, item=specified_item, as_of=TODAY)
+        assert plan["status"] == "unknown"
+        assert isinstance(plan["resupply_quantity"], Unconfirmed)
+        assert isinstance(plan["months_of_stock"], Unconfirmed)
+        assert any("negative balance" in r for r in plan["resupply_quantity"].reasons)
+        assert any("would not fix it" in r for r in plan["resupply_quantity"].reasons)

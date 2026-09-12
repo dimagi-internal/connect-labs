@@ -41,6 +41,10 @@ urlpatterns = [
         procurement_views.RegistriesView.as_view(),
         name="procurement_registries",
     ),
+    path("orders/", views.OrdersView.as_view(), name="orders"),
+    path("orders/<int:contract_id>/", views.OrderDetailView.as_view(), name="order_detail"),
+    path("stock/", views.StockView.as_view(), name="stock"),
+    path("distribution/", views.DistributionView.as_view(), name="distribution"),
 ]
 
 if settings.DEBUG:

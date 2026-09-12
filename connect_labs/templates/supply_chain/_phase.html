@@ -1,0 +1,19 @@
+{% comment %}
+One phase of the chain as a row of stage cells. Takes `stages` as a list of
+{label, value, sub} so the template does no arithmetic and no interpretation
+-- the counts come from chain_summary, which is a derivation.
+{% endcomment %}
+<div class="bg-white border border-gray-200 border-l-4 {{ accent }} rounded-lg mb-2 overflow-hidden">
+  <div class="px-4 py-2 border-b border-gray-100">
+    <span class="text-xs font-bold uppercase tracking-wide text-gray-500">{{ phase }}</span>
+  </div>
+  <div class="flex flex-wrap">
+    {% for stage in stages %}
+      <div class="flex-1 min-w-[9rem] px-4 py-3 border-r border-gray-100 last:border-r-0">
+        <div class="text-[10px] font-bold uppercase tracking-wide text-gray-400">{{ stage.label }}</div>
+        <div class="{% if stage.value == "per commodity" or stage.value == "Unconfirmed" %}text-sm text-gray-400 mt-1.5{% else %}text-2xl font-semibold text-brand-indigo tabular-nums leading-tight mt-0.5{% endif %}">{{ stage.value }}</div>
+        {% if stage.sub %}<div class="text-xs text-gray-500 mt-0.5">{{ stage.sub }}</div>{% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</div>

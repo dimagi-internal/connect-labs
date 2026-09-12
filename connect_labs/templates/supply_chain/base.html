@@ -23,17 +23,15 @@ slot into it.
     </div>
   </div>
 
+  {% comment %}
+  The chain in order, so the nav reads the way the work runs: what we can buy,
+  how we buy it, what was ordered, what is on hand, where it went.
+  {% endcomment %}
   <nav class="flex flex-wrap gap-2 mb-6 text-sm">
-    <a href="{% url 'supply_chain:home' %}"
-       class="px-3 py-1.5 rounded-md bg-white border border-gray-300 hover:bg-gray-50 text-gray-700">Home</a>
-    <a href="{% url 'supply_chain:items' %}"
-       class="px-3 py-1.5 rounded-md bg-white border border-gray-300 hover:bg-gray-50 text-gray-700">Item master</a>
-    <a href="{% url 'supply_chain:procurement_round_board' %}"
-       class="px-3 py-1.5 rounded-md bg-white border border-gray-300 hover:bg-gray-50 text-gray-700">Procurement</a>
-    <a href="{% url 'supply_chain:procurement_registries' %}"
-       class="px-3 py-1.5 rounded-md bg-white border border-gray-300 hover:bg-gray-50 text-gray-700">Registries</a>
-    <a href="{% url 'supply_chain:procurement_quote_entry' %}"
-       class="px-3 py-1.5 rounded-md bg-white border border-gray-300 hover:bg-gray-50 text-gray-700">Record a quote</a>
+    {% for tab in supply_tabs %}
+      <a href="{{ tab.url }}"
+         class="px-3 py-1.5 rounded-md border {% if tab.active %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 hover:bg-gray-50 text-gray-700{% endif %}">{{ tab.label }}</a>
+    {% endfor %}
   </nav>
 
   {% block supply_content %}{% endblock %}

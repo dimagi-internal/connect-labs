@@ -1,65 +1,176 @@
-{% extends "supply_chain/base.html" %}
-{% load static i18n %}
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+Two panels, two kinds of thing (see DomainHomeView's docstring): the funnel
+carries STATES, the checks panel carries GAPS and CONTRADICTIONS. Neither
+ranks. The checks are grouped by who can answer them, which is routing and
+therefore a fact, rather than by urgency, which would be an opinion.
+{% endcomment %}
 
 {% block supply_content %}
+
 {% if not has_program_context %}
-<div class="bg-blue-50 border border-blue-200 rounded-lg shadow-sm p-8 text-center mb-8">
-  <i class="fa-solid fa-building text-4xl text-blue-400 mb-3"></i>
-  <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
-  <p class="text-blue-700 text-sm">
-    Select a programme from the context selector to see its rounds and commodities.
-  </p>
-</div>
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+    <p class="text-sm text-amber-900">
+      Rounds, contracts and stock are programme-scoped, so there is nothing to
+      show until one is chosen.
+    </p>
+  </div>
+{% else %}
+
+{% if commodities|length > 1 %}
+  <div class="flex items-center gap-2 mb-4 text-sm">
+    <span class="text-gray-500">Commodity</span>
+    <a href="?" class="px-2 py-1 rounded border {% if not commodity_slug %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700{% endif %}">All</a>
+    {% for c in commodities %}
+      <a href="?commodity={{ c.slug }}"
+         class="px-2 py-1 rounded border {% if commodity_slug == c.slug %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700{% endif %}">{{ c.name }}</a>
+    {% endfor %}
+  </div>
 {% endif %}
 
-<h2 class="text-lg font-semibold text-gray-900 mb-3">Sub-components</h2>
-<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-  {% for sub in sub_components %}
-  <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 {% if not sub.available %}opacity-60{% endif %}">
-    <h3 class="font-semibold text-gray-900">{{ sub.label }}</h3>
-    <p class="text-sm text-gray-600 mt-1 mb-3">{{ sub.blurb }}</p>
-    {% if sub.available %}
-      <a href="{% url sub.url_name %}" class="text-sm text-brand-indigo font-medium hover:underline">Open &rarr;</a>
-    {% else %}
-      <span class="text-xs uppercase tracking-wide text-gray-400 font-medium">Not yet available</span>
-    {% endif %}
-  </div>
+<h2 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mb-2">
+  The chain
+  <span class="normal-case tracking-normal font-normal text-gray-500">
+    — where records sit. Counts, not judgements.
+  </span>
+</h2>
+
+{% include "supply_chain/_phase.html" with phase="Source" accent="border-brand-indigo" stages=summary.source|source_stages %}
+{% include "supply_chain/_phase.html" with phase="Order" accent="border-indigo-400" stages=summary.order|order_stages %}
+{% include "supply_chain/_phase.html" with phase="Deliver" accent="border-teal-500" stages=summary.deliver|deliver_stages %}
+
+<h2 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mt-8 mb-2">
+  Checks
+  <span class="normal-case tracking-normal font-normal text-gray-500">
+    — {{ checks.count }} open:
+    {% for category, n in checks.by_category.items %}{% if n %}{{ n }} {{ category|category_label }}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}
+  </span>
+</h2>
+<p class="text-xs text-gray-500 mb-3">
+  Grouped by who can answer, and in no particular order — what matters today
+  depends on things this record does not contain.
+</p>
+
+<div class="grid gap-3 md:grid-cols-3">
+  {% for group in checks_by_audience %}
+    <div class="bg-white border border-gray-200 rounded-lg">
+      <div class="px-4 py-2.5 border-b border-gray-100 flex items-baseline gap-2">
+        <span class="text-xs font-bold uppercase tracking-wide text-gray-500">{{ group.audience }}</span>
+        <span class="text-sm font-semibold text-brand-indigo">{{ group.items|length }}</span>
+        <span class="text-xs text-gray-400 ml-auto">{{ group.audience|audience_label }}</span>
+      </div>
+      {% if group.items %}
+        <ul class="divide-y divide-gray-100">
+          {% for item in group.items %}
+            <li class="px-4 py-2.5">
+              <div class="flex items-baseline gap-2">
+                <span class="text-sm font-medium text-gray-900">{{ item.kind|check_label }}</span>
+                {% if item.days_open %}
+                  <span class="text-xs text-gray-400 ml-auto whitespace-nowrap">{{ item.days_open }}d</span>
+                {% endif %}
+              </div>
+              <div class="text-xs text-gray-500 mt-0.5">{{ item.subject.label }}</div>
+              {% if item.facts.missing %}
+                <ul class="mt-1 text-xs text-gray-600 list-disc list-inside">
+                  {% for fact in item.facts.missing %}<li>{{ fact.question }}</li>{% endfor %}
+                </ul>
+              {% elif item.facts.reasons %}
+                <ul class="mt-1 text-xs text-gray-600 list-disc list-inside">
+                  {% for reason in item.facts.reasons %}<li>{{ reason }}</li>{% endfor %}
+                </ul>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="px-4 py-4 text-sm text-gray-400">Nothing outstanding.</p>
+      {% endif %}
+    </div>
   {% endfor %}
 </div>
 
-{% if has_program_context %}
-<h2 class="text-lg font-semibold text-gray-900 mb-3">Recent rounds</h2>
-<div class="bg-white rounded-lg shadow-sm overflow-hidden mb-8">
-  <table class="min-w-full divide-y divide-gray-200">
-    <thead class="bg-gray-50">
+<h2 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mt-8 mb-2">Rounds</h2>
+<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
       <tr>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Round</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+        <th class="text-left px-4 py-2">Round</th>
+        <th class="text-left px-4 py-2">Status</th>
+        <th class="text-left px-4 py-2">Deliver to</th>
+        <th class="text-left px-4 py-2">Response deadline</th>
+        <th class="px-4 py-2"></th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-gray-200">
+    <tbody class="divide-y divide-gray-100">
       {% for round in rounds %}
-      <tr>
-        <td class="px-4 py-2 text-sm">
-          <a href="{% url 'supply_chain:procurement_round_detail' round.id %}"
-             class="text-brand-indigo hover:underline">{{ round.label }}</a>
-        </td>
-        <td class="px-4 py-2 text-sm text-gray-600">{{ round.status|title }}</td>
-      </tr>
+        <tr>
+          <td class="px-4 py-2.5 font-medium text-gray-900">{{ round.label }}</td>
+          <td class="px-4 py-2.5">{{ round.status }}</td>
+          <td class="px-4 py-2.5 text-gray-600">
+            {{ round.delivery_point.name|default:"" }}{% if round.delivery_point.city %}, {{ round.delivery_point.city }}{% endif %}
+          </td>
+          <td class="px-4 py-2.5 text-gray-600">{{ round.response_deadline|default:"—" }}</td>
+          <td class="px-4 py-2.5 text-right">
+            <a class="text-brand-indigo hover:underline"
+               href="{% url 'supply_chain:procurement_round_detail' round.id %}">Open</a>
+          </td>
+        </tr>
       {% empty %}
-      <tr><td colspan="2" class="px-4 py-6 text-center text-gray-500">No rounds yet.</td></tr>
+        <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">No rounds yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 
-<h2 class="text-lg font-semibold text-gray-900 mb-3">Commodities</h2>
-<div class="flex flex-wrap gap-2">
-  {% for commodity in commodities %}
-  <span class="px-3 py-1.5 rounded-full bg-gray-100 text-gray-700 text-sm">{{ commodity.name }}</span>
-  {% empty %}
-  <span class="text-sm text-gray-500">No commodities catalogued yet.</span>
-  {% endfor %}
-</div>
+{% if contracts %}
+  <h2 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mt-8 mb-2">
+    Contracts
+    <span class="normal-case tracking-normal font-normal text-gray-500">
+      — who is actually buying
+    </span>
+  </h2>
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <tr>
+          <th class="text-left px-4 py-2">Reference</th>
+          <th class="text-left px-4 py-2">Buyer of record</th>
+          <th class="text-left px-4 py-2">Quantity</th>
+          <th class="text-left px-4 py-2">Status</th>
+          <th class="text-left px-4 py-2">Told by</th>
+          <th class="px-4 py-2"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for contract in contracts %}
+          <tr>
+            <td class="px-4 py-2.5 font-medium text-gray-900">
+              {{ contract.reference|default:"—" }}
+            </td>
+            <td class="px-4 py-2.5">
+              {{ contract.buyer_of_record }}
+              {% if contract.duty_relief_claimed and not contract.duty_relief_evidenced %}
+                <span class="ml-1 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded px-1.5 py-0.5">
+                  relief unevidenced
+                </span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2.5 text-gray-600">{{ contract.quantity }} {{ contract.quantity_unit }}</td>
+            <td class="px-4 py-2.5">{{ contract.status }}</td>
+            <td class="px-4 py-2.5 text-xs text-gray-500">{{ contract.source }}</td>
+            <td class="px-4 py-2.5 text-right">
+              <a class="text-brand-indigo hover:underline"
+                 href="{% url 'supply_chain:order_detail' contract.id %}">Open</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
 {% endif %}
 {% endblock %}
