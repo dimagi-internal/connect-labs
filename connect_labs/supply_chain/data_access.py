@@ -46,6 +46,7 @@ from connect_labs.supply_chain.models import (
     SupplyPoint,
     scope_key,
 )
+from connect_labs.supply_chain.stock.repository import StockRepositoryMixin
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,15 @@ def _copy_of(obj, overrides: dict) -> dict:
     return {**plain, **overrides}
 
 
-class SupplyDataAccess:
+class SupplyDataAccess(StockRepositoryMixin):
+    """One object, one scope, every tier.
+
+    The tiers are mixins rather than separate access classes so that a client
+    -- a view, an API request, an MCP call -- carries a single scoped object
+    and the operation handlers stay uniformly `access.<verb>`. Each mixin
+    lives with the tier it serves.
+    """
+
     def __init__(
         self,
         access_token: str | None = None,

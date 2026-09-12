@@ -11,3 +11,4 @@ class SupplyChainConfig(AppConfig):
         # generated from that. A tier not imported here is a tier with no API.
         from connect_labs.supply_chain.fulfilment import operations as fulfilment_operations  # noqa: F401
         from connect_labs.supply_chain.procurement import operations  # noqa: F401
+        from connect_labs.supply_chain.stock import operations as stock_operations  # noqa: F401

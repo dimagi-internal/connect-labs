@@ -15,22 +15,16 @@ pricing design refuses to lose -- the same reason the input schemas refuse to
 accept one.
 """
 
-from decimal import Decimal
+from connect_labs.supply_chain.values import decimal_string
 
 
 def _num(value):
-    """A Decimal as a plain decimal string, or None. Never a float."""
-    if value is None:
-        return None
-    if isinstance(value, Decimal):
-        # Normalise away the storage scale so 255.0000 reads as "255", which
-        # is what a human entered and what a caller compares against.
-        trimmed = value.normalize()
-        # normalize() renders integers in exponent form (2E+2); quantize back.
-        if trimmed == trimmed.to_integral_value():
-            trimmed = trimmed.quantize(Decimal("1"))
-        return str(trimmed)
-    return str(value)
+    """A Decimal as a plain decimal string, or None.
+
+    Shares `values.decimal_string` with the derived-figure wire format, so a
+    stored quantity and a computed one are spelled the same way.
+    """
+    return None if value is None else decimal_string(value)
 
 
 def _date(value):
