@@ -83,7 +83,6 @@ def _obj(properties: dict, required: tuple[str, ...] = ()) -> dict:
 
 
 _ID = {"type": "integer"}
-_DATA = {"type": "object"}
 
 
 # A record's `data` is deliberately open — LabsRecords carry whatever a domain needs, and
@@ -97,7 +96,40 @@ def _data_with(**properties) -> dict:
     return {"type": "object", "properties": properties, "additionalProperties": True}
 
 
-_POSITIVE = {"type": ["number", "string"], "pattern": r"^\d*\.?\d+$"}
+# A JSON Schema `pattern` is a no-op against a non-string instance — it constrains the
+# string branch of a `["number", "string"]` union and nothing else. A schema of
+# {"type": ["number", "string"], "pattern": ...} therefore lets `12.50` (a JSON float)
+# straight through, and money is Decimal, never float: a float that reaches the handler
+# has already lost the precision this whole design refuses to lose silently. So money
+# and quantity get two different schemas, not one shared "positive number" schema:
+#
+#   _MONEY    — string only. A JSON number cannot carry a monetary amount without a
+#               possible silent rounding, so the contract refuses it outright rather
+#               than accept-and-round. The description is what a caller reads when its
+#               float gets rejected.
+#   _QUANTITY — a decimal string OR a JSON number, because "quantity": 3 is a reasonable
+#               thing for a caller to write and rejecting it buys nothing — but positive
+#               on BOTH branches, via `anyOf` rather than a shared `pattern`, so a zero or
+#               negative quantity is refused whichever shape it arrives in.
+_MONEY = {
+    "type": "string",
+    "pattern": r"^\d*\.?\d+$",
+    "description": (
+        'A monetary amount, as a decimal string (e.g. "12.50"), never a JSON number — '
+        "money is Decimal, never float, and a float silently loses precision that a "
+        "string does not."
+    ),
+}
+
+_NONZERO_DECIMAL_STRING = r"^(?!0*\.?0*$)\d*\.?\d+$"
+
+_QUANTITY = {
+    "anyOf": [
+        {"type": "string", "pattern": _NONZERO_DECIMAL_STRING},
+        {"type": "number", "exclusiveMinimum": 0},
+    ]
+}
+
 _NON_NEGATIVE_INT = {"type": "integer", "minimum": 0}
 
 _QUOTE_DATA = _data_with(
@@ -105,16 +137,18 @@ _QUOTE_DATA = _data_with(
     supplier_id=_ID,
     item_id=_ID,
     commodity_slug={"type": "string", "minLength": 1},
-    as_quoted_amount=_POSITIVE,
+    as_quoted_amount=_MONEY,
     as_quoted_unit={"enum": ["per_base_unit", "per_pack", "per_lot_total", "per_metric_tonne"]},
     as_quoted_currency={"type": "string", "minLength": 3, "maxLength": 3},
-    quantity_basis=_POSITIVE,
+    quantity_basis=_QUANTITY,
     pack_spec_source={"enum": ["stated_on_quote", "trade_item_confirmed", "not_stated"]},
     base_per_pack_stated=_NON_NEGATIVE_INT,
     base_unit_grams_stated=_NON_NEGATIVE_INT,
     freight_basis={"enum": ["included", "excluded", "not_specified"]},
     duties_basis={"enum": ["included", "excluded", "not_specified"]},
-    fx_rate_to_usd=_POSITIVE,
+    freight_amount=_MONEY,
+    duties_amount=_MONEY,
+    fx_rate_to_usd=_MONEY,
     shelf_life_months_stated=_NON_NEGATIVE_INT,
     lead_time_days=_NON_NEGATIVE_INT,
 )
@@ -126,7 +160,7 @@ _ROUND_DATA = _data_with(
         "type": "array",
         "items": _data_with(
             commodity_slug={"type": "string", "minLength": 1},
-            quantity=_POSITIVE,
+            quantity=_QUANTITY,
             quantity_unit={"type": "string", "minLength": 1},
         ),
     },
@@ -154,8 +188,8 @@ _PURCHASE_DATA = _data_with(
     round_id=_ID,
     supplier_id=_ID,
     commodity_slug={"type": "string", "minLength": 1},
-    quantity=_POSITIVE,
-    amount_paid=_POSITIVE,
+    quantity=_QUANTITY,
+    amount_paid=_MONEY,
     currency={"type": "string", "minLength": 3, "maxLength": 3},
 )
 
@@ -178,7 +212,7 @@ _COMMODITY_DATA = _data_with(
     base_unit_grams=_NON_NEGATIVE_INT,
     shelf_life_months_minimum=_NON_NEGATIVE_INT,
     course_definition=_data_with(
-        base_units_per_day=_POSITIVE,
+        base_units_per_day=_QUANTITY,
         days_per_course=_NON_NEGATIVE_INT,
         base_units_per_course=_NON_NEGATIVE_INT,
         source={"type": "string"},

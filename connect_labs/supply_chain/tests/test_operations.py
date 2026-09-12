@@ -59,3 +59,75 @@ def test_a_valid_payload_reaches_the_data_access():
 def test_an_unknown_operation_raises_keyerror():
     with pytest.raises(KeyError):
         get_operation("not_an_operation")
+
+
+def _quote_payload(**overrides):
+    data = {
+        "round_id": 1,
+        "supplier_id": 2,
+        "commodity_slug": "rutf",
+        "as_quoted_unit": "per_pack",
+        "quantity_basis": "10",
+    }
+    data.update(overrides)
+    return {"data": data}
+
+
+def test_a_float_money_amount_is_rejected():
+    """A JSON Schema `pattern` is a no-op against a non-string instance, so a money
+    field typed ["number", "string"] with a decimal pattern lets a float straight
+    through. Money is Decimal, never float — a float that reaches the handler has
+    already lost precision this schema exists to refuse."""
+    access = MagicMock()
+    with pytest.raises(Exception):
+        call_operation("quote_record", access, _quote_payload(as_quoted_amount=12.50))
+    assert not access.create_quote.called
+
+
+def test_the_equivalent_string_money_amount_is_accepted():
+    access = MagicMock()
+    access.create_quote.return_value = MagicMock(id=1)
+    call_operation("quote_record", access, _quote_payload(as_quoted_amount="12.50"))
+    assert access.create_quote.called
+
+
+def test_a_negative_or_zero_quantity_is_rejected_on_both_the_string_and_the_number_branch():
+    access = MagicMock()
+    for bad_quantity in (0, -1, "0", "0.0", "-1"):
+        with pytest.raises(Exception):
+            call_operation(
+                "purchase_record",
+                access,
+                {
+                    "data": {
+                        "round_id": 1,
+                        "supplier_id": 2,
+                        "commodity_slug": "rutf",
+                        "quantity": bad_quantity,
+                        "amount_paid": "10.00",
+                        "currency": "USD",
+                    }
+                },
+            )
+    assert not access.create_purchase.called
+
+
+def test_a_positive_quantity_is_accepted_as_either_a_string_or_a_number():
+    access = MagicMock()
+    access.create_purchase.return_value = MagicMock(id=1)
+    for good_quantity in ("10", 10, 10.5, "0.5"):
+        call_operation(
+            "purchase_record",
+            access,
+            {
+                "data": {
+                    "round_id": 1,
+                    "supplier_id": 2,
+                    "commodity_slug": "rutf",
+                    "quantity": good_quantity,
+                    "amount_paid": "10.00",
+                    "currency": "USD",
+                }
+            },
+        )
+    assert access.create_purchase.call_count == 4
