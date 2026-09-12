@@ -1,0 +1,30 @@
+{% load supply_chain_extras %}
+{% comment %}
+Design doc section 7's audience split, rendered once and included from both
+the Comparable and Needs-info sections of comparison.html (finding 7):
+acceptance facts (shelf life, MOQ, lead time, validity) don't block a
+figure, so a fully-priced Comparable row can still carry outstanding
+questions -- and those must be just as visible as a Blocked row's.
+{% endcomment %}
+{% with supplier_questions=row.questions|questions_for:"supplier" internal_questions=row.questions|questions_for:"internal" %}
+  {% if supplier_questions %}
+    <div class="mt-2">
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Ask the supplier</p>
+      <ul class="list-disc list-inside text-sm text-gray-700 space-y-0.5">
+        {% for q in supplier_questions %}<li>{{ q.question }}</li>{% endfor %}
+      </ul>
+      <a class="inline-block mt-1 text-sm text-brand-indigo hover:underline"
+         href="{% url 'supply_chain:procurement_followup_draft' %}?quote_id={{ row.quote_id }}">
+        Draft follow-up
+      </a>
+    </div>
+  {% endif %}
+  {% if internal_questions %}
+    <div class="mt-2">
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Our own outstanding work</p>
+      <ul class="list-disc list-inside text-sm text-gray-700 space-y-0.5">
+        {% for q in internal_questions %}<li>{{ q.question }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+{% endwith %}

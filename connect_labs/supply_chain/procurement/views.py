@@ -30,7 +30,7 @@ from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 
-from connect_labs.supply_chain.api_views import _access
+from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.operations import call_operation
 
 
@@ -77,7 +77,11 @@ class RoundBoardView(_Base):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["rounds"] = self.op("round_list")
+        context["has_program_context"] = has_program_context(self.request)
+        # round_list is programme-scoped; a fresh '/supply/procurement/'
+        # visit before a programme is selected is a normal state
+        # (labs_context = {}), not a bug -- see api_views.has_program_context.
+        context["rounds"] = self.op("round_list") if context["has_program_context"] else []
         return context
 
 
@@ -113,12 +117,22 @@ class ComparisonView(_Base):
         if not commodity and len(lines) == 1:
             commodity = lines[0].get("commodity_slug")
 
+        comparison = self.op("round_compare", round_id=round_id, commodity_slug=commodity) if commodity else None
+
         context["round"] = round_
         context["round_id"] = round_id
         context["commodity_slug"] = commodity
-        context["comparison"] = (
-            self.op("round_compare", round_id=round_id, commodity_slug=commodity) if commodity else None
-        )
+        context["comparison"] = comparison
+        # ranked_by is a bare figure key (e.g. "landed_total_for_round_quantity");
+        # its human label already lives on the matching column (pricing.py's
+        # FIGURE_LABELS, formatted with this commodity's own unit nouns), so look
+        # it up here rather than re-deriving or hardcoding a second copy in the
+        # template. None when nothing is comparable (finding 14) -- no column
+        # matches and the template shows "not yet ranked" instead.
+        context["ranked_by_label"] = None
+        if comparison and comparison.get("ranked_by"):
+            column = next((c for c in comparison["columns"] if c["key"] == comparison["ranked_by"]), None)
+            context["ranked_by_label"] = column["label"] if column else comparison["ranked_by"]
         return context
 
     def post(self, request, round_id, *args, **kwargs):

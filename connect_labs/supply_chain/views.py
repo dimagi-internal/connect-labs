@@ -9,8 +9,9 @@ from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 
-from connect_labs.supply_chain.api_views import _access
+from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.procurement.services.compliance import spec_verdict
 
 
 @method_decorator(login_required, name="dispatch")
@@ -48,6 +49,7 @@ class ItemMasterView(OperationBase):
                 and commodity.get("base_per_pack")
                 and item["base_per_pack"] != commodity["base_per_pack"]
             )
+            item["spec_verdict"] = spec_verdict(item.get("spec_attributes"), commodity.get("spec_requirements") or [])
 
         context["items"] = items
         context["commodities"] = commodities.values()
@@ -61,8 +63,13 @@ class DomainHomeView(OperationBase):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["rounds"] = self.op("round_list")
-        context["commodities"] = self.op("commodity_list")
+        context["has_program_context"] = has_program_context(self.request)
+        # round_list is programme-scoped (SupplyDataAccess.program_experiment
+        # raises ValueError with no program_id); commodity_list is reference
+        # tier and does not need this guard, but there is nothing useful to
+        # show alongside an empty round list, so both wait for a programme.
+        context["rounds"] = self.op("round_list") if context["has_program_context"] else []
+        context["commodities"] = self.op("commodity_list") if context["has_program_context"] else []
         context["sub_components"] = [
             {
                 "slug": "procurement",

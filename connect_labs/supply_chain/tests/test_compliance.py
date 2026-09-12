@@ -1,5 +1,5 @@
 from connect_labs.supply_chain.models import CommodityRecord
-from connect_labs.supply_chain.procurement.services.compliance import check_compliance
+from connect_labs.supply_chain.procurement.services.compliance import check_compliance, spec_verdict
 from connect_labs.supply_chain.tests.conftest import quote, wrap
 
 
@@ -103,3 +103,33 @@ def test_an_unknown_operator_raises_rather_than_passing_silently():
     bad = dict(GRADUATION, operator="approximately")
     with pytest.raises(ValueError):
         check_compliance(quote(stated_spec={"minimum_graduation_g": 10}), scale([bad]))
+
+
+# --- Finding 15: item master's "spec verdict" column ------------------------
+
+
+def test_spec_verdict_with_no_requirements():
+    assert spec_verdict({"minimum_graduation_g": 10}, []) == "No requirements"
+
+
+def test_spec_verdict_when_the_item_meets_every_requirement():
+    assert spec_verdict({"minimum_graduation_g": 10}, [GRADUATION]) == "Meets all 1"
+
+
+def test_spec_verdict_when_the_item_fails_a_requirement():
+    assert spec_verdict({"minimum_graduation_g": 100}, [GRADUATION]) == "1 of 1 fail"
+
+
+def test_spec_verdict_when_the_item_never_states_the_attribute():
+    assert spec_verdict({}, [GRADUATION]) == "1 of 1 not stated"
+
+
+def test_spec_verdict_treats_none_attributes_as_empty():
+    assert spec_verdict(None, [GRADUATION]) == "1 of 1 not stated"
+
+
+def test_spec_verdict_does_not_raise_on_an_unrecognised_operator():
+    """Unlike check_compliance, this renders a read-only table cell -- a bad
+    operator on one commodity must not 500 the whole item list."""
+    bad = dict(GRADUATION, operator="approximately")
+    assert spec_verdict({"minimum_graduation_g": 10}, [bad]) == "1 of 1 not stated"

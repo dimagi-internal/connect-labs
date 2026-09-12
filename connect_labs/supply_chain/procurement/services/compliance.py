@@ -128,3 +128,42 @@ def check_compliance(
             )
 
     return results
+
+
+def spec_verdict(item_spec_attributes: dict | None, spec_requirements: list[dict]) -> str:
+    """A short pass/fail/not_stated summary for the item master screen's
+    "spec verdict" column (design doc section 12, finding 15).
+
+    No quote is in scope on that screen -- an item's own specification
+    sheet is checked against the commodity's requirements directly, using
+    the same OPERATORS this module already evaluates check_compliance's
+    quote-vs-requirement comparisons with, so the pass/fail rule is written
+    once. Unlike check_compliance, an unrecognised operator here is folded
+    into "not stated" rather than raised: this renders a table cell on a
+    read-only registry page, and a bad operator on one commodity's spec
+    should not 500 the whole item list.
+    """
+    if not spec_requirements:
+        return "No requirements"
+
+    attributes = item_spec_attributes or {}
+    outcomes: list[str] = []
+    for requirement in spec_requirements:
+        operator = requirement.get("operator")
+        if operator not in OPERATORS:
+            outcomes.append(NOT_STATED)
+            continue
+        required = _as_decimal(requirement.get("value"))
+        stated = _as_decimal(attributes.get(requirement.get("field")))
+        if stated is None:
+            outcomes.append(NOT_STATED)
+        elif OPERATORS[operator](stated, required):
+            outcomes.append(PASS)
+        else:
+            outcomes.append(FAIL)
+
+    if FAIL in outcomes:
+        return f"{outcomes.count(FAIL)} of {len(outcomes)} fail"
+    if NOT_STATED in outcomes:
+        return f"{outcomes.count(NOT_STATED)} of {len(outcomes)} not stated"
+    return f"Meets all {len(outcomes)}"

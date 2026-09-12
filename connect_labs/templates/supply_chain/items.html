@@ -18,7 +18,8 @@
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Manufacturer</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pack configuration</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GTIN</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Specification</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Spec verdict</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-200">
@@ -54,9 +55,10 @@
           {% endwith %}
         </td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ item.status|default:"active"|title }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ item.spec_verdict }}</td>
       </tr>
       {% empty %}
-      <tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">No items catalogued yet.</td></tr>
+      <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">No items catalogued yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
