@@ -5,7 +5,7 @@ web pages have is a tool, and a new operation needs no work here.
 from connect_labs.mcp.connect_token import require_connect_token
 from connect_labs.mcp.tool_registry import register
 from connect_labs.supply_chain.data_access import SupplyDataAccess
-from connect_labs.supply_chain.operations import all_operations
+from connect_labs.supply_chain.operations import all_operations, call_operation
 
 # Procurement's operations register themselves into the shared registry as a side
 # effect of importing connect_labs.supply_chain.procurement.operations -- normally
@@ -25,7 +25,16 @@ def _make_handler(operation):
             organization_id=organization_id,
             program_id=program_id,
         )
-        return operation.handler(access, **payload)
+        # Route through call_operation, not operation.handler directly. FastMCP's
+        # own schema validation lives in FunctionTool.run, which RegistryTool
+        # (connect_labs/mcp/server.py) overrides and never calls -- so
+        # call_operation's jsonschema.validate() is the ONLY place the closed
+        # schema (money-as-string, enum values, additionalProperties) gets
+        # enforced on this surface. organization_id/program_id are already
+        # consumed by this handler's own signature above, so they never reach
+        # the operation's payload -- the operation's schema does not declare
+        # them and would reject them if they did.
+        return call_operation(operation.name, access, payload)
 
     handler.__name__ = f"procurement_{operation.name}"
     return handler
