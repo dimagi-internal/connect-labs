@@ -136,7 +136,7 @@ def test_the_missing_course_definition_reason_uses_the_commodity_own_noun(round_
     regardless of the commodity, so an infant scale (base_unit="unit") read
     "no course definition set for Infant scale (sachets per course)". Per
     Ruling 1, every user-facing noun comes from the commodity."""
-    from connect_labs.supply_chain.models import CommodityRecord
+    from connect_labs.supply_chain.proxies import CommodityRecord
     from connect_labs.supply_chain.tests.conftest import wrap
 
     scale = wrap(

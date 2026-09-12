@@ -1,527 +1,879 @@
-"""Proxy models over LocalLabsRecord for procurement records.
+"""First-class Django models for the supply domain.
 
-Read-only typed access to record.data. These classes hold no rules: every
-derived figure comes from services/, so there is exactly one place to look
-for how a number was produced.
+**Why these are real tables and not LabsRecords.** The procurement tier was
+built on `LabsRecord`s written through to production Connect, because that is
+how labs apps normally persist: the data belongs to Connect and labs is a
+client of it. Supply is different on both counts.
 
-LocalLabsRecord is transient and cannot be .save()d — persistence is
-LabsRecordAPIClient's job, via data_access.py.
+  1. It is *primary* data that originates here -- a stock ledger, a contract,
+     a receipt, a worker's reported count. Nothing in Connect is its source.
+  2. It carries no PII. The reason labs round-trips data through Connect is so
+     that person-level data lives where its access controls live. A carton
+     count does not need that.
+  3. It needs real relational work. A balance is an aggregate over a ledger
+     filtered by supply point, item and batch; average monthly consumption is
+     a windowed aggregate; a three-way match is a join. Doing that over JSON
+     blobs fetched by HTTP is the wrong tool.
+
+So the labs database is the system of record for supply, and whether to sync
+any of it back to Connect is a later, separate decision. Nothing here assumes
+it will not happen: every model carries the Connect identifiers
+(`program_id`, `opportunity_id`, `connect_username`) needed to push upward.
+
+**Connect entities are integer ids, not foreign keys.** `program_id`,
+`opportunity_id`, `organization_id` and `connect_user_id` reference rows that
+live in production Connect. The `opportunity`/`program`/`organization` tables
+exist in this database only to satisfy migrations and are empty (see
+CLAUDE.md), so a ForeignKey to them would fail on every real id. Indexed
+integers keep the query plans and drop the integrity we cannot honour anyway.
+
+Rules live in `procurement/services/` and `stock/services/`, never here. The
+one exception is arithmetic that must not be expressible two ways -- the
+ledger sign convention on `MovementQuerySet` -- which is a property of the
+schema, not a policy.
 """
 
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
-from connect_labs.labs.models import LocalLabsRecord
+from django.core.exceptions import ValidationError
+from django.db import models
+from django.db.models import Q, Sum
 
+from connect_labs.supply_chain import records
 
-def _decimal(raw) -> Decimal | None:
-    """Decimal, or None for absent/unparseable. Never a silent zero."""
-    if raw is None or raw == "":
-        return None
-    try:
-        return Decimal(str(raw))
-    except (InvalidOperation, ValueError):
-        return None
-
-
-class _Base(LocalLabsRecord):
-    def _get(self, key, default=None):
-        return self.data.get(key, default)
+# Quantities: 4 decimal places is enough for a carton, a sachet or a
+# millilitre and keeps every sum exact. Money is 4 as well -- a unit price
+# divided out of a lot total is routinely fractional, and rounding it at
+# storage time is the silent precision loss the pricing rules refuse.
+QTY = {"max_digits": 18, "decimal_places": 4}
+MONEY = {"max_digits": 18, "decimal_places": 4}
 
 
-class CommodityRecord(_Base):
+def _choices(values):
+    return [(v, v.replace("_", " ")) for v in values]
+
+
+def scope_key(organization_id=None, program_id=None) -> str:
+    """The reference tier's scope, as one indexable string.
+
+    Reference data (commodities, items, suppliers, parties) is shared across a
+    programme's rounds and ideally across an organisation's programmes. Which
+    of the two we get depends on the caller: `labs_context` hands a numeric
+    organisation id for a real org and a slug for a labs-only synthetic one.
+
+    Encoding both cases in a single column rather than two nullable ones is
+    deliberate: Postgres treats NULLs as distinct, so `unique_together` over
+    nullable scope columns does not actually prevent duplicate slugs. A
+    non-null scope_key makes the uniqueness constraint real.
+    """
+    if organization_id not in (None, ""):
+        return f"org:{organization_id}"
+    if program_id not in (None, ""):
+        return f"prog:{program_id}"
+    raise ValueError("reference data needs an organization_id or a program_id to be scoped by")
+
+
+class TimestampedModel(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+
+
+class SourcedModel(TimestampedModel):
+    """Provenance, compulsory below the contract (design doc section 17.3).
+
+    Between "raise the purchase order" and "receive the goods" there are five
+    consecutive stages we do not witness, because the buyer of record may not
+    be us. Every record in the fulfilment, network and stock tiers therefore
+    says who put it here and how they knew -- and `source` has no default, so
+    a caller cannot omit it and have the record read as first-hand.
+    """
+
+    source = models.CharField(max_length=32, choices=_choices(records.SOURCES))
+    recorded_by_party = models.ForeignKey(
+        "supply_chain.Party", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
+    )
+    note = models.TextField(blank=True, default="")
+
+    class Meta:
+        abstract = True
+
     @property
-    def slug(self):
-        return self._get("slug")
+    def witnessed(self) -> bool:
+        """True only for what we saw ourselves or hold a document for.
+
+        Deliberately strict: a missing source is weaker than a partner's
+        claim, not stronger.
+        """
+        return self.source in ("we_recorded", "document")
+
+
+# ======================================================================
+# Reference tier -- reused across a programme's rounds
+# ======================================================================
+
+
+class Party(TimestampedModel):
+    """An organisation that can act in the chain, including us.
+
+    Separate from `Supplier` on purpose. A supplier has a sourcing lifecycle
+    (identified, contacted, quoting, awarded) and prequalification state; a
+    party is simply an actor that can buy, receive, distribute or pay. A
+    supplier that also acts -- holding consignment stock, say -- links through
+    `Supplier.party` rather than being crammed into one table with two
+    lifecycles.
+
+    `connect_organization_id` is nullable because a local partner is usually
+    working with us before anybody creates its Connect organisation, and
+    refusing to record the party until that link exists would make the system
+    unusable exactly when it is most needed.
+    """
+
+    scope_key = models.CharField(max_length=64, db_index=True)
+    slug = models.SlugField(max_length=64)
+    name = models.CharField(max_length=255)
+    kind = models.CharField(max_length=32, choices=_choices(records.PARTY_KINDS))
+    connect_organization_id = models.IntegerField(null=True, blank=True, db_index=True)
+    roles = models.JSONField(default=list, blank=True)
+    country = models.CharField(max_length=2, blank=True, default="")
+    contacts = models.JSONField(default=list, blank=True)
+    notes = models.TextField(blank=True, default="")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["scope_key", "slug"], name="uniq_party_scope_slug")]
+        ordering = ["name"]
+        verbose_name_plural = "parties"
+
+    def __str__(self):
+        return self.name
 
     @property
-    def name(self):
-        return self._get("name", "")
+    def is_linked(self) -> bool:
+        """Whether this party is bound to a real Connect organisation.
 
-    @property
-    def category(self):
-        return self._get("category")
+        An unlinked party can still record everything; the binding is what
+        lets its own staff sign in and do it themselves.
+        """
+        return self.connect_organization_id is not None
 
-    @property
-    def base_unit(self):
-        return self._get("base_unit")
 
-    @property
-    def pack_unit(self):
-        return self._get("pack_unit")
+class Commodity(TimestampedModel):
+    """The type of thing bought -- RUTF, not a particular manufacturer's RUTF."""
 
-    @property
-    def base_per_pack(self):
-        return self._get("base_per_pack")
+    scope_key = models.CharField(max_length=64, db_index=True)
+    slug = models.SlugField(max_length=64)
+    name = models.CharField(max_length=255)
+    category = models.CharField(max_length=32, blank=True, default="")
+    base_unit = models.CharField(max_length=32, blank=True, default="")
+    pack_unit = models.CharField(max_length=32, blank=True, default="")
+    base_per_pack = models.IntegerField(null=True, blank=True)
+    base_unit_grams = models.IntegerField(null=True, blank=True)
+    shelf_life_months_minimum = models.IntegerField(null=True, blank=True)
+    spec_requirements = models.JSONField(default=list, blank=True)
+    # {base_units_per_day, days_per_course, base_units_per_course, source}.
+    # Empty is the normal starting state and is why per-course figures come
+    # back Unconfirmed rather than guessed -- our gap, not a supplier's.
+    course_definition = models.JSONField(default=dict, blank=True)
+    spec_reference = models.CharField(max_length=255, blank=True, default="")
+    unicef_material_number = models.CharField(max_length=32, blank=True, default="")
 
-    @property
-    def base_unit_grams(self):
-        return self._get("base_unit_grams")
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["scope_key", "slug"], name="uniq_commodity_scope_slug")]
+        ordering = ["name"]
+        verbose_name_plural = "commodities"
 
-    @property
-    def course_definition(self):
-        return self._get("course_definition") or {}
+    def __str__(self):
+        return self.name
 
     @property
     def base_units_per_course(self):
-        """None when the programme has not entered its treatment protocol."""
-        return self.course_definition.get("base_units_per_course")
-
-    @property
-    def spec_requirements(self):
-        return self._get("spec_requirements") or []
-
-    @property
-    def shelf_life_months_minimum(self):
-        return self._get("shelf_life_months_minimum")
-
-    @property
-    def gpc_brick(self):
-        return self._get("gpc_brick")
-
-    @property
-    def unspsc(self):
-        return self._get("unspsc")
+        return (self.course_definition or {}).get("base_units_per_course")
 
 
-class ItemRecord(_Base):
-    """A trade item — the specific, pack-configured thing that is counted and scanned.
+class Item(TimestampedModel):
+    """A trade item: one manufacturer's product, with its own pack configuration.
 
-    `commodity` says what kind of thing it is; this says which one. Two suppliers'
-    RUTF can be 144 and 150 sachets per carton, and that difference is invisible at
-    commodity level while silently corrupting every per-sachet comparison.
+    The layer that exists because two suppliers' RUTF can be 144 and 150 to
+    the carton. A commodity cannot know that; only the item can.
     """
 
-    @property
-    def sku(self):
-        return self._get("sku")
+    scope_key = models.CharField(max_length=64, db_index=True)
+    sku = models.CharField(max_length=64)
+    name = models.CharField(max_length=255)
+    commodity = models.ForeignKey(Commodity, on_delete=models.PROTECT, related_name="items")
+    manufacturer = models.CharField(max_length=255, blank=True, default="")
+    base_unit = models.CharField(max_length=32, blank=True, default="")
+    pack_unit = models.CharField(max_length=32, blank=True, default="")
+    base_per_pack = models.IntegerField(null=True, blank=True)
+    pack_per_case = models.IntegerField(null=True, blank=True)
+    base_unit_grams = models.IntegerField(null=True, blank=True)
+    shelf_life_months = models.IntegerField(null=True, blank=True)
+    gtin_base = models.CharField(max_length=14, blank=True, default="")
+    gtin_pack = models.CharField(max_length=14, blank=True, default="")
+    gtin_case = models.CharField(max_length=14, blank=True, default="")
+    gpc_brick = models.CharField(max_length=16, blank=True, default="")
+    spec_attributes = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=16, default="active", choices=_choices(("active", "discontinued")))
 
-    @property
-    def name(self):
-        return self._get("name", "")
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["scope_key", "sku"], name="uniq_item_scope_sku")]
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.sku})"
 
     @property
     def commodity_slug(self):
-        return self._get("commodity_slug")
-
-    @property
-    def manufacturer(self):
-        return self._get("manufacturer", "")
-
-    @property
-    def brand(self):
-        return self._get("brand", "")
-
-    @property
-    def base_unit(self):
-        return self._get("base_unit")
-
-    @property
-    def base_per_pack(self):
-        return self._get("base_per_pack")
-
-    @property
-    def pack_unit(self):
-        return self._get("pack_unit")
-
-    @property
-    def pack_per_case(self):
-        return self._get("pack_per_case")
-
-    @property
-    def base_unit_grams(self):
-        return self._get("base_unit_grams")
-
-    @property
-    def gross_weight_kg(self):
-        return _decimal(self._get("gross_weight_kg"))
-
-    @property
-    def gtin_base(self):
-        return self._get("gtin_base")
-
-    @property
-    def gtin_pack(self):
-        return self._get("gtin_pack")
-
-    @property
-    def gtin_case(self):
-        return self._get("gtin_case")
-
-    @property
-    def unicef_material_no(self):
-        return self._get("unicef_material_no")
-
-    @property
-    def unspsc(self):
-        return self._get("unspsc")
-
-    @property
-    def atc(self):
-        return self._get("atc")
-
-    @property
-    def gpc_brick(self):
-        return self._get("gpc_brick")
-
-    @property
-    def spec_attributes(self):
-        """The item's actual specification — durable fact, unlike a quote's claim."""
-        return self._get("spec_attributes") or {}
-
-    @property
-    def shelf_life_months(self):
-        return self._get("shelf_life_months")
-
-    @property
-    def status(self):
-        return self._get("status", "active")
-
-    @property
-    def source(self):
-        return self._get("source") or {}
+        return self.commodity.slug
 
 
-class SupplierRecord(_Base):
-    @property
-    def name(self):
-        return self._get("name", "")
+class Supplier(TimestampedModel):
+    scope_key = models.CharField(max_length=64, db_index=True)
+    name = models.CharField(max_length=255)
+    # `type` rather than `kind` because the sourcing services already read
+    # supplier.type; renaming it here would buy consistency with Party.kind at
+    # the cost of touching working, tested code for no behavioural gain.
+    type = models.CharField(max_length=32, blank=True, default="")
+    country = models.CharField(max_length=2, blank=True, default="")
+    city = models.CharField(max_length=128, blank=True, default="")
+    status = models.CharField(max_length=32, blank=True, default="identified")
+    contacts = models.JSONField(default=list, blank=True)
+    qualifications = models.JSONField(default=list, blank=True)
+    connect_organization_id = models.IntegerField(null=True, blank=True, db_index=True)
+    party = models.ForeignKey(Party, null=True, blank=True, on_delete=models.SET_NULL, related_name="supplier_roles")
+    notes = models.TextField(blank=True, default="")
 
-    @property
-    def supplier_type(self):
-        return self._get("type")
+    class Meta:
+        ordering = ["name"]
 
-    @property
-    def country(self):
-        return self._get("country")
-
-    @property
-    def city(self):
-        return self._get("city")
-
-    @property
-    def origin_note(self):
-        return self._get("origin_note", "")
-
-    @property
-    def contacts(self):
-        return self._get("contacts") or []
-
-    @property
-    def qualifications(self):
-        return self._get("qualifications") or []
-
-    @property
-    def connect_organization_id(self):
-        return self._get("connect_organization_id")
-
-    @property
-    def gln(self):
-        """GS1 Global Location Number, when the supplier has one."""
-        return self._get("gln")
-
-    @property
-    def status(self):
-        return self._get("status", "identified")
-
-    @property
-    def status_reason(self):
-        return self._get("status_reason", "")
+    def __str__(self):
+        return self.name
 
 
-class RoundRecord(_Base):
-    @property
-    def label(self):
-        return self._get("label", "")
+# ======================================================================
+# Procurement tier -- source to award. Programme-scoped.
+# ======================================================================
 
-    @property
-    def status(self):
-        return self._get("status", "draft")
 
-    @property
-    def lines(self):
-        return self._get("lines") or []
+class Round(TimestampedModel):
+    program_id = models.IntegerField(db_index=True)
+    label = models.CharField(max_length=255)
+    status = models.CharField(max_length=16, default="draft", choices=_choices(("draft", "open", "closed", "awarded")))
+    lines = models.JSONField(default=list, blank=True)
+    delivery_point = models.JSONField(default=dict, blank=True)
+    response_deadline = models.DateField(null=True, blank=True)
+    reminder_interval_days = models.IntegerField(null=True, blank=True)
+    shelf_life_months_minimum = models.IntegerField(null=True, blank=True)
+    notes_to_supplier = models.TextField(blank=True, default="")
+    opened_at = models.DateTimeField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
 
-    @property
-    def delivery_point(self):
-        return self._get("delivery_point") or {}
+    class Meta:
+        ordering = ["-created_at"]
 
-    @property
-    def response_deadline(self):
-        return self._get("response_deadline")
-
-    @property
-    def reminder_interval_days(self):
-        return self._get("reminder_interval_days")
-
-    @property
-    def notes_to_supplier(self):
-        return self._get("notes_to_supplier", "")
-
-    @property
-    def shelf_life_months_minimum(self):
-        return self._get("shelf_life_months_minimum")
+    def __str__(self):
+        return self.label
 
     def quantity_for(self, commodity_slug):
-        """(quantity, unit) for a commodity on this round, or None."""
-        for line in self.lines:
+        """(quantity, unit) for one commodity on this round, or (None, None)."""
+        for line in self.lines or []:
             if line.get("commodity_slug") == commodity_slug:
-                quantity = _decimal(line.get("quantity"))
-                if quantity is None:
-                    return None
-                return quantity, line.get("quantity_unit")
-        return None
+                raw = line.get("quantity")
+                return (Decimal(str(raw)) if raw not in (None, "") else None), line.get("quantity_unit")
+        return None, None
 
 
-class OutreachRecord(_Base):
-    @property
-    def round_id(self):
-        return self._get("round_id")
+class Outreach(TimestampedModel):
+    """One RFQ invitation. A log, not a state machine -- deliberately not unique
+    per (round, supplier), because re-inviting is a real event worth keeping."""
 
-    @property
-    def supplier_id(self):
-        return self._get("supplier_id")
+    round = models.ForeignKey(Round, on_delete=models.CASCADE, related_name="outreach")
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="outreach")
+    channel = models.CharField(max_length=16, blank=True, default="manual")
+    sent_on = models.DateField(null=True, blank=True)
+    responded = models.BooleanField(default=False)
+    response_kind = models.CharField(max_length=16, blank=True, default="")
+    last_reminder_on = models.DateField(null=True, blank=True)
+    notes = models.TextField(blank=True, default="")
 
-    @property
-    def contact_email_used(self):
-        return self._get("contact_email_used")
-
-    @property
-    def sent_on(self):
-        return self._get("sent_on")
-
-    @property
-    def channel(self):
-        return self._get("channel", "manual")
-
-    @property
-    def request_text_rendered(self):
-        return self._get("request_text_rendered", "")
-
-    @property
-    def responded(self):
-        return bool(self._get("responded", False))
-
-    @property
-    def responded_on(self):
-        return self._get("responded_on")
-
-    @property
-    def response_kind(self):
-        return self._get("response_kind")
+    class Meta:
+        ordering = ["-sent_on", "-created_at"]
+        indexes = [models.Index(fields=["round", "supplier"])]
+        verbose_name_plural = "outreach"
 
 
-class QuoteRecord(_Base):
-    @property
-    def round_id(self):
-        return self._get("round_id")
+class Quote(TimestampedModel):
+    """What a supplier said, recorded on the supplier's own terms.
 
-    @property
-    def supplier_id(self):
-        return self._get("supplier_id")
+    Nothing here is normalised. `as_quoted_*` is verbatim and the `*_basis`
+    and `pack_spec_source` flags record what was and was not stated, so the
+    derivations can refuse to compute rather than assume. Corrections
+    supersede rather than overwrite: a quote is a statement someone made, and
+    editing it away loses the fact that it was made.
+    """
+
+    round = models.ForeignKey(Round, on_delete=models.CASCADE, related_name="quotes")
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="quotes")
+    commodity = models.ForeignKey(Commodity, on_delete=models.PROTECT, related_name="quotes")
+    item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT, related_name="quotes")
+
+    as_quoted_amount = models.DecimalField(null=True, blank=True, **MONEY)
+    as_quoted_unit = models.CharField(max_length=24, blank=True, default="")
+    as_quoted_currency = models.CharField(max_length=3, default="USD")
+    quantity_basis = models.DecimalField(null=True, blank=True, **QTY)
+    quantity_basis_unit = models.CharField(max_length=32, blank=True, default="")
+
+    pack_spec_source = models.CharField(max_length=24, blank=True, default="not_stated")
+    base_per_pack_stated = models.IntegerField(null=True, blank=True)
+    base_unit_grams_stated = models.IntegerField(null=True, blank=True)
+
+    freight_basis = models.CharField(max_length=16, blank=True, default="not_specified")
+    freight_amount = models.DecimalField(null=True, blank=True, **MONEY)
+    duties_basis = models.CharField(max_length=16, blank=True, default="not_specified")
+    duties_amount = models.DecimalField(null=True, blank=True, **MONEY)
+    fx_rate_to_usd = models.DecimalField(null=True, blank=True, max_digits=18, decimal_places=8)
+
+    shelf_life_months_stated = models.IntegerField(null=True, blank=True)
+    moq = models.DecimalField(null=True, blank=True, **QTY)
+    moq_unit = models.CharField(max_length=32, blank=True, default="")
+    lead_time_days = models.IntegerField(null=True, blank=True)
+    validity_until = models.DateField(null=True, blank=True)
+    incoterm = models.CharField(max_length=16, blank=True, default="")
+    stated_spec = models.JSONField(default=dict, blank=True)
+    received_on = models.DateField(null=True, blank=True)
+
+    voided = models.BooleanField(default=False)
+    superseded_by = models.OneToOneField(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="supersedes"
+    )
+    notes = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["round", "commodity"])]
 
     @property
     def commodity_slug(self):
-        return self._get("commodity_slug")
+        return self.commodity.slug
 
     @property
-    def as_quoted_amount(self):
-        return _decimal(self._get("as_quoted_amount"))
-
-    @property
-    def as_quoted_currency(self):
-        return self._get("as_quoted_currency", "USD")
-
-    @property
-    def as_quoted_unit(self):
-        return self._get("as_quoted_unit")
-
-    @property
-    def quantity_basis(self):
-        return _decimal(self._get("quantity_basis"))
-
-    @property
-    def quantity_basis_unit(self):
-        return self._get("quantity_basis_unit")
-
-    @property
-    def item_id(self):
-        """The trade item this quote is for, when the supplier named one."""
-        return self._get("item_id")
-
-    @property
-    def pack_spec_source(self):
-        """Where the pack configuration came from, if anywhere.
-
-        stated_on_quote      — the supplier wrote the sachets-per-carton down
-        trade_item_confirmed — the supplier identified a known trade item, which
-                               states it just as surely
-        not_stated           — nobody has said; every per-sachet figure is Unconfirmed
-
-        Defaults to not_stated: the honest reading of a quote that was silent has
-        to be the cheapest one to record.
-        """
-        return self._get("pack_spec_source", "not_stated")
-
-    @property
-    def base_per_pack_stated(self):
-        return self._get("base_per_pack_stated")
-
-    @property
-    def base_unit_grams_stated(self):
-        return self._get("base_unit_grams_stated")
-
-    @property
-    def freight_basis(self):
-        return self._get("freight_basis", "not_specified")
-
-    @property
-    def freight_amount(self):
-        return _decimal(self._get("freight_amount"))
-
-    @property
-    def duties_basis(self):
-        return self._get("duties_basis", "not_specified")
-
-    @property
-    def duties_amount(self):
-        return _decimal(self._get("duties_amount"))
-
-    @property
-    def duties_note(self):
-        return self._get("duties_note", "")
-
-    @property
-    def incoterm(self):
-        return self._get("incoterm")
-
-    @property
-    def delivery_point_quoted(self):
-        return self._get("delivery_point_quoted") or {}
-
-    @property
-    def shelf_life_months_stated(self):
-        return self._get("shelf_life_months_stated")
-
-    @property
-    def production_or_expiry_date_stated(self):
-        return self._get("production_or_expiry_date_stated")
-
-    @property
-    def moq(self):
-        return _decimal(self._get("moq"))
-
-    @property
-    def moq_unit(self):
-        return self._get("moq_unit")
-
-    @property
-    def lead_time_days(self):
-        return self._get("lead_time_days")
-
-    @property
-    def validity_until(self):
-        return self._get("validity_until")
-
-    @property
-    def stated_spec(self):
-        return self._get("stated_spec") or {}
-
-    @property
-    def fx_rate_to_usd(self):
-        return _decimal(self._get("fx_rate_to_usd"))
-
-    @property
-    def fx_rate_as_of(self):
-        return self._get("fx_rate_as_of")
-
-    @property
-    def version(self):
-        return self._get("version", 1)
-
-    @property
-    def supersedes_quote_id(self):
-        return self._get("supersedes_quote_id")
+    def supplier_id_value(self):
+        return self.supplier_id
 
     @property
     def superseded_by_quote_id(self):
-        return self._get("superseded_by_quote_id")
+        """Named for the services that read it; the column is a self relation."""
+        return self.superseded_by_id
 
     @property
-    def correction_reason(self):
-        return self._get("correction_reason", "")
+    def is_live(self) -> bool:
+        return not self.voided and self.superseded_by_id is None
+
+
+class Award(TimestampedModel):
+    """The decision. Not a commitment -- see Contract."""
+
+    round = models.ForeignKey(Round, on_delete=models.CASCADE, related_name="awards")
+    quote = models.ForeignKey(Quote, on_delete=models.PROTECT, related_name="awards")
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="awards")
+    commodity = models.ForeignKey(Commodity, on_delete=models.PROTECT, related_name="awards")
+    decided_on = models.DateField(null=True, blank=True)
+    decided_by = models.CharField(max_length=255, blank=True, default="")
+    rationale = models.TextField(blank=True, default="")
+    # Frozen at the moment of the decision, including which buyer of record
+    # its landed totals assumed (design doc section 17.1). Without that, a
+    # replayed comparison can silently disagree with the award it justified.
+    comparison_snapshot = models.JSONField(default=dict, blank=True)
+    provisional = models.BooleanField(default=False)
+    assumed_buyer_of_record = models.CharField(
+        max_length=16, blank=True, default="", choices=_choices(records.BUYER_OF_RECORD)
+    )
+
+    class Meta:
+        ordering = ["-decided_on", "-created_at"]
+
+
+# ======================================================================
+# Fulfilment tier -- contract to receipt
+# ======================================================================
+
+
+class Contract(SourcedModel):
+    """The commitment, and the record that names who is actually buying.
+
+    `buyer_of_record` has no default. Import duty and VAT depend on who
+    imports, so a landed total computed without knowing the buyer would be a
+    number with an invisible assumption inside it -- the exact failure mode
+    the whole domain is built to refuse.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    round = models.ForeignKey(Round, null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
+    award = models.ForeignKey(Award, null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="contracts")
+    commodity = models.ForeignKey(Commodity, on_delete=models.PROTECT, related_name="contracts")
+    item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
+
+    buyer_of_record = models.CharField(max_length=16, choices=_choices(records.BUYER_OF_RECORD))
+    buyer_party = models.ForeignKey(Party, on_delete=models.PROTECT, related_name="contracts")
+
+    # May be the partner's PO number rather than ours, which is why it is
+    # nullable and why `source` says who told us it.
+    reference = models.CharField(max_length=64, blank=True, default="")
+    signed_on = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=16, default="draft", choices=_choices(records.CONTRACT_STATUSES))
+
+    currency = models.CharField(max_length=3, default="USD")
+    quantity = models.DecimalField(null=True, blank=True, **QTY)
+    quantity_unit = models.CharField(max_length=32, blank=True, default="")
+    unit_price = models.DecimalField(null=True, blank=True, **MONEY)
+    unit_price_unit = models.CharField(max_length=24, blank=True, default="")
+
+    freight_basis = models.CharField(max_length=16, default="not_specified", choices=_choices(records.BASIS))
+    freight_amount = models.DecimalField(null=True, blank=True, **MONEY)
+    duties_basis = models.CharField(max_length=16, default="not_specified", choices=_choices(records.BASIS))
+    duties_amount = models.DecimalField(null=True, blank=True, **MONEY)
+    vat_basis = models.CharField(max_length=16, default="not_specified", choices=_choices(records.BASIS))
+    vat_amount = models.DecimalField(null=True, blank=True, **MONEY)
+
+    # A claimed relief is not a relief: with no document attached the duty
+    # line derives as Unconfirmed, not as zero (design doc section 17.1).
+    duty_relief_claimed = models.BooleanField(default=False)
+    duty_relief_document = models.ForeignKey(
+        "supply_chain.Document", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    incoterm = models.CharField(max_length=16, blank=True, default="")
+    delivery_supply_point = models.ForeignKey(
+        "supply_chain.SupplyPoint", null=True, blank=True, on_delete=models.PROTECT, related_name="inbound_contracts"
+    )
+    promised_lead_time_days = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-signed_on", "-created_at"]
+        indexes = [models.Index(fields=["program_id", "status"])]
+
+    def __str__(self):
+        return self.reference or f"contract {self.pk}"
 
     @property
-    def voided(self):
-        return bool(self._get("voided", False))
+    def duty_relief_evidenced(self) -> bool:
+        return self.duty_relief_claimed and self.duty_relief_document_id is not None
+
+
+class Shipment(SourcedModel):
+    contract = models.ForeignKey(Contract, on_delete=models.CASCADE, related_name="shipments")
+    reference = models.CharField(max_length=64, blank=True, default="")
+    sscc = models.CharField(max_length=18, blank=True, default="")
+    status = models.CharField(max_length=16, default="planned", choices=_choices(records.SHIPMENT_STATUSES))
+    dispatched_on = models.DateField(null=True, blank=True)
+    expected_on = models.DateField(null=True, blank=True)
+    carrier = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ["-dispatched_on", "-created_at"]
 
     @property
-    def void_reason(self):
-        return self._get("void_reason", "")
+    def is_in_transit(self) -> bool:
+        """Dispatched and not yet received. Never counted as stock (section 19.1)."""
+        return self.status in records.IN_TRANSIT_STATUSES
+
+
+class ShipmentLine(models.Model):
+    shipment = models.ForeignKey(Shipment, on_delete=models.CASCADE, related_name="lines")
+    item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    batch = models.CharField(max_length=64, blank=True, default="")
+    expiry = models.DateField(null=True, blank=True)
+    quantity = models.DecimalField(**QTY)
+    quantity_unit = models.CharField(max_length=32)
+
+
+class Receipt(SourcedModel):
+    """A goods received note. The only event that brings stock into existence."""
+
+    contract = models.ForeignKey(Contract, null=True, blank=True, on_delete=models.PROTECT, related_name="receipts")
+    shipment = models.ForeignKey(Shipment, null=True, blank=True, on_delete=models.PROTECT, related_name="receipts")
+    supply_point = models.ForeignKey("supply_chain.SupplyPoint", on_delete=models.PROTECT, related_name="receipts")
+    reference = models.CharField(max_length=64, blank=True, default="")
+    received_on = models.DateField()
+
+    class Meta:
+        ordering = ["-received_on", "-created_at"]
+
+
+class ReceiptLine(models.Model):
+    receipt = models.ForeignKey(Receipt, on_delete=models.CASCADE, related_name="lines")
+    item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    batch = models.CharField(max_length=64, blank=True, default="")
+    expiry = models.DateField(null=True, blank=True)
+    quantity_accepted = models.DecimalField(**QTY)
+    quantity_rejected = models.DecimalField(default=Decimal("0"), **QTY)
+    rejection_reason = models.CharField(max_length=255, blank=True, default="")
+    quantity_unit = models.CharField(max_length=32)
+
+
+class Invoice(SourcedModel):
+    contract = models.ForeignKey(Contract, on_delete=models.CASCADE, related_name="invoices")
+    reference = models.CharField(max_length=64, blank=True, default="")
+    issued_on = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=16, default="received", choices=_choices(records.INVOICE_STATUSES))
+    currency = models.CharField(max_length=3, default="USD")
+    amount = models.DecimalField(null=True, blank=True, **MONEY)
+    quantity_billed = models.DecimalField(null=True, blank=True, **QTY)
+    quantity_unit = models.CharField(max_length=32, blank=True, default="")
+
+    class Meta:
+        ordering = ["-issued_on", "-created_at"]
+
+
+class Payment(SourcedModel):
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="payments")
+    paid_on = models.DateField()
+    amount = models.DecimalField(**MONEY)
+    currency = models.CharField(max_length=3, default="USD")
+    method = models.CharField(max_length=32, blank=True, default="")
+    reference = models.CharField(max_length=64, blank=True, default="")
+
+    class Meta:
+        ordering = ["-paid_on"]
+
+
+class Document(SourcedModel):
+    """Evidence. A stored file, or a link to where it legitimately lives.
+
+    Six explicit nullable links rather than a GenericForeignKey: the targets
+    are a closed set, and explicit columns stay joinable and queryable, which
+    a generic relation is not.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    kind = models.CharField(max_length=32, choices=_choices(records.DOCUMENT_KINDS))
+    title = models.CharField(max_length=255, blank=True, default="")
+    filename = models.CharField(max_length=255, blank=True, default="")
+    content_type = models.CharField(max_length=128, blank=True, default="")
+    size_bytes = models.BigIntegerField(null=True, blank=True)
+    # Stored through Django's configured storage: S3 on the deployment,
+    # filesystem locally. Either this or external_url, never neither.
+    storage_key = models.CharField(max_length=512, blank=True, default="")
+    external_url = models.URLField(max_length=1024, blank=True, default="")
+    sha256 = models.CharField(max_length=64, blank=True, default="")
+    uploaded_at = models.DateTimeField(null=True, blank=True)
+
+    contract = models.ForeignKey(Contract, null=True, blank=True, on_delete=models.CASCADE, related_name="documents")
+    shipment = models.ForeignKey(Shipment, null=True, blank=True, on_delete=models.CASCADE, related_name="documents")
+    receipt = models.ForeignKey(Receipt, null=True, blank=True, on_delete=models.CASCADE, related_name="documents")
+    invoice = models.ForeignKey(Invoice, null=True, blank=True, on_delete=models.CASCADE, related_name="documents")
+    supply_point = models.ForeignKey(
+        "supply_chain.SupplyPoint", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    )
+    supplier = models.ForeignKey(Supplier, null=True, blank=True, on_delete=models.CASCADE, related_name="documents")
+
+    class Meta:
+        ordering = ["-uploaded_at", "-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(storage_key="") | ~Q(external_url=""),
+                name="document_has_a_location",
+            )
+        ]
 
     @property
-    def source(self):
-        return self._get("source") or {}
+    def is_stored(self) -> bool:
+        return bool(self.storage_key)
 
 
-class AwardRecord(_Base):
-    @property
-    def round_id(self):
-        return self._get("round_id")
-
-    @property
-    def quote_id(self):
-        return self._get("quote_id")
-
-    @property
-    def decided_on(self):
-        return self._get("decided_on")
-
-    @property
-    def decided_by(self):
-        return self._get("decided_by")
-
-    @property
-    def rationale(self):
-        return self._get("rationale", "")
-
-    @property
-    def comparison_snapshot(self):
-        return self._get("comparison_snapshot") or {}
+# ======================================================================
+# Network tier -- where stock can rest
+# ======================================================================
 
 
-class PurchaseRecord(_Base):
-    @property
-    def round_id(self):
-        return self._get("round_id")
+class SupplyPoint(SourcedModel):
+    """Anywhere stock can rest, including a field worker's own holding.
 
-    @property
-    def supplier_id(self):
-        return self._get("supplier_id")
+    `kind="user_held"` is the ruling the whole stock model rests on (design
+    doc section 18). A worker is a supply point, not a special case with its
+    own arithmetic, which is what lets:
 
-    @property
-    def commodity_slug(self):
-        return self._get("commodity_slug")
+      - distributing to a worker reuse the same movement ledger as a
+        store-to-store transfer;
+      - a worker's stock on hand be a balance rather than a parallel concept;
+      - a worker's self-reported count and a warehouse stock take be one
+        record type;
+      - resupply planning not care which level it is planning for.
 
-    @property
-    def llo_name(self):
-        return self._get("llo_name", "")
+    Points form a tree through `parent`, so a programme's network reads as a
+    hierarchy without a second structure to keep in step.
+    """
 
-    @property
-    def quantity(self):
-        return _decimal(self._get("quantity"))
+    program_id = models.IntegerField(db_index=True)
+    # Set when the point belongs to one opportunity -- every user_held point
+    # does. Programme-level stores leave it null, so one query with a filter
+    # serves both "this opportunity's workers" and "the whole network".
+    opportunity_id = models.IntegerField(null=True, blank=True, db_index=True)
+    slug = models.SlugField(max_length=96)
+    name = models.CharField(max_length=255)
+    kind = models.CharField(max_length=24, choices=_choices(records.SUPPLY_POINT_KINDS))
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="children")
+    managed_by_party = models.ForeignKey(
+        Party, null=True, blank=True, on_delete=models.PROTECT, related_name="supply_points"
+    )
 
-    @property
-    def quantity_unit(self):
-        return self._get("quantity_unit")
+    connect_username = models.CharField(max_length=150, blank=True, default="", db_index=True)
+    connect_user_id = models.IntegerField(null=True, blank=True, db_index=True)
 
-    @property
-    def amount_paid(self):
-        return _decimal(self._get("amount_paid"))
+    admin_area = models.CharField(max_length=255, blank=True, default="")
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
 
-    @property
-    def currency(self):
-        return self._get("currency", "USD")
+    # Policy as data: the min/max months-of-stock band this point is managed
+    # to. Resupply reads it rather than hardcoding a programme's rule.
+    min_months_of_stock = models.DecimalField(null=True, blank=True, max_digits=6, decimal_places=2)
+    max_months_of_stock = models.DecimalField(null=True, blank=True, max_digits=6, decimal_places=2)
+    status = models.CharField(max_length=16, default="active", choices=_choices(("active", "inactive")))
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["program_id", "slug"], name="uniq_supply_point_program_slug")]
+        ordering = ["name"]
+        indexes = [models.Index(fields=["program_id", "kind"])]
+
+    def __str__(self):
+        return self.name
 
     @property
-    def paid_on(self):
-        return self._get("paid_on")
+    def is_user_held(self) -> bool:
+        return self.kind == "user_held"
+
+    def clean(self):
+        if self.kind == "user_held" and not (self.connect_username or self.connect_user_id):
+            raise ValidationError(
+                {"connect_username": "A user_held supply point must name the Connect user whose stock it is."}
+            )
+
+
+# ======================================================================
+# Stock tier -- the append-only ledger, and what is reported over it
+# ======================================================================
+
+
+class MovementQuerySet(models.QuerySet):
+    """The ledger's arithmetic, in one place.
+
+    **The sign convention.** A balance at a point is
+
+        sum(quantity where to_supply_point = point)
+      - sum(quantity where from_supply_point = point)
+
+    and that single rule covers every movement kind, because each kind simply
+    chooses which sides it sets: a receipt sets `to` only, consumption sets
+    `from` only, a transfer/issue/distribution sets both, and an adjustment
+    sets `to` with a quantity that may be negative. No kind needs a special
+    case, so there is no table of which kinds add and which subtract to get
+    wrong -- which is exactly the bug that silently doubles or zeroes a
+    balance.
+
+    **Units are not summed across.** Quantities are stored in the unit they
+    were stated in. Cartons and sachets cannot be added without the pack
+    specification, and the supplier may never have stated it, so these
+    methods return a total *per unit* and leave reconciliation to
+    `stock/services/`, which can return Unconfirmed. Collapsing units here
+    would bury the one finding this domain exists to surface.
+    """
+
+    def for_program(self, program_id):
+        return self.filter(program_id=program_id)
+
+    def for_opportunity(self, opportunity_id):
+        return self.filter(opportunity_id=opportunity_id)
+
+    def as_of(self, on_date):
+        return self.filter(occurred_on__lte=on_date) if on_date else self
+
+    def between(self, start, end):
+        qs = self
+        if start:
+            qs = qs.filter(occurred_on__gte=start)
+        if end:
+            qs = qs.filter(occurred_on__lte=end)
+        return qs
+
+    def touching(self, supply_point):
+        """Every movement that changes this point's balance, either direction."""
+        return self.filter(Q(to_supply_point=supply_point) | Q(from_supply_point=supply_point))
+
+    def _totals(self, group_by):
+        """{(group values...): Decimal} -- one grouped SUM, executed in the database."""
+        rows = self.values(*group_by).annotate(total=Sum("quantity"))
+        return {tuple(row[key] for key in group_by): (row["total"] or Decimal("0")) for row in rows}
+
+    def balance_by_unit(self, supply_point, item=None):
+        """{quantity_unit: Decimal} held at this point, aggregated in the database."""
+        qs = self.filter(item=item) if item is not None else self
+        inbound = qs.filter(to_supply_point=supply_point)._totals(["quantity_unit"])
+        outbound = qs.filter(from_supply_point=supply_point)._totals(["quantity_unit"])
+        units = set(inbound) | set(outbound)
+        return {unit[0]: inbound.get(unit, Decimal("0")) - outbound.get(unit, Decimal("0")) for unit in units}
+
+    def balance_by_batch(self, supply_point, item=None):
+        """{(batch, quantity_unit): Decimal} -- what first-expired-first-out needs."""
+        qs = self.filter(item=item) if item is not None else self
+        keys = ["batch", "quantity_unit"]
+        inbound = qs.filter(to_supply_point=supply_point)._totals(keys)
+        outbound = qs.filter(from_supply_point=supply_point)._totals(keys)
+        return {
+            key: inbound.get(key, Decimal("0")) - outbound.get(key, Decimal("0"))
+            for key in set(inbound) | set(outbound)
+        }
+
+    def consumption_by_unit(self):
+        """{quantity_unit: Decimal} dispensed. The input to average monthly consumption."""
+        return {unit[0]: total for unit, total in self.filter(kind="consumption")._totals(["quantity_unit"]).items()}
+
+
+class Movement(SourcedModel):
+    """One line of the stock ledger. Append-only: never updated, never deleted.
+
+    A correction is an `adjustment` movement naming its cause, not an edit.
+    That is what makes a balance reproducible: replaying the ledger at any
+    date gives the figure the system showed on that date.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    opportunity_id = models.IntegerField(null=True, blank=True, db_index=True)
+    kind = models.CharField(max_length=16, choices=_choices(records.MOVEMENT_KINDS))
+    occurred_on = models.DateField(db_index=True)
+
+    from_supply_point = models.ForeignKey(
+        SupplyPoint, null=True, blank=True, on_delete=models.PROTECT, related_name="movements_out"
+    )
+    to_supply_point = models.ForeignKey(
+        SupplyPoint, null=True, blank=True, on_delete=models.PROTECT, related_name="movements_in"
+    )
+
+    item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT, related_name="movements")
+    commodity = models.ForeignKey(Commodity, on_delete=models.PROTECT, related_name="movements")
+    batch = models.CharField(max_length=64, blank=True, default="")
+    expiry = models.DateField(null=True, blank=True)
+    quantity = models.DecimalField(**QTY)
+    quantity_unit = models.CharField(max_length=32)
+    reference = models.CharField(max_length=64, blank=True, default="")
+
+    receipt = models.ForeignKey(Receipt, null=True, blank=True, on_delete=models.PROTECT, related_name="movements")
+    shipment = models.ForeignKey(Shipment, null=True, blank=True, on_delete=models.PROTECT, related_name="movements")
+    distribution = models.ForeignKey(
+        "supply_chain.Distribution", null=True, blank=True, on_delete=models.PROTECT, related_name="movements"
+    )
+    stock_count = models.ForeignKey(
+        "supply_chain.StockCount", null=True, blank=True, on_delete=models.PROTECT, related_name="movements"
+    )
+
+    objects = MovementQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["-occurred_on", "-id"]
+        indexes = [
+            models.Index(fields=["program_id", "item", "occurred_on"]),
+            models.Index(fields=["to_supply_point", "item"]),
+            models.Index(fields=["from_supply_point", "item"]),
+            models.Index(fields=["opportunity_id", "kind"]),
+        ]
+        constraints = [
+            # A movement that touches no point changes nothing and would sit
+            # in the ledger as an untraceable quantity.
+            models.CheckConstraint(
+                condition=Q(from_supply_point__isnull=False) | Q(to_supply_point__isnull=False),
+                name="movement_touches_a_point",
+            ),
+            # Only an adjustment may be negative: it is how a stock count's
+            # variance gets into the ledger. A negative receipt or
+            # consumption is a sign error, and silently accepting one
+            # corrupts every balance downstream of it.
+            models.CheckConstraint(
+                condition=Q(quantity__gt=0) | Q(kind="adjustment"),
+                name="movement_positive_unless_adjustment",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk is not None and not self._state.adding:
+            raise ValueError(
+                "Movements are append-only: record an adjustment movement naming this one "
+                "as its cause rather than editing it."
+            )
+        return super().save(*args, **kwargs)
+
+
+class StockCount(SourcedModel):
+    """What somebody says is actually there.
+
+    Kept beside the ledger balance rather than replacing it: the variance
+    between the two is the finding, and overwriting one with the other
+    destroys it. An `override` additionally writes a compensating
+    `adjustment` movement, so the ledger continues to agree with the working
+    figure while remaining the authority (design doc section 20).
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    opportunity_id = models.IntegerField(null=True, blank=True, db_index=True)
+    supply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="stock_counts")
+    item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT, related_name="stock_counts")
+    commodity = models.ForeignKey(Commodity, on_delete=models.PROTECT, related_name="stock_counts")
+    batch = models.CharField(max_length=64, blank=True, default="")
+    kind = models.CharField(max_length=16, choices=_choices(records.STOCK_COUNT_KINDS))
+    counted_on = models.DateField(db_index=True)
+    quantity = models.DecimalField(**QTY)
+    quantity_unit = models.CharField(max_length=32)
+    reason = models.TextField(blank=True, default="")
+
+    # Where a self-reported count came from. A worker's periodic CommCare
+    # submission arrives through Connect, so the count is traceable back to
+    # the form that produced it rather than being an unattributable number.
+    form_submission_id = models.CharField(max_length=64, blank=True, default="")
+    visit_id = models.CharField(max_length=64, blank=True, default="")
+    connect_username = models.CharField(max_length=150, blank=True, default="", db_index=True)
+
+    adjustment_movement = models.OneToOneField(
+        Movement, null=True, blank=True, on_delete=models.PROTECT, related_name="caused_by_count"
+    )
+
+    class Meta:
+        ordering = ["-counted_on", "-id"]
+        indexes = [models.Index(fields=["supply_point", "item", "counted_on"])]
+
+    def clean(self):
+        if self.kind == "override" and not (self.reason or "").strip():
+            raise ValidationError(
+                {"reason": "An override asserts a figure over both the ledger and the last count; say why."}
+            )
+
+
+class Distribution(SourcedModel):
+    """One resupply run from a store out to field workers.
+
+    A batch header over many movements: a run covers every worker served that
+    day and emits one movement per line, so the ledger has no special case
+    for distribution and a worker's balance needs no separate arithmetic.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    opportunity_id = models.IntegerField(db_index=True)
+    supply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="distributions_out")
+    distributed_on = models.DateField(db_index=True)
+    reference = models.CharField(max_length=64, blank=True, default="")
+
+    class Meta:
+        ordering = ["-distributed_on", "-id"]
+
+
+class DistributionLine(models.Model):
+    distribution = models.ForeignKey(Distribution, on_delete=models.CASCADE, related_name="lines")
+    to_supply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="distribution_lines")
+    connect_username = models.CharField(max_length=150, blank=True, default="")
+    item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    batch = models.CharField(max_length=64, blank=True, default="")
+    quantity = models.DecimalField(**QTY)
+    quantity_unit = models.CharField(max_length=32)
+    movement = models.OneToOneField(
+        Movement, null=True, blank=True, on_delete=models.PROTECT, related_name="distribution_line"
+    )

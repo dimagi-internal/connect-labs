@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.urls import path
 
 from connect_labs.supply_chain import api_views, views
@@ -46,3 +47,10 @@ urlpatterns = [
         name="procurement_followup_draft",
     ),
 ]
+
+if settings.DEBUG:
+    # Local iteration only: the labs OAuth middleware cannot be satisfied on a
+    # laptop. Raises Http404 on its own if DEBUG is ever off. See dev_views.
+    from connect_labs.supply_chain import dev_views
+
+    urlpatterns += [path("dev-login/", dev_views.dev_login, name="dev_login")]

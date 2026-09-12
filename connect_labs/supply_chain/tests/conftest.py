@@ -10,7 +10,7 @@ The fixtures exist to reproduce the SHAPES that break a comparison:
 
 import pytest
 
-from connect_labs.supply_chain.models import CommodityRecord, ItemRecord, QuoteRecord, RoundRecord
+from connect_labs.supply_chain.proxies import CommodityRecord, ItemRecord, QuoteRecord, RoundRecord
 
 
 def wrap(cls, data, record_id=1):

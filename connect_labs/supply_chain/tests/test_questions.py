@@ -34,7 +34,7 @@ def test_missing_facts_read_as_questions_to_a_supplier(rutf, round_2000_cartons)
 
 
 def test_a_not_stated_spec_requirement_becomes_a_question(round_2000_cartons):
-    from connect_labs.supply_chain.models import CommodityRecord
+    from connect_labs.supply_chain.proxies import CommodityRecord
     from connect_labs.supply_chain.tests.conftest import wrap
 
     scale = wrap(
@@ -109,7 +109,7 @@ def test_the_shelf_life_question_omits_the_broken_clause_when_no_minimum_is_set(
     shelf_life_months_minimum, _context()'s "" fallback used to put a
     broken sentence -- "We need at least  months." -- straight into the
     RFQ. Neither this round nor rutf_without_course sets a minimum."""
-    from connect_labs.supply_chain.models import RoundRecord
+    from connect_labs.supply_chain.proxies import RoundRecord
 
     round_no_minimum = wrap(RoundRecord, {"lines": [], "delivery_point": {"city": "Kano", "country": "NG"}})
     fact = next(f for f in initial_request_facts(rutf_without_course, round_no_minimum) if f.key == "shelf_life")
@@ -178,7 +178,7 @@ def test_no_pricing_reason_reaches_the_mapping_unmatched(rutf, rutf_without_cour
     told about, logged as a warning so it cannot pass silently; this walks
     every reason-producing path in pricing.py and asserts none of them do.
     """
-    from connect_labs.supply_chain.models import CommodityRecord
+    from connect_labs.supply_chain.proxies import CommodityRecord
     from connect_labs.supply_chain.tests.conftest import wrap
 
     unlisted_commodity = wrap(
@@ -260,7 +260,7 @@ def test_an_unrecognised_spec_operator_does_not_leak_into_the_question(round_200
     five _spec_fact translates (spec_requirements is unconstrained by
     _COMMODITY_DATA) is reachable here. The raw symbol must never appear in
     a supplier-facing question."""
-    from connect_labs.supply_chain.models import CommodityRecord
+    from connect_labs.supply_chain.proxies import CommodityRecord
     from connect_labs.supply_chain.tests.conftest import wrap
 
     scale = wrap(

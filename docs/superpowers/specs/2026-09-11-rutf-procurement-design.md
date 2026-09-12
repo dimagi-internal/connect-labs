@@ -692,3 +692,209 @@ the round, a non-USD quote with no rate. Real data lives only in `LabsRecord`s.
   binding as suppliers get Connect accounts.
 - **2** — fulfilment: events, stock on hand, consumption from a selected source,
   computed reorder quantities.
+
+---
+
+# Part 2 — fulfilment, network, and stock
+
+Added 2026-09-12, after the first end-to-end design review. Part 1 stops at
+award. Everything below it follows from three findings in that review, and
+each of the three is a ruling that binds the rest of this document.
+
+## 17. The party that decides is not always the party that buys
+
+Sophie sourced Round 1. The **local partner placed the order**, in its own
+name, so the consignment could enter Nigeria under local duty relief that a
+non-resident buyer cannot claim. That is a normal arrangement, not an
+exception, so it is a field and not an assumption.
+
+**`buyer_of_record` is a property of the contract**, with three cases:
+
+| Case | Who raises the PO and pays | What we hold |
+|---|---|---|
+| `programme_org` | us | every document, first-hand |
+| `partner_org` | the local implementing partner | whatever the partner gives us |
+| `agency` | a procurement agent or UN supply division | a catalogue price and a delivery |
+
+Three consequences, all load-bearing.
+
+**17.1 Tax lines belong to the buyer, not to the quote.** Import duty and VAT
+depend on who imports. The same quote from the same supplier yields a
+different landed total under `programme_org` than under `partner_org`, so
+**the landed-cost derivation takes the buyer as an input** and a landed total
+is never presented without naming the buyer it assumed. An award snapshot
+records `buyer_of_record`; a comparison that has not been told one returns
+`Unconfirmed`, never a number computed against a default.
+
+A claimed relief is not a relief. `duty_relief_claimed: true` with no
+supporting document yields a duty line of `Unconfirmed`, not `0`.
+
+**17.2 The partner is a party with the same operations, not a lesser
+portal.** The partner records shipments, receipts, invoices, distributions
+and stock counts through *the same operations* we do — there is no
+partner-only write path, no shadow model, and no second set of rules. What
+differs is `recorded_by_party_id` on the record, and nothing else. A design
+where the partner emails us a spreadsheet and we retype it is the design
+this domain exists to replace.
+
+**17.3 Provenance is compulsory below the contract.** Between *raise the
+purchase order* and *receive the goods* there are five consecutive stages we
+do not witness. Every record in the fulfilment, network and stock tiers
+therefore carries:
+
+```
+recorded_by_party_id   who put this in the system
+source                 we_recorded | partner_reported | supplier_reported
+                       | commcare_form | connect_visit | document
+```
+
+`source` is required. A fact we did not witness is a claim, and the system
+labels it as one rather than quietly promoting it. This is the same rule as
+§6 applied to events instead of figures.
+
+## 18. Supply points, and the user as a supply point
+
+Distribution needs places. A **supply point** is anywhere stock can rest:
+
+```
+kind: central_store | regional_store | facility | user_held
+    | supplier_site | in_transit | customs
+```
+
+Supply points are programme-scoped and carry `opportunity_id` when they
+belong to one, so a network manager can read one opportunity's points or a
+programme's whole network with the same operation and a filter.
+
+**A field worker is a supply point of kind `user_held`.** This is the
+ruling the rest of the stock model rests on. It means:
+
+- distributing stock to a worker is the *same* primitive as moving it
+  between stores — one ledger, one balance function, one set of rules;
+- stock on hand for a worker is a balance at a supply point, not a
+  parallel concept with its own arithmetic;
+- a worker's self-reported count and a warehouse's physical count are the
+  same record type;
+- resupply planning does not care which level it is planning for.
+
+A `user_held` point carries `connect_username` and, where known,
+`connect_user_id`. Points form a tree via `parent_supply_point_id`, so a
+programme's network is readable as a hierarchy without a second structure.
+
+## 19. The stock ledger
+
+Stock is **derived from an append-only ledger of movements**, never stored as
+a level. A level that is stored is a level that drifts.
+
+```
+kind: receipt | issue | transfer | distribution | consumption
+    | adjustment | loss | expiry | return
+from_supply_point_id / to_supply_point_id   (one side null where appropriate)
+item_id, batch, expiry, quantity, quantity_unit
+```
+
+**Balance at a point = movements in − movements out.** There are no edits: a
+correction is an `adjustment` movement that names its cause. A batch is the
+unit of truth, so expiry, certificates and recall all resolve without a
+second index.
+
+**In transit is not stock (§19.1).** Goods dispatched and not yet received
+are a real position and a separate one. Counted as on hand, a network reads
+months of stock it does not have and nobody reorders while stores run dry.
+`position()` returns `on_hand`, `in_transit`, `committed` and `available`
+as four distinct figures, and `months_of_stock` is computed on `on_hand`
+alone.
+
+**Consumption is derived, not entered (§19.2).** A worker dispensing to a
+child records it on the CommCare deliver form; that submission arrives via
+Connect and becomes a `consumption` movement. Nobody keys a consumption
+report. This is why the domain lives inside Connect rather than beside it.
+
+**19.3 The reconciliation that may not close.** The store counts packs; the
+field counts base units. The bridge between them is the pack specification —
+and if the supplier never stated it, the bridge does not exist. A variance
+between ledger and count whose units cannot be reconciled returns
+`Unconfirmed`, naming the pack spec as the missing fact. It is the same
+missing fact that blocks the price comparison, which is the argument for one
+domain rather than a procurement tool beside a stock tool.
+
+## 20. Stock counts, overrides, and resupply
+
+**Two answers, both kept.** A supply point's stock on hand has a *ledger
+balance* (derived) and a *last reported count* (observed). The system shows
+both plus the variance and never silently prefers one.
+
+Counts arrive three ways:
+
+```
+self_reported    a worker's periodic CommCare form submission
+physical_count   a stock take at a store
+override         a human asserting the true figure over both
+```
+
+Overrides are expected and frequent, and they get more frequent the further
+down the network you go — a worker's phone is not a warehouse system. So an
+override is a first-class record requiring a `reason`, **and it writes a
+compensating `adjustment` movement** so the ledger continues to agree with
+the working figure. The ledger stays authoritative; the override is how
+reality gets into it.
+
+**Resupply (§20.1).** From the ledger and the counts:
+
+```
+amc                  average monthly consumption over a stated window
+months_of_stock      on_hand / amc
+days_to_stockout     on_hand / (amc / 30)
+reorder_point        amc x (lead_time_days / 30) + safety stock
+resupply_quantity    (max_months x amc) - on_hand - on_order
+status               stockout | below_min | ok | overstocked | unknown
+```
+
+Every one of these returns `Unconfirmed` rather than a number when its
+inputs are not there. In particular an `amc` computed over a window shorter
+than the stated minimum is `Unconfirmed`, because a fortnight of data
+extrapolated to a month is how a supply chain talks itself into a stockout.
+`min_months_of_stock` and `max_months_of_stock` live on the supply point, so
+policy is data.
+
+## 21. Documents
+
+Evidence is the only thing standing behind a reported fact, so documents are
+a record type, uploadable by any party:
+
+```
+kind: purchase_order | order_confirmation | certificate_of_analysis
+    | certificate_of_conformity | duty_exemption | dispatch_note
+    | goods_received_note | invoice | proof_of_payment | stock_report | other
+```
+
+A document is stored through Django's configured storage (S3 on the
+deployment, filesystem locally) and holds its `sha256`, or it holds an
+`external_url` for evidence that legitimately lives elsewhere. It links to
+whatever it evidences. Two derivations depend on a document existing at all:
+a claimed duty relief (§17.1) and a batch's conformity.
+
+## 22. The product derives. It does not recommend.
+
+The first mockups carried a curated worklist — "chase these six suppliers",
+"draft this follow-up", ranked by urgency. **That comes out.** Prioritising,
+wording and sequencing are an agent's job, and an agent that sits on top of
+a clean surface can do them better than a hardcoded list, for any programme,
+in any language.
+
+The line:
+
+- **The product derives.** `Unconfirmed(reasons)`, `MissingFact(audience)`,
+  the comparable/blocked partition, three-way match, variance, months of
+  stock, days to stockout. These are deterministic functions of records. They
+  stay, and they are exposed as data.
+- **The product does not recommend.** No priority order, no "you should",
+  no drafted message, no invented urgency.
+
+So the registry gains read operations that return every derived exception as
+structured facts — subject, kind, the missing facts, how long it has been
+true — with no ordering and no prose. An agent reads those through the same
+MCP and HTTP surfaces every other client uses, and where its analysis and
+proposed tasks are stored is a separate decision, deliberately not made here.
+
+This keeps §9 honest: if the built-in UI cannot rank a worklist, no client
+is privileged, and the agentic path is the same path.

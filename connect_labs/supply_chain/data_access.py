@@ -23,7 +23,7 @@ from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClien
 from connect_labs.labs.models import LocalLabsRecord
 from connect_labs.labs.synthetic.models import LABS_ONLY_OPP_ID_FLOOR
 from connect_labs.supply_chain import gs1, records
-from connect_labs.supply_chain.models import (
+from connect_labs.supply_chain.proxies import (
     AwardRecord,
     CommodityRecord,
     ItemRecord,
