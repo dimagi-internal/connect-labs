@@ -6,6 +6,8 @@ import jsonschema
 import pytest
 from django.urls import reverse
 
+from connect_labs.supply_chain.operations import call_operation as real_call_operation
+
 pytestmark = pytest.mark.django_db
 
 
@@ -95,6 +97,122 @@ def test_award_post_without_a_rationale_does_not_500(client, sophie):
         )
     assert response.status_code == 200
     assert "rationale" in response.content.decode().lower()
+
+
+def test_quote_entry_post_with_a_malformed_amount_does_not_500(client, sophie):
+    """A European decimal comma ("52,42" for "52.42") is an ordinary typo for
+    someone transcribing a supplier's quote by hand, not a reason to 500.
+
+    Dispatches "quote_record" to the REAL call_operation, so this exercises
+    the actual _MONEY pattern in operations.py rather than a guess at what it
+    rejects — and confirms the rejection happens before anything is written
+    (SupplyDataAccess.create_quote is never reached: jsonschema.validate
+    raises first).
+    """
+
+    def _dispatch(name, access, payload):
+        if name == "quote_record":
+            return real_call_operation(name, access, payload)
+        return []
+
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch):
+        response = client.post(
+            reverse("supply_chain:procurement_quote_entry"),
+            {"as_quoted_amount": "52,42", "as_quoted_unit": "per_pack", "as_quoted_currency": "USD"},
+        )
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "52,42" in body
+
+
+def test_quote_entry_post_preserves_entered_values_on_error(client, sophie):
+    """Losing the form on a validation error means re-typing the whole quote."""
+
+    def _dispatch(name, access, payload):
+        if name == "quote_record":
+            return real_call_operation(name, access, payload)
+        if name == "commodity_list":
+            return [{"id": 1, "slug": "rutf", "name": "RUTF"}]
+        return []
+
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch):
+        response = client.post(
+            reverse("supply_chain:procurement_quote_entry"),
+            {
+                "as_quoted_amount": "52,42",
+                "as_quoted_unit": "per_pack",
+                "as_quoted_currency": "EUR",
+                "commodity_slug": "rutf",
+                "quantity_basis": "667",
+            },
+        )
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert 'value="52,42"' in body
+    assert 'value="EUR"' in body
+    assert 'value="667"' in body
+    assert 'value="rutf"' in body and "selected" in body
+
+
+def test_comparison_without_a_commodity_shows_a_chooser_instead_of_500ing(client, sophie):
+    """A bookmark, browser-history entry, or shared link with no ?commodity=
+    is a normal way to land here — it must not crash the schema-required
+    commodity_slug straight into round_compare.
+    """
+    round_ = {
+        "id": 1,
+        "label": "Q3 RUTF round",
+        "lines": [
+            {"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"},
+            {"commodity_slug": "amoxicillin", "quantity": "1000", "quantity_unit": "bottle"},
+        ],
+    }
+
+    def _dispatch(name, access, payload):
+        if name == "round_get":
+            return round_
+        raise AssertionError(f"round_compare must not be called with no commodity selected (got {name!r})")
+
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch):
+        response = client.get(reverse("supply_chain:procurement_comparison", args=[1]))
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "rutf" in body
+    assert "amoxicillin" in body
+
+
+def test_comparison_without_a_commodity_defaults_when_the_round_has_one_line(client, sophie):
+    round_ = {
+        "id": 1,
+        "label": "Q3 RUTF round",
+        "lines": [{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}],
+    }
+    snapshot = {
+        "round_id": 1,
+        "generated_at": "2026-09-11T00:00:00+00:00",
+        "comparable_count": 0,
+        "total_count": 0,
+        "ranked_by": "usd_per_pack_normalized",
+        "provisional": False,
+        "columns": [],
+        "comparable": [],
+        "blocked": [],
+        "all_rows": [],
+    }
+    calls = []
+
+    def _dispatch(name, access, payload):
+        calls.append((name, payload))
+        if name == "round_get":
+            return round_
+        if name == "round_compare":
+            return snapshot
+        raise AssertionError(name)
+
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch):
+        response = client.get(reverse("supply_chain:procurement_comparison", args=[1]))
+    assert response.status_code == 200
+    assert ("round_compare", {"round_id": 1, "commodity_slug": "rutf"}) in calls
 
 
 def test_no_view_mutates_a_record_outside_an_operation():
