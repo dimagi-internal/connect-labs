@@ -432,6 +432,35 @@ register-scalable-target` plus two target-tracking policies:
   streams, another team's ~110s audit calls — queued behind the six workers
   and surfaced to users as an SSE stream that received no events for minutes.
   Nothing was wrong with the data; there was simply nowhere to run the work.
+  **Measured behaviour, read back from the live policies on 2026-09-11** (the
+  targets alone do not tell you the timing, and the timing is what you need at
+  3am): scale **out** fires when CPU > 60% (or memory > 70%) for **3 x 1 min**,
+  with a **60s** cooldown; scale **in** fires only when CPU < **54%** (or memory
+  < **63%**) for **15 x 1 min**, with a **300s** cooldown. Scale-in tracks a
+  _lower_ band than the target, so coming down from 6 to 2 takes roughly **30
+  minutes** of sustained quiet and no lull shorter than 15 minutes removes
+  anything -- deliberate, because labs traffic is bursty and flapping would be
+  worse than an idle task. The weak side is scale-OUT: it needs 3 minutes of
+  sustained load plus ~1-2 minutes for a task to pass health checks, so a
+  90-second spike is over before capacity arrives. The lever for that is a higher
+  MINIMUM, not a tuned policy.
+
+  **What is and is not logged.** `aws application-autoscaling
+  describe-scaling-activities --service-namespace ecs --resource-id
+  service/labs-jj-cluster/labs-jj-web` is the per-action record (cause, start and
+  end time) and the right read for "did it scale, how often, for how long".
+  CloudTrail's 90-day event history corroborates it through the scaler's
+  `UpdateService` calls -- note there is **no CloudTrail trail** in this account,
+  only the always-on event history. Two real gaps: **Container Insights is
+  disabled** on `labs-jj-cluster`, so no `DesiredTaskCount`/`RunningTaskCount`
+  metric exists and task count cannot be charted over time (enabling it is
+  cluster-wide -- canopy-web, ace-web and umami share the cluster -- and costs per
+  metric); and a target-tracking alarm's only action is its own scaling policy, so
+  **nothing notifies** when the tier scales, there being no EventBridge rules at
+  all. Worth knowing while reading the alarm table above: `labs-jj-alerts` has
+  exactly **one** subscriber (`hal@dimagi-ai.com`), so every alarm in this stack
+  reaches a single mailbox.
+
   **Two consequences worth knowing.** Scaling policies move `desiredCount`,
   which is exactly what the per-task-statistic note above says to re-check —
   `labs-jj-web-cpu-high` is alarmed on `Maximum` for that reason and stays
