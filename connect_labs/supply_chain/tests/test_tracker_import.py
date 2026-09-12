@@ -12,7 +12,13 @@ repository -- that is the whole point of reading them from Drive at runtime.
 
 from decimal import Decimal
 
+import pytest
+
+from connect_labs.supply_chain.data_access import SupplyDataAccess
+from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services import tracker_import as t
+
+PROGRAM = 10503
 
 
 class TestPrice:
@@ -143,3 +149,55 @@ def test_the_operation_is_registered_as_a_write():
     from connect_labs.supply_chain.operations import get_operation
 
     assert get_operation("tracker_import").is_write is True
+
+
+def _row(*, price="$52.42", freight="Not specified", name="Harmattan Foods"):
+    """A tracker row in the sheet's own 20-column shape."""
+    row = [""] * 20
+    row[t.NAME] = name
+    row[t.TYPE] = "Manufacturer"
+    row[t.LOCATION] = "Nigeria"
+    spec = t.ROUNDS[0]
+    row[spec["contacted"]] = "2026-05-01"
+    row[spec["responded"]] = "Yes"
+    row[spec["quote_date"]] = "2026-05-06"
+    row[spec["price"]] = price
+    row[spec["freight"]] = freight
+    return row
+
+
+class TestDryRun:
+    """A dry run's job is to preview what the sheet will and will not give up.
+
+    `refused` was a hardcoded empty list on that path, so previewing a sheet
+    with five refusals reported none. An empty list is not an absence of
+    information -- it ASSERTS that nothing was refused, which is exactly the
+    substitution (a confident zero for an unknown) that the rest of this
+    domain exists to refuse. And the advice attached to the operation is "use
+    dry_run first", so the misleading half is the one a reader sees first.
+    """
+
+    @pytest.mark.django_db
+    def test_a_dry_run_reports_the_same_refusals_the_real_run_makes(self, monkeypatch):
+        monkeypatch.setattr(t, "_read_rows", lambda _id: [_row()])
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+
+        dry = t.import_tracker(da, ensure_commodity=True, dry_run=True)
+        real = t.import_tracker(da, ensure_commodity=True)
+
+        assert dry["refused"], "a dry run reported nothing refused for a sheet that refuses something"
+        assert dry["refused"] == real["refused"]
+        assert any("freight recorded as not specified" in r for r in dry["refused"])
+
+    @pytest.mark.django_db
+    def test_a_dry_run_still_writes_nothing(self, monkeypatch):
+        """The refusals now come from walking the same code, so the write is
+        what has to be suppressed -- not the traversal."""
+        monkeypatch.setattr(t, "_read_rows", lambda _id: [_row()])
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+
+        t.import_tracker(da, ensure_commodity=True, dry_run=True)
+
+        assert call_operation("supplier_list", da, {}) == []
+        assert call_operation("round_list", da, {}) == []
+        assert call_operation("commodity_list", da, {}) == []

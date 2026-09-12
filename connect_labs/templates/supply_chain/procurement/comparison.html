@@ -24,14 +24,27 @@
 {% if comparison.provisional %}
   <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-sm text-amber-900">
     <strong>{{ comparison.comparable_count }} of {{ comparison.total_count }} comparable.</strong>
-    The ranking below is
-    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-      PROVISIONAL
-    </span>
-    —
-    {% for row in comparison.blocked %}{{ row.supplier_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
-    {% if comparison.blocked|length == 1 %}has{% else %}have{% endif %}
-    not given us enough to compare, and could still beat it.
+    {% if comparison.comparable %}
+      The ranking below is
+      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+        PROVISIONAL
+      </span>
+      —
+      {% for row in comparison.blocked %}{{ row.supplier_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+      {% if comparison.blocked|length == 1 %}has{% else %}have{% endif %}
+      not given us enough to compare, and could still beat it.
+    {% else %}
+      {% comment %}
+      Nothing is ranked, so there is no ranking to call provisional and no
+      leader to beat. PROVISIONAL qualifies a ranking; with none, the badge
+      asserts something that does not exist. Naming who has to answer is the
+      half that still holds.
+      {% endcomment %}
+      There is no ranking yet —
+      {% for row in comparison.blocked %}{{ row.supplier_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+      {% if comparison.blocked|length == 1 %}has{% else %}have{% endif %}
+      not given us enough to compare.
+    {% endif %}
   </div>
 {% endif %}
 

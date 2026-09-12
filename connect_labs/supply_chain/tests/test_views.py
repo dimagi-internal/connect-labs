@@ -685,3 +685,56 @@ def test_a_comparable_row_never_renders_an_unconfirmed_figure_as_a_blank(client,
     assert "Unconfirmed" in body, "the cell rendered blank instead of saying it is unconfirmed"
     # The confirmed figure on the same row still renders as a number.
     assert "100000" in body
+
+
+def test_with_nothing_comparable_the_page_does_not_claim_a_provisional_ranking(client, sophie):
+    """The first thing the real imported tracker shows is `0 of 2 comparable`,
+    and the banner said "The ranking below is PROVISIONAL -- <suppliers> have
+    not given us enough to compare, and could still beat it" directly above a
+    section reading "Nothing is comparable yet."
+
+    There is no ranking below and no leader to beat. PROVISIONAL qualifies a
+    ranking, so with nothing ranked the badge asserts something that does not
+    exist. The suppliers must still be named -- who has to answer is the
+    useful half -- but the sentence has to be true.
+    """
+    blocked = {
+        "quote_id": 2,
+        "supplier_id": 2,
+        "supplier_name": "EHA Clinics",
+        "is_comparable": False,
+        "figures": {"usd_per_pack_normalized": {"unconfirmed": ["pack spec not stated on the quote"]}},
+        "compliance": [],
+        "questions": [{"key": "pack_spec", "question": "How many sachets are in one carton?", "audience": "supplier"}],
+    }
+    snapshot = {
+        "round_id": 1,
+        "generated_at": "2026-09-12T00:00:00+00:00",
+        "comparable_count": 0,
+        "total_count": 2,
+        "ranked_by": None,
+        "provisional": True,
+        "unavailable": {},
+        "columns": [
+            {
+                "key": "usd_per_pack_normalized",
+                "label": "USD per carton",
+                "rankable": False,
+                "blocked_by": ["EHA Clinics"],
+            }
+        ],
+        "comparable": [],
+        "blocked": [blocked, dict(blocked, quote_id=1, supplier_id=1, supplier_name="DABS")],
+        "all_rows": [blocked],
+    }
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=snapshot):
+        response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
+    body = response.content.decode()
+
+    assert "0 of 2 comparable" in body
+    # Who has to answer is still reported.
+    assert "EHA Clinics" in body
+    assert "DABS" in body
+    # But nothing is ranked, so nothing can be provisionally ranked or beaten.
+    assert "PROVISIONAL" not in body
+    assert "could still beat it" not in body
