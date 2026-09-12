@@ -40,7 +40,8 @@ one of them would destroy the only signal it had.
 {% endif %}
 
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-  <table class="min-w-full text-sm">
+  <div class="overflow-x-auto">
+  <table class="min-w-[44rem] w-full text-sm">
     <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
       <tr>
         <th class="text-left px-4 py-2">Supply point</th>
@@ -123,6 +124,7 @@ one of them would destroy the only signal it had.
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <p class="text-xs text-gray-500 mt-3">
