@@ -29,11 +29,13 @@
         told by {{ run.source }}{% if not run.witnessed %} (reported, not witnessed){% endif %}
       </span>
     </div>
-    {# A scroll container is not focusable by default, so a keyboard-only
-       user cannot reach the columns it hides -- which re-creates the
-       unreachable-column bug for the people least able to work around it.
-       tabindex makes it a tab stop; the labelled region tells a screen
-       reader what it is once focused. #}
+    {% comment %}
+    A scroll container is not focusable by default, so a keyboard-only user
+    cannot reach the columns it hides -- which re-creates the
+    unreachable-column bug for the people least able to work around it.
+    tabindex makes it a tab stop; the labelled region tells a screen reader
+    what it is once focused.
+    {% endcomment %}
     <div class="overflow-x-auto" tabindex="0" role="region"
          aria-label="Table, scrolls sideways">
     <table class="min-w-[44rem] w-full text-sm">
