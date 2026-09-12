@@ -168,27 +168,13 @@ class ComparisonView(_Base):
         return redirect(f"{url}?commodity={commodity}" if commodity else url)
 
 
-class FollowupDraftView(_Base):
-    """A read-only render of the follow-up email for one quote, for copying.
-
-    Just an operation call behind a GET — followup_render mutates nothing,
-    so there is no form, no CSRF concern, and no reason to route it through
-    a POST.
-    """
-
-    template_name = "supply_chain/procurement/followup_draft.html"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        quote_id_raw = self.request.GET.get("quote_id")
-        try:
-            quote_id = int(quote_id_raw)
-        except (TypeError, ValueError):
-            context["error"] = "No quote was specified."
-            return context
-        context["quote_id"] = quote_id
-        context["text"] = self.op("followup_render", quote_id=quote_id)["text"]
-        return context
+# FollowupDraftView used to render a ready-to-send follow-up email here.
+# It is gone from the product on purpose (design doc section 22): the
+# `followup_render` OPERATION remains, so a client -- an agent, a script, a
+# person hitting the API -- can ask for the text. What the product no longer
+# does is press a drafted message on the user as the next thing to do.
+# Prioritising and phrasing are judgements about what matters today, which a
+# client can make better than a hardcoded page can.
 
 
 class QuoteEntryView(_Base):

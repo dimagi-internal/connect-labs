@@ -108,17 +108,27 @@ def _columns(model, data: dict) -> dict:
     that persists reads back as absent forever, which looks like data loss
     and is nearly impossible to spot.
     """
-    settable = set()
+    nullable = {}
     for field in model._meta.get_fields():
         if not hasattr(field, "attname"):
             continue
-        settable.add(field.name)
-        settable.add(field.attname)
-    return {
-        key: value
-        for key, value in data.items()
-        if key in settable and key not in _RESOLVED and key not in _NOT_SETTABLE
-    }
+        nullable[field.name] = field.null
+        nullable[field.attname] = field.null
+
+    out = {}
+    for key, value in data.items():
+        if key not in nullable or key in _RESOLVED or key in _NOT_SETTABLE:
+            continue
+        # A None against a non-nullable column means "the caller did not
+        # supply this", not "set it to NULL". Operations give optional
+        # arguments a default of None, so passing it through turned every
+        # omitted string into an integrity error on a column whose real
+        # default is "". Leaving the key out lets the field's own default
+        # apply. A caller CAN still clear a genuinely nullable field.
+        if value is None and not nullable[key]:
+            continue
+        out[key] = value
+    return out
 
 
 def _fresh(obj):

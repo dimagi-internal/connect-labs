@@ -482,3 +482,37 @@ def supplier_create(access, data):
 )
 def supplier_update(access, supplier_id, data):
     return record(access.update_supplier(supplier_id, data))
+
+
+@register_operation(
+    name="exceptions_list",
+    summary=(
+        "Every derived exception in this programme, as structured facts: quotes that cannot be "
+        "compared and why, suppliers who have not replied, awards with no contract, duty reliefs "
+        "claimed without evidence, shipments stalled at a border, invoices billed for more than "
+        "arrived, supply points below their own minimum, workers who have never reported. Each "
+        "carries its subject, the facts behind it, how long it has been true, and the AUDIENCE "
+        "that can answer it -- supplier, partner or internal -- because a missing pack spec can "
+        "only be answered by the supplier and a missing ration table only by us.\n\n"
+        "Deliberately UNRANKED and unworded: sorted by kind then subject id, with no priority, "
+        "no severity and no drafted message. Prioritising and phrasing are judgements about what "
+        "matters today, which this database does not contain; a client that wants a worklist "
+        "sorts one from these facts."
+    ),
+    input_schema=obj(
+        {
+            "opportunity_id": ID,
+            "kinds": {"type": "array", "items": {"type": "string"}},
+        }
+    ),
+)
+def exceptions_list(access, opportunity_id=None, kinds=None):
+    from connect_labs.supply_chain.exceptions import KINDS, list_exceptions
+
+    found = list_exceptions(access, opportunity_id=opportunity_id, kinds=kinds)
+    return {
+        "kinds": list(KINDS),
+        "count": len(found),
+        "by_kind": {kind: sum(1 for e in found if e["kind"] == kind) for kind in KINDS},
+        "exceptions": found,
+    }

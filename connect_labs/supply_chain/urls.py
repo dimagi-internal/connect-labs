@@ -41,11 +41,6 @@ urlpatterns = [
         procurement_views.RegistriesView.as_view(),
         name="procurement_registries",
     ),
-    path(
-        "procurement/quotes/followup/",
-        procurement_views.FollowupDraftView.as_view(),
-        name="procurement_followup_draft",
-    ),
 ]
 
 if settings.DEBUG:
