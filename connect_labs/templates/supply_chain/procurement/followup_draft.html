@@ -1,0 +1,17 @@
+{% extends "supply_chain/base.html" %}
+{% load static i18n %}
+
+{% block supply_content %}
+{% if error %}
+  <h1 class="text-xl font-semibold text-gray-900 mb-2">Follow-up</h1>
+  <p class="text-red-600">{{ error }}</p>
+{% else %}
+  <h1 class="text-xl font-semibold text-gray-900 mb-2">Follow-up — quote #{{ quote_id }}</h1>
+  <p class="text-sm text-gray-600 mb-2">
+    Asks for exactly the facts still missing before this quote can be compared. Copy this
+    and send it to the supplier.
+  </p>
+  <textarea readonly rows="18"
+            class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono">{{ text }}</textarea>
+{% endif %}
+{% endblock %}

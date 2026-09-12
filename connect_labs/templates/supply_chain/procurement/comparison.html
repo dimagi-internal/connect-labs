@@ -14,6 +14,12 @@
   </div>
 {% endif %}
 
+{% if award_error %}
+  <div class="alert alert-danger">
+    Could not award: {{ award_error }}
+  </div>
+{% endif %}
+
 {% if comparison.comparable %}
   <h2>Comparable</h2>
   <table class="table">
@@ -35,9 +41,12 @@
             {% endwith %}
           {% endfor %}
           <td>
-            <form method="post" action="{% url 'supply_chain:api_operation' 'award_create' %}">
+            <form method="post" action="" class="d-flex gap-1">
               {% csrf_token %}
-              <button class="btn btn-sm btn-primary" name="quote_id" value="{{ row.quote_id }}">
+              <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
+              <input type="text" name="rationale" placeholder="Why this supplier?" required
+                     class="form-control form-control-sm" style="width: 160px;">
+              <button class="btn btn-sm btn-primary" type="submit">
                 Award
               </button>
             </form>
@@ -67,7 +76,7 @@
       {% endwith %}
     {% endfor %}
     <a class="btn btn-sm btn-outline-primary"
-       href="{% url 'supply_chain:api_operation' 'followup_render' %}?quote_id={{ row.quote_id }}">
+       href="{% url 'supply_chain:procurement_followup_draft' %}?quote_id={{ row.quote_id }}">
       Draft follow-up
     </a>
     {% for c in row.compliance %}

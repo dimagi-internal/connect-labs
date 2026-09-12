@@ -1,5 +1,5 @@
-"""Procurement screens. Read-only context comes from operations, and the one
-POST path goes through an operation too.
+"""Procurement screens. Read-only context comes from operations, and every
+mutating action — quote entry, award — goes through an operation too.
 
 `call_operation` and `_access` are imported directly into this module rather
 than reached only via the domain shell's `OperationBase.op()`: a name that
@@ -10,10 +10,20 @@ leave this module able to run real operations against a fake session in
 tests, hitting production APIs instead of the mock. Mirroring the tiny `op()`
 helper locally keeps the same one-path-to-the-domain contract without that
 trap.
+
+The web client calls operations directly from these views — it does not
+route through its own JSON API (api_views.py). That endpoint is the machine
+surface, deliberately JSON-in/JSON-out for agents and API clients; teaching
+it to also accept browser form-encoded POSTs would blur that boundary and
+give up the CSRF protection Django hands the server-rendered path for free.
+Three clients over one registry (web, HTTP API, MCP) was always the
+design — the web client is a Django view calling an operation, not an HTTP
+client of its own API.
 """
 
 from datetime import date, datetime
 
+import jsonschema
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -94,6 +104,61 @@ class ComparisonView(_Base):
         context["comparison"] = self.op("round_compare", round_id=round_id, commodity_slug=commodity)
         context["round_id"] = round_id
         context["commodity_slug"] = commodity
+        return context
+
+    def post(self, request, round_id, *args, **kwargs):
+        """Award a quote. The Award button's form posts here (action="" —
+        same URL, so the ?commodity= query string round-trips for free).
+
+        A missing or empty rationale is refused by award_create's schema, not
+        guessed around here — that refusal must not become a 500: catch it
+        and re-render the page with what's wrong, the same way a browser
+        form re-shows itself on a validation error.
+        """
+        quote_id_raw = request.POST.get("quote_id")
+        rationale = request.POST.get("rationale", "")
+        try:
+            self.op(
+                "award_create",
+                round_id=round_id,
+                quote_id=int(quote_id_raw),
+                rationale=rationale,
+                decided_by=request.user.get_username(),
+            )
+        except jsonschema.ValidationError as exc:
+            context = self.get_context_data(round_id=round_id, **kwargs)
+            context["award_error"] = exc.message
+            return self.render_to_response(context)
+        except (TypeError, ValueError):
+            context = self.get_context_data(round_id=round_id, **kwargs)
+            context["award_error"] = "No valid quote was selected to award."
+            return self.render_to_response(context)
+
+        url = reverse("supply_chain:procurement_comparison", args=[round_id])
+        commodity = request.GET.get("commodity")
+        return redirect(f"{url}?commodity={commodity}" if commodity else url)
+
+
+class FollowupDraftView(_Base):
+    """A read-only render of the follow-up email for one quote, for copying.
+
+    Just an operation call behind a GET — followup_render mutates nothing,
+    so there is no form, no CSRF concern, and no reason to route it through
+    a POST.
+    """
+
+    template_name = "supply_chain/procurement/followup_draft.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        quote_id_raw = self.request.GET.get("quote_id")
+        try:
+            quote_id = int(quote_id_raw)
+        except (TypeError, ValueError):
+            context["error"] = "No quote was specified."
+            return context
+        context["quote_id"] = quote_id
+        context["text"] = self.op("followup_render", quote_id=quote_id)["text"]
         return context
 
 
