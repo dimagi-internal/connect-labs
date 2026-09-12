@@ -423,13 +423,13 @@ def test_recording_the_count_on_camera_raises_the_sixty_carton_discrepancy(seede
     rather than seeded, so this test is what stops the scene silently going back
     to narrating a pre-existing record.
     """
-    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    client.post("/oes/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
     awaiting = Shipment.objects.get(reference="SHP-2026-0930")
     site = awaiting.destination
     stock_before = float(cover.stock_on_hand(site))
 
     resp = client.post(
-        f"/supply/api/shipments/{awaiting.id}/events/",
+        f"/oes/api/shipments/{awaiting.id}/events/",
         data=json.dumps(
             {
                 "biz_step": "receiving",
@@ -452,7 +452,7 @@ def test_recording_the_count_on_camera_raises_the_sixty_carton_discrepancy(seede
     # and not by what was advised.
     assert float(cover.stock_on_hand(site)) == stock_before + 840
     # And it lands on the partner's own discrepancy card.
-    body = client.get("/supply/api/bootstrap/").json()
+    body = client.get("/oes/api/bootstrap/").json()
     refs = {d["shipment_reference"] for d in body["discrepancies"]}
     assert "SHP-2026-0930" in refs
 
@@ -464,8 +464,8 @@ def test_the_calendar_is_untouched_by_an_uncounted_consignment(seeded_world, cli
     neither side, or the calendar would promise Monguno cartons no record says
     it holds.
     """
-    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
-    body = client.get("/supply/api/bootstrap/").json()
+    client.post("/oes/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    body = client.get("/oes/api/bootstrap/").json()
 
     monguno = [p for p in body["distribution_plans"] if p["site_name"] == "Monguno Nutrition Centre"]
     assert monguno
@@ -476,8 +476,8 @@ def test_the_calendar_is_untouched_by_an_uncounted_consignment(seeded_world, cli
 
 
 def test_a_partner_sees_only_their_own_sites(seeded_world, client):
-    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
-    body = client.get("/supply/api/bootstrap/").json()
+    client.post("/oes/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    body = client.get("/oes/api/bootstrap/").json()
 
     assert body["role"] == "partner"
     assert body["org"]["legal_name"] == "Komadugu Health Initiative"
@@ -490,8 +490,8 @@ def test_a_partner_sees_only_their_own_sites(seeded_world, client):
 
 
 def test_a_partner_gets_a_calendar_not_a_shipment_list(seeded_world, client):
-    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
-    body = client.get("/supply/api/bootstrap/").json()
+    client.post("/oes/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    body = client.get("/oes/api/bootstrap/").json()
 
     plans = body["distribution_plans"]
     assert plans
@@ -500,8 +500,8 @@ def test_a_partner_gets_a_calendar_not_a_shipment_list(seeded_world, client):
 
 
 def test_a_partner_cannot_reach_procurement_surfaces(seeded_world, client):
-    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
-    body = client.get("/supply/api/bootstrap/").json()
+    client.post("/oes/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    body = client.get("/oes/api/bootstrap/").json()
 
     # No bidding, no registry, no review queue: a partner never tenders.
     assert "eligible_rfps" not in body
@@ -514,11 +514,11 @@ def test_a_partner_cannot_reach_procurement_surfaces(seeded_world, client):
 def test_the_partner_and_the_centre_report_the_same_cover(seeded_world, client):
     """The narrative requires the two surfaces to agree on the same node."""
 
-    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
-    partner_cover = {r["node_id"]: r for r in client.get("/supply/api/bootstrap/").json()["cover"]}
+    client.post("/oes/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    partner_cover = {r["node_id"]: r for r in client.get("/oes/api/bootstrap/").json()["cover"]}
 
-    client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
-    centre_cover = {r["node_id"]: r for r in client.get("/supply/api/bootstrap/").json()["cover"]}
+    client.post("/oes/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
+    centre_cover = {r["node_id"]: r for r in client.get("/oes/api/bootstrap/").json()["cover"]}
 
     shared = set(partner_cover) & set(centre_cover)
     assert shared, "the partner's sites must also appear in the centre's view"
@@ -772,8 +772,8 @@ def test_every_distribution_record_traces_to_a_real_delivered_batch(seeded_world
 
 def test_the_seeded_world_has_a_partner_raised_exception_waiting(seeded_world, client):
     """Scene 7 of oes-command-centre needs a real signal from the ground."""
-    client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
-    body = client.get("/supply/api/bootstrap/").json()
+    client.post("/oes/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
+    body = client.get("/oes/api/bootstrap/").json()
 
     partner_rows = [r for r in body["exceptions"] if r["origin"] == "partner"]
     assert partner_rows, "the command centre must show a signal the partner raised"
@@ -784,11 +784,11 @@ def test_the_seeded_world_has_a_partner_raised_exception_waiting(seeded_world, c
 
 
 def test_a_partner_raises_a_shortfall_and_the_centre_sees_it(seeded_world, client):
-    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
-    site_id = client.get("/supply/api/bootstrap/").json()["sites"][0]["id"]
+    client.post("/oes/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    site_id = client.get("/oes/api/bootstrap/").json()["sites"][0]["id"]
 
     response = client.post(
-        "/supply/api/signals/raise/",
+        "/oes/api/signals/raise/",
         data={
             "site_id": site_id,
             "needed_by": "2026-09-09",
@@ -800,18 +800,18 @@ def test_a_partner_raises_a_shortfall_and_the_centre_sees_it(seeded_world, clien
     )
     assert response.status_code == 200, response.content
 
-    client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
-    queue = client.get("/supply/api/bootstrap/").json()["exceptions"]
+    client.post("/oes/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
+    queue = client.get("/oes/api/bootstrap/").json()["exceptions"]
     mine = [r for r in queue if r.get("children_at_risk") == 640 and r["origin"] == "partner"]
     assert mine, "the centre must see the signal the partner just raised"
 
 
 def test_a_partner_cannot_raise_a_shortfall_at_someone_elses_site(seeded_world, client):
-    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    client.post("/oes/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
     foreign = SupplyNode.objects.get(name="Tawila Nutrition Site")
 
     response = client.post(
-        "/supply/api/signals/raise/",
+        "/oes/api/signals/raise/",
         data={"site_id": foreign.id, "needed_by": "2026-09-09", "children_affected": 100, "cartons_short": 100},
         content_type="application/json",
     )
@@ -819,9 +819,9 @@ def test_a_partner_cannot_raise_a_shortfall_at_someone_elses_site(seeded_world, 
 
 
 def test_a_supplier_cannot_raise_a_shortfall_at_all(seeded_world, client):
-    client.post("/supply/login/", {"email": "supplier@savanna.example", "password": "oes-demo-2026"})
+    client.post("/oes/login/", {"email": "supplier@savanna.example", "password": "oes-demo-2026"})
     response = client.post(
-        "/supply/api/signals/raise/",
+        "/oes/api/signals/raise/",
         data={"site_id": 1, "needed_by": "2026-09-09", "children_affected": 10, "cartons_short": 10},
         content_type="application/json",
     )
@@ -917,9 +917,9 @@ def test_resolving_a_signal_ties_it_to_the_action_that_resolved_it(seeded_world,
         source_tier=SupplyEvent.SourceTier.CHECKIN,
     )
 
-    client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
+    client.post("/oes/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
     response = client.post(
-        "/supply/api/actions/reallocate/",
+        "/oes/api/actions/reallocate/",
         data={
             "source_node_id": surplus.id,
             "target_node_id": signal.site_id,
@@ -938,7 +938,7 @@ def test_resolving_a_signal_ties_it_to_the_action_that_resolved_it(seeded_world,
     # And it is still ON the queue, marked closed and carrying the decision.
     # It used to be dropped the moment it resolved, which meant the one loop in
     # the product that actually completes completed by a row ceasing to exist.
-    queue = client.get("/supply/api/bootstrap/").json()["exceptions"]
+    queue = client.get("/oes/api/bootstrap/").json()["exceptions"]
     closed = next((r for r in queue if r.get("signal_id") == signal.id), None)
     assert closed is not None
     assert closed["tone"] == "good"
@@ -947,9 +947,9 @@ def test_resolving_a_signal_ties_it_to_the_action_that_resolved_it(seeded_world,
 
 
 def test_a_partner_cannot_reallocate(seeded_world, client):
-    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    client.post("/oes/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
     response = client.post(
-        "/supply/api/actions/reallocate/",
+        "/oes/api/actions/reallocate/",
         data={"source_node_id": 1, "target_node_id": 2, "quantity": 10, "rationale": "no"},
         content_type="application/json",
     )
@@ -970,8 +970,8 @@ def test_a_delivered_batch_drills_to_a_child_who_recovered(seeded_world, client)
     batch = _CO.objects.exclude(batch_lot="").values_list("batch_lot", flat=True).first()
     assert batch, "the demo needs at least one batch with recorded outcomes"
 
-    client.post("/supply/login/", {"email": "usg@oes.example", "password": "oes-demo-2026"})
-    body = client.get(f"/supply/api/batches/{batch}/").json()
+    client.post("/oes/login/", {"email": "usg@oes.example", "password": "oes-demo-2026"})
+    body = client.get(f"/oes/api/batches/{batch}/").json()
 
     assert body["records"], "a batch must resolve to the distributions it fed"
     assert body["outcomes"], "and to the children admitted on it"
@@ -991,8 +991,8 @@ def test_a_supplier_cannot_drill_into_child_outcomes(seeded_world, client):
     from connect_labs.supply.models import DistributionRecord
 
     batch = DistributionRecord.objects.first().batch_lot
-    client.post("/supply/login/", {"email": "supplier@savanna.example", "password": "oes-demo-2026"})
-    assert client.get(f"/supply/api/batches/{batch}/").status_code == 403
+    client.post("/oes/login/", {"email": "supplier@savanna.example", "password": "oes-demo-2026"})
+    assert client.get(f"/oes/api/batches/{batch}/").status_code == 403
 
 
 # --- structural guards ------------------------------------------------------

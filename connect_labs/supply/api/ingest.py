@@ -1,4 +1,4 @@
-"""The supplier-facing ingestion API (``/supply/api/v1/``).
+"""The supplier-facing ingestion API (``/oes/api/v1/``).
 
 Authenticated by an org-scoped bearer token, so a supplier's own system can
 post without a browser session. Three capture endpoints matching the three

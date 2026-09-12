@@ -12,17 +12,17 @@ pytestmark = pytest.mark.django_db
 
 def test_it_refuses_outside_debug(client, settings):
     settings.DEBUG = False
-    response = client.get("/supply/dev-login/?persona=ada")
+    response = client.get("/oes/dev-login/?persona=ada")
     assert response.status_code == 403
 
 
 def test_it_logs_in_a_seeded_persona(seeded_world, client, settings):
     settings.DEBUG = True
 
-    response = client.get("/supply/dev-login/?persona=zara")
+    response = client.get("/oes/dev-login/?persona=zara")
     assert response.status_code == 302
 
-    body = client.get("/supply/api/bootstrap/").json()
+    body = client.get("/oes/api/bootstrap/").json()
     assert body["role"] == "partner"
     assert body["org"]["legal_name"] == "Komadugu Health Initiative"
 
@@ -43,13 +43,13 @@ def test_every_persona_resolves_to_a_seeded_user(seeded_world, client, settings)
     }
     assert set(_personas()) == set(expected)
     for persona, role in expected.items():
-        assert client.get(f"/supply/dev-login/?persona={persona}").status_code == 302
-        assert client.get("/supply/api/bootstrap/").json()["role"] == role, persona
+        assert client.get(f"/oes/dev-login/?persona={persona}").status_code == 302
+        assert client.get("/oes/api/bootstrap/").json()["role"] == role, persona
 
 
 def test_an_unknown_persona_is_rejected(client, settings):
     settings.DEBUG = True
-    response = client.get("/supply/dev-login/?persona=nobody")
+    response = client.get("/oes/dev-login/?persona=nobody")
     assert response.status_code == 400
 
 
@@ -59,5 +59,5 @@ def test_it_never_creates_a_user(client, settings):
     from django.contrib.auth import get_user_model
 
     before = get_user_model().objects.count()
-    assert client.get("/supply/dev-login/?persona=ada").status_code == 404
+    assert client.get("/oes/dev-login/?persona=ada").status_code == 404
     assert get_user_model().objects.count() == before

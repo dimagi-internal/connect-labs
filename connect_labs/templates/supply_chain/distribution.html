@@ -1,0 +1,70 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+    <p class="text-sm text-amber-900">Distribution is programme-scoped.</p>
+  </div>
+{% else %}
+
+<h2 class="text-lg font-semibold text-brand-indigo mb-1">Distribution</h2>
+<p class="text-xs text-gray-500 mb-4">
+  Each run posts one movement per line, so a worker's stock on hand is a ledger
+  balance rather than a separate figure. A worker is a supply point, which is
+  why moving stock to one is the same operation as moving it between stores.
+</p>
+
+{% for run in runs %}
+  <div class="bg-white border border-gray-200 rounded-lg mb-3 overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-100 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <span class="font-medium text-gray-900">{{ run.reference|default:"Run" }}</span>
+      <span class="text-sm text-gray-500">{{ run.distributed_on }}</span>
+      <span class="text-sm text-gray-500">
+        from {{ points|dictkey:run.supply_point_id|dictkey:"name"|default:run.supply_point_id }}
+      </span>
+      <span class="text-xs text-gray-500 ml-auto">
+        {{ run.lines|length }} line{{ run.lines|length|pluralize }} ·
+        told by {{ run.source }}{% if not run.witnessed %} (reported, not witnessed){% endif %}
+      </span>
+    </div>
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <tr>
+          <th class="text-left px-4 py-2">To</th>
+          <th class="text-left px-4 py-2">Batch</th>
+          <th class="text-left px-4 py-2">Quantity</th>
+          <th class="text-left px-4 py-2">Posted to the ledger</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for line in run.lines %}
+          <tr>
+            <td class="px-4 py-2">
+              {{ points|dictkey:line.to_supply_point_id|dictkey:"name"|default:line.connect_username }}
+              {% if line.connect_username %}
+                <span class="text-xs text-gray-500">({{ line.connect_username }})</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ line.quantity }} {{ line.quantity_unit }}</td>
+            <td class="px-4 py-2 text-xs">
+              {% if line.movement_id %}
+                <span class="text-teal-700">movement {{ line.movement_id }}</span>
+              {% else %}
+                <span class="text-amber-800">committed, not yet moved</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% empty %}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-gray-500">
+    No distribution runs recorded yet.
+  </div>
+{% endfor %}
+{% endif %}
+{% endblock %}

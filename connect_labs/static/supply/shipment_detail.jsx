@@ -12,7 +12,7 @@ function ShipmentDetail({ ctx, shipmentId, onClose }) {
   const [recording, setRecording] = useState(false);
 
   const load = useCallback(async () => {
-    const body = await supplyGet(`/supply/api/shipments/${shipmentId}/`);
+    const body = await supplyGet(`/oes/api/shipments/${shipmentId}/`);
     setShipment(body.shipment);
   }, [shipmentId]);
 
@@ -30,12 +30,9 @@ function ShipmentDetail({ ctx, shipmentId, onClose }) {
 
   const confirm = () =>
     ctx.act(async () => {
-      const r = await supplyPost(
-        `/supply/api/shipments/${shipmentId}/confirm/`,
-        {
-          quantity: shipment.quantity,
-        },
-      );
+      const r = await supplyPost(`/oes/api/shipments/${shipmentId}/confirm/`, {
+        quantity: shipment.quantity,
+      });
       await load();
       return r;
     }, 'Delivery confirmed.');

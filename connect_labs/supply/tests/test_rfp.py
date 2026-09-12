@@ -28,14 +28,14 @@ def test_rfp_and_lot_created_with_dates_serialize_back(admin_client):
     client, _user = admin_client
     resp = _post(
         client,
-        "/supply/api/rfps/",
+        "/oes/api/rfps/",
         {"title": "Dated tender", "categories": ["rutf"], "countries": ["NG"], "bid_deadline": "2026-09-01"},
     )
     assert resp.status_code == 200
     rid = resp.json()["rfp"]["id"]
     resp = _post(
         client,
-        f"/supply/api/rfps/{rid}/lots/",
+        f"/oes/api/rfps/{rid}/lots/",
         {
             "description": "1,000 cartons RUTF delivered to Maiduguri",
             "category": "rutf",
@@ -54,8 +54,8 @@ def test_unqualified_org_cannot_see_or_bid(supplier_client):
     rfp = f.RFPFactory(categories=["rutf"], status=RFP.Status.PUBLISHED)
     lot = f.LotFactory(rfp=rfp)
 
-    assert client.get("/supply/api/rfps/").json()["rfps"] == []
-    resp = _post(client, f"/supply/api/rfps/{rfp.id}/bid/", {"lot_bids": [{"lot_id": lot.id, "unit_price": 40}]})
+    assert client.get("/oes/api/rfps/").json()["rfps"] == []
+    resp = _post(client, f"/oes/api/rfps/{rfp.id}/bid/", {"lot_bids": [{"lot_id": lot.id, "unit_price": 40}]})
     # 404 rather than 403: a solicitation the org cannot see is reported as
     # absent, so the response does not disclose that it exists.
     assert resp.status_code == 404
@@ -69,7 +69,7 @@ def test_expired_qualification_does_not_grant_access(supplier_client):
     )
     rfp = f.RFPFactory(categories=["rutf"], status=RFP.Status.PUBLISHED)
     f.LotFactory(rfp=rfp)
-    assert client.get("/supply/api/rfps/").json()["rfps"] == []
+    assert client.get("/oes/api/rfps/").json()["rfps"] == []
 
 
 def test_qualified_org_bids_per_lot(supplier_client):
@@ -79,12 +79,12 @@ def test_qualified_org_bids_per_lot(supplier_client):
     lot1 = f.LotFactory(rfp=rfp, delivery_place="Maiduguri")
     lot2 = f.LotFactory(rfp=rfp, delivery_place="Damaturu")
 
-    listed = client.get("/supply/api/rfps/").json()["rfps"]
+    listed = client.get("/oes/api/rfps/").json()["rfps"]
     assert [r["id"] for r in listed] == [rfp.id]
 
     resp = _post(
         client,
-        f"/supply/api/rfps/{rfp.id}/bid/",
+        f"/oes/api/rfps/{rfp.id}/bid/",
         {
             "lot_bids": [
                 {"lot_id": lot1.id, "unit_price": 41.5, "lead_time_days": 21, "notes": "FCA Kano"},
@@ -98,11 +98,11 @@ def test_qualified_org_bids_per_lot(supplier_client):
     assert bid.lot_bids.count() == 2
 
     # saving again replaces the lot bids rather than duplicating them
-    _post(client, f"/supply/api/rfps/{rfp.id}/bid/", {"lot_bids": [{"lot_id": lot1.id, "unit_price": 39.0}]})
+    _post(client, f"/oes/api/rfps/{rfp.id}/bid/", {"lot_bids": [{"lot_id": lot1.id, "unit_price": 39.0}]})
     assert bid.lot_bids.count() == 1
     assert float(bid.lot_bids.get().unit_price) == 39.0
 
-    assert _post(client, f"/supply/api/rfps/{rfp.id}/bid/submit/", {}).status_code == 200
+    assert _post(client, f"/oes/api/rfps/{rfp.id}/bid/submit/", {}).status_code == 200
     bid.refresh_from_db()
     assert bid.status == Bid.Status.SUBMITTED
     assert bid.submitted_at is not None
@@ -114,9 +114,7 @@ def test_cannot_bid_on_lot_from_another_rfp(supplier_client):
     rfp = f.RFPFactory(categories=["rutf"], status=RFP.Status.PUBLISHED)
     f.LotFactory(rfp=rfp)
     foreign_lot = f.LotFactory()
-    resp = _post(
-        client, f"/supply/api/rfps/{rfp.id}/bid/", {"lot_bids": [{"lot_id": foreign_lot.id, "unit_price": 40}]}
-    )
+    resp = _post(client, f"/oes/api/rfps/{rfp.id}/bid/", {"lot_bids": [{"lot_id": foreign_lot.id, "unit_price": 40}]})
     assert resp.status_code == 400
 
 
@@ -127,7 +125,7 @@ def test_cannot_bid_after_deadline_or_when_closed(supplier_client):
     lot = f.LotFactory(rfp=past)
     assert (
         _post(
-            client, f"/supply/api/rfps/{past.id}/bid/", {"lot_bids": [{"lot_id": lot.id, "unit_price": 40}]}
+            client, f"/oes/api/rfps/{past.id}/bid/", {"lot_bids": [{"lot_id": lot.id, "unit_price": 40}]}
         ).status_code
         == 400
     )
@@ -136,7 +134,7 @@ def test_cannot_bid_after_deadline_or_when_closed(supplier_client):
     closed_lot = f.LotFactory(rfp=closed)
     assert (
         _post(
-            client, f"/supply/api/rfps/{closed.id}/bid/", {"lot_bids": [{"lot_id": closed_lot.id, "unit_price": 40}]}
+            client, f"/oes/api/rfps/{closed.id}/bid/", {"lot_bids": [{"lot_id": closed_lot.id, "unit_price": 40}]}
         ).status_code
         == 400
     )
@@ -147,9 +145,9 @@ def test_cannot_edit_bid_after_submitting(supplier_client):
     _qualify(member.org)
     rfp = f.RFPFactory(categories=["rutf"], status=RFP.Status.PUBLISHED)
     lot = f.LotFactory(rfp=rfp)
-    _post(client, f"/supply/api/rfps/{rfp.id}/bid/", {"lot_bids": [{"lot_id": lot.id, "unit_price": 40}]})
-    _post(client, f"/supply/api/rfps/{rfp.id}/bid/submit/", {})
-    resp = _post(client, f"/supply/api/rfps/{rfp.id}/bid/", {"lot_bids": [{"lot_id": lot.id, "unit_price": 1}]})
+    _post(client, f"/oes/api/rfps/{rfp.id}/bid/", {"lot_bids": [{"lot_id": lot.id, "unit_price": 40}]})
+    _post(client, f"/oes/api/rfps/{rfp.id}/bid/submit/", {})
+    resp = _post(client, f"/oes/api/rfps/{rfp.id}/bid/", {"lot_bids": [{"lot_id": lot.id, "unit_price": 1}]})
     assert resp.status_code == 400
 
 
@@ -161,26 +159,26 @@ def test_supplier_cannot_see_other_bids(supplier_client):
     rival_bid = f.BidFactory(org=f.SupplierOrgFactory(legal_name="Rival Foods"), rfp=rfp, status=Bid.Status.SUBMITTED)
     f.LotBidFactory(bid=rival_bid, lot=lot, unit_price=10)
 
-    body = client.get(f"/supply/api/rfps/{rfp.id}/").json()
+    body = client.get(f"/oes/api/rfps/{rfp.id}/").json()
     assert body["my_bid"] is None
     assert "bids" not in body
-    assert client.get(f"/supply/api/rfps/{rfp.id}/comparison/").status_code == 403
+    assert client.get(f"/oes/api/rfps/{rfp.id}/comparison/").status_code == 403
 
 
 def test_admin_publishes_rfp_requires_lot(admin_client):
     client, _user = admin_client
     resp = _post(
         client,
-        "/supply/api/rfps/",
+        "/oes/api/rfps/",
         {"title": "RUTF Northeast Nigeria Q3", "categories": ["rutf"], "countries": ["NG"]},
     )
     assert resp.status_code == 200
     rfp_id = resp.json()["rfp"]["id"]
-    assert _post(client, f"/supply/api/rfps/{rfp_id}/transition/", {"status": "published"}).status_code == 400
+    assert _post(client, f"/oes/api/rfps/{rfp_id}/transition/", {"status": "published"}).status_code == 400
 
     _post(
         client,
-        f"/supply/api/rfps/{rfp_id}/lots/",
+        f"/oes/api/rfps/{rfp_id}/lots/",
         {
             "category": "rutf",
             "description": "60,000 cartons RUTF",
@@ -190,7 +188,7 @@ def test_admin_publishes_rfp_requires_lot(admin_client):
             "delivery_place": "Maiduguri",
         },
     )
-    assert _post(client, f"/supply/api/rfps/{rfp_id}/transition/", {"status": "published"}).status_code == 200
+    assert _post(client, f"/oes/api/rfps/{rfp_id}/transition/", {"status": "published"}).status_code == 200
     assert RFP.objects.get(id=rfp_id).status == RFP.Status.PUBLISHED
 
 
@@ -215,14 +213,14 @@ def test_scoring_and_comparison_ranked_by_price(admin_client):
     )
 
     assert (
-        _post(client, f"/supply/api/lot-bids/{cheap.id}/score/", {"technical_score": 80, "notes": "ok"}).status_code
+        _post(client, f"/oes/api/lot-bids/{cheap.id}/score/", {"technical_score": 80, "notes": "ok"}).status_code
         == 200
     )
     # re-scoring by the same reviewer updates rather than duplicating
-    _post(client, f"/supply/api/lot-bids/{cheap.id}/score/", {"technical_score": 90})
-    _post(client, f"/supply/api/lot-bids/{dear.id}/score/", {"technical_score": 70})
+    _post(client, f"/oes/api/lot-bids/{cheap.id}/score/", {"technical_score": 90})
+    _post(client, f"/oes/api/lot-bids/{dear.id}/score/", {"technical_score": 70})
 
-    comparison = client.get(f"/supply/api/rfps/{rfp.id}/comparison/").json()["lots"]
+    comparison = client.get(f"/oes/api/rfps/{rfp.id}/comparison/").json()["lots"]
     assert len(comparison) == 1
     rows = comparison[0]["lot_bids"]
     # unsubmitted bids never reach the comparison table
@@ -235,7 +233,7 @@ def test_scoring_and_comparison_ranked_by_price(admin_client):
 def test_score_out_of_range_rejected(admin_client):
     client, _user = admin_client
     lb = f.LotBidFactory()
-    assert _post(client, f"/supply/api/lot-bids/{lb.id}/score/", {"technical_score": 140}).status_code == 400
+    assert _post(client, f"/oes/api/lot-bids/{lb.id}/score/", {"technical_score": 140}).status_code == 400
 
 
 def test_cannot_award_unsubmitted_bid(admin_client):
@@ -243,7 +241,7 @@ def test_cannot_award_unsubmitted_bid(admin_client):
     rfp = f.RFPFactory(status=RFP.Status.PUBLISHED)
     lot = f.LotFactory(rfp=rfp)
     draft = f.LotBidFactory(bid=f.BidFactory(rfp=rfp, status=Bid.Status.DRAFT), lot=lot)
-    resp = _post(client, f"/supply/api/lots/{lot.id}/award/", {"lot_bid_id": draft.id})
+    resp = _post(client, f"/oes/api/lots/{lot.id}/award/", {"lot_bid_id": draft.id})
     assert resp.status_code == 400
     assert Award.objects.count() == 0
 
@@ -259,11 +257,11 @@ def test_award_sets_rfp_awarded_when_all_lots_done(admin_client):
     f.BidScoreFactory(lot_bid=lb1)
     f.BidScoreFactory(lot_bid=lb2)
 
-    assert _post(client, f"/supply/api/lots/{lot1.id}/award/", {"lot_bid_id": lb1.id}).status_code == 200
+    assert _post(client, f"/oes/api/lots/{lot1.id}/award/", {"lot_bid_id": lb1.id}).status_code == 200
     rfp.refresh_from_db()
     assert rfp.status == RFP.Status.PUBLISHED  # one lot still open
 
-    assert _post(client, f"/supply/api/lots/{lot2.id}/award/", {"lot_bid_id": lb2.id}).status_code == 200
+    assert _post(client, f"/oes/api/lots/{lot2.id}/award/", {"lot_bid_id": lb2.id}).status_code == 200
     rfp.refresh_from_db()
     assert rfp.status == RFP.Status.AWARDED
 
@@ -278,8 +276,8 @@ def test_cannot_award_same_lot_twice(admin_client):
     # A lot cannot be awarded until every submitted bid on it is scored.
     f.BidScoreFactory(lot_bid=lb)
     f.BidScoreFactory(lot_bid=other)
-    assert _post(client, f"/supply/api/lots/{lot.id}/award/", {"lot_bid_id": lb.id}).status_code == 200
-    assert _post(client, f"/supply/api/lots/{lot.id}/award/", {"lot_bid_id": other.id}).status_code == 400
+    assert _post(client, f"/oes/api/lots/{lot.id}/award/", {"lot_bid_id": lb.id}).status_code == 200
+    assert _post(client, f"/oes/api/lots/{lot.id}/award/", {"lot_bid_id": other.id}).status_code == 400
     assert Award.objects.count() == 1
 
 
@@ -288,16 +286,16 @@ def test_reviewer_can_score_but_not_award(reviewer_client):
     rfp = f.RFPFactory(status=RFP.Status.PUBLISHED)
     lot = f.LotFactory(rfp=rfp)
     lb = f.LotBidFactory(bid=f.BidFactory(rfp=rfp, status=Bid.Status.SUBMITTED), lot=lot)
-    assert _post(client, f"/supply/api/lot-bids/{lb.id}/score/", {"technical_score": 65}).status_code == 200
-    assert _post(client, f"/supply/api/lots/{lot.id}/award/", {"lot_bid_id": lb.id}).status_code == 403
-    assert _post(client, "/supply/api/rfps/", {"title": "x", "categories": ["rutf"]}).status_code == 403
+    assert _post(client, f"/oes/api/lot-bids/{lb.id}/score/", {"technical_score": 65}).status_code == 200
+    assert _post(client, f"/oes/api/lots/{lot.id}/award/", {"lot_bid_id": lb.id}).status_code == 403
+    assert _post(client, "/oes/api/rfps/", {"title": "x", "categories": ["rutf"]}).status_code == 403
 
 
 def test_supplier_cannot_score(supplier_client):
     client, member = supplier_client
     _qualify(member.org)
     lb = f.LotBidFactory()
-    assert _post(client, f"/supply/api/lot-bids/{lb.id}/score/", {"technical_score": 99}).status_code == 403
+    assert _post(client, f"/oes/api/lot-bids/{lb.id}/score/", {"technical_score": 99}).status_code == 403
 
 
 def test_cannot_award_a_lot_whose_bids_are_not_all_scored(admin_client):
@@ -317,7 +315,7 @@ def test_cannot_award_a_lot_whose_bids_are_not_all_scored(admin_client):
     f.LotBidFactory(bid=f.BidFactory(rfp=rfp, status=Bid.Status.SUBMITTED), lot=lot, unit_price=41)
     f.BidScoreFactory(lot_bid=scored)
 
-    resp = _post(client, f"/supply/api/lots/{lot.id}/award/", {"lot_bid_id": scored.id})
+    resp = _post(client, f"/oes/api/lots/{lot.id}/award/", {"lot_bid_id": scored.id})
 
     assert resp.status_code == 400
     assert "scored" in resp.json()["error"]
@@ -335,7 +333,7 @@ def test_award_succeeds_once_every_bid_on_the_lot_is_scored(admin_client):
     for lb in lot_bids:
         f.BidScoreFactory(lot_bid=lb)
 
-    resp = _post(client, f"/supply/api/lots/{lot.id}/award/", {"lot_bid_id": lot_bids[0].id})
+    resp = _post(client, f"/oes/api/lots/{lot.id}/award/", {"lot_bid_id": lot_bids[0].id})
 
     assert resp.status_code == 200, resp.json()
     assert Award.objects.filter(lot=lot).exists()
@@ -351,7 +349,7 @@ def test_an_unscored_draft_bid_does_not_block_the_award(admin_client):
     f.LotBidFactory(bid=f.BidFactory(rfp=rfp, status=Bid.Status.DRAFT), lot=lot, unit_price=39)
     f.BidScoreFactory(lot_bid=submitted)
 
-    resp = _post(client, f"/supply/api/lots/{lot.id}/award/", {"lot_bid_id": submitted.id})
+    resp = _post(client, f"/oes/api/lots/{lot.id}/award/", {"lot_bid_id": submitted.id})
 
     assert resp.status_code == 200, resp.json()
 
@@ -365,6 +363,6 @@ def test_comparison_names_who_is_still_unscored(admin_client):
     org = f.SupplierOrgFactory(legal_name="Unscored Foods Ltd")
     f.LotBidFactory(bid=f.BidFactory(rfp=rfp, org=org, status=Bid.Status.SUBMITTED), lot=lot, unit_price=40)
 
-    body = client.get(f"/supply/api/rfps/{rfp.id}/comparison/").json()
+    body = client.get(f"/oes/api/rfps/{rfp.id}/comparison/").json()
 
     assert body["lots"][0]["unscored_bidders"] == ["Unscored Foods Ltd"]

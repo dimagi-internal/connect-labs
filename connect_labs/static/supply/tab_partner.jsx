@@ -362,7 +362,7 @@ function PartnerTab({ ctx }) {
           onClose={() => setRaising(null)}
           onSubmit={(payload) =>
             act(
-              () => supplyPost('/supply/api/signals/raise/', payload),
+              () => supplyPost('/oes/api/signals/raise/', payload),
               'Shortfall raised. It is now in the OES command centre queue.',
             ).then(() => setRaising(null))
           }

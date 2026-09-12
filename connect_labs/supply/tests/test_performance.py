@@ -186,7 +186,7 @@ def test_the_award_screen_receives_every_bidder_s_record(seeded_world, admin_cli
     rfp = RFP.objects.filter(status=RFP.Status.PUBLISHED, lots__lot_bids__isnull=False).distinct().first()
     assert rfp is not None, "the seeded world must carry a published tender with bids"
 
-    body = _json.loads(client.get(f"/supply/api/rfps/{rfp.id}/comparison/").content)
+    body = _json.loads(client.get(f"/oes/api/rfps/{rfp.id}/comparison/").content)
     rows = [row for lot in body["lots"] for row in lot["lot_bids"]]
     assert rows, "the tender must carry bids to compare"
     for row in rows:

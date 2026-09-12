@@ -1,6 +1,6 @@
 """Programmatic reseed, and the guards that make it acceptable on a public host.
 
-`/supply/` has open registration on the open internet and this empties its
+`/oes/` has open registration on the open internet and this empties its
 tables, so the refusals are the feature and are asserted here rather than assumed
 from a settings file — the same reasoning as `test_dev_auth.py`.
 
@@ -15,7 +15,7 @@ from connect_labs.supply.models.procurement import RFP, Award
 
 pytestmark = pytest.mark.django_db
 
-URL = "/supply/api/demo/reseed/"
+URL = "/oes/api/demo/reseed/"
 
 
 @pytest.fixture()

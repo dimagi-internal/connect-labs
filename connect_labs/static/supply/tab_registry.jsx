@@ -16,9 +16,7 @@ function RegistryTab({ ctx }) {
       if (next.expiring) params.set('expiring_within_days', next.expiring);
       const qs = params.toString();
       try {
-        const body = await supplyGet(
-          `/supply/api/registry/${qs ? `?${qs}` : ''}`,
-        );
+        const body = await supplyGet(`/oes/api/registry/${qs ? `?${qs}` : ''}`);
         // Never blank the table on a malformed response.
         setRows(body && body.registry ? body.registry : []);
       } catch (err) {

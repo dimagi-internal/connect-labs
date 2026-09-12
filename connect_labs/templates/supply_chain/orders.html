@@ -1,0 +1,75 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+    <p class="text-sm text-amber-900">Orders are programme-scoped.</p>
+  </div>
+{% else %}
+
+<h2 class="text-lg font-semibold text-brand-indigo mb-1">Orders</h2>
+<p class="text-xs text-gray-500 mb-4">
+  An award is a decision; a contract is a commitment. They are separate because
+  the party that decides is often not the party that buys — and because import
+  duty and VAT fall on whoever imports, the buyer of record changes the landed
+  cost rather than just the paperwork.
+</p>
+
+<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+      <tr>
+        <th class="text-left px-4 py-2">Reference</th>
+        <th class="text-left px-4 py-2">Supplier</th>
+        <th class="text-left px-4 py-2">Buyer of record</th>
+        <th class="text-left px-4 py-2">Quantity</th>
+        <th class="text-left px-4 py-2">Status</th>
+        <th class="text-left px-4 py-2">Told by</th>
+        <th class="px-4 py-2"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for contract in contracts %}
+        <tr>
+          <td class="px-4 py-2.5">
+            {% if contract.reference %}
+              <span class="font-medium text-gray-900">{{ contract.reference }}</span>
+            {% else %}
+              <span class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                we do not hold it
+              </span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2.5 text-gray-700">
+            {{ suppliers|dictkey:contract.supplier_id|dictkey:"name"|default:contract.supplier_id }}
+          </td>
+          <td class="px-4 py-2.5">
+            <div class="text-gray-900">
+              {{ parties|dictkey:contract.buyer_party_id|dictkey:"name"|default:contract.buyer_of_record }}
+            </div>
+            <div class="text-xs text-gray-500">{{ contract.buyer_of_record }}</div>
+          </td>
+          <td class="px-4 py-2.5 tabular-nums text-gray-600">
+            {{ contract.quantity }} {{ contract.quantity_unit }}
+          </td>
+          <td class="px-4 py-2.5">{{ contract.status }}</td>
+          <td class="px-4 py-2.5 text-xs text-gray-500">
+            {{ contract.source }}{% if not contract.witnessed %}<div class="text-gray-400">reported, not witnessed</div>{% endif %}
+          </td>
+          <td class="px-4 py-2.5 text-right">
+            <a class="text-brand-indigo hover:underline"
+               href="{% url 'supply_chain:order_detail' contract.id %}">Open</a>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">
+          No contracts yet. An award on its own commits nothing.
+        </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
