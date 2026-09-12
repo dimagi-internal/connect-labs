@@ -7,6 +7,7 @@ Phase 1c sends the same text over SES.
 
 from connect_labs.supply_chain.models import CommodityRecord, QuoteRecord, RoundRecord, SupplierRecord
 from connect_labs.supply_chain.procurement.services.questions import initial_request_facts, missing_facts
+from connect_labs.supply_chain.values import format_quantity, plural_unit
 
 
 def _numbered(facts) -> str:
@@ -15,7 +16,11 @@ def _numbered(facts) -> str:
 
 def _destination(round_: RoundRecord) -> str:
     point = round_.delivery_point or {}
-    parts = [point.get("name"), point.get("city"), point.get("country")]
+    # Prefer the human-typed country name over the bare ISO code — see
+    # questions.py's _context(), which applies the same preference so a
+    # destination doesn't read as a code in one place and a name in another.
+    country = point.get("country_name") or point.get("country")
+    parts = [point.get("name"), point.get("city"), country]
     return ", ".join(part for part in parts if part) or "the delivery point"
 
 
@@ -25,7 +30,9 @@ def render_initial_request(
     supplier: SupplierRecord,
 ) -> str:
     quantity = round_.quantity_for(commodity.slug)
-    quantity_text = f"{quantity[0]} {quantity[1]}s" if quantity else "the quantity below"
+    quantity_text = (
+        f"{format_quantity(quantity[0])} {plural_unit(quantity[1], quantity[0])}" if quantity else "the quantity below"
+    )
     incoterm = (round_.delivery_point or {}).get("incoterm_requested")
 
     lines = [

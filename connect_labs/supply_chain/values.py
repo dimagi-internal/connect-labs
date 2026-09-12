@@ -79,3 +79,21 @@ def metric_tonnes_to_base_units(tonnes: Decimal, base_unit_grams: int) -> Decima
         raise ValueError("base_unit_grams must be positive")
     grams = tonnes * Decimal("1000000")
     return (grams / Decimal(base_unit_grams)).to_integral_value(rounding="ROUND_DOWN")
+
+
+def plural_unit(unit: str, count) -> str:
+    """Naive English pluralisation for a unit noun (carton, sachet, tonne, ...).
+
+    One shared rule so a quantity's unit cannot be pluralised two different
+    ways in the same message — procurement's render.py and questions.py both
+    call this rather than each appending an "s" of its own. Handles count == 1
+    so a single-carton round reads "carton", not "1 cartons". No unit in this
+    domain's vocabulary takes an irregular plural.
+    """
+    return unit if count == 1 else f"{unit}s"
+
+
+def format_quantity(quantity: Decimal) -> str:
+    """A quantity written the way commercial correspondence writes it, e.g.
+    2000 -> "2,000"."""
+    return f"{quantity:,}"

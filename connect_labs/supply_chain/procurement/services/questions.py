@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from connect_labs.supply_chain.models import CommodityRecord, QuoteRecord, RoundRecord
 from connect_labs.supply_chain.procurement.services.compliance import NOT_STATED, check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
-from connect_labs.supply_chain.values import Unconfirmed
+from connect_labs.supply_chain.values import Unconfirmed, plural_unit
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +161,11 @@ _ALWAYS_ASKED_BY_KEY: dict[str, str] = dict(_ALWAYS_ASKED)
 
 def _context(commodity: CommodityRecord, round_: RoundRecord) -> dict:
     destination = round_.delivery_point or {}
-    where = ", ".join(part for part in (destination.get("city"), destination.get("country")) if part)
+    # A human-typed country name reads as a person wrote this; the ISO code
+    # (kept for later integration) is the fallback for a delivery point that
+    # hasn't been given one yet.
+    country = destination.get("country_name") or destination.get("country")
+    where = ", ".join(part for part in (destination.get("city"), country) if part)
     quantity = round_.quantity_for(commodity.slug)
     return {
         "base_unit": commodity.base_unit or "unit",
@@ -169,7 +173,7 @@ def _context(commodity: CommodityRecord, round_: RoundRecord) -> dict:
         "commodity": commodity.name or commodity.slug,
         "destination": where or "the delivery point",
         "quantity": quantity[0] if quantity else "",
-        "quantity_unit": quantity[1] if quantity else "",
+        "quantity_unit": plural_unit(quantity[1], quantity[0]) if quantity else "",
         "shelf_life": round_.shelf_life_months_minimum or commodity.shelf_life_months_minimum or "",
     }
 
