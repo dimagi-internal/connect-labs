@@ -309,18 +309,15 @@ page down.
 288 tests, self-contained: own factories and `conftest.py`, **zero labs
 fixtures**, so the suite travels with the app if it is ever split out.
 
-> **Paused in CI.** `pyproject.toml` carries
-> `--ignore=connect_labs/supply/tests`, so these do **not** run on a normal
-> `pytest` or in CI. They are green, not broken — this app is the most
-> expensive package in the repo and nobody is working on it, so it is not worth
-> paying for on every PR. **Before touching anything under `connect_labs/supply/`,
-> delete that one `--ignore` and leave it deleted.** Nothing else is needed.
->
-> To run them once without turning them back on:
->
-> ```bash
-> make test ARGS="connect_labs/supply -n 4 --override-ini=addopts='--ds=config.settings.test --reuse-db'"
-> ```
+> **No longer paused in CI (2026-09-11).** `pyproject.toml` used to carry
+> `--ignore=connect_labs/supply/tests` while nobody was working on `/supply/`
+> and this was the most expensive package in the repo. The move to `/oes/`
+> touched ~25 files and every route in this package — the exact condition
+> this note's own rule named for turning the suite back on — so the ignore is
+> gone and these 288 tests now run on a normal `pytest` and in CI like
+> everything else. If `/oes/` goes quiet again and the cost is no longer
+> worth paying, the same rule applies in reverse: re-add the ignore, and
+> record why here.
 
 ```bash
 DATABASE_URL=postgis://postgres:postgres@localhost:5432/connect_labs \

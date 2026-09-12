@@ -1,12 +1,13 @@
 # ==== pytest ====
 [tool.pytest.ini_options]
 minversion = "6.0"
-# `--ignore=connect_labs/supply/tests` is a DELIBERATE, REVERSIBLE PAUSE, not a
-# quarantine: the suite is green (288 tests) and was optimised immediately
-# before being switched off. Nobody is working on `/supply/` right now and it is
-# the most expensive package in the repo, so it is not worth paying for on every
-# PR. Delete that one --ignore to turn it back on; nothing else is needed.
-addopts = "--ds=config.settings.test --reuse-db --durations=25 --ignore=connect_labs/supply/tests --ignore=connect_labs/workflow/tests/e2e --ignore=connect_labs/labs/tests/e2e --ignore=connect_labs/solicitations/tests/e2e --ignore=connect_labs/funder_dashboard/tests/e2e --ignore=connect_labs/campaign/tests/e2e --ignore=connect_labs/audit/management/commands/test_search_readers.py"
+# `connect_labs/supply/tests` was PAUSED here (a deliberate, reversible pause,
+# not a quarantine) while nobody was working on `/supply/` and it was the most
+# expensive package in the repo. The 2026-09-11 OES-to-/oes/ move touched ~25
+# files and every route in that package, which is exactly the condition the
+# pause's own rule names for turning it back on (see
+# connect_labs/supply/README.md's Testing section) — so the ignore is gone.
+addopts = "--ds=config.settings.test --reuse-db --durations=25 --ignore=connect_labs/workflow/tests/e2e --ignore=connect_labs/labs/tests/e2e --ignore=connect_labs/solicitations/tests/e2e --ignore=connect_labs/funder_dashboard/tests/e2e --ignore=connect_labs/campaign/tests/e2e --ignore=connect_labs/audit/management/commands/test_search_readers.py"
 norecursedirs = ["management"]
 python_files = [
     "tests.py",
