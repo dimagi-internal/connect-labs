@@ -39,6 +39,7 @@ figure here can go stale.
       <span class="text-xs font-bold uppercase tracking-wide text-gray-500">Landed cost</span>
       <span class="text-xs text-gray-400 ml-2">assuming {{ landed.buyer_of_record }} imports</span>
     </div>
+    <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
       <tbody class="divide-y divide-gray-100">
         <tr><td class="px-4 py-2 text-gray-600">Goods</td>
@@ -57,11 +58,13 @@ figure here can go stale.
         </tr>
       </tbody>
     </table>
+    </div>
     {% for reason in landed.landed_total|unconfirmed_reasons %}
       <div class="px-4 py-2 text-xs text-orange-800 bg-orange-50 border-t border-orange-100">{{ reason }}</div>
     {% endfor %}
     <div class="px-4 py-2.5 border-t border-gray-100">
       <div class="text-xs font-bold uppercase tracking-wide text-gray-500 mb-1">The same order, per buyer</div>
+      <div class="overflow-x-auto">
       <table class="min-w-full text-sm">
         <tbody class="divide-y divide-gray-100">
           {% for buyer, cell in landed.by_buyer.items %}
@@ -75,6 +78,7 @@ figure here can go stale.
           {% endfor %}
         </tbody>
       </table>
+      </div>
       <p class="text-xs text-gray-500 mt-2">
         Duty and VAT fall on whoever imports, so this is the same goods at the
         same price costing three different amounts.
@@ -91,6 +95,7 @@ figure here can go stale.
       <span class="text-xs font-bold uppercase tracking-wide text-gray-500">Ordered · received · invoiced</span>
       <span class="text-xs text-gray-400 ml-2">{{ match.status }}</span>
     </div>
+    <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
       <tbody class="divide-y divide-gray-100">
         <tr><td class="px-4 py-2 text-gray-600">Ordered</td>
@@ -119,6 +124,7 @@ figure here can go stale.
         </tr>
       </tbody>
     </table>
+    </div>
     <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
       The value of what actually arrived, less what has been paid — never the
       value of what was billed.
@@ -128,7 +134,8 @@ figure here can go stale.
 
 <h3 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mt-6 mb-2">Shipments</h3>
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-  <table class="min-w-full text-sm">
+  <div class="overflow-x-auto">
+  <table class="min-w-[44rem] w-full text-sm">
     <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
       <tr>
         <th class="text-left px-4 py-2">Reference</th>
@@ -169,11 +176,13 @@ figure here can go stale.
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <h3 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mt-6 mb-2">Received</h3>
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-  <table class="min-w-full text-sm">
+  <div class="overflow-x-auto">
+  <table class="min-w-[44rem] w-full text-sm">
     <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
       <tr>
         <th class="text-left px-4 py-2">Note</th>
@@ -206,6 +215,7 @@ figure here can go stale.
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <h3 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mt-6 mb-2">Evidence</h3>
