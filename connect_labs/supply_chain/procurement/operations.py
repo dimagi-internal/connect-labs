@@ -6,7 +6,6 @@ Handlers take a SupplyDataAccess first and return JSON-serialisable dicts.
 from connect_labs.supply_chain.operations import (
     _OUTREACH_DATA,
     _OUTREACH_DATA_CREATE,
-    _PURCHASE_DATA,
     _QUOTE_DATA,
     _QUOTE_DATA_CREATE,
     _ROUND_DATA,
@@ -389,25 +388,8 @@ def award_list(access, round_id=None):
     return [record(a) for a in access.list_awards(round_id=round_id)]
 
 
-# ---- purchases ---------------------------------------------------------
-
-
-@register_operation(
-    name="purchase_record",
-    summary=(
-        "Record what an LLO actually paid — the fact behind cost per course, " "as opposed to the quoted intention."
-    ),
-    input_schema=obj({"data": _PURCHASE_DATA}, required=("data",)),
-    is_write=True,
-)
-def purchase_record(access, data):
-    return record(access.create_purchase(data))
-
-
-@register_operation(
-    name="purchase_list",
-    summary="List recorded purchases for this programme.",
-    input_schema=obj({}),
-)
-def purchase_list(access):
-    return [record(p) for p in access.list_purchases()]
+# Purchases used to live here, as "what an LLO actually paid". They are gone:
+# a commitment (Contract), a bill (Invoice) and a settlement (Payment) are
+# three different facts with three different dates, and collapsing them into
+# one row meant the system could not answer "what have we committed but not
+# paid". See fulfilment/operations.py.

@@ -1,15 +1,15 @@
 from decimal import Decimal
 
+from connect_labs.supply_chain.models import Round, Supplier
 from connect_labs.supply_chain.procurement.services.comparison import compare_round
-from connect_labs.supply_chain.proxies import RoundRecord, SupplierRecord
 from connect_labs.supply_chain.tests.conftest import quote, wrap
 from connect_labs.supply_chain.values import Unconfirmed
 
 
 def suppliers():
     return {
-        1: wrap(SupplierRecord, {"name": "Northwind Nutrition"}, record_id=1),
-        2: wrap(SupplierRecord, {"name": "Harmattan Foods"}, record_id=2),
+        1: wrap(Supplier, {"name": "Northwind Nutrition"}, record_id=1),
+        2: wrap(Supplier, {"name": "Harmattan Foods"}, record_id=2),
     }
 
 
@@ -134,7 +134,7 @@ def test_ranked_by_is_none_when_the_round_has_no_line_for_the_commodity(rutf):
     Unconfirmed for every quote, so nothing is ever comparable in this case and
     the fallback key never actually ranked anything. Nothing comparable means
     nothing to rank by: ranked_by is None, not a quieter figure standing in."""
-    round_no_line = wrap(RoundRecord, {"lines": []})
+    round_no_line = wrap(Round, {"lines": []})
     comparison = compare_round(round_no_line, rutf, [quote(supplier_id=1)], suppliers())
     assert comparison.comparable_count == 0
     assert comparison.ranked_by is None

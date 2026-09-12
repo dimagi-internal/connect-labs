@@ -5,8 +5,8 @@ email will ignore a portal too, and the credibility is in the sender.
 Phase 1c sends the same text over SES.
 """
 
+from connect_labs.supply_chain.models import Commodity, Quote, Round, Supplier
 from connect_labs.supply_chain.procurement.services.questions import SUPPLIER, initial_request_facts, missing_facts
-from connect_labs.supply_chain.proxies import CommodityRecord, QuoteRecord, RoundRecord, SupplierRecord
 from connect_labs.supply_chain.values import destination_phrase, quantity_phrase
 
 
@@ -15,9 +15,9 @@ def _numbered(facts) -> str:
 
 
 def render_initial_request(
-    commodity: CommodityRecord,
-    round_: RoundRecord,
-    supplier: SupplierRecord,
+    commodity: Commodity,
+    round_: Round,
+    supplier: Supplier,
 ) -> str:
     quantity = round_.quantity_for(commodity.slug)
     quantity_text = quantity_phrase(quantity[0], quantity[1]) if quantity else "the quantity below"
@@ -46,10 +46,10 @@ def render_initial_request(
 
 
 def render_followup(
-    quote: QuoteRecord,
-    commodity: CommodityRecord,
-    round_: RoundRecord,
-    supplier: SupplierRecord,
+    quote: Quote,
+    commodity: Commodity,
+    round_: Round,
+    supplier: Supplier,
     item=None,
 ) -> str:
     """Ask only for what is still missing.

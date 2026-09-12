@@ -8,7 +8,7 @@ turns that into the follow-up email.
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-from connect_labs.supply_chain.proxies import CommodityRecord, QuoteRecord
+from connect_labs.supply_chain.models import Commodity, Quote
 
 OPERATORS = {
     "<=": lambda stated, required: stated <= required,
@@ -41,7 +41,7 @@ def _as_decimal(raw):
         return None
 
 
-def _resolve(field, quote: QuoteRecord, item):
+def _resolve(field, quote: Quote, item):
     """(value, origin, conflict) for one requirement field.
 
     The item's specification sheet wins over the supplier's claim: one is a
@@ -61,8 +61,8 @@ def _resolve(field, quote: QuoteRecord, item):
 
 
 def check_compliance(
-    quote: QuoteRecord,
-    commodity: CommodityRecord,
+    quote: Quote,
+    commodity: Commodity,
     item=None,
 ) -> list[RequirementResult]:
     results: list[RequirementResult] = []

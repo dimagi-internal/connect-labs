@@ -5,7 +5,6 @@ web pages have is a tool, and a new operation needs no work here.
 from connect_labs.mcp.connect_token import require_connect_token
 from connect_labs.mcp.tool_registry import register
 from connect_labs.supply_chain.data_access import SupplyDataAccess
-from connect_labs.supply_chain.operations import all_operations, call_operation
 
 # Procurement's operations register themselves into the shared registry as a side
 # effect of importing connect_labs.supply_chain.procurement.operations -- normally
@@ -14,6 +13,8 @@ from connect_labs.supply_chain.operations import all_operations, call_operation
 # this module transitively via tools/__init__.py) runs first: without this explicit
 # import, all_operations() below would see only the 9 root-level operations and
 # silently register no procurement_* tools at all.
+from connect_labs.supply_chain.fulfilment import operations as _fulfilment_operations  # noqa: F401
+from connect_labs.supply_chain.operations import all_operations, call_operation
 from connect_labs.supply_chain.procurement import operations as _procurement_operations  # noqa: F401
 
 

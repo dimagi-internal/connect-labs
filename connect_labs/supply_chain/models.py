@@ -33,7 +33,7 @@ ledger sign convention on `MovementQuerySet` -- which is a property of the
 schema, not a policy.
 """
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -277,12 +277,23 @@ class Round(TimestampedModel):
         return self.label
 
     def quantity_for(self, commodity_slug):
-        """(quantity, unit) for one commodity on this round, or (None, None)."""
+        """(quantity, unit) for a commodity on this round, or None.
+
+        A single None rather than a (None, None) pair, because all three
+        callers test the result for truthiness before unpacking it -- and a
+        two-tuple of Nones is truthy, so returning one sends None into
+        `quantity_phrase()` and raises where the caller expected a blank.
+        """
         for line in self.lines or []:
             if line.get("commodity_slug") == commodity_slug:
                 raw = line.get("quantity")
-                return (Decimal(str(raw)) if raw not in (None, "") else None), line.get("quantity_unit")
-        return None, None
+                if raw in (None, ""):
+                    return None
+                try:
+                    return Decimal(str(raw)), line.get("quantity_unit")
+                except InvalidOperation:
+                    return None
+        return None
 
 
 class Outreach(TimestampedModel):
@@ -345,9 +356,16 @@ class Quote(TimestampedModel):
     received_on = models.DateField(null=True, blank=True)
 
     voided = models.BooleanField(default=False)
+    void_reason = models.TextField(blank=True, default="")
+    # A correction creates a new version and back-links the old one rather
+    # than overwriting it. Overwriting would make a past award's frozen
+    # comparison unreproducible, and a comparison shown to a funder has to
+    # stay reconstructible.
+    version = models.IntegerField(default=1)
     superseded_by = models.OneToOneField(
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="supersedes"
     )
+    correction_reason = models.TextField(blank=True, default="")
     notes = models.TextField(blank=True, default="")
 
     class Meta:
@@ -359,13 +377,23 @@ class Quote(TimestampedModel):
         return self.commodity.slug
 
     @property
-    def supplier_id_value(self):
-        return self.supplier_id
-
-    @property
     def superseded_by_quote_id(self):
         """Named for the services that read it; the column is a self relation."""
         return self.superseded_by_id
+
+    @property
+    def supersedes_quote_id(self):
+        """The quote this one replaced, when that is known without a query.
+
+        The forward side of the supersession link is `superseded_by`, because
+        that is the direction the comparison reads on every row to exclude
+        stale quotes, and it must be free. This is the reverse side, so
+        touching it would cost one query per quote serialised. It returns
+        None unless the relation has been selected -- `data_access` selects
+        it on list reads -- rather than quietly issuing that query.
+        """
+        cached = self._state.fields_cache.get("supersedes")
+        return cached.pk if cached is not None else None
 
     @property
     def is_live(self) -> bool:

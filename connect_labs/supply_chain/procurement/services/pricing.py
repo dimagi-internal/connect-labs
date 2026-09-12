@@ -11,7 +11,7 @@ missing fact, because questions.py turns them into the next email.
 from dataclasses import dataclass
 from decimal import Decimal
 
-from connect_labs.supply_chain.proxies import CommodityRecord, ItemRecord, QuoteRecord, RoundRecord
+from connect_labs.supply_chain.models import Commodity, Item, Quote, Round
 from connect_labs.supply_chain.values import Derived, Money, confirmed, merge, metric_tonnes_to_base_units, unconfirmed
 
 FIGURE_FIELDS = (
@@ -49,7 +49,7 @@ class QuoteFigures:
         return {field: getattr(self, field) for field in FIGURE_FIELDS}
 
 
-def _usd_amount(quote: QuoteRecord) -> Derived:
+def _usd_amount(quote: Quote) -> Derived:
     """The quote's headline amount in USD, or why it cannot be known."""
     amount = quote.as_quoted_amount
     if amount is None:
@@ -65,7 +65,7 @@ def _usd_amount(quote: QuoteRecord) -> Derived:
     return Money(amount * rate)
 
 
-def _pack_spec(quote: QuoteRecord, item: ItemRecord | None) -> int | Derived:
+def _pack_spec(quote: Quote, item: Item | None) -> int | Derived:
     """Base units per pack, from whoever actually stated it.
 
     Two sources count as a statement, and one does not:
@@ -102,7 +102,7 @@ def _pack_spec(quote: QuoteRecord, item: ItemRecord | None) -> int | Derived:
     return unconfirmed("pack spec not stated on the quote (units per pack)")
 
 
-def _base_unit_grams(quote: QuoteRecord, item: ItemRecord | None) -> int | Derived:
+def _base_unit_grams(quote: Quote, item: Item | None) -> int | Derived:
     """Grams per base unit, from whoever actually stated it.
 
     Mirrors `_pack_spec`'s shape, because it is the same rule: the quote
@@ -120,7 +120,7 @@ def _base_unit_grams(quote: QuoteRecord, item: ItemRecord | None) -> int | Deriv
     return unconfirmed("unit weight not stated on the quote (grams per base unit)")
 
 
-def _extras(quote: QuoteRecord) -> Derived:
+def _extras(quote: Quote) -> Derived:
     """Freight plus duties to add to a lot total, or why that is unknowable."""
     total = Decimal("0")
     reasons: list[str] = []
@@ -144,7 +144,7 @@ def _extras(quote: QuoteRecord) -> Derived:
     return Money(total)
 
 
-def _course_size(commodity: CommodityRecord) -> int | Derived:
+def _course_size(commodity: Commodity) -> int | Derived:
     size = commodity.base_units_per_course
     if not size:
         base_unit = commodity.base_unit or "unit"
@@ -155,8 +155,8 @@ def _course_size(commodity: CommodityRecord) -> int | Derived:
 
 
 def _lot_subtotal(
-    quote: QuoteRecord,
-    commodity: CommodityRecord,
+    quote: Quote,
+    commodity: Commodity,
     usd: Money,
     per_base_unit: Money,
     units_quoted: Decimal,
@@ -190,10 +190,10 @@ def _lot_subtotal(
 
 
 def _base_units_quoted(
-    quote: QuoteRecord,
-    commodity: CommodityRecord,
+    quote: Quote,
+    commodity: Commodity,
     pack_spec: int | Derived,
-    item: ItemRecord | None,
+    item: Item | None,
 ) -> Decimal | Derived:
     """How many base units the quote's own quantity basis covers."""
     quantity = quote.quantity_basis
@@ -220,10 +220,10 @@ def _base_units_quoted(
 
 
 def compute_figures(
-    quote: QuoteRecord,
-    commodity: CommodityRecord,
-    round_: RoundRecord,
-    item: ItemRecord | None = None,
+    quote: Quote,
+    commodity: Commodity,
+    round_: Round,
+    item: Item | None = None,
 ) -> QuoteFigures:
     """Derive every comparable figure for one quote, or say why it cannot be.
 
