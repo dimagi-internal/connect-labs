@@ -1,0 +1,281 @@
+{% extends "supply_chain/base.html" %}
+{% load static i18n supply_chain_extras %}
+
+{% block supply_content %}
+<h1 class="text-xl font-semibold text-gray-900 mb-2">Record a quote</h1>
+<p class="text-sm text-gray-600 mb-4">
+  Record exactly what the supplier said, in the unit and basis they said it. Leave
+  freight, duties and pack spec as "not specified" / "not stated" when the supplier
+  was silent about them — a guessed input produces a confident wrong answer.
+</p>
+
+{% if not has_program_context %}
+<div class="bg-blue-50 border border-blue-200 rounded-lg shadow-sm p-8 text-center">
+  <i class="fa-solid fa-building text-4xl text-blue-400 mb-3"></i>
+  <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+  <p class="text-blue-700 text-sm">Select a programme from the context selector before recording a quote.</p>
+</div>
+{% else %}
+
+{% if quote_error %}
+  <div class="mb-4 p-4 rounded-lg border border-red-200 bg-red-50 text-red-800 text-sm max-w-3xl">
+    <strong>Could not record this quote:</strong> {{ quote_error }}
+    <div class="mt-1 text-red-700">Nothing below was lost — fix the field and submit again.</div>
+  </div>
+{% endif %}
+
+<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 max-w-3xl"
+     data-pack-spec-source="{{ submitted|dictkey:'pack_spec_source'|default_if_none:'not_stated' }}"
+     x-data="quoteEntryForm()"
+     x-init="packSpecSource = $el.dataset.packSpecSource">
+  <form method="post" action="{% url 'supply_chain:procurement_quote_entry' %}">
+    {% csrf_token %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_round_id">Round</label>
+        <select id="id_round_id" name="round_id" required
+                class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          {% for round in rounds %}
+          <option value="{{ round.id }}"
+                  {% if submitted|dictkey:"round_id" == round.id|stringformat:"s" %}selected{% endif %}>
+            {{ round.label }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_supplier_id">Supplier</label>
+        <select id="id_supplier_id" name="supplier_id" required
+                class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          {% for supplier in suppliers %}
+          <option value="{{ supplier.id }}"
+                  {% if submitted|dictkey:"supplier_id" == supplier.id|stringformat:"s" %}selected{% endif %}>
+            {{ supplier.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_commodity_slug">Commodity</label>
+        <select id="id_commodity_slug" name="commodity_slug" required
+                class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          {% for commodity in commodities %}
+          <option value="{{ commodity.slug }}"
+                  {% if submitted|dictkey:"commodity_slug" == commodity.slug %}selected{% endif %}>
+            {{ commodity.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_as_quoted_unit">Quoted per</label>
+        {% with as_quoted_unit=submitted|dictkey:"as_quoted_unit"|default_if_none:"per_base_unit" %}
+        <select id="id_as_quoted_unit" name="as_quoted_unit" required
+                class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          <option value="per_base_unit" {% if as_quoted_unit == "per_base_unit" %}selected{% endif %}>
+            Base unit (e.g. sachet)
+          </option>
+          <option value="per_pack" {% if as_quoted_unit == "per_pack" %}selected{% endif %}>
+            Pack (e.g. carton)
+          </option>
+          <option value="per_lot_total" {% if as_quoted_unit == "per_lot_total" %}selected{% endif %}>
+            Lot total
+          </option>
+          <option value="per_metric_tonne" {% if as_quoted_unit == "per_metric_tonne" %}selected{% endif %}>
+            Metric tonne
+          </option>
+        </select>
+        {% endwith %}
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_as_quoted_amount">As-quoted amount</label>
+        <input type="text" id="id_as_quoted_amount" name="as_quoted_amount" required placeholder="e.g. 52.42"
+               value="{{ submitted|dictkey:'as_quoted_amount'|default:'' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_as_quoted_currency">Currency</label>
+        <input type="text" id="id_as_quoted_currency" name="as_quoted_currency" maxlength="3" required
+               value="{{ submitted|dictkey:'as_quoted_currency'|default:'USD' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_quantity_basis">
+          Quantity the price covers
+        </label>
+        <input type="text" id="id_quantity_basis" name="quantity_basis" required placeholder="e.g. 500"
+               value="{{ submitted|dictkey:'quantity_basis'|default:'' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_lead_time_days">Lead time (days)</label>
+        <input type="number" min="0" id="id_lead_time_days" name="lead_time_days"
+               value="{{ submitted|dictkey:'lead_time_days'|default:'' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+    </div>
+
+    <fieldset class="mb-4 border border-gray-200 rounded-md p-4">
+      <legend class="text-sm font-medium text-gray-700 px-1">Pack specification</legend>
+      <p class="text-xs text-gray-500 mb-3">
+        Where the sachets-per-carton figure came from. Leaving this as "not stated" is
+        the honest reading of a quote that never said — do not guess.
+      </p>
+      <div class="flex flex-col gap-2 mb-3">
+        <label class="flex items-center gap-2 text-sm">
+          <input type="radio" name="pack_spec_source" value="not_stated" x-model="packSpecSource">
+          Not stated
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <input type="radio" name="pack_spec_source" value="stated_on_quote" x-model="packSpecSource">
+          Stated on the quote
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <input type="radio" name="pack_spec_source" value="trade_item_confirmed" x-model="packSpecSource">
+          Supplier named a known trade item
+        </label>
+      </div>
+
+      <div x-show="packSpecSource === 'stated_on_quote'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1" for="id_base_per_pack_stated">
+            Base units per pack
+          </label>
+          <input type="number" min="0" id="id_base_per_pack_stated" name="base_per_pack_stated"
+                 value="{{ submitted|dictkey:'base_per_pack_stated'|default:'' }}"
+                 class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1" for="id_base_unit_grams_stated">
+            Base unit weight (g)
+          </label>
+          <input type="number" min="0" id="id_base_unit_grams_stated" name="base_unit_grams_stated"
+                 value="{{ submitted|dictkey:'base_unit_grams_stated'|default:'' }}"
+                 class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+        </div>
+      </div>
+
+      <div x-show="packSpecSource === 'trade_item_confirmed'">
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_item_id">Trade item</label>
+        <select id="id_item_id" name="item_id" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          <option value="">Select the item the supplier named…</option>
+          {% for item in items %}
+          <option value="{{ item.id }}"
+                  {% if submitted|dictkey:"item_id" == item.id|stringformat:"s" %}selected{% endif %}>
+            {{ item.name }} ({{ item.sku }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+    </fieldset>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_freight_basis">Freight</label>
+        {% with freight_basis=submitted|dictkey:"freight_basis"|default_if_none:"not_specified" %}
+        <select id="id_freight_basis" name="freight_basis"
+                class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          <option value="not_specified" {% if freight_basis == "not_specified" %}selected{% endif %}>
+            Not specified
+          </option>
+          <option value="included" {% if freight_basis == "included" %}selected{% endif %}>Included</option>
+          <option value="excluded" {% if freight_basis == "excluded" %}selected{% endif %}>Excluded</option>
+        </select>
+        {% endwith %}
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_freight_amount">
+          Freight amount (if excluded)
+        </label>
+        <input type="text" id="id_freight_amount" name="freight_amount"
+               value="{{ submitted|dictkey:'freight_amount'|default:'' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_duties_basis">Duties</label>
+        {% with duties_basis=submitted|dictkey:"duties_basis"|default_if_none:"not_specified" %}
+        <select id="id_duties_basis" name="duties_basis"
+                class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          <option value="not_specified" {% if duties_basis == "not_specified" %}selected{% endif %}>
+            Not specified
+          </option>
+          <option value="included" {% if duties_basis == "included" %}selected{% endif %}>Included</option>
+          <option value="excluded" {% if duties_basis == "excluded" %}selected{% endif %}>Excluded</option>
+        </select>
+        {% endwith %}
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_duties_amount">
+          Duties amount (if excluded)
+        </label>
+        <input type="text" id="id_duties_amount" name="duties_amount"
+               value="{{ submitted|dictkey:'duties_amount'|default:'' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_fx_rate_to_usd">
+          FX rate to USD (if not USD)
+        </label>
+        <input type="text" id="id_fx_rate_to_usd" name="fx_rate_to_usd"
+               value="{{ submitted|dictkey:'fx_rate_to_usd'|default:'' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_shelf_life_months_stated">
+          Shelf life (months)
+        </label>
+        <input type="number" min="0" id="id_shelf_life_months_stated" name="shelf_life_months_stated"
+               value="{{ submitted|dictkey:'shelf_life_months_stated'|default:'' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_moq">
+          Minimum order quantity
+        </label>
+        <input type="text" id="id_moq" name="moq" placeholder="e.g. 500"
+               value="{{ submitted|dictkey:'moq'|default:'' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_moq_unit">
+          MOQ unit
+        </label>
+        <input type="text" id="id_moq_unit" name="moq_unit" placeholder="e.g. carton"
+               value="{{ submitted|dictkey:'moq_unit'|default:'' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_validity_until">
+          Quotation valid until
+        </label>
+        <input type="date" id="id_validity_until" name="validity_until"
+               value="{{ submitted|dictkey:'validity_until'|default:'' }}"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+    </div>
+
+    <div class="flex justify-end">
+      <button type="submit" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+        Record quote
+      </button>
+    </div>
+  </form>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block inline_javascript %}
+<script>
+  // Any previously-submitted pack_spec_source arrives via the element's own
+  // data-pack-spec-source attribute (x-init above), never interpolated into
+  // this function call — a value templated straight into an x-data JS
+  // expression is HTML-decoded by the browser before Alpine evaluates it,
+  // so a submitted string containing a quote would break out of the string
+  // literal. A data-* attribute is HTML-escaped, not JS-escaped, and is read
+  // back as an inert string via .dataset, never re-parsed as JavaScript.
+  function quoteEntryForm() {
+    return { packSpecSource: 'not_stated' };
+  }
+</script>
+{% endblock %}

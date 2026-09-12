@@ -22,7 +22,7 @@ from ..tool_registry import register
 @register(
     name="supply_demo_reseed",
     description=(
-        "Reset the OES supply demo world (/supply/) to its seeded state and "
+        "Reset the OES supply demo world (/oes/) to its seeded state and "
         "return the seeder's own summary. Deletes and rebuilds the supply_* "
         "tables via seed_supply_demo --reset; deterministic, so the rebuilt "
         "world is identical every time. Use between walkthrough takes: every OES "

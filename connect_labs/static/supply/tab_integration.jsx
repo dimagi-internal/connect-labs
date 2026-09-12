@@ -10,7 +10,7 @@ function IntegrationTab({ ctx }) {
 
   const mint = async () => {
     const result = await act(
-      () => supplyPost('/supply/api/tokens/', { label }),
+      () => supplyPost('/oes/api/tokens/', { label }),
       'Token created — copy it now.',
     );
     if (result) {
@@ -100,8 +100,7 @@ function IntegrationTab({ ctx }) {
                     className="btn-link danger"
                     onClick={() =>
                       act(
-                        () =>
-                          supplyPost(`/supply/api/tokens/${t.id}/revoke/`, {}),
+                        () => supplyPost(`/oes/api/tokens/${t.id}/revoke/`, {}),
                         'Token revoked.',
                       )
                     }
@@ -125,9 +124,7 @@ function IntegrationTab({ ctx }) {
             Object, aggregation and transformation events are all accepted, with
             GS1 Digital Link or <code>urn:epc:</code> identifiers.
           </p>
-          <code className="endpoint-url">
-            POST /supply/api/v1/epcis/capture/
-          </code>
+          <code className="endpoint-url">POST /oes/api/v1/epcis/capture/</code>
         </div>
 
         <div className="endpoint">
@@ -136,7 +133,7 @@ function IntegrationTab({ ctx }) {
             The shipment → packages → items tree from an X12 856 or EDIFACT
             DESADV, as JSON. Any EDI translation service emits this shape.
           </p>
-          <code className="endpoint-url">POST /supply/api/v1/shipments/</code>
+          <code className="endpoint-url">POST /oes/api/v1/shipments/</code>
         </div>
 
         <div className="endpoint">
@@ -145,7 +142,7 @@ function IntegrationTab({ ctx }) {
             For corridors without system coverage: a consignment reference, a
             place and what happened. A driver's phone is enough.
           </p>
-          <code className="endpoint-url">POST /supply/api/v1/checkins/</code>
+          <code className="endpoint-url">POST /oes/api/v1/checkins/</code>
         </div>
 
         <div className="endpoint">
@@ -155,7 +152,7 @@ function IntegrationTab({ ctx }) {
             reconcile against your own records.
           </p>
           <code className="endpoint-url">
-            GET /supply/api/v1/shipments/&lt;id&gt;/events/
+            GET /oes/api/v1/shipments/&lt;id&gt;/events/
           </code>
         </div>
 

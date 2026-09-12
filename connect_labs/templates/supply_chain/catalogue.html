@@ -1,0 +1,224 @@
+{% extends "supply_chain/base.html" %}
+{% load supply_chain_extras %}
+
+{% comment %}
+Two levels, because the supply chain uses two. A product is a specification
+and cannot be ordered; a trade item is one manufacturer's version of it and
+can. The batch -- which physical lot arrived -- is the third level and lives
+on the Stock page.
+{% endcomment %}
+
+{% block supply_content %}
+
+<h1 class="text-lg font-semibold text-brand-indigo mb-1">Catalogue</h1>
+<p class="text-sm text-gray-600 mb-6 max-w-4xl">
+  Three levels of identity, and conflating any two is how a per&#8209;sachet
+  figure silently goes wrong. A <b>product</b> is a specification — "RUTF,
+  92&nbsp;g sachet, 150 to the carton" — and nobody can ship you one. A
+  <b>trade item</b> is one manufacturer's product against that specification,
+  with its own SKU and GTIN, and is what you actually order. A <b>batch</b> is
+  the lot that arrived, and carries the expiry and the certificate; it appears
+  under <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a>.
+  So: every supplier's RUTF is the same 92&nbsp;g sachet because the product
+  says so and each trade item is checked against it — while their SKUs stay
+  their own.
+</p>
+
+{% for product in products %}
+  <div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
+    <div class="px-4 py-3 border-b border-gray-100">
+      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h2 class="text-base font-semibold text-brand-indigo">{{ product.name }}</h2>
+        <span class="text-xs text-gray-500">{{ product.slug }}</span>
+        {% if product.category %}
+          <span class="text-xs text-gray-500">{{ product.category|humanise }}</span>
+        {% endif %}
+        <span class="text-xs text-gray-400 ml-auto">
+          {{ product.items|length }} trade item{{ product.items|length|pluralize }}
+        </span>
+      </div>
+
+      <div class="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-xs">
+        <span class="text-gray-600">
+          <span class="text-gray-400">Unit ladder</span>
+          {% if product.base_per_pack %}
+            {{ product.base_per_pack }} {{ product.base_unit }}s per {{ product.pack_unit }}
+          {% else %}
+            <span class="text-amber-800">not stated</span>
+          {% endif %}
+        </span>
+        <span class="text-gray-600">
+          <span class="text-gray-400">Unit weight</span>
+          {% if product.base_unit_grams %}{{ product.base_unit_grams }} g{% else %}
+            <span class="text-amber-800">not stated</span>{% endif %}
+        </span>
+        <span class="text-gray-600">
+          <span class="text-gray-400">Minimum shelf life</span>
+          {% if product.shelf_life_months_minimum %}{{ product.shelf_life_months_minimum }} months{% else %}
+            <span class="text-amber-800">not stated</span>{% endif %}
+        </span>
+        <span class="text-gray-600">
+          <span class="text-gray-400">Specification</span>
+          {% if product.spec_reference %}{{ product.spec_reference }}{% else %}
+            <span class="text-amber-800">no reference recorded</span>{% endif %}
+        </span>
+        <span class="text-gray-600">
+          <span class="text-gray-400">UNICEF material no.</span>
+          {% if product.unicef_material_number %}
+            <span class="tabular-nums">{{ product.unicef_material_number }}</span>
+          {% else %}
+            <span class="text-amber-800">not recorded</span>
+          {% endif %}
+        </span>
+      </div>
+
+      <div class="mt-2 text-xs">
+        {% if product.has_course_definition %}
+          <span class="text-gray-600">
+            <span class="text-gray-400">Ration table</span>
+            {{ product.course_definition.base_units_per_course }} {{ product.base_unit }}s per course
+            {% if product.course_definition.source %}
+              <span class="text-gray-400">({{ product.course_definition.source }})</span>
+            {% endif %}
+          </span>
+        {% else %}
+          <span class="text-amber-800">
+            No ration table. Sachets per day and days per course is this
+            programme's treatment protocol, not part of the specification — so
+            cost per course and cost per child come back unconfirmed until it
+            is set. Nobody outside can answer it.
+          </span>
+        {% endif %}
+      </div>
+
+      {% if product.spec_requirements %}
+        <div class="mt-2">
+          <div class="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+            Requirements every trade item is checked against
+          </div>
+          <ul class="text-xs text-gray-600 list-disc list-inside mt-0.5">
+            {% for requirement in product.spec_requirements %}
+              <li>
+                {{ requirement.field }} {{ requirement.operator }} {{ requirement.value }}{{ requirement.unit }}
+                {% if requirement.rationale %}
+                  <span class="text-gray-400">— {{ requirement.rationale }}</span>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      {% if product.pack_values|length > 1 or product.weight_values|length > 1 %}
+        <div class="mt-2 text-xs text-orange-800 bg-orange-50 border border-orange-200 rounded px-2 py-1.5">
+          {% if product.pack_values|length > 1 %}
+            Its trade items are packed {{ product.pack_values|join:" and " }} to the
+            {{ product.pack_unit }}.
+          {% endif %}
+          {% if product.weight_values|length > 1 %}
+            Their unit weights differ: {{ product.weight_values|join:" g and " }} g.
+          {% endif %}
+          A single per&#8209;{{ product.base_unit }} figure across them is not one number —
+          which is exactly why the trade item layer exists.
+        </div>
+      {% endif %}
+    </div>
+
+    {% if product.items %}
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+          <tr>
+            <th class="text-left px-4 py-2">Trade item</th>
+            <th class="text-left px-4 py-2">Manufacturer</th>
+            <th class="text-left px-4 py-2">Packed</th>
+            <th class="text-left px-4 py-2">Unit weight</th>
+            <th class="text-left px-4 py-2">Shelf life</th>
+            <th class="text-left px-4 py-2">GS1 keys</th>
+            <th class="text-left px-4 py-2">Against the spec</th>
+            <th class="text-left px-4 py-2">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for item in product.items %}
+            <tr class="{% if item.pack_disagrees_with_siblings or item.weight_disagrees_with_siblings %}bg-amber-50{% endif %}">
+              <td class="px-4 py-2.5">
+                <div class="font-medium text-gray-900">{{ item.name }}</div>
+                <div class="text-xs text-gray-500">{{ item.sku }}</div>
+              </td>
+              <td class="px-4 py-2.5 text-gray-700">{{ item.manufacturer|default:"—" }}</td>
+              <td class="px-4 py-2.5 tabular-nums">
+                {% if item.base_per_pack %}
+                  {{ item.base_per_pack }} / {{ item.pack_unit|default:product.pack_unit }}
+                  {% if item.differs_from_product %}
+                    <div class="text-xs text-gray-500">
+                      product says {{ product.base_per_pack }}
+                    </div>
+                  {% endif %}
+                {% else %}
+                  <span class="text-amber-800 text-xs">not stated</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-2.5 tabular-nums">
+                {% if item.base_unit_grams %}{{ item.base_unit_grams }} g{% else %}
+                  <span class="text-amber-800 text-xs">not stated</span>{% endif %}
+              </td>
+              <td class="px-4 py-2.5 tabular-nums text-gray-600">
+                {% if item.shelf_life_months %}{{ item.shelf_life_months }} mo{% else %}—{% endif %}
+              </td>
+              <td class="px-4 py-2.5">
+                {% if item.gtins %}
+                  {% for gtin in item.gtins %}
+                    <div class="text-xs tabular-nums text-gray-600">
+                      {{ gtin.value }} <span class="text-gray-400">{{ gtin.level }}</span>
+                    </div>
+                  {% endfor %}
+                {% else %}
+                  <span class="text-xs text-gray-400">none recorded</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-2.5">
+                {% if "fail" in item.spec_verdict %}
+                  <span class="text-xs font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">{{ item.spec_verdict }}</span>
+                {% elif "not stated" in item.spec_verdict %}
+                  <span class="text-xs font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">{{ item.spec_verdict }}</span>
+                {% elif "No requirements" in item.spec_verdict %}
+                  <span class="text-xs text-gray-400">{{ item.spec_verdict }}</span>
+                {% else %}
+                  <span class="text-xs font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">{{ item.spec_verdict }}</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-2.5 text-gray-600">{{ item.status }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="px-4 py-4 text-sm text-gray-500">
+        No trade items yet. Nothing can be ordered against a product until at
+        least one manufacturer's version of it is recorded, and a quote that
+        names no trade item cannot be converted to a per&#8209;{{ product.base_unit }}
+        price.
+      </p>
+    {% endif %}
+  </div>
+{% empty %}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-gray-500">
+    Nothing in the catalogue yet.
+  </div>
+{% endfor %}
+
+{% if orphan_items %}
+  <div class="bg-white border border-orange-200 rounded-lg px-4 py-3">
+    <div class="text-xs font-bold uppercase tracking-wide text-orange-800">
+      Trade items with no product
+    </div>
+    <p class="text-xs text-gray-600 mt-1">
+      Nothing checks these against a specification, so nothing can say whether
+      they are the right thing.
+    </p>
+    <ul class="text-sm mt-1 list-disc list-inside">
+      {% for item in orphan_items %}<li>{{ item.name }} ({{ item.sku }})</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+{% endblock %}

@@ -134,7 +134,7 @@ def _labs_pat() -> str:
 
 
 def _reseed_remotely(base_url: str, token: str, password: str | None = None) -> int:
-    """Reseed a DEPLOYED site over HTTP (``/supply/api/demo/reseed/``).
+    """Reseed a DEPLOYED site over HTTP (``/oes/api/demo/reseed/``).
 
     The deployed site has no shell for the render loop to use. The documented
     alternative was an interactive ``aws ecs execute-command`` — an SSO token and
@@ -146,7 +146,7 @@ def _reseed_remotely(base_url: str, token: str, password: str | None = None) -> 
     import urllib.error
     import urllib.request
 
-    url = f"{base_url.rstrip('/')}/supply/api/demo/reseed/"
+    url = f"{base_url.rstrip('/')}/oes/api/demo/reseed/"
     print(f"ensure_demo: POST {url}", flush=True)
     payload = json.dumps({"password": password} if password else {}).encode()
 

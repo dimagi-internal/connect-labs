@@ -29,7 +29,7 @@
           <div class="form-error">{{ form.non_field_errors|first }}</div>
         {% endif %}
 
-        <form method="post" action="/supply/signup/">
+        <form method="post" action="/oes/signup/">
           {% csrf_token %}
           <div class="field">
             <label for="id_org_name">Organisation legal name</label>
@@ -95,7 +95,7 @@
         </form>
 
         <div class="auth-alt">
-          Already registered? <a href="/supply/login/">Sign in</a>
+          Already registered? <a href="/oes/login/">Sign in</a>
         </div>
 
         <div class="demo-note">

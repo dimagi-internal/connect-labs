@@ -67,4 +67,4 @@ def dev_login(request):
         )
 
     auth_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-    return redirect(request.GET.get("next") or "/supply/")
+    return redirect(request.GET.get("next") or "/oes/")

@@ -144,7 +144,7 @@ function RoundsTab({ ctx }) {
                           act(
                             () =>
                               supplyPost(
-                                `/supply/api/eoi/rounds/${r.id}/transition/`,
+                                `/oes/api/eoi/rounds/${r.id}/transition/`,
                                 { status: 'open' },
                               ),
                             'Round opened.',
@@ -296,7 +296,7 @@ function ConfirmCloseRoundModal({ ctx, round, onClose }) {
             onClick={() =>
               act(
                 () =>
-                  supplyPost(`/supply/api/eoi/rounds/${round.id}/transition/`, {
+                  supplyPost(`/oes/api/eoi/rounds/${round.id}/transition/`, {
                     status: 'closed',
                   }),
                 'Round closed.',
@@ -352,7 +352,7 @@ function NewRoundModal({ ctx, onClose }) {
   const submit = async () => {
     const ok = await ctx.act(
       () =>
-        supplyPost('/supply/api/eoi/rounds/', {
+        supplyPost('/oes/api/eoi/rounds/', {
           ...form,
           opens_at: form.opens_at || null,
           closes_at: form.closes_at || null,
@@ -462,7 +462,7 @@ function ReviewModal({ ctx, submission, onClose }) {
   const submit = async () => {
     const ok = await ctx.act(
       () =>
-        supplyPost(`/supply/api/eoi/submissions/${submission.id}/review/`, {
+        supplyPost(`/oes/api/eoi/submissions/${submission.id}/review/`, {
           decisions,
           notes,
         }),

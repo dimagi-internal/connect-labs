@@ -15,7 +15,7 @@ function OrgTab({ ctx }) {
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
   const save = () =>
-    act(() => supplyPost('/supply/api/org/profile/', form), 'Profile saved.');
+    act(() => supplyPost('/oes/api/org/profile/', form), 'Profile saved.');
 
   return (
     <Page
@@ -136,7 +136,7 @@ function OrgTab({ ctx }) {
                       act(
                         () =>
                           supplyPost(
-                            `/supply/api/org/certifications/${c.id}/delete/`,
+                            `/oes/api/org/certifications/${c.id}/delete/`,
                             {},
                           ),
                         'Certification removed.',
@@ -170,7 +170,7 @@ function AddCertificationModal({ ctx, onClose }) {
 
   const submit = async () => {
     const ok = await ctx.act(
-      () => supplyPost('/supply/api/org/certifications/', row),
+      () => supplyPost('/oes/api/org/certifications/', row),
       'Certification added.',
     );
     if (ok) onClose();

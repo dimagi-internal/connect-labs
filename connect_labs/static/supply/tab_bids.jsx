@@ -165,20 +165,18 @@ function BidWorkspace({ ctx, rfp, onClose }) {
 
   const save = () =>
     ctx.act(
-      () =>
-        supplyPost(`/supply/api/rfps/${rfp.id}/bid/`, { lot_bids: priced() }),
+      () => supplyPost(`/oes/api/rfps/${rfp.id}/bid/`, { lot_bids: priced() }),
       'Bid saved as draft.',
     );
 
   const submit = async () => {
     const saved = await ctx.act(
-      () =>
-        supplyPost(`/supply/api/rfps/${rfp.id}/bid/`, { lot_bids: priced() }),
+      () => supplyPost(`/oes/api/rfps/${rfp.id}/bid/`, { lot_bids: priced() }),
       null,
     );
     if (!saved) return;
     const done = await ctx.act(
-      () => supplyPost(`/supply/api/rfps/${rfp.id}/bid/submit/`, {}),
+      () => supplyPost(`/oes/api/rfps/${rfp.id}/bid/submit/`, {}),
       'Bid submitted.',
     );
     if (done) onClose();

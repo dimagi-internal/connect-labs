@@ -84,7 +84,7 @@ def network(db):
 
 def test_gov_observer_bootstrap_is_country_scoped(gov_client, network):
     client, _role = gov_client
-    body = client.get("/supply/api/bootstrap/").json()
+    body = client.get("/oes/api/bootstrap/").json()
     assert body["role"] == "gov_observer"
     assert body["scope_country"] == "NG"
     assert "contracts" in body and "nodes" in body
@@ -98,19 +98,19 @@ def test_gov_observer_bootstrap_is_country_scoped(gov_client, network):
 def test_gov_observer_is_read_only(gov_client, network):
     client, _role = gov_client
     ship = network["ng_ship"]
-    assert client.post(f"/supply/api/shipments/{ship.id}/confirm/").status_code == 403
+    assert client.post(f"/oes/api/shipments/{ship.id}/confirm/").status_code == 403
     assert (
         client.post(
-            "/supply/api/shipments/",
+            "/oes/api/shipments/",
             data=json.dumps({}),
             content_type="application/json",
         ).status_code
         == 403
     )
-    assert client.get("/supply/api/tokens/").status_code == 403
+    assert client.get("/oes/api/tokens/").status_code == 403
     assert (
         client.post(
-            "/supply/api/eoi/rounds/", data=json.dumps({"title": "x"}), content_type="application/json"
+            "/oes/api/eoi/rounds/", data=json.dumps({"title": "x"}), content_type="application/json"
         ).status_code
         == 403
     )
@@ -119,7 +119,7 @@ def test_gov_observer_is_read_only(gov_client, network):
 def test_gov_observer_cannot_resolve_discrepancies(gov_client, network):
     client, _role = gov_client
     disc = f.DiscrepancyFactory(shipment=network["ng_ship"])
-    assert client.post(f"/supply/api/discrepancies/{disc.id}/resolve/").status_code == 403
+    assert client.post(f"/oes/api/discrepancies/{disc.id}/resolve/").status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +129,7 @@ def test_gov_observer_cannot_resolve_discrepancies(gov_client, network):
 
 def test_funder_bootstrap_carries_the_money_chain(funder_client, network):
     client, _role = funder_client
-    body = client.get("/supply/api/bootstrap/").json()
+    body = client.get("/oes/api/bootstrap/").json()
     assert body["role"] == "funder"
     assert [a["title"] for a in body["appropriations"]] == ["FY2026 Emergency Food Security"]
 
@@ -147,13 +147,13 @@ def test_funder_bootstrap_carries_the_money_chain(funder_client, network):
 
 def test_funder_is_read_only(funder_client, network):
     client, _role = funder_client
-    assert client.post(f"/supply/api/shipments/{network['ng_ship'].id}/confirm/").status_code == 403
-    assert client.get("/supply/api/tokens/").status_code == 403
+    assert client.post(f"/oes/api/shipments/{network['ng_ship'].id}/confirm/").status_code == 403
+    assert client.get("/oes/api/tokens/").status_code == 403
 
 
 def test_funder_sees_no_procurement_surfaces(funder_client, network):
     client, _role = funder_client
-    body = client.get("/supply/api/bootstrap/").json()
+    body = client.get("/oes/api/bootstrap/").json()
     for key in ("review_queue", "registry", "rounds", "rfps", "org"):
         assert not body.get(key), f"funder should not receive {key}"
 
@@ -171,18 +171,18 @@ def test_shipment_payload_carries_route_geometry_for_the_map(admin_client, netwo
     ship.route = LineString([(8.5, 12.0), (10.6, 11.75), (13.15, 11.83)], srid=4326)
     ship.save(update_fields=["route"])
 
-    body = client.get(f"/supply/api/shipments/{ship.id}/").json()["shipment"]
+    body = client.get(f"/oes/api/shipments/{ship.id}/").json()["shipment"]
     assert body["route"] == [[8.5, 12.0], [10.6, 11.75], [13.15, 11.83]]
 
     # a shipment with no digitised corridor reports null rather than an empty
     # path the map would try to animate
     other = network["et_ship"]
-    assert client.get(f"/supply/api/shipments/{other.id}/").json()["shipment"]["route"] is None
+    assert client.get(f"/oes/api/shipments/{other.id}/").json()["shipment"]["route"] is None
 
 
 def test_delivered_and_in_transit_are_distinguishable_on_the_wire(admin_client, network):
     client, _user = admin_client
-    contracts = {c["reference"]: c for c in client.get("/supply/api/contracts/").json()["contracts"]}
+    contracts = {c["reference"]: c for c in client.get("/oes/api/contracts/").json()["contracts"]}
     ng_statuses = {s["status"] for s in contracts["OES-C-NG"]["shipments"]}
     et_statuses = {s["status"] for s in contracts["OES-C-ET"]["shipments"]}
     assert ng_statuses == {"confirmed"}
@@ -201,7 +201,7 @@ def test_eta_delta_surfaces_lateness(admin_client, network):
         planned_at=now - timedelta(days=3),
         actual_at=now,
     )
-    body = client.get(f"/supply/api/shipments/{ship.id}/").json()["shipment"]
+    body = client.get(f"/oes/api/shipments/{ship.id}/").json()["shipment"]
     assert body["eta_delta_days"] == pytest.approx(3.0, abs=0.1)
 
 

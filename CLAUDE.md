@@ -103,7 +103,8 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 | `microplans/`      | Microplanning at `/microplans/`: sampling + coverage planning on admin boundaries/work areas, program-scoped plans, study groups, KPIs, Connect work-area export. See `docs/microplans-design.md` (historical north-star)              | `core/`, `sampling/`, `coverage/`, `monitoring/`, `qc/`, `models.py`, `views.py`    |
 | `funder_dashboard/`| Funder-facing dashboard at `/funder/`: funds, allocations, charts/KPIs, AI fund-report agents                                                                                                                                          | `data_access.py`, `views.py`, `api_views.py`, `mcp_tools.py`                        |
 | `campaign/`        | Standalone Campaign Utility Tool at `/campaign/` — has its **own CommCare OAuth** (session key `campaign_oauth`), not the labs session                                                                                                 | `api/`, `services/`, `auth/`, `middleware.py`                                       |
-| `supply/`          | Standalone supply-chain procurement + tracking site at `/supply/` (Operation End Starvation demo) — second satellite site, own auth, zero labs imports. **Read [connect_labs/supply/README.md](connect_labs/supply/README.md) before touching it.**                                                                                     | see that README                                                                     |
+| `supply/`          | The OES (Operation End Starvation) demo satellite site, now at `/oes/` (moved off `/supply/` to free that address for `supply_chain/`) — second satellite site, own auth, zero labs imports. **Slated for retirement.** **Read [connect_labs/supply/README.md](connect_labs/supply/README.md) before touching it.**                     | see that README                                                                     |
+| `supply_chain/`    | Core-labs supply domain at `/supply/` — sourcing, fulfilment, stock and distribution end to end. **The labs DB is its system of record** (real tables, real FKs, SQL aggregation for the stock ledger), unlike every other labs app: supply data originates here, carries no PII, and needs relational work. Sync back to Connect is deliberately deferred. A field worker is a supply point, so distributing to one reuses the ledger. See `docs/superpowers/specs/2026-09-11-rutf-procurement-design.md` (Part 2 covers buyer-of-record, provenance and stock). | `models.py`, `data_access.py`, `operations.py`, `stock/services/`, `scopes.py` |
 | `pages/`           | Composable card landing-page "surfaces" at `/labs/p/<slug>`, authored via the `pages_*` MCP tools                                                                                                                                      | `data_access.py`, `providers/`, `views.py`                                          |
 | `flags/`           | Flag-type `LocalLabsRecord`s — findings observed on FLWs during workflow runs; API mounted at `/labs/workflow/api/run/<id>/flags/`                                                                                                     | `models.py`, `data_access.py`                                                       |
 | `mcp/`             | The labs remote MCP server (see [MCP Servers](#mcp-servers)): PAT auth, FastMCP ASGI app at `/mcp/`, tool registry + audit log                                                                                                          | `server.py`, `tool_registry.py`, `tools/`, `auth.py`                                |
@@ -343,8 +344,10 @@ Connect OAuth token (`~/.commcare-connect/token.json`).
 A remote MCP server hosted inside the labs Django app (`connect_labs/mcp/`)
 at `https://labs.connect.dimagi.com/mcp/`. The protocol endpoint is a
 FastMCP 3.x Streamable-HTTP ASGI app mounted in `config/asgi.py`; the catalog
-registers **107 tools** (write tools are rate-limited and fully argument-logged
-to `MCPAuditLog`).
+registers **183 tools** (write tools are rate-limited and fully argument-logged
+to `MCPAuditLog`) — 67 of them generated from the supply-chain
+operation registry (`connect_labs/supply_chain/operations.py`), one tool per
+operation, so the count moves whenever that registry does.
 
 **Auth:** two ways in, both resolving to the same labs user (tools run as that
 user, audit rows attribute to them):

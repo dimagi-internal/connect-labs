@@ -49,7 +49,7 @@ function DespatchForm({ ctx, contracts, onClose }) {
       ],
     };
     const ok = await ctx.act(
-      () => supplyPost('/supply/api/shipments/', payload),
+      () => supplyPost('/oes/api/shipments/', payload),
       'Despatch recorded.',
     );
     if (ok) onClose();
@@ -215,15 +215,12 @@ function EventForm({ ctx, shipment, onClose, onSaved }) {
 
   const submit = async () => {
     const ok = await ctx.act(async () => {
-      const r = await supplyPost(
-        `/supply/api/shipments/${shipment.id}/events/`,
-        {
-          ...form,
-          node_id: Number(form.node_id),
-          quantity: form.quantity ? Number(form.quantity) : null,
-          event_time: form.event_time || null,
-        },
-      );
+      const r = await supplyPost(`/oes/api/shipments/${shipment.id}/events/`, {
+        ...form,
+        node_id: Number(form.node_id),
+        quantity: form.quantity ? Number(form.quantity) : null,
+        event_time: form.event_time || null,
+      });
       await onSaved();
       return r;
     }, 'Event recorded.');

@@ -26,7 +26,7 @@ def test_submit_freezes_profile_snapshot(supplier_client):
 
     resp = _post(
         client,
-        "/supply/api/eoi/submissions/",
+        "/oes/api/eoi/submissions/",
         {
             "round_id": rnd.id,
             "categories": ["rutf"],
@@ -36,7 +36,7 @@ def test_submit_freezes_profile_snapshot(supplier_client):
     assert resp.status_code == 200
     sub_id = resp.json()["submission"]["id"]
 
-    assert _post(client, f"/supply/api/eoi/submissions/{sub_id}/submit/", {}).status_code == 200
+    assert _post(client, f"/oes/api/eoi/submissions/{sub_id}/submit/", {}).status_code == 200
 
     # Mutating the live profile must not change what reviewers see.
     member.org.description = "Rewritten after submission"
@@ -54,7 +54,7 @@ def test_cannot_submit_to_closed_round(supplier_client):
     rnd.status = EOIRound.Status.CLOSED
     rnd.save()
 
-    resp = _post(client, f"/supply/api/eoi/submissions/{sub.id}/submit/", {})
+    resp = _post(client, f"/oes/api/eoi/submissions/{sub.id}/submit/", {})
     assert resp.status_code == 400
     sub.refresh_from_db()
     assert sub.status == EOISubmission.Status.DRAFT
@@ -64,8 +64,8 @@ def test_cannot_submit_twice(supplier_client):
     client, member = supplier_client
     rnd = f.EOIRoundFactory(status=EOIRound.Status.OPEN)
     sub = f.EOISubmissionFactory(org=member.org, round=rnd)
-    assert _post(client, f"/supply/api/eoi/submissions/{sub.id}/submit/", {}).status_code == 200
-    assert _post(client, f"/supply/api/eoi/submissions/{sub.id}/submit/", {}).status_code == 400
+    assert _post(client, f"/oes/api/eoi/submissions/{sub.id}/submit/", {}).status_code == 200
+    assert _post(client, f"/oes/api/eoi/submissions/{sub.id}/submit/", {}).status_code == 400
 
 
 def test_supplier_sees_only_own_submissions(supplier_client):
@@ -75,12 +75,12 @@ def test_supplier_sees_only_own_submissions(supplier_client):
     mine = f.EOISubmissionFactory(org=member.org, round=rnd)
     theirs = f.EOISubmissionFactory(org=other, round=rnd)
 
-    ids = [s["id"] for s in client.get("/supply/api/eoi/submissions/").json()["submissions"]]
+    ids = [s["id"] for s in client.get("/oes/api/eoi/submissions/").json()["submissions"]]
     assert mine.id in ids
     assert theirs.id not in ids
 
     # and cannot act on another org's submission
-    assert _post(client, f"/supply/api/eoi/submissions/{theirs.id}/submit/", {}).status_code == 404
+    assert _post(client, f"/oes/api/eoi/submissions/{theirs.id}/submit/", {}).status_code == 404
 
 
 def test_review_qualify_creates_qualifications(admin_client):
@@ -93,7 +93,7 @@ def test_review_qualify_creates_qualifications(admin_client):
 
     resp = _post(
         client,
-        f"/supply/api/eoi/submissions/{sub.id}/review/",
+        f"/oes/api/eoi/submissions/{sub.id}/review/",
         {"decisions": {"rutf": "qualify", "transport": "qualify"}, "notes": "Strong capacity"},
     )
     assert resp.status_code == 200
@@ -140,7 +140,7 @@ def test_qualification_flags_reverification_when_it_outlives_its_certificate(adm
 
     resp = _post(
         client,
-        f"/supply/api/eoi/submissions/{sub.id}/review/",
+        f"/oes/api/eoi/submissions/{sub.id}/review/",
         {"decisions": {"rutf": "qualify"}},
     )
     assert resp.status_code == 200
@@ -157,7 +157,7 @@ def test_qualification_carries_no_verify_date_when_certificates_outlast_it(admin
     rnd = f.EOIRoundFactory(categories=["rutf"])
     sub = f.EOISubmissionFactory(org=org, round=rnd, categories=["rutf"], status=EOISubmission.Status.DRAFT)
     submit_submission(sub)
-    _post(client, f"/supply/api/eoi/submissions/{sub.id}/review/", {"decisions": {"rutf": "qualify"}})
+    _post(client, f"/oes/api/eoi/submissions/{sub.id}/review/", {"decisions": {"rutf": "qualify"}})
     assert Qualification.objects.get(org=org, category="rutf").verify_at is None
 
 
@@ -167,7 +167,7 @@ def test_review_partial_qualify(admin_client):
     sub = f.EOISubmissionFactory(org=org, categories=["rutf", "transport"], status=EOISubmission.Status.SUBMITTED)
     _post(
         client,
-        f"/supply/api/eoi/submissions/{sub.id}/review/",
+        f"/oes/api/eoi/submissions/{sub.id}/review/",
         {"decisions": {"rutf": "qualify", "transport": "reject"}},
     )
     sub.refresh_from_db()
@@ -179,7 +179,7 @@ def test_review_all_rejected(admin_client):
     client, _user = admin_client
     org = f.SupplierOrgFactory()
     sub = f.EOISubmissionFactory(org=org, categories=["rutf"], status=EOISubmission.Status.SUBMITTED)
-    _post(client, f"/supply/api/eoi/submissions/{sub.id}/review/", {"decisions": {"rutf": "reject"}})
+    _post(client, f"/oes/api/eoi/submissions/{sub.id}/review/", {"decisions": {"rutf": "reject"}})
     sub.refresh_from_db()
     assert sub.status == EOISubmission.Status.REJECTED
     assert Qualification.objects.filter(org=org).count() == 0
@@ -188,7 +188,7 @@ def test_review_all_rejected(admin_client):
 def test_cannot_review_a_draft_submission(admin_client):
     client, _user = admin_client
     sub = f.EOISubmissionFactory(categories=["rutf"], status=EOISubmission.Status.DRAFT)
-    resp = _post(client, f"/supply/api/eoi/submissions/{sub.id}/review/", {"decisions": {"rutf": "qualify"}})
+    resp = _post(client, f"/oes/api/eoi/submissions/{sub.id}/review/", {"decisions": {"rutf": "qualify"}})
     assert resp.status_code == 400
 
 
@@ -197,7 +197,7 @@ def test_review_rejects_categories_outside_submission(admin_client):
     sub = f.EOISubmissionFactory(categories=["rutf"], status=EOISubmission.Status.SUBMITTED)
     resp = _post(
         client,
-        f"/supply/api/eoi/submissions/{sub.id}/review/",
+        f"/oes/api/eoi/submissions/{sub.id}/review/",
         {"decisions": {"warehousing": "qualify"}},
     )
     assert resp.status_code == 400
@@ -205,25 +205,25 @@ def test_review_rejects_categories_outside_submission(admin_client):
 
 def test_reviewer_cannot_manage_rounds(reviewer_client):
     client, _user = reviewer_client
-    resp = _post(client, "/supply/api/eoi/rounds/", {"title": "Sneaky round", "categories": ["rutf"]})
+    resp = _post(client, "/oes/api/eoi/rounds/", {"title": "Sneaky round", "categories": ["rutf"]})
     assert resp.status_code == 403
 
 
 def test_supplier_cannot_reach_review_queue(supplier_client):
     client, _member = supplier_client
-    assert client.get("/supply/api/eoi/review-queue/").status_code == 403
+    assert client.get("/oes/api/eoi/review-queue/").status_code == 403
 
 
 def test_admin_creates_and_transitions_round(admin_client):
     client, _user = admin_client
-    resp = _post(client, "/supply/api/eoi/rounds/", {"title": "OES Supply Base 2026-B", "categories": ["rutf"]})
+    resp = _post(client, "/oes/api/eoi/rounds/", {"title": "OES Supply Base 2026-B", "categories": ["rutf"]})
     assert resp.status_code == 200
     rid = resp.json()["round"]["id"]
     assert EOIRound.objects.get(id=rid).status == EOIRound.Status.DRAFT
 
-    assert _post(client, f"/supply/api/eoi/rounds/{rid}/transition/", {"status": "open"}).status_code == 200
+    assert _post(client, f"/oes/api/eoi/rounds/{rid}/transition/", {"status": "open"}).status_code == 200
     assert EOIRound.objects.get(id=rid).status == EOIRound.Status.OPEN
-    assert _post(client, f"/supply/api/eoi/rounds/{rid}/transition/", {"status": "draft"}).status_code == 400
+    assert _post(client, f"/oes/api/eoi/rounds/{rid}/transition/", {"status": "draft"}).status_code == 400
 
 
 def test_round_created_with_dates_serializes_back(admin_client):
@@ -234,7 +234,7 @@ def test_round_created_with_dates_serializes_back(admin_client):
     client, _user = admin_client
     resp = _post(
         client,
-        "/supply/api/eoi/rounds/",
+        "/oes/api/eoi/rounds/",
         {"title": "Dated round", "categories": ["rutf"], "opens_at": None, "closes_at": "2026-08-18"},
     )
     assert resp.status_code == 200
@@ -245,7 +245,7 @@ def test_round_rejects_malformed_date(admin_client):
     client, _user = admin_client
     resp = _post(
         client,
-        "/supply/api/eoi/rounds/",
+        "/oes/api/eoi/rounds/",
         {"title": "Bad date", "categories": ["rutf"], "closes_at": "18/08/2026"},
     )
     assert resp.status_code == 400
@@ -256,7 +256,7 @@ def test_supplier_round_list_shows_open_only(supplier_client):
     open_round = f.EOIRoundFactory(status=EOIRound.Status.OPEN)
     f.EOIRoundFactory(status=EOIRound.Status.DRAFT)
     f.EOIRoundFactory(status=EOIRound.Status.CLOSED)
-    ids = [r["id"] for r in client.get("/supply/api/eoi/rounds/").json()["rounds"]]
+    ids = [r["id"] for r in client.get("/oes/api/eoi/rounds/").json()["rounds"]]
     assert ids == [open_round.id]
 
 
@@ -269,7 +269,7 @@ def test_renewed_certification_wins_the_live_column(supplier_client):
     client, member = supplier_client
     f.CertificationFactory(org=member.org, cert_type="UNICEF RUTF approval", issuer="UNICEF Supply Division")
     f.CertificationFactory(org=member.org, cert_type="UNICEF RUTF approval", issuer="UNICEF Supply Division (renewed)")
-    body = client.get("/supply/api/bootstrap/").json()
+    body = client.get("/oes/api/bootstrap/").json()
     same_type = [c for c in body["org"]["certifications"] if c["cert_type"] == "UNICEF RUTF approval"]
     assert [c["issuer"] for c in same_type] == ["UNICEF Supply Division", "UNICEF Supply Division (renewed)"]
 
@@ -287,19 +287,19 @@ def test_registry_filters(admin_client):
         org=et, category="warehousing", granted_at=today - timedelta(days=600), expires_at=today - timedelta(days=1)
     )
 
-    all_rows = client.get("/supply/api/registry/").json()["registry"]
+    all_rows = client.get("/oes/api/registry/").json()["registry"]
     cats = {r["org"]["legal_name"]: sorted(q["category"] for q in r["qualifications"]) for r in all_rows}
     assert cats["Savanna Nutrients"] == ["rutf", "transport"]
     assert cats["Rift Valley Therapeutics"] == ["rutf"]
 
-    ng_only = client.get("/supply/api/registry/?country=NG").json()["registry"]
+    ng_only = client.get("/oes/api/registry/?country=NG").json()["registry"]
     assert [r["org"]["legal_name"] for r in ng_only] == ["Savanna Nutrients"]
 
-    rutf_only = client.get("/supply/api/registry/?category=rutf").json()["registry"]
+    rutf_only = client.get("/oes/api/registry/?category=rutf").json()["registry"]
     assert len(rutf_only) == 2
     assert all(q["category"] == "rutf" for r in rutf_only for q in r["qualifications"])
 
-    expiring = client.get("/supply/api/registry/?expiring_within_days=30").json()["registry"]
+    expiring = client.get("/oes/api/registry/?expiring_within_days=30").json()["registry"]
     assert [r["org"]["legal_name"] for r in expiring] == ["Savanna Nutrients"]
     assert [q["category"] for q in expiring[0]["qualifications"]] == ["transport"]
 
@@ -322,7 +322,7 @@ def test_registry_qualification_names_who_granted_it_and_from_which_application(
         expires_at=TODAY + timedelta(days=400),
     )
 
-    registry = client.get("/supply/api/registry/").json()["registry"]
+    registry = client.get("/oes/api/registry/").json()["registry"]
     row = next(r for r in registry if r["org"]["legal_name"] == "Evidence Foods Ltd")
     qual = row["qualifications"][0]
 
@@ -340,7 +340,7 @@ def test_a_qualification_with_no_recorded_reviewer_reports_the_gap(admin_client)
         org=org, category="rutf", source_submission=None, granted_at=TODAY, expires_at=TODAY + timedelta(days=400)
     )
 
-    registry = client.get("/supply/api/registry/").json()["registry"]
+    registry = client.get("/oes/api/registry/").json()["registry"]
     row = next(r for r in registry if r["org"]["legal_name"] == "Unattributed Foods Ltd")
 
     assert row["qualifications"][0]["granted_by"] is None

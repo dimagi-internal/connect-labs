@@ -171,13 +171,13 @@ def test_missing_labs_oauth_payload_logs_user_out():
 
 
 @pytest.mark.django_db
-@override_settings(LABS_SATELLITE_URL_PREFIXES=["/supply/", "/campaign/"])
+@override_settings(LABS_SATELLITE_URL_PREFIXES=["/oes/", "/campaign/"])
 def test_satellite_paths_are_skipped():
     """A satellite site's own paths must NOT be reconciled — its users have no
     labs_oauth (they use the satellite's own auth), so checking them would log
     every satellite user out. This is the multi-site host contract."""
     user = User.objects.create(username="supplier")
-    request = _make_request("/supply/dashboard/", user, session_data=None)
+    request = _make_request("/oes/dashboard/", user, session_data=None)
 
     _run(request)
 

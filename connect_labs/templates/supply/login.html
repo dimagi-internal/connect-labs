@@ -24,7 +24,7 @@
 
         {% if error %}<div class="form-error">{{ error }}</div>{% endif %}
 
-        <form method="post" action="/supply/login/">
+        <form method="post" action="/oes/login/">
           {% csrf_token %}
           <div class="field">
             <label for="id_email">Email address</label>
@@ -38,7 +38,7 @@
         </form>
 
         <div class="auth-alt">
-          New supplier? <a href="/supply/signup/">Register your organisation</a>
+          New supplier? <a href="/oes/signup/">Register your organisation</a>
         </div>
 
         <div class="demo-note">
