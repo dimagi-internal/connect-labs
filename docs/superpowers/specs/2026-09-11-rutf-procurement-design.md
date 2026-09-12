@@ -1,7 +1,8 @@
-# RUTF Procurement in Connect Labs — design
+# The labs supply domain, and RUTF procurement — design
 
 **Status:** approved design, not yet implemented.
-**Date:** 2026-09-11 (revised same day: see "Clients, not callers").
+**Date:** 2026-09-11 (revised same day twice: see "Clients, not callers", and
+section 2 on the `/supply/` domain).
 
 ## 0. In plain terms
 
@@ -35,6 +36,10 @@ It is built to extend from RUTF to the wider ICCM basket — vitamin A, amoxicil
 antimalarials, rapid diagnostic tests, dewormers, MUAC tapes, scales — without a
 second app.
 
+It lives at **`/supply/`**, because procurement is one sub-component of the supply
+domain and tracking and distribution follow it. The OES demo site, which held that
+address, moves to `/oes/`.
+
 ## 1. Why now
 
 Round 1 was 500 cartons, ordered. Round 2 (February) is 2,000 cartons, re-quotes
@@ -50,7 +55,25 @@ every reply comes back per carton of 150 sachets; confirm shelf life against the
 project timeline; and gather costing data across commodities so supplying a treatment
 can be compared to referring the patient, on evidence.
 
-## 2. Scope
+## 2. Scope, and the shape of the domain
+
+A new app `connect_labs/supply_chain/` mounted at **`/supply/`**. Procurement is its
+first sub-component, at `/supply/procurement/`; **tracking** and **distribution** are
+named slots beside it, built later. The shared plumbing — the unit ladder, the
+commodity and supplier registries, the operation registry, the HTTP and MCP adapters —
+sits at the app root; each sub-component owns only its own services, operations and
+screens. That is the seam that makes the second sub-component cheap.
+
+The API is **domain-level, not per sub-component**: one endpoint dispatches the whole
+registry, so a tracking operation added later needs no routing work.
+
+`/supply/` is currently the OES demo satellite. It moves to `/oes/` — URL prefix,
+namespace, its own tests, and the four live walkthrough recipes. Its Python package
+stays `connect_labs/supply/` and its Django app label stays `supply`: renaming the
+package would rewrite ~16k lines of internal imports and renaming the label would
+orphan its migration history, both for an app slated for retirement. Historical
+artifacts that record a rendered run — the DDD run reports, narrative locks, the
+2026-07-25 design doc — are **not** rewritten; editing them would falsify history.
 
 **In:** commodity catalogue, supplier registry, quote rounds, outreach tracking,
 quote capture, honest normalisation, spec compliance, award with rationale, recorded
@@ -63,7 +86,8 @@ supply nodes. Payment execution — LLOs transact; we record what they paid.
 
 ## 3. Relationship to prior work
 
-**`connect_labs/supply/`** (the OES satellite site) stays as a design reference.
+**`connect_labs/supply/`** (the OES satellite site, now served at `/oes/`) stays as a
+design reference and is expected to be retired once this ships.
 Three principles carry over: derived values are never typed in, the
 sachet → carton → course unit ladder, and one module computes a given figure so every
 screen agrees. Nothing is imported — it has zero cross-app imports by design and
@@ -81,8 +105,8 @@ nullable field, not a second identity model.
 
 ## 4. Scoping
 
-A new app, `connect_labs/procurement/`, on the house `data_access.py` + `LabsRecord`
-pattern. Three tiers, because these entities have genuinely different lifetimes:
+`connect_labs/supply_chain/`, on the house `data_access.py` + `LabsRecord` pattern.
+Three tiers, because these entities have genuinely different lifetimes:
 
 | Tier | Scope | Record types |
 |---|---|---|
@@ -292,22 +316,32 @@ Everything is hand-entered to start, but there is no such thing as a capability 
 web UI has and the API does not.
 
 ```
-data_access.py       LabsRecord CRUD + scoping
-services/            the domain — the only place rules live
-  pricing.py         derivation and Unconfirmed
-  questions.py       what is still missing (section 7)
-  render.py          request / follow-up text
-  compliance.py      stated_spec vs spec_requirements
-  costing.py         cost library aggregation
-operations.py        every capability, declared once: name, input schema, callable
-views.py             Django pages  ─┐
-api_views.py         HTTP API      ─┼─ three adapters over operations.py, no logic
-mcp_tools.py         MCP tools     ─┘
+connect_labs/supply_chain/
+  records.py         LabsRecord type constants                     [shared]
+  values.py          Money, Unconfirmed, the unit ladder           [shared]
+  models.py          proxy models for every record type            [shared]
+  data_access.py     LabsRecord CRUD + two-tier scoping            [shared]
+  operations.py      the registry + the reference operations       [shared]
+  views.py           domain shell    ─┐
+  api_views.py       HTTP API        ─┼─ three adapters, no logic
+  mcp_tools.py       MCP tools       ─┘
+  procurement/       SUB-COMPONENT ONE
+    operations.py    registers procurement_* into the registry
+    views.py         the procurement screens
+    services/        the rules — the only place they live
+      pricing.py     derivation and Unconfirmed
+      questions.py   what is still missing (section 7)
+      render.py      request / follow-up text
+      compliance.py  stated_spec vs spec_requirements
+      costing.py     cost library aggregation            (phase 1b)
+  tracking/          later
+  distribution/      later
 ```
 
 **The rule: no capability without an operation.** A Django view may not mutate state
-except by calling one, and the API router and the MCP registry are both generated from
-the same declarations. Tests assert it: every operation is reachable over HTTP and over
+except by calling one, and the HTTP API and the MCP registry are both loops over the
+same registry — the API is a single dispatch endpoint rather than hand-written routes,
+so parity is structural rather than maintained. Tests assert it: every operation is reachable over HTTP and over
 MCP with matching schemas, and no view mutates a record outside an operation. A drifted
 surface fails the suite instead of being discovered by an agent that cannot do
 something a person can.
@@ -374,6 +408,9 @@ them.
 
 ## 12. Screens
 
+0. **Domain landing** (`/supply/`) — the sub-components and enough state to pick one.
+   Tracking and distribution appear here as named-but-unavailable from day one, so the
+   shape of the domain is visible rather than implied.
 1. **Round board** — supplier × round: contacted, days waiting, responded, quote
    status, reminder due, next action.
 2. **Quote entry** — as-quoted fields with explicit basis selectors, `not_specified`
