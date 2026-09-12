@@ -20,7 +20,13 @@
   </a>
 </div>
 <div class="bg-white rounded-lg shadow-sm overflow-hidden">
-  <div class="overflow-x-auto">
+  {# A scroll container is not focusable by default, so a keyboard-only
+     user cannot reach the columns it hides -- which re-creates the
+     unreachable-column bug for the people least able to work around it.
+     tabindex makes it a tab stop; the labelled region tells a screen
+     reader what it is once focused. #}
+  <div class="overflow-x-auto" tabindex="0" role="region"
+       aria-label="Table, scrolls sideways">
   <table class="min-w-[44rem] w-full divide-y divide-gray-200">
     <thead class="bg-gray-50">
       <tr>
