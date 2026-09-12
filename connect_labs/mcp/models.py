@@ -3,6 +3,7 @@
 MCPAccessToken: Personal Access Tokens for Claude Code clients.
 MCPAuditLog: Audit trail of every tool call (added in Task D1).
 """
+
 import hashlib
 import secrets
 from datetime import timedelta
@@ -111,6 +112,29 @@ class MCPAccessToken(models.Model):
         """Update last_used_at. Call on every successful request."""
         self.last_used_at = timezone.now()
         self.save(update_fields=["last_used_at"])
+
+
+class MCPOAuthClient(models.Model):
+    """Marks an OAuth application as an MCP client, registered by ``oauth.register_client``.
+
+    The marker is what confines the application to the ``mcp`` scope
+    (``oauth.MCPScopes``) and what the MCP token verifier requires, so a token
+    minted for labs' other OAuth APIs can never call MCP tools, and an MCP
+    sign-in can never mint a token for those APIs.
+    """
+
+    application = models.OneToOneField(
+        settings.OAUTH2_PROVIDER_APPLICATION_MODEL,
+        on_delete=models.CASCADE,
+        related_name="mcp_client",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "mcp_oauth_client"
+
+    def __str__(self) -> str:
+        return f"MCP client {self.application_id}"
 
 
 class MCPAuditLog(models.Model):

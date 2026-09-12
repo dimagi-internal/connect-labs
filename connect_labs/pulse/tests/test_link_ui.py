@@ -111,3 +111,10 @@ class TestAccess:
         assert 'name="action" value="create"' in body
         assert 'name="action" value="revoke"' in body
         assert "csrfmiddlewaretoken" in body, "forms must be CSRF-protected"
+
+    def test_the_page_links_the_network_and_the_directory(self, client, operator):
+        from connect_labs.pulse.management.commands.pulse_partner_import import DIRECTORY_ID
+
+        body = client.get(reverse("pulse:index")).content.decode()
+        assert f'href="{reverse("pulse:network")}"' in body
+        assert f'href="https://docs.google.com/spreadsheets/d/{DIRECTORY_ID}/edit"' in body

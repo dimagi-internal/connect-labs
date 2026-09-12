@@ -60,6 +60,14 @@ def _coerce_int(value):
         return None
 
 
+# Bounds for `pipeline_rows_api`: a worker has hundreds of cases, not thousands,
+# and a case has tens of weighings. Generous enough for both, small enough that no
+# single call can re-create the 30 MB payload this endpoint exists to replace.
+MAX_ROWS_CASE_IDS = 200
+MAX_ROWS_DEFAULT_LIMIT = 5000
+MAX_ROWS_HARD_LIMIT = 20000
+
+
 def _run_program_hint(request) -> int | None:
     """The program a caller already knows this run might be owned by.
 
@@ -2198,6 +2206,105 @@ def preview_snapshot_api(request, run_id):
 
 @login_required
 @require_GET
+def pipeline_rows_api(request, definition_id):
+    """One pipeline alias's rows for ONE opportunity, filtered server-side.
+
+    The alternative -- and what the worker review used to do -- is the framework's
+    default: stream every pipeline's rows for every opportunity the workflow spans
+    to the browser, and filter there. For the KMC review that is ~8,900 baby rows
+    and ~36,000 weighings, about 30 MB, to show one worker's ~250 cases: ~20s warm
+    and minutes cold, on a 1-vCPU web task that everything else then queues behind
+    (measured 2026-09-11).
+
+    Params: `alias` and `opportunity_id` (both required), then any of `username`,
+    `case_ids` (comma-separated, the pipeline's entity/baby key) and `limit`. The
+    read prefers the processed cache and falls back to executing THAT pipeline for
+    THAT opportunity -- never the whole cohort.
+    """
+    alias = (request.GET.get("alias") or "").strip()
+    opportunity_id = _coerce_int(request.GET.get("opportunity_id"))
+    if not alias or not opportunity_id:
+        return JsonResponse({"error": "alias and opportunity_id are required"}, status=400)
+    username = (request.GET.get("username") or "").strip()
+    case_ids = {c.strip() for c in (request.GET.get("case_ids") or "").split(",") if c.strip()}
+    if len(case_ids) > MAX_ROWS_CASE_IDS:
+        return JsonResponse({"error": f"at most {MAX_ROWS_CASE_IDS} case_ids"}, status=400)
+    try:
+        limit = min(int(request.GET.get("limit") or MAX_ROWS_DEFAULT_LIMIT), MAX_ROWS_HARD_LIMIT)
+    except ValueError:
+        return JsonResponse({"error": "limit must be a number"}, status=400)
+
+    wf_access = None
+    pipeline_access = None
+    try:
+        wf_access = WorkflowDataAccess(request=request)
+        definition = wf_access.get_definition(definition_id)
+        if not definition:
+            return JsonResponse({"error": "Workflow not found"}, status=404)
+        spanned = [int(o) for o in (definition.opportunity_ids or [])] or [opportunity_id]
+        if opportunity_id not in spanned:
+            # The workflow's own opportunities are the only ones it may read.
+            return JsonResponse(
+                {"error": f"workflow {definition_id} does not span opportunity {opportunity_id}"}, status=403
+            )
+        source = next((s for s in (definition.pipeline_sources or []) if s.get("alias") == alias), None)
+        if not source or not source.get("pipeline_id"):
+            return JsonResponse({"error": f"no pipeline source with alias {alias!r}"}, status=404)
+
+        pipeline_id = int(source["pipeline_id"])
+        pipeline_access = PipelineDataAccess(
+            request=request,
+            access_token=(request.session.get("labs_oauth", {}) or {}).get("access_token"),
+            opportunity_id=opportunity_id,
+        )
+        # A referenced pipeline is read where it lives (its source's home_scope).
+        pipeline_access.use_sources(definition.pipeline_sources)
+        pdef = pipeline_access.get_definition(pipeline_id)
+        if not pdef or not pdef.schema:
+            return JsonResponse({"error": f"pipeline {pipeline_id} not found"}, status=404)
+        config = pipeline_access._schema_to_config(pdef.schema, pipeline_id)
+
+        cached = pipeline_access.get_cached_pipeline_result(pipeline_id, opportunity_id, config=config)
+        from_cache = cached is not None
+        if cached is None:
+            cached = pipeline_access.execute_pipeline(pipeline_id, opportunity_id, config=config)
+            if (cached.get("metadata") or {}).get("error"):
+                return JsonResponse({"error": cached["metadata"]["error"]}, status=502)
+
+        rows = []
+        for row in cached.get("rows", []):
+            if username and (row.get("username") or "") != username:
+                continue
+            if case_ids and str(row.get("baby_case_id") or row.get("entity_id") or "") not in case_ids:
+                continue
+            rows.append({**row, "opportunity_id": opportunity_id})
+            if len(rows) >= limit:
+                break
+        return JsonResponse(
+            {
+                "rows": rows,
+                "metadata": {
+                    "alias": alias,
+                    "pipeline_id": pipeline_id,
+                    "opportunity_id": opportunity_id,
+                    "row_count": len(rows),
+                    "from_cache": from_cache,
+                    "truncated": len(rows) >= limit,
+                },
+            }
+        )
+    except Exception:
+        logger.exception("Failed to read pipeline rows for definition %s alias %s", definition_id, alias)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+    finally:
+        if pipeline_access:
+            pipeline_access.close()
+        if wf_access:
+            wf_access.close()
+
+
+@login_required
+@require_GET
 def run_history_api(request, definition_id):
     """Every COMPLETED run of a definition, with a projection of each saved snapshot.
 
@@ -2213,12 +2320,22 @@ def run_history_api(request, definition_id):
     their member opportunities, so the history is complete wherever the page is
     opened from.
     """
+    from connect_labs.workflow import history_cache
     from connect_labs.workflow.snapshot_runtime import project_state
 
     keys = [k.strip() for k in (request.GET.get("keys") or "").split(",") if k.strip()]
     if not keys:
         return JsonResponse({"error": "keys is required: comma-separated paths under the snapshot state"}, status=400)
+    # The answer depends on the scope it was read in (list_runs fans out differently
+    # for a program), so that is part of the key.
+    labs_context = getattr(request, "labs_context", {}) or {}
+    opp = labs_context.get("opportunity_id") or request.GET.get("opportunity_id")
+    program = labs_context.get("program_id") or request.GET.get("program_id")
+    scope_key = f"opp{opp}" if opp else (f"prog{program}" if program else "none")
     try:
+        cached = history_cache.get(definition_id, scope_key, keys)
+        if cached is not None:
+            return JsonResponse({"runs": cached, "cached": True})
         wf_access = WorkflowDataAccess(request=request)
         try:
             runs = wf_access.list_runs(definition_id=definition_id)
@@ -2241,6 +2358,7 @@ def run_history_api(request, definition_id):
                 }
             )
         out.sort(key=lambda r: (str(r["period_end"] or ""), str(r["completed_at"] or "")))
+        history_cache.store(definition_id, scope_key, keys, out)
         return JsonResponse({"runs": out})
     except Exception:
         logger.exception("Failed to build run history for definition %s", definition_id)

@@ -183,6 +183,49 @@
     {% endif %}
   </div>
 
+  <div class="bg-white rounded-xl shadow-sm p-8 mt-6">
+    <h2 class="text-base font-semibold text-gray-900 mb-1">Apps you've signed in</h2>
+    <p class="text-sm text-gray-500 mb-4">
+      MCP clients you signed in to with your browser. They act as you, and they stay signed in until you disconnect them.
+    </p>
+
+    {% if connected_clients %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="text-xs uppercase text-gray-500 border-b border-gray-200">
+          <tr>
+            <th class="text-left py-2 pr-4 font-medium">App</th>
+            <th class="text-left py-2 pr-4 font-medium">Signed in</th>
+            <th class="text-right py-2 font-medium">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for client in connected_clients %}
+          <tr>
+            <td class="py-3 pr-4 font-medium text-gray-900">{{ client.application.name }}</td>
+            <td class="py-3 pr-4 text-gray-600">{{ client.signed_in_at|date:"Y-m-d H:i" }}</td>
+            <td class="py-3 text-right whitespace-nowrap">
+              <form method="post" action="{% url 'labs:mcp_clients_disconnect' client.application.pk %}" class="inline">
+                {% csrf_token %}
+                <button
+                  type="submit"
+                  onclick="return confirm('Disconnect “{{ client.application.name|escapejs }}”? It will have to sign in again.');"
+                  class="text-rose-600 hover:text-rose-800 text-xs font-medium"
+                >
+                  <i class="fa-solid fa-link-slash mr-1"></i> Disconnect
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-500">No apps are signed in.</p>
+    {% endif %}
+  </div>
+
 </div>
 
 <script>

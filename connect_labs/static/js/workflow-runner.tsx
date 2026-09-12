@@ -753,8 +753,11 @@ function WorkflowRunner({
       : // No pipelines configured?
       !initialData.definition.pipeline_sources?.length
       ? null
-      : // A finished run carries its own; nothing to wait for.
-      snapshotCarriesPipelines
+      : // A finished run carries its own; nothing to wait for. Nor does a page
+      // that fetches its own rows (config.noPipelineStream).
+      snapshotCarriesPipelines ||
+        (definition?.config as Record<string, unknown> | undefined)
+          ?.noPipelineStream
       ? null
       : // Need to load
         'Connecting...',
@@ -767,6 +770,14 @@ function WorkflowRunner({
   const renderWhileLoading = Boolean(
     (definition?.config as Record<string, unknown> | undefined)
       ?.renderWhileLoading,
+  );
+  // Opt-out per definition (`config.noPipelineStream`): a page that fetches the
+  // few rows it needs (see the `pipeline-rows` endpoint) must not also be handed
+  // every pipeline's rows for every opportunity it spans -- for the KMC worker
+  // review that was ~30 MB to show one worker's ~250 cases.
+  const noPipelineStream = Boolean(
+    (definition?.config as Record<string, unknown> | undefined)
+      ?.noPipelineStream,
   );
   const [error, setError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -1114,6 +1125,7 @@ function WorkflowRunner({
     // hook emits no `pipelines` key still falls through to the live data and would
     // otherwise lose it.
     if (snapshotCarriesPipelines) return;
+    if (noPipelineStream) return;
     if (
       definition.pipeline_sources?.length &&
       !Object.keys(pipelineData).length
@@ -1123,6 +1135,7 @@ function WorkflowRunner({
     }
   }, [
     snapshotCarriesPipelines,
+    noPipelineStream,
     definition.pipeline_sources,
     pipelineData,
     streamPipelineData,
