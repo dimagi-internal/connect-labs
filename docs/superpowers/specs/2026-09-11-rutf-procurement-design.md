@@ -27,6 +27,12 @@ This builds a procurement app in Connect Labs that does four things:
 4. **Remembers what things actually cost** — what LLOs really paid, per commodity,
    per course, so that "treat or refer" can be argued from measured cost.
 
+Underneath all four sits a **master item list**: every type of stock we can buy or
+track, from RUTF to amoxicillin to infant scales, each with its pack configuration, its
+GS1 identifiers and its required specification. That list is what makes two suppliers
+comparable, what makes a specification checkable, and what phase-2 stock will be counted
+in.
+
 Everything is typed in by hand to begin with. But every single thing the web pages
 can do is also an API call and an MCP tool, so an AI agent can do it too — which is
 how quotes will mostly arrive in practice: forward the supplier's email to an agent
@@ -110,7 +116,7 @@ Three tiers, because these entities have genuinely different lifetimes:
 
 | Tier | Scope | Record types |
 |---|---|---|
-| Reference | `organization_id` | `commodity`, `supplier` |
+| Reference | `organization_id` | `commodity`, `item`, `supplier` |
 | Procurement | `program_id` (experiment = program_id) | `round`, `outreach`, `quote`, `award`, `purchase` |
 | Fulfilment (phase 2) | `opportunity_id` | `supply_event` |
 
@@ -126,36 +132,40 @@ fulfilment is opportunity-scoped because visits belong to an opportunity.
 Scope resolves from `request.labs_context` like every other labs app, so no
 programme identifier is hard-coded anywhere.
 
-**Probe status (2026-09-11, Task 1): not yet run.** The scope probe management
-command (`connect_labs.supply_chain.management.commands.supply_scope_probe`) is
-written and imports cleanly, but it needs a real integer organisation id for the
-Connect-RUTF owning organisation and a token with the `export` scope, neither of
-which Task 1 had. It has **not been executed against the real API**, so the
-reference-tier design above is still **unconfirmed**: whether the org identifier
-`request.labs_context` exposes at runtime is an `int` (writes scope correctly) or
-a `slug` (writes land unscoped and become unreadable — `create_record()` drops a
-non-int `organization_id` silently, and unscoped `get_records()` returns only
-`public=True`) is still open. Whoever builds the reference tier (Task 9) must run
-the probe first:
+**Scope-tier selection (resolved 2026-09-11 from the code, not from a probe).**
+`LabsRecordAPIClient.__init__` coerces unconditionally — `int(organization_id)` — so a
+non-numeric organisation identifier raises `ValueError` out of the constructor. It is a
+loud failure, not the silent unscoped write the earlier draft feared, and the
+`isinstance(..., int)` guard later in `create_record()` is therefore unreachable dead
+defence.
+
+What actually arrives: `connect_labs/labs/context.py` sets
+`labs_context["organization_id"]` from the request, then replaces it with `org["id"]`
+on validation (line 230). For a real Connect organisation that is numeric. For a
+**labs-only synthetic organisation it is a slug** — `context.py` constructs those org
+entries itself (line 103) and says so at line 208. Synthetic opportunities are how this
+app is developed and demoed, so "org-scoped reference data" would crash in exactly the
+environment we build in.
+
+So `SupplyDataAccess` picks the reference tier in **one place**, on the shape of the
+identifier:
+
+| `organization_id` | Reference tier | Consequence |
+|---|---|---|
+| numeric | `organization_id` scope | one registry shared across the org's programmes — the intended behaviour |
+| non-numeric (slug) or absent | `program_id` scope, `experiment = "supply:reference"` | registry is per-programme; correct but not shared |
+
+Every reference record stores `reference_scope: "organization" | "program"` so a later
+migration can find the program-scoped ones and lift them. Choosing the tier anywhere
+other than `SupplyDataAccess.__init__` is a bug.
+
+The probe command survives as **confirmation, not a gate**: it establishes what a real
+Connect organisation's `id` actually looks like end to end, which the code can only
+suggest. Run it when a token is to hand and record the result here:
 
 ```bash
 make manage CMD="supply_scope_probe --organization-id <int> --token $TOKEN"
 ```
-
-and update this section with the result before writing `data_access.py`. If the
-identifier turns out to be a slug, or the org-scoped read comes back empty, do not
-build the reference tier as specced above — fall back to program-scoped reference
-records (`experiment=f"{EXPERIMENT_PREFIX}:reference"`) with copy-on-first-use per
-programme, per the decision gate in the Task 1 brief.
-
-**One thing to expect when this finally runs:** `LabsRecordAPIClient.__init__`
-unconditionally does `int(organization_id)` on whatever is passed to it, so a
-genuine non-numeric slug will raise `ValueError` out of the client constructor
-itself, not surface as the probe's own "not an integer" warning (which only
-catches the parse in the command, before the client is built) or as a silent
-unscoped write. A traceback there is itself the answer to the decision gate —
-it means the identifier cannot be used as `organization_id` at all — but it is
-a crash, not the clean "0 records" signal the probe's docstring implies.
 
 ## 5. Data model
 
@@ -200,7 +210,44 @@ ICCM basket run through the same machinery as RUTF.
 Mutable — a phone number changes. Nothing commercial depends on the live profile;
 commercial terms live on the quote.
 
-### 5.3 `round` (procurement)
+### 5.3 `item` (reference) — the master item list
+
+A **trade item**: the specific, branded, pack-configured thing that is actually counted,
+scanned and shipped. `commodity` is a type ("RUTF"); an `item` is
+"Northwind RUTF 92 g, 150 per carton". Three reasons this is a separate record and not a
+few more fields on `commodity`:
+
+1. **Two suppliers' RUTF differ in pack configuration** — 144 per carton against 150.
+   That difference is invisible at commodity level and silently corrupts every
+   per-sachet comparison, which is the defect already present in the spreadsheet this
+   app replaces.
+2. **Stock cannot be counted per commodity.** You count items, in batches. Phase-2
+   tracking has nothing to hang off without this layer.
+3. **A specification is a property of an item, not a category.** "Scale" has no
+   graduation; that scale does.
+
+Fields:
+
+- `sku` (slug, unique within the organisation), `name`, `commodity_slug`
+- `manufacturer`, `brand`. Who *sells* it is not stored — that is derivable from quotes,
+  and a distributor list would go stale immediately.
+- packaging ladder: `base_unit`, `base_per_pack`, `pack_unit`, `pack_per_case`,
+  `base_unit_grams`, `gross_weight_kg`
+- GS1: `gtin_base`, `gtin_pack`, `gtin_case` — one per packaging level, each optional and
+  check-digit validated on write (section 5.9)
+- external references: `unicef_material_no`, `unspsc`, `atc`, `gpc_brick`
+- `spec_attributes`: `{field: value}` — the item's actual specification, checked against
+  its commodity's `spec_requirements`. This is durable fact; a quote's `stated_spec` is
+  one supplier's claim. Both exist, and the item's value wins when the quote names a
+  confirmed item.
+- `shelf_life_months`, `status` (active | discontinued), `source`
+
+**Batches are not master data.** Lot number, expiry, production date and serial are
+properties of a consignment, not of an item — one item has many batches in a warehouse
+at once. They land in phase 2 on the fulfilment records, named after the GS1 Application
+Identifiers so a scanned barcode maps straight onto them.
+
+### 5.4 `round` (procurement)
 
 One quote-request cycle. Holds everything a supplier must be told to be able to quote.
 
@@ -212,7 +259,7 @@ One quote-request cycle. Holds everything a supplier must be told to be able to 
 - `notes_to_supplier` — standing preamble, including why the volume is small
 - `shelf_life_months_minimum` (defaults from commodity, overridable)
 
-### 5.4 `outreach` (procurement)
+### 5.5 `outreach` (procurement)
 
 One row per supplier per round — the pipeline the spreadsheet's left half is doing.
 
@@ -222,7 +269,7 @@ One row per supplier per round — the pipeline the spreadsheet's left half is d
 - derived: `reminder_due_on`, `days_waiting`
 - `source`
 
-### 5.5 `quote` (procurement) — the important one
+### 5.6 `quote` (procurement) — the important one
 
 **Stores exactly what the supplier said, in the unit they said it, plus the basis
 flags. Nothing derived is stored.**
@@ -233,7 +280,10 @@ flags. Nothing derived is stored.**
 - `quantity_basis`, `quantity_basis_unit` — what the quote actually covers. A quote
   for 667 cartons is not a quote for a 500-carton round and its lot total must never
   sit in a column beside one.
-- `pack_spec_stated`, `base_per_pack_stated`, `base_unit_grams_stated`
+- `item_id` — nullable; the trade item this quote is for, when known
+- `pack_spec_source` — `stated_on_quote | trade_item_confirmed | not_stated`
+- `base_per_pack_stated`, `base_unit_grams_stated` — populated when the source is
+  `stated_on_quote`
 - `freight_basis` (included | excluded | not_specified), `freight_amount`
 - `duties_basis` (included | excluded | not_specified), `duties_amount`, `duties_note`
 - `incoterm`, `delivery_point_quoted`
@@ -252,14 +302,14 @@ that was silent. That default is load-bearing: a plausible guess is the commones
 failure for a person in a hurry and for a model reading an invoice, so the truthful
 answer has to be the cheapest one to record.
 
-### 5.6 `award` (procurement)
+### 5.7 `award` (procurement)
 
 - `round_id`, `quote_id`, `decided_on`, `decided_by`, `rationale` (required)
 - `comparison_snapshot` — the normalised comparison **frozen as it stood at the moment
   of decision**, so the reason a supplier was chosen stays reconstructible after later
   quotes land. Mirrors the OES app's frozen-submission rule.
 
-### 5.7 `purchase` (procurement)
+### 5.8 `purchase` (procurement)
 
 What an LLO actually paid, which is frequently not what was quoted.
 
@@ -271,6 +321,48 @@ What an LLO actually paid, which is frequently not what was quoted.
 Quoted prices are an intention; paid prices are a fact. The cost library is built on
 these.
 
+### 5.9 GS1, and what we take from it
+
+Humanitarian supply chains already have identifier standards, and UNICEF Supply Division
+barcodes to them. Inventing our own keys would make every later integration a mapping
+exercise, so we adopt the identifier layer now — it is nearly free — and defer the
+machinery.
+
+**Taken now, as optional fields:**
+
+| Standard | Where it lands |
+|---|---|
+| **GTIN** — trade item identity, one per packaging level | `item.gtin_base` / `gtin_pack` / `gtin_case`. The natural master-list key. |
+| **GLN** — locations and parties | `supplier.gln`; phase-2 supply nodes |
+| **GPC brick** — product classification | `commodity.gpc_brick`, `item.gpc_brick` |
+| **Application Identifier vocabulary** | field *names*: `01` GTIN, `00` SSCC, `10` batch/lot, `17` expiry, `11` production date, `21` serial, `414` location GLN. Naming our fields after the AIs means a scanned GS1-128 or DataMatrix maps 1:1 with no translation layer. |
+| **GS1 Digital Link** | already implemented in the code being ported |
+
+Non-GS1 references carried on `item` for the same reason: `unspsc`, `atc`, and
+**`unicef_material_no`** — that last one specifically because UNICEF is the reference
+price for RUTF, and holding their material number is what lets the cost library say
+"our landed cost is X% over the UNICEF published price", which is a far stronger claim
+than three quotes compared against each other.
+
+**Deferred:** **GDSN**, the master-data exchange network. Suppliers who do not answer
+email are not publishing to a data-sync network, and the attribute names above stay
+GDSN/GDD-compatible so we could join later without a migration.
+
+**Phase 2 uses EPCIS 2.0 + CBV** for the fulfilment event log — its what/where/when/why
+vocabulary (`epcClass`, `bizStep`, `disposition`, `readPoint`, `bizLocation`) is the shape
+that log wants, and inventing a parallel vocabulary would be a straight loss.
+
+**Implementation note.** `connect_labs/supply/gs1.py` already implements the mod-10 check
+digit, GTIN/GLN/SSCC construction, `is_valid()`, and Digital Link build/parse in 100
+lines. It is **ported, not imported** — the OES app is being retired — and its
+`SACHETS_PER_CARTON = 150` / `SACHET_GRAMS = 92` / `CARTONS_PER_CHILD_TREATED = 1`
+constants are **dropped**: hardcoding the ladder is exactly what this design refuses, and
+those values now live on `commodity.base_per_pack`, `base_unit_grams` and
+`course_definition`.
+
+The AI numbers above are recalled, not looked up. They must be checked against the GS1
+General Specifications before any code encodes or parses a real barcode.
+
 ## 6. The one invariant
 
 > **Every comparable number is derived, never stored. A derivation whose inputs are
@@ -281,15 +373,21 @@ whole reason this beats a spreadsheet.
 
 `services/pricing.py` computes, from a quote and its commodity:
 `usd_per_base_unit`, `usd_per_pack_normalized`, `usd_per_course`,
-`landed_total_for_round_quantity`, `usd_per_child_treated`. Each returns a `Money` or
+`landed_total_as_quoted`, `landed_total_for_round_quantity`, `usd_per_child_treated`. Each returns a `Money` or
 an `Unconfirmed`, whose reasons are specific because they become the questions sent
 back to the supplier.
 
 Rules:
 
-1. A quote that did not state its pack spec yields `Unconfirmed` for every
+1. A quote whose `pack_spec_source` is `not_stated` yields `Unconfirmed` for every
    per-base-unit and per-course figure. **The commodity's `base_per_pack` is not
    substituted** — that substitution is the exact error this exists to prevent.
+
+   A `pack_spec_source` of `trade_item_confirmed` **is** a statement: a supplier who
+   identifies the trade item being quoted has told us its pack configuration as surely
+   as if they had typed it, and the figure derives from `item.base_per_pack`. What is
+   forbidden is the *commodity* assumption about a pack nobody identified — never an
+   identified item published one.
 2. A quote whose `quantity_basis` differs from the round's quantity carries that
    basis, and the comparison will not place its total beside a conforming quote's.
 3. `not_specified` freight or duties — or `excluded` with no amount — makes every
@@ -298,12 +396,24 @@ Rules:
    `Unconfirmed`. Currency is just another confirmable input.
 5. A commodity with no `course_definition` makes per-course and per-child figures
    `Unconfirmed`. Configuration is held to the same standard as supplier data.
-6. **The comparison refuses to rank a column any candidate is `Unconfirmed` in**, and
-   emits the outstanding questions per supplier instead.
+6. **The comparison partitions, and never ranks across the partition.** A quote that
+   yields a full set of figures is *comparable* and is ranked. A quote with any
+   `Unconfirmed` figure is *blocked*, never placed in the ranking, and surfaced as a
+   worklist of the questions that would unblock it. Every comparison states
+   "N of M comparable", names the blocked suppliers, and labels its leader
+   **provisional**.
 
 Rule 6 is the product. In the spreadsheet the blockers are prose and the comparison
-happens anyway; here the blockers are the output, and the answer to "who is cheapest"
-is "you cannot know yet, and here is the email to send."
+happens anyway, silently. Here the ranking covers only what can be defended and carries
+its own incompleteness on the same screen, so the answer to "who is cheapest" becomes
+"Harmattan, provisionally — and three suppliers could still beat it; here are the emails
+to send."
+
+An earlier draft suppressed the ranking entirely whenever any candidate was unconfirmed.
+That is more faithful to the letter and worse in practice: it withholds the comparison we
+*can* defend along with the one we cannot, and the procurement lead does exactly two
+things all week — decide, and chase. The partition serves both; total suppression serves
+neither.
 
 `pricing.py` is the only place any of these figures is computed — screens, API
 responses, MCP results, exports and the phase-2 reorder calculation all call it.
@@ -332,10 +442,17 @@ supplier form attach to the same records later.
 
 ## 8. Spec compliance
 
-`services/compliance.py` evaluates a quote's `stated_spec` against the commodity's
+`services/compliance.py` evaluates a specification against the commodity's
 `spec_requirements`, returning `pass | fail | not_stated` per requirement with the
 rationale attached. A scale quoted at 100 g graduation fails
 `minimum_graduation_g <= 20` and says why.
+
+It reads the specification from **the confirmed trade item first, the quote second**:
+`item.spec_attributes` is durable fact about a product, where `quote.stated_spec` is one
+supplier claim on one day. When a quote names a confirmed item, the item wins and the
+quote value is kept only for comparison — a supplier claiming a graduation the item
+sheet contradicts is itself worth seeing. When no item is named, the quote claim is all
+there is.
 
 `not_stated` is distinct from `fail` and feeds `questions.py` exactly as `Unconfirmed`
 does. This is why the ICCM basket needs no second app: those commodities differ in
@@ -447,11 +564,15 @@ them.
 2. **Quote entry** — as-quoted fields with explicit basis selectors, `not_specified`
    preselected, live compliance check and live `Unconfirmed` reasons as fields fill,
    so whoever is entering sees immediately what the reply failed to say.
-3. **Comparison** — normalised columns, `Unconfirmed` cells rendered as their reason,
-   ranking suppressed under rule 6, an outstanding-questions panel that renders
-   straight into a follow-up email, and award with a required rationale.
-4. **Registries** — commodity catalogue with specs and course definition; supplier
-   registry with contacts, status, qualifications.
+3. **Comparison** — two sections, per rule 6. A banner states "N of M comparable" and
+   names who is excluded. **Comparable** is a ranked table of normalised figures with
+   the leader marked provisional and an award action. **Needs info** lists each blocked
+   supplier with its outstanding questions and a copy-follow-up action. Award requires a
+   rationale.
+4. **Registries** — the **item master** (trade items: commodity, pack configuration,
+   GTIN, spec verdict), which flags where two items under one commodity disagree on pack
+   configuration; the commodity catalogue with specification requirements and course
+   definition; and the supplier registry with contacts, status and qualifications.
 5. **Cost library** — per commodity: quoted range, paid actuals, cost per course, cost
    per child treated, by LLO and over time, provenance per figure, CSV export.
 
@@ -519,9 +640,9 @@ the round, a non-USD quote with no rate. Real data lives only in `LabsRecord`s.
 
 ## 16. Phasing
 
-- **1a** — registries, rounds, outreach, quote capture, `pricing.py`,
-  `questions.py`, `compliance.py`, comparison, award. All three surfaces from the
-  start.
+- **1a** — registries (commodity, **item**, supplier), the ported `gs1.py` identifier
+  helpers, rounds, outreach, quote capture, `pricing.py`, `questions.py`,
+  `compliance.py`, the partitioned comparison, award. All three surfaces from the start.
 - **1b** — document storage, tracker import, cost library, exports, follow-up
   rendering.
 - **1c** — SES send with a tokenized supplier quote form; `connect_organization_id`
