@@ -8,7 +8,7 @@ turns that into the follow-up email.
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-from connect_labs.supply_chain.models import CommodityRecord, QuoteRecord
+from connect_labs.supply_chain.proxies import CommodityRecord, QuoteRecord
 
 OPERATORS = {
     "<=": lambda stated, required: stated <= required,

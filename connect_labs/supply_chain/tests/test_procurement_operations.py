@@ -8,9 +8,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from connect_labs.supply_chain.models import SupplierRecord
 from connect_labs.supply_chain.procurement.operations import award_create, quote_get, quote_questions
 from connect_labs.supply_chain.procurement.services.comparison import compare_round
+from connect_labs.supply_chain.proxies import SupplierRecord
 from connect_labs.supply_chain.tests.conftest import quote, wrap
 
 

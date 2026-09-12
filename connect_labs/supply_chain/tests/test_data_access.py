@@ -224,7 +224,7 @@ def test_quotes_are_read_from_the_programme_client(da):
 
 
 def test_supplier_search_filters_client_side_on_name(da):
-    from connect_labs.supply_chain.models import SupplierRecord
+    from connect_labs.supply_chain.proxies import SupplierRecord
     from connect_labs.supply_chain.tests.conftest import wrap
 
     da.reference_client.get_records.return_value = [
@@ -236,7 +236,7 @@ def test_supplier_search_filters_client_side_on_name(da):
 
 
 def test_voiding_a_quote_records_the_reason_and_keeps_the_record(da):
-    from connect_labs.supply_chain.models import QuoteRecord
+    from connect_labs.supply_chain.proxies import QuoteRecord
     from connect_labs.supply_chain.tests.conftest import wrap
 
     existing = wrap(QuoteRecord, {"round_id": 1, "as_quoted_amount": "50"}, record_id=5)
@@ -251,7 +251,7 @@ def test_voiding_a_quote_records_the_reason_and_keeps_the_record(da):
 
 
 def test_superseding_a_quote_creates_a_new_version_and_links_both_ways(da):
-    from connect_labs.supply_chain.models import QuoteRecord
+    from connect_labs.supply_chain.proxies import QuoteRecord
     from connect_labs.supply_chain.tests.conftest import wrap
 
     existing = wrap(QuoteRecord, {"round_id": 1, "version": 1, "as_quoted_amount": "50"}, record_id=5)
@@ -270,7 +270,7 @@ def test_superseding_a_quote_creates_a_new_version_and_links_both_ways(da):
 
 
 def test_opening_a_round_without_a_delivery_point_is_refused(da):
-    from connect_labs.supply_chain.models import RoundRecord
+    from connect_labs.supply_chain.proxies import RoundRecord
     from connect_labs.supply_chain.tests.conftest import wrap
 
     da.program_client.get_record_by_id.return_value = wrap(
@@ -307,7 +307,7 @@ def test_upserting_a_commodity_returns_the_typed_record_re_read_after_the_write(
     AttributeError despite the -> CommodityRecord annotation, unless the write
     is re-read through get_commodity.
     """
-    from connect_labs.supply_chain.models import CommodityRecord
+    from connect_labs.supply_chain.proxies import CommodityRecord
     from connect_labs.supply_chain.tests.conftest import wrap
 
     da.reference_client.get_records.return_value = [
@@ -318,7 +318,7 @@ def test_upserting_a_commodity_returns_the_typed_record_re_read_after_the_write(
 
 
 def test_upserting_an_item_returns_the_typed_record_re_read_after_the_write(da):
-    from connect_labs.supply_chain.models import ItemRecord
+    from connect_labs.supply_chain.proxies import ItemRecord
     from connect_labs.supply_chain.tests.conftest import wrap
 
     da.reference_client.get_records.return_value = [
@@ -334,7 +334,7 @@ def test_updating_a_supplier_also_stamps_which_tier_wrote_it(da):
     the future lift-migration depends on (every reference record says which
     tier wrote it).
     """
-    from connect_labs.supply_chain.models import SupplierRecord
+    from connect_labs.supply_chain.proxies import SupplierRecord
     from connect_labs.supply_chain.tests.conftest import wrap
 
     existing = wrap(SupplierRecord, {"name": "Northwind Nutrition"}, record_id=3)
@@ -349,7 +349,7 @@ def test_updating_a_round_passes_the_already_fetched_record_to_skip_a_second_get
     record the caller already holds. Every update site here has `existing` in
     hand, so every one of them should pass it through.
     """
-    from connect_labs.supply_chain.models import RoundRecord
+    from connect_labs.supply_chain.proxies import RoundRecord
     from connect_labs.supply_chain.tests.conftest import wrap
 
     existing = wrap(RoundRecord, {"label": "Round 1", "status": "draft"}, record_id=1)
@@ -409,7 +409,7 @@ def test_supersede_quote_logs_and_reraises_if_the_back_link_update_fails(da, cap
     """
     import logging
 
-    from connect_labs.supply_chain.models import QuoteRecord
+    from connect_labs.supply_chain.proxies import QuoteRecord
     from connect_labs.supply_chain.tests.conftest import wrap
 
     existing = wrap(QuoteRecord, {"round_id": 1, "version": 1}, record_id=5)

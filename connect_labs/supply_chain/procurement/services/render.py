@@ -5,8 +5,8 @@ email will ignore a portal too, and the credibility is in the sender.
 Phase 1c sends the same text over SES.
 """
 
-from connect_labs.supply_chain.models import CommodityRecord, QuoteRecord, RoundRecord, SupplierRecord
 from connect_labs.supply_chain.procurement.services.questions import SUPPLIER, initial_request_facts, missing_facts
+from connect_labs.supply_chain.proxies import CommodityRecord, QuoteRecord, RoundRecord, SupplierRecord
 from connect_labs.supply_chain.values import destination_phrase, quantity_phrase
 
 

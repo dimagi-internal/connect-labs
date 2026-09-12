@@ -1,7 +1,7 @@
 from decimal import Decimal
 
-from connect_labs.supply_chain.models import RoundRecord, SupplierRecord
 from connect_labs.supply_chain.procurement.services.comparison import compare_round
+from connect_labs.supply_chain.proxies import RoundRecord, SupplierRecord
 from connect_labs.supply_chain.tests.conftest import quote, wrap
 from connect_labs.supply_chain.values import Unconfirmed
 

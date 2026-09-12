@@ -23,10 +23,10 @@ frozen at all.
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from connect_labs.supply_chain.models import CommodityRecord, QuoteRecord, RoundRecord
 from connect_labs.supply_chain.procurement.services.compliance import check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import FIGURE_FIELDS, FIGURE_LABELS, compute_figures
 from connect_labs.supply_chain.procurement.services.questions import missing_facts
+from connect_labs.supply_chain.proxies import CommodityRecord, QuoteRecord, RoundRecord
 from connect_labs.supply_chain.values import Unconfirmed, to_wire
 
 

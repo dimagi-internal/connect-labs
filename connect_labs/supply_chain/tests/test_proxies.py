@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from connect_labs.supply_chain.models import CommodityRecord, ItemRecord, QuoteRecord, RoundRecord
+from connect_labs.supply_chain.proxies import CommodityRecord, ItemRecord, QuoteRecord, RoundRecord
 
 
 def _wrap(cls, data):

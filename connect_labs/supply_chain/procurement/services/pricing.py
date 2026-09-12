@@ -11,7 +11,7 @@ missing fact, because questions.py turns them into the next email.
 from dataclasses import dataclass
 from decimal import Decimal
 
-from connect_labs.supply_chain.models import CommodityRecord, ItemRecord, QuoteRecord, RoundRecord
+from connect_labs.supply_chain.proxies import CommodityRecord, ItemRecord, QuoteRecord, RoundRecord
 from connect_labs.supply_chain.values import Derived, Money, confirmed, merge, metric_tonnes_to_base_units, unconfirmed
 
 FIGURE_FIELDS = (

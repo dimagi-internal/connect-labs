@@ -1,5 +1,5 @@
-from connect_labs.supply_chain.models import SupplierRecord
 from connect_labs.supply_chain.procurement.services.render import render_followup, render_initial_request
+from connect_labs.supply_chain.proxies import SupplierRecord
 from connect_labs.supply_chain.tests.conftest import quote, wrap
 
 

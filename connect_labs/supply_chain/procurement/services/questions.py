@@ -32,9 +32,9 @@ can show both.
 import logging
 from dataclasses import dataclass
 
-from connect_labs.supply_chain.models import CommodityRecord, QuoteRecord, RoundRecord
 from connect_labs.supply_chain.procurement.services.compliance import NOT_STATED, check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
+from connect_labs.supply_chain.proxies import CommodityRecord, QuoteRecord, RoundRecord
 from connect_labs.supply_chain.values import Unconfirmed, destination_phrase, quantity_phrase
 
 logger = logging.getLogger(__name__)

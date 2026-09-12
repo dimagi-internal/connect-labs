@@ -16,6 +16,21 @@ class Money:
 
 
 @dataclass(frozen=True)
+class Quantity:
+    """An amount of something, carrying the unit it was stated in.
+
+    The unit travels with the number because the domain's central failure is
+    a quantity that got added to another quantity in a different unit. A
+    bare Decimal invites exactly that; a Quantity cannot be summed with a
+    mismatched one without someone deciding how, which is the decision this
+    type exists to force into the open.
+    """
+
+    amount: Decimal
+    unit: str
+
+
+@dataclass(frozen=True)
 class Unconfirmed:
     """A figure that cannot be computed honestly, and why.
 
@@ -27,17 +42,18 @@ class Unconfirmed:
 
 
 Derived = Money | Unconfirmed
+DerivedQuantity = Quantity | Unconfirmed
 
 
 def unconfirmed(*reasons: str) -> Unconfirmed:
     return Unconfirmed(reasons=tuple(reasons))
 
 
-def to_wire(value: Derived) -> dict:
-    """The one JSON wire shape for a Derived figure.
+def to_wire(value: Derived | DerivedQuantity) -> dict:
+    """The one JSON wire shape for a derived figure.
 
-    {"amount", "currency"} for a Money, {"unconfirmed": [...]} for an
-    Unconfirmed -- the contract every consumer reads via cell.amount /
+    {"amount", "currency"} for a Money, {"amount", "unit"} for a Quantity,
+    {"unconfirmed": [...]} for an Unconfirmed -- the contract every consumer reads via cell.amount /
     cell.unconfirmed in a template. operations.figure() and
     Comparison.to_snapshot()'s cell() used to each define these same four
     lines separately; single-sourced here so the two producers cannot drift
@@ -45,6 +61,8 @@ def to_wire(value: Derived) -> dict:
     """
     if isinstance(value, Money):
         return {"amount": str(value.amount), "currency": value.currency}
+    if isinstance(value, Quantity):
+        return {"amount": str(value.amount), "unit": value.unit}
     return {"unconfirmed": list(value.reasons)}
 
 
