@@ -30,7 +30,7 @@ def ensure_demo():
 
 def _http_409():
     return urllib.error.HTTPError(
-        url="http://x/supply/api/demo/reseed/",
+        url="http://x/oes/api/demo/reseed/",
         code=409,
         msg="Conflict",
         hdrs=None,

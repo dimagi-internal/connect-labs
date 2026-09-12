@@ -76,7 +76,7 @@ def _despatch_payload(ops, asn="ASN-PORTAL-1", qty=60000):
 
 
 def test_portal_despatch_form_creates_the_same_shipment_as_the_api(ops):
-    resp = _post(ops["client"], "/supply/api/shipments/", _despatch_payload(ops))
+    resp = _post(ops["client"], "/oes/api/shipments/", _despatch_payload(ops))
     assert resp.status_code == 200
     body = resp.json()["shipment"]
     assert body["asn_reference"] == "ASN-PORTAL-1"
@@ -93,11 +93,11 @@ def test_portal_despatch_form_creates_the_same_shipment_as_the_api(ops):
 
 def test_portal_and_api_despatch_produce_equivalent_records(ops):
     """Same payload, two doors: the resulting shipment must match field for field."""
-    _post(ops["client"], "/supply/api/shipments/", _despatch_payload(ops, asn="ASN-BY-HAND"))
+    _post(ops["client"], "/oes/api/shipments/", _despatch_payload(ops, asn="ASN-BY-HAND"))
     _t, token = tokens.mint_token(ops["org"], "machine")
     _api(
         ops["client"],
-        "/supply/api/v1/shipments/",
+        "/oes/api/v1/shipments/",
         _despatch_payload(ops, asn="ASN-BY-MACHINE"),
         token,
     )
@@ -122,12 +122,12 @@ def test_portal_and_api_despatch_produce_equivalent_records(ops):
 
 
 def test_portal_event_form_matches_epcis_capture(ops):
-    _post(ops["client"], "/supply/api/shipments/", _despatch_payload(ops))
+    _post(ops["client"], "/oes/api/shipments/", _despatch_payload(ops))
     shipment = Shipment.objects.get()
 
     resp = _post(
         ops["client"],
-        f"/supply/api/shipments/{shipment.id}/events/",
+        f"/oes/api/shipments/{shipment.id}/events/",
         {
             "biz_step": "arriving",
             "node_id": ops["hub"].id,
@@ -150,40 +150,40 @@ def test_portal_event_form_matches_epcis_capture(ops):
 
 
 def test_portal_event_form_rejects_unknown_step(ops):
-    _post(ops["client"], "/supply/api/shipments/", _despatch_payload(ops))
+    _post(ops["client"], "/oes/api/shipments/", _despatch_payload(ops))
     shipment = Shipment.objects.get()
-    resp = _post(ops["client"], f"/supply/api/shipments/{shipment.id}/events/", {"biz_step": "teleporting"})
+    resp = _post(ops["client"], f"/oes/api/shipments/{shipment.id}/events/", {"biz_step": "teleporting"})
     assert resp.status_code == 400
 
 
 def test_portal_checkin_and_confirm(ops):
-    _post(ops["client"], "/supply/api/shipments/", _despatch_payload(ops))
+    _post(ops["client"], "/oes/api/shipments/", _despatch_payload(ops))
     shipment = Shipment.objects.get()
 
     _post(
         ops["client"],
-        f"/supply/api/shipments/{shipment.id}/checkin/",
+        f"/oes/api/shipments/{shipment.id}/checkin/",
         {"status": "arriving", "location_gln": ops["hub"].gln, "occurred_at": "2026-07-26T09:00:00Z"},
     )
     assert shipment.events.filter(source_tier=SupplyEvent.SourceTier.CHECKIN).exists()
 
-    resp = _post(ops["client"], f"/supply/api/shipments/{shipment.id}/confirm/", {"quantity": 60000})
+    resp = _post(ops["client"], f"/oes/api/shipments/{shipment.id}/confirm/", {"quantity": 60000})
     assert resp.status_code == 200
     shipment.refresh_from_db()
     assert shipment.status == Shipment.Status.CONFIRMED
 
 
 def test_portal_confirm_with_short_quantity_raises_discrepancy(ops):
-    _post(ops["client"], "/supply/api/shipments/", _despatch_payload(ops))
+    _post(ops["client"], "/oes/api/shipments/", _despatch_payload(ops))
     shipment = Shipment.objects.get()
-    _post(ops["client"], f"/supply/api/shipments/{shipment.id}/confirm/", {"quantity": 59000})
+    _post(ops["client"], f"/oes/api/shipments/{shipment.id}/confirm/", {"quantity": 59000})
     disc = Discrepancy.objects.get()
     assert float(disc.shortfall) == 1000
 
 
 def test_cannot_confirm_a_shipment_that_has_not_departed(ops):
     shipment = f.ShipmentFactory(contract=ops["contract"], status=Shipment.Status.PLANNED)
-    resp = _post(ops["client"], f"/supply/api/shipments/{shipment.id}/confirm/", {})
+    resp = _post(ops["client"], f"/oes/api/shipments/{shipment.id}/confirm/", {})
     assert resp.status_code == 400
 
 
@@ -196,14 +196,12 @@ def test_supplier_sees_only_own_contracts_and_shipments(ops):
     rival_contract = f.ContractFactory(org=f.SupplierOrgFactory(legal_name="Rival Foods"))
     rival_shipment = f.ShipmentFactory(contract=rival_contract)
 
-    body = ops["client"].get("/supply/api/contracts/").json()["contracts"]
+    body = ops["client"].get("/oes/api/contracts/").json()["contracts"]
     assert [c["reference"] for c in body] == [ops["contract"].reference]
 
-    assert ops["client"].get(f"/supply/api/shipments/{rival_shipment.id}/").status_code == 404
+    assert ops["client"].get(f"/oes/api/shipments/{rival_shipment.id}/").status_code == 404
     assert (
-        _post(
-            ops["client"], f"/supply/api/shipments/{rival_shipment.id}/events/", {"biz_step": "arriving"}
-        ).status_code
+        _post(ops["client"], f"/oes/api/shipments/{rival_shipment.id}/events/", {"biz_step": "arriving"}).status_code
         == 404
     )
 
@@ -212,22 +210,22 @@ def test_staff_see_all_contracts_but_cannot_report(admin_client):
     client, _user = admin_client
     f.ContractFactory(reference="OES-C-9001")
     f.ContractFactory(reference="OES-C-9002")
-    body = client.get("/supply/api/contracts/").json()["contracts"]
+    body = client.get("/oes/api/contracts/").json()["contracts"]
     assert len(body) == 2
     # reporting is the supplier's job; staff resolve discrepancies instead
-    assert _post(client, "/supply/api/shipments/", {}).status_code == 403
+    assert _post(client, "/oes/api/shipments/", {}).status_code == 403
 
 
 def test_staff_resolve_discrepancy_supplier_cannot(ops, admin_client):
-    _post(ops["client"], "/supply/api/shipments/", _despatch_payload(ops))
+    _post(ops["client"], "/oes/api/shipments/", _despatch_payload(ops))
     shipment = Shipment.objects.get()
-    _post(ops["client"], f"/supply/api/shipments/{shipment.id}/confirm/", {"quantity": 100})
+    _post(ops["client"], f"/oes/api/shipments/{shipment.id}/confirm/", {"quantity": 100})
     disc = Discrepancy.objects.get()
 
-    assert _post(ops["client"], f"/supply/api/discrepancies/{disc.id}/resolve/", {}).status_code == 403
+    assert _post(ops["client"], f"/oes/api/discrepancies/{disc.id}/resolve/", {}).status_code == 403
 
     staff_client, _user = admin_client
-    resp = _post(staff_client, f"/supply/api/discrepancies/{disc.id}/resolve/", {"note": "Damage in transit"})
+    resp = _post(staff_client, f"/oes/api/discrepancies/{disc.id}/resolve/", {"note": "Damage in transit"})
     assert resp.status_code == 200
     disc.refresh_from_db()
     assert disc.status == Discrepancy.Status.RESOLVED
@@ -240,7 +238,7 @@ def test_staff_resolve_discrepancy_supplier_cannot(ops, admin_client):
 
 
 def test_supplier_mints_and_revokes_tokens(ops):
-    resp = _post(ops["client"], "/supply/api/tokens/", {"label": "factory feed"})
+    resp = _post(ops["client"], "/oes/api/tokens/", {"label": "factory feed"})
     assert resp.status_code == 200
     body = resp.json()
     secret = body["secret"]
@@ -248,25 +246,25 @@ def test_supplier_mints_and_revokes_tokens(ops):
     assert body["token"]["prefix"] == secret[:12]
     assert tokens.resolve_token(secret) == ops["org"]
 
-    listed = ops["client"].get("/supply/api/tokens/").json()["tokens"]
+    listed = ops["client"].get("/oes/api/tokens/").json()["tokens"]
     assert len(listed) == 1
     assert "secret" not in listed[0]  # the raw token is shown exactly once
 
-    assert _post(ops["client"], f"/supply/api/tokens/{body['token']['id']}/revoke/", {}).status_code == 200
+    assert _post(ops["client"], f"/oes/api/tokens/{body['token']['id']}/revoke/", {}).status_code == 200
     assert tokens.resolve_token(secret) is None
 
 
 def test_token_label_required_and_scoped_to_own_org(ops):
-    assert _post(ops["client"], "/supply/api/tokens/", {"label": ""}).status_code == 400
+    assert _post(ops["client"], "/oes/api/tokens/", {"label": ""}).status_code == 400
 
     rival = f.SupplierOrgFactory(legal_name="Rival Foods")
     rival_token, _raw = tokens.mint_token(rival, "theirs")
-    assert _post(ops["client"], f"/supply/api/tokens/{rival_token.id}/revoke/", {}).status_code == 404
+    assert _post(ops["client"], f"/oes/api/tokens/{rival_token.id}/revoke/", {}).status_code == 404
 
 
 def test_staff_have_no_token_management(admin_client):
     client, _user = admin_client
-    assert client.get("/supply/api/tokens/").status_code == 403
+    assert client.get("/oes/api/tokens/").status_code == 403
 
 
 def test_no_consignment_is_dated_before_the_contract_that_paid_for_it(seeded_world):

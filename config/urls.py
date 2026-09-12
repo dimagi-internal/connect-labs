@@ -72,7 +72,7 @@ urlpatterns = [
     ),
     path("ai/", include("connect_labs.ai.urls", namespace="ai")),
     path("campaign/", include("connect_labs.campaign.urls", namespace="campaign")),
-    path("supply/", include("connect_labs.supply.urls", namespace="supply")),
+    path("oes/", include("connect_labs.supply.urls", namespace="oes")),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # Django Admin (conditionally include if admin app is installed)

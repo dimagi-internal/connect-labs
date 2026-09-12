@@ -170,6 +170,7 @@ LOCAL_APPS = [
     "connect_labs.pages",
     "connect_labs.pulse",
     "connect_labs.solicitations",
+    "connect_labs.supply_chain",
     "connect_labs.users",
     "connect_labs.web",
 ]
@@ -196,7 +197,7 @@ LOGIN_URL = "/labs/login/"
 # so a satellite login never becomes a labs login. Each satellite MUST list its
 # URL prefix here (next to its INSTALLED_APPS + urls.py entries) or its own
 # users get logged out on every request to it. See docs/multi-site-auth.md.
-LABS_SATELLITE_URL_PREFIXES = ["/supply/", "/campaign/"]
+LABS_SATELLITE_URL_PREFIXES = ["/oes/", "/campaign/"]
 
 # PASSWORDS
 # ------------------------------------------------------------------------------

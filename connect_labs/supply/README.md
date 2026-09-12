@@ -1,6 +1,6 @@
 # OES Supply — the supply-chain satellite site
 
-A standalone website at **`/supply/`** for **Operation End Starvation (OES)**, an
+A standalone website at **`/oes/`** for **Operation End Starvation (OES)**, an
 invented multi-country famine-response initiative. It runs two-stage
 humanitarian procurement (expression of interest → supplier registry → RFP →
 per-lot award), then keeps going: awarded suppliers report what physically
@@ -9,7 +9,16 @@ moves, and four stakeholder dashboards render it.
 Everything in it is synthetic. There is no real Connect or CommCare data
 anywhere in this app.
 
-Live at `https://labs.connect.dimagi.com/supply/`.
+Live at `https://labs.connect.dimagi.com/oes/`.
+
+**The URL moved; the package did not.** OES used to live at `/supply/`. That
+address is now `connect_labs/supply_chain/` — a new, unrelated core-labs domain
+(procurement, then tracking/distribution). OES is slated for retirement, so it
+was not worth rewriting ~16k lines of internal imports or orphaning its
+migration history in `django_migrations` just to make the package name match
+the new URL. The package stays `connect_labs.supply`, the Django app label
+stays `supply`, and only the URL prefix (`/oes/`) and namespace (`oes`) moved.
+Do not be surprised that a `connect_labs.supply` import serves `/oes/`.
 
 ---
 
@@ -28,7 +37,7 @@ imports three things. Its only contact with labs is:
 1. an `INSTALLED_APPS` entry in `local.py` / `labs_aws.py` / `test.py`
    (deliberately **not** `base.py`, mirroring campaign),
 2. one line in `config/urls.py`,
-3. `"/supply/"` in the `LABS_SATELLITE_URL_PREFIXES` setting (`config/settings/base.py`),
+3. `"/oes/"` in the `LABS_SATELLITE_URL_PREFIXES` setting (`config/settings/base.py`),
    which `connect_labs/labs/oauth_session.py` reads. See [docs/multi-site-auth.md](../../docs/multi-site-auth.md).
 
 That third one is a **host contract**, not an implementation detail. Labs' OAuth
@@ -174,7 +183,7 @@ and recoveries recorded has a size somebody can defend.
 
 ## Ingestion: three tiers, and why
 
-Awarded suppliers report movements through `/supply/api/v1/`, authenticated by
+Awarded suppliers report movements through `/oes/api/v1/`, authenticated by
 an org-scoped bearer token (hashed at rest, shown once).
 
 | Tier      | Endpoint               | What it is                                                                                          |
@@ -251,7 +260,7 @@ Five personas, all sharing one password:
 - `supplier@savanna.example` — Savanna Nutrients (Kano)
 
 **The password in the repo is `oes-demo-2026`, and it is deliberately rejected on
-the deployed site.** `/supply/` has open registration on a public host and the
+the deployed site.** `/oes/` has open registration on a public host and the
 seed creates a procurement admin, so labs reads `SUPPLY_DEMO_PASSWORD` from
 Secrets Manager (`labs-jj-supply-demo-password`, referenced from
 `deploy/task-definitions/{web,worker}.json`). Reseeding rotates existing users'
@@ -330,7 +339,7 @@ What each file is defending:
 
 | File                          | Guards                                                                                                                 |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `test_host_integration.py`    | labs' OAuth middleware skips `/supply/`                                                                                |
+| `test_host_integration.py`    | labs' OAuth middleware skips `/oes/`                                                                                   |
 | `test_rbac_contract.py`       | `perms.js` ↔ `rbac.py` equality, plus a guard proving the parser detects drift                                         |
 | `test_eoi.py` / `test_rfp.py` | snapshot immutability; no bidding without a _live_ qualification; no awarding an unsubmitted bid or a lot twice        |
 | `test_ingestion.py`           | EPCIS/ASN/check-in capture, idempotency, monotonic status, discrepancy on short receipt, pull parity, GS1 check digits |
@@ -392,7 +401,7 @@ aws --profile labs --region us-east-1 ecs execute-command \
 ```bash
 # as an MCP tool (agents):        supply_demo_reseed
 # or over HTTP, same implementation:
-curl -X POST https://labs.connect.dimagi.com/supply/api/demo/reseed/ \
+curl -X POST https://labs.connect.dimagi.com/oes/api/demo/reseed/ \
   -H "Authorization: Bearer $CONNECT_LABS_MCP_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"password": "something-you-will-log-in-with"}'
@@ -416,7 +425,7 @@ touches. The env var bought nothing and cost a deploy-time provisioning step.)
 **`password` sets every persona's password as part of the reseed.** The seeder
 rotates them on every run anyway, so a caller that can reseed can already choose
 the value — which means a render needs no pre-shared secret at all: reseed, then
-sign in with what you just set. Minimum 8 characters, because `/supply/` is
+sign in with what you just set. Minimum 8 characters, because `/oes/` is
 publicly reachable.
 
 `scripts/walkthroughs/oes/ensure_demo.py` picks the path automatically — it POSTs

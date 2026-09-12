@@ -150,7 +150,7 @@ function EOIWizard({ ctx, round, existing, onClose }) {
   const saveDraft = () =>
     ctx.act(
       () =>
-        supplyPost('/supply/api/eoi/submissions/', {
+        supplyPost('/oes/api/eoi/submissions/', {
           round_id: round.id,
           categories,
           commitments,
@@ -161,7 +161,7 @@ function EOIWizard({ ctx, round, existing, onClose }) {
   const submit = async () => {
     const saved = await ctx.act(
       () =>
-        supplyPost('/supply/api/eoi/submissions/', {
+        supplyPost('/oes/api/eoi/submissions/', {
           round_id: round.id,
           categories,
           commitments,
@@ -172,7 +172,7 @@ function EOIWizard({ ctx, round, existing, onClose }) {
     const done = await ctx.act(
       () =>
         supplyPost(
-          `/supply/api/eoi/submissions/${saved.submission.id}/submit/`,
+          `/oes/api/eoi/submissions/${saved.submission.id}/submit/`,
           {},
         ),
       'Expression of interest submitted.',

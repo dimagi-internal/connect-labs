@@ -12,7 +12,7 @@ pytestmark = pytest.mark.django_db
 
 
 def test_ping_unauthenticated():
-    resp = Client().get("/supply/ping/")
+    resp = Client().get("/oes/ping/")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
 
@@ -23,4 +23,4 @@ def test_labs_oauth_middleware_skips_supply():
     # The host contract is now the LABS_SATELLITE_URL_PREFIXES setting, surfaced
     # through get_skip_path_prefixes(). Supply must appear there or labs' OAuth
     # reconciliation logs supply users out on every request.
-    assert any(p.rstrip("/") == "/supply" for p in oauth_session.get_skip_path_prefixes())
+    assert any(p.rstrip("/") == "/oes" for p in oauth_session.get_skip_path_prefixes())

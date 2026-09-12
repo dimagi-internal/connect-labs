@@ -153,8 +153,8 @@ def test_the_command_centre_receives_the_projection(seeded_world, client):
     """A forecast nobody's screen calls is a forecast that changes no decision."""
     import json as _json
 
-    client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
-    body = _json.loads(client.get("/supply/api/bootstrap/").content)
+    client.post("/oes/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
+    body = _json.loads(client.get("/oes/api/bootstrap/").content)
 
     assert "projection" in body, "the command centre payload carries no forward projection"
     proj = body["projection"]

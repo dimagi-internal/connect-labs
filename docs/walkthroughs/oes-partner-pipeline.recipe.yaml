@@ -1,5 +1,5 @@
 auth:
-  # Off-camera personas. dev-login is a hard 403 outside DEBUG — /supply/ has open
+  # Off-camera personas. dev-login is a hard 403 outside DEBUG — /oes/ has open
   # registration on a public host, so an endpoint that logs a caller in as a
   # procurement admin without a password is only defensible while it refuses in
   # production. So each persona is signed in through the REAL form before
@@ -10,7 +10,7 @@ auth:
   # is deliberately rejected on the deployed site, and a committed spec must not
   # carry a credential either way.
   type: form
-  login_url: /supply/login/
+  login_url: /oes/login/
   fields:
     email: input[name="email"]
     password: input[name="password"]
@@ -35,8 +35,8 @@ scenes:
   concept_claim: The organisation admitting the children is the only actor touching both the carton and
     the child, and it is the one with no instrument to see its own supply.
   role: overview
-  url: /supply/
-  show: 'Komadugu Health Initiative''s own surface at /supply/ — the key figures row showing eleven feeding
+  url: /oes/
+  show: 'Komadugu Health Initiative''s own surface at /oes/ — the key figures row showing eleven feeding
     sites, the distributions not covered, the thinnest cover in the network and the shortfall already
     raised. This is the whole argument in four numbers: they know their caseload exactly and, until now,
     nothing about the supply behind it.'
@@ -57,7 +57,7 @@ scenes:
 - id: inbound-supply-in-the-calendar-they-plan-in
   concept_claim: Inbound supply rendered against planned distribution days reads as covered, at risk or
     uncovered per site and date — the frame a partner actually plans in.
-  url: /supply/
+  url: /oes/
   show: 'The Distribution calendar card — a day, a site, the children booked in for it, and whether inbound
     supply covers it. Three states are visible at once: covered rows, Askira at risk, and Biu with nothing
     assigned to it at all.'
@@ -79,7 +79,7 @@ scenes:
 - id: weeks-of-cover-and-the-date-it-runs-dry
   concept_claim: Weeks of cover and a projected stockout date are derived per site from receiving events
     and the admission rate, with the method stated on screen.
-  url: /supply/
+  url: /oes/
   show: The Weeks of cover card — every site with its stock on hand, the children it serves a month, its
     weeks of cover and the date it runs dry, ranked worst first. Biu at zero and awaiting its first
     consignment, Askira at 0.6, Kukawa at 1.6 and eleven days out, Dikwa comfortable at 5.5.
@@ -102,7 +102,7 @@ scenes:
 - id: the-storekeeper-counts-it-and-the-short-count-is-evidence
   concept_claim: A receipt recorded at the loading bay against the despatch advice raises the discrepancy
     as evidence from the person holding the cartons, labelled hand-keyed.
-  url: /supply/
+  url: /oes/
   show: 'The Receiving tab — the partner''s own capture surface. A consignment has arrived at Monguno
     and is awaiting a count; the storekeeper records 840 against its 900-carton despatch advice on
     camera, and the 60-carton discrepancy appears as a consequence of the count rather than as a record
@@ -179,7 +179,7 @@ scenes:
 - id: zara-raises-a-shortfall-and-the-centre-answers
   concept_claim: A partner raises a shortfall from their own screen and it enters the central queue ranked
     by the children behind it, marked as partner-raised.
-  url: /supply/
+  url: /oes/
   show: Zara raises a shortfall on Kukawa from the cover table — the site, the children affected, the
     cartons short and the date it is needed by — and it lands in the OES command centre ranked by the
     children behind it.
@@ -235,7 +235,7 @@ scenes:
 - id: from-a-batch-to-the-child-who-recovered
   concept_claim: A received batch resolves forward to the distributions it fed and to a child's MUAC series
     crossing the recovery threshold, labelled synthetic.
-  url: /supply/
+  url: /oes/
   show: 'The batch table at the bottom of the partner surface, and one batch opened: the consignment it
     arrived on, the distribution it fed, and the children admitted on it — each with a MUAC series drawn
     against the WHO red, amber and green bands, climbing out of the red.'

@@ -334,7 +334,7 @@ function CommandTab({ ctx }) {
                         act(
                           () =>
                             supplyPost(
-                              `/supply/api/discrepancies/${e.discrepancy_id}/resolve/`,
+                              `/oes/api/discrepancies/${e.discrepancy_id}/resolve/`,
                               { note: 'Reconciled from the command centre.' },
                             ),
                           'Discrepancy resolved.',
@@ -879,7 +879,7 @@ function ExpediteModal({ ctx, exception, onClose }) {
               act(
                 () =>
                   supplyPost(
-                    `/supply/api/actions/expedite/${exception.shipment_id}/`,
+                    `/oes/api/actions/expedite/${exception.shipment_id}/`,
                     { rationale: rationale.trim() },
                   ),
                 `${exception.shipment_reference} escalated with the carrier.`,
@@ -993,7 +993,7 @@ function ReallocateModal({ ctx, exception, surplus, cover, onClose, nodes }) {
   const submit = async () => {
     const ok = await ctx.act(
       () =>
-        supplyPost('/supply/api/actions/reallocate/', {
+        supplyPost('/oes/api/actions/reallocate/', {
           source_node_id: sourceId,
           target_node_id: targetId,
           quantity: Number(quantity),
