@@ -86,7 +86,7 @@ def _pack_spec(quote: QuoteRecord, item: ItemRecord | None) -> int | Derived:
     if source == "stated_on_quote":
         stated = quote.base_per_pack_stated
         if not stated:
-            return unconfirmed("pack spec recorded as stated on the quote but no " "units-per-pack value was captured")
+            return unconfirmed("pack spec recorded as stated on the quote but no units-per-pack value was captured")
         return int(stated)
 
     if source == "trade_item_confirmed":
@@ -94,14 +94,30 @@ def _pack_spec(quote: QuoteRecord, item: ItemRecord | None) -> int | Derived:
         # passes none, and inventing the pack size at that point is the very
         # substitution this function refuses.
         if item is None:
-            return unconfirmed("pack spec not confirmed: quote names a trade item but no item " "record was supplied")
+            return unconfirmed("pack spec not confirmed: quote names a trade item but no item record was supplied")
         if not item.base_per_pack:
-            return unconfirmed(
-                f"pack spec not confirmed: trade item {item.sku or item.id} " "records no units per pack"
-            )
+            return unconfirmed(f"pack spec not confirmed: trade item {item.sku or item.id} records no units per pack")
         return int(item.base_per_pack)
 
     return unconfirmed("pack spec not stated on the quote (units per pack)")
+
+
+def _base_unit_grams(quote: QuoteRecord, item: ItemRecord | None) -> int | Derived:
+    """Grams per base unit, from whoever actually stated it.
+
+    Mirrors `_pack_spec`'s shape, because it is the same rule: the quote
+    itself, or a confirmed trade item, count as a statement; the commodity
+    catalogue does not. A supplier's actual sachet can weigh 100 g against a
+    catalogue default of 92 g, and that is exactly as load-bearing for a
+    per-tonne conversion as a pack-spec mismatch is for a per-carton one —
+    **the commodity catalogue is never consulted here** either.
+    """
+    stated = quote.base_unit_grams_stated
+    if stated:
+        return int(stated)
+    if item is not None and item.base_unit_grams:
+        return int(item.base_unit_grams)
+    return unconfirmed("unit weight not stated on the quote (grams per base unit)")
 
 
 def _extras(quote: QuoteRecord) -> Derived:
@@ -131,7 +147,7 @@ def _extras(quote: QuoteRecord) -> Derived:
 def _course_size(commodity: CommodityRecord) -> int | Derived:
     size = commodity.base_units_per_course
     if not size:
-        return unconfirmed(f"no course definition set for {commodity.name or commodity.slug} " "(sachets per course)")
+        return unconfirmed(f"no course definition set for {commodity.name or commodity.slug} (sachets per course)")
     return int(size)
 
 
@@ -145,31 +161,45 @@ def _lot_subtotal(
     """The pre-extras cost of the quote's own quantity basis.
 
     When the quote's price and its quantity basis are already denominated in
-    the same unit ($/carton priced against a quantity in cartons, say), the
-    total is one exact multiplication. Routing that through a per-base-unit
-    price instead — dividing by the pack spec, then multiplying back by a
-    pack-derived unit count — sends an exact whole-dollar figure through a
-    repeating decimal for no reason: 50.00 / 150 has no exact Decimal
-    representation, and Decimal's fixed precision does not reliably cancel
-    that back out on the way back up. Take the exact path whenever the units
-    already line up; fall back to the per-base-unit price only when they do
-    not (a genuine unit conversion, where some rounding is unavoidable).
+    the same unit ($/carton priced against a quantity in cartons, $/tonne
+    against a quantity in tonnes, a lot total against itself), the total is
+    one exact multiplication — or, for a lot total, no arithmetic at all.
+    Routing that through a per-base-unit price instead — dividing by a pack
+    spec or a unit weight, then multiplying back by a derived unit count —
+    sends an exact whole-dollar figure through a repeating decimal for no
+    reason: 50.00 / 150 has no exact Decimal representation, and Decimal's
+    fixed precision does not reliably cancel that back out on the way back
+    up. Take the exact path whenever the units already line up; fall back to
+    the per-base-unit price only for a genuine unit conversion, where some
+    rounding is unavoidable.
     """
     unit = quote.quantity_basis_unit
-    if quote.as_quoted_unit == "per_pack" and unit == commodity.pack_unit:
+    same_unit_as_price = (
+        (quote.as_quoted_unit == "per_pack" and unit == commodity.pack_unit)
+        or (quote.as_quoted_unit == "per_base_unit" and unit == commodity.base_unit)
+        or (quote.as_quoted_unit == "per_metric_tonne" and unit == "metric_tonne")
+    )
+    if same_unit_as_price:
         return usd.amount * quote.quantity_basis
-    if quote.as_quoted_unit == "per_base_unit" and unit == commodity.base_unit:
-        return usd.amount * quote.quantity_basis
+    if quote.as_quoted_unit == "per_lot_total":
+        return usd.amount
     return per_base_unit.amount * units_quoted
 
 
-def _base_units_quoted(quote: QuoteRecord, commodity: CommodityRecord, pack_spec: int | Derived) -> Decimal | Derived:
+def _base_units_quoted(
+    quote: QuoteRecord,
+    commodity: CommodityRecord,
+    pack_spec: int | Derived,
+    item: ItemRecord | None,
+) -> Decimal | Derived:
     """How many base units the quote's own quantity basis covers."""
     quantity = quote.quantity_basis
     if quantity is None:
         return unconfirmed("no quantity basis recorded on the quote")
 
     unit = quote.quantity_basis_unit
+    if unit is None:
+        return unconfirmed("no quantity basis unit recorded on the quote")
     if unit == commodity.base_unit:
         return quantity
     if unit == commodity.pack_unit:
@@ -178,10 +208,11 @@ def _base_units_quoted(quote: QuoteRecord, commodity: CommodityRecord, pack_spec
             return blocked
         return quantity * Decimal(pack_spec)
     if unit == "metric_tonne":
-        grams = quote.base_unit_grams_stated or commodity.base_unit_grams
-        if not grams:
-            return unconfirmed("quote is in metric tonnes and no unit weight is known")
-        return metric_tonnes_to_base_units(quantity, int(grams))
+        grams = _base_unit_grams(quote, item)
+        blocked = merge(confirmed(grams))
+        if blocked:
+            return blocked
+        return metric_tonnes_to_base_units(quantity, grams)
     return unconfirmed(f"quantity basis unit {unit!r} is not on this commodity's unit ladder")
 
 
@@ -219,20 +250,17 @@ def compute_figures(
         spec_blocked = merge(confirmed(pack_spec))
         per_base_unit = spec_blocked or Money(usd.amount / Decimal(pack_spec))
     elif quote.as_quoted_unit == "per_metric_tonne":
-        grams = (
-            quote.base_unit_grams_stated
-            or (item.base_unit_grams if item is not None else None)
-            or commodity.base_unit_grams
-        )
-        if not grams:
-            per_base_unit = per_pack = unconfirmed("quote is per metric tonne and no unit weight is known")
+        grams = _base_unit_grams(quote, item)
+        grams_blocked = merge(confirmed(grams))
+        if grams_blocked:
+            per_base_unit = per_pack = grams_blocked
         else:
-            units = metric_tonnes_to_base_units(Decimal("1"), int(grams))
+            units = metric_tonnes_to_base_units(Decimal("1"), grams)
             per_base_unit = Money(usd.amount / units)
             spec_blocked = merge(confirmed(pack_spec))
             per_pack = spec_blocked or Money(per_base_unit.amount * Decimal(pack_spec))
     elif quote.as_quoted_unit == "per_lot_total":
-        units = _base_units_quoted(quote, commodity, pack_spec)
+        units = _base_units_quoted(quote, commodity, pack_spec, item)
         unit_blocked = merge(confirmed(units))
         if unit_blocked:
             per_base_unit = per_pack = unit_blocked
@@ -252,7 +280,7 @@ def compute_figures(
     per_child = per_course
 
     # --- landed totals ---------------------------------------------------
-    units_quoted = _base_units_quoted(quote, commodity, pack_spec)
+    units_quoted = _base_units_quoted(quote, commodity, pack_spec, item)
     landed_blocked = merge(per_base_unit, extras, confirmed(units_quoted))
     if landed_blocked:
         landed_as_quoted: Derived = landed_blocked
@@ -264,12 +292,14 @@ def compute_figures(
     round_quantity = round_.quantity_for(commodity.slug)
     if round_quantity is None:
         landed_for_round = unconfirmed(f"this round has no line for {commodity.slug}")
-    elif quote.quantity_basis is None or quote.quantity_basis_unit != round_quantity[1]:
+    elif quote.quantity_basis is None:
+        # A dedicated message: the generic "quote covers None carton" below
+        # would leak internal absence-representation into a supplier-facing
+        # reason instead of naming the missing fact.
         landed_for_round = unconfirmed(
-            f"quote covers {quote.quantity_basis} {quote.quantity_basis_unit}; "
-            f"round is {round_quantity[0]} {round_quantity[1]}"
+            f"no quantity basis recorded on the quote; this round is " f"{round_quantity[0]} {round_quantity[1]}"
         )
-    elif quote.quantity_basis != round_quantity[0]:
+    elif quote.quantity_basis_unit != round_quantity[1] or quote.quantity_basis != round_quantity[0]:
         landed_for_round = unconfirmed(
             f"quote covers {quote.quantity_basis} {quote.quantity_basis_unit}; "
             f"round is {round_quantity[0]} {round_quantity[1]}"

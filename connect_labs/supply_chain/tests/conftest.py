@@ -153,3 +153,27 @@ def item_144():
         },
         record_id=12,
     )
+
+
+@pytest.fixture
+def item_100g():
+    """A trade item weighing 100 g per sachet — DISAGREES with the commodity's 92 g.
+
+    The unit-weight sibling of item_144: a per-tonne conversion derived from the
+    commodity's 92 g would be wrong by ~8.7%, the same class of error as the
+    pack-spec case.
+    """
+    return wrap(
+        ItemRecord,
+        {
+            "sku": "sahel-rutf-100g",
+            "name": "Sahel RUTF 100 g",
+            "commodity_slug": "rutf",
+            "base_unit": "sachet",
+            "pack_unit": "carton",
+            "base_per_pack": 150,
+            "base_unit_grams": 100,
+            "spec_attributes": {},
+        },
+        record_id=13,
+    )

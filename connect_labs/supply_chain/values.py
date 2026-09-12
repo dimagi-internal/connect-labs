@@ -6,6 +6,7 @@ from, and keeping Django out of here keeps the rules cheap to test.
 
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import TypeVar
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,10 @@ def merge(*items: Derived) -> Unconfirmed | None:
     return Unconfirmed(reasons=tuple(reasons)) if reasons else None
 
 
-def confirmed(value):
+_ConfirmedT = TypeVar("_ConfirmedT")
+
+
+def confirmed(value: _ConfirmedT) -> _ConfirmedT:
     """Mark an already-confirmed plain value as fit to pass into merge().
 
     merge() only ever inspects its arguments for `Unconfirmed`; every other value

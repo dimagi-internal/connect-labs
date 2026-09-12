@@ -142,3 +142,71 @@ def test_reasons_accumulate_when_several_facts_are_missing(rutf, round_2000_cart
     f = compute_figures(q, rutf, round_2000_cartons)
     reasons = _reasons(f.usd_per_course)
     assert "pack spec" in reasons
+
+
+def test_the_catalogue_unit_weight_is_never_substituted(rutf, round_2000_cartons):
+    """The unit-weight sibling of the pack-spec regression test.
+
+    The commodity says 92 g per sachet. The quote did not state a weight and
+    named no item. A per-tonne conversion derived from the catalogue would
+    look authoritative and be a guess, so it must not be produced at all.
+    """
+    q = quote(
+        as_quoted_unit="per_metric_tonne",
+        as_quoted_amount="5000.00",
+        quantity_basis="27.6",
+        quantity_basis_unit="metric_tonne",
+        base_unit_grams_stated=None,
+    )
+    f = compute_figures(q, rutf, round_2000_cartons)
+    assert rutf.base_unit_grams == 92  # the tempting value is right there
+    assert "unit weight" in _reasons(f.usd_per_base_unit)
+    assert "unit weight" in _reasons(f.landed_total_as_quoted)
+
+
+def test_a_confirmed_item_states_the_unit_weight_when_the_quote_does_not(rutf, round_2000_cartons, item_100g):
+    """The commodity says 92 g. This supplier's actual item is 100 g.
+
+    Deriving the per-tonne conversion from the commodity would be wrong by
+    ~8.7% and would look authoritative — it must come from the item.
+    """
+    q = quote(
+        as_quoted_unit="per_metric_tonne",
+        as_quoted_amount="5000.00",
+        quantity_basis="27.6",
+        quantity_basis_unit="metric_tonne",
+        base_unit_grams_stated=None,
+        item_id=13,
+    )
+    f = compute_figures(q, rutf, round_2000_cartons, item=item_100g)
+    assert rutf.base_unit_grams == 92
+    # 1,000,000 g / 100 g = 10,000 sachets per tonne, exactly
+    assert f.usd_per_base_unit == Money(Decimal("0.50"))
+
+
+def test_a_per_tonne_quote_against_a_tonne_basis_is_exact(rutf, round_2000_cartons):
+    q = quote(
+        as_quoted_unit="per_metric_tonne",
+        as_quoted_amount="5000.00",
+        quantity_basis="27.6",
+        quantity_basis_unit="metric_tonne",
+        base_unit_grams_stated=92,
+    )
+    f = compute_figures(q, rutf, round_2000_cartons)
+    assert f.landed_total_as_quoted == Money(Decimal("138000.00"))
+
+
+def test_a_lot_total_quote_landed_total_is_exact(rutf, round_2000_cartons):
+    q = quote(as_quoted_unit="per_lot_total", as_quoted_amount="100000.00")
+    f = compute_figures(q, rutf, round_2000_cartons)
+    assert f.landed_total_as_quoted == Money(Decimal("100000.00"))
+
+
+def test_a_missing_quantity_basis_names_the_missing_fact_not_the_word_none(rutf, round_2000_cartons):
+    """A supplier-facing reason must never read like "covers None carton" —
+    that is internal absence-representation leaking into product copy."""
+    q = quote(quantity_basis=None)
+    f = compute_figures(q, rutf, round_2000_cartons)
+    reasons = _reasons(f.landed_total_for_round_quantity)
+    assert "None" not in reasons
+    assert "no quantity basis recorded" in reasons
