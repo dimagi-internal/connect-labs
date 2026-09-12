@@ -14,7 +14,7 @@ from django.urls import reverse
 
 SUPPLY_TABS = (
     ("supply_chain:home", "Overview"),
-    ("supply_chain:items", "Catalogue"),
+    ("supply_chain:catalogue", "Catalogue"),
     ("supply_chain:procurement_round_board", "Sourcing"),
     ("supply_chain:orders", "Orders"),
     ("supply_chain:stock", "Stock"),
@@ -27,7 +27,7 @@ TAB_FOR_VIEW = {
     "supply_chain:procurement_round_detail": "supply_chain:procurement_round_board",
     "supply_chain:procurement_comparison": "supply_chain:procurement_round_board",
     "supply_chain:procurement_quote_entry": "supply_chain:procurement_round_board",
-    "supply_chain:procurement_registries": "supply_chain:items",
+    "supply_chain:procurement_registries": "supply_chain:catalogue",
     "supply_chain:order_detail": "supply_chain:orders",
 }
 

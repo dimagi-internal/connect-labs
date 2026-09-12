@@ -24,10 +24,14 @@ def test_the_round_board_renders(client, sophie):
     assert response.status_code == 200
 
 
-def test_the_item_master_shows_status_and_a_computed_spec_verdict(client, sophie):
+def test_the_catalogue_shows_status_and_a_computed_spec_verdict(client, sophie):
     """Finding 15: the column headed 'Specification' actually rendered
     item.status -- mislabelled, and design doc section 12's 'spec verdict'
-    content was entirely absent. Now there are two distinct columns."""
+    content was entirely absent. Now there are two distinct columns.
+
+    The page is the Catalogue now, with products and trade items as separate
+    levels, but the verdict this pins is the same one.
+    """
     items = [
         {
             "id": 1,
@@ -54,11 +58,14 @@ def test_the_item_master_shows_status_and_a_computed_spec_verdict(client, sophie
         raise AssertionError(name)
 
     with patch("connect_labs.supply_chain.views.call_operation", side_effect=_dispatch):
-        response = client.get(reverse("supply_chain:items"))
+        response = client.get(reverse("supply_chain:catalogue"))
     body = response.content.decode()
     assert response.status_code == 200
-    assert "Spec verdict" in body
+    assert "Against the spec" in body
     assert "Meets all 1" in body
+    # The two levels are distinct, and a trade item sits under its product.
+    assert "Trade item" in body
+    assert "Infant scale" in body
 
 
 # --- Finding 3: '/supply/' and '/supply/procurement/' must not 500 with no
@@ -488,3 +495,84 @@ def test_no_view_mutates_a_record_outside_an_operation():
         if name.startswith(("create_", "update_", "upsert_", "void_", "supersede_", "open_", "close_"))
     }
     assert not forbidden, f"a view mutates directly via {sorted(forbidden)}; call an operation"
+
+
+def test_the_catalogue_says_a_product_with_no_ration_table_blocks_per_course_cost(client, sophie):
+    """The gap is OURS and nobody outside can close it, so the page says so
+    rather than leaving a blank where a figure would go."""
+    commodities = [
+        {
+            "slug": "rutf",
+            "name": "Ready-to-use therapeutic food",
+            "base_unit": "sachet",
+            "pack_unit": "carton",
+            "base_per_pack": 150,
+            "base_unit_grams": 92,
+            "spec_requirements": [],
+            "course_definition": {},
+        }
+    ]
+
+    def _dispatch(name, access, payload):
+        if name == "item_list":
+            return []
+        if name == "commodity_list":
+            return commodities
+        raise AssertionError(name)
+
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_dispatch):
+        response = client.get(reverse("supply_chain:catalogue"))
+    body = response.content.decode()
+    assert "No ration table" in body
+    assert "Nobody outside can answer it" in body
+
+
+def test_the_catalogue_names_a_pack_disagreement_between_trade_items(client, sophie):
+    """Two trade items under one product packed differently is the condition
+    the whole trade-item layer exists for: invisible at product level, and it
+    silently corrupts every per-base-unit comparison."""
+    commodities = [
+        {
+            "slug": "rutf",
+            "name": "RUTF",
+            "base_unit": "sachet",
+            "pack_unit": "carton",
+            "base_per_pack": 150,
+            "spec_requirements": [],
+            "course_definition": {},
+        }
+    ]
+    items = [
+        {
+            "id": 1,
+            "sku": "a",
+            "name": "A",
+            "commodity_slug": "rutf",
+            "base_per_pack": 150,
+            "spec_attributes": {},
+            "status": "active",
+        },
+        {
+            "id": 2,
+            "sku": "b",
+            "name": "B",
+            "commodity_slug": "rutf",
+            "base_per_pack": 144,
+            "spec_attributes": {},
+            "status": "active",
+        },
+    ]
+
+    def _dispatch(name, access, payload):
+        if name == "item_list":
+            return items
+        if name == "commodity_list":
+            return commodities
+        raise AssertionError(name)
+
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_dispatch):
+        response = client.get(reverse("supply_chain:catalogue"))
+    body = response.content.decode()
+    # Substring stops before the template's line break rather than spanning it.
+    assert "packed 144 and 150 to the" in body
+    assert "is not one number" in body

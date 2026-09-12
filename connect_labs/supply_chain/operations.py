@@ -357,6 +357,23 @@ _COMMODITY_DATA = _data_with(
         base_units_per_course=_NON_NEGATIVE_INT,
         source={"type": "string"},
     ),
+    # Catalogue-level identity. The specification reference says which
+    # standard the product's figures come from; the UNICEF Supply Division
+    # material number names the same product across every prequalified
+    # manufacturer, which is what lets two suppliers' different SKUs be known
+    # to be the same thing.
+    spec_reference={"type": "string"},
+    unicef_material_number={"type": "string"},
+    spec_requirements={
+        "type": "array",
+        "items": _data_with(
+            field={"type": "string"},
+            operator={"enum": ["<=", ">=", "<", ">", "=="]},
+            value={"type": ["number", "string"]},
+            unit={"type": "string"},
+            rationale={"type": "string"},
+        ),
+    },
 )
 
 _OUTREACH_DATA = _data_with(

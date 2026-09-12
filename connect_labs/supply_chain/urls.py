@@ -11,7 +11,7 @@ urlpatterns = [
     path("", views.DomainHomeView.as_view(), name="home"),
     # the master item list is domain-level reference data, not procurement's:
     # tracking and distribution will both read it
-    path("items/", views.ItemMasterView.as_view(), name="items"),
+    path("catalogue/", views.CatalogueView.as_view(), name="catalogue"),
     # shared API: one endpoint for the whole domain, because the registry is shared
     path("api/operations/", api_views.OperationListView.as_view(), name="api_operations"),
     path("api/<str:name>/", api_views.OperationDispatchView.as_view(), name="api_operation"),

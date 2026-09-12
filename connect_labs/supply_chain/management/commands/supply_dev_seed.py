@@ -72,6 +72,11 @@ class Command(BaseCommand):
                 "base_per_pack": 150,
                 "base_unit_grams": 92,
                 "shelf_life_months_minimum": 18,
+                # From the published standard, not invented. The UNICEF
+                # material number is deliberately left unset: there is a real
+                # one, and putting a made-up value here would be exactly the
+                # kind of authoritative-looking fiction this domain refuses.
+                "spec_reference": "WHO/WFP/UNICEF/UN-SCN joint statement, 2007",
                 "spec_requirements": [],
                 "course_definition": {
                     "base_units_per_day": "2",

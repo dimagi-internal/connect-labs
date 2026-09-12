@@ -217,3 +217,14 @@ def deliver_stages(deliver):
             f"{deliver['network']['never_reported']} never reported",
         ),
     ]
+
+
+@register.filter
+def humanise(value):
+    """A slug or enum value as words: therapeutic_food -> therapeutic food.
+
+    `|cut:"_"` was doing this and silently produced "therapeuticfood": cut
+    REMOVES the character rather than replacing it. Django has no built-in
+    replace filter, which is why the wrong one was reached for.
+    """
+    return str(value or "").replace("_", " ")
