@@ -100,10 +100,25 @@ class ComparisonView(_Base):
 
     def get_context_data(self, round_id, **kwargs):
         context = super().get_context_data(**kwargs)
+        round_ = self.op("round_get", round_id=round_id)
+        lines = (round_ or {}).get("lines") or []
         commodity = self.request.GET.get("commodity")
-        context["comparison"] = self.op("round_compare", round_id=round_id, commodity_slug=commodity)
+
+        # round_compare's schema requires commodity_slug as a string — nothing
+        # ambiguous is a safe default. But a bookmark, browser-history entry,
+        # or shared link with no ?commodity= at all is a normal way to land
+        # here, and it must not 500. A round with exactly one line has one
+        # sensible default; more than one (or none) means asking, which is
+        # also more useful than an error: it's a worklist of what to compare.
+        if not commodity and len(lines) == 1:
+            commodity = lines[0].get("commodity_slug")
+
+        context["round"] = round_
         context["round_id"] = round_id
         context["commodity_slug"] = commodity
+        context["comparison"] = (
+            self.op("round_compare", round_id=round_id, commodity_slug=commodity) if commodity else None
+        )
         return context
 
     def post(self, request, round_id, *args, **kwargs):
@@ -175,12 +190,41 @@ class QuoteEntryView(_Base):
         return context
 
     def post(self, request, *args, **kwargs):
+        """Record a quote. The person filling this in is transcribing figures
+        out of a supplier email — "52,42" instead of "52.42", a European
+        decimal comma from a francophone supplier — is an ordinary typo, not
+        a reason to lose their work. A schema rejection (or a field that
+        doesn't even coerce to the integer the schema wants) re-renders this
+        same form with what's wrong AND what they typed, rather than 500ing
+        or discarding the entry.
+        """
+        submitted = {key: value for key, value in request.POST.items() if key != "csrfmiddlewaretoken"}
         data = {}
-        for key, value in request.POST.items():
-            if key == "csrfmiddlewaretoken" or value == "":
+        error = None
+        for key, value in submitted.items():
+            if value == "":
                 continue
-            data[key] = int(value) if key in _QUOTE_INT_FIELDS else value
-        created = self.op("quote_record", data=data)
+            if key in _QUOTE_INT_FIELDS:
+                try:
+                    data[key] = int(value)
+                except ValueError:
+                    error = f"'{value}' is not a whole number for {key.replace('_', ' ')}."
+                    break
+            else:
+                data[key] = value
+
+        if error is None:
+            try:
+                created = self.op("quote_record", data=data)
+            except jsonschema.ValidationError as exc:
+                error = exc.message
+
+        if error is not None:
+            context = self.get_context_data(**kwargs)
+            context["quote_error"] = error
+            context["submitted"] = submitted
+            return self.render_to_response(context)
+
         url = reverse("supply_chain:procurement_comparison", args=[created["round_id"]])
         return redirect(f"{url}?commodity={created['commodity_slug']}")
 

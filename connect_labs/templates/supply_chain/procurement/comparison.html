@@ -1,13 +1,30 @@
 {% extends "supply_chain/base.html" %}
 {% load supply_chain_extras %}
 {% block supply_content %}
+{% if not commodity_slug %}
+  <h1>Comparison — round {{ round_id }}{% if round.label %}, {{ round.label }}{% endif %}</h1>
+  <p>Which commodity do you want to compare?</p>
+  <ul>
+    {% for line in round.lines %}
+      <li>
+        <a href="?commodity={{ line.commodity_slug }}">
+          {{ line.commodity_slug }}{% if line.quantity %} — {{ line.quantity }} {{ line.quantity_unit }}{% endif %}
+        </a>
+      </li>
+    {% empty %}
+      <li>This round has no commodity lines yet — there is nothing to compare.</li>
+    {% endfor %}
+  </ul>
+{% else %}
 <h1>Comparison — round {{ round_id }}, {{ commodity_slug }}</h1>
 
 {% if comparison.comparable_count < comparison.total_count %}
   <div class="alert alert-warning">
     <strong>{{ comparison.comparable_count }} of {{ comparison.total_count }}
     comparable.</strong>
-    The ranking below is <em>provisional</em> —
+    The ranking below is
+    <strong style="background-color:#fff3cd;color:#7a5b00;padding:1px 6px;border-radius:3px;">PROVISIONAL</strong>
+    —
     {% for row in comparison.blocked %}{{ row.supplier_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
     {% if comparison.blocked|length == 1 %}has{% else %}have{% endif %}
     not given us enough to compare, and could still beat it.
@@ -88,5 +105,6 @@
       {% endif %}
     {% endfor %}
   {% endfor %}
+{% endif %}
 {% endif %}
 {% endblock %}
