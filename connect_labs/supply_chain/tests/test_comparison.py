@@ -216,3 +216,15 @@ def test_a_figure_missing_on_only_one_row_is_that_suppliers_gap_not_ours(rutf, r
     assert comparison.comparable_count == 1
     assert len(comparison.blocked) == 1
     assert comparison.unavailable == {}, "a per-supplier gap was reported as ours"
+
+
+def test_a_column_nobody_can_compute_is_not_rankable(rutf_without_course, round_2000_cartons):
+    """`rankable` used to be "is anything comparable", so a column no row
+    could compute still claimed to be sortable -- offering a sort that
+    silently does nothing."""
+    comparison = compare_round(round_2000_cartons, rutf_without_course, [quote(supplier_id=1)], suppliers())
+
+    by_key = {c.key: c for c in comparison.columns}
+    assert by_key["landed_total_for_round_quantity"].rankable is True
+    assert by_key["usd_per_course"].rankable is False
+    assert by_key["usd_per_child_treated"].rankable is False

@@ -254,6 +254,7 @@ def compare_round(
     if ranked_by is not None:
         comparable.sort(key=lambda row: row.figures[ranked_by].amount)
 
+    unavailable = _unavailable_figures(comparable + blocked)
     columns: list[ComparisonColumn] = []
     for key in FIGURE_FIELDS:
         # blocked_by names every supplier missing this figure, so the template can
@@ -269,7 +270,10 @@ def compare_round(
             ComparisonColumn(
                 key=key,
                 label=FIGURE_LABELS[key].format(**nouns),
-                rankable=bool(comparable),
+                # A column no row could compute cannot order anything, however
+                # many rows are otherwise comparable. Saying `rankable` of it
+                # would offer a sort that silently does nothing.
+                rankable=bool(comparable) and key not in unavailable,
                 blocked_by=short,
             )
         )
@@ -282,5 +286,5 @@ def compare_round(
         generated_at=datetime.now(UTC).isoformat(),
         ranked_by=ranked_by,
         provisional=bool(blocked),
-        unavailable=_unavailable_figures(comparable + blocked),
+        unavailable=unavailable,
     )

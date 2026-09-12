@@ -87,7 +87,22 @@
               <td class="font-medium text-gray-900">{{ row.supplier_name }}</td>
               {% for column in comparison.columns %}
                 {% with cell=row.figures|dictkey:column.key %}
-                  <td>{{ cell.currency }} {{ cell.amount|floatformat:4 }}</td>
+                  {% if cell.unconfirmed %}
+                    {% comment %}
+                    A comparable row CAN hold an unconfirmed cell now that
+                    comparability no longer waits on figures only we can
+                    supply (see COMPARABILITY_FIELDS). Rendering
+                    {{ cell.amount }} for one produced an empty cell --
+                    which reads as "no cost per course" rather than "we have
+                    not set the ration table", and a blank is the one thing
+                    the whole Unconfirmed type exists to prevent.
+                    {% endcomment %}
+                    <td class="text-gray-400" title="{% for reason in cell.unconfirmed %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}">
+                      Unconfirmed
+                    </td>
+                  {% else %}
+                    <td>{{ cell.currency }} {{ cell.amount|floatformat:4 }}</td>
+                  {% endif %}
                 {% endwith %}
               {% endfor %}
               <td>
