@@ -102,13 +102,13 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
     ),
     (
         "quantity basis",
-        "quantity_basis",
+        "quantity_basis_missing",
         "What quantity does this price cover?",
         SUPPLIER,
     ),
     (
         "round is",
-        "quantity_basis",
+        "quantity_basis_mismatch",
         "Can you quote for {quantity} {quantity_unit} specifically?",
         SUPPLIER,
     ),
@@ -225,6 +225,7 @@ def missing_facts(
     context = _context(commodity, round_)
     facts: list[MissingFact] = []
     seen: set[str] = set()
+    warned: set[str] = set()
 
     figures = compute_figures(quote, commodity, round_, item=item)
     reasons: list[str] = []
@@ -246,8 +247,15 @@ def missing_facts(
             # told. This should be unreachable — test_questions.py's
             # completeness check walks every reason pricing.py can currently
             # produce — so reaching it means a new Unconfirmed() call was
-            # added to pricing.py without a matching row here.
-            logger.warning("questions.missing_facts: unmapped Unconfirmed reason: %r", reason)
+            # added to pricing.py without a matching row here. The same
+            # reason text can appear on several of a quote's six figures at
+            # once (e.g. an unstated pack spec blocks every figure derived
+            # from a per-base-unit price), so dedupe by reason text before
+            # warning — otherwise one real gap becomes a burst of identical
+            # WARNING lines, which is how a real signal gets tuned out.
+            if reason not in warned:
+                warned.add(reason)
+                logger.warning("questions.missing_facts: unmapped Unconfirmed reason: %r", reason)
 
     for result in check_compliance(quote, commodity, item=item):
         if result.outcome == NOT_STATED:
@@ -286,7 +294,14 @@ def initial_request_facts(
     for key, template in (
         ("amount", _QUESTION_BY_KEY["amount"]),
         ("pack_spec", _QUESTION_BY_KEY["pack_spec"]),
-        ("quantity_basis", "Can you quote for {quantity} {quantity_unit}?"),
+        # "quantity_basis_mismatch"'s wording ("Can you quote for {quantity}
+        # {quantity_unit} specifically?") is the one that actually names the
+        # round's target quantity, which is what the initial ask needs to
+        # state up front — reused verbatim rather than authoring a third
+        # wording of the same question. The fact's own key stays the plain
+        # "quantity_basis": nothing has been quoted yet, so neither
+        # "_missing" nor "_mismatch" describes this ask.
+        ("quantity_basis", _QUESTION_BY_KEY["quantity_basis_mismatch"]),
         ("freight_basis", _QUESTION_BY_KEY["freight_basis"]),
         ("duties_basis", _QUESTION_BY_KEY["duties_basis"]),
     ):

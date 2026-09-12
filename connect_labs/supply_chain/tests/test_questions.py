@@ -210,10 +210,17 @@ def test_no_pricing_reason_reaches_the_mapping_unmatched(rutf, rutf_without_cour
     assert unmapped == []
 
 
-def test_an_unmapped_reason_is_logged_rather_than_silently_dropped(monkeypatch, rutf, round_2000_cartons, caplog):
+def test_an_unmapped_reason_is_logged_exactly_once_not_once_per_figure(monkeypatch, rutf, round_2000_cartons, caplog):
     """Proves the warning mechanism itself fires, not just that it stays quiet
     on the known set above — by removing the mapping and checking a reason
-    that would otherwise vanish is at least logged.
+    that would otherwise vanish is logged.
+
+    An unstated pack spec blocks all six of a quote's QuoteFigures fields
+    (usd_per_base_unit, usd_per_pack_normalized, usd_per_course,
+    landed_total_as_quoted, landed_total_for_round_quantity,
+    usd_per_child_treated all carry the identical reason string), so this
+    also pins the fix for the burst-of-identical-WARNINGs bug: one gap must
+    log once, not once per figure it happens to block.
     """
     import connect_labs.supply_chain.procurement.services.questions as questions_module
 
@@ -224,4 +231,20 @@ def test_an_unmapped_reason_is_logged_rather_than_silently_dropped(monkeypatch, 
         facts = missing_facts(q, rutf, round_2000_cartons)
 
     assert facts == []
-    assert any("unmapped Unconfirmed reason" in r.message for r in caplog.records)
+    warnings = [r.message for r in caplog.records if "unmapped Unconfirmed reason" in r.message]
+    assert len(warnings) == 1, warnings
+
+
+def test_no_two_reason_questions_rows_share_a_key():
+    """Guards the defect this module's own docstring says it exists to
+    prevent: _QUESTION_BY_KEY is built as a dict comprehension over
+    _REASON_QUESTIONS, so two rows sharing a key silently collapse to one —
+    last-write-wins — and the first becomes unreachable through that index
+    even though it still fires from the raw tuple iteration in
+    missing_facts. A duplicate key here is exactly "a question string
+    written in two places" one level removed.
+    """
+    from connect_labs.supply_chain.procurement.services.questions import _REASON_QUESTIONS
+
+    keys = [key for _fragment, key, _template, _audience in _REASON_QUESTIONS]
+    assert len(keys) == len(set(keys)), f"duplicate keys in _REASON_QUESTIONS: {keys}"
