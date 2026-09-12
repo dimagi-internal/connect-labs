@@ -12,7 +12,16 @@ user is allowed to see (see labs.context._merge_labs_only_opps). That keeps the
 local view honest — it shows synthetic programmes and nothing else.
 
 Wired only when settings.DEBUG, and it raises Http404 otherwise, so it cannot
-exist in a deployed environment. Precedent: the OES satellite's /oes/dev-login/.
+exist in a deployed environment. Precedent: the OES satellite's
+/oes/dev-login/, which this now matches in the one respect that matters -- it
+signs in a user the seeder already created and REFUSES if there is none,
+rather than creating one.
+
+That distinction is the whole safety argument. An earlier version called
+get_or_create with is_superuser=True, so a single misconfiguration
+(DJANGO_DEBUG=True in a deployed environment) turned one unauthenticated GET
+into a superuser. Signing in an existing local-only user degrades that to
+"signs in a user that does not exist there", which fails closed.
 """
 
 import time
@@ -32,13 +41,11 @@ def dev_login(request):
         raise Http404("dev-login is available only when DEBUG is on")
 
     User = get_user_model()
-    user, _ = User.objects.get_or_create(
-        username=DEV_USERNAME,
-        defaults={"email": "dev@dimagi.com", "is_staff": True, "is_superuser": True},
-    )
-    if not user.view_synthetic_opps:
-        user.view_synthetic_opps = True
-        user.save(update_fields=["view_synthetic_opps"])
+    user = User.objects.filter(username=DEV_USERNAME).first()
+    if user is None:
+        # Deliberately does NOT create one. See the module docstring: creating
+        # a superuser here is a far worse failure mode than refusing to.
+        raise Http404(f'no local user {DEV_USERNAME!r}. Run: make manage CMD="supply_dev_seed"')
 
     # ModelBackend is not the only backend configured, so name it explicitly.
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
