@@ -50,6 +50,20 @@ def merge(*items: Derived) -> Unconfirmed | None:
     return Unconfirmed(reasons=tuple(reasons)) if reasons else None
 
 
+def confirmed(value):
+    """Mark an already-confirmed plain value as fit to pass into merge().
+
+    merge() only ever inspects its arguments for `Unconfirmed`; every other value
+    — an int, a Decimal, a domain value a caller has already checked — is silently
+    treated as confirmed and contributes no reasons. That means this is the
+    identity function at runtime. It exists so a call site can write
+    `merge(rate, confirmed(pack_spec))` and say what it means, instead of a
+    `pack_spec if isinstance(pack_spec, int) else Money(Decimal("0"))` guard whose
+    only job was to hand merge() a throwaway stand-in.
+    """
+    return value
+
+
 def packs_to_base_units(packs: Decimal, base_per_pack: int) -> Decimal:
     if base_per_pack <= 0:
         raise ValueError("base_per_pack must be positive")

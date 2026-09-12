@@ -5,6 +5,7 @@ import pytest
 from connect_labs.supply_chain.values import (
     Money,
     Unconfirmed,
+    confirmed,
     merge,
     metric_tonnes_to_base_units,
     packs_to_base_units,
@@ -41,6 +42,16 @@ def test_merge_combines_reasons_from_every_unconfirmed_input():
 def test_merge_deduplicates_repeated_reasons():
     result = merge(unconfirmed("same"), unconfirmed("same"))
     assert result.reasons == ("same",)
+
+
+def test_confirmed_is_a_pass_through_merge_accepts_directly():
+    # confirmed() exists so a plain domain value can ride into merge() without a
+    # throwaway Money(...) stand-in obscuring the call site's intent.
+    assert confirmed(150) == 150
+    reason = unconfirmed("no quantity basis recorded on the quote")
+    assert confirmed(reason) is reason
+    assert merge(Money(Decimal("1")), confirmed(150)) is None
+    assert merge(Money(Decimal("1")), confirmed(reason)) == reason
 
 
 def test_packs_to_base_units():
