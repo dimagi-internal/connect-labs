@@ -53,16 +53,16 @@ def feed(db):
 
 
 def test_ingestion_requires_bearer_token(feed):
-    resp = feed["client"].post("/supply/api/v1/checkins/", data="{}", content_type="application/json")
+    resp = feed["client"].post("/oes/api/v1/checkins/", data="{}", content_type="application/json")
     assert resp.status_code == 401
 
 
 def test_invalid_and_revoked_tokens_rejected(feed):
-    assert _api(feed["client"], "/supply/api/v1/checkins/", {}, "oes_nope").status_code == 401
+    assert _api(feed["client"], "/oes/api/v1/checkins/", {}, "oes_nope").status_code == 401
 
     token_obj, raw = tokens.mint_token(feed["org"], "temp")
     tokens.revoke_token(feed["org"], token_obj.id)
-    assert _api(feed["client"], "/supply/api/v1/checkins/", {}, raw).status_code == 401
+    assert _api(feed["client"], "/oes/api/v1/checkins/", {}, raw).status_code == 401
 
 
 def test_token_is_stored_hashed_not_in_clear(feed):
@@ -105,7 +105,7 @@ def _asn_payload(feed, asn="ASN-2026-0587", qty=60000):
 
 
 def test_asn_creates_shipment_lines_and_planned_legs(feed):
-    resp = _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    resp = _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
     assert resp.status_code == 201
     body = resp.json()["shipment"]
     assert body["asn_reference"] == "ASN-2026-0587"
@@ -130,8 +130,8 @@ def test_asn_creates_shipment_lines_and_planned_legs(feed):
 
 
 def test_asn_is_idempotent(feed):
-    first = _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
-    second = _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    first = _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    second = _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
     assert first.status_code == 201
     assert second.status_code == 200  # already known, not an error
     assert Shipment.objects.filter(asn_reference="ASN-2026-0587").count() == 1
@@ -140,17 +140,17 @@ def test_asn_is_idempotent(feed):
 def test_asn_rejects_unknown_contract_and_locations(feed):
     bad_contract = _asn_payload(feed)
     bad_contract["contract_reference"] = "OES-C-9999"
-    assert _api(feed["client"], "/supply/api/v1/shipments/", bad_contract, feed["token"]).status_code == 400
+    assert _api(feed["client"], "/oes/api/v1/shipments/", bad_contract, feed["token"]).status_code == 400
 
     bad_gln = _asn_payload(feed, asn="ASN-2")
     bad_gln["ship_to_gln"] = "0000000000000"
-    assert _api(feed["client"], "/supply/api/v1/shipments/", bad_gln, feed["token"]).status_code == 400
+    assert _api(feed["client"], "/oes/api/v1/shipments/", bad_gln, feed["token"]).status_code == 400
 
 
 def test_supplier_cannot_despatch_against_another_orgs_contract(feed):
     rival = f.SupplierOrgFactory(legal_name="Rival Foods")
     _t, rival_token = tokens.mint_token(rival, "rival")
-    resp = _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), rival_token)
+    resp = _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), rival_token)
     assert resp.status_code == 400
     assert Shipment.objects.count() == 0
 
@@ -195,8 +195,8 @@ def _epcis_doc(feed, biz_step="arriving", event_id="evt-1", gln=None, qty=60000)
 
 
 def test_epcis_capture_links_to_shipment_and_stamps_milestone(feed):
-    _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
-    resp = _api(feed["client"], "/supply/api/v1/epcis/capture/", _epcis_doc(feed), feed["token"])
+    _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    resp = _api(feed["client"], "/oes/api/v1/epcis/capture/", _epcis_doc(feed), feed["token"])
     assert resp.status_code == 201
     assert resp.json()["captured"] == 1
 
@@ -212,20 +212,20 @@ def test_epcis_capture_links_to_shipment_and_stamps_milestone(feed):
 
 
 def test_epcis_capture_is_idempotent_on_event_id(feed):
-    _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
     doc = _epcis_doc(feed)
-    first = _api(feed["client"], "/supply/api/v1/epcis/capture/", doc, feed["token"]).json()
-    second = _api(feed["client"], "/supply/api/v1/epcis/capture/", doc, feed["token"]).json()
+    first = _api(feed["client"], "/oes/api/v1/epcis/capture/", doc, feed["token"]).json()
+    second = _api(feed["client"], "/oes/api/v1/epcis/capture/", doc, feed["token"]).json()
     assert first == {"captured": 1, "duplicates": 0, "event_ids": first["event_ids"]}
     assert second["captured"] == 0 and second["duplicates"] == 1
     assert SupplyEvent.objects.filter(source_tier="epcis").count() == 1
 
 
 def test_epcis_receiving_advances_status_to_delivered(feed):
-    _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
     _api(
         feed["client"],
-        "/supply/api/v1/epcis/capture/",
+        "/oes/api/v1/epcis/capture/",
         _epcis_doc(feed, biz_step="receiving", event_id="evt-recv"),
         feed["token"],
     )
@@ -235,17 +235,17 @@ def test_epcis_receiving_advances_status_to_delivered(feed):
 
 
 def test_epcis_shipping_alias_and_cbv_urn_accepted(feed):
-    _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
     doc = _epcis_doc(feed, event_id="evt-urn")
     doc["epcisBody"]["eventList"][0]["bizStep"] = "urn:epcglobal:cbv:bizstep:shipping"
-    assert _api(feed["client"], "/supply/api/v1/epcis/capture/", doc, feed["token"]).status_code == 201
+    assert _api(feed["client"], "/oes/api/v1/epcis/capture/", doc, feed["token"]).status_code == 201
     assert SupplyEvent.objects.filter(biz_step="departing", source_tier="epcis").exists()
 
 
 def test_epcis_rejects_unknown_bizstep_and_empty_document(feed):
     doc = _epcis_doc(feed, biz_step="teleporting", event_id="evt-bad")
-    assert _api(feed["client"], "/supply/api/v1/epcis/capture/", doc, feed["token"]).status_code == 400
-    assert _api(feed["client"], "/supply/api/v1/epcis/capture/", {"type": "x"}, feed["token"]).status_code == 400
+    assert _api(feed["client"], "/oes/api/v1/epcis/capture/", doc, feed["token"]).status_code == 400
+    assert _api(feed["client"], "/oes/api/v1/epcis/capture/", {"type": "x"}, feed["token"]).status_code == 400
 
 
 def test_epcis_transformation_event_records_production(feed):
@@ -270,7 +270,7 @@ def test_epcis_transformation_event_records_production(feed):
             ]
         },
     }
-    assert _api(feed["client"], "/supply/api/v1/epcis/capture/", doc, feed["token"]).status_code == 201
+    assert _api(feed["client"], "/oes/api/v1/epcis/capture/", doc, feed["token"]).status_code == 201
     event = SupplyEvent.objects.get(external_id="evt-make")
     assert event.event_type == SupplyEvent.EventType.TRANSFORMATION
     assert event.read_point == feed["factory"]
@@ -283,11 +283,11 @@ def test_epcis_transformation_event_records_production(feed):
 
 
 def test_checkin_advances_shipment(feed):
-    _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
     shipment = Shipment.objects.get(asn_reference="ASN-2026-0587")
     resp = _api(
         feed["client"],
-        "/supply/api/v1/checkins/",
+        "/oes/api/v1/checkins/",
         {
             "shipment_reference": shipment.reference,
             "status": "arriving",
@@ -304,16 +304,16 @@ def test_checkin_advances_shipment(feed):
 
 
 def test_checkin_is_idempotent_and_scoped_to_org(feed):
-    _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
     shipment = Shipment.objects.get(asn_reference="ASN-2026-0587")
     payload = {"shipment_reference": shipment.reference, "status": "arriving", "checkin_id": "ci-dup"}
-    _api(feed["client"], "/supply/api/v1/checkins/", payload, feed["token"])
-    _api(feed["client"], "/supply/api/v1/checkins/", payload, feed["token"])
+    _api(feed["client"], "/oes/api/v1/checkins/", payload, feed["token"])
+    _api(feed["client"], "/oes/api/v1/checkins/", payload, feed["token"])
     assert SupplyEvent.objects.filter(external_id="ci-dup").count() == 1
 
     rival = f.SupplierOrgFactory(legal_name="Rival Foods")
     _t, rival_token = tokens.mint_token(rival, "rival")
-    assert _api(feed["client"], "/supply/api/v1/checkins/", payload, rival_token).status_code == 400
+    assert _api(feed["client"], "/oes/api/v1/checkins/", payload, rival_token).status_code == 400
 
 
 # ---------------------------------------------------------------------------
@@ -322,10 +322,10 @@ def test_checkin_is_idempotent_and_scoped_to_org(feed):
 
 
 def test_short_receipt_raises_a_discrepancy(feed):
-    _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
     _api(
         feed["client"],
-        "/supply/api/v1/epcis/capture/",
+        "/oes/api/v1/epcis/capture/",
         _epcis_doc(feed, biz_step="receiving", event_id="evt-short", qty=58200),
         feed["token"],
     )
@@ -337,10 +337,10 @@ def test_short_receipt_raises_a_discrepancy(feed):
 
 
 def test_matching_receipt_raises_no_discrepancy(feed):
-    _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
     _api(
         feed["client"],
-        "/supply/api/v1/epcis/capture/",
+        "/oes/api/v1/epcis/capture/",
         _epcis_doc(feed, biz_step="receiving", event_id="evt-ok"),
         feed["token"],
     )
@@ -348,12 +348,12 @@ def test_matching_receipt_raises_no_discrepancy(feed):
 
 
 def test_pull_api_matches_the_event_log(feed):
-    _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
-    _api(feed["client"], "/supply/api/v1/epcis/capture/", _epcis_doc(feed), feed["token"])
+    _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    _api(feed["client"], "/oes/api/v1/epcis/capture/", _epcis_doc(feed), feed["token"])
     shipment = Shipment.objects.get(asn_reference="ASN-2026-0587")
 
     resp = feed["client"].get(
-        f"/supply/api/v1/shipments/{shipment.id}/events/",
+        f"/oes/api/v1/shipments/{shipment.id}/events/",
         HTTP_AUTHORIZATION=f"Bearer {feed['token']}",
     )
     assert resp.status_code == 200
@@ -367,7 +367,7 @@ def test_pull_api_matches_the_event_log(feed):
     assert (
         feed["client"]
         .get(
-            f"/supply/api/v1/shipments/{shipment.id}/events/",
+            f"/oes/api/v1/shipments/{shipment.id}/events/",
             HTTP_AUTHORIZATION=f"Bearer {rival_token}",
         )
         .status_code
@@ -377,10 +377,10 @@ def test_pull_api_matches_the_event_log(feed):
 
 def test_status_never_moves_backwards(feed):
     """Events arrive out of order in the real world; state must be monotonic."""
-    _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
     _api(
         feed["client"],
-        "/supply/api/v1/epcis/capture/",
+        "/oes/api/v1/epcis/capture/",
         _epcis_doc(feed, biz_step="receiving", event_id="evt-r"),
         feed["token"],
     )
@@ -388,7 +388,7 @@ def test_status_never_moves_backwards(feed):
     # a late-arriving departure event must not undo the delivery
     _api(
         feed["client"],
-        "/supply/api/v1/epcis/capture/",
+        "/oes/api/v1/epcis/capture/",
         _epcis_doc(feed, biz_step="departing", event_id="evt-late-dep"),
         feed["token"],
     )
@@ -396,7 +396,7 @@ def test_status_never_moves_backwards(feed):
 
 
 def test_milestone_delta_days_reports_lateness(feed):
-    _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
     shipment = Shipment.objects.get()
     arrive = shipment.milestones.get(kind=Milestone.Kind.ARRIVE)
     arrive.actual_at = arrive.planned_at + timedelta(days=2, hours=12)
@@ -433,14 +433,14 @@ def test_unit_ladder_conversions():
 
 def test_arriving_implies_in_transit(feed):
     """Goods cannot arrive without having left; feeds arrive out of order."""
-    _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    _api(feed["client"], "/oes/api/v1/shipments/", _asn_payload(feed), feed["token"])
     shipment = Shipment.objects.get()
     shipment.status = Shipment.Status.PLANNED
     shipment.save(update_fields=["status"])
 
     _api(
         feed["client"],
-        "/supply/api/v1/epcis/capture/",
+        "/oes/api/v1/epcis/capture/",
         _epcis_doc(feed, biz_step="arriving", event_id="evt-arr-only"),
         feed["token"],
     )
@@ -463,7 +463,7 @@ def test_blank_gln_does_not_bind_an_arbitrary_node(feed):
     payload = _asn_payload(feed, asn="ASN-BLANK")
     payload["ship_from_gln"] = ""
     payload["ship_to_gln"] = ""
-    resp = _api(feed["client"], "/supply/api/v1/shipments/", payload, feed["token"])
+    resp = _api(feed["client"], "/oes/api/v1/shipments/", payload, feed["token"])
     assert resp.status_code == 400
     assert "resolve to known locations" in resp.json()["error"]
     assert not Shipment.objects.filter(asn_reference="ASN-BLANK").exists()
@@ -493,7 +493,7 @@ def test_blank_contract_reference_is_rejected(feed):
     )
     payload = _asn_payload(feed, asn="ASN-NOCONTRACT")
     payload["contract_reference"] = ""
-    resp = _api(feed["client"], "/supply/api/v1/shipments/", payload, feed["token"])
+    resp = _api(feed["client"], "/oes/api/v1/shipments/", payload, feed["token"])
     assert resp.status_code == 400
     assert "contract_reference is required" in resp.json()["error"]
 

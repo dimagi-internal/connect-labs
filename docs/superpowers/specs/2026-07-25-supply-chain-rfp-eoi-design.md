@@ -1,6 +1,11 @@
 # Supply Chain RFP/EOI System — Operation End Starvation
 
 **Status:** SHIPPED — all three phases built, merged and deployed to labs (2026-07-25).
+**Update (2026-09-11):** the app this spec designed now serves `/oes/`, not `/supply/`
+— see the [2026-09-11 procurement design doc](2026-09-11-rutf-procurement-design.md)
+for why `/supply/` was freed for a new, unrelated domain. The package and app label
+below are unchanged and this document's `/supply/` references describe the app as it
+was designed; they are left as written.
 This is a historical design record, not current-state documentation. It captures
 what was decided and why, including the standards and visualisation research the
 design rests on. For how the app actually works today, read

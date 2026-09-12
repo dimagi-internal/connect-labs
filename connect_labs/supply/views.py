@@ -88,7 +88,7 @@ def signup_view(request):
                 )
                 SupplierMember.objects.create(user=user, org=org)
             auth_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-            return redirect("/supply/")
+            return redirect("/oes/")
     else:
         form = SignupForm()
     return render(request, "supply/signup.html", {"form": form})
@@ -102,7 +102,7 @@ def login_view(request):
             user = authenticate(request, username=form.cleaned_data["email"], password=form.cleaned_data["password"])
             if user is not None:
                 auth_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-                return redirect("/supply/")
+                return redirect("/oes/")
             error = "Invalid email or password."
         else:
             error = "Invalid email or password."
@@ -113,13 +113,13 @@ def login_view(request):
 
 def logout_view(request):
     auth_logout(request)
-    return redirect("/supply/login/")
+    return redirect("/oes/login/")
 
 
 def app_view(request):
     """The SPA shell: renders the role-scoped bootstrap payload inline."""
     if resolve_role(request.user) is None:
-        return redirect("/supply/login/")
+        return redirect("/oes/login/")
     from django.conf import settings
 
     from .api.bootstrap import build_bootstrap

@@ -10,7 +10,7 @@ from .api import ingest as ingest_api
 from .api import orgs as orgs_api
 from .api import rfp as rfp_api
 
-app_name = "supply"
+app_name = "oes"
 
 urlpatterns = [
     path("ping/", views.ping, name="ping"),

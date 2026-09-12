@@ -165,7 +165,7 @@ function App() {
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
-    const fresh = await supplyGet('/supply/api/bootstrap/');
+    const fresh = await supplyGet('/oes/api/bootstrap/');
     setWorld(fresh);
     return fresh;
   }, []);
@@ -207,7 +207,7 @@ function App() {
           <span className="user-name">
             {world.org ? world.org.legal_name : world.user.name}
           </span>
-          <form method="post" action="/supply/logout/">
+          <form method="post" action="/oes/logout/">
             <input
               type="hidden"
               name="csrfmiddlewaretoken"

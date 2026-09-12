@@ -1,5 +1,5 @@
 auth:
-  # Off-camera personas. dev-login is a hard 403 outside DEBUG — /supply/ has open
+  # Off-camera personas. dev-login is a hard 403 outside DEBUG — /oes/ has open
   # registration on a public host, so an endpoint that logs a caller in as a
   # procurement admin without a password is only defensible while it refuses in
   # production. So each persona is signed in through the REAL form before
@@ -10,7 +10,7 @@ auth:
   # is deliberately rejected on the deployed site, and a committed spec must not
   # carry a credential either way.
   type: form
-  login_url: /supply/login/
+  login_url: /oes/login/
   fields:
     email: input[name="email"]
     password: input[name="password"]
@@ -35,7 +35,7 @@ scenes:
   concept_claim: The command centre opens on a severity-ranked exception queue rather than a status board,
     so the first thing read is which children go without and by when.
   role: overview
-  url: /supply/
+  url: /oes/
   show: The Command centre tab — the severity-ranked exception queue beside the live corridor map, with
     the key figures above it leading on children at risk rather than consignment count.
   actions:
@@ -52,7 +52,7 @@ scenes:
 - id: three-ways-the-data-arrives-and-the-honest-one
   concept_claim: Every event carries its ingestion tier and hand-keyed data is marked wherever it appears,
     so the picture is honest about being brightest where access is easiest.
-  url: /supply/
+  url: /oes/
   show: The Sudan corridor's contract opened to its delivery schedule, every consignment carrying how it
     is known — EPCIS from a plant, a despatch advice, or a driver's phone check-in — so the picture says
     where it is bright and where it is thin. (The delivery schedule is chosen over the network map because
@@ -83,7 +83,7 @@ scenes:
 - id: late-is-a-measurement-not-an-argument
   concept_claim: Planned, estimated and actual are kept as three separate timestamps per milestone, so
     a delay is a measurement that survives the conversation.
-  url: /supply/
+  url: /oes/
   show: A late consignment opened to its milestone rail — planned, estimated and actual kept as three
     separate timestamps per leg, with the resulting delta.
   actions:
@@ -116,7 +116,7 @@ scenes:
 - id: nobody-can-clear-a-red-row-by-editing-a-field
   concept_claim: Shipment status and milestone actuals are derived from an append-only event log with
     no write path that sets them directly.
-  url: /supply/
+  url: /oes/
   show: The same consignment's event log — append-only, each entry carrying how it reached us, and no
     field anywhere on the page that sets the status directly.
   actions:
@@ -132,7 +132,7 @@ scenes:
 - id: the-caseload-underneath-the-map
   concept_claim: A caseload per district turns delivery from tonnage into coverage, and every figure carries
     the method that produced it.
-  url: /supply/
+  url: /oes/
   show: The Requirement from caseload card — every district with its famine phase, the children needing
     treatment across the response window, the courses actually delivered into it, and coverage. North
     Darfur at IPC 5 sits at 0% with everything still in transit; Borno at 31% with 33,232 children uncovered.
@@ -161,7 +161,7 @@ scenes:
 - id: twelve-thousand-children-by-the-ninth-of-september
   concept_claim: All four exception kinds are ranked in one unit — children who miss a full course — with
     the derivation shown on the expanded row.
-  url: /supply/
+  url: /oes/
   show: The exception queue read properly — every row carrying children who miss a full course, an expanded
     row showing the derivation behind its rank, and the Weeks of cover card below giving the date each
     node runs dry.
@@ -194,7 +194,7 @@ scenes:
 - id: the-signal-came-from-the-ground
   concept_claim: A partner-raised exception is marked as such and names the organisation, distinguishing
     a coordination product from a monitoring one.
-  url: /supply/
+  url: /oes/
   show: The Askira shortfall, marked as raised by Komadugu Health Initiative four days ago, sitting in
     a queue otherwise made of exceptions the system derived for itself.
   actions:
@@ -213,7 +213,7 @@ scenes:
   concept_claim: The partner-raised shortfall is closed by the reallocation made against it, carrying
     the actor and the recorded reason, while the destination's cover deliberately does not move until
     the cartons land.
-  url: /supply/
+  url: /oes/
   show: Ada acts on the same Askira shortfall the previous scene showed being raised. The source list
     offers only nodes genuinely holding surplus, each with what it could spare without dropping below
     its own threshold, and Gombe is offered first because it is in the same country rather than merely

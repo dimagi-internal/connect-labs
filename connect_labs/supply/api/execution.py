@@ -98,7 +98,7 @@ def checkin(request, shipment_id):
 def create_shipment(request):
     """Webform equivalent of the ASN endpoint.
 
-    Identical payload shape to ``POST /supply/api/v1/shipments/`` — a supplier
+    Identical payload shape to ``POST /oes/api/v1/shipments/`` — a supplier
     with no integration keys in the same despatch by hand, and it is recorded
     as portal-tier so the provenance stays honest.
     """

@@ -23,7 +23,7 @@ request:
 
 Labs access therefore requires a **labs OAuth session**, which only the labs
 OAuth flow (`/labs/login/` → `/labs/callback/`) establishes. A satellite's own
-login (e.g. `/supply/login/`, a plain Django password login) never sets
+login (e.g. `/oes/login/`, a plain Django password login) never sets
 `labs_oauth`, so a satellite session is torn down the instant it touches a labs
 path (`/labs/*`, `/microplans/*`, `/funder/*`, `/solicitations/*`, …). The
 boundary is **fail-closed**: any path that isn't explicitly skip-listed is

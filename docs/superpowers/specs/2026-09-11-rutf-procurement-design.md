@@ -126,6 +126,37 @@ fulfilment is opportunity-scoped because visits belong to an opportunity.
 Scope resolves from `request.labs_context` like every other labs app, so no
 programme identifier is hard-coded anywhere.
 
+**Probe status (2026-09-11, Task 1): not yet run.** The scope probe management
+command (`connect_labs.supply_chain.management.commands.supply_scope_probe`) is
+written and imports cleanly, but it needs a real integer organisation id for the
+Connect-RUTF owning organisation and a token with the `export` scope, neither of
+which Task 1 had. It has **not been executed against the real API**, so the
+reference-tier design above is still **unconfirmed**: whether the org identifier
+`request.labs_context` exposes at runtime is an `int` (writes scope correctly) or
+a `slug` (writes land unscoped and become unreadable — `create_record()` drops a
+non-int `organization_id` silently, and unscoped `get_records()` returns only
+`public=True`) is still open. Whoever builds the reference tier (Task 9) must run
+the probe first:
+
+```bash
+make manage CMD="supply_scope_probe --organization-id <int> --token $TOKEN"
+```
+
+and update this section with the result before writing `data_access.py`. If the
+identifier turns out to be a slug, or the org-scoped read comes back empty, do not
+build the reference tier as specced above — fall back to program-scoped reference
+records (`experiment=f"{EXPERIMENT_PREFIX}:reference"`) with copy-on-first-use per
+programme, per the decision gate in the Task 1 brief.
+
+**One thing to expect when this finally runs:** `LabsRecordAPIClient.__init__`
+unconditionally does `int(organization_id)` on whatever is passed to it, so a
+genuine non-numeric slug will raise `ValueError` out of the client constructor
+itself, not surface as the probe's own "not an integer" warning (which only
+catches the parse in the command, before the client is built) or as a silent
+unscoped write. A traceback there is itself the answer to the decision gate —
+it means the identifier cannot be used as `organization_id` at all — but it is
+a crash, not the clean "0 records" signal the probe's docstring implies.
+
 ## 5. Data model
 
 `LabsRecord`s reached through `ProcurementDataAccess`, following

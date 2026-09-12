@@ -143,7 +143,7 @@ function RFPsTab({ ctx }) {
                       onClick={() =>
                         act(
                           () =>
-                            supplyPost(`/supply/api/rfps/${r.id}/transition/`, {
+                            supplyPost(`/oes/api/rfps/${r.id}/transition/`, {
                               status: 'published',
                             }),
                           'Solicitation published to the registry.',
@@ -196,7 +196,7 @@ function NewRFPModal({ ctx, onClose }) {
   const submit = async () => {
     const ok = await ctx.act(
       () =>
-        supplyPost('/supply/api/rfps/', {
+        supplyPost('/oes/api/rfps/', {
           title: form.title,
           brief: form.brief,
           categories: form.categories,

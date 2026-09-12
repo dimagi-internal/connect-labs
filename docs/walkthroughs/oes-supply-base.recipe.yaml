@@ -1,5 +1,5 @@
 auth:
-  # Off-camera personas. dev-login is a hard 403 outside DEBUG — /supply/ has open
+  # Off-camera personas. dev-login is a hard 403 outside DEBUG — /oes/ has open
   # registration on a public host, so an endpoint that logs a caller in as a
   # procurement admin without a password is only defensible while it refuses in
   # production. So each persona is signed in through the REAL form before
@@ -10,7 +10,7 @@ auth:
   # is deliberately rejected on the deployed site, and a committed spec must not
   # carry a credential either way.
   type: form
-  login_url: /supply/login/
+  login_url: /oes/login/
   fields:
     email: input[name="email"]
     password: input[name="password"]
@@ -37,8 +37,8 @@ scenes:
   concept_claim: A standing supplier registry answers 'who can supply RUTF to north-east Nigeria today'
     from one screen, without opening a folder of emailed PDFs.
   role: overview
-  url: /supply/
-  show: Ada's console at /supply/ — registry coverage by category, the applications awaiting review, and
+  url: /oes/
+  show: Ada's console at /oes/ — registry coverage by category, the applications awaiting review, and
     the live solicitations. The question "who is qualified to supply RUTF to north-east Nigeria today"
     is answerable here in one look.
   actions:
@@ -67,7 +67,7 @@ scenes:
 - id: ada-opens-a-round-and-names-the-categories
   concept_claim: Declaring the categories up front makes every application arrive in the same comparable
     shape rather than as free-form attachments.
-  url: /supply/
+  url: /oes/
   show: The EOI rounds tab — Ada creates the round on camera, naming it and ticking the four categories
     (RUTF, therapeutic milk, road transport, warehousing), then opens it, so the round in the table is
     the one the viewer watched her declare.
@@ -131,7 +131,7 @@ scenes:
 - id: amina-applies-and-the-profile-is-frozen
   concept_claim: The profile a supplier is judged on is frozen at submission, so a later edit to their
     live paperwork cannot change what the reviewer assessed.
-  url: /supply/
+  url: /oes/
   show: Amina's side at Savanna Nutrients — she applies to the round on camera, declaring capacity,
     regions and lead time, submits (freezing her profile onto the submission), then renews the UNICEF
     RUTF approval — and the "What the reviewer is assessing" panel shows the frozen column staying put
@@ -238,7 +238,7 @@ scenes:
 - id: tomas-qualifies-the-supplier-per-category-and-with-an-expiry
   concept_claim: A reviewer decides per category and each pass carries an expiry date, so one supplier
     can be qualified for RUTF and declined for therapeutic milk.
-  url: /supply/
+  url: /oes/
   show: 'Tomas''s review queue with Savanna''s submission opened — the frozen snapshot he is assessing,
     and the per-category decision made on camera: qualify on ready-to-use therapeutic food with the date
     that qualification expires, decline on therapeutic milk — one supplier and two different answers.'
@@ -290,7 +290,7 @@ scenes:
 - id: the-registry-answers-who-can-supply-today
   concept_claim: The registry IS the set of live qualifications, so a lapsed certification removes a supplier
     without anyone maintaining a list.
-  url: /supply/
+  url: /oes/
   show: The Supplier registry tab — organisations listed by live qualification, with category, country
     and expiry filters, and the expiring-soon count called out.
   actions:
@@ -344,7 +344,7 @@ scenes:
 - id: a-solicitation-reaches-only-qualified-suppliers
   concept_claim: Eligibility is enforced when the payload is built, so an unqualified supplier never receives
     the solicitation rather than seeing it with a hidden button.
-  url: /supply/
+  url: /oes/
   show: 'Ada publishes the next solicitation on camera — created, given its lot of sixty thousand cartons
     of RUTF into Maiduguri, then published — and the row it lands on states the reach the registry just
     bought her: the suppliers holding a live qualification in a matching category, the one qualified
@@ -467,7 +467,7 @@ scenes:
 - id: bids-priced-and-scored-lot-by-lot
   concept_claim: Pricing per lot surfaces a different leader on each corridor — information a per-tender
     comparison cannot show.
-  url: /supply/
+  url: /oes/
   show: 'The live tender — RUTF Northeast Nigeria Q3 2026 — opened to its per-lot comparison: rows ranked
     by unit price with each reviewer''s technical score inline, and a different leader on the Maiduguri
     lot (Savanna, out of Kano) than on Djibo (Faso NutriWorks, out of Ouagadougou).'
@@ -511,7 +511,7 @@ scenes:
 - id: two-suppliers-two-corridors-one-tender
   concept_claim: One solicitation's lots can be awarded to two different suppliers, so a single plant
     or corridor failing does not take every district down at once.
-  url: /supply/
+  url: /oes/
   show: The same solicitation showing both lots awarded — Maiduguri to one supplier, Djibo to another,
     on purpose.
   actions:
@@ -557,7 +557,7 @@ scenes:
 - id: the-award-becomes-the-contract
   concept_claim: The award is immutable and the contract carries it out against a named appropriation,
     so the same record the tender produced is what the supply chain moves against.
-  url: /supply/
+  url: /oes/
   show: 'The contract the award just made produced — OES-C-2026-NG2, created by that award moments ago,
     carrying the 60,000 cartons at the price Savanna bid, obligated against a named funding envelope with
     its IATI activity identifier. The record the tender produced is the record the supply chain moves

@@ -49,9 +49,9 @@ def test_seed_personas_and_roles(seeded_world):
 
 
 def test_seed_demo_logins_can_sign_in(seeded_world, client):
-    resp = client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
-    assert resp.status_code == 302 and resp.url == "/supply/"
-    assert client.get("/supply/api/bootstrap/").json()["role"] == "procurement_admin"
+    resp = client.post("/oes/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
+    assert resp.status_code == 302 and resp.url == "/oes/"
+    assert client.get("/oes/api/bootstrap/").json()["role"] == "procurement_admin"
 
 
 def test_seed_world_shape(seeded_world):
@@ -99,8 +99,8 @@ def test_seeded_registry_has_expiring_certifications(seeded_world):
 
 
 def test_seeded_supplier_sees_eligible_solicitations(seeded_world, client):
-    client.post("/supply/login/", {"email": "supplier@savanna.example", "password": "oes-demo-2026"})
-    body = client.get("/supply/api/bootstrap/").json()
+    client.post("/oes/login/", {"email": "supplier@savanna.example", "password": "oes-demo-2026"})
+    body = client.get("/oes/api/bootstrap/").json()
     assert body["role"] == "supplier"
     assert body["org"]["legal_name"] == "Savanna Nutrients Ltd"
     assert any(q["category"] == "rutf" for q in body["org"]["qualifications"])

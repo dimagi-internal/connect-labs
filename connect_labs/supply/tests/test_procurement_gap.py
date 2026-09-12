@@ -104,8 +104,8 @@ def test_the_procurement_dashboard_receives_the_gap(seeded_world, client):
     """A gap nobody's dashboard shows is a gap no tender will close."""
     import json as _json
 
-    client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
-    body = _json.loads(client.get("/supply/api/bootstrap/").content)
+    client.post("/oes/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
+    body = _json.loads(client.get("/oes/api/bootstrap/").content)
 
     assert "procurement_gap" in body, "the procurement dashboard payload carries no gap analysis"
     gap = body["procurement_gap"]

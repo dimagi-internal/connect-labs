@@ -14,7 +14,7 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
 
   const loadComparison = useCallback(async () => {
     if (isDraft) return;
-    const body = await supplyGet(`/supply/api/rfps/${rfp.id}/comparison/`);
+    const body = await supplyGet(`/oes/api/rfps/${rfp.id}/comparison/`);
     setComparison(body.lots);
   }, [rfp.id, isDraft]);
 
@@ -24,7 +24,7 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
 
   const award = (lot, lotBid) =>
     ctx.act(async () => {
-      const result = await supplyPost(`/supply/api/lots/${lot.id}/award/`, {
+      const result = await supplyPost(`/oes/api/lots/${lot.id}/award/`, {
         lot_bid_id: lotBid.id,
       });
       await loadComparison();
@@ -297,7 +297,7 @@ function AddLotModal({ ctx, rfp, onClose }) {
   const submit = async () => {
     const ok = await ctx.act(
       () =>
-        supplyPost(`/supply/api/rfps/${rfp.id}/lots/`, {
+        supplyPost(`/oes/api/rfps/${rfp.id}/lots/`, {
           ...form,
           delivery_deadline: form.delivery_deadline || null,
         }),
@@ -407,13 +407,10 @@ function ScoreModal({ ctx, lotBid, onClose, onScored }) {
       return;
     }
     const ok = await ctx.act(async () => {
-      const result = await supplyPost(
-        `/supply/api/lot-bids/${lotBid.id}/score/`,
-        {
-          technical_score: value,
-          notes,
-        },
-      );
+      const result = await supplyPost(`/oes/api/lot-bids/${lotBid.id}/score/`, {
+        technical_score: value,
+        notes,
+      });
       await onScored();
       return result;
     }, 'Technical score recorded.');

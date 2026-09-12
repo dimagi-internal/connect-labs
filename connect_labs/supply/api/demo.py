@@ -78,7 +78,7 @@ def reseed_demo_world(password=None):
 
 @csrf_exempt
 def reseed(request):
-    """POST /supply/api/demo/reseed/ — bearer a labs MCP PAT.
+    """POST /oes/api/demo/reseed/ — bearer a labs MCP PAT.
 
     Returns the seeder's own summary so the caller can assert the world it is
     about to film rather than trusting a 200.
