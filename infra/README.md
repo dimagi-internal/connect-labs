@@ -422,6 +422,24 @@ operations can never touch them. Recorded here for reproducibility:
   receives SIGTERM (#1697) and finishes in-flight requests itself.
   canopy-web's group on the same ALB runs 5s / 2 / 2.
 
+- **Application Auto Scaling on `labs-jj-web`** — min **2**, max **6** tasks,
+  registered 2026-09-11 via `aws application-autoscaling
+register-scalable-target` plus two target-tracking policies:
+  `labs-jj-web-cpu60` (`ECSServiceAverageCPUUtilization`, target 60%) and
+  `labs-jj-web-mem70` (`ECSServiceAverageMemoryUtilization`, target 70%).
+  Why: the tier ran at a fixed `desiredCount=2` (1024 CPU / 4096 MB, three
+  uvicorn workers each), so a burst of expensive requests — 30 MB snapshot
+  streams, another team's ~110s audit calls — queued behind the six workers
+  and surfaced to users as an SSE stream that received no events for minutes.
+  Nothing was wrong with the data; there was simply nowhere to run the work.
+  **Two consequences worth knowing.** Scaling policies move `desiredCount`,
+  which is exactly what the per-task-statistic note above says to re-check —
+  `labs-jj-web-cpu-high` is alarmed on `Maximum` for that reason and stays
+  correct as the count moves, but any statistic added there must be re-read
+  against a variable task count, not against 2. And target tracking scales on
+  the service AVERAGE, so a single pinned task beside idle ones will not
+  trigger it; it answers sustained tier-wide load, not one slow endpoint.
+
 ## Future slices (not yet implemented)
 
 - **RDS `idle_session_timeout` backstop.** A server-side reaper so any future
