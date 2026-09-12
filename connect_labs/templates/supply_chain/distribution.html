@@ -29,7 +29,8 @@
         told by {{ run.source }}{% if not run.witnessed %} (reported, not witnessed){% endif %}
       </span>
     </div>
-    <table class="min-w-full text-sm">
+    <div class="overflow-x-auto">
+    <table class="min-w-[44rem] w-full text-sm">
       <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
         <tr>
           <th class="text-left px-4 py-2">To</th>
@@ -60,6 +61,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 {% empty %}
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-gray-500">

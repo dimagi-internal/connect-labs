@@ -125,7 +125,8 @@ on the Stock page.
     </div>
 
     {% if product.items %}
-      <table class="min-w-full text-sm">
+      <div class="overflow-x-auto">
+      <table class="min-w-[44rem] w-full text-sm">
         <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
           <tr>
             <th class="text-left px-4 py-2">Trade item</th>
@@ -192,6 +193,7 @@ on the Stock page.
           {% endfor %}
         </tbody>
       </table>
+      </div>
     {% else %}
       <p class="px-4 py-4 text-sm text-gray-500">
         No trade items yet. Nothing can be ordered against a product until at
