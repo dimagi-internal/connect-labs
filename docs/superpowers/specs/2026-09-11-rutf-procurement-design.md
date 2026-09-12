@@ -456,6 +456,29 @@ must be kept in step — they are one schema read in different directions. Add a
 to `quote` and the next request asks for it; drop a question and it shows up as a
 systematic `Unconfirmed`.
 
+**Two kinds of missing fact, and both get chased.** A *comparability* fact — price,
+unit, pack spec, quantity basis, freight, duties, exchange rate, unit weight — is one
+`pricing.py` needs before it will yield a number at all. An *acceptance* fact — shelf
+life against the round's minimum, MOQ, lead time, quote validity — does not block the
+arithmetic but decides whether the offer is usable. Confirming shelf life against the
+project timeline is one of the programme's three standing asks, so a supplier who sends
+a price and no shelf life is exactly who needs a follow-up. Both kinds appear in the
+follow-up; neither is dropped merely because it did not happen to block a calculation.
+
+**Some missing facts are ours, not the supplier's.** A `MissingFact` carries an
+`audience`: `supplier` or `internal`. "How many sachets are in a carton" is a question
+for a manufacturer; "nobody has entered the treatment protocol, so cost per course
+cannot be reported" is a question for us. The follow-up renderer sends only the
+supplier-facing ones; the comparison screen shows the internal ones as our own
+outstanding work.
+
+That field exists because the alternative — leaving an internal reason unmapped — means
+a real missing fact nobody is ever told about, which is the same silent failure
+`Unconfirmed` was introduced to abolish. **Every reason maps to a fact**; `audience`
+decides only where it surfaces. It also has a concrete payoff today: the programme has
+not yet supplied its ration table, so the comparison reads "cost per course unavailable:
+nobody has entered the treatment protocol" rather than showing an empty column.
+
 Phase 1 renders text to send from a human mailbox — a supplier who ignores email will
 ignore a portal too, and the credibility is in the sender. SES send and a tokenized
 supplier form attach to the same records later.
