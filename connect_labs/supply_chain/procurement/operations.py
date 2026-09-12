@@ -393,3 +393,42 @@ def award_list(access, round_id=None):
 # three different facts with three different dates, and collapsing them into
 # one row meant the system could not answer "what have we committed but not
 # paid". See fulfilment/operations.py.
+
+
+@register_operation(
+    name="tracker_import",
+    summary=(
+        "Import a procurement due-diligence tracker from a Google Sheet into this programme: "
+        "suppliers with their contacts, the rounds, who was invited, and the quotes.\n\n"
+        "It records what the sheet STATES and refuses what the sheet DERIVES. A cell reading "
+        '"$0.46/sachet (quoted). Carton price not given; ~$69/carton is derived @150/carton, '
+        'unconfirmed" imports the $0.46 -- a supplier said that -- and refuses the $69, because '
+        "importing a hand-derived figure that its own author flagged as unconfirmed would turn "
+        "the caveat into a stored number that looks authoritative and then gets re-derived on "
+        "top of. This system computes that figure itself and says so when it cannot.\n\n"
+        "`refused` in the response is as much the point as `imported`: it is the list of things "
+        "the sheet knows and this system will not guess at. Read it.\n\n"
+        "Idempotent on round labels and supplier names, so it can be re-run as the sheet is "
+        "edited. Requires the Drive service account to have read access to the sheet; the error "
+        "names the address to share it with. Use dry_run first."
+    ),
+    input_schema=obj(
+        {
+            "spreadsheet_id": {"type": "string"},
+            "commodity_slug": {"type": "string"},
+            "ensure_commodity": {"type": "boolean"},
+            "dry_run": {"type": "boolean"},
+        }
+    ),
+    is_write=True,
+)
+def tracker_import(access, spreadsheet_id=None, commodity_slug="rutf", ensure_commodity=False, dry_run=False):
+    from connect_labs.supply_chain.procurement.services import tracker_import as service
+
+    return service.import_tracker(
+        access,
+        spreadsheet_id=spreadsheet_id or service.SPREADSHEET_ID,
+        commodity_slug=commodity_slug,
+        ensure_commodity=ensure_commodity,
+        dry_run=dry_run,
+    )
