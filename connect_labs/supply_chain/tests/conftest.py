@@ -78,7 +78,13 @@ def round_2000_cartons():
             "label": "Round 2",
             "status": "open",
             "lines": [{"commodity_slug": "rutf", "quantity": "2000", "quantity_unit": "carton"}],
-            "delivery_point": {"name": "Central store", "city": "Kano", "country": "NG", "incoterm_requested": "DDP"},
+            "delivery_point": {
+                "name": "Central store",
+                "city": "Kano",
+                "country": "NG",
+                "country_name": "Nigeria",
+                "incoterm_requested": "DDP",
+            },
             "shelf_life_months_minimum": 18,
         },
     )

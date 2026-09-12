@@ -44,3 +44,15 @@ def test_a_followup_does_not_ask_for_a_pack_spec_the_item_already_states(rutf, r
     )
     text = render_followup(q, rutf, round_2000_cartons, supplier(), item=item_144)
     assert "nothing outstanding" in text.lower()
+
+
+def test_a_followup_never_asks_a_supplier_to_enter_our_treatment_protocol(rutf_without_course, round_2000_cartons):
+    """The scenario the audience amendment exists for: missing course_definition
+    is a real gap (test_questions.py's test_a_fact_only_we_can_fix_is_tagged_internal_
+    not_emailed_to_the_supplier pins it as audience="internal"), but it is ours to
+    fix, not the supplier's, and must never reach an email to a manufacturer.
+    """
+    q = quote(shelf_life_months_stated=24)
+    text = render_followup(q, rutf_without_course, round_2000_cartons, supplier())
+    assert "treatment protocol" not in text.lower()
+    assert "nothing outstanding" in text.lower()
