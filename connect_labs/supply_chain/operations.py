@@ -32,6 +32,7 @@ _SERIALIZERS = {
     models.Shipment: serializers.shipment,
     models.Receipt: serializers.receipt,
     models.Invoice: serializers.invoice,
+    models.Payment: serializers.payment,
     models.Document: serializers.document,
     models.SupplyPoint: serializers.supply_point,
     models.Movement: serializers.movement,
@@ -271,7 +272,7 @@ _ITEM_DATA = _data_with(
 # derived without knowing the buyer carries an invisible assumption -- the
 # exact failure this domain exists to refuse. See the design doc, 17.1.
 _CONTRACT_DATA = _data_with(
-    ("commodity_slug", "supplier_id", "buyer_of_record", "buyer_party_id", "source"),
+    (),
     round_id=ID,
     award_id=ID,
     supplier_id=ID,
@@ -300,6 +301,17 @@ _CONTRACT_DATA = _data_with(
     source={"enum": list(records.SOURCES)},
     recorded_by_party_id=ID,
 )
+
+# contract_create builds a row from nothing, so it must name the buyer of
+# record and the supplier up front. contract_update is a partial merge --
+# typically recording the purchase-order reference once the partner supplies
+# it -- and requiring the whole set there would force a caller to re-send
+# values it is not changing, where a wrong resend corrupts the field it never
+# meant to touch.
+_CONTRACT_DATA_CREATE = {
+    **_CONTRACT_DATA,
+    "required": ["commodity_slug", "supplier_id", "buyer_of_record", "buyer_party_id", "source"],
+}
 
 _COMMODITY_DATA = _data_with(
     ("slug",),

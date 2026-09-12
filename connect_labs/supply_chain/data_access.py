@@ -26,6 +26,7 @@ from datetime import date
 from django.db import transaction
 
 from connect_labs.supply_chain import gs1, scopes
+from connect_labs.supply_chain.fulfilment.repository import FulfilmentRepositoryMixin
 from connect_labs.supply_chain.models import (
     Award,
     Commodity,
@@ -52,10 +53,32 @@ logger = logging.getLogger(__name__)
 
 GTIN_FIELDS = ("gtin_base", "gtin_pack", "gtin_case")
 
-# Keys a caller may send that are not columns. `commodity_slug` and the
-# various *_id fields are resolved to relations; the rest are dropped rather
-# than silently persisted somewhere they will never be read from again.
-_RESOLVED = {"commodity_slug", "round_id", "supplier_id", "item_id", "quote_id", "buyer_party_id"}
+# Keys some repository method resolves to a model instance itself, so that a
+# bad id produces an error naming the thing rather than a foreign-key
+# violation naming a column. `_columns` must skip these or they would be set
+# twice, once as an id and once as an object.
+#
+# Anything NOT listed here passes through as a raw id -- which is the point:
+# an earlier version matched only field *names*, so every `*_id` a JSON
+# caller sent was silently discarded. `recorded_by_party_id` is on every
+# provenance-bearing write in the domain, and it was being dropped.
+_RESOLVED = {
+    "commodity_slug",
+    "round_id",
+    "supplier_id",
+    "item_id",
+    "quote_id",
+    "buyer_party_id",
+    "supply_point_id",
+    "parent_supply_point_id",
+    "managed_by_party_id",
+    "from_supply_point_id",
+    "to_supply_point_id",
+    "contract_id",
+    "shipment_id",
+    "receipt_id",
+    "invoice_id",
+}
 
 # Never settable by a caller: the identity and the audit timestamps.
 _NOT_SETTABLE = {"id", "pk", "created_at", "updated_at", "scope_key", "program_id"}
@@ -72,15 +95,29 @@ def _as_int(value):
 
 
 def _columns(model, data: dict) -> dict:
-    """Only the keys that are actual fields on `model`.
+    """The keys of `data` that this model can actually be given.
 
-    A caller that sends an unknown key gets it ignored rather than stored: a
-    typo'd field name used to land in the JSON blob and read back as absent
-    forever, which looked like data loss and was impossible to spot.
+    Two kinds count: a field's name, and a relation's attname -- `award_id`,
+    `recorded_by_party_id`, `delivery_supply_point_id`. The attnames matter
+    because that is how a JSON caller names a relation, and an earlier
+    version matched names only, so every `*_id` sent over the API was
+    silently discarded. `recorded_by_party_id` rides on every
+    provenance-bearing write in the domain, and it was being dropped.
+
+    Anything unrecognised is ignored rather than stored: a typo'd field name
+    that persists reads back as absent forever, which looks like data loss
+    and is nearly impossible to spot.
     """
-    names = {f.name for f in model._meta.get_fields() if hasattr(f, "attname")}
+    settable = set()
+    for field in model._meta.get_fields():
+        if not hasattr(field, "attname"):
+            continue
+        settable.add(field.name)
+        settable.add(field.attname)
     return {
-        key: value for key, value in data.items() if key in names and key not in _RESOLVED and key not in _NOT_SETTABLE
+        key: value
+        for key, value in data.items()
+        if key in settable and key not in _RESOLVED and key not in _NOT_SETTABLE
     }
 
 
@@ -113,7 +150,7 @@ def _copy_of(obj, overrides: dict) -> dict:
     return {**plain, **overrides}
 
 
-class SupplyDataAccess(StockRepositoryMixin):
+class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
     """One object, one scope, every tier.
 
     The tiers are mixins rather than separate access classes so that a client

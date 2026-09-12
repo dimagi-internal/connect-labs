@@ -319,6 +319,19 @@ def invoice(obj) -> dict:
     }
 
 
+def payment(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "invoice_id": obj.invoice_id,
+        "paid_on": _date(obj.paid_on),
+        "amount": _num(obj.amount),
+        "currency": obj.currency,
+        "method": obj.method,
+        "reference": obj.reference,
+        **_sourced(obj),
+    }
+
+
 def document(obj) -> dict:
     return {
         "id": obj.pk,
