@@ -388,10 +388,30 @@ Rules:
    as if they had typed it, and the figure derives from `item.base_per_pack`. What is
    forbidden is the *commodity* assumption about a pack nobody identified — never an
    identified item published one.
+
+   **The same rule governs unit weight**, and for the same reason. A quote priced per
+   metric tonne needs grams-per-base-unit to yield a per-base-unit figure, and that
+   weight may come from the quote or from a confirmed item — never from the commodity
+   catalogue. A 92 g catalogue assumption against a real 100 g sachet is an 8.7% error,
+   the same order as 144 against 150 per carton, and it arrives wearing the same
+   unearned authority. One helper resolves unit weight for every figure, so two numbers
+   in the same result can never disagree about the same gram.
+
+   This was originally written for pack spec alone. The asymmetry was found in review on
+   2026-09-11, after it produced a landed total 8.7% high — reported as a confirmed
+   figure — because two call sites resolved the same gram differently. An invariant that
+   applies to one supplier-specific quantity and not its neighbour is worse than a strict
+   one: nobody can remember which half is in force.
 2. A quote whose `quantity_basis` differs from the round's quantity carries that
    basis, and the comparison will not place its total beside a conforming quote's.
 3. `not_specified` freight or duties — or `excluded` with no amount — makes every
    landed figure `Unconfirmed`.
+
+   Landed totals are computed from the price basis the supplier actually quoted, not by
+   dividing to a per-unit figure and multiplying back up. Over fixed-precision decimal
+   arithmetic that round trip does not reliably cancel: `50.00/150 × 300000` yields
+   `99999.99999…`, not `100000.00`. A price and a quantity already in the same unit
+   multiply exactly, and that is the path taken whenever the two units agree.
 4. A missing `fx_rate_to_usd` on a non-USD quote makes every USD figure
    `Unconfirmed`. Currency is just another confirmable input.
 5. A commodity with no `course_definition` makes per-course and per-child figures
