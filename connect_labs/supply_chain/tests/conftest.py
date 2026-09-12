@@ -85,7 +85,15 @@ def round_2000_cartons():
 
 
 def quote(**overrides):
-    """A fully-specified, comparable per-carton quote; override to break it."""
+    """A fully-specified, comparable per-carton quote; override to break it.
+
+    "Fully specified" covers both classes of fact procurement.services.questions
+    distinguishes: the comparability facts pricing.py needs to derive a number
+    (price, pack spec, quantity basis, freight/duties, FX rate) AND the
+    acceptance facts that decide whether an otherwise-priceable offer is
+    usable (shelf life, MOQ, lead time, quote validity). A quote silent on
+    the latter is exactly the kind that still needs chasing in a follow-up.
+    """
     data = {
         "round_id": 1,
         "supplier_id": 1,
@@ -103,6 +111,11 @@ def quote(**overrides):
         "incoterm": "DDP",
         "fx_rate_to_usd": "1",
         "stated_spec": {},
+        "shelf_life_months_stated": 24,
+        "moq": "500",
+        "moq_unit": "carton",
+        "lead_time_days": 30,
+        "validity_until": "2026-12-31",
     }
     data.update(overrides)
     return wrap(QuoteRecord, data)

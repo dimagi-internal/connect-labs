@@ -10,16 +10,26 @@ normalising the reply cannot drift apart: add a field to the quote record and
 the next request asks for it; drop a question from the request and it shows
 up as a systematic Unconfirmed.
 
-Every question below is product copy addressed to an external supplier — it
-must read as a fact they can actually supply. Some Unconfirmed reasons from
-pricing.py name a fact that is *not* a supplier's to give (the programme's own
-treatment protocol, a round misconfigured with no line for a commodity, an
-invalid as-quoted-unit value someone typed into our own records). Those are
-deliberately left unmapped in `_REASON_QUESTIONS`: an unmatched reason is
-silently dropped rather than turned into a question nobody outside could
-possibly answer. See the note above `_REASON_QUESTIONS` for the full list.
+Two classes of fact are missing, and both matter:
+  - comparability facts — price, unit, pack spec, quantity basis, freight,
+    duties, FX rate, unit weight. Without these `pricing.py` cannot derive a
+    number at all.
+  - acceptance facts — shelf life, MOQ, lead time, quote validity. These
+    block nothing in `pricing.py`, but they decide whether an otherwise
+    fully-priced offer is actually usable, and a supplier silent on them is
+    exactly who needs chasing in a follow-up.
+
+Every fact also has an `audience`: most are questions for the supplier, but
+a few name something only we can fix (our own missing programme data, a
+misconfigured round, a bad enum value in our own record of a quote). Those
+still get named — nothing is ever silently dropped — but tagged
+`audience="internal"` so nothing addressed to us ever gets emailed to a
+supplier by mistake. `render_followup` (services/render.py) filters on
+`audience == "supplier"` before composing the email; the comparison screen
+can show both.
 """
 
+import logging
 from dataclasses import dataclass
 
 from connect_labs.supply_chain.models import CommodityRecord, QuoteRecord, RoundRecord
@@ -27,77 +37,114 @@ from connect_labs.supply_chain.procurement.services.compliance import NOT_STATED
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
 from connect_labs.supply_chain.values import Unconfirmed
 
+logger = logging.getLogger(__name__)
+
+SUPPLIER = "supplier"
+INTERNAL = "internal"
+
 
 @dataclass(frozen=True)
 class MissingFact:
     key: str
     question: str
+    audience: str = SUPPLIER
 
 
-# Maps a fragment of a pricing Unconfirmed reason to the question that
-# resolves it. Ordered: the first matching rule wins, so more specific
-# fragments come before more general ones ("quantity basis" before "round
-# is", both of which can appear in the same reason string).
+# Maps a fragment of a pricing Unconfirmed reason to (key, question, audience).
+# Ordered: the first matching rule wins, so more specific fragments come
+# before more general ones ("quantity basis" before "round is", both of which
+# can appear in the same reason string).
 #
-# Three of pricing.py's Unconfirmed reasons are intentionally NOT mapped here,
-# because none names a fact a supplier could ever supply:
-#   - "no course definition set for ..." — the treatment protocol behind a
-#     per-course cost is programme data, decided internally.
-#   - "this round has no line for ..." — a round misconfiguration, not
-#     something asking the supplier could fix.
-#   - "as-quoted unit ... is not recognised" — an invalid enum value in our
-#     own record of the quote, not a fact the supplier failed to state.
-# Every other Unconfirmed reason pricing.py can produce is matched below;
-# see test_questions.py for the check that pins the case Task 4 added
-# (per-metric-tonne unit weight) so a real gap doesn't silently disappear.
-_REASON_QUESTIONS: tuple[tuple[str, str, str], ...] = (
+# Every Unconfirmed reason pricing.py can produce is matched below — see
+# test_questions.py's completeness check, which walks a set of deliberately
+# broken quotes and asserts every reason they produce matches a fragment
+# here. A reason that named a real gap but matched nothing would silently
+# vanish, which is the exact failure this module exists to prevent — so
+# three of the rows below are `audience="internal"` rather than omitted:
+# the fact they name is real, it just is not the supplier's to give.
+_REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
     (
         "pack spec",
         "pack_spec",
         "How many {base_unit}s are in one {pack_unit}, and what is the weight of each {base_unit}?",
+        SUPPLIER,
     ),
     (
         "unit weight",
         "unit_weight",
         "What is the weight of one {base_unit}, in grams?",
+        SUPPLIER,
     ),
     (
         "freight",
         "freight_basis",
         "Does the price include freight to {destination}? If not, what is the freight charge?",
+        SUPPLIER,
     ),
     (
         "duties",
         "duties_basis",
         "Does the price include import duties and taxes at {destination}? If not, what are they?",
+        SUPPLIER,
     ),
     (
         "exchange rate",
         "fx_rate",
         "Can you confirm the price in USD, or the exchange rate the quote assumes?",
+        SUPPLIER,
+    ),
+    (
+        "course definition",
+        "course_definition",
+        "Enter the treatment protocol for {commodity} ({base_unit}s per day and days per course) "
+        "in the commodity record — a per-course cost cannot be computed until then.",
+        INTERNAL,
     ),
     (
         "quantity basis",
         "quantity_basis",
         "What quantity does this price cover?",
+        SUPPLIER,
     ),
     (
         "round is",
         "quantity_basis",
         "Can you quote for {quantity} {quantity_unit} specifically?",
+        SUPPLIER,
     ),
     (
         "no amount recorded",
         "amount",
         "What is the price per {pack_unit}?",
+        SUPPLIER,
+    ),
+    (
+        "no line for",
+        "round_configuration",
+        "This round has no line for {commodity} — add one before requesting or comparing quotes.",
+        INTERNAL,
+    ),
+    (
+        "as-quoted unit",
+        "as_quoted_unit",
+        "The as-quoted unit recorded on this quote is not one of the recognised bases — " "correct the quote record.",
+        INTERNAL,
     ),
 )
 
-_QUESTION_BY_KEY: dict[str, str] = {key: template for _, key, template in _REASON_QUESTIONS}
+_QUESTION_BY_KEY: dict[str, str] = {key: template for _, key, template, _audience in _REASON_QUESTIONS}
 
-# Facts no derived figure ever blocks on, so pricing/compliance never flag
-# their absence — asked only in the initial request, never re-asked in a
-# missing_facts follow-up.
+# Acceptance facts: nothing in pricing.py or compliance.py ever blocks a
+# figure on these, so they are checked directly against the quote itself
+# rather than discovered as a pricing/compliance side effect. Each fires
+# independently — a quote can state its price and pack spec perfectly and
+# still be missing all four of these.
+_ACCEPTANCE_CHECKS: tuple[tuple[str, str], ...] = (
+    ("shelf_life", "shelf_life_months_stated"),
+    ("lead_time", "lead_time_days"),
+    ("validity", "validity_until"),
+)
+
 _ALWAYS_ASKED: tuple[tuple[str, str], ...] = (
     (
         "shelf_life",
@@ -109,13 +156,7 @@ _ALWAYS_ASKED: tuple[tuple[str, str], ...] = (
     ("validity", "How long is this quotation valid?"),
 )
 
-_OPERATOR_PHRASES = {
-    "<=": "no more than",
-    ">=": "at least",
-    "==": "exactly",
-    "<": "less than",
-    ">": "more than",
-}
+_ALWAYS_ASKED_BY_KEY: dict[str, str] = dict(_ALWAYS_ASKED)
 
 
 def _context(commodity: CommodityRecord, round_: RoundRecord) -> dict:
@@ -133,23 +174,31 @@ def _context(commodity: CommodityRecord, round_: RoundRecord) -> dict:
     }
 
 
-def _fact(key: str, template: str, context: dict) -> MissingFact:
-    return MissingFact(key=key, question=template.format(**context))
+def _fact(key: str, template: str, context: dict, audience: str = SUPPLIER) -> MissingFact:
+    return MissingFact(key=key, question=template.format(**context), audience=audience)
 
 
-def _spec_fact(field: str, requirement: dict) -> MissingFact:
+def _spec_fact(field_name: str, requirement: dict) -> MissingFact:
     """The one question text for an unstated spec requirement.
 
     Shared by missing_facts (a specific quote left it unanswered) and
     initial_request_facts (nobody has answered anything yet) so the wording
     of a spec question is written exactly once, not duplicated between them.
     """
-    phrase = _OPERATOR_PHRASES.get(requirement.get("operator"), requirement.get("operator"))
+    operator_phrases = {
+        "<=": "no more than",
+        ">=": "at least",
+        "==": "exactly",
+        "<": "less than",
+        ">": "more than",
+    }
+    phrase = operator_phrases.get(requirement.get("operator"), requirement.get("operator"))
     amount = f"{requirement.get('value')} {requirement.get('unit') or ''}".strip()
     return MissingFact(
-        key=f"spec:{field}",
+        key=f"spec:{field_name}",
         question=(
-            f"What is the {field.replace('_', ' ')} of the item you would supply? " f"We require {phrase} {amount}."
+            f"What is the {field_name.replace('_', ' ')} of the item you would supply? "
+            f"We require {phrase} {amount}."
         ),
     )
 
@@ -162,10 +211,12 @@ def missing_facts(
 ) -> list[MissingFact]:
     """Every fact still needed before this quote could be compared honestly.
 
-    Derived from exactly two sources — pricing's Unconfirmed reasons (a
-    figure could not be derived) and compliance's not_stated results (a
-    requirement was never addressed) — deduplicated by key so a fact that
-    blocks several figures at once is still named once.
+    Three sources, deduplicated by key so a fact that blocks several figures
+    at once is still named once:
+      - pricing's Unconfirmed reasons — a figure could not be derived;
+      - compliance's not_stated results — a requirement was never addressed;
+      - the acceptance facts (shelf life, MOQ, lead time, validity) checked
+        directly, since no derived figure depends on them.
 
     `item` is threaded through to pricing and compliance rather than
     consulted here: a supplier who confirmed a trade item has already
@@ -183,12 +234,20 @@ def missing_facts(
 
     for reason in reasons:
         lowered = reason.lower()
-        for fragment, key, template in _REASON_QUESTIONS:
+        for fragment, key, template, audience in _REASON_QUESTIONS:
             if fragment in lowered:
                 if key not in seen:
                     seen.add(key)
-                    facts.append(_fact(key, template, context))
+                    facts.append(_fact(key, template, context, audience=audience))
                 break
+        else:
+            # A reason pricing.py can produce that names no fact in the table
+            # above: a real gap that would otherwise vanish with nobody ever
+            # told. This should be unreachable — test_questions.py's
+            # completeness check walks every reason pricing.py can currently
+            # produce — so reaching it means a new Unconfirmed() call was
+            # added to pricing.py without a matching row here.
+            logger.warning("questions.missing_facts: unmapped Unconfirmed reason: %r", reason)
 
     for result in check_compliance(quote, commodity, item=item):
         if result.outcome == NOT_STATED:
@@ -196,6 +255,15 @@ def missing_facts(
             if key not in seen:
                 seen.add(key)
                 facts.append(_spec_fact(result.field, result.requirement))
+
+    for key, attr in _ACCEPTANCE_CHECKS:
+        if key not in seen and getattr(quote, attr) is None:
+            seen.add(key)
+            facts.append(_fact(key, _ALWAYS_ASKED_BY_KEY[key], context))
+
+    if "moq" not in seen and (quote.moq is None or quote.moq_unit is None):
+        seen.add("moq")
+        facts.append(_fact("moq", _ALWAYS_ASKED_BY_KEY["moq"], context))
 
     return facts
 
@@ -208,8 +276,8 @@ def initial_request_facts(
 
     Shares its question text with missing_facts (via _QUESTION_BY_KEY and
     _spec_fact) so the two directions of the same schema cannot drift, and
-    adds the facts (shelf life, MOQ, lead time, validity) that no derived
-    figure ever blocks on — those go out only here, never in a follow-up.
+    always includes the acceptance facts (shelf life, MOQ, lead time,
+    validity) up front.
     """
     context = _context(commodity, round_)
     seen: set[str] = set()
@@ -231,10 +299,10 @@ def initial_request_facts(
             facts.append(_fact(key, template, context))
 
     for requirement in commodity.spec_requirements:
-        field = requirement.get("field")
-        key = f"spec:{field}"
+        req_field = requirement.get("field")
+        key = f"spec:{req_field}"
         if key not in seen:
             seen.add(key)
-            facts.append(_spec_fact(field, requirement))
+            facts.append(_spec_fact(req_field, requirement))
 
     return facts
