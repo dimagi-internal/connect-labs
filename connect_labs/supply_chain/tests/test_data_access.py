@@ -134,6 +134,78 @@ def test_an_item_without_any_gtin_is_fine(da):
 
 def test_the_procurement_client_carries_the_programme(da):
     assert da.program_client.init_kwargs["program_id"] == 7
+    # The `da` fixture never supplies an opportunity_id, so nothing should be
+    # invented here either -- see the dedicated real-vs-synthetic tests below
+    # for the case that actually caught the bug.
+    assert da.program_client.init_kwargs.get("opportunity_id") is None
+
+
+def test_a_real_opportunity_is_never_stamped_onto_the_programme_client(monkeypatch):
+    """LabsRecordAPIClient cannot tell a routing hint from a real scope: once its
+    opportunity_id is set, create_record stamps it onto every payload and
+    get_records sends it on every read. A round written while a REAL opp A was
+    selected would go silently unreadable -- empty list, no error -- the moment
+    opp B in the same programme was selected instead.
+    """
+    made = []
+
+    def fake_client(**kwargs):
+        client = MagicMock()
+        client.init_kwargs = kwargs
+        client.get_records.return_value = []
+        made.append(client)
+        return client
+
+    monkeypatch.setattr("connect_labs.supply_chain.data_access.LabsRecordAPIClient", fake_client)
+    da = SupplyDataAccess(access_token="t", program_id=7, opportunity_id=4821)
+    assert da.program_client.init_kwargs.get("opportunity_id") is None
+
+
+def test_a_labs_only_opportunity_id_is_passed_through_for_routing(monkeypatch):
+    """A synthetic (>= LABS_ONLY_OPP_ID_FLOOR) opportunity id IS the routing hint
+    the parameter exists for: passing it through is what lets
+    LabsRecordAPIClient dispatch to the local backend instead of prod.
+    """
+    from connect_labs.labs.synthetic.models import LABS_ONLY_OPP_ID_FLOOR
+
+    def fake_client(**kwargs):
+        client = MagicMock()
+        client.init_kwargs = kwargs
+        client.get_records.return_value = []
+        return client
+
+    monkeypatch.setattr("connect_labs.supply_chain.data_access.LabsRecordAPIClient", fake_client)
+    da = SupplyDataAccess(
+        access_token="t",
+        program_id=LABS_ONLY_OPP_ID_FLOOR,
+        opportunity_id=LABS_ONLY_OPP_ID_FLOOR,
+    )
+    assert da.program_client.init_kwargs["opportunity_id"] == LABS_ONLY_OPP_ID_FLOOR
+
+
+def test_the_fallback_reference_tier_also_never_carries_a_real_opportunity(monkeypatch):
+    """reference_client IS program_client in the slug/fallback case, so a real
+    opportunity would otherwise get stamped onto commodities/items/suppliers
+    whose own reference_scope field says "program" -- misdescribing the record
+    for the future lift-migration that reference_scope exists to drive.
+    """
+
+    def fake_client(**kwargs):
+        client = MagicMock()
+        client.init_kwargs = kwargs
+        client.get_records.return_value = []
+        return client
+
+    monkeypatch.setattr("connect_labs.supply_chain.data_access.LabsRecordAPIClient", fake_client)
+    da = SupplyDataAccess(
+        access_token="t",
+        organization_id="labs-synthetic-nutrition-demo",
+        program_id=7,
+        opportunity_id=4821,
+    )
+    assert da.reference_scope == "program"
+    assert da.reference_client is da.program_client
+    assert da.reference_client.init_kwargs.get("opportunity_id") is None
 
 
 def test_commodity_lookup_filters_on_a_bare_kwarg_not_a_data_prefix(da):
@@ -227,3 +299,127 @@ def test_the_reference_fallback_never_needs_a_programme_to_read_or_write(da_with
     da_without_program.reference_client.get_records.return_value = []
     da_without_program.upsert_commodity({"slug": "rutf", "name": "RUTF"})
     assert da_without_program.reference_client.create_record.called
+
+
+def test_upserting_a_commodity_returns_the_typed_record_re_read_after_the_write(da):
+    """create_record/update_record return a bare LocalLabsRecord (no model_class
+    param): a caller doing .name on the "typed" return value would raise
+    AttributeError despite the -> CommodityRecord annotation, unless the write
+    is re-read through get_commodity.
+    """
+    from connect_labs.supply_chain.models import CommodityRecord
+    from connect_labs.supply_chain.tests.conftest import wrap
+
+    da.reference_client.get_records.return_value = [
+        wrap(CommodityRecord, {"slug": "rutf", "name": "RUTF"}, record_id=9)
+    ]
+    result = da.upsert_commodity({"slug": "rutf", "name": "RUTF"})
+    assert result.name == "RUTF"
+
+
+def test_upserting_an_item_returns_the_typed_record_re_read_after_the_write(da):
+    from connect_labs.supply_chain.models import ItemRecord
+    from connect_labs.supply_chain.tests.conftest import wrap
+
+    da.reference_client.get_records.return_value = [
+        wrap(ItemRecord, {"sku": "x", "commodity_slug": "rutf"}, record_id=9)
+    ]
+    result = da.upsert_item({"sku": "x", "commodity_slug": "rutf"})
+    assert result.sku == "x"
+
+
+def test_updating_a_supplier_also_stamps_which_tier_wrote_it(da):
+    """create_supplier already stamps reference_scope; update_supplier is the
+    one reference write that didn't -- harmless today, but it breaks the rule
+    the future lift-migration depends on (every reference record says which
+    tier wrote it).
+    """
+    from connect_labs.supply_chain.models import SupplierRecord
+    from connect_labs.supply_chain.tests.conftest import wrap
+
+    existing = wrap(SupplierRecord, {"name": "Northwind Nutrition"}, record_id=3)
+    da.reference_client.get_record_by_id.return_value = existing
+    da.update_supplier(3, {"name": "Northwind Nutrition Ltd"})
+    data = da.reference_client.update_record.call_args.kwargs["data"]
+    assert data["reference_scope"] == "organization"
+
+
+def test_updating_a_round_passes_the_already_fetched_record_to_skip_a_second_get(da):
+    """update_record accepts current_record specifically to avoid re-fetching a
+    record the caller already holds. Every update site here has `existing` in
+    hand, so every one of them should pass it through.
+    """
+    from connect_labs.supply_chain.models import RoundRecord
+    from connect_labs.supply_chain.tests.conftest import wrap
+
+    existing = wrap(RoundRecord, {"label": "Round 1", "status": "draft"}, record_id=1)
+    da.program_client.get_record_by_id.return_value = existing
+    da.update_round(1, {"label": "Round 1 revised"})
+    assert da.program_client.update_record.call_args.kwargs["current_record"] is existing
+
+
+def test_creating_a_quote_for_a_nonexistent_round_is_refused(da):
+    da.program_client.get_record_by_id.return_value = None
+    with pytest.raises(ValueError, match="round"):
+        da.create_quote({"round_id": 999, "commodity_slug": "rutf"})
+    assert not da.program_client.create_record.called
+
+
+def test_creating_a_quote_for_a_nonexistent_commodity_is_refused(da):
+    """The round resolves (the fixture's default get_record_by_id mock is
+    truthy), but the commodity slug doesn't -- get_commodity's own default
+    (get_records returning []) already reads as "not found".
+    """
+    with pytest.raises(ValueError, match="commodity"):
+        da.create_quote({"round_id": 1, "commodity_slug": "does-not-exist"})
+    assert not da.program_client.create_record.called
+
+
+def test_creating_outreach_for_a_nonexistent_round_is_refused(da):
+    da.program_client.get_record_by_id.return_value = None
+    with pytest.raises(ValueError, match="round"):
+        da.create_outreach({"round_id": 999, "supplier_id": 1})
+    assert not da.program_client.create_record.called
+
+
+def test_creating_an_award_for_a_nonexistent_round_is_refused(da):
+    da.program_client.get_record_by_id.return_value = None
+    with pytest.raises(ValueError, match="round"):
+        da.create_award({"round_id": 999, "rationale": "lowest landed cost"})
+    assert not da.program_client.create_record.called
+
+
+def test_creating_a_purchase_for_a_nonexistent_round_is_refused(da):
+    da.program_client.get_record_by_id.return_value = None
+    with pytest.raises(ValueError, match="round"):
+        da.create_purchase({"round_id": 999, "commodity_slug": "rutf"})
+    assert not da.program_client.create_record.called
+
+
+def test_creating_a_purchase_for_a_nonexistent_commodity_is_refused(da):
+    with pytest.raises(ValueError, match="commodity"):
+        da.create_purchase({"round_id": 1, "commodity_slug": "does-not-exist"})
+    assert not da.program_client.create_record.called
+
+
+def test_supersede_quote_logs_and_reraises_if_the_back_link_update_fails(da, caplog):
+    """If the replacement write succeeds but the back-link update on the
+    original fails, both versions currently read as live and the superseded
+    quote silently re-enters comparisons. That has to be loud, not swallowed.
+    """
+    import logging
+
+    from connect_labs.supply_chain.models import QuoteRecord
+    from connect_labs.supply_chain.tests.conftest import wrap
+
+    existing = wrap(QuoteRecord, {"round_id": 1, "version": 1}, record_id=5)
+    da.program_client.get_record_by_id.return_value = existing
+    created = wrap(QuoteRecord, {"version": 2}, record_id=6)
+    da.program_client.create_record.return_value = created
+    da.program_client.update_record.side_effect = RuntimeError("boom")
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(RuntimeError):
+            da.supersede_quote(5, {}, reason="typo fix")
+
+    assert "back-link" in caplog.text

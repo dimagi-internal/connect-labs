@@ -20,6 +20,8 @@ import logging
 from datetime import UTC, datetime
 
 from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
+from connect_labs.labs.models import LocalLabsRecord
+from connect_labs.labs.synthetic.models import LABS_ONLY_OPP_ID_FLOOR
 from connect_labs.supply_chain import gs1, records
 from connect_labs.supply_chain.models import (
     AwardRecord,
@@ -47,6 +49,24 @@ def _as_int(value):
         return None
 
 
+def _routing_opportunity_id(value):
+    """The opportunity_id to hand LabsRecordAPIClient's programme client, or None.
+
+    LabsRecordAPIClient cannot tell a routing hint from a real scope: once its
+    opportunity_id is set, create_record stamps it onto every payload and
+    get_records sends it on every read. A real (below-floor) opportunity_id is
+    NEVER a legitimate scope for a programme-wide procurement tier -- a round
+    written while opp A was selected would go silently unreadable the moment
+    opp B in the same programme was selected instead. Only a labs-only
+    synthetic id (>= LABS_ONLY_OPP_ID_FLOOR) is the routing hint the parameter
+    exists for, so only that value is passed through.
+    """
+    numeric = _as_int(value)
+    if numeric is not None and numeric >= LABS_ONLY_OPP_ID_FLOOR:
+        return numeric
+    return None
+
+
 class SupplyDataAccess:
     def __init__(
         self,
@@ -66,13 +86,17 @@ class SupplyDataAccess:
         self.program_id = program_id
         self.opportunity_id = opportunity_id
 
-        # Procurement tier: programme scope. opportunity_id is passed only so
-        # labs-only routing works for synthetic programmes, where
-        # program_id == opportunity_id.
+        # Procurement tier: programme scope. opportunity_id is passed to the
+        # client ONLY when it is a labs-only synthetic id -- the routing hint
+        # that lets LabsRecordAPIClient dispatch to the local backend instead
+        # of prod. A real opportunity_id is a genuine scope to the client, not
+        # a hint, so passing one through would silently narrow every
+        # round/quote/award/purchase to that one opportunity within the
+        # programme. See _routing_opportunity_id.
         self.program_client = LabsRecordAPIClient(
             access_token=access_token,
             program_id=program_id,
-            opportunity_id=opportunity_id,
+            opportunity_id=_routing_opportunity_id(opportunity_id),
         )
 
         # Reference tier: organisation scope when the identifier is numeric, so a
@@ -137,19 +161,28 @@ class SupplyDataAccess:
         return {**data, "reference_scope": self.reference_scope}
 
     def upsert_commodity(self, data: dict) -> CommodityRecord:
+        """Create or update, and hand back the typed record either way.
+
+        create_record/update_record return a bare LocalLabsRecord (neither
+        takes model_class), which has no typed properties -- so the write
+        itself is re-read through get_commodity rather than returned directly.
+        """
         existing = self.get_commodity(data["slug"])
         if existing:
-            return self.reference_client.update_record(
+            self.reference_client.update_record(
                 record_id=existing.id,
                 experiment=self.reference_experiment,
                 type=records.COMMODITY_TYPE,
                 data={**existing.data, **self._reference_data(data)},
+                current_record=existing,
             )
-        return self.reference_client.create_record(
-            experiment=self.reference_experiment,
-            type=records.COMMODITY_TYPE,
-            data=self._reference_data(data),
-        )
+        else:
+            self.reference_client.create_record(
+                experiment=self.reference_experiment,
+                type=records.COMMODITY_TYPE,
+                data=self._reference_data(data),
+            )
+        return self.get_commodity(data["slug"])
 
     # ---- items: the master item list -----------------------------------
 
@@ -195,17 +228,20 @@ class SupplyDataAccess:
 
         existing = self.get_item_by_sku(data["sku"])
         if existing:
-            return self.reference_client.update_record(
+            self.reference_client.update_record(
                 record_id=existing.id,
                 experiment=self.reference_experiment,
                 type=records.ITEM_TYPE,
                 data={**existing.data, **self._reference_data(data)},
+                current_record=existing,
             )
-        return self.reference_client.create_record(
-            experiment=self.reference_experiment,
-            type=records.ITEM_TYPE,
-            data=self._reference_data(data),
-        )
+        else:
+            self.reference_client.create_record(
+                experiment=self.reference_experiment,
+                type=records.ITEM_TYPE,
+                data=self._reference_data(data),
+            )
+        return self.get_item_by_sku(data["sku"])
 
     def list_suppliers(self, search: str | None = None) -> list[SupplierRecord]:
         found = self.reference_client.get_records(
@@ -231,14 +267,17 @@ class SupplyDataAccess:
             model_class=SupplierRecord,
         )
 
-    def create_supplier(self, data: dict) -> SupplierRecord:
+    def create_supplier(self, data: dict) -> LocalLabsRecord:
+        """Returns the bare write result, honestly: create_record takes no
+        model_class, so this is never actually a typed SupplierRecord."""
         return self.reference_client.create_record(
             experiment=self.reference_experiment,
             type=records.SUPPLIER_TYPE,
             data=self._reference_data(data),
         )
 
-    def update_supplier(self, supplier_id: int, data: dict) -> SupplierRecord:
+    def update_supplier(self, supplier_id: int, data: dict) -> LocalLabsRecord:
+        """Returns the bare write result, honestly -- see create_supplier."""
         existing = self.get_supplier(supplier_id)
         if existing is None:
             raise ValueError(f"supplier {supplier_id} not found")
@@ -246,7 +285,8 @@ class SupplyDataAccess:
             record_id=supplier_id,
             experiment=self.reference_experiment,
             type=records.SUPPLIER_TYPE,
-            data={**existing.data, **data},
+            data={**existing.data, **self._reference_data(data)},
+            current_record=existing,
         )
 
     # ---- procurement tier ----------------------------------------------
@@ -274,13 +314,28 @@ class SupplyDataAccess:
             model_class=model_class,
         )
 
-    def _update(self, record_type, record_id, data):
+    def _update(self, record_type, record_id, data, current_record=None):
         return self.program_client.update_record(
             record_id=record_id,
             experiment=self.program_experiment,
             type=record_type,
             data=data,
+            current_record=current_record,
         )
+
+    def _require_round(self, round_id):
+        """Existence needs a read, so it belongs here, not to a schema validator.
+
+        An orphan quote/outreach/award/purchase pointing at a non-existent
+        round would never appear in any comparison -- it would be invisible,
+        not just wrong.
+        """
+        if self.get_round(round_id) is None:
+            raise ValueError(f"round {round_id} does not exist")
+
+    def _require_commodity(self, commodity_slug):
+        if self.get_commodity(commodity_slug) is None:
+            raise ValueError(f"commodity {commodity_slug!r} does not exist")
 
     def list_rounds(self):
         return self._list(records.ROUND_TYPE, RoundRecord)
@@ -295,7 +350,7 @@ class SupplyDataAccess:
         existing = self.get_round(round_id)
         if existing is None:
             raise ValueError(f"round {round_id} not found")
-        return self._update(records.ROUND_TYPE, round_id, {**existing.data, **data})
+        return self._update(records.ROUND_TYPE, round_id, {**existing.data, **data}, current_record=existing)
 
     def open_round(self, round_id):
         """A round cannot open without a delivery point.
@@ -310,25 +365,28 @@ class SupplyDataAccess:
         point = existing.delivery_point or {}
         if not point.get("city") and not point.get("name"):
             raise ValueError("a round needs a delivery point before it can open")
-        return self._update(records.ROUND_TYPE, round_id, {**existing.data, "status": "open"})
+        return self._update(records.ROUND_TYPE, round_id, {**existing.data, "status": "open"}, current_record=existing)
 
     def close_round(self, round_id):
         existing = self.get_round(round_id)
         if existing is None:
             raise ValueError(f"round {round_id} not found")
-        return self._update(records.ROUND_TYPE, round_id, {**existing.data, "status": "closed"})
+        return self._update(
+            records.ROUND_TYPE, round_id, {**existing.data, "status": "closed"}, current_record=existing
+        )
 
     def list_outreach(self, round_id=None):
         return self._list(records.OUTREACH_TYPE, OutreachRecord, round_id=round_id)
 
     def create_outreach(self, data):
+        self._require_round(data["round_id"])
         return self._create(records.OUTREACH_TYPE, data)
 
     def update_outreach(self, outreach_id, data):
         existing = self._get(records.OUTREACH_TYPE, outreach_id, OutreachRecord)
         if existing is None:
             raise ValueError(f"outreach {outreach_id} not found")
-        return self._update(records.OUTREACH_TYPE, outreach_id, {**existing.data, **data})
+        return self._update(records.OUTREACH_TYPE, outreach_id, {**existing.data, **data}, current_record=existing)
 
     def list_quotes(self, round_id=None):
         return self._list(records.QUOTE_TYPE, QuoteRecord, round_id=round_id)
@@ -337,6 +395,8 @@ class SupplyDataAccess:
         return self._get(records.QUOTE_TYPE, quote_id, QuoteRecord)
 
     def create_quote(self, data):
+        self._require_round(data["round_id"])
+        self._require_commodity(data["commodity_slug"])
         return self._create(records.QUOTE_TYPE, {"version": 1, **data})
 
     def supersede_quote(self, quote_id, data, reason):
@@ -361,11 +421,26 @@ class SupplyDataAccess:
             "superseded_by_quote_id": None,
         }
         created = self._create(records.QUOTE_TYPE, new_data)
-        self._update(
-            records.QUOTE_TYPE,
-            quote_id,
-            {**existing.data, "superseded_by_quote_id": created.id},
-        )
+        try:
+            self._update(
+                records.QUOTE_TYPE,
+                quote_id,
+                {**existing.data, "superseded_by_quote_id": created.id},
+                current_record=existing,
+            )
+        except Exception:
+            # The replacement already exists; if THIS write fails, both
+            # versions read as live and the superseded quote re-enters
+            # comparisons until someone notices and fixes the back-link by
+            # hand. That's worth a loud log, not a swallowed exception.
+            logger.error(
+                "supersede_quote: created replacement quote %s for quote %s but "
+                "failed to back-link the original -- both versions currently "
+                "read as live",
+                created.id,
+                quote_id,
+            )
+            raise
         return created
 
     def void_quote(self, quote_id, reason):
@@ -383,6 +458,7 @@ class SupplyDataAccess:
             records.QUOTE_TYPE,
             quote_id,
             {**existing.data, "voided": True, "void_reason": reason},
+            current_record=existing,
         )
 
     def list_awards(self, round_id=None):
@@ -391,6 +467,7 @@ class SupplyDataAccess:
     def create_award(self, data):
         if not data.get("rationale"):
             raise ValueError("an award needs a rationale")
+        self._require_round(data["round_id"])
         return self._create(
             records.AWARD_TYPE,
             {"decided_on": datetime.now(UTC).isoformat(), **data},
@@ -400,4 +477,6 @@ class SupplyDataAccess:
         return self._list(records.PURCHASE_TYPE, PurchaseRecord)
 
     def create_purchase(self, data):
+        self._require_round(data["round_id"])
+        self._require_commodity(data["commodity_slug"])
         return self._create(records.PURCHASE_TYPE, data)
