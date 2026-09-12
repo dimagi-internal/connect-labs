@@ -1,0 +1,94 @@
+{% extends "supply_chain/base.html" %}
+{% load static i18n %}
+
+{% block supply_content %}
+{% if round %}
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <h1 class="text-xl font-semibold text-gray-900">{{ round.label }}</h1>
+    <p class="text-sm text-gray-600">
+      Status: {{ round.status|title }} — response deadline {{ round.response_deadline|default:"not set" }}
+    </p>
+  </div>
+  <div class="flex gap-2">
+    {% for line in round.lines %}
+    <a href="{% url 'supply_chain:procurement_comparison' round.id %}?commodity={{ line.commodity_slug }}"
+       class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+      Compare {{ line.commodity_slug }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<h2 class="text-lg font-semibold text-gray-900 mb-2">Outreach</h2>
+<div class="bg-white rounded-lg shadow-sm overflow-hidden mb-8">
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sent</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Days waiting</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Responded</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Response kind</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-200">
+      {% for o in outreach %}
+      <tr>
+        <td class="px-4 py-2 text-sm text-gray-900">Supplier #{{ o.supplier_id }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ o.sent_on|default:"—" }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">
+          {{ o.days_waiting|default_if_none:"—" }}
+        </td>
+        <td class="px-4 py-2 text-sm text-gray-600">{% if o.responded %}Yes{% else %}No{% endif %}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ o.response_kind|default:"—" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">No outreach recorded yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="text-lg font-semibold text-gray-900 mb-2">Quotes</h2>
+<div class="bg-white rounded-lg shadow-sm overflow-hidden">
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Commodity</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">As quoted</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pack spec source</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-200">
+      {% for q in quotes %}
+      <tr class="{% if q.voided %}opacity-50{% endif %}">
+        <td class="px-4 py-2 text-sm text-gray-900">Supplier #{{ q.supplier_id }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ q.commodity_slug }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">
+          {{ q.as_quoted_currency }} {{ q.as_quoted_amount }} {{ q.as_quoted_unit }}
+        </td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ q.pack_spec_source|default:"not_stated" }}</td>
+        <td class="px-4 py-2 text-sm">
+          {% if q.voided %}
+            <span class="text-xs text-gray-400">voided</span>
+          {% elif q.superseded_by_quote_id %}
+            <span class="text-xs text-gray-400">superseded</span>
+          {% else %}
+            <a href="{% url 'supply_chain:api_operation' 'followup_render' %}?quote_id={{ q.id }}"
+               class="text-brand-indigo hover:underline">Draft follow-up</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">No quotes recorded yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-gray-500">Round not found.</p>
+{% endif %}
+{% endblock %}

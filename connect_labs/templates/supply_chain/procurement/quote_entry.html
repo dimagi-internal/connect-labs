@@ -1,0 +1,191 @@
+{% extends "supply_chain/base.html" %}
+{% load static i18n %}
+
+{% block supply_content %}
+<h1 class="text-xl font-semibold text-gray-900 mb-2">Record a quote</h1>
+<p class="text-sm text-gray-600 mb-4">
+  Record exactly what the supplier said, in the unit and basis they said it. Leave
+  freight, duties and pack spec as "not specified" / "not stated" when the supplier
+  was silent about them — a guessed input produces a confident wrong answer.
+</p>
+
+<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 max-w-3xl" x-data="quoteEntryForm()">
+  <form method="post" action="{% url 'supply_chain:procurement_quote_entry' %}">
+    {% csrf_token %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_round_id">Round</label>
+        <select id="id_round_id" name="round_id" required
+                class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          {% for round in rounds %}
+          <option value="{{ round.id }}">{{ round.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_supplier_id">Supplier</label>
+        <select id="id_supplier_id" name="supplier_id" required
+                class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          {% for supplier in suppliers %}
+          <option value="{{ supplier.id }}">{{ supplier.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_commodity_slug">Commodity</label>
+        <select id="id_commodity_slug" name="commodity_slug" required
+                class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          {% for commodity in commodities %}
+          <option value="{{ commodity.slug }}">{{ commodity.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_as_quoted_unit">Quoted per</label>
+        <select id="id_as_quoted_unit" name="as_quoted_unit" required
+                class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          <option value="per_base_unit">Base unit (e.g. sachet)</option>
+          <option value="per_pack">Pack (e.g. carton)</option>
+          <option value="per_lot_total">Lot total</option>
+          <option value="per_metric_tonne">Metric tonne</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_as_quoted_amount">As-quoted amount</label>
+        <input type="text" id="id_as_quoted_amount" name="as_quoted_amount" required placeholder="e.g. 52.42"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_as_quoted_currency">Currency</label>
+        <input type="text" id="id_as_quoted_currency" name="as_quoted_currency" value="USD" maxlength="3" required
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_quantity_basis">
+          Quantity the price covers
+        </label>
+        <input type="text" id="id_quantity_basis" name="quantity_basis" required placeholder="e.g. 500"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_lead_time_days">Lead time (days)</label>
+        <input type="number" min="0" id="id_lead_time_days" name="lead_time_days"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+    </div>
+
+    <fieldset class="mb-4 border border-gray-200 rounded-md p-4">
+      <legend class="text-sm font-medium text-gray-700 px-1">Pack specification</legend>
+      <p class="text-xs text-gray-500 mb-3">
+        Where the sachets-per-carton figure came from. Leaving this as "not stated" is
+        the honest reading of a quote that never said — do not guess.
+      </p>
+      <div class="flex flex-col gap-2 mb-3">
+        <label class="flex items-center gap-2 text-sm">
+          <input type="radio" name="pack_spec_source" value="not_stated" x-model="packSpecSource" checked>
+          Not stated
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <input type="radio" name="pack_spec_source" value="stated_on_quote" x-model="packSpecSource">
+          Stated on the quote
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <input type="radio" name="pack_spec_source" value="trade_item_confirmed" x-model="packSpecSource">
+          Supplier named a known trade item
+        </label>
+      </div>
+
+      <div x-show="packSpecSource === 'stated_on_quote'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1" for="id_base_per_pack_stated">
+            Base units per pack
+          </label>
+          <input type="number" min="0" id="id_base_per_pack_stated" name="base_per_pack_stated"
+                 class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1" for="id_base_unit_grams_stated">
+            Base unit weight (g)
+          </label>
+          <input type="number" min="0" id="id_base_unit_grams_stated" name="base_unit_grams_stated"
+                 class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+        </div>
+      </div>
+
+      <div x-show="packSpecSource === 'trade_item_confirmed'">
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_item_id">Trade item</label>
+        <select id="id_item_id" name="item_id" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          <option value="">Select the item the supplier named…</option>
+          {% for item in items %}
+          <option value="{{ item.id }}">{{ item.name }} ({{ item.sku }})</option>
+          {% endfor %}
+        </select>
+      </div>
+    </fieldset>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_freight_basis">Freight</label>
+        <select id="id_freight_basis" name="freight_basis"
+                class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          <option value="not_specified" selected>Not specified</option>
+          <option value="included">Included</option>
+          <option value="excluded">Excluded</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_freight_amount">
+          Freight amount (if excluded)
+        </label>
+        <input type="text" id="id_freight_amount" name="freight_amount"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_duties_basis">Duties</label>
+        <select id="id_duties_basis" name="duties_basis"
+                class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          <option value="not_specified" selected>Not specified</option>
+          <option value="included">Included</option>
+          <option value="excluded">Excluded</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_duties_amount">
+          Duties amount (if excluded)
+        </label>
+        <input type="text" id="id_duties_amount" name="duties_amount"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_fx_rate_to_usd">
+          FX rate to USD (if not USD)
+        </label>
+        <input type="text" id="id_fx_rate_to_usd" name="fx_rate_to_usd"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="id_shelf_life_months_stated">
+          Shelf life (months)
+        </label>
+        <input type="number" min="0" id="id_shelf_life_months_stated" name="shelf_life_months_stated"
+               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+      </div>
+    </div>
+
+    <div class="flex justify-end">
+      <button type="submit" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+        Record quote
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+<script>
+  function quoteEntryForm() {
+    return { packSpecSource: 'not_stated' };
+  }
+</script>
+{% endblock %}

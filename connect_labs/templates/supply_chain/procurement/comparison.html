@@ -1,0 +1,83 @@
+{% extends "supply_chain/base.html" %}
+{% load supply_chain_extras %}
+{% block supply_content %}
+<h1>Comparison — round {{ round_id }}, {{ commodity_slug }}</h1>
+
+{% if comparison.comparable_count < comparison.total_count %}
+  <div class="alert alert-warning">
+    <strong>{{ comparison.comparable_count }} of {{ comparison.total_count }}
+    comparable.</strong>
+    The ranking below is <em>provisional</em> —
+    {% for row in comparison.blocked %}{{ row.supplier_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+    {% if comparison.blocked|length == 1 %}has{% else %}have{% endif %}
+    not given us enough to compare, and could still beat it.
+  </div>
+{% endif %}
+
+{% if comparison.comparable %}
+  <h2>Comparable</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>#</th><th>Supplier</th>
+        {% for column in comparison.columns %}<th>{{ column.label }}</th>{% endfor %}
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in comparison.comparable %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>{{ row.supplier_name }}</td>
+          {% for column in comparison.columns %}
+            {% with cell=row.figures|dictkey:column.key %}
+              <td>{{ cell.currency }} {{ cell.amount|floatformat:4 }}</td>
+            {% endwith %}
+          {% endfor %}
+          <td>
+            <form method="post" action="{% url 'supply_chain:api_operation' 'award_create' %}">
+              {% csrf_token %}
+              <button class="btn btn-sm btn-primary" name="quote_id" value="{{ row.quote_id }}">
+                Award
+              </button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="text-muted">Nothing is comparable yet. Every quote is missing something —
+  the questions below are the whole job right now.</p>
+{% endif %}
+
+{% if comparison.blocked %}
+  <h2>Needs info — {{ comparison.blocked|length }} supplier{{ comparison.blocked|pluralize }}</h2>
+  {% for row in comparison.blocked %}
+    <h3>{{ row.supplier_name }}</h3>
+    <ol>{% for q in row.questions %}<li>{{ q.question }}</li>{% endfor %}</ol>
+    {% for column in comparison.columns %}
+      {% with cell=row.figures|dictkey:column.key %}
+        {% if cell.unconfirmed %}
+          <p class="text-muted small">
+            <strong>{{ column.label }}:</strong>
+            {% for reason in cell.unconfirmed %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}
+          </p>
+        {% endif %}
+      {% endwith %}
+    {% endfor %}
+    <a class="btn btn-sm btn-outline-primary"
+       href="{% url 'supply_chain:api_operation' 'followup_render' %}?quote_id={{ row.quote_id }}">
+      Draft follow-up
+    </a>
+    {% for c in row.compliance %}
+      {% if c.claim_conflict %}
+        <p class="text-danger small">
+          {{ c.field }}: the item specification and this supplier's claim disagree —
+          {{ c.message }}
+        </p>
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+{% endif %}
+{% endblock %}

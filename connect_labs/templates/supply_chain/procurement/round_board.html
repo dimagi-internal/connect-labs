@@ -1,0 +1,47 @@
+{% extends "supply_chain/base.html" %}
+{% load static i18n %}
+
+{% block supply_content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-semibold text-gray-900">Quote rounds</h1>
+  <a href="{% url 'supply_chain:procurement_quote_entry' %}"
+     class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+    <i class="fa-solid fa-plus mr-1"></i> Record a quote
+  </a>
+</div>
+<div class="bg-white rounded-lg shadow-sm overflow-hidden">
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Round</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Response deadline</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lines</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-200">
+      {% for round in rounds %}
+      <tr>
+        <td class="px-4 py-2 text-sm font-medium text-gray-900">{{ round.label }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ round.status|title }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ round.response_deadline|default:"not set" }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">
+          {% for line in round.lines %}{{ line.commodity_slug }}{% if not forloop.last %}, {% endif %}{% endfor %}
+        </td>
+        <td class="px-4 py-2 text-sm whitespace-nowrap">
+          <a href="{% url 'supply_chain:procurement_round_detail' round.id %}"
+             class="text-brand-indigo hover:underline mr-3">Detail</a>
+          {% for line in round.lines %}
+            <a href="{% url 'supply_chain:procurement_comparison' round.id %}?commodity={{ line.commodity_slug }}"
+               class="text-brand-indigo hover:underline mr-3">Compare {{ line.commodity_slug }}</a>
+          {% endfor %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">No rounds yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

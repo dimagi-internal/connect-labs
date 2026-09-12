@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% load static i18n %}
+
+{% comment %}
+Domain shell for /supply/. Every supply_chain page extends this, not
+'base.html' directly, so the sub-component nav is always present.
+
+This declares 'content' (the same block name tasks/ uses against root
+base.html) and immediately re-opens it as 'supply_content' for pages to
+fill. A page template cannot re-declare 'content' itself — Django's block
+resolution would let it replace this whole block, nav included, rather than
+slot into it.
+{% endcomment %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-6">
+  <div class="flex gap-4 items-center p-4 profile-bg bg-brand-indigo rounded-2xl mb-6">
+    <div class="flex flex-col justify-center text-white">
+      <h1 class="text-2xl font-bold mb-1">Supply</h1>
+      <p class="text-sm opacity-90">
+        Source commodities, compare quotes on one basis, and track what reaches whom.
+      </p>
+    </div>
+  </div>
+
+  <nav class="flex flex-wrap gap-2 mb-6 text-sm">
+    <a href="{% url 'supply_chain:home' %}"
+       class="px-3 py-1.5 rounded-md bg-white border border-gray-300 hover:bg-gray-50 text-gray-700">Home</a>
+    <a href="{% url 'supply_chain:items' %}"
+       class="px-3 py-1.5 rounded-md bg-white border border-gray-300 hover:bg-gray-50 text-gray-700">Item master</a>
+    <a href="{% url 'supply_chain:procurement_round_board' %}"
+       class="px-3 py-1.5 rounded-md bg-white border border-gray-300 hover:bg-gray-50 text-gray-700">Procurement</a>
+    <a href="{% url 'supply_chain:procurement_registries' %}"
+       class="px-3 py-1.5 rounded-md bg-white border border-gray-300 hover:bg-gray-50 text-gray-700">Registries</a>
+    <a href="{% url 'supply_chain:procurement_quote_entry' %}"
+       class="px-3 py-1.5 rounded-md bg-white border border-gray-300 hover:bg-gray-50 text-gray-700">Record a quote</a>
+  </nav>
+
+  {% block supply_content %}{% endblock %}
+</div>
+{% endblock %}
