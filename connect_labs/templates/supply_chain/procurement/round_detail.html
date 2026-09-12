@@ -76,9 +76,6 @@
             <span class="text-xs text-gray-400">voided</span>
           {% elif q.superseded_by_quote_id %}
             <span class="text-xs text-gray-400">superseded</span>
-          {% else %}
-            <a href="{% url 'supply_chain:procurement_followup_draft' %}?quote_id={{ q.id }}"
-               class="text-brand-indigo hover:underline">Draft follow-up</a>
           {% endif %}
         </td>
       </tr>

@@ -13,10 +13,6 @@ questions -- and those must be just as visible as a Blocked row's.
       <ul class="list-disc list-inside text-sm text-gray-700 space-y-0.5">
         {% for q in supplier_questions %}<li>{{ q.question }}</li>{% endfor %}
       </ul>
-      <a class="inline-block mt-1 text-sm text-brand-indigo hover:underline"
-         href="{% url 'supply_chain:procurement_followup_draft' %}?quote_id={{ row.quote_id }}">
-        Draft follow-up
-      </a>
     </div>
   {% endif %}
   {% if internal_questions %}
