@@ -49,6 +49,27 @@ def unconfirmed(*reasons: str) -> Unconfirmed:
     return Unconfirmed(reasons=tuple(reasons))
 
 
+def decimal_string(value) -> str:
+    """A Decimal written for the wire, without the storage scale showing.
+
+    The single source for how a number is spelled in JSON, because there are
+    two producers -- `to_wire` for derived figures and `serializers` for
+    stored columns -- and a quantity that reads "288" from one and "288.0000"
+    from the other is the same value described two ways. A consumer comparing
+    them is then wrong for a reason it cannot see.
+
+    Always a string, never a float: a float is how a monetary amount silently
+    loses the precision the input schemas refuse to accept in the first place.
+    """
+    if not isinstance(value, Decimal):
+        return str(value)
+    trimmed = value.normalize()
+    if trimmed == trimmed.to_integral_value():
+        # normalize() renders whole numbers in exponent form (2E+2).
+        trimmed = trimmed.quantize(Decimal("1"))
+    return str(trimmed)
+
+
 def to_wire(value: Derived | DerivedQuantity) -> dict:
     """The one JSON wire shape for a derived figure.
 
@@ -60,9 +81,9 @@ def to_wire(value: Derived | DerivedQuantity) -> dict:
     apart on what a figure looks like on the wire.
     """
     if isinstance(value, Money):
-        return {"amount": str(value.amount), "currency": value.currency}
+        return {"amount": decimal_string(value.amount), "currency": value.currency}
     if isinstance(value, Quantity):
-        return {"amount": str(value.amount), "unit": value.unit}
+        return {"amount": decimal_string(value.amount), "unit": value.unit}
     return {"unconfirmed": list(value.reasons)}
 
 
