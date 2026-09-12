@@ -154,6 +154,47 @@ def test_quote_entry_post_preserves_entered_values_on_error(client, sophie):
     assert 'value="rutf"' in body and "selected" in body
 
 
+def test_a_quoted_submitted_value_cannot_break_out_of_the_x_data_js_context(client, sophie):
+    """The previously-submitted pack_spec_source used to be interpolated
+    straight into an `x-data="quoteEntryForm('...')"` JS-string literal.
+    Django HTML-escapes `'` to `&#x27;`, but the browser HTML-decodes an
+    attribute value BEFORE Alpine evaluates x-data as JavaScript — so a
+    submitted value containing a quote could break out of that string and
+    inject arbitrary JS. Regression guard: the value must never again be
+    interpolated into any JS expression at all, only carried in a data-*
+    attribute (HTML-escaped, decoded back to an inert string by .dataset,
+    never re-parsed as code).
+    """
+    payload = "not_stated');alert(document.cookie);//"
+
+    def _dispatch(name, access, payload_):
+        if name == "quote_record":
+            return real_call_operation(name, access, payload_)
+        return []
+
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch):
+        response = client.post(
+            reverse("supply_chain:procurement_quote_entry"),
+            {"as_quoted_amount": "52,42", "pack_spec_source": payload},
+        )
+    assert response.status_code == 200
+    body = response.content.decode()
+
+    # The raw, unescaped payload must never appear verbatim anywhere in the
+    # page — if it does, something HTML-escaped-but-JS-unsafe (or unescaped
+    # entirely) let it through.
+    assert payload not in body
+
+    # x-data must carry zero interpolation — no call arguments at all — so
+    # there is no JS-string context for a submitted value to land in, ever.
+    assert 'x-data="quoteEntryForm()"' in body
+
+    # The value only ever reaches the page via a data-* attribute, which is
+    # HTML-escaped (single quote becomes &#x27;) and read back as an inert
+    # string through $el.dataset — never evaluated as JavaScript.
+    assert 'data-pack-spec-source="not_stated&#x27;);alert(document.cookie);//"' in body
+
+
 def test_comparison_without_a_commodity_shows_a_chooser_instead_of_500ing(client, sophie):
     """A bookmark, browser-history entry, or shared link with no ?commodity=
     is a normal way to land here — it must not crash the schema-required

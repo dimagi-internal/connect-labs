@@ -17,7 +17,9 @@
 {% endif %}
 
 <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 max-w-3xl"
-     x-data="quoteEntryForm('{{ submitted|dictkey:'pack_spec_source'|default_if_none:'not_stated' }}')">
+     data-pack-spec-source="{{ submitted|dictkey:'pack_spec_source'|default_if_none:'not_stated' }}"
+     x-data="quoteEntryForm()"
+     x-init="packSpecSource = $el.dataset.packSpecSource">
   <form method="post" action="{% url 'supply_chain:procurement_quote_entry' %}">
     {% csrf_token %}
 
@@ -232,8 +234,15 @@
 
 {% block inline_javascript %}
 <script>
-  function quoteEntryForm(initialPackSpecSource) {
-    return { packSpecSource: initialPackSpecSource || 'not_stated' };
+  // Any previously-submitted pack_spec_source arrives via the element's own
+  // data-pack-spec-source attribute (x-init above), never interpolated into
+  // this function call — a value templated straight into an x-data JS
+  // expression is HTML-decoded by the browser before Alpine evaluates it,
+  // so a submitted string containing a quote would break out of the string
+  // literal. A data-* attribute is HTML-escaped, not JS-escaped, and is read
+  // back as an inert string via .dataset, never re-parsed as JavaScript.
+  function quoteEntryForm() {
+    return { packSpecSource: 'not_stated' };
   }
 </script>
 {% endblock %}
