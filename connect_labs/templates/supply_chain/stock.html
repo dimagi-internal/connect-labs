@@ -1,0 +1,135 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+Both figures, always: the ledger balance and what somebody reported. They
+disagree routinely and the disagreement is the finding, so a screen showing
+one of them would destroy the only signal it had.
+{% endcomment %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+    <p class="text-sm text-amber-900">Stock is programme-scoped.</p>
+  </div>
+{% else %}
+
+<div class="flex items-baseline gap-3 mb-1">
+  <h2 class="text-lg font-semibold text-brand-indigo">Stock across the network</h2>
+  <span class="text-sm text-gray-500">
+    {{ network.summary.points }} supply points ·
+    {{ network.summary.never_reported }} have never reported
+  </span>
+</div>
+<p class="text-xs text-gray-500 mb-4">
+  Cover is measured against each point's own minimum and maximum months of
+  stock, so "below its band" means below what this programme set. Goods in
+  transit are excluded: they are real, but they are not cover.
+</p>
+
+{% if items|length > 1 %}
+  <div class="flex items-center gap-2 mb-4 text-sm">
+    <span class="text-gray-500">Trade item</span>
+    <a href="?" class="px-2 py-1 rounded border {% if not item_id %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700{% endif %}">All</a>
+    {% for item in items %}
+      <a href="?item_id={{ item.id }}"
+         class="px-2 py-1 rounded border {% if item_id == item.id %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700{% endif %}">{{ item.name }}</a>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+      <tr>
+        <th class="text-left px-4 py-2">Supply point</th>
+        <th class="text-left px-4 py-2">Ledger says</th>
+        <th class="text-left px-4 py-2">Reported</th>
+        <th class="text-left px-4 py-2">Consumption / month</th>
+        <th class="text-left px-4 py-2">Months of stock</th>
+        <th class="text-left px-4 py-2">Send</th>
+        <th class="text-left px-4 py-2">Against its band</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for point in network.points %}
+        <tr>
+          <td class="px-4 py-2.5">
+            <div class="font-medium text-gray-900">{{ point.name }}</div>
+            <div class="text-xs text-gray-500">
+              {{ point.kind }}{% if point.admin_area %} · {{ point.admin_area }}{% endif %}
+            </div>
+          </td>
+          <td class="px-4 py-2.5 tabular-nums">
+            {{ point.on_hand|figure_text }}
+            {% for reason in point.on_hand|unconfirmed_reasons %}
+              <div class="text-xs text-orange-700 mt-0.5">{{ reason }}</div>
+            {% endfor %}
+          </td>
+          <td class="px-4 py-2.5 tabular-nums">
+            {% if point.reported %}
+              {{ point.reported|figure_text }}
+              <div class="text-xs text-gray-500">{{ point.reported_kind }} · {{ point.reported_on }}</div>
+            {% else %}
+              <span class="text-gray-400">never</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2.5 tabular-nums text-gray-600">{{ point.amc|derived_text }}</td>
+          <td class="px-4 py-2.5 tabular-nums text-gray-600">
+            {{ point.months_of_stock|derived_text }}
+            {% for reason in point.months_of_stock|unconfirmed_reasons %}
+              <div class="text-xs text-gray-500 mt-0.5">{{ reason }}</div>
+            {% endfor %}
+            {% if point.min_months_of_stock %}
+              <span class="text-xs text-gray-400">
+                (min {{ point.min_months_of_stock }} / max {{ point.max_months_of_stock }})
+              </span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2.5 tabular-nums text-gray-600">
+            {{ point.resupply_quantity|derived_text }}
+            {% for reason in point.resupply_quantity|unconfirmed_reasons %}
+              <div class="text-xs text-orange-700 mt-0.5">{{ reason }}</div>
+            {% endfor %}
+          </td>
+          <td class="px-4 py-2.5">
+            {% if point.status == "ok" %}
+              <span class="text-xs font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">within</span>
+            {% elif point.status == "below_min" %}
+              <span class="text-xs font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">below min</span>
+            {% elif point.status == "stockout" %}
+              <span class="text-xs font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">none left</span>
+            {% elif point.status == "negative" %}
+              <span class="text-xs font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">negative</span>
+              <div class="text-xs text-red-700 mt-0.5">more left here than ever arrived</div>
+            {% elif point.status == "overstocked" %}
+              <span class="text-xs font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">over max</span>
+            {% else %}
+              {% comment %}
+              `unknown` covers more than one cause -- too little consumption
+              history, a balance that cannot be computed, a negative balance.
+              Naming one of them here would be a guess; the reason is already
+              spelled out in the columns to the left.
+              {% endcomment %}
+              <span class="text-xs text-gray-400">cannot be assessed</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">
+          No supply points yet. Stock needs somewhere to be.
+        </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="text-xs text-gray-500 mt-3">
+  Consumption is derived from Connect visits, not keyed by a clerk — the field
+  record is the consumption record. A worker's reported figure is kept beside
+  the ledger rather than overwriting it; moving the ledger takes a deliberate
+  override with a reason.
+</p>
+{% endif %}
+{% endblock %}

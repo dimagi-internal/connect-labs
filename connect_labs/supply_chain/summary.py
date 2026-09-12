@@ -32,6 +32,7 @@ from connect_labs.supply_chain.models import (
 )
 from connect_labs.supply_chain.procurement.services.comparison import compare_round
 from connect_labs.supply_chain.stock.services import ledger, network, resupply
+from connect_labs.supply_chain.values import unconfirmed
 
 
 def _source(access, commodity=None):
@@ -122,7 +123,20 @@ def _order(access, commodity=None):
     }
 
 
-def _deliver(access, commodity=None, item=None, opportunity_id=None):
+def _network_total(movements, points, item, disagreement):
+    """The network's own balance, or the reason it is not one number.
+
+    When two trade items under a commodity are packed differently, a total
+    spanning both is not a quantity anyone can act on -- and saying "no pack
+    specification" would be wrong, because each item states one. The reason
+    names the actual problem: they disagree.
+    """
+    if disagreement is not None:
+        return disagreement
+    return ledger.collapse(_network_balance(movements, points), item, None)
+
+
+def _deliver(access, commodity=None, item=None, opportunity_id=None, disagreement=None):
     program_id = access.program_id
     points = SupplyPoint.objects.filter(program_id=program_id, status="active")
     if opportunity_id is not None:
@@ -143,11 +157,7 @@ def _deliver(access, commodity=None, item=None, opportunity_id=None):
     if commodity is not None:
         # A unit is only knowable once a commodity is named, so the
         # quantities appear only then rather than as a meaningless total.
-        on_hand = ledger.collapse(
-            {unit: amount for unit, amount in _network_balance(movements, points).items()},
-            item,
-            None,
-        )
+        on_hand = _network_total(movements, points, item, disagreement)
         in_transit = ledger.in_transit(program_id, item=item)
         consumed = ledger.collapse(movements.consumption_by_unit(), item, None)
 
@@ -199,14 +209,32 @@ def chain_summary(access, *, commodity_slug=None, opportunity_id=None) -> dict:
         raise ValueError(f"commodity {commodity_slug!r} does not exist")
 
     items = [i for i in access.list_items() if commodity and i.commodity_id == commodity.pk]
-    # Only meaningful with exactly one trade item: with two that disagree on
-    # pack configuration there is no single conversion, and the ledger says so.
+    # Only meaningful with exactly one trade item: with two that are packed
+    # differently there is no single conversion, so a network total spanning
+    # both is not a quantity. The reason names the disagreement rather than
+    # claiming nobody stated a pack size -- each item did.
     item = items[0] if len(items) == 1 else None
+    disagreement = None
+    packs = {i.base_per_pack for i in items if i.base_per_pack}
+    if len(packs) > 1:
+        described = " and ".join(
+            f"{i.name} is {i.base_per_pack} to the {i.pack_unit or 'pack'}" for i in items if i.base_per_pack
+        )
+        disagreement = unconfirmed(
+            f"{described} — a network total spanning both is not one quantity. "
+            "Choose a trade item on the Stock page."
+        )
 
     return {
         "commodity_slug": commodity_slug,
         "opportunity_id": opportunity_id,
         "source": _source(access, commodity=commodity),
         "order": _order(access, commodity=commodity),
-        "deliver": _deliver(access, commodity=commodity, item=item, opportunity_id=opportunity_id),
+        "deliver": _deliver(
+            access,
+            commodity=commodity,
+            item=item,
+            opportunity_id=opportunity_id,
+            disagreement=disagreement,
+        ),
     }

@@ -14,7 +14,7 @@ the same reason and over the same missing fact.
 
 from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Q, Sum
 
 from connect_labs.supply_chain import records
 from connect_labs.supply_chain.models import DistributionLine, Movement, ShipmentLine
@@ -110,6 +110,31 @@ def collapse(by_unit: dict, item, unit: str | None):
     if reasons:
         return unconfirmed(*dict.fromkeys(reasons))
     return Quantity(total, unit)
+
+
+def sole_item(program_id, supply_point):
+    """The one trade item this point has ever held, or None if not exactly one.
+
+    The single place this resolution happens. A balance spanning packs and
+    base units IS convertible when the point holds one item that states its
+    pack size, and genuinely is not when it holds several -- and callers that
+    forgot to work that out reported "cannot be computed" for points whose
+    stock was perfectly computable. That went wrong in three separate places
+    (the network view, the resupply plan, the ledger-versus-count variance)
+    before it was worth a function.
+    """
+    from connect_labs.supply_chain.models import Item
+
+    item_ids = set(
+        Movement.objects.for_program(program_id)
+        .filter(Q(to_supply_point=supply_point) | Q(from_supply_point=supply_point))
+        .exclude(item__isnull=True)
+        .values_list("item_id", flat=True)
+        .distinct()
+    )
+    if len(item_ids) != 1:
+        return None
+    return Item.objects.filter(pk=item_ids.pop()).select_related("commodity").first()
 
 
 def _scope(program_id, opportunity_id=None, on_date=None):

@@ -82,8 +82,21 @@ def get_operation(name: str) -> Operation:
 
 
 def call_operation(name: str, access, payload: dict | None = None) -> Any:
+    """Validate a payload against its operation's schema, then dispatch.
+
+    Top-level keys whose value is None are dropped before validation: a
+    caller that names a parameter with no value has not supplied it, and a
+    view or a script that computes `commodity_slug = request.GET.get(...)`
+    and passes it through should not have to strip its own Nones. The
+    alternative -- widening every optional parameter's schema to accept
+    null -- weakens the contract an agent reads, to say the same thing.
+
+    Only the top level. A None INSIDE a `data` payload is meaningful: it is
+    how a nullable field gets cleared, and data_access._columns already
+    distinguishes that from an omitted key.
+    """
     operation = get_operation(name)
-    payload = payload or {}
+    payload = {key: value for key, value in (payload or {}).items() if value is not None}
     jsonschema.validate(payload, operation.input_schema)
     return operation.handler(access, **payload)
 
@@ -124,6 +137,12 @@ def obj(properties: dict, required: tuple[str, ...] = ()) -> dict:
 
 
 ID = {"type": "integer"}
+
+# For a relation where DETACHING is a real operation, not just a thing you
+# forgot to set. Sending null clears it; omitting the key leaves it alone
+# (data_access._columns makes that distinction). Used sparingly: a nullable
+# column is not by itself a reason to let a caller null it.
+NULLABLE_ID = {"type": ["integer", "null"]}
 
 
 # A record's `data` is deliberately open — LabsRecords carry whatever a domain needs, and
@@ -294,7 +313,7 @@ _CONTRACT_DATA = _data_with(
     vat_basis={"enum": list(records.BASIS)},
     vat_amount=MONEY,
     duty_relief_claimed={"type": "boolean"},
-    duty_relief_document_id=ID,
+    duty_relief_document_id=NULLABLE_ID,
     incoterm={"type": "string"},
     delivery_supply_point_id=ID,
     promised_lead_time_days=_NON_NEGATIVE_INT,

@@ -1,0 +1,233 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+The two derivations that decide whether to pay: landed cost under each buyer
+of record, and ordered-against-received-against-invoiced. Both are computed on
+every render; neither is stored, so recording a receipt changes them and no
+figure here can go stale.
+{% endcomment %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+  </div>
+{% else %}
+
+<div class="mb-4">
+  <div class="text-xs text-gray-500">
+    <a class="hover:underline" href="{% url 'supply_chain:orders' %}">Orders</a> ›
+    {{ contract.reference|default:"no reference" }}
+  </div>
+  <h2 class="text-lg font-semibold text-brand-indigo">
+    {{ suppliers|dictkey:contract.supplier_id|dictkey:"name" }} ·
+    {{ contract.quantity }} {{ contract.quantity_unit }}
+  </h2>
+  <p class="text-sm text-gray-600">
+    Bought by
+    <b>{{ parties|dictkey:contract.buyer_party_id|dictkey:"name"|default:contract.buyer_of_record }}</b>
+    as <span class="text-gray-500">{{ contract.buyer_of_record }}</span>
+    {% if contract.incoterm %} · {{ contract.incoterm }}{% endif %}
+    {% if contract.status %} · {{ contract.status }}{% endif %}
+  </p>
+</div>
+
+<div class="grid gap-3 md:grid-cols-2">
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-100">
+      <span class="text-xs font-bold uppercase tracking-wide text-gray-500">Landed cost</span>
+      <span class="text-xs text-gray-400 ml-2">assuming {{ landed.buyer_of_record }} imports</span>
+    </div>
+    <table class="min-w-full text-sm">
+      <tbody class="divide-y divide-gray-100">
+        <tr><td class="px-4 py-2 text-gray-600">Goods</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ landed.goods|figure_text }}</td></tr>
+        <tr><td class="px-4 py-2 text-gray-600">Freight</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ landed.freight|figure_text }}</td></tr>
+        <tr><td class="px-4 py-2 text-gray-600">Import duty</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ landed.duty|figure_text }}</td></tr>
+        <tr><td class="px-4 py-2 text-gray-600">VAT</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ landed.vat|figure_text }}</td></tr>
+        <tr class="bg-gray-50">
+          <td class="px-4 py-2 font-semibold text-brand-indigo">Landed total</td>
+          <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">
+            {{ landed.landed_total|figure_text }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    {% for reason in landed.landed_total|unconfirmed_reasons %}
+      <div class="px-4 py-2 text-xs text-orange-800 bg-orange-50 border-t border-orange-100">{{ reason }}</div>
+    {% endfor %}
+    <div class="px-4 py-2.5 border-t border-gray-100">
+      <div class="text-xs font-bold uppercase tracking-wide text-gray-500 mb-1">The same order, per buyer</div>
+      <table class="min-w-full text-sm">
+        <tbody class="divide-y divide-gray-100">
+          {% for buyer, cell in landed.by_buyer.items %}
+            <tr>
+              <td class="py-1 text-gray-600">
+                {{ buyer }}{% if buyer == landed.buyer_of_record %}
+                  <span class="text-xs text-brand-indigo">chosen</span>{% endif %}
+              </td>
+              <td class="py-1 text-right tabular-nums">{{ cell|figure_text }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="text-xs text-gray-500 mt-2">
+        Duty and VAT fall on whoever imports, so this is the same goods at the
+        same price costing three different amounts.
+        {% if contract.duty_relief_claimed and not contract.duty_relief_evidenced %}
+          A relief is claimed here with no exemption document attached, which is
+          why the figure above is unconfirmed rather than a bargain.
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-100">
+      <span class="text-xs font-bold uppercase tracking-wide text-gray-500">Ordered · received · invoiced</span>
+      <span class="text-xs text-gray-400 ml-2">{{ match.status }}</span>
+    </div>
+    <table class="min-w-full text-sm">
+      <tbody class="divide-y divide-gray-100">
+        <tr><td class="px-4 py-2 text-gray-600">Ordered</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ match.ordered|figure_text }}</td></tr>
+        <tr><td class="px-4 py-2 text-gray-600">Received</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ match.received|figure_text }}</td></tr>
+        <tr><td class="px-4 py-2 text-gray-600">Invoiced</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ match.invoiced|figure_text }}</td></tr>
+        <tr><td class="px-4 py-2 text-gray-600">Still outstanding</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ match.outstanding|figure_text }}</td></tr>
+        {% if match.over_invoiced %}
+          <tr class="bg-red-50">
+            <td class="px-4 py-2 text-red-800">Billed beyond what arrived</td>
+            <td class="px-4 py-2 text-right tabular-nums text-red-800">{{ match.over_invoiced|figure_text }}</td>
+          </tr>
+        {% endif %}
+        <tr><td class="px-4 py-2 text-gray-600">Billed</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ match.billed_amount|figure_text }}</td></tr>
+        <tr><td class="px-4 py-2 text-gray-600">Paid</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ match.paid_amount|figure_text }}</td></tr>
+        <tr class="bg-gray-50">
+          <td class="px-4 py-2 font-semibold text-brand-indigo">Safe to pay now</td>
+          <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">
+            {{ match.payable_now|figure_text }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
+      The value of what actually arrived, less what has been paid — never the
+      value of what was billed.
+    </p>
+  </div>
+</div>
+
+<h3 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mt-6 mb-2">Shipments</h3>
+<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+      <tr>
+        <th class="text-left px-4 py-2">Reference</th>
+        <th class="text-left px-4 py-2">Status</th>
+        <th class="text-left px-4 py-2">Batch</th>
+        <th class="text-left px-4 py-2">Best before</th>
+        <th class="text-left px-4 py-2">Quantity</th>
+        <th class="text-left px-4 py-2">Certificate</th>
+        <th class="text-left px-4 py-2">Told by</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for shipment in shipments %}
+        {% for line in shipment.lines %}
+          <tr>
+            <td class="px-4 py-2 font-medium text-gray-900">{{ shipment.reference|default:shipment.id }}</td>
+            <td class="px-4 py-2">
+              {{ shipment.status }}
+              {% if shipment.is_in_transit %}
+                <div class="text-xs text-amber-800">in transit — not counted as stock</div>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ line.expiry|default:"—" }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ line.quantity }} {{ line.quantity_unit }}</td>
+            <td class="px-4 py-2">
+              {% if shipment.document_ids %}
+                <span class="text-xs text-teal-700">on file</span>
+              {% else %}
+                <span class="text-xs text-amber-800">none</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2 text-xs text-gray-500">{{ shipment.source }}</td>
+          </tr>
+        {% endfor %}
+      {% empty %}
+        <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">Nothing dispatched yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h3 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mt-6 mb-2">Received</h3>
+<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+      <tr>
+        <th class="text-left px-4 py-2">Note</th>
+        <th class="text-left px-4 py-2">Date</th>
+        <th class="text-left px-4 py-2">Batch</th>
+        <th class="text-left px-4 py-2">Accepted</th>
+        <th class="text-left px-4 py-2">Refused</th>
+        <th class="text-left px-4 py-2">Told by</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for receipt in receipts %}
+        {% for line in receipt.lines %}
+          <tr>
+            <td class="px-4 py-2 font-medium text-gray-900">{{ receipt.reference|default:receipt.id }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ receipt.received_on }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ line.quantity_accepted }} {{ line.quantity_unit }}</td>
+            <td class="px-4 py-2 tabular-nums">
+              {{ line.quantity_rejected }}
+              {% if line.rejection_reason %}
+                <div class="text-xs text-gray-500">{{ line.rejection_reason }}</div>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2 text-xs text-gray-500">{{ receipt.source }}</td>
+          </tr>
+        {% endfor %}
+      {% empty %}
+        <tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">Nothing received yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h3 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mt-6 mb-2">Evidence</h3>
+<div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+  {% if documents %}
+    <ul class="text-sm divide-y divide-gray-100">
+      {% for document in documents %}
+        <li class="py-1.5 flex items-baseline gap-2">
+          <span class="text-gray-900">{{ document.title|default:document.kind }}</span>
+          <span class="text-xs text-gray-500">{{ document.kind }}</span>
+          <span class="text-xs text-gray-400 ml-auto">
+            {% if document.is_stored %}stored{% else %}linked{% endif %} · {{ document.source }}
+          </span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-sm text-gray-500">
+      Nothing attached. Two figures on this page depend on a document existing:
+      the duty relief, and each batch's conformity.
+    </p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

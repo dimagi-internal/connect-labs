@@ -98,7 +98,18 @@ def network_stock(
 
     balances = _balances(program_id, points, item=item, on_date=on_date)
     counts = _latest_counts(program_id, points, item=item)
-    items_by_id = {i.pk: i for i in Item.objects.filter(scope_key__isnull=False)} if item is None else {}
+    # One fetch for every item any of these points has held, so resolving a
+    # point's sole item costs no extra query per point.
+    items_by_id = (
+        {}
+        if item is not None
+        else {
+            i.pk: i
+            for i in Item.objects.filter(pk__in={pk for _, held in balances.values() for pk in held}).select_related(
+                "commodity"
+            )
+        }
+    )
 
     rows = []
     for point in points:
@@ -109,6 +120,7 @@ def network_stock(
         for_conversion = item
         if for_conversion is None and len(item_ids) == 1:
             for_conversion = items_by_id.get(next(iter(item_ids)))
+
         # Report the whole column in one unit where the item states a pack
         # size: a table mixing cartons and sachets row by row is not
         # comparable by eye, which is the only thing a network view is for.

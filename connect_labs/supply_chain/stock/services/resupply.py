@@ -19,7 +19,7 @@ from decimal import Decimal
 
 from connect_labs.supply_chain.models import Movement
 from connect_labs.supply_chain.stock.services import ledger
-from connect_labs.supply_chain.values import Quantity, Unconfirmed, unconfirmed
+from connect_labs.supply_chain.values import Quantity, Unconfirmed, decimal_string, unconfirmed
 
 DAYS_PER_MONTH = Decimal("30")
 MINIMUM_WINDOW_DAYS = 30
@@ -118,6 +118,18 @@ def plan(program_id, supply_point, item=None, as_of=None, window_days=DEFAULT_WI
 
     if isinstance(on_hand, Unconfirmed):
         return blocked_on(on_hand)
+    if on_hand.amount < 0:
+        # More has left this point than ever arrived, so cover and a resupply
+        # quantity are both meaningless: sending stock does not fix a
+        # movement nobody recorded, and a number here would invite exactly
+        # that. Refuse, and name what to do first.
+        return blocked_on(
+            unconfirmed(
+                f"{decimal_string(on_hand.amount)} {on_hand.unit} is a negative balance -- more has "
+                "left here than ever arrived. Find the unrecorded movement before planning a "
+                "resupply; sending more stock would not fix it."
+            )
+        )
     if isinstance(amc, Unconfirmed):
         return blocked_on(amc)
 
