@@ -218,3 +218,39 @@ def test_purchase_record_rejects_data_missing_round_id_or_commodity_slug():
         with pytest.raises(Exception):
             call_operation("purchase_record", access, {"data": data})
     assert not access.create_purchase.called
+
+
+# --- Regression (final review, item A): required on _QUOTE_DATA/_OUTREACH_DATA
+# must not land on the schemas SHARED with quote_correct/outreach_update --
+# both are partial updates (data_access merges {**existing.data, **data}), so
+# round_id/commodity_slug already live on the existing record. Forcing a
+# caller to resupply them on a correction is not just friction: a wrong
+# resupplied value merges straight into the record. quote_record/outreach_log
+# alone use the *_CREATE variant that carries the requirement.
+
+
+def test_quote_correct_succeeds_with_a_partial_payload_naming_only_the_fix():
+    """A correction to a transcribed amount must not need round_id/
+    commodity_slug re-supplied -- those already live on the existing quote."""
+    access = MagicMock()
+    access.supersede_quote.return_value = MagicMock(id=2)
+    call_operation(
+        "quote_correct",
+        access,
+        {"quote_id": 1, "data": {"as_quoted_amount": "52.42"}, "reason": "transcription error"},
+    )
+    assert access.supersede_quote.called
+
+
+def test_outreach_update_succeeds_with_a_partial_payload_naming_only_the_response():
+    """outreach_update's own summary is 'typically to record that a supplier
+    responded, and how' -- exactly a responded/response_kind-only payload,
+    naming neither round_id nor supplier_id."""
+    access = MagicMock()
+    access.update_outreach.return_value = MagicMock(id=1)
+    call_operation(
+        "outreach_update",
+        access,
+        {"outreach_id": 1, "data": {"responded": True, "response_kind": "quote"}},
+    )
+    assert access.update_outreach.called

@@ -196,11 +196,16 @@ class QuoteEntryView(_Base):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
         context["commodities"] = self.op("commodity_list")
         context["suppliers"] = self.op("supplier_list")
-        context["rounds"] = self.op("round_list")
         # For the pack_spec_source=trade_item_confirmed picker.
         context["items"] = self.op("item_list")
+        # round_list is programme-scoped; the round board's "Record a quote"
+        # button is only shown once a programme is selected (finding 3's
+        # fix), but this route must stay safe however it is reached --
+        # a bookmark, a direct URL, or a raw POST.
+        context["rounds"] = self.op("round_list") if context["has_program_context"] else []
         return context
 
     def post(self, request, *args, **kwargs):
@@ -212,6 +217,9 @@ class QuoteEntryView(_Base):
         same form with what's wrong AND what they typed, rather than 500ing
         or discarding the entry.
         """
+        if not has_program_context(request):
+            return self.render_to_response(self.get_context_data(**kwargs))
+
         submitted = {key: value for key, value in request.POST.items() if key != "csrfmiddlewaretoken"}
         data = {}
         error = None

@@ -5,8 +5,10 @@ Handlers take a SupplyDataAccess first and return JSON-serialisable dicts.
 
 from connect_labs.supply_chain.operations import (
     _OUTREACH_DATA,
+    _OUTREACH_DATA_CREATE,
     _PURCHASE_DATA,
     _QUOTE_DATA,
+    _QUOTE_DATA_CREATE,
     _ROUND_DATA,
     ID,
     figure,
@@ -133,7 +135,7 @@ def outreach_list(access, round_id=None):
 @register_operation(
     name="outreach_log",
     summary="Record that a quote request was sent to a supplier on a round.",
-    input_schema=obj({"data": _OUTREACH_DATA}, required=("data",)),
+    input_schema=obj({"data": _OUTREACH_DATA_CREATE}, required=("data",)),
     is_write=True,
 )
 def outreach_log(access, data):
@@ -212,7 +214,7 @@ def quote_get(access, quote_id):
         "figures are derived, "
         "and a guessed input produces a confident wrong answer."
     ),
-    input_schema=obj({"data": _QUOTE_DATA}, required=("data",)),
+    input_schema=obj({"data": _QUOTE_DATA_CREATE}, required=("data",)),
     is_write=True,
 )
 def quote_record(access, data):

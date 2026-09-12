@@ -82,6 +82,42 @@ def test_the_round_board_does_not_500_with_no_programme_selected(client, sophie)
     assert "No programme selected" in response.content.decode()
 
 
+def test_the_round_board_does_not_offer_record_a_quote_with_no_programme_selected(client, sophie):
+    """Final review, item C: the board's own button (distinct from the
+    persistent site nav's copy of the same link, which is out of this
+    finding's scope) rendered ABOVE the has_program_context guard, so the
+    no-programme board still put a one-click path to QuoteEntryView, which
+    raised the same finding-3 ValueError. Marked by its icon, since the nav
+    link (base.html) has the same text and href on every supply_chain page
+    regardless of context."""
+    response = client.get(reverse("supply_chain:procurement_round_board"))
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert "fa-plus mr-1" not in body
+
+
+def test_quote_entry_get_does_not_500_with_no_programme_selected(client, sophie):
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=[]):
+        response = client.get(reverse("supply_chain:procurement_quote_entry"))
+    assert response.status_code == 200
+    assert "No programme selected" in response.content.decode()
+
+
+def test_quote_entry_post_does_not_500_with_no_programme_selected(client, sophie):
+    """The route must stay safe however it is reached -- a bookmark, a
+    direct URL, or a raw POST -- not just the board's now-hidden button."""
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=[]) as mock_call:
+        response = client.post(
+            reverse("supply_chain:procurement_quote_entry"),
+            {"as_quoted_amount": "52.42", "as_quoted_unit": "per_pack", "round_id": "1"},
+        )
+    assert response.status_code == 200
+    assert "No programme selected" in response.content.decode()
+    # No attempt was made to record the quote -- the guard returns before
+    # any parsing/validation of the submitted fields.
+    assert all(call.args[0] != "quote_record" for call in mock_call.call_args_list)
+
+
 def test_the_comparison_page_shows_an_unconfirmed_reason_rather_than_a_number(client, sophie):
     # Shaped like the real round_compare operation's snapshot (comparison.py,
     # Comparison.to_snapshot()) — comparable/blocked/all_rows, not a flat
@@ -273,7 +309,13 @@ def test_quote_entry_post_with_a_malformed_amount_does_not_500(client, sophie):
             return real_call_operation(name, access, payload)
         return []
 
-    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch):
+    # has_program_context patched True: this test is about the malformed-
+    # amount rejection, orthogonal to finding 3/C's no-programme guard, and
+    # `sophie` carries no programme context by default.
+    with (
+        patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch),
+        patch("connect_labs.supply_chain.procurement.views.has_program_context", return_value=True),
+    ):
         response = client.post(
             reverse("supply_chain:procurement_quote_entry"),
             {"as_quoted_amount": "52,42", "as_quoted_unit": "per_pack", "as_quoted_currency": "USD"},
@@ -293,7 +335,10 @@ def test_quote_entry_post_preserves_entered_values_on_error(client, sophie):
             return [{"id": 1, "slug": "rutf", "name": "RUTF"}]
         return []
 
-    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch):
+    with (
+        patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch),
+        patch("connect_labs.supply_chain.procurement.views.has_program_context", return_value=True),
+    ):
         response = client.post(
             reverse("supply_chain:procurement_quote_entry"),
             {
@@ -330,7 +375,10 @@ def test_a_quoted_submitted_value_cannot_break_out_of_the_x_data_js_context(clie
             return real_call_operation(name, access, payload_)
         return []
 
-    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch):
+    with (
+        patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch),
+        patch("connect_labs.supply_chain.procurement.views.has_program_context", return_value=True),
+    ):
         response = client.post(
             reverse("supply_chain:procurement_quote_entry"),
             {"as_quoted_amount": "52,42", "pack_spec_source": payload},

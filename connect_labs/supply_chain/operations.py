@@ -157,7 +157,6 @@ QUANTITY = {
 _NON_NEGATIVE_INT = {"type": "integer", "minimum": 0}
 
 _QUOTE_DATA = _data_with(
-    ("round_id", "commodity_slug"),
     round_id=ID,
     supplier_id=ID,
     item_id=ID,
@@ -177,6 +176,17 @@ _QUOTE_DATA = _data_with(
     shelf_life_months_stated=_NON_NEGATIVE_INT,
     lead_time_days=_NON_NEGATIVE_INT,
 )
+
+# quote_record creates a new quote from nothing, so round_id/commodity_slug
+# must be given up front -- data_access.create_quote indexes both with `[]`.
+# quote_correct is a PARTIAL update (data_access.supersede_quote merges
+# {**existing.data, **data}): the existing record already has these, and
+# requiring them on a correction would force a caller to re-supply values it
+# is not correcting -- and a wrong resupplied value would merge straight
+# into the record, corrupting the field the caller never meant to touch.
+# So only the create-shaped schema carries the requirement; quote_correct
+# keeps using the unrequired _QUOTE_DATA above.
+_QUOTE_DATA_CREATE = {**_QUOTE_DATA, "required": ["round_id", "commodity_slug"]}
 
 _ROUND_DATA = _data_with(
     label={"type": "string", "minLength": 1},
@@ -248,13 +258,20 @@ _COMMODITY_DATA = _data_with(
 )
 
 _OUTREACH_DATA = _data_with(
-    ("round_id",),
     round_id=ID,
     supplier_id=ID,
     channel={"enum": ["manual", "api", "mcp", "ses"]},
     responded={"type": "boolean"},
     response_kind={"enum": ["quote", "declined", "needs_info", "no_reply"]},
 )
+
+# Same split as _QUOTE_DATA_CREATE above, for the same reason:
+# outreach_log creates a row from nothing (data_access.create_outreach
+# indexes data["round_id"]); outreach_update is a partial merge
+# ({**existing.data, **data}) whose own summary is "typically to record
+# that a supplier responded, and how" -- a payload that names only
+# responded/response_kind must keep working.
+_OUTREACH_DATA_CREATE = {**_OUTREACH_DATA, "required": ["round_id"]}
 
 _SUPPLIER_DATA = _data_with(
     name={"type": "string", "minLength": 1},
