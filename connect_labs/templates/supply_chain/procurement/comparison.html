@@ -35,6 +35,28 @@
   </div>
 {% endif %}
 
+{% if comparison.unavailable %}
+  {% comment %}
+  Figures no supplier could supply, because the gap is in our own
+  configuration. Reported here, once, rather than by marking every supplier
+  blocked -- which is what this used to do, and it made a supplier who had
+  answered every question look like the problem.
+  {% endcomment %}
+  <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-sm text-blue-900">
+    <strong>Ours to close, not theirs.</strong>
+    These columns cannot be computed for anyone, so they are not part of the
+    comparison:
+    <ul class="list-disc list-inside mt-1">
+      {% for key, figure in comparison.unavailable.items %}
+        <li>
+          <b>{{ figure.label }}</b> —
+          {% for reason in figure.reasons %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
 {% if award_error %}
   <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 text-sm text-red-800">
     Could not award: {{ award_error }}
@@ -65,7 +87,22 @@
               <td class="font-medium text-gray-900">{{ row.supplier_name }}</td>
               {% for column in comparison.columns %}
                 {% with cell=row.figures|dictkey:column.key %}
-                  <td>{{ cell.currency }} {{ cell.amount|floatformat:4 }}</td>
+                  {% if cell.unconfirmed %}
+                    {% comment %}
+                    A comparable row CAN hold an unconfirmed cell now that
+                    comparability no longer waits on figures only we can
+                    supply (see COMPARABILITY_FIELDS). Rendering
+                    {{ cell.amount }} for one produced an empty cell --
+                    which reads as "no cost per course" rather than "we have
+                    not set the ration table", and a blank is the one thing
+                    the whole Unconfirmed type exists to prevent.
+                    {% endcomment %}
+                    <td class="text-gray-400" title="{% for reason in cell.unconfirmed %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}">
+                      Unconfirmed
+                    </td>
+                  {% else %}
+                    <td>{{ cell.currency }} {{ cell.amount|floatformat:4 }}</td>
+                  {% endif %}
                 {% endwith %}
               {% endfor %}
               <td>

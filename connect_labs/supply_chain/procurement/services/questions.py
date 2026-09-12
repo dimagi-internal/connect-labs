@@ -134,6 +134,27 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
 
 _QUESTION_BY_KEY: dict[str, str] = {key: template for _, key, template, _audience in _REASON_QUESTIONS}
 
+
+def audience_for_reason(reason: str) -> str:
+    """Who can close the gap this Unconfirmed reason names.
+
+    The same first-match-wins table the questions are built from, exposed so
+    nothing else has to guess. The comparison uses it to decide whether an
+    uncomputable figure is a supplier's gap or ours -- and an earlier version
+    guessed instead, with "Unconfirmed on every row" as the test. With a
+    single quote on a round that is trivially true, so one supplier's own
+    missing pack specification was reported to us as our own gap.
+    """
+    lowered = (reason or "").lower()
+    for fragment, _key, _template, audience in _REASON_QUESTIONS:
+        if fragment in lowered:
+            return audience
+    # An unmatched reason is a real gap nobody has classified. Treating it as
+    # ours is the safe direction: it surfaces for us to look at rather than
+    # being sent to a supplier who cannot act on it.
+    return INTERNAL
+
+
 # Acceptance facts: nothing in pricing.py or compliance.py ever blocks a
 # figure on these, so they are checked directly against the quote itself
 # rather than discovered as a pricing/compliance side effect. Each fires

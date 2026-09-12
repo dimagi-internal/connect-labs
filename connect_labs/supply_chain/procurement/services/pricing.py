@@ -23,6 +23,30 @@ FIGURE_FIELDS = (
     "usd_per_child_treated",
 )
 
+# Which figures decide whether a quote can be COMPARED, as opposed to merely
+# being shown.
+#
+# Not all of them, and the difference matters. `usd_per_course` and
+# `usd_per_child_treated` need the commodity's ration table -- sachets per day
+# and days per course -- which is the PROGRAMME's treatment protocol and not
+# anything a supplier states. Gating comparability on them meant a supplier
+# who answered every question we could possibly ask still came back
+# "blocked", on a gap they had no way to close. Measured: a fully specified
+# quote against a commodity with no ration table reported 0 of 1 comparable,
+# and the only outstanding question had audience `internal`.
+#
+# So comparability is gated on the figures whose inputs are facts a supplier
+# or the round supplies. The course figures stay in FIGURE_FIELDS, stay
+# visible, and stay Unconfirmed with their reason -- they are simply not a
+# reason to refuse to rank. The ranking is on
+# landed_total_for_round_quantity, which needs no ration table.
+COMPARABILITY_FIELDS = (
+    "usd_per_base_unit",
+    "usd_per_pack_normalized",
+    "landed_total_as_quoted",
+    "landed_total_for_round_quantity",
+)
+
 # str.format templates over {base_unit} / {pack_unit}: the commodity supplies the
 # nouns. A hardcoded "USD per sachet" would render a wrong header for an infant
 # scale or a diagnostic test, and this catalogue is generic by design.
