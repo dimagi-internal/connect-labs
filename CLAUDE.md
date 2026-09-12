@@ -344,8 +344,10 @@ Connect OAuth token (`~/.commcare-connect/token.json`).
 A remote MCP server hosted inside the labs Django app (`connect_labs/mcp/`)
 at `https://labs.connect.dimagi.com/mcp/`. The protocol endpoint is a
 FastMCP 3.x Streamable-HTTP ASGI app mounted in `config/asgi.py`; the catalog
-registers **107 tools** (write tools are rate-limited and fully argument-logged
-to `MCPAuditLog`).
+registers **148 tools** (write tools are rate-limited and fully argument-logged
+to `MCPAuditLog`) — 32 of them (`procurement_*`) generated from the supply-chain
+operation registry (`connect_labs/supply_chain/operations.py`), one tool per
+operation, so the count moves whenever that registry does.
 
 **Auth:** Personal Access Tokens (PAT) — a deliberate permanent design, not a
 placeholder. Labs is a PAT-only resource server, **not** an OAuth authorization
