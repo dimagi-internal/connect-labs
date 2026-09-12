@@ -147,7 +147,10 @@ def _extras(quote: QuoteRecord) -> Derived:
 def _course_size(commodity: CommodityRecord) -> int | Derived:
     size = commodity.base_units_per_course
     if not size:
-        return unconfirmed(f"no course definition set for {commodity.name or commodity.slug} (sachets per course)")
+        base_unit = commodity.base_unit or "unit"
+        return unconfirmed(
+            f"no course definition set for {commodity.name or commodity.slug} ({base_unit}s per course)"
+        )
     return int(size)
 
 
@@ -277,6 +280,14 @@ def compute_figures(
         per_course: Derived = course_blocked
     else:
         per_course = Money(per_base_unit.amount * Decimal(course))
+    # Phase 1a treats one course as one child treated -- there is no
+    # courses_per_child on the commodity, and the programme's course
+    # definition (base_units_per_day * days_per_course) already defines a
+    # full treatment course per the protocol. usd_per_child_treated is kept
+    # as its own FIGURE_FIELDS entry (not dropped in favour of usd_per_course)
+    # because the two answer different questions on the comparison screen --
+    # "what does treating a child cost" reads differently from "what does a
+    # course cost" even when, today, they are the same number.
     per_child = per_course
 
     # --- landed totals ---------------------------------------------------

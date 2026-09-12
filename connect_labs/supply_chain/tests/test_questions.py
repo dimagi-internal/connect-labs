@@ -1,7 +1,7 @@
 import logging
 
 from connect_labs.supply_chain.procurement.services.questions import initial_request_facts, missing_facts
-from connect_labs.supply_chain.tests.conftest import quote
+from connect_labs.supply_chain.tests.conftest import quote, wrap
 
 
 def test_a_comparable_quote_is_missing_nothing(comparable_quote, rutf, round_2000_cartons):
@@ -102,6 +102,25 @@ def test_a_quote_silent_on_shelf_life_is_missing_it(rutf, round_2000_cartons):
     q = quote(shelf_life_months_stated=None)
     keys = [f.key for f in missing_facts(q, rutf, round_2000_cartons)]
     assert "shelf_life" in keys
+
+
+def test_the_shelf_life_question_omits_the_broken_clause_when_no_minimum_is_set(rutf_without_course):
+    """Finding 8: when neither the round nor the commodity carries
+    shelf_life_months_minimum, _context()'s "" fallback used to put a
+    broken sentence -- "We need at least  months." -- straight into the
+    RFQ. Neither this round nor rutf_without_course sets a minimum."""
+    from connect_labs.supply_chain.models import RoundRecord
+
+    round_no_minimum = wrap(RoundRecord, {"lines": [], "delivery_point": {"city": "Kano", "country": "NG"}})
+    fact = next(f for f in initial_request_facts(rutf_without_course, round_no_minimum) if f.key == "shelf_life")
+    assert "We need at least" not in fact.question
+    assert "  " not in fact.question
+    assert "shelf life" in fact.question.lower()
+
+
+def test_the_shelf_life_question_states_the_minimum_when_one_exists(rutf, round_2000_cartons):
+    fact = next(f for f in initial_request_facts(rutf, round_2000_cartons) if f.key == "shelf_life")
+    assert "We need at least 18 months." in fact.question
 
 
 def test_a_quote_silent_on_moq_is_missing_it(rutf, round_2000_cartons):

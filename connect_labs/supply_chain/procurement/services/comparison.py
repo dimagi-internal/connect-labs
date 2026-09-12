@@ -12,8 +12,8 @@ cannot.
 
 Ranking is decided here, not in a template: `compare_round` sorts the
 comparable rows by a declared `ranked_by` key (landed total for this round's
-quantity, falling back to the per-pack price when the round has no line for
-the commodity) and records that key and a `provisional` flag — true whenever
+quantity -- the only key that can ever have a comparable row to sort, per
+Ruling 22) and records that key and a `provisional` flag — true whenever
 anything was left out of the ranking — on the frozen result. "Ranked by X;
 provisional because N of M suppliers were blocked" is what makes an award
 defensible months after the fact, which is the whole reason the comparison is
@@ -27,7 +27,7 @@ from connect_labs.supply_chain.models import CommodityRecord, QuoteRecord, Round
 from connect_labs.supply_chain.procurement.services.compliance import check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import FIGURE_FIELDS, FIGURE_LABELS, compute_figures
 from connect_labs.supply_chain.procurement.services.questions import missing_facts
-from connect_labs.supply_chain.values import Money, Unconfirmed
+from connect_labs.supply_chain.values import Unconfirmed, to_wire
 
 
 @dataclass(frozen=True)
@@ -88,18 +88,13 @@ class Comparison:
         decided.
         """
 
-        def cell(value):
-            if isinstance(value, Money):
-                return {"amount": str(value.amount), "currency": value.currency}
-            return {"unconfirmed": list(value.reasons)}
-
         def row_dict(row):
             return {
                 "quote_id": row.quote_id,
                 "supplier_id": row.supplier_id,
                 "supplier_name": row.supplier_name,
                 "is_comparable": row.is_comparable,
-                "figures": {key: cell(value) for key, value in row.figures.items()},
+                "figures": {key: to_wire(value) for key, value in row.figures.items()},
                 "compliance": [
                     {
                         "field": r.field,

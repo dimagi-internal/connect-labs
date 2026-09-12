@@ -21,6 +21,17 @@ def test_the_initial_request_numbers_its_questions(rutf, round_2000_cartons):
     assert "1." in text and "2." in text
 
 
+def test_the_initial_request_uses_the_same_destination_phrase_throughout(rutf, round_2000_cartons):
+    """Finding 10: render._destination() included delivery_point.name;
+    questions._context()'s destination did not, so the opening line read
+    "delivered to Central store, Kano, Nigeria" while the freight/duties/
+    lead-time questions a few lines later read "freight to Kano, Nigeria" --
+    dropping the site name every time. Both now single-source through
+    values.destination_phrase, so the full phrase appears everywhere."""
+    text = render_initial_request(rutf, round_2000_cartons, supplier())
+    assert text.count("Central store, Kano, Nigeria") >= 2
+
+
 def test_a_followup_asks_only_what_is_missing(rutf, round_2000_cartons):
     q = quote(pack_spec_source="not_stated", base_per_pack_stated=None, shelf_life_months_stated=24)
     text = render_followup(q, rutf, round_2000_cartons, supplier())

@@ -131,6 +131,25 @@ def test_a_commodity_without_a_course_definition_blocks_per_course(
     assert f.usd_per_pack_normalized == Money(Decimal("50.00"))
 
 
+def test_the_missing_course_definition_reason_uses_the_commodity_own_noun(round_2000_cartons):
+    """Finding 11: "(sachets per course)" was hardcoded into this reason
+    regardless of the commodity, so an infant scale (base_unit="unit") read
+    "no course definition set for Infant scale (sachets per course)". Per
+    Ruling 1, every user-facing noun comes from the commodity."""
+    from connect_labs.supply_chain.models import CommodityRecord
+    from connect_labs.supply_chain.tests.conftest import wrap
+
+    scale = wrap(
+        CommodityRecord,
+        {"slug": "infant-scale", "name": "Infant scale", "base_unit": "unit", "pack_unit": "box"},
+    )
+    q = quote(commodity_slug="infant-scale")
+    f = compute_figures(q, scale, round_2000_cartons)
+    reason = _reasons(f.usd_per_course)
+    assert "units per course" in reason
+    assert "sachets" not in reason
+
+
 def test_a_missing_amount_blocks_everything(rutf, round_2000_cartons):
     q = quote(as_quoted_amount=None)
     f = compute_figures(q, rutf, round_2000_cartons)

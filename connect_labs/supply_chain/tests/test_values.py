@@ -58,6 +58,13 @@ def test_packs_to_base_units():
     assert packs_to_base_units(Decimal("500"), 150) == Decimal("75000")
 
 
+def test_packs_to_base_units_rejects_a_zero_pack_size():
+    """Finding 21: both unit-ladder conversions now share one positivity
+    guard (values._require_positive) rather than each carrying its own copy."""
+    with pytest.raises(ValueError, match="base_per_pack must be positive"):
+        packs_to_base_units(Decimal("500"), 0)
+
+
 def test_metric_tonnes_to_base_units_uses_the_sachet_weight():
     # 1 tonne of 92 g sachets
     assert metric_tonnes_to_base_units(Decimal("1"), 92) == Decimal("10869")
