@@ -14,7 +14,7 @@ of a broken dashboard.
 
 import logging
 
-from connect_labs.semantic.explain import UnknownIndicator, explain
+from connect_labs.semantic.explain import UnknownIndicator, english, explain
 from connect_labs.semantic.runtime import normalise_deployment_facts
 from connect_labs.semantic.seed import registry_payload
 from connect_labs.semantic.validation import RegistryInvalid, validate_registry
@@ -249,17 +249,51 @@ def semantic_registry_update(
     return {**_summary(record), "_version_before": before.version, "_version_after": record.version}
 
 
+def _indicator_index(record) -> list[dict]:
+    """Every top-level indicator as one line: what it is, not how it is computed.
+
+    Deliberately cheap -- `english` renders from the registry documents and
+    compiles no SQL, so an index of the whole registry costs about what one
+    explanation used to.
+    """
+    rows = []
+    for measure in record.indicators_doc.get("measures") or []:
+        meta = measure.get("meta") or {}
+        if not meta.get("indicator"):
+            continue
+        rows.append(
+            {
+                "indicator": meta["indicator"],
+                "measure": measure["name"],
+                "title": measure.get("title"),
+                "unit": meta.get("unit"),
+                "category": meta.get("category"),
+                # Both readings, as `explain` returns them: `plain` is the authored
+                # wording where the registry has one, `definition` is rendered from
+                # the SQL and so cannot drift from the number.
+                "plain": meta.get("plain"),
+                "definition": (english(record.indicators_doc, record.properties_doc, measure["name"]) or {}).get(
+                    "definition"
+                ),
+            }
+        )
+    return rows
+
+
 @register(
     name="semantic_registry_explain",
     description=(
         "The exact logic behind an indicator, read from the registry with nothing hidden: "
         "the compiled measure expression, its numerator/denominator components, the Layer-2 "
         "property chain it depends on in evaluation order with every constant substituted, "
-        "the per-baby aggregates and weight-series window derivations it touches, the "
-        "section-2 cutoffs used, and the full compiled statement for one scope (Layer 1, the "
-        "pipeline rows, as a named placeholder -- read that schema with pipeline_get). Pass an "
-        "indicator id (N15, C14), a measure name (n15), or several. This is how a second "
-        "engine reproduces a number instead of trusting its label."
+        "the per-baby aggregates and weight-series window derivations it touches, and the "
+        "section-2 cutoffs used. The full compiled statement for the scope comes back ONCE, "
+        "beside the indicators (Layer 1, the pipeline rows, is a named placeholder -- read "
+        "that schema with pipeline_get). Pass an indicator id (N15, C14), a measure name "
+        "(n15), or several. This is how a second engine reproduces a number instead of "
+        "trusting its label. Omit `indicators` for an INDEX of every top-level indicator -- "
+        "id, title and one-line definition -- then ask again by id for the ones you want; the "
+        "chains are far too big to return all at once."
     ),
     input_schema={
         "type": "object",
@@ -269,7 +303,8 @@ def semantic_registry_update(
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Indicator ids or measure names, e.g. ['N15', 'C14']. Omit for every top-level indicator."
+                    "Indicator ids or measure names, e.g. ['N15', 'C14']. Omit for an index of every "
+                    "top-level indicator (id, title, one-line definition) rather than their full chains."
                 ),
             },
             "scope": {
@@ -297,13 +332,26 @@ def semantic_registry_explain(
         if record is None:
             raise MCPToolError("NOT_FOUND", f"No semantic registry with id {registry_id}")
         facts = normalise_deployment_facts(record.deployment)
-        wanted = indicators or [
-            (m.get("meta") or {}).get("indicator") or m["name"]
-            for m in record.indicators_doc.get("measures") or []
-            if (m.get("meta") or {}).get("indicator")
-        ]
+        if not indicators:
+            # An index, not every chain. Explaining all of them returned ~1.17M
+            # characters for the KMC registry -- 37 indicators, each carrying its
+            # own copy of one 27KB compiled statement -- which is more than ten
+            # times what a client will accept in a single tool result, so the
+            # obvious first call ("explain everything") failed outright. The index
+            # is built from the registry rows and `english`, neither of which
+            # compiles any SQL (dimagi-internal/connect-labs#1743).
+            return {
+                "registry_id": record.id,
+                "version": record.version,
+                "indicators": _indicator_index(record),
+                "detail": (
+                    "An index. Call again with `indicators` (ids or measure names) for the full "
+                    "chain and the compiled statement."
+                ),
+            }
+
         out = []
-        for ind in wanted:
+        for ind in indicators:
             try:
                 out.append(
                     explain(
@@ -317,6 +365,22 @@ def semantic_registry_explain(
                 )
             except UnknownIndicator:
                 raise MCPToolError("NOT_FOUND", f"No indicator or measure named {ind!r} in registry {registry_id}")
-        return {"registry_id": record.id, "version": record.version, "scope": scope, "indicators": out}
+
+        # The compiled statement is the whole scope's SELECT: identical for every
+        # indicator asked for. Return it once beside them rather than once per
+        # indicator, which is what made asking for several expensive.
+        compiled_sql = out[0].pop("compiled_sql", None) if out else None
+        layer1 = out[0].pop("layer1", None) if out else None
+        for explanation in out[1:]:
+            explanation.pop("compiled_sql", None)
+            explanation.pop("layer1", None)
+        return {
+            "registry_id": record.id,
+            "version": record.version,
+            "scope": scope,
+            "indicators": out,
+            "compiled_sql": compiled_sql,
+            "layer1": layer1,
+        }
     finally:
         access.close()

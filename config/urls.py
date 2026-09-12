@@ -8,6 +8,8 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
 
 from connect_labs.mcp.admin_views import create_token_browser
+from connect_labs.mcp.oauth import MCPAuthorizationView
+from connect_labs.mcp.oauth import register_client as mcp_register_client
 
 from . import views
 
@@ -24,6 +26,13 @@ urlpatterns = [
     path("health/", views.health_check, name="health_check"),
     path("robots.txt", views.robots_txt, name="robots_txt"),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
+    # MCP dynamic client registration (RFC 7591): the one endpoint the standard
+    # MCP sign-in needs that django-oauth-toolkit does not ship. Listed before the
+    # "o/" include so it is matched first.
+    path("o/register/", mcp_register_client, name="mcp_oauth_register"),
+    # The consent screen, with the MCP-client rules (forced consent, S256 PKCE).
+    # Non-MCP applications get the toolkit's behaviour unchanged.
+    path("o/authorize/", MCPAuthorizationView.as_view(), name="mcp_oauth_authorize"),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
     # Labs apps
     path("solicitations/", include("connect_labs.solicitations.urls", namespace="solicitations")),

@@ -177,6 +177,9 @@ DEPLOY_ENVIRONMENT = "labs"
 LABS_OAUTH_SCOPES = ["export", "openid"]
 LOGIN_URL = "/labs/login/"
 
+# The origin MCP clients connect to, named in the sign-in's discovery documents.
+LABS_PUBLIC_URL = env("LABS_PUBLIC_URL", default="https://labs.connect.dimagi.com")
+
 # Prelogin Login CTA target — labs sends authenticated users into the labs app,
 # whereas the prelogin view's default ("/accounts/login/") suits prod connect.
 PRELOGIN_APP_LOGIN_URL = "/labs/overview/"

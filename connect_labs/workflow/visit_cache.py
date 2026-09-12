@@ -80,6 +80,30 @@ def workflow_opportunity_ids(definition, owner_opportunity_id: int | None) -> li
     return ids
 
 
+def warm_images(access_token: str | None, opportunity_id: int, hold_minutes: int) -> dict:
+    """Fill the IMAGE slot for one opportunity, and hold it.
+
+    Photos live in their own raw-cache slot (no pipeline id) -- the one
+    `visit_images_api` reads -- so warming a workflow's pipelines leaves every
+    case's photos cold, and the first click on each opportunity pays a full
+    download with images. This warms that slot on request.
+    """
+    from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
+    from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+
+    analysis = AnalysisPipeline(access_token=access_token)
+    rows = analysis.backend.fetch_raw_visits(
+        opportunity_id=opportunity_id,
+        access_token=access_token,
+        expected_visit_count=analysis.expected_visits_for(opportunity_id),
+        include_images=True,
+        skip_form_json=True,
+    )
+    manager = SQLCacheManager(opportunity_id)
+    manager.extend_raw_cache_ttl(hold_minutes)
+    return {"visits": len(rows or []), "held_minutes": hold_minutes}
+
+
 def _default_slot(access_token: str | None, owner_scope: dict[str, Any], sources=None):
     """The production wiring: a cache manager, a raw fetch and a pipeline run per slot."""
     from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
@@ -128,6 +152,7 @@ def ensure_visit_cache(
     start_at: int = 0,
     limit: int | None = None,
     hold_minutes: int = DEFAULT_HOLD_MINUTES,
+    include_images: bool = False,
     progress: Callable | None = None,
     slot_factory: Callable | None = None,
 ) -> dict:
@@ -190,6 +215,16 @@ def ensure_visit_cache(
             except Exception:  # noqa: BLE001 -- telemetry must never fail the work
                 logger.debug("progress callback raised; continuing", exc_info=True)
         entry: dict = {"opportunity_id": opp, "slots": [], "ok": True, "error": None}
+        if include_images:
+            # The photo slot is separate from every pipeline slot; a case's photos
+            # are only fast once it is warm.
+            try:
+                entry["images"] = warm_images(getattr(data_access, "access_token", None), opp, int(hold_minutes))
+            except Exception as e:  # noqa: BLE001 -- one opportunity must not cost the rest
+                logger.warning("image cache for opp %s failed", opp, exc_info=True)
+                entry["images"] = {"error": str(e)}
+                entry["ok"] = False
+                entry["error"] = entry["error"] or f"images: {e}"
         for pid in pipeline_ids:
             slot: dict = {"pipeline_id": pid}
             try:

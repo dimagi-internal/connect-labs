@@ -112,6 +112,9 @@ The **MBW Visit Verification** template creates a single-table dashboard for opp
 
     No engineering work is required for that transition. A small follow-up to re-point the template directly at the production domain (removing the need for test-domain access) is recommended once the live app is fully updated, but is not required for the dashboard to function.
 
+!!! note "Empty table fix"
+    A previous issue caused the MBW Visit Verification dashboard to display an empty table even when real visit data was available. This has been corrected — visits now appear as expected.
+
 ### Selecting opportunities with the multi-opportunity picker
 
 When a template asks you to choose which opportunities to include, the picker offers several ways to build your selection quickly.
@@ -226,5 +229,3 @@ The custom name replaces the generic label everywhere the run appears: the workf
 ---
 
 ## Creating a Run
-
-When you click **Create Run** on a workflow, the button darkens immediately to confirm your click has been registered, then shows a spinner labelled **"Creating run..."** until the new run opens. This means you will always get

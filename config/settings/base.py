@@ -444,7 +444,10 @@ CELERY_TASK_TRACK_STARTED = True
 # -------------------------------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "oauth2_provider.contrib.rest_framework.OAuth2Authentication",
+        # The toolkit's OAuth2Authentication, minus MCP tokens: an MCP sign-in
+        # consents to the MCP tools, not to this API, and no view here checks a
+        # scope. See connect_labs.mcp.oauth.MCPAwareOAuth2Authentication.
+        "connect_labs.mcp.oauth.MCPAwareOAuth2Authentication",
         "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
@@ -524,9 +527,25 @@ OAUTH2_PROVIDER = {
         "read": "Read scope",
         "write": "Write scope",
         "export": "Allow exporting data to other platforms using export API's.",
+        # The standard MCP sign-in (connect_labs/mcp/oauth.py). Only MCP clients
+        # can hold this scope, and they can hold nothing else -- see MCPScopes.
+        "mcp": "Use Connect Labs tools as you, from an MCP client",
     },
+    "SCOPES_BACKEND_CLASS": "connect_labs.mcp.oauth.MCPScopes",
+    "OAUTH2_VALIDATOR_CLASS": "connect_labs.mcp.oauth.MCPOAuth2Validator",
 }
 OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
+
+# The public origin clients reach labs at. The MCP sign-in's discovery documents
+# name it, so it must be the URL a client connected to -- not the scheme and host
+# a request arrives with from behind the load balancer.
+#
+# No default here, deliberately: each environment sets its own (see labs_aws.py
+# and local.py). A shared default would make a dev or staging instance advertise
+# PRODUCTION's authorize and token endpoints, sending a developer's sign-in to
+# prod and handing back a token their own server then rejects. Unset means the
+# MCP sign-in is simply not offered on this instance and it stays PAT-only.
+LABS_PUBLIC_URL = env("LABS_PUBLIC_URL", default="")
 
 # Connect Production OAuth (for audit data extraction)
 CONNECT_PRODUCTION_URL = env("CONNECT_PRODUCTION_URL", default="https://connect.dimagi.com")

@@ -181,3 +181,26 @@ def test_the_programme_report_creates_this_workflow_as_its_companion():
     src = METRICS_RENDER.read_text()
     assert "FLW_REVIEW.workflow_id" in src and "FLW_REVIEW.run_id" in src
     assert "cfgAudit.flw_review" in src
+
+
+def test_the_review_fetches_its_own_rows_instead_of_the_cohort_stream():
+    """The page needs one worker's cases and one case's weighings. The framework
+    default handed it every pipeline's rows for all twelve opportunities (~30 MB)
+    to filter in the browser -- ~20s warm, minutes cold, and the case panel waited
+    on it. It now asks for what it needs, and opts out of the stream."""
+    from connect_labs.workflow.templates.kmc_flw_review import TEMPLATE
+
+    src = TEMPLATE["render_code"]
+    assert TEMPLATE["definition"]["config"]["noPipelineStream"] is True
+    assert "/pipeline-rows/" in src, "the review does not fetch its own rows"
+    assert "alias=children" in src and "alias=visits" in src
+    assert "pipelines.children" not in src, "still reading the streamed cohort rows"
+    assert "pipelines.visits" not in src
+
+
+def test_the_runner_honours_the_opt_out():
+    from pathlib import Path
+
+    runner = (Path(__file__).resolve().parents[2] / "static" / "js" / "workflow-runner.tsx").read_text()
+    assert "noPipelineStream" in runner
+    assert "if (noPipelineStream) return;" in runner, "the stream is started anyway"

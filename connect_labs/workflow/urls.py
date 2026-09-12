@@ -69,6 +69,7 @@ urlpatterns = [
     path("api/ocs/bots/", views.ocs_bots_api, name="api_ocs_bots"),
     # API endpoints - Pipeline data
     path("api/<int:definition_id>/pipeline-data/", views.get_pipeline_data_api, name="api_pipeline_data"),
+    path("api/<int:definition_id>/pipeline-rows/", views.pipeline_rows_api, name="api_pipeline_rows"),
     path(
         "api/<int:definition_id>/semantic/",
         views.semantic_indicators_api,
