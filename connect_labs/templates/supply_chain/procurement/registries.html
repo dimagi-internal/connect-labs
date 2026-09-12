@@ -6,7 +6,16 @@
 
 <h2 class="text-lg font-semibold text-gray-900 mb-2">Commodities</h2>
 <div class="bg-white rounded-lg shadow-sm overflow-hidden mb-8">
-  <table class="min-w-full divide-y divide-gray-200">
+  {% comment %}
+  A scroll container is not focusable by default, so a keyboard-only user
+  cannot reach the columns it hides -- which re-creates the
+  unreachable-column bug for the people least able to work around it.
+  tabindex makes it a tab stop; the labelled region tells a screen reader
+  what it is once focused.
+  {% endcomment %}
+  <div class="overflow-x-auto" tabindex="0" role="region"
+       aria-label="Table, scrolls sideways">
+  <table class="min-w-[44rem] w-full divide-y divide-gray-200">
     <thead class="bg-gray-50">
       <tr>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Slug</th>
@@ -37,11 +46,21 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <h2 class="text-lg font-semibold text-gray-900 mb-2">Suppliers</h2>
 <div class="bg-white rounded-lg shadow-sm overflow-hidden">
-  <table class="min-w-full divide-y divide-gray-200">
+  {% comment %}
+  A scroll container is not focusable by default, so a keyboard-only user
+  cannot reach the columns it hides -- which re-creates the
+  unreachable-column bug for the people least able to work around it.
+  tabindex makes it a tab stop; the labelled region tells a screen reader
+  what it is once focused.
+  {% endcomment %}
+  <div class="overflow-x-auto" tabindex="0" role="region"
+       aria-label="Table, scrolls sideways">
+  <table class="min-w-[44rem] w-full divide-y divide-gray-200">
     <thead class="bg-gray-50">
       <tr>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
@@ -63,5 +82,6 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endblock %}

@@ -29,7 +29,16 @@
         told by {{ run.source }}{% if not run.witnessed %} (reported, not witnessed){% endif %}
       </span>
     </div>
-    <table class="min-w-full text-sm">
+    {% comment %}
+    A scroll container is not focusable by default, so a keyboard-only user
+    cannot reach the columns it hides -- which re-creates the
+    unreachable-column bug for the people least able to work around it.
+    tabindex makes it a tab stop; the labelled region tells a screen reader
+    what it is once focused.
+    {% endcomment %}
+    <div class="overflow-x-auto" tabindex="0" role="region"
+         aria-label="Table, scrolls sideways">
+    <table class="min-w-[44rem] w-full text-sm">
       <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
         <tr>
           <th class="text-left px-4 py-2">To</th>
@@ -60,6 +69,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 {% empty %}
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-gray-500">
