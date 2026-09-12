@@ -9,6 +9,15 @@ questions to send" — which is the point of the app. Suppressing the whole
 ranking whenever any candidate is unconfirmed was tried and rejected: it
 withholds the comparison the buyer CAN defend along with the one they
 cannot.
+
+Ranking is decided here, not in a template: `compare_round` sorts the
+comparable rows by a declared `ranked_by` key (landed total for this round's
+quantity, falling back to the per-pack price when the round has no line for
+the commodity) and records that key and a `provisional` flag — true whenever
+anything was left out of the ranking — on the frozen result. "Ranked by X;
+provisional because N of M suppliers were blocked" is what makes an award
+defensible months after the fact, which is the whole reason the comparison is
+frozen at all.
 """
 
 from dataclasses import dataclass, field
@@ -47,10 +56,20 @@ class Comparison:
     comparable: list[ComparisonRow]
     blocked: list[ComparisonRow]
     generated_at: str
+    ranked_by: str
+    provisional: bool
 
     @property
-    def rows(self) -> list[ComparisonRow]:
-        """Everything, comparable first — for callers that want one list."""
+    def all_rows(self) -> list[ComparisonRow]:
+        """Everything, comparable first — for callers that want every supplier's
+        row regardless of state (e.g. round_outstanding_questions in Task 10).
+
+        Named `all_rows`, not `rows`, on purpose: a ranked-table render that
+        pulled from this instead of `.comparable` would seat a blocked
+        supplier's partial figures beside a comparable one's — the exact false
+        comparison this module exists to refuse. The name is deliberately in
+        the way at the call site.
+        """
         return [*self.comparable, *self.blocked]
 
     @property
@@ -99,6 +118,8 @@ class Comparison:
             "generated_at": self.generated_at,
             "comparable_count": self.comparable_count,
             "total_count": self.total_count,
+            "ranked_by": self.ranked_by,
+            "provisional": self.provisional,
             "columns": [
                 {
                     "key": column.key,
@@ -110,13 +131,32 @@ class Comparison:
             ],
             "comparable": [row_dict(row) for row in self.comparable],
             "blocked": [row_dict(row) for row in self.blocked],
-            # Flat view for consumers that do not care about the partition.
-            "rows": [row_dict(row) for row in self.rows],
+            # Flat view for consumers that legitimately need every supplier's
+            # row regardless of state (e.g. Task 10's round_outstanding_questions).
+            # Named all_rows, not rows: see Comparison.all_rows's docstring.
+            "all_rows": [row_dict(row) for row in self.all_rows],
         }
 
 
 def _is_live(quote: QuoteRecord) -> bool:
     return not quote.voided and not quote.superseded_by_quote_id
+
+
+def _ranking_key(round_: RoundRecord, commodity: CommodityRecord) -> str:
+    """Which figure decides the leader — a declared, round-level decision.
+
+    Landed total for this round's own quantity is the honest "what would we
+    actually pay" figure, so it wins whenever the round has a line for this
+    commodity. When it does not (nobody has told this round how much of this
+    commodity it needs yet), that figure is Unconfirmed for every quote, so
+    ranking on it would rank nothing; the per-pack price is the next best
+    apples-to-apples figure and becomes the declared key instead. Deciding
+    this once, structurally, means the snapshot can say what it ranked by —
+    an award record can't leave that to whichever template rendered it.
+    """
+    if round_.quantity_for(commodity.slug) is None:
+        return "usd_per_pack_normalized"
+    return "landed_total_for_round_quantity"
 
 
 def compare_round(
@@ -159,13 +199,24 @@ def compare_round(
         )
         (comparable if row.is_comparable else blocked).append(row)
 
+    ranked_by = _ranking_key(round_, commodity)
+    # Cheapest first: comparable[0] is the leader the screen names, and it is
+    # provisional (below) whenever anything was left out of the ranking. Every
+    # comparable row is guaranteed a Money here — is_comparable already
+    # required all of FIGURE_FIELDS, which includes both candidate keys, to be
+    # confirmed.
+    comparable.sort(key=lambda row: row.figures[ranked_by].amount)
+
     columns: list[ComparisonColumn] = []
     for key in FIGURE_FIELDS:
         # blocked_by names every supplier missing this figure, so the template can
         # say what a blocked row is short of — but rankability is judged over the
-        # comparable subset alone (rule 6 as amended).
+        # comparable subset alone (rule 6 as amended). Deduped: a supplier with
+        # two live blocked quotes on one round must not appear twice.
         short = tuple(
-            row.supplier_name for row in (*comparable, *blocked) if isinstance(row.figures.get(key), Unconfirmed)
+            dict.fromkeys(
+                row.supplier_name for row in (*comparable, *blocked) if isinstance(row.figures.get(key), Unconfirmed)
+            )
         )
         columns.append(
             ComparisonColumn(
@@ -182,4 +233,6 @@ def compare_round(
         comparable=comparable,
         blocked=blocked,
         generated_at=datetime.now(UTC).isoformat(),
+        ranked_by=ranked_by,
+        provisional=bool(blocked),
     )
