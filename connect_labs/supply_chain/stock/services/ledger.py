@@ -73,8 +73,11 @@ def collapse(by_unit: dict, item, unit: str | None):
     holdings = {u: amount for u, amount in by_unit.items() if amount != ZERO}
 
     if not holdings:
-        target = unit or _pack_spec(item)[2] or (next(iter(by_unit), None) or "unit")
-        return Quantity(ZERO, target)
+        # Nothing here. The unit is whatever the caller asked for, else the
+        # item's pack unit, else genuinely unknown -- reported as None rather
+        # than as the invented word "unit", which reads like a real unit of
+        # measure and is not one.
+        return Quantity(ZERO, unit or _pack_spec(item)[2] or next(iter(by_unit), None))
 
     if unit is None:
         if len(holdings) == 1:
