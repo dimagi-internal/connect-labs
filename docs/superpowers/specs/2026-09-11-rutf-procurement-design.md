@@ -971,3 +971,77 @@ not:
   different dates (a commitment, a bill, a settlement) into one row, so the
   system could not answer "what have we committed but not paid" — and could
   not represent somebody else raising the purchase order at all.
+
+## 24. What the checks are, and what they are not
+
+§22 said the product derives and does not recommend. Building it raised a
+sharper question: *are these just hardcoded rules?* They are, and being
+precise about that is what keeps the boundary honest.
+
+**They are hardcoded detectors over the schema.** Fourteen of them, listed in
+one dict, each a hand-written function. Adding a fifteenth needs a deploy.
+There is **no learning**: nothing adapts, nothing notices what a user
+dismisses, nothing discovers a pattern.
+
+That is the right design for what they cover, and the wrong design for
+everything else, so the line matters.
+
+### 24.1 The three categories
+
+Every check falls in exactly one, and none of the three is an opinion:
+
+| Category | What it means | Why it cannot be a judgement |
+|---|---|---|
+| `missing` | a fact nobody supplied | a null column, an absent document, a derivation that returned `Unconfirmed` |
+| `conflict` | two records disagree | arithmetic — billed against received, ledger against count |
+| `threshold` | a derived figure past a bound **stored in the data** | the number is the programme's own: a supply point's min/max band, a commodity's specification |
+
+There are **zero hardcoded numbers** in the whole set. The two categories
+that involve a bound read it from a row.
+
+### 24.2 What is deliberately excluded
+
+A state readable off a single table is **not** a check. Three were removed
+after they were built, and each removal has its own reason:
+
+- `round_awaiting_response` — one boolean on one outreach row. `outreach_list`
+  already reports it, and a second path to the same fact is a liability. It
+  also asserted that silence is a problem, which on day one it is not.
+- `shipment_stalled` — fired on any shipment in transit, with **no time
+  threshold at all**, so a consignment dispatched yesterday read identically
+  to one held seventy days. The name asserted a judgement the code never
+  made. A client concludes "stalled" from the status and the date.
+- `supplier_never_approached` — a judgement about *intent*. A register of nine
+  suppliers of whom four were ever meant to be contacted is a perfectly good
+  register, and nothing in the database distinguishes that from an oversight.
+
+The test suite asserts these four kinds are absent, so the boundary cannot
+erode by accident.
+
+One check was **added** in the same pass, and it is the most valuable in the
+set: `stock_variance`, the ledger against the reported count. It is the
+disagreement the whole stock design exists to surface, and it was missing.
+
+### 24.3 The division of labour
+
+**The product detects gaps in a row. A client detects patterns across rows.**
+
+The checks that matter most in a live programme cannot be enumerated in
+advance, because they are patterns over history rather than properties of a
+record:
+
+- this supplier's quotes always land three weeks after the deadline
+- this store's reported stock is consistently half what we issued it
+- cartons from this plant keep arriving short of the stated pack
+
+None of those is in the fourteen, and none of them should be. They need the
+ledger and the quote history read across time, which `movement_list`,
+`stock_count_list` and `quote_list` already expose. Finding them is a
+client's job, needs no rule engine, and needs no deploy. That is the only
+sense in which anything here learns — and it is the right place for it,
+because the product's set has to be closed, exhaustive and cheap, while a
+client's can be open and wrong sometimes.
+
+The operation is named `checks_list` rather than `exceptions_list` for this
+reason: "exception" implies somebody judged something exceptional. A check
+has a definite pass or fail and claims nothing about importance.

@@ -485,34 +485,45 @@ def supplier_update(access, supplier_id, data):
 
 
 @register_operation(
-    name="exceptions_list",
+    name="checks_list",
     summary=(
-        "Every derived exception in this programme, as structured facts: quotes that cannot be "
-        "compared and why, suppliers who have not replied, awards with no contract, duty reliefs "
-        "claimed without evidence, shipments stalled at a border, invoices billed for more than "
-        "arrived, supply points below their own minimum, workers who have never reported. Each "
-        "carries its subject, the facts behind it, how long it has been true, and the AUDIENCE "
-        "that can answer it -- supplier, partner or internal -- because a missing pack spec can "
-        "only be answered by the supplier and a missing ration table only by us.\n\n"
-        "Deliberately UNRANKED and unworded: sorted by kind then subject id, with no priority, "
-        "no severity and no drafted message. Prioritising and phrasing are judgements about what "
-        "matters today, which this database does not contain; a client that wants a worklist "
-        "sorts one from these facts."
+        "Run the domain's checks and report what they found. A fan-out of the derivations, so "
+        "you do not have to recompute them. Every finding falls into exactly one category:\n\n"
+        "  missing    a fact nobody supplied — a null reference, an absent certificate, a "
+        "derivation that came back unconfirmed.\n"
+        "  conflict   two records that disagree — an invoice billed for more than arrived, a "
+        "ledger and a stock count that differ.\n"
+        "  threshold  a derived figure past a bound stored in YOUR data — a supply point's own "
+        "min/max band, a commodity's own specification.\n\n"
+        "Each finding carries its subject, the facts behind it, how long it has been true, and "
+        "the AUDIENCE that can answer it: supplier, partner or internal. A missing pack spec can "
+        "only be answered by the supplier; an unset ration table only by us.\n\n"
+        "Deliberately UNRANKED and unworded — sorted by kind then subject id, with no priority, "
+        "severity or drafted message. Also deliberately NARROW: a state you can read off one "
+        "table (who has not replied, what is at customs) is not a check, because outreach_list "
+        "and shipment_list already say so. Every check here needs a derivation or a join.\n\n"
+        "These detect gaps in a row. Patterns across rows and over time — this supplier is "
+        "always late, this store's reported stock is always half what we issued — are not here "
+        "and cannot be enumerated in advance; the history operations expose the data to find "
+        "them."
     ),
     input_schema=obj(
         {
             "opportunity_id": ID,
             "kinds": {"type": "array", "items": {"type": "string"}},
+            "categories": {"type": "array", "items": {"enum": ["missing", "conflict", "threshold"]}},
         }
     ),
 )
-def exceptions_list(access, opportunity_id=None, kinds=None):
-    from connect_labs.supply_chain.exceptions import KINDS, list_exceptions
+def checks_list(access, opportunity_id=None, kinds=None, categories=None):
+    from connect_labs.supply_chain.checks import CATEGORIES, KIND_CATEGORIES, run_checks
 
-    found = list_exceptions(access, opportunity_id=opportunity_id, kinds=kinds)
+    found = run_checks(access, opportunity_id=opportunity_id, kinds=kinds, categories=categories)
     return {
-        "kinds": list(KINDS),
+        "kinds": KIND_CATEGORIES,
+        "categories": list(CATEGORIES),
         "count": len(found),
-        "by_kind": {kind: sum(1 for e in found if e["kind"] == kind) for kind in KINDS},
-        "exceptions": found,
+        "by_kind": {kind: sum(1 for f in found if f["kind"] == kind) for kind in KIND_CATEGORIES},
+        "by_category": {category: sum(1 for f in found if f["category"] == category) for category in CATEGORIES},
+        "checks": found,
     }
