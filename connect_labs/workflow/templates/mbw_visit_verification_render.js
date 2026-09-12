@@ -2,7 +2,11 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
   // --- Eligible-FLW set (commcare-user cases, visit_verification='yes') ---
   // entity_name is the built-in row field cchq_cases populates from each
   // case's case_name, which for commcare-user cases is the FLW's username.
-  var eligibleRows = (pipelines && pipelines.eligible_flws && pipelines.eligible_flws.rows) || [];
+  // Two pipelines -- test domain and opp 765's real production domain --
+  // merged the same way the visit pipelines are below.
+  var eligibleRows = ((pipelines && pipelines.eligible_flws && pipelines.eligible_flws.rows) || []).concat(
+    (pipelines && pipelines.eligible_flws_prod && pipelines.eligible_flws_prod.rows) || [],
+  );
   var eligibleUsernames = React.useMemo(
     function () {
       var set = {};
@@ -23,10 +27,14 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
   // -- the true 1st/2nd/3rd... sequence, independent of which rows the
   // verification-data filter below ends up keeping.
   //
-  // Six separate pipelines, one per visit-type form (cchq_forms fetches one
-  // form_name at a time). Keep this list in sync with the aliases in
-  // PIPELINE_SCHEMAS. Forms that haven't grown the verification block yet
-  // just contribute an empty rows array -- harmless.
+  // Twelve pipelines -- one per visit-type form, times two domains (the test
+  // domain that has the verification block today, and opp 765's real
+  // production domain, which will get it eventually with zero code changes
+  // needed here). cchq_forms fetches one form_name at a time, unlike
+  // connect_csv, which merges across form types automatically. Keep this
+  // list in sync with the aliases in PIPELINE_SCHEMAS. Forms/domains that
+  // haven't grown the verification block yet just contribute an empty rows
+  // array -- harmless.
   var VISIT_PIPELINE_ALIASES = [
     'visits_anc_visit',
     'visits_post_delivery_visit',
@@ -34,6 +42,12 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     'visits_1_month_visit',
     'visits_3_month_visit',
     'visits_6_month_visit',
+    'visits_prod_anc_visit',
+    'visits_prod_post_delivery_visit',
+    'visits_prod_1_week_visit',
+    'visits_prod_1_month_visit',
+    'visits_prod_3_month_visit',
+    'visits_prod_6_month_visit',
   ];
 
   var allVisitRows = [];
@@ -141,11 +155,30 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     return 'NA';
   }
 
+  function signatureOutcome(row) {
+    return blankOrNA(row.mother_initial_visit_verification);
+  }
+
   function motherQuestionsOutcome(row) {
     if (row.show_mother_questions === '0') return 'NA';
     if (row.show_mother_questions === '1') return blankOrNA(row.mother_questions_visit_verification);
     return 'NA';
   }
+
+  function ancCardOutcome(row) {
+    return blankOrNA(row.capture_anc_card_visit_verification);
+  }
+
+  // Shared list of the 5 per-method outcomes -- drives both the "Final
+  // verification method(s)" column and the summary chart, so they can never
+  // drift apart on what counts as a method.
+  var METHODS = [
+    { label: 'GPS', getOutcome: gpsOutcome },
+    { label: 'QR', getOutcome: qrOutcome },
+    { label: 'Signature', getOutcome: signatureOutcome },
+    { label: 'Mother Questions', getOutcome: motherQuestionsOutcome },
+    { label: 'ANC Card', getOutcome: ancCardOutcome },
+  ];
 
   // 'Attempted' = the FLW provided information for that method AND it
   // produced an outcome of Pass, Fail, or Pending Audit -- NA/Not
@@ -156,11 +189,9 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 
   function finalVerificationMethods(row) {
     var methods = [];
-    if (wasAttempted(gpsOutcome(row))) methods.push('GPS');
-    if (wasAttempted(qrOutcome(row))) methods.push('QR');
-    if (wasAttempted(blankOrNA(row.mother_initial_visit_verification))) methods.push('Signature');
-    if (wasAttempted(motherQuestionsOutcome(row))) methods.push('Mother Questions');
-    if (wasAttempted(blankOrNA(row.capture_anc_card_visit_verification))) methods.push('ANC Card');
+    METHODS.forEach(function (m) {
+      if (wasAttempted(m.getOutcome(row))) methods.push(m.label);
+    });
     return methods.length > 0 ? methods.join(', ') : 'NA';
   }
 
@@ -205,9 +236,9 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     if (key === 'visit_datetime') return formatVisitDateTime(row.visit_datetime);
     if (key === 'gps_outcome') return gpsOutcome(row);
     if (key === 'qr_outcome') return qrOutcome(row);
-    if (key === 'signature_outcome') return blankOrNA(row.mother_initial_visit_verification);
+    if (key === 'signature_outcome') return signatureOutcome(row);
     if (key === 'mother_questions_outcome') return motherQuestionsOutcome(row);
-    if (key === 'anc_card_outcome') return blankOrNA(row.capture_anc_card_visit_verification);
+    if (key === 'anc_card_outcome') return ancCardOutcome(row);
     if (key === 'final_verification_methods') return finalVerificationMethods(row);
     return row[key];
   }
@@ -273,6 +304,25 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     [displayRows],
   );
 
+  // --- Per-method Pass/Pending/Fail counts, for the summary chart --------
+  var methodStats = React.useMemo(
+    function () {
+      return METHODS.map(function (m) {
+        var pass = 0;
+        var fail = 0;
+        var pending = 0;
+        displayRows.forEach(function (row) {
+          var v = m.getOutcome(row);
+          if (v === 'Pass') pass += 1;
+          else if (v === 'Fail') fail += 1;
+          else if (typeof v === 'string' && v.indexOf('Pending') !== -1) pending += 1;
+        });
+        return { label: m.label, pass: pass, pending: pending, fail: fail };
+      });
+    },
+    [displayRows],
+  );
+
   // --- CSV export -----------------------------------------------------------
   function csvEscape(value) {
     var s = value === null || value === undefined ? '' : String(value);
@@ -305,78 +355,187 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     URL.revokeObjectURL(url);
   }
 
+  // --- Tabs ----------------------------------------------------------------
+  var TABS = [
+    { key: 'summary', label: 'Verification Summary' },
+    { key: 'table', label: 'Per FLW Verification View' },
+  ];
+  var _tab = React.useState('summary');
+  var activeTab = _tab[0];
+  var setActiveTab = _tab[1];
+
+  // --- Stacked horizontal bar chart (Chart.js) ------------------------------
+  var chartRef = React.useRef(null);
+  var chartInstance = React.useRef(null);
+
+  React.useEffect(
+    function () {
+      if (activeTab !== 'summary') return;
+      if (!chartRef.current || !window.Chart) return;
+      if (chartInstance.current) chartInstance.current.destroy();
+
+      chartInstance.current = new window.Chart(chartRef.current, {
+        type: 'bar',
+        data: {
+          labels: methodStats.map(function (m) {
+            return m.label;
+          }),
+          datasets: [
+            {
+              label: 'Passed',
+              data: methodStats.map(function (m) {
+                return m.pass;
+              }),
+              backgroundColor: '#22c55e',
+            },
+            {
+              label: 'Pending Audit',
+              data: methodStats.map(function (m) {
+                return m.pending;
+              }),
+              backgroundColor: '#eab308',
+            },
+            {
+              label: 'Failed',
+              data: methodStats.map(function (m) {
+                return m.fail;
+              }),
+              backgroundColor: '#ef4444',
+            },
+          ],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+            y: { stacked: true },
+          },
+          plugins: { legend: { position: 'bottom' } },
+        },
+      });
+
+      return function () {
+        if (chartInstance.current) chartInstance.current.destroy();
+      };
+    },
+    [methodStats, activeTab],
+  );
+
+  var summaryCards = (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="rounded-lg border border-green-200 bg-green-50 p-4 shadow-sm">
+        <div className="text-3xl font-bold text-green-700">{summary.passPct}%</div>
+        <div className="text-gray-600">Passed Verification (n={summary.passCount})</div>
+      </div>
+      <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 shadow-sm">
+        <div className="text-3xl font-bold text-yellow-700">{summary.pendingPct}%</div>
+        <div className="text-gray-600">Pending Audit (n={summary.pendingCount})</div>
+      </div>
+      <div className="rounded-lg border border-red-200 bg-red-50 p-4 shadow-sm">
+        <div className="text-3xl font-bold text-red-700">{summary.failPct}%</div>
+        <div className="text-gray-600">Failed Verification (n={summary.failCount})</div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{definition.name}</h1>
-          <p className="text-gray-600">{definition.description}</p>
-        </div>
-        <button
-          onClick={handleExportCSV}
-          className="whitespace-nowrap rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          Export CSV
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold">{definition.name}</h1>
+        <p className="text-gray-600">{definition.description}</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-lg border border-green-200 bg-green-50 p-4 shadow-sm">
-          <div className="text-3xl font-bold text-green-700">{summary.passPct}%</div>
-          <div className="text-gray-600">Passed Verification (n={summary.passCount})</div>
-        </div>
-        <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 shadow-sm">
-          <div className="text-3xl font-bold text-yellow-700">{summary.pendingPct}%</div>
-          <div className="text-gray-600">Pending Audit (n={summary.pendingCount})</div>
-        </div>
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 shadow-sm">
-          <div className="text-3xl font-bold text-red-700">{summary.failPct}%</div>
-          <div className="text-gray-600">Failed Verification (n={summary.failCount})</div>
-        </div>
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex gap-4">
+          {TABS.map(function (t) {
+            var isActive = activeTab === t.key;
+            return (
+              <button
+                key={t.key}
+                onClick={function () {
+                  setActiveTab(t.key);
+                }}
+                className={
+                  'whitespace-nowrap border-b-2 px-1 py-2 text-sm font-medium ' +
+                  (isActive
+                    ? 'border-blue-600 text-blue-700'
+                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700')
+                }
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
-      <div className="text-sm text-gray-500">{sortedRows.length} visits shown</div>
-      <div className="overflow-x-auto rounded border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              {columns.map(function (col) {
-                var isSorted = sort.key === col.key;
-                return (
-                  <th
-                    key={col.key}
-                    onClick={function () {
-                      handleSortClick(col.key);
-                    }}
-                    className="cursor-pointer select-none whitespace-nowrap px-3 py-2 text-left font-medium text-gray-700 hover:bg-gray-100"
-                  >
-                    {col.label}
-                    {isSorted ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100 bg-white">
-            {sortedRows.map(function (row, i) {
-              return (
-                <tr key={row.form_instance_id || i}>
+      {activeTab === 'summary' && (
+        <div className="space-y-4">
+          {summaryCards}
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <div style={{ height: '320px' }}>
+              <canvas ref={chartRef}></canvas>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'table' && (
+        <div className="space-y-4">
+          <div className="flex items-start justify-between">
+            <div className="text-sm text-gray-500">{sortedRows.length} visits shown</div>
+            <button
+              onClick={handleExportCSV}
+              className="whitespace-nowrap rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Export CSV
+            </button>
+          </div>
+          <div className="overflow-x-auto rounded border border-gray-200">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
+                <tr>
                   {columns.map(function (col) {
-                    var v = cellValue(row, col.key);
-                    var text = v === null || v === undefined ? '' : String(v);
-                    var colorClass = OUTCOME_COLUMN_KEYS[col.key] ? outcomeColorClass(v) : '';
+                    var isSorted = sort.key === col.key;
                     return (
-                      <td key={col.key} className={'whitespace-nowrap px-3 py-2 text-gray-800 ' + colorClass}>
-                        {text}
-                      </td>
+                      <th
+                        key={col.key}
+                        onClick={function () {
+                          handleSortClick(col.key);
+                        }}
+                        className="cursor-pointer select-none whitespace-nowrap px-3 py-2 text-left font-medium text-gray-700 hover:bg-gray-100"
+                      >
+                        {col.label}
+                        {isSorted ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      </th>
                     );
                   })}
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {sortedRows.map(function (row, i) {
+                  return (
+                    <tr key={row.form_instance_id || i}>
+                      {columns.map(function (col) {
+                        var v = cellValue(row, col.key);
+                        var text = v === null || v === undefined ? '' : String(v);
+                        var colorClass = OUTCOME_COLUMN_KEYS[col.key] ? outcomeColorClass(v) : '';
+                        return (
+                          <td key={col.key} className={'whitespace-nowrap px-3 py-2 text-gray-800 ' + colorClass}>
+                            {text}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
