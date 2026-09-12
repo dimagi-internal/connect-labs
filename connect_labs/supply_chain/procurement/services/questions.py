@@ -187,6 +187,14 @@ def _spec_fact(field_name: str, requirement: dict) -> MissingFact:
     Shared by missing_facts (a specific quote left it unanswered) and
     initial_request_facts (nobody has answered anything yet) so the wording
     of a spec question is written exactly once, not duplicated between them.
+
+    `commodity.spec_requirements` is unconstrained by _COMMODITY_DATA, and
+    initial_request_facts calls this directly rather than through
+    check_compliance (whose own operator guard would have raised first) --
+    so an operator outside the five named below IS reachable here, and
+    printing it raw would put e.g. "We require != 20 g" in a supplier email.
+    Omit the requirement clause entirely in that case rather than leak the
+    raw operator symbol.
     """
     operator_phrases = {
         "<=": "no more than",
@@ -195,15 +203,12 @@ def _spec_fact(field_name: str, requirement: dict) -> MissingFact:
         "<": "less than",
         ">": "more than",
     }
-    phrase = operator_phrases.get(requirement.get("operator"), requirement.get("operator"))
-    amount = f"{requirement.get('value')} {requirement.get('unit') or ''}".strip()
-    return MissingFact(
-        key=f"spec:{field_name}",
-        question=(
-            f"What is the {field_name.replace('_', ' ')} of the item you would supply? "
-            f"We require {phrase} {amount}."
-        ),
-    )
+    question = f"What is the {field_name.replace('_', ' ')} of the item you would supply?"
+    phrase = operator_phrases.get(requirement.get("operator"))
+    if phrase is not None:
+        amount = f"{requirement.get('value')} {requirement.get('unit') or ''}".strip()
+        question += f" We require {phrase} {amount}."
+    return MissingFact(key=f"spec:{field_name}", question=question)
 
 
 def missing_facts(

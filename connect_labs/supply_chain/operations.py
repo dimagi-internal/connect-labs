@@ -63,17 +63,17 @@ def call_operation(name: str, access, payload: dict | None = None) -> Any:
 # ---- serialisation helpers ---------------------------------------------
 
 
-def _figure(value):
+def figure(value):
     if isinstance(value, Money):
         return {"amount": str(value.amount), "currency": value.currency}
     return {"unconfirmed": list(value.reasons)}
 
 
-def _record(record) -> dict:
-    return {"id": record.id, **record.data}
+def record(rec) -> dict:
+    return {"id": rec.id, **rec.data}
 
 
-def _obj(properties: dict, required: tuple[str, ...] = ()) -> dict:
+def obj(properties: dict, required: tuple[str, ...] = ()) -> dict:
     return {
         "type": "object",
         "properties": properties,
@@ -82,7 +82,7 @@ def _obj(properties: dict, required: tuple[str, ...] = ()) -> dict:
     }
 
 
-_ID = {"type": "integer"}
+ID = {"type": "integer"}
 
 
 # A record's `data` is deliberately open — LabsRecords carry whatever a domain needs, and
@@ -91,9 +91,19 @@ _ID = {"type": "integer"}
 # the only place that claim can bind all three surfaces at once (web form, HTTP API, MCP
 # tool) while doubling as the documentation an agent reads before calling. So: constrain
 # the fields whose wrong values are silent, leave the rest open.
-def _data_with(**properties) -> dict:
-    """An object schema that pins the named properties and permits the rest."""
-    return {"type": "object", "properties": properties, "additionalProperties": True}
+def _data_with(_required: tuple[str, ...] = (), **properties) -> dict:
+    """An object schema that pins the named properties and permits the rest.
+
+    `_required` names the properties data_access indexes with `[]` rather
+    than `.get()` -- the ones whose absence is a KeyError deep inside a data
+    access method (a 500 that names no field) rather than a 400 naming
+    exactly what is missing, right where an agent reading this schema as
+    documentation would look for it.
+    """
+    schema: dict = {"type": "object", "properties": properties, "additionalProperties": True}
+    if _required:
+        schema["required"] = list(_required)
+    return schema
 
 
 # A JSON Schema `pattern` is a no-op against a non-string instance — it constrains the
@@ -103,15 +113,15 @@ def _data_with(**properties) -> dict:
 # has already lost the precision this whole design refuses to lose silently. So money
 # and quantity get two different schemas, not one shared "positive number" schema:
 #
-#   _MONEY    — string only. A JSON number cannot carry a monetary amount without a
+#   MONEY    — string only. A JSON number cannot carry a monetary amount without a
 #               possible silent rounding, so the contract refuses it outright rather
 #               than accept-and-round. The description is what a caller reads when its
 #               float gets rejected.
-#   _QUANTITY — a decimal string OR a JSON number, because "quantity": 3 is a reasonable
+#   QUANTITY — a decimal string OR a JSON number, because "quantity": 3 is a reasonable
 #               thing for a caller to write and rejecting it buys nothing — but positive
 #               on BOTH branches, via `anyOf` rather than a shared `pattern`, so a zero or
 #               negative quantity is refused whichever shape it arrives in.
-_MONEY = {
+MONEY = {
     "type": "string",
     "pattern": r"^\d*\.?\d+$",
     "description": (
@@ -123,7 +133,23 @@ _MONEY = {
 
 _NONZERO_DECIMAL_STRING = r"^(?!0*\.?0*$)\d*\.?\d+$"
 
-_QUANTITY = {
+# as_quoted_amount and amount_paid are the headline price -- a quote or a purchase at
+# $0 is not a real fact this domain has a basis flag for (unlike free freight or a
+# waived duty, which ARE representable facts and stay on the zero-accepting MONEY
+# above). MONEY's own pattern accepts "0"/"0.00" and yields a *confirmed* Money(0)
+# that sorts first in a comparison -- exactly the silent-wrong-answer this schema
+# layer exists to refuse everywhere else.
+MONEY_NONZERO = {
+    "type": "string",
+    "pattern": _NONZERO_DECIMAL_STRING,
+    "description": (
+        'A monetary amount, as a decimal string (e.g. "12.50"), never a JSON number — '
+        "money is Decimal, never float, and a float silently loses precision that a "
+        "string does not. Must be greater than zero."
+    ),
+}
+
+QUANTITY = {
     "anyOf": [
         {"type": "string", "pattern": _NONZERO_DECIMAL_STRING},
         {"type": "number", "exclusiveMinimum": 0},
@@ -133,22 +159,23 @@ _QUANTITY = {
 _NON_NEGATIVE_INT = {"type": "integer", "minimum": 0}
 
 _QUOTE_DATA = _data_with(
-    round_id=_ID,
-    supplier_id=_ID,
-    item_id=_ID,
+    ("round_id", "commodity_slug"),
+    round_id=ID,
+    supplier_id=ID,
+    item_id=ID,
     commodity_slug={"type": "string", "minLength": 1},
-    as_quoted_amount=_MONEY,
+    as_quoted_amount=MONEY_NONZERO,
     as_quoted_unit={"enum": ["per_base_unit", "per_pack", "per_lot_total", "per_metric_tonne"]},
     as_quoted_currency={"type": "string", "minLength": 3, "maxLength": 3},
-    quantity_basis=_QUANTITY,
+    quantity_basis=QUANTITY,
     pack_spec_source={"enum": ["stated_on_quote", "trade_item_confirmed", "not_stated"]},
     base_per_pack_stated=_NON_NEGATIVE_INT,
     base_unit_grams_stated=_NON_NEGATIVE_INT,
     freight_basis={"enum": ["included", "excluded", "not_specified"]},
     duties_basis={"enum": ["included", "excluded", "not_specified"]},
-    freight_amount=_MONEY,
-    duties_amount=_MONEY,
-    fx_rate_to_usd=_MONEY,
+    freight_amount=MONEY,
+    duties_amount=MONEY,
+    fx_rate_to_usd=MONEY,
     shelf_life_months_stated=_NON_NEGATIVE_INT,
     lead_time_days=_NON_NEGATIVE_INT,
 )
@@ -160,7 +187,7 @@ _ROUND_DATA = _data_with(
         "type": "array",
         "items": _data_with(
             commodity_slug={"type": "string", "minLength": 1},
-            quantity=_QUANTITY,
+            quantity=QUANTITY,
             quantity_unit={"type": "string", "minLength": 1},
         ),
     },
@@ -175,6 +202,7 @@ _ROUND_DATA = _data_with(
 )
 
 _ITEM_DATA = _data_with(
+    ("sku",),
     sku={"type": "string", "minLength": 1},
     commodity_slug={"type": "string", "minLength": 1},
     base_per_pack=_NON_NEGATIVE_INT,
@@ -185,15 +213,17 @@ _ITEM_DATA = _data_with(
 )
 
 _PURCHASE_DATA = _data_with(
-    round_id=_ID,
-    supplier_id=_ID,
+    ("round_id", "commodity_slug"),
+    round_id=ID,
+    supplier_id=ID,
     commodity_slug={"type": "string", "minLength": 1},
-    quantity=_QUANTITY,
-    amount_paid=_MONEY,
+    quantity=QUANTITY,
+    amount_paid=MONEY_NONZERO,
     currency={"type": "string", "minLength": 3, "maxLength": 3},
 )
 
 _COMMODITY_DATA = _data_with(
+    ("slug",),
     slug={"type": "string", "minLength": 1},
     name={"type": "string", "minLength": 1},
     category={
@@ -212,7 +242,7 @@ _COMMODITY_DATA = _data_with(
     base_unit_grams=_NON_NEGATIVE_INT,
     shelf_life_months_minimum=_NON_NEGATIVE_INT,
     course_definition=_data_with(
-        base_units_per_day=_QUANTITY,
+        base_units_per_day=QUANTITY,
         days_per_course=_NON_NEGATIVE_INT,
         base_units_per_course=_NON_NEGATIVE_INT,
         source={"type": "string"},
@@ -220,8 +250,9 @@ _COMMODITY_DATA = _data_with(
 )
 
 _OUTREACH_DATA = _data_with(
-    round_id=_ID,
-    supplier_id=_ID,
+    ("round_id",),
+    round_id=ID,
+    supplier_id=ID,
     channel={"enum": ["manual", "api", "mcp", "ses"]},
     responded={"type": "boolean"},
     response_kind={"enum": ["quote", "declined", "needs_info", "no_reply"]},
@@ -253,10 +284,10 @@ _SUPPLIER_DATA = _data_with(
         "List every commodity in the catalogue, with its unit ladder, course "
         "definition and specification requirements."
     ),
-    input_schema=_obj({}),
+    input_schema=obj({}),
 )
 def commodity_list(access):
-    return [_record(c) for c in access.list_commodities()]
+    return [record(c) for c in access.list_commodities()]
 
 
 @register_operation(
@@ -265,11 +296,11 @@ def commodity_list(access):
         "Create or update a commodity by slug. Include course_definition to "
         "unlock per-course and per-child cost figures."
     ),
-    input_schema=_obj({"data": _COMMODITY_DATA}, required=("data",)),
+    input_schema=obj({"data": _COMMODITY_DATA}, required=("data",)),
     is_write=True,
 )
 def commodity_upsert(access, data):
-    return _record(access.upsert_commodity(data))
+    return record(access.upsert_commodity(data))
 
 
 @register_operation(
@@ -280,20 +311,20 @@ def commodity_upsert(access, data):
         "specific branded product; a commodity is the type. Two suppliers' RUTF can "
         "be 144 and 150 to the carton, and only the item knows which."
     ),
-    input_schema=_obj({}),
+    input_schema=obj({}),
 )
 def item_list(access):
-    return [_record(i) for i in access.list_items()]
+    return [record(i) for i in access.list_items()]
 
 
 @register_operation(
     name="item_get",
     summary="Fetch one trade item by record id, with its pack configuration and specification attributes.",
-    input_schema=_obj({"item_id": _ID}, required=("item_id",)),
+    input_schema=obj({"item_id": ID}, required=("item_id",)),
 )
 def item_get(access, item_id):
     item = access.get_item(item_id)
-    return _record(item) if item else None
+    return record(item) if item else None
 
 
 @register_operation(
@@ -303,11 +334,11 @@ def item_get(access, item_id):
         "as the manufacturer states them, not as the commodity assumes. Any GTIN is "
         "validated against its GS1 check digit and a bad one is refused."
     ),
-    input_schema=_obj({"data": _ITEM_DATA}, required=("data",)),
+    input_schema=obj({"data": _ITEM_DATA}, required=("data",)),
     is_write=True,
 )
 def item_upsert(access, data):
-    return _record(access.upsert_item(data))
+    return record(access.upsert_item(data))
 
 
 @register_operation(
@@ -317,30 +348,30 @@ def item_upsert(access, data):
         "of name or contact email. Read this before creating a supplier to "
         "avoid making a duplicate."
     ),
-    input_schema=_obj({"search": {"type": "string"}}),
+    input_schema=obj({"search": {"type": "string"}}),
 )
 def supplier_list(access, search=None):
-    return [_record(s) for s in access.list_suppliers(search=search)]
+    return [record(s) for s in access.list_suppliers(search=search)]
 
 
 @register_operation(
     name="supplier_get",
     summary="Fetch one supplier by record id, with contacts, qualifications and status.",
-    input_schema=_obj({"supplier_id": _ID}, required=("supplier_id",)),
+    input_schema=obj({"supplier_id": ID}, required=("supplier_id",)),
 )
 def supplier_get(access, supplier_id):
     supplier = access.get_supplier(supplier_id)
-    return _record(supplier) if supplier else None
+    return record(supplier) if supplier else None
 
 
 @register_operation(
     name="supplier_create",
     summary="Create a supplier. Call supplier_list first if there is any chance this supplier is already on file.",
-    input_schema=_obj({"data": _SUPPLIER_DATA}, required=("data",)),
+    input_schema=obj({"data": _SUPPLIER_DATA}, required=("data",)),
     is_write=True,
 )
 def supplier_create(access, data):
-    return _record(access.create_supplier(data))
+    return record(access.create_supplier(data))
 
 
 @register_operation(
@@ -348,8 +379,8 @@ def supplier_create(access, data):
     summary=(
         "Update a supplier's details — contacts, status, qualifications, or " "the connect_organization_id binding."
     ),
-    input_schema=_obj({"supplier_id": _ID, "data": _SUPPLIER_DATA}, required=("supplier_id", "data")),
+    input_schema=obj({"supplier_id": ID, "data": _SUPPLIER_DATA}, required=("supplier_id", "data")),
     is_write=True,
 )
 def supplier_update(access, supplier_id, data):
-    return _record(access.update_supplier(supplier_id, data))
+    return record(access.update_supplier(supplier_id, data))

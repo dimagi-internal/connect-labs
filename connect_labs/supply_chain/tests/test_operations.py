@@ -91,6 +91,40 @@ def test_the_equivalent_string_money_amount_is_accepted():
     assert access.create_quote.called
 
 
+def test_a_zero_as_quoted_amount_is_rejected():
+    """MONEY's own pattern accepts "0"/"0.00" and yields a *confirmed*
+    Money(0) that sorts first in a comparison. as_quoted_amount is the
+    headline price -- unlike free freight or a waived duty (real facts with
+    their own basis flag), a $0 quote is not something this domain can
+    represent honestly, so it gets the nonzero variant."""
+    access = MagicMock()
+    for zero in ("0", "0.00", "0.0"):
+        with pytest.raises(Exception):
+            call_operation("quote_record", access, _quote_payload(as_quoted_amount=zero))
+    assert not access.create_quote.called
+
+
+def test_a_zero_amount_paid_is_rejected():
+    access = MagicMock()
+    for zero in ("0", "0.00"):
+        with pytest.raises(Exception):
+            call_operation(
+                "purchase_record",
+                access,
+                {
+                    "data": {
+                        "round_id": 1,
+                        "supplier_id": 2,
+                        "commodity_slug": "rutf",
+                        "quantity": "10",
+                        "amount_paid": zero,
+                        "currency": "USD",
+                    }
+                },
+            )
+    assert not access.create_purchase.called
+
+
 def test_a_negative_or_zero_quantity_is_rejected_on_both_the_string_and_the_number_branch():
     access = MagicMock()
     for bad_quantity in (0, -1, "0", "0.0", "-1"):
@@ -131,3 +165,56 @@ def test_a_positive_quantity_is_accepted_as_either_a_string_or_a_number():
             },
         )
     assert access.create_purchase.call_count == 4
+
+
+# --- Finding 4: every write operation's data schema names its required
+# fields, so a missing one is a 400 naming the field, not a KeyError deep
+# inside data_access (a 500 that names nothing) ------------------------------
+
+
+def test_quote_record_rejects_data_missing_round_id_or_commodity_slug():
+    access = MagicMock()
+    base = _quote_payload()["data"]
+    for missing in ("round_id", "commodity_slug"):
+        data = {k: v for k, v in base.items() if k != missing}
+        with pytest.raises(Exception):
+            call_operation("quote_record", access, {"data": data})
+    assert not access.create_quote.called
+
+
+def test_item_upsert_rejects_data_missing_sku():
+    access = MagicMock()
+    with pytest.raises(Exception):
+        call_operation("item_upsert", access, {"data": {"commodity_slug": "rutf"}})
+    assert not access.upsert_item.called
+
+
+def test_commodity_upsert_rejects_data_missing_slug():
+    access = MagicMock()
+    with pytest.raises(Exception):
+        call_operation("commodity_upsert", access, {"data": {"name": "RUTF"}})
+    assert not access.upsert_commodity.called
+
+
+def test_outreach_log_rejects_data_missing_round_id():
+    access = MagicMock()
+    with pytest.raises(Exception):
+        call_operation("outreach_log", access, {"data": {"supplier_id": 1}})
+    assert not access.create_outreach.called
+
+
+def test_purchase_record_rejects_data_missing_round_id_or_commodity_slug():
+    access = MagicMock()
+    base = {
+        "round_id": 1,
+        "supplier_id": 2,
+        "commodity_slug": "rutf",
+        "quantity": "10",
+        "amount_paid": "10.00",
+        "currency": "USD",
+    }
+    for missing in ("round_id", "commodity_slug"):
+        data = {k: v for k, v in base.items() if k != missing}
+        with pytest.raises(Exception):
+            call_operation("purchase_record", access, {"data": data})
+    assert not access.create_purchase.called

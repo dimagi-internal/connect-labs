@@ -235,6 +235,37 @@ def test_an_unmapped_reason_is_logged_exactly_once_not_once_per_figure(monkeypat
     assert len(warnings) == 1, warnings
 
 
+def test_an_unrecognised_spec_operator_does_not_leak_into_the_question(round_2000_cartons):
+    """initial_request_facts calls _spec_fact directly, never through
+    check_compliance's own operator guard -- so an operator outside the
+    five _spec_fact translates (spec_requirements is unconstrained by
+    _COMMODITY_DATA) is reachable here. The raw symbol must never appear in
+    a supplier-facing question."""
+    from connect_labs.supply_chain.models import CommodityRecord
+    from connect_labs.supply_chain.tests.conftest import wrap
+
+    scale = wrap(
+        CommodityRecord,
+        {
+            "slug": "infant-scale",
+            "name": "Infant scale",
+            "base_unit": "unit",
+            "pack_unit": "box",
+            "spec_requirements": [
+                {
+                    "field": "minimum_graduation_g",
+                    "operator": "!=",
+                    "value": 20,
+                    "unit": "g",
+                }
+            ],
+        },
+    )
+    fact = next(f for f in initial_request_facts(scale, round_2000_cartons) if f.key == "spec:minimum_graduation_g")
+    assert "!=" not in fact.question
+    assert "?" in fact.question
+
+
 def test_no_two_reason_questions_rows_share_a_key():
     """Guards the defect this module's own docstring says it exists to
     prevent: _QUESTION_BY_KEY is built as a dict comprehension over
