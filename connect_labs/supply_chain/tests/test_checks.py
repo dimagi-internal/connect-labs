@@ -445,3 +445,53 @@ class TestStock:
         result = _read(da, opportunity_id=OPP, categories=["missing"])
         assert result["count"] > 0
         assert {c["category"] for c in result["checks"]} == {"missing"}
+
+    def test_dispensing_stock_never_issued_is_a_conflict_not_a_stockout(self, da, rutf_without_course):
+        """More has left the point than ever arrived, which is not a level to
+        replenish -- it is a movement nobody recorded."""
+        item = op(
+            da,
+            "item_upsert",
+            data={
+                "sku": "harmattan",
+                "name": "Harmattan RUTF",
+                "commodity_slug": "rutf",
+                "base_unit": "sachet",
+                "pack_unit": "carton",
+                "base_per_pack": 144,
+            },
+        )
+        worker = op(
+            da,
+            "supply_point_upsert",
+            data={
+                "slug": "flw-kumbotso",
+                "name": "Worker, Kumbotso",
+                "kind": "user_held",
+                "opportunity_id": OPP,
+                "connect_username": "flw-kumbotso",
+                "source": "we_recorded",
+            },
+        )
+        op(
+            da,
+            "movement_record",
+            data={
+                "kind": "consumption",
+                "occurred_on": TODAY.isoformat(),
+                "commodity_slug": "rutf",
+                "item_id": item["id"],
+                "from_supply_point_id": worker["id"],
+                "quantity": "460",
+                "quantity_unit": "sachet",
+                "source": "connect_visit",
+            },
+        )
+
+        checks = _read(da, opportunity_id=OPP)["checks"]
+        kinds = [c["kind"] for c in checks]
+        assert "stock_negative" in kinds
+        assert "stock_stockout" not in kinds, "a negative balance was reported as a stockout"
+        negative = next(c for c in checks if c["kind"] == "stock_negative")
+        assert negative["category"] == "conflict"
+        assert negative["facts"]["balance"].startswith("-")

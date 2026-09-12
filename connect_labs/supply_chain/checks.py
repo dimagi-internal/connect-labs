@@ -75,6 +75,7 @@ KIND_CATEGORIES = {
     "award_not_contracted": "conflict",
     "invoice_over_billed": "conflict",
     "stock_variance": "conflict",
+    "stock_negative": "conflict",
     # threshold -- a derived figure crossed a bound stored in the data
     "stock_stockout": "threshold",
     "stock_below_minimum": "threshold",
@@ -333,7 +334,26 @@ def _stock(access, as_of, opportunity_id=None):
             label=row["name"],
             audience="internal",
         )
-        if row["status"] == "stockout":
+        # A negative balance is not a stockout, it is an impossibility: more
+        # has left this point than ever arrived. The commodity moved and the
+        # movement was never recorded -- an informal transfer between
+        # neighbours, or an issue note nobody wrote. Both are ordinary, and
+        # both make every figure downstream unreliable until reconciled, so
+        # this is a conflict to resolve rather than a level to replenish.
+        if not isinstance(row["on_hand"], Unconfirmed) and row["on_hand"].amount < 0:
+            out.append(
+                _check(
+                    "stock_negative",
+                    **subject,
+                    facts={
+                        "balance": decimal_string(row["on_hand"].amount),
+                        "unit": row["on_hand"].unit,
+                        "kind": row["kind"],
+                    },
+                    as_of=as_of,
+                )
+            )
+        elif row["status"] == "stockout":
             out.append(_check("stock_stockout", **subject, facts={"kind": row["kind"]}, as_of=as_of))
         elif row["status"] == "below_min":
             out.append(

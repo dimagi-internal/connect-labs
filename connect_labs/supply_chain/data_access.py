@@ -32,6 +32,7 @@ from connect_labs.supply_chain.models import (
     Commodity,
     Contract,
     Distribution,
+    DistributionLine,
     Document,
     Invoice,
     Item,
@@ -211,9 +212,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
 
         What a seeder's `--reset` needs, and the reason `scopes.require_synthetic`
         exists: the guard is here, at the only place that can do it, rather
-        than in each caller that might forget. Deletion order follows the
-        foreign keys inward-out, since the relations are PROTECTed precisely
-        so that a partial delete cannot silently orphan a ledger.
+        than in each caller that might forget.
         """
         program_id = self._require_program()
         scopes.require_synthetic(program_id, "purge supply data")
@@ -221,22 +220,47 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         counts: dict[str, int] = {}
 
         def drop(label, queryset):
-            deleted, _ = queryset.delete()
-            if deleted:
-                counts[label] = deleted
+            """Record how many of THIS model went, not the cascade total.
+
+            `QuerySet.delete()` returns every row it touched, children
+            included, so deleting one distribution with one line reported
+            "2 distributions". The per-model breakdown is the number a reader
+            of `--reset` output is actually looking for.
+            """
+            _, by_model = queryset.delete()
+            own = by_model.get(queryset.model._meta.label, 0)
+            if own:
+                counts[label] = own
+
+        # Sever every protected reference BEFORE deleting anything. This
+        # graph is PROTECT-heavy on purpose -- that is what stops a stray
+        # delete orphaning a ledger in normal use -- but it means there is no
+        # delete ORDER that works, because several pairs protect each other in
+        # both directions: a Movement points at its Distribution while that
+        # Distribution's lines point back at the Movement, and a worker's
+        # supply point names the store above it as its parent. So unlink
+        # first, then delete, rather than weakening the constraints that make
+        # the ledger trustworthy the rest of the time.
+        movements = Movement.objects.filter(program_id=program_id)
+        DistributionLine.objects.filter(distribution__program_id=program_id).update(movement=None)
+        StockCount.objects.filter(program_id=program_id).update(adjustment_movement=None)
+        movements.update(distribution=None, receipt=None, shipment=None, stock_count=None)
+        Contract.objects.filter(program_id=program_id).update(duty_relief_document=None)
+        Quote.objects.filter(round__program_id=program_id).update(superseded_by=None)
+        # Self-references are the same problem one table in: a worker's
+        # holding names the store above it as its parent, so no ordering of
+        # SupplyPoint deletes can work either.
+        SupplyPoint.objects.filter(program_id=program_id).update(parent=None, managed_by_party=None)
 
         drop("documents", Document.objects.filter(program_id=program_id))
         drop("stock counts", StockCount.objects.filter(program_id=program_id))
-        drop("movements", Movement.objects.filter(program_id=program_id))
         drop("distributions", Distribution.objects.filter(program_id=program_id))
+        drop("movements", movements)
         drop("invoices", Invoice.objects.filter(contract__program_id=program_id))
         drop("receipts", Receipt.objects.filter(supply_point__program_id=program_id))
         drop("shipments", Shipment.objects.filter(contract__program_id=program_id))
         drop("contracts", Contract.objects.filter(program_id=program_id))
         drop("awards", Award.objects.filter(round__program_id=program_id))
-        # Quotes reference each other through supersession, so the back-link
-        # goes first or the delete trips its own PROTECT.
-        Quote.objects.filter(round__program_id=program_id).update(superseded_by=None)
         drop("quotes", Quote.objects.filter(round__program_id=program_id))
         drop("outreach", Outreach.objects.filter(round__program_id=program_id))
         drop("rounds", Round.objects.filter(program_id=program_id))
