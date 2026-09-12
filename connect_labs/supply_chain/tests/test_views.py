@@ -576,3 +576,112 @@ def test_the_catalogue_names_a_pack_disagreement_between_trade_items(client, sop
     # Substring stops before the template's line break rather than spanning it.
     assert "packed 144 and 150 to the" in body
     assert "is not one number" in body
+
+
+def test_the_comparison_page_attributes_an_uncomputable_column_to_us_not_a_supplier(client, sophie):
+    """Cost per course needs the commodity's ration table -- our treatment
+    protocol, not anything a supplier states. It used to make every supplier
+    read as BLOCKED on a gap they could not close. The page now says once, at
+    the top, that the column is ours to close and is not part of the
+    comparison, while the supplier stays comparable.
+
+    Shaped like the real round_compare snapshot (Comparison.to_snapshot()); a
+    mock describing a shape the operation never returns asserts nothing.
+    """
+    row = {
+        "quote_id": 5,
+        "supplier_id": 1,
+        "supplier_name": "Harmattan Foods",
+        "is_comparable": True,
+        "figures": {
+            "landed_total_for_round_quantity": {"amount": "100000.00", "currency": "USD"},
+            "usd_per_course": {"unconfirmed": ["no course definition set for RUTF (sachets per course)"]},
+        },
+        "compliance": [],
+        "questions": [],
+    }
+    snapshot = {
+        "round_id": 1,
+        "generated_at": "2026-09-12T00:00:00+00:00",
+        "comparable_count": 1,
+        "total_count": 1,
+        "ranked_by": "landed_total_for_round_quantity",
+        "provisional": False,
+        "unavailable": {
+            "usd_per_course": {
+                "label": "USD per course",
+                "reasons": ["no course definition set for RUTF (sachets per course)"],
+            }
+        },
+        "columns": [
+            {
+                "key": "landed_total_for_round_quantity",
+                "label": "Landed total (this round)",
+                "rankable": True,
+                "blocked_by": [],
+            }
+        ],
+        "comparable": [row],
+        "blocked": [],
+        "all_rows": [row],
+    }
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=snapshot):
+        response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
+    body = response.content.decode()
+
+    assert "Ours to close, not theirs" in body
+    assert "no course definition set" in body
+    # And it must NOT be dressed up as the supplier's problem.
+    assert "PROVISIONAL" not in body
+    assert "not given us enough to compare" not in body
+
+
+def test_a_comparable_row_never_renders_an_unconfirmed_figure_as_a_blank(client, sophie):
+    """Comparability no longer waits on figures only we can supply, so a
+    COMPARABLE row can now hold an unconfirmed cell -- a state that was
+    unreachable before. The comparable table rendered `cell.amount` for it
+    unconditionally, producing an empty cell, which reads as "no cost per
+    course" rather than "we have not set the ration table". A blank is the
+    one thing the Unconfirmed type exists to prevent."""
+    row = {
+        "quote_id": 5,
+        "supplier_id": 1,
+        "supplier_name": "Harmattan Foods",
+        "is_comparable": True,
+        "figures": {
+            "landed_total_for_round_quantity": {"amount": "100000.00", "currency": "USD"},
+            "usd_per_course": {"unconfirmed": ["no course definition set for RUTF (sachets per course)"]},
+        },
+        "compliance": [],
+        "questions": [],
+    }
+    snapshot = {
+        "round_id": 1,
+        "generated_at": "2026-09-12T00:00:00+00:00",
+        "comparable_count": 1,
+        "total_count": 1,
+        "ranked_by": "landed_total_for_round_quantity",
+        "provisional": False,
+        "unavailable": {
+            "usd_per_course": {"label": "USD per course", "reasons": ["no course definition set for RUTF"]}
+        },
+        "columns": [
+            {
+                "key": "landed_total_for_round_quantity",
+                "label": "Landed total (this round)",
+                "rankable": True,
+                "blocked_by": [],
+            },
+            {"key": "usd_per_course", "label": "USD per course", "rankable": False, "blocked_by": []},
+        ],
+        "comparable": [row],
+        "blocked": [],
+        "all_rows": [row],
+    }
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=snapshot):
+        response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
+    body = response.content.decode()
+
+    assert "Unconfirmed" in body, "the cell rendered blank instead of saying it is unconfirmed"
+    # The confirmed figure on the same row still renders as a number.
+    assert "100000" in body

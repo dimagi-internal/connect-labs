@@ -25,8 +25,13 @@ from datetime import UTC, datetime
 
 from connect_labs.supply_chain.models import Commodity, Quote, Round
 from connect_labs.supply_chain.procurement.services.compliance import check_compliance
-from connect_labs.supply_chain.procurement.services.pricing import FIGURE_FIELDS, FIGURE_LABELS, compute_figures
-from connect_labs.supply_chain.procurement.services.questions import missing_facts
+from connect_labs.supply_chain.procurement.services.pricing import (
+    COMPARABILITY_FIELDS,
+    FIGURE_FIELDS,
+    FIGURE_LABELS,
+    compute_figures,
+)
+from connect_labs.supply_chain.procurement.services.questions import audience_for_reason, missing_facts
 from connect_labs.supply_chain.values import Unconfirmed, to_wire
 
 
@@ -58,6 +63,11 @@ class Comparison:
     generated_at: str
     ranked_by: str | None
     provisional: bool
+    # Figures no row could compute, with the reason -- a gap in OUR
+    # configuration rather than any supplier's answer. Reported separately
+    # from `blocked` because conflating the two is what made a supplier who
+    # answered everything look like the problem.
+    unavailable: dict = field(default_factory=dict)
 
     @property
     def all_rows(self) -> list[ComparisonRow]:
@@ -114,6 +124,7 @@ class Comparison:
             "comparable_count": self.comparable_count,
             "total_count": self.total_count,
             "ranked_by": self.ranked_by,
+            "unavailable": self.unavailable,
             "provisional": self.provisional,
             "columns": [
                 {
@@ -135,6 +146,37 @@ class Comparison:
 
 def _is_live(quote: Quote) -> bool:
     return not quote.voided and not quote.superseded_by_quote_id
+
+
+def _unavailable_figures(rows: list[ComparisonRow]) -> dict:
+    """Figures no supplier could supply, because the gap is OURS.
+
+    Decided by the audience of the reasons, not by how many rows are missing
+    the figure. An earlier version used "Unconfirmed on every row", which is
+    trivially true when a round has one quote -- so that supplier's own
+    missing pack specification came back reported as our gap. `audience` is
+    the domain's existing answer to whose a gap is, and it is the same table
+    the supplier questions are built from.
+
+    A figure appears here only when EVERY reason blocking it, on every row, is
+    internal. One supplier-facing reason and it belongs in that supplier's
+    question list instead.
+    """
+    if not rows:
+        return {}
+    out = {}
+    for key in FIGURE_FIELDS:
+        values = [row.figures.get(key) for row in rows]
+        if not all(isinstance(value, Unconfirmed) for value in values):
+            continue
+        reasons: list[str] = []
+        for value in values:
+            for reason in value.reasons:
+                if reason not in reasons:
+                    reasons.append(reason)
+        if all(audience_for_reason(reason) == "internal" for reason in reasons):
+            out[key] = {"label": FIGURE_LABELS.get(key, key), "reasons": reasons}
+    return out
 
 
 def _ranking_key(comparable: list[ComparisonRow]) -> str | None:
@@ -195,7 +237,10 @@ def compare_round(
             figures=figures,
             compliance=check_compliance(quote, commodity, item=item),
             questions=missing_facts(quote, commodity, round_, item=item),
-            is_comparable=not any(isinstance(v, Unconfirmed) for v in figures.values()),
+            # Only the figures a supplier or the round determines. See
+            # COMPARABILITY_FIELDS: gating on the course figures blocked
+            # suppliers for our own missing ration table.
+            is_comparable=not any(isinstance(figures[key], Unconfirmed) for key in COMPARABILITY_FIELDS),
         )
         (comparable if row.is_comparable else blocked).append(row)
 
@@ -209,6 +254,7 @@ def compare_round(
     if ranked_by is not None:
         comparable.sort(key=lambda row: row.figures[ranked_by].amount)
 
+    unavailable = _unavailable_figures(comparable + blocked)
     columns: list[ComparisonColumn] = []
     for key in FIGURE_FIELDS:
         # blocked_by names every supplier missing this figure, so the template can
@@ -224,7 +270,10 @@ def compare_round(
             ComparisonColumn(
                 key=key,
                 label=FIGURE_LABELS[key].format(**nouns),
-                rankable=bool(comparable),
+                # A column no row could compute cannot order anything, however
+                # many rows are otherwise comparable. Saying `rankable` of it
+                # would offer a sort that silently does nothing.
+                rankable=bool(comparable) and key not in unavailable,
                 blocked_by=short,
             )
         )
@@ -237,4 +286,5 @@ def compare_round(
         generated_at=datetime.now(UTC).isoformat(),
         ranked_by=ranked_by,
         provisional=bool(blocked),
+        unavailable=unavailable,
     )
