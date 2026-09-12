@@ -26,39 +26,82 @@ class OperationBase(TemplateView):
         return context
 
 
-class ItemMasterView(OperationBase):
-    """The master item list, with the disagreement that justifies its existence.
+class CatalogueView(OperationBase):
+    """What can be bought, at the two levels the supply chain actually uses.
 
-    Two items under one commodity that disagree on pack configuration is the
-    defect this layer exists to surface: it is invisible at commodity level and
-    it silently corrupts every per-base-unit comparison.
+    **Products** are spec-defined: "ready-to-use therapeutic food, 92 g
+    sachet, 150 to the carton, 18 months minimum" is a specification, not a
+    thing you can order. It carries the reference to the standard it comes
+    from and, where one exists, the UNICEF Supply Division material number
+    that names it across every prequalified manufacturer.
+
+    **Trade items** are orderable: one manufacturer's product, with its own
+    SKU and its own GTIN, checked against the product's requirements.
+
+    This is not "item master" renamed. The two levels answer the question
+    Jonathan asked -- how do you know every supplier's RUTF is really the same
+    92 g sachet while still knowing their specific SKU -- and the answer has
+    three identifier levels, of which this page shows two: the product says
+    what it must be, the trade item says whose it is and how it is packed, and
+    the batch (on the Stock page) says which physical lot arrived. Conflating
+    any two of them is how a per-sachet comparison silently goes 4% wrong.
     """
 
-    template_name = "supply_chain/items.html"
+    template_name = "supply_chain/catalogue.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         items = self.op("item_list")
-        commodities = {c["slug"]: c for c in self.op("commodity_list")}
+        products = self.op("commodity_list")
 
-        packs_seen: dict[str, set] = {}
+        by_product: dict[str, list] = {}
         for item in items:
-            if item.get("base_per_pack"):
-                packs_seen.setdefault(item["commodity_slug"], set()).add(item["base_per_pack"])
+            by_product.setdefault(item["commodity_slug"], []).append(item)
 
-        for item in items:
-            commodity = commodities.get(item["commodity_slug"], {})
-            item["commodity_name"] = commodity.get("name", item["commodity_slug"])
-            item["pack_disagrees"] = len(packs_seen.get(item["commodity_slug"], set())) > 1
-            item["differs_from_commodity"] = bool(
-                item.get("base_per_pack")
-                and commodity.get("base_per_pack")
-                and item["base_per_pack"] != commodity["base_per_pack"]
+        for product in products:
+            own = by_product.get(product["slug"], [])
+            packs = {i["base_per_pack"] for i in own if i.get("base_per_pack")}
+            weights = {i["base_unit_grams"] for i in own if i.get("base_unit_grams")}
+
+            for item in own:
+                item["spec_verdict"] = spec_verdict(
+                    item.get("spec_attributes"), product.get("spec_requirements") or []
+                )
+                # Two different kinds of disagreement, and they are not the
+                # same finding. Differing from the product's nominal pack is
+                # often legitimate -- a manufacturer may genuinely pack 144.
+                # Two trade items under one product differing from EACH OTHER
+                # is what makes a single per-sachet figure impossible.
+                item["differs_from_product"] = bool(
+                    item.get("base_per_pack")
+                    and product.get("base_per_pack")
+                    and item["base_per_pack"] != product["base_per_pack"]
+                )
+                item["pack_disagrees_with_siblings"] = len(packs) > 1
+                item["weight_disagrees_with_siblings"] = len(weights) > 1
+                item["gtins"] = [
+                    {"level": level, "value": item.get(key)}
+                    for level, key in (
+                        ("base unit", "gtin_base"),
+                        ("pack", "gtin_pack"),
+                        ("case", "gtin_case"),
+                    )
+                    if item.get(key)
+                ]
+
+            product["items"] = own
+            product["pack_values"] = sorted(packs)
+            product["weight_values"] = sorted(weights)
+            # The ration table is a programme decision, not part of the
+            # specification, so its absence is stated rather than defaulted.
+            product["has_course_definition"] = bool(
+                (product.get("course_definition") or {}).get("base_units_per_course")
             )
-            item["spec_verdict"] = spec_verdict(item.get("spec_attributes"), commodity.get("spec_requirements") or [])
 
-        context["items"] = items
-        context["commodities"] = commodities.values()
+        context["products"] = products
+        context["orphan_items"] = [
+            item for item in items if item["commodity_slug"] not in {p["slug"] for p in products}
+        ]
         return context
 
 
