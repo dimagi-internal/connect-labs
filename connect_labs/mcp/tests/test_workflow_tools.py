@@ -2110,3 +2110,120 @@ def test_forking_seeds_the_copy_with_what_the_page_shows_now(mock_wda_cls, clien
     saved = mock_wda_cls.return_value.save_render_code.call_args.kwargs
     assert saved["component_code"] == get_template("kmc_programme_metrics")["render_code"]
     assert saved["version"] == 10
+
+
+# =============================================================================
+# workflow_clone(linked=True) tests
+# =============================================================================
+
+
+def _linked_source_def():
+    source_def = MagicMock(
+        id=19778,
+        description="real KMC",
+        data={
+            "version": 4,
+            "config": {"templateType": "kmc_programme_metrics"},
+            "statuses": [],
+            "pipeline_sources": [{"alias": "visits", "pipeline_id": 19776}],
+            "opportunity_ids": [523],
+            "registry_source": {"registry_id": 19784},
+        },
+    )
+    source_def.name = "KMC Programme Metrics"
+    return source_def
+
+
+@pytest.mark.django_db
+@patch("connect_labs.workflow.data_access.PipelineDataAccess")
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_clone_linked_references_an_unshared_pipeline_in_its_source_scope(
+    mock_wda_cls, mock_pda_cls, client, auth_user
+):
+    _, raw = auth_user
+    src, dst = MagicMock(), MagicMock()
+    mock_wda_cls.side_effect = [src, dst]
+    src.get_definition.return_value = _linked_source_def()
+    src.get_render_code.return_value = MagicMock(component_code="function WorkflowUI(){}", version=7)
+    dst.create_definition.return_value = MagicMock(id=5456)
+    # Not readable as public, so the clone must name the source's own scope.
+    mock_pda_cls.return_value.get_definition.return_value = None
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_clone",
+        {
+            "source_workflow_id": 19778,
+            "source_opportunity_id": 523,
+            "target_opportunity_id": 10042,
+            "linked": True,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["linked"] is True
+    assert content["pipeline_sources"] == [
+        {"alias": "visits", "pipeline_id": 19776, "home_scope": {"opportunity_id": 523}}
+    ]
+    # The registry binding has to be resolvable from the NEW scope.
+    assert content["registry"] == {"registry_id": 19784, "opportunity_id": 523}
+    # It follows the template, so no copy of the render code is stored.
+    assert content["render_source"] == {"template": "kmc_programme_metrics"}
+    assert content["render_code_version"] is None
+    dst.save_render_code.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("connect_labs.workflow.data_access.PipelineDataAccess")
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_clone_linked_prefers_public_for_a_shared_pipeline(mock_wda_cls, mock_pda_cls, client, auth_user):
+    _, raw = auth_user
+    src, dst = MagicMock(), MagicMock()
+    mock_wda_cls.side_effect = [src, dst]
+    src.get_definition.return_value = _linked_source_def()
+    src.get_render_code.return_value = None
+    dst.create_definition.return_value = MagicMock(id=5456)
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(id=19776)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_clone",
+        {
+            "source_workflow_id": 19778,
+            "source_opportunity_id": 523,
+            "target_opportunity_id": 10042,
+            "linked": True,
+        },
+    )
+    content = data["result"]["structuredContent"]
+    assert content["pipeline_sources"] == [{"alias": "visits", "pipeline_id": 19776, "home_scope": {"public": True}}]
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_clone_unlinked_still_forks_the_render_code(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    src, dst = MagicMock(), MagicMock()
+    mock_wda_cls.side_effect = [src, dst]
+    src.get_definition.return_value = _linked_source_def()
+    src.get_render_code.return_value = MagicMock(component_code="function WorkflowUI(){}", version=7)
+    dst.create_definition.return_value = MagicMock(id=5456)
+    dst.save_render_code.return_value = MagicMock(version=1)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_clone",
+        {
+            "source_workflow_id": 19778,
+            "source_opportunity_id": 523,
+            "target_opportunity_id": 10042,
+        },
+    )
+    content = data["result"]["structuredContent"]
+    assert content["linked"] is False
+    assert content["render_code_version"] == 1
+    assert content["render_source"] is None
+    dst.save_render_code.assert_called_once()
