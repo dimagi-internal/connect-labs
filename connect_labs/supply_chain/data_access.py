@@ -98,6 +98,20 @@ class SupplyDataAccess:
 
     @property
     def program_experiment(self) -> str:
+        """The procurement tier's experiment key -- never a stand-in.
+
+        str(None) would silently collapse every programme-less caller onto the
+        experiment "None", making rounds/quotes/awards/purchases written by
+        different callers indistinguishable -- exactly the cross-programme leak
+        the two-tier scoping exists to prevent. A round, a quote and an award
+        have no meaning outside a programme, so refuse rather than invent one.
+        """
+        if self.program_id is None:
+            raise ValueError(
+                "SupplyDataAccess has no program_id: procurement records "
+                "(rounds, outreach, quotes, awards, purchases) require a "
+                "programme scope and cannot be read or written without one"
+            )
         return str(self.program_id)
 
     # ---- reference tier -------------------------------------------------

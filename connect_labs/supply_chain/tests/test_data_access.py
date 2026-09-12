@@ -38,6 +38,27 @@ def da(monkeypatch):
     return access
 
 
+@pytest.fixture
+def da_without_program(monkeypatch):
+    """No programme at all — the reference tier's fallback still has to work.
+
+    Reference reads/writes use a fixed experiment key ("supply:reference"),
+    never program_experiment, so program_id must not be needed there. But a
+    round/quote/award/purchase has no meaning outside a programme, so the
+    procurement tier must refuse rather than write to the literal string
+    "None".
+    """
+
+    def fake_client(**kwargs):
+        client = MagicMock()
+        client.init_kwargs = kwargs
+        client.get_records.return_value = []
+        return client
+
+    monkeypatch.setattr("connect_labs.supply_chain.data_access.LabsRecordAPIClient", fake_client)
+    return SupplyDataAccess(access_token="t")
+
+
 def test_reference_and_procurement_use_separate_clients(da):
     assert da.reference_client is not da.program_client
 
@@ -185,3 +206,24 @@ def test_opening_a_round_without_a_delivery_point_is_refused(da):
     )
     with pytest.raises(ValueError, match="delivery point"):
         da.open_round(9)
+
+
+def test_procurement_without_a_programme_refuses_rather_than_writing_to_none(da_without_program):
+    """str(None) == "None" would silently pin every procurement record from every
+    programme-less caller onto the same fake experiment -- a cross-programme
+    leak, the exact failure the two-tier scoping exists to prevent.
+    """
+    with pytest.raises(ValueError, match="program_id"):
+        da_without_program.list_rounds()
+
+
+def test_the_reference_fallback_never_needs_a_programme_to_read_or_write(da_without_program):
+    """The programme-scoped fallback tier (no numeric org) is the synthetic-
+    environment path this app is actually developed in. It must not require a
+    program_id either, because reference records key off a fixed experiment
+    string, not program_experiment.
+    """
+    assert da_without_program.reference_scope == "program"
+    da_without_program.reference_client.get_records.return_value = []
+    da_without_program.upsert_commodity({"slug": "rutf", "name": "RUTF"})
+    assert da_without_program.reference_client.create_record.called
