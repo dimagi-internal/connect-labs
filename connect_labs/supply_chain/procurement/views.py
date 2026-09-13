@@ -127,6 +127,14 @@ class QuoteDetailView(_Base):
 
     def get_context_data(self, quote_id, **kwargs):
         context = super().get_context_data(**kwargs)
+        # Every programme-scoped view in this app guards this and the new one
+        # did not: without a programme in context, `quote_get` reaches
+        # `_require_program` and raises, which is a 500 on a page reached by a
+        # link rather than an honest "choose a programme".
+        context["has_program_context"] = has_program_context(self.request)
+        if not context["has_program_context"]:
+            return context
+
         detail = self.op("quote_get", quote_id=quote_id)
         if detail is None:
             raise Http404(f"no quote {quote_id} in this programme")

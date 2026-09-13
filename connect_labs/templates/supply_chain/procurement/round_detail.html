@@ -1,5 +1,5 @@
 {% extends "supply_chain/base.html" %}
-{% load static i18n %}
+{% load static i18n supply_chain_extras %}
 
 {% block supply_content %}
 {% if round %}
@@ -44,13 +44,13 @@
     <tbody class="divide-y divide-gray-200">
       {% for o in outreach %}
       <tr>
-        <td class="px-4 py-2 text-sm text-gray-900">Supplier #{{ o.supplier_id }}</td>
+        <td class="px-4 py-2 text-sm text-gray-900">{{ supplier_names|dictkey:o.supplier_id|default:"Supplier" }}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ o.sent_on|default:"—" }}</td>
         <td class="px-4 py-2 text-sm text-gray-600">
           {{ o.days_waiting|default_if_none:"—" }}
         </td>
         <td class="px-4 py-2 text-sm text-gray-600">{% if o.responded %}Yes{% else %}No{% endif %}</td>
-        <td class="px-4 py-2 text-sm text-gray-600">{{ o.response_kind|default:"—" }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ o.response_kind|humanise|default:"—" }}</td>
       </tr>
       {% empty %}
       <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">No outreach recorded yet.</td></tr>

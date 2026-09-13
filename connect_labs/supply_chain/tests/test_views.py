@@ -743,3 +743,19 @@ def test_with_nothing_comparable_the_page_does_not_claim_a_provisional_ranking(c
     # But nothing is ranked, so nothing can be provisionally ranked or beaten.
     assert "PROVISIONAL" not in body
     assert "could still beat it" not in body
+
+
+def test_the_quote_page_asks_for_a_programme_rather_than_raising(client, sophie):
+    """Every programme-scoped view in this app guards this; the quote page was
+    added without it. Unguarded, `quote_get` reaches `_require_program` and
+    raises ValueError -- a 500 on a page reached by an ordinary link, where
+    the honest answer is "choose a programme".
+
+    The operation must not be called at all: reaching it is the failure.
+    """
+    with patch("connect_labs.supply_chain.procurement.views.call_operation") as op:
+        response = client.get(reverse("supply_chain:procurement_quote_detail", args=[1]))
+
+    assert response.status_code == 200
+    assert "No programme selected" in response.content.decode()
+    assert not op.called, "a programme-scoped operation ran without a programme"

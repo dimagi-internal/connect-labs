@@ -303,7 +303,11 @@ def _basis_phrase(basis, amount):
     if not basis or basis == "not_specified":
         return ""
     words = str(basis).replace("_", " ")
-    return f"{words}, {amount}" if amount else f"{words}, amount not given"
+    # `if amount` is false for 0, so freight quoted at zero read as "amount
+    # not given" -- an unknown. Free freight and a waived duty are real facts
+    # with their own basis flag, and keeping a known zero apart from an
+    # unknown is the thing this domain is built around.
+    return f"{words}, {amount}" if amount is not None else f"{words}, amount not given"
 
 
 @register.filter
