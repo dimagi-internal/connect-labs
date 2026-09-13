@@ -151,6 +151,14 @@ def test_the_operation_is_registered_as_a_write():
     assert get_operation("tracker_import").is_write is True
 
 
+def _group_row(round_one="Round 1 Quote (500 cartons)", round_two="Feb Re-quote (2,000 cartons)"):
+    """Row 4: the sheet's merged group headers, which NAME the rounds."""
+    row = [""] * 20
+    row[t.ROUNDS[0]["label_column"]] = round_one
+    row[t.ROUNDS[1]["label_column"]] = round_two
+    return row
+
+
 def _row(*, price="$52.42", freight="Not specified", name="Harmattan Foods"):
     """A tracker row in the sheet's own 20-column shape."""
     row = [""] * 20
@@ -179,7 +187,7 @@ class TestDryRun:
 
     @pytest.mark.django_db
     def test_a_dry_run_reports_the_same_refusals_the_real_run_makes(self, monkeypatch):
-        monkeypatch.setattr(t, "_read_rows", lambda _id: [_row()])
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
         da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
 
         dry = t.import_tracker(da, ensure_commodity=True, dry_run=True)
@@ -193,7 +201,7 @@ class TestDryRun:
     def test_a_dry_run_still_writes_nothing(self, monkeypatch):
         """The refusals now come from walking the same code, so the write is
         what has to be suppressed -- not the traversal."""
-        monkeypatch.setattr(t, "_read_rows", lambda _id: [_row()])
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
         da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
 
         t.import_tracker(da, ensure_commodity=True, dry_run=True)
@@ -201,3 +209,85 @@ class TestDryRun:
         assert call_operation("supplier_list", da, {}) == []
         assert call_operation("round_list", da, {}) == []
         assert call_operation("commodity_list", da, {}) == []
+
+
+class TestRoundLabels:
+    """A round is named by the sheet, not by this module.
+
+    The labels were literals: "Round 1 — May 2026" and "Round 2 — February
+    re-quote". The sheet's own header for the first is "Round 1 Quote (500
+    cartons)" -- no month anywhere. May was ONE supplier's quote date (DABS,
+    18 May 2026) promoted into the round's identity, and Round 1 actually
+    runs from EHA's 23 Feb quote to DABS's 18 May one. So the label was
+    wrong for EHA and misleading for the rest, and because it lived in a
+    string constant no derivation guard could catch it -- the same
+    stored-derived-value substitution this domain refuses everywhere it can
+    see one.
+    """
+
+    def test_a_round_is_named_by_the_sheets_own_group_header(self):
+        labels = t._round_labels(_group_row())
+        assert labels == ["Round 1 Quote (500 cartons)", "Feb Re-quote (2,000 cartons)"]
+
+    def test_no_label_asserts_a_month_the_sheet_does_not_state(self):
+        labels = t._round_labels(_group_row())
+        assert not any("May" in label for label in labels)
+
+    def test_two_rounds_resolving_to_one_name_is_refused_not_merged(self):
+        """Reading the label off the sheet made a collision reachable for the
+        first time: as literals the two were distinct by construction.
+
+        `_ensure_rounds` keys on the label, so two identical headers map both
+        specs to ONE round id and `_load_round` then writes the Feb re-quote's
+        prices against Round 1 -- two rounds silently collapsed, with every
+        quantity and age attributed to the wrong one. Refused rather than
+        disambiguated: appending a suffix would invent a name, which is the
+        defect this whole change exists to remove.
+        """
+        with pytest.raises(t.TrackerImportError) as caught:
+            t._round_labels(_group_row(round_one="Quote", round_two="Quote"))
+        assert "distinct" in str(caught.value)
+        assert "Quote" in str(caught.value)
+
+    def test_a_stated_header_colliding_with_the_other_fallback_is_refused(self):
+        """The fallbacks are real labels too, so a header reading "Round 2"
+        on the FIRST round collides with the second's fallback."""
+        with pytest.raises(t.TrackerImportError):
+            t._round_labels(_group_row(round_one="Round 2", round_two=""))
+
+    def test_a_blank_header_falls_back_to_an_ordinal_never_an_inferred_month(self):
+        labels = t._round_labels(_group_row(round_one="", round_two=""))
+        assert labels == ["Round 1", "Round 2"]
+
+    def test_the_header_rows_are_dropped_by_position_not_truthiness(self, monkeypatch):
+        """Rows 4 and 5 both carry text in the supplier-name column
+        ("Supplier Identification", "Supplier name"), so a truthiness filter
+        would import two phantom suppliers."""
+        group = _group_row()
+        column_headers = [""] * 20
+        column_headers[t.NAME] = "Supplier name"
+        payload = {"values": [group, column_headers, _row(name="Harmattan Foods")]}
+
+        class _Response:
+            status_code = 200
+
+            def json(self):
+                return payload
+
+            def raise_for_status(self):
+                pass
+
+        monkeypatch.setattr(t, "_load_credentials", lambda: _FakeCreds())
+        monkeypatch.setattr(t.httpx, "get", lambda *a, **k: _Response())
+
+        returned_group, rows = t._read_sheet("sheet-id")
+        assert returned_group == group
+        assert [r[t.NAME] for r in rows] == ["Harmattan Foods"]
+
+
+class _FakeCreds:
+    token = "unused"
+    service_account_email = "sa@example.com"
+
+    def refresh(self, _request):
+        pass
