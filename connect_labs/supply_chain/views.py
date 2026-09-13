@@ -6,6 +6,7 @@ reaches the domain.
 """
 
 from django.contrib.auth.decorators import login_required
+from django.http import Http404
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
@@ -240,7 +241,14 @@ class OrderDetailView(OperationBase):
         if not context["has_program_context"]:
             return context
         contract_id = int(kwargs["contract_id"])
-        context["contract"] = self.op("contract_get", contract_id=contract_id)
+        # A contract that is not in this programme is a 404, not a 500. Without
+        # this, `contract_landed_cost` below is handed a missing contract and
+        # raises deep in a derivation, so a mistyped or stale URL returns a
+        # server error that names nothing.
+        contract = self.op("contract_get", contract_id=contract_id)
+        if contract is None:
+            raise Http404(f"no contract {contract_id} in this programme")
+        context["contract"] = contract
         context["landed"] = self.op("contract_landed_cost", contract_id=contract_id, compare_buyers=True)
         context["match"] = self.op("contract_match", contract_id=contract_id)
         context["shipments"] = self.op("shipment_list", contract_id=contract_id)

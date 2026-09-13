@@ -97,7 +97,13 @@ class RoundDetailView(_Base):
 
     def get_context_data(self, round_id, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["round"] = self.op("round_get", round_id=round_id)
+        round_ = self.op("round_get", round_id=round_id)
+        # Was a 200 rendering "Round not found." A missing resource answering
+        # 200 tells a browser, a link checker and a monitor that the page is
+        # fine, which is the one thing it is not.
+        if round_ is None:
+            raise Http404(f"no round {round_id} in this programme")
+        context["round"] = round_
         outreach = self.op("outreach_list", round_id=round_id)
         for o in outreach:
             o["days_waiting"] = None if o.get("responded") else _days_waiting(o.get("sent_on"))
@@ -166,7 +172,12 @@ class ComparisonView(_Base):
     def get_context_data(self, round_id, **kwargs):
         context = super().get_context_data(**kwargs)
         round_ = self.op("round_get", round_id=round_id)
-        lines = (round_ or {}).get("lines") or []
+        # The `or {}` below tolerated a missing round as far as here and then
+        # `round_compare` raised on it, so a stale link 500'd. A round that is
+        # not in this programme is a 404.
+        if round_ is None:
+            raise Http404(f"no round {round_id} in this programme")
+        lines = round_.get("lines") or []
         commodity = self.request.GET.get("commodity")
 
         # round_compare's schema requires commodity_slug as a string — nothing
