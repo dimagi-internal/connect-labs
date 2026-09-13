@@ -286,10 +286,40 @@ class TestContracts:
         assert contract.duty_relief_evidenced is False
 
 
+@pytest.fixture
+def registered_synthetic():
+    """Register the test programme as a labs-only scope.
+
+    `is_synthetic` no longer trusts the id range alone: it asks
+    `labs/synthetic` whether a labs-only opportunity is registered under the
+    programme, because that registration is what says who the programme
+    belongs to. A programme that may be purged wholesale has to be one
+    somebody claimed -- so a test that purges has to claim one too.
+    """
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+    return SyntheticOpportunity.objects.create(
+        opportunity_id=SYNTHETIC_PROGRAM,
+        program_id=SYNTHETIC_PROGRAM,
+        labs_only=True,
+        enabled=True,
+        label="supply tests",
+        allowed_domains=["dimagi.com"],
+    )
+
+
 class TestSyntheticScopes:
-    def test_a_labs_only_programme_is_synthetic(self):
-        assert access(program_id=SYNTHETIC_FLOOR).is_synthetic is True
+    def test_a_registered_labs_only_programme_is_synthetic(self, registered_synthetic):
         assert access(program_id=SYNTHETIC_PROGRAM).is_synthetic is True
+
+    def test_an_unregistered_id_in_the_reserved_range_is_not_synthetic(self):
+        """The gap this closed. A bare id at or above the floor satisfied the
+        old numeric rule while being governed by nothing -- labs' access check
+        skipped it because labs did not consider it labs-only, and there was
+        no Connect membership to check because it does not exist in Connect.
+        Destructible on the strength of a number."""
+        assert access(program_id=SYNTHETIC_FLOOR).is_synthetic is False
+        assert access(program_id=SYNTHETIC_PROGRAM).is_synthetic is False
 
     def test_a_real_programme_is_not_synthetic(self):
         assert access(program_id=REAL_PROGRAM).is_synthetic is False
@@ -306,7 +336,7 @@ class TestSyntheticScopes:
             real.purge()
         assert real.list_rounds(), "a refused purge still deleted something"
 
-    def test_purge_clears_a_synthetic_programme_including_its_ledger(self, da, open_round):
+    def test_purge_clears_a_synthetic_programme_including_its_ledger(self, da, open_round, registered_synthetic):
         store = SupplyPoint.objects.create(
             program_id=SYNTHETIC_PROGRAM,
             slug="central",
@@ -334,7 +364,7 @@ class TestSyntheticScopes:
         assert Movement.objects.count() == 0
         assert da.get_commodity("rutf") is None
 
-    def test_purge_leaves_another_programmes_data_alone(self, da, open_round):
+    def test_purge_leaves_another_programmes_data_alone(self, da, open_round, registered_synthetic):
         other = access(program_id=SYNTHETIC_PROGRAM + 1)
         other.upsert_commodity({"slug": "rutf", "name": "RUTF"})
         other.create_round({"label": "Theirs", "delivery_point": {"city": "Kaduna"}})
@@ -344,7 +374,7 @@ class TestSyntheticScopes:
         assert len(other.list_rounds()) == 1
         assert other.get_commodity("rutf") is not None
 
-    def test_purge_clears_a_fully_seeded_chain_including_its_distributions(self, da, open_round):
+    def test_purge_clears_a_fully_seeded_chain_including_its_distributions(self, da, open_round, registered_synthetic):
         """The ledger and the events that produced it PROTECT each other in
         both directions, so there is no delete order that works -- a movement
         points at its distribution and that distribution's lines point back at
