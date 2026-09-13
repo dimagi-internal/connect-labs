@@ -689,3 +689,66 @@ def test_every_place_that_knows_the_document_targets_reads_the_declaration():
 
     published = serialize(Document(kind="other"))["links"]
     assert set(published) == {f"{n}_id" for n in declared}
+
+
+class TestDocumentPanelScope:
+    """The supplier panel shows that supplier's documents and no others.
+
+    `list_documents` treats a None link id as "no filter", so passing a
+    missing supplier id straight through would render every document in the
+    programme under one supplier's name. `Quote.supplier` is non-nullable, so
+    that exact path is unreachable -- this pins the property anyway, because
+    the widening is silent and a nullable column later would turn it into a
+    quiet disclosure rather than an error.
+    """
+
+    def test_a_none_link_id_does_not_widen_to_every_document(self, da, chain):
+        from connect_labs.supply_chain.operations import call_operation as call
+
+        call(
+            "document_attach",
+            da,
+            {
+                "data": {
+                    "kind": "invoice",
+                    "source": "we_recorded",
+                    "contract_id": chain["contract"],
+                    "external_url": "https://example.test/unrelated.pdf",
+                }
+            },
+        )
+        # What the view does when there is no supplier: ask for nothing.
+        everything = call("document_list", da, {})
+        assert everything, "fixture did not attach anything"
+        assert call("document_list", da, {"supplier_id": chain["supplier"]}) == []
+
+    def test_only_that_suppliers_documents_come_back(self, da, chain, setup):
+        from connect_labs.supply_chain.operations import call_operation as call
+
+        other = call("supplier_create", da, {"data": {"name": "Someone else"}})
+        mine = call(
+            "document_attach",
+            da,
+            {
+                "data": {
+                    "kind": "other",
+                    "source": "we_recorded",
+                    "supplier_id": chain["supplier"],
+                    "external_url": "https://example.test/mine.pdf",
+                }
+            },
+        )
+        call(
+            "document_attach",
+            da,
+            {
+                "data": {
+                    "kind": "other",
+                    "source": "we_recorded",
+                    "supplier_id": other["id"],
+                    "external_url": "https://example.test/theirs.pdf",
+                }
+            },
+        )
+        found = call("document_list", da, {"supplier_id": chain["supplier"]})
+        assert [d["id"] for d in found] == [mine["id"]]

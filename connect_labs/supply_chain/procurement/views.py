@@ -154,7 +154,14 @@ class QuoteDetailView(_Base):
         # The supplier's own documents are shown separately rather than mixed
         # in: a certification belongs to the company, not to this offer.
         context["documents"] = self.op("document_list", quote_id=quote["id"])
-        context["supplier_documents"] = self.op("document_list", supplier_id=quote["supplier_id"])
+        # Guarded rather than passed straight through. `list_documents` treats
+        # a None link id as "no filter", so a missing supplier would render
+        # EVERY document in the programme under this supplier's name.
+        # `Quote.supplier` is non-nullable today, so that is unreachable --
+        # but the widening is silent, and one nullable column later it would
+        # be a quiet disclosure rather than an error.
+        supplier_id = quote.get("supplier_id")
+        context["supplier_documents"] = self.op("document_list", supplier_id=supplier_id) if supplier_id else []
         # The invitation this quote answered, so the page can say how long the
         # supplier took rather than only when the quote landed.
         context["outreach"] = [
