@@ -480,3 +480,54 @@ class TestReviewFindings:
         assert preview["unchanged"]["invitations"] == 1
         # And still wrote nothing.
         assert len(call_operation("quote_list", da, {})) == 1
+
+
+class TestProgrammeParty:
+    """Setup has to establish who the programme is.
+
+    Nothing did. Programme 10063 held nine suppliers, two rounds, sixteen
+    invitations and three quotes, and no party at all -- so every provenance
+    write in it was refused, by anybody. The refusal was right; the omission
+    was upstream.
+    """
+
+    @pytest.mark.django_db
+    def test_an_import_establishes_the_programme_party(self, monkeypatch):
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+
+        t.import_tracker(da, ensure_commodity=True)
+
+        ours = [p for p in call_operation("party_list", da, {}) if p["kind"] == "programme_org"]
+        assert len(ours) == 1
+
+    @pytest.mark.django_db
+    def test_a_re_import_neither_duplicates_nor_repoints_it(self, monkeypatch):
+        """Re-pointing the programme's owner because somebody re-ran an
+        import would change who every existing record was attributed to."""
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+
+        t.import_tracker(da, ensure_commodity=True)
+        first = [p for p in call_operation("party_list", da, {}) if p["kind"] == "programme_org"][0]
+        t.import_tracker(da, ensure_commodity=True)
+        after = [p for p in call_operation("party_list", da, {}) if p["kind"] == "programme_org"]
+
+        assert [p["id"] for p in after] == [first["id"]]
+
+    @pytest.mark.django_db
+    def test_a_dimagi_user_can_then_be_attributed(self, monkeypatch):
+        """The end of the chain: with the party in place, a provenance write
+        by Dimagi staff resolves instead of being refused."""
+        from connect_labs.supply_chain.identity import resolve_party
+
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        t.import_tracker(da, ensure_commodity=True)
+
+        class _User:
+            email = "sophie@dimagi.com"
+            is_authenticated = True
+
+        scoped = SupplyDataAccess(program_id=PROGRAM, user=_User())
+        assert resolve_party(scoped).kind == "programme_org"
