@@ -36,6 +36,12 @@ urlpatterns = [
         procurement_views.QuoteEntryView.as_view(),
         name="procurement_quote_entry",
     ),
+    # After "quotes/new/" so the literal never loses to the int converter.
+    path(
+        "procurement/quotes/<int:quote_id>/",
+        procurement_views.QuoteDetailView.as_view(),
+        name="procurement_quote_detail",
+    ),
     path(
         "procurement/registries/",
         procurement_views.RegistriesView.as_view(),

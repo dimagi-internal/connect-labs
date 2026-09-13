@@ -25,6 +25,7 @@ from datetime import date, datetime
 
 import jsonschema
 from django.contrib.auth.decorators import login_required
+from django.http import Http404
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -102,6 +103,52 @@ class RoundDetailView(_Base):
             o["days_waiting"] = None if o.get("responded") else _days_waiting(o.get("sent_on"))
         context["outreach"] = outreach
         context["quotes"] = self.op("quote_list", round_id=round_id)
+        # Rows showed "Supplier #2". An id is not a supplier to anyone
+        # reading the page, and the name is one list call away.
+        context["supplier_names"] = {s["id"]: s["name"] for s in self.op("supplier_list")}
+        return context
+
+
+class QuoteDetailView(_Base):
+    """One quote: what the supplier stated, beside what we derive from it.
+
+    The two columns are the product. A quote arrives on the supplier's own
+    terms -- per carton, per sachet, freight in or out -- and every figure
+    worth comparing is derived from those terms plus the round and the
+    commodity. Showing the derivation next to its inputs is what makes an
+    `Unconfirmed` legible: the reason names the input that is missing, and the
+    input is right there, blank.
+
+    It also holds the two things that existed in the data with nowhere to be
+    read: the date the quote arrived, and any documents attached to it.
+    """
+
+    template_name = "supply_chain/procurement/quote_detail.html"
+
+    def get_context_data(self, quote_id, **kwargs):
+        context = super().get_context_data(**kwargs)
+        detail = self.op("quote_get", quote_id=quote_id)
+        if detail is None:
+            raise Http404(f"no quote {quote_id} in this programme")
+        context["detail"] = detail
+        quote = detail["quote"]
+        context["quote"] = quote
+        context["round"] = self.op("round_get", round_id=quote["round_id"])
+        context["supplier"] = self.op("supplier_get", supplier_id=quote["supplier_id"])
+        # `Document` has six explicit links -- contract, shipment, receipt,
+        # invoice, supply point, supplier -- and none to a quote, so a quote
+        # cannot carry evidence of its own yet. EHA's own note cites
+        # "Pro-Forma Invoice SO239306" as the source of its price, which is
+        # exactly a quote-level document, so this is a gap rather than a
+        # design. Showing the supplier's documents and saying so beats an
+        # empty panel that implies none exist.
+        context["documents"] = self.op("document_list", supplier_id=quote["supplier_id"])
+        # The invitation this quote answered, so the page can say how long the
+        # supplier took rather than only when the quote landed.
+        context["outreach"] = [
+            o for o in self.op("outreach_list", round_id=quote["round_id"]) if o["supplier_id"] == quote["supplier_id"]
+        ]
+        context["questions"] = detail["missing"]
         return context
 
 

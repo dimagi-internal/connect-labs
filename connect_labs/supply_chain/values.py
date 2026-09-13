@@ -8,6 +8,21 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import TypeVar
 
+# The scale money is stored at (models.MONEY), applied to DERIVED figures on
+# their way out. Dividing a price by a pack size is the commonest derivation
+# here, and unquantized a $50 carton at 150 to the carton reports
+# 0.33333333333333333333333333 USD per sachet -- 26 digits off a two-decimal
+# input, asserting a precision nobody has.
+#
+# Rounded at the boundary rather than at the division, because a figure here
+# is often the input to the next one: quantizing the per-sachet price made
+# cost per course 49.9950 instead of 50.00, since per course is per sachet
+# times the ration. Internal arithmetic keeps full precision; only the
+# published number is rounded, and at four decimal places the resolution is a
+# hundredth of a cent -- finer than any procurement decision, and the same
+# scale the column would hold.
+MONEY_SCALE = Decimal("0.0001")
+
 
 @dataclass(frozen=True)
 class Money:
@@ -84,7 +99,7 @@ def to_wire(value: Derived | DerivedQuantity) -> dict:
     apart on what a figure looks like on the wire.
     """
     if isinstance(value, Money):
-        return {"amount": decimal_string(value.amount), "currency": value.currency}
+        return {"amount": decimal_string(value.amount.quantize(MONEY_SCALE)), "currency": value.currency}
     if isinstance(value, Quantity):
         return {"amount": decimal_string(value.amount), "unit": value.unit}
     return {"unconfirmed": list(value.reasons)}

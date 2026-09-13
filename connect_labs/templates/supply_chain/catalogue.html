@@ -10,90 +10,116 @@ on the Stock page.
 
 {% block supply_content %}
 
-<h1 class="text-lg font-semibold text-brand-indigo mb-1">Catalogue</h1>
-<p class="text-sm text-gray-600 mb-6 max-w-4xl">
-  Three levels of identity, and conflating any two is how a per&#8209;sachet
-  figure silently goes wrong. A <b>product</b> is a specification — "RUTF,
-  92&nbsp;g sachet, 150 to the carton" — and nobody can ship you one. A
-  <b>trade item</b> is one manufacturer's product against that specification,
-  with its own SKU and GTIN, and is what you actually order. A <b>batch</b> is
-  the lot that arrived, and carries the expiry and the certificate; it appears
-  under <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a>.
-  So: every supplier's RUTF is the same 92&nbsp;g sachet because the product
-  says so and each trade item is checked against it — while their SKUs stay
-  their own.
-</p>
+<div class="flex flex-wrap items-end justify-between gap-4 mb-1">
+  <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Catalogue</h1>
+  <p class="text-sm text-gray-500">
+    {{ products|length }} product{{ products|length|pluralize }} this programme can buy against
+  </p>
+</div>
+
+{% comment %}
+The three-level identity explanation used to open the page as five lines of
+prose, which made a catalogue read as documentation. It is genuinely load
+bearing -- conflating the levels is how a per-sachet figure goes wrong -- so
+it is kept, one click away, for the reader who wants it rather than in front
+of the reader who does not.
+{% endcomment %}
+<details class="mb-6 max-w-3xl">
+  <summary class="text-sm text-brand-indigo cursor-pointer hover:underline
+                  focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-indigo">
+    Why a product, a trade item and a batch are three different things
+  </summary>
+  <p class="text-sm text-gray-600 mt-2 leading-relaxed">
+    A <b>product</b> is a specification — "RUTF, 92&nbsp;g sachet, 150 to the
+    carton" — and nobody can ship you one. A <b>trade item</b> is one
+    manufacturer's product against that specification, with its own SKU and
+    GTIN, and is what you actually order. A <b>batch</b> is the lot that
+    arrived, and carries the expiry and the certificate; it appears under
+    <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a>.
+    So every supplier's RUTF is the same 92&nbsp;g sachet because the product
+    says so and each trade item is checked against it — while their SKUs stay
+    their own. Conflating any two is how a per&#8209;sachet figure silently
+    goes wrong.
+  </p>
+</details>
 
 {% for product in products %}
-  <div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
-    <div class="px-4 py-3 border-b border-gray-100">
+  <div class="bg-white border border-brand-border-light rounded-lg mb-4 overflow-hidden">
+    <div class="px-5 py-4 border-b border-brand-border-light">
       <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 class="text-base font-semibold text-brand-indigo">{{ product.name }}</h2>
-        <span class="text-xs text-gray-500">{{ product.slug }}</span>
+        <h2 class="text-lg font-semibold text-gray-900">{{ product.name }}</h2>
+        <code class="text-xs text-gray-500 bg-gray-50 border border-brand-border-light rounded px-1.5 py-0.5">{{ product.slug }}</code>
         {% if product.category %}
           <span class="text-xs text-gray-500">{{ product.category|humanise }}</span>
         {% endif %}
-        <span class="text-xs text-gray-400 ml-auto">
+        <span class="ml-auto text-xs font-medium {% if product.items %}text-gray-600{% else %}text-message-warning-text{% endif %}">
           {{ product.items|length }} trade item{{ product.items|length|pluralize }}
         </span>
       </div>
 
-      <div class="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-xs">
-        <span class="text-gray-600">
-          <span class="text-gray-400">Unit ladder</span>
-          {% if product.base_per_pack %}
-            {{ product.base_per_pack }} {{ product.base_unit }}s per {{ product.pack_unit }}
-          {% else %}
-            <span class="text-amber-800">not stated</span>
-          {% endif %}
-        </span>
-        <span class="text-gray-600">
-          <span class="text-gray-400">Unit weight</span>
-          {% if product.base_unit_grams %}{{ product.base_unit_grams }} g{% else %}
-            <span class="text-amber-800">not stated</span>{% endif %}
-        </span>
-        <span class="text-gray-600">
-          <span class="text-gray-400">Minimum shelf life</span>
-          {% if product.shelf_life_months_minimum %}{{ product.shelf_life_months_minimum }} months{% else %}
-            <span class="text-amber-800">not stated</span>{% endif %}
-        </span>
-        <span class="text-gray-600">
-          <span class="text-gray-400">Specification</span>
-          {% if product.spec_reference %}{{ product.spec_reference }}{% else %}
-            <span class="text-amber-800">no reference recorded</span>{% endif %}
-        </span>
-        <span class="text-gray-600">
-          <span class="text-gray-400">UNICEF material no.</span>
-          {% if product.unicef_material_number %}
-            <span class="tabular-nums">{{ product.unicef_material_number }}</span>
-          {% else %}
-            <span class="text-amber-800">not recorded</span>
-          {% endif %}
-        </span>
-      </div>
+      {% comment %}
+      A grid of label-above-value, not inline runs. The same six facts read
+      as a paragraph of text when they are spans separated by spaces, and
+      this page exists to be scanned against a quote.
+      {% endcomment %}
+      <dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-3 mt-4">
+        <div>
+          <dt class="text-[11px] text-gray-500">Unit ladder</dt>
+          <dd class="text-sm mt-0.5 {% if product.base_per_pack %}text-gray-900{% else %}text-message-warning-text{% endif %}">
+            {% if product.base_per_pack %}
+              {{ product.base_per_pack }} {{ product.base_unit }}s / {{ product.pack_unit }}
+            {% else %}not stated{% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt class="text-[11px] text-gray-500">Unit weight</dt>
+          <dd class="text-sm mt-0.5 {% if product.base_unit_grams %}text-gray-900{% else %}text-message-warning-text{% endif %}">
+            {% if product.base_unit_grams %}{{ product.base_unit_grams }} g{% else %}not stated{% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt class="text-[11px] text-gray-500">Minimum shelf life</dt>
+          <dd class="text-sm mt-0.5 {% if product.shelf_life_months_minimum %}text-gray-900{% else %}text-message-warning-text{% endif %}">
+            {% if product.shelf_life_months_minimum %}{{ product.shelf_life_months_minimum }} months{% else %}not stated{% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt class="text-[11px] text-gray-500">UNICEF material no.</dt>
+          <dd class="text-sm mt-0.5 tabular-nums {% if product.unicef_material_number %}text-gray-900{% else %}text-gray-400{% endif %}">
+            {% if product.unicef_material_number %}{{ product.unicef_material_number }}{% else %}not recorded{% endif %}
+          </dd>
+        </div>
+        <div class="col-span-2 sm:col-span-3 lg:col-span-1">
+          <dt class="text-[11px] text-gray-500">Specification</dt>
+          <dd class="text-sm mt-0.5 {% if product.spec_reference %}text-gray-900{% else %}text-gray-400{% endif %}">
+            {% if product.spec_reference %}{{ product.spec_reference }}{% else %}no reference recorded{% endif %}
+          </dd>
+        </div>
+      </dl>
 
-      <div class="mt-2 text-xs">
-        {% if product.has_course_definition %}
-          <span class="text-gray-600">
-            <span class="text-gray-400">Ration table</span>
-            {{ product.course_definition.base_units_per_course }} {{ product.base_unit }}s per course
-            {% if product.course_definition.source %}
-              <span class="text-gray-400">({{ product.course_definition.source }})</span>
-            {% endif %}
-          </span>
-        {% else %}
-          <span class="text-amber-800">
-            No ration table. Sachets per day and days per course is this
-            programme's treatment protocol, not part of the specification — so
-            cost per course and cost per child come back unconfirmed until it
-            is set. Nobody outside can answer it.
-          </span>
-        {% endif %}
-      </div>
+      {% if product.has_course_definition %}
+        <div class="mt-4 text-sm text-gray-700">
+          <span class="text-gray-500">Ration table</span>
+          {{ product.course_definition.base_units_per_course }} {{ product.base_unit }}s per course
+          {% if product.course_definition.source %}
+            <span class="text-gray-500">({{ product.course_definition.source }})</span>
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="mt-4 rounded-md bg-message-warning border border-message-warning-border/50 px-3 py-2.5">
+          <p class="text-sm font-medium text-message-warning-text">No ration table set</p>
+          <p class="text-sm text-message-warning-text/90 mt-0.5 max-w-2xl">
+            Sachets per day and days per course is this programme's treatment
+            protocol, not part of the specification — so cost per course and
+            cost per child stay unconfirmed until it is set.
+            Nobody outside can answer it.
+          </p>
+        </div>
+      {% endif %}
 
       {% if product.spec_requirements %}
         <div class="mt-2">
-          <div class="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          <div class="text-[11px] text-gray-500">
             Requirements every trade item is checked against
           </div>
           <ul class="text-xs text-gray-600 list-disc list-inside mt-0.5">
@@ -196,7 +222,7 @@ on the Stock page.
                   <span class="text-xs font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">{{ item.spec_verdict }}</span>
                 {% endif %}
               </td>
-              <td class="px-4 py-2.5 text-gray-600">{{ item.status }}</td>
+              <td class="px-4 py-2.5 text-gray-600">{{ item.status|humanise }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -219,7 +245,7 @@ on the Stock page.
 
 {% if orphan_items %}
   <div class="bg-white border border-orange-200 rounded-lg px-4 py-3">
-    <div class="text-xs font-bold uppercase tracking-wide text-orange-800">
+    <div class="text-xs font-semibold text-orange-800">
       Trade items with no product
     </div>
     <p class="text-xs text-gray-600 mt-1">

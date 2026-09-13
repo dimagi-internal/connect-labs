@@ -6,6 +6,7 @@ reaches the domain.
 """
 
 from django.contrib.auth.decorators import login_required
+from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 
@@ -149,14 +150,49 @@ class DomainHomeView(OperationBase):
 
         checks = self.op("checks_list")
         context["checks"] = checks
-        context["checks_by_audience"] = [
-            {
-                "audience": audience,
-                "items": [c for c in checks["checks"] if c["audience"] == audience],
-            }
-            for audience in self.AUDIENCE_ORDER
-        ]
+        context["checks_by_audience"] = self._checks_by_audience(checks, rounds=context["rounds"])
         return context
+
+    # Where each audience's answering actually happens. The raw feed is
+    # deliberately unranked and unworded -- that is what makes it good agent
+    # surface -- so the page's job is to route, not to re-render it. A
+    # supplier's questions belong beside its figures on the comparison
+    # screen; ours belong on the record that is missing the fact.
+    def _checks_by_audience(self, checks, rounds):
+        first_round = rounds[0]["id"] if rounds else None
+        groups = []
+        for audience in self.AUDIENCE_ORDER:
+            items = [c for c in checks["checks"] if c["audience"] == audience]
+            if not items:
+                continue
+            kinds = {c["kind"] for c in items}
+            groups.append(
+                {
+                    "audience": audience,
+                    "items": items,
+                    "headline": self._headline(kinds, len(items)),
+                    "href": self._destination(audience, items, first_round),
+                }
+            )
+        return groups
+
+    def _headline(self, kinds, count):
+        """What the group is, in the words of the thing rather than the kind."""
+        if kinds == {"quote_not_comparable"}:
+            return f"{'quote' if count == 1 else 'quotes'} not yet comparable"
+        if kinds == {"commodity_course_undefined"}:
+            return "ration table not set"
+        return "open " + ("check" if count == 1 else "checks")
+
+    def _destination(self, audience, items, first_round):
+        if audience == "internal":
+            return reverse("supply_chain:catalogue")
+        rounds = {c["facts"].get("round_id") for c in items if c["facts"].get("round_id")}
+        # One round involved -- go straight to its comparison. Several, and
+        # the board is the honest landing place rather than picking one.
+        if len(rounds) == 1:
+            return reverse("supply_chain:procurement_comparison", args=[rounds.pop()])
+        return reverse("supply_chain:procurement_round_board")
 
 
 class OrdersView(OperationBase):
