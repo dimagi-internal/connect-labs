@@ -1045,3 +1045,163 @@ client's can be open and wrong sometimes.
 The operation is named `checks_list` rather than `exceptions_list` for this
 reason: "exception" implies somebody judged something exceptional. A check
 has a definite pass or fail and claims nothing about importance.
+
+---
+
+# Part 3 — the organisation, and what `Party` got wrong
+
+*Added 2026-09-12, after Jonathan read §17. This part supersedes `Party` as a
+concept. No schema has changed yet, deliberately: Connect's `Organization`
+entity is being reworked in production and labs will inherit it, and a
+migration built against today's shape is the most likely thing here to be
+thrown away.*
+
+## 25. `Party` is a second organisation registry, and there are three of them
+
+§17 introduced `Party` to hold "an organisation that can act in the chain",
+because the Sophie case needs a buyer of record who is neither us nor the
+supplier. The need is real. The shape is wrong: a party is just an
+organisation, and an organisation is a thing Connect already models.
+
+Two tables in one codebase both meaning "an organisation in real life" will
+drift — the same organisation appears twice, under two names, with no way to
+tell that it is one body. That is not a hypothesis. Labs has invented this
+registry three times already:
+
+| Table | What it holds | How it joins to Connect |
+|---|---|---|
+| `supply_chain.Party` | an org that can buy, receive, distribute, pay | `connect_organization_id`, nullable |
+| `supply_chain.Supplier` | an org we buy from, with its own name/country/contacts | nothing at all |
+| `pulse.PulsePartner` + `PulsePartnerAlias` | a delivery partner, named from the LLO Directory | org **slug**, plus human-curated aliases |
+
+Three registries, three join strategies, none aware of the others.
+`PulsePartner`'s own docstring already states the posture this part
+generalises: *"the sheet is the source of truth and this table is its
+cache."*
+
+The target model is the one a reader would have guessed:
+
+- **An organisation is one row.** It may deliver Connect interventions, sell
+  us goods, and buy on our behalf, all at once. Those are not three entities.
+- **A supplier is a profile on an organisation**, not an organisation.
+- **Buyer, receiver, distributor, payer are roles**, recorded on the contract
+  or the movement that they apply to — which is already where they live.
+
+## 26. `LabsOrg`: an identity registry with a shrinking remit
+
+Labs will hold organisations that Connect does not represent for as long as
+labs builds features ahead of production. Most of this tracker's suppliers are
+the case in point: Nutriset, GC Rieber Compact, INSTA Products EPZ and Hilina
+are manufacturers in France, Norway, Kenya and Ethiopia. They have no Connect
+account, no users, and no reason to acquire either.
+
+So labs needs a local organisation registry. The honest version of it is named
+for what it is, lives in `labs/` rather than in any one domain, and is designed
+to **get smaller until it is gone**:
+
+- `LabsOrg` carries **identity only** — name, short name, country, aliases,
+  and the join keys.
+- It joins on **both** `connect_organization_id` **and** slug. Pulse matches
+  slugs; supply chain has ids; the reworked production entity may change one
+  and not the other.
+- **When a Connect id is present, Connect is authoritative** for identity. The
+  local row is a cache, and a labs feature must not be the place someone edits
+  an organisation's name.
+- Each domain attaches its own **profile**, keyed to the org: a supplier
+  profile, a delivery-partner profile, and — when it exists — a
+  marketplace-visibility profile. A profile is owned by its app and migrates
+  on its own schedule.
+
+**The trap, and the only thing that makes "shrinking" true rather than
+aspirational.** If `LabsOrg` accumulates domain attributes it can never
+migrate: the day Connect is ready, the blocker becomes Connect not having
+`prequalification_status`. So the remit is narrow by rule, and the rule is
+worth more than the table:
+
+> Identity on `LabsOrg`. Domain state in the domain's own profile. Nothing a
+> single feature invented goes on the org.
+
+Applied to what exists, the three registries have three different fates, and
+the difference is a useful test:
+
+- **`PulsePartner` is identity only** — a directory name, a short name,
+  aliases. It **dissolves** into `LabsOrg` entirely, leaving no profile behind.
+- **`Supplier` is identity plus real domain state** — a sourcing lifecycle
+  (identified → contacted → quoting → awarded) and prequalification. It
+  **sheds** name, country and contacts and **keeps** the lifecycle as a
+  profile.
+- **`Party` is identity plus roles that are already recorded elsewhere.** It
+  **disappears**.
+
+So: if a table's only content is identity, it dissolves; if it carries domain
+state, it keeps the state and sheds the identity.
+
+**How much is left is a number, not a feeling.** The count of `LabsOrg` rows
+with no `connect_organization_id` is the backlog. It belongs on a page
+somewhere, because a transitional table with no visible backlog becomes a
+permanent one.
+
+## 27. What this changes about authorisation
+
+§17.2 says a partner is a party with the same operations as us, and the
+partner write paths are still unbuilt. Part 3 makes that work simpler and
+removes a decision.
+
+Labs already receives the signed-in user's Connect organisations in the OAuth
+session (`labs/context.py`, `get_org_data`). If a party is an organisation,
+then *"which party is this user acting for"* is *"which organisations is this
+user a member of"* — a question already answered on every request. No new
+grant mechanism, and the per-programme-grant question raised earlier mostly
+dissolves.
+
+Three gaps remain, and only the last is a screen:
+
+1. **Nothing resolves a signed-in user to an organisation acting in the
+   chain.** The join key exists; the resolution does not.
+2. **`recorded_by_party_id` is supplied by the caller** on every provenance
+   write. A partner can therefore claim to be any party, including us. §17.3
+   makes provenance compulsory precisely so a figure traces to whoever
+   asserted it, and a self-asserted assertion carries no weight. It must be
+   **derived from the session**, not accepted from the payload.
+3. **Authorisation is `login_required` plus "is a programme selected?"** Any
+   authenticated labs user who sets a programme in context can call all 30
+   write operations against any programme.
+
+Those precede the four partner screens (record a receipt, record a
+distribution run, record a count or override, raise a contract). Shipping the
+screens first would put a partner-facing surface on a model where anyone can
+write as anyone — worse than no screens, because it would look trustworthy
+while the provenance beneath it is unverified.
+
+## 28. Two hazards to carry into the migration
+
+**Partner names are entitled, and the gate is not on the table.** Pulse's read
+API is otherwise unauthenticated, so partner names sit behind
+`_partner_names_allowed` (`pulse/api.py`, enforced in `network_api.py`). Move
+names onto `LabsOrg` without moving that gate and it silently opens. Any new
+endpoint that carries organisation identity has to gate the same way — which
+is already pulse's stated rule, and is now a shared one.
+
+**Pulse is the riskiest mover and should go last.** Supply chain is the safe
+first mover: nine suppliers and a few parties, in one synthetic programme, all
+re-importable from the tracker in a single operation. `PulsePartner` is live,
+carries identity behind that gate, and holds two dating guards that are
+expensive to rediscover. Sequence: introduce `LabsOrg`, migrate supply onto
+it, prove the pattern, then pulse.
+
+## 29. The open question this part cannot answer
+
+**Can an updated Connect `Organization` represent an organisation with no
+users, that delivers nothing, and that we merely buy from?**
+
+If **yes**: `Supplier` becomes a profile on a Connect org, `Party` is deleted,
+`LabsOrg` exists only for organisations awaiting their Connect row, and the
+backlog really does trend to zero.
+
+If **no**: something must carry Nutriset permanently, and `LabsOrg` earns a
+standing place — but with the far narrower remit of §26, not the one `Party`
+had drifted into.
+
+Until that is known, no schema changes. The reasoning is recorded here because
+it is worth more than the code it will produce, and because the production
+entity lands on its own schedule rather than ours.
