@@ -1136,10 +1136,36 @@ the difference is a useful test:
 So: if a table's only content is identity, it dissolves; if it carries domain
 state, it keeps the state and sheds the identity.
 
-**How much is left is a number, not a feeling.** The count of `LabsOrg` rows
-with no `connect_organization_id` is the backlog. It belongs on a page
-somewhere, because a transitional table with no visible backlog becomes a
-permanent one.
+**An unlinked org is not necessarily a missing one.** Some organisations will
+never have a Connect counterpart and should not be waiting for one. A
+manufacturer in Norway that we buy cartons from has no users, delivers
+nothing, and has no reason to hold a Connect account in any future worth
+planning for. It is a complete, correct `LabsOrg` with `connect_organization_id`
+permanently null — a terminal state, not an unfinished one.
+
+So `LabsOrg` has two populations, and conflating them is how the register
+stops being trusted:
+
+- **linked, or awaiting linking** — a partner, a programme org, ourselves.
+  Connect is or will be authoritative for identity; an unlinked row here is
+  real work outstanding.
+- **local for good** — an organisation we only buy from. Nothing is missing.
+
+**How much is left is a number, not a feeling — but only over the first
+population.** Counting every unlinked row makes the backlog include the
+suppliers that will never link, so it never reaches zero and everybody learns
+to ignore it. The backlog is: rows with no `connect_organization_id` whose
+profiles imply they need one.
+
+And that is **derived, not declared**. An organisation that delivers Connect
+interventions must be a Connect org — that is what an LLO is — so a delivery
+profile implies the link is expected. An organisation carrying only a supplier
+profile implies nothing of the kind. Storing a `should_be_in_connect` flag
+would be storing an opinion, and this document refuses that everywhere else
+(§22); the profiles already carry the fact.
+
+It belongs on a page somewhere, because a transitional register with no
+visible backlog becomes a permanent one by default rather than by decision.
 
 ## 27. What this changes about authorisation
 
@@ -1194,13 +1220,19 @@ it, prove the pattern, then pulse.
 **Can an updated Connect `Organization` represent an organisation with no
 users, that delivers nothing, and that we merely buy from?**
 
-If **yes**: `Supplier` becomes a profile on a Connect org, `Party` is deleted,
-`LabsOrg` exists only for organisations awaiting their Connect row, and the
-backlog really does trend to zero.
+If **yes**: `Supplier` becomes a profile on a Connect org and `LabsOrg` holds
+only organisations awaiting their Connect row.
 
-If **no**: something must carry Nutriset permanently, and `LabsOrg` earns a
-standing place — but with the far narrower remit of §26, not the one `Party`
-had drifted into.
+If **no**: `LabsOrg` permanently carries the organisations we merely buy from.
+
+**Either answer is fine, and this is the part the first draft of §26 got
+wrong.** `LabsOrg` was framed as a waiting room that empties. It is better
+understood as the labs organisation register, of which *some* rows correspond
+to Connect orgs and some never will. What must shrink to zero is not the
+table — it is the **duplication**: every organisation that Connect does
+represent should be linked to it and should stop being separately edited here.
+`Party` is deleted in either case, because its problem was never that
+organisations live in labs; it was that it was a second registry of them.
 
 Until that is known, no schema changes. The reasoning is recorded here because
 it is worth more than the code it will produce, and because the production
