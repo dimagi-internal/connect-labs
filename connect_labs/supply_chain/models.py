@@ -571,9 +571,17 @@ class Payment(SourcedModel):
 class Document(SourcedModel):
     """Evidence. A stored file, or a link to where it legitimately lives.
 
-    Six explicit nullable links rather than a GenericForeignKey: the targets
-    are a closed set, and explicit columns stay joinable and queryable, which
-    a generic relation is not.
+    Explicit nullable links rather than a GenericForeignKey, one per thing a
+    document can be evidence FOR (`records.DOCUMENT_LINKS`). A document is not
+    decoration here -- two derivations turn on one existing, a claimed duty
+    relief and a batch's conformity -- so a row pointing at a deleted contract
+    would silently un-evidence a figure. A generic relation gives up the
+    database's help with precisely that, and gives up joining.
+
+    At most one link is set. Two would be one row claiming to evidence two
+    things, which is two documents that can later disagree; none is a
+    programme-level document, which is legitimate. The write path enforces
+    it -- see `attach_document`.
     """
 
     program_id = models.IntegerField(db_index=True)
@@ -597,6 +605,27 @@ class Document(SourcedModel):
         "supply_chain.SupplyPoint", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
     )
     supplier = models.ForeignKey(Supplier, null=True, blank=True, on_delete=models.CASCADE, related_name="documents")
+    quote = models.ForeignKey(
+        "supply_chain.Quote", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    )
+    round = models.ForeignKey(
+        "supply_chain.Round", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    )
+    award = models.ForeignKey(
+        "supply_chain.Award", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    )
+    payment = models.ForeignKey(
+        "supply_chain.Payment", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    )
+    distribution = models.ForeignKey(
+        "supply_chain.Distribution", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    )
+    stock_count = models.ForeignKey(
+        "supply_chain.StockCount", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    )
+    item = models.ForeignKey(
+        "supply_chain.Item", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    )
 
     class Meta:
         ordering = ["-uploaded_at", "-created_at"]

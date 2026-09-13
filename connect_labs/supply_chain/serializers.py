@@ -15,6 +15,7 @@ pricing design refuses to lose -- the same reason the input schemas refuse to
 accept one.
 """
 
+from connect_labs.supply_chain import records
 from connect_labs.supply_chain.values import decimal_string
 
 
@@ -344,14 +345,11 @@ def document(obj) -> dict:
         "external_url": obj.external_url,
         "sha256": obj.sha256,
         "uploaded_at": obj.uploaded_at.isoformat() if obj.uploaded_at else None,
-        "links": {
-            "contract_id": obj.contract_id,
-            "shipment_id": obj.shipment_id,
-            "receipt_id": obj.receipt_id,
-            "invoice_id": obj.invoice_id,
-            "supply_point_id": obj.supply_point_id,
-            "supplier_id": obj.supplier_id,
-        },
+        # Read from the declaration, not listed here. This was the sixth
+        # place the same list lived, and it still held the original six -- so
+        # a document attached to a quote came back with no quote_id and a
+        # caller could not tell what it was evidence for.
+        "links": {f"{name}_id": getattr(obj, f"{name}_id") for name in records.DOCUMENT_LINKS},
         **_sourced(obj),
     }
 

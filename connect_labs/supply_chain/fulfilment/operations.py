@@ -217,14 +217,13 @@ _DOCUMENT_DATA = _data_with(
     content_type={"type": "string"},
     content_base64={"type": "string"},
     external_url={"type": "string"},
-    contract_id=ID,
-    shipment_id=ID,
-    receipt_id=ID,
-    invoice_id=ID,
-    supply_point_id=ID,
-    supplier_id=ID,
     source={"enum": list(records.SOURCES)},
     recorded_by_party_id=ID,
+    # One `<name>_id` per thing a document can evidence, generated from the
+    # single declaration. Written out by hand before, so adding a target
+    # meant remembering this list too -- and forgetting it fails as
+    # "additionalProperties" rather than as anything that names the cause.
+    **{f"{name}_id": ID for name in records.DOCUMENT_LINKS},
 )
 
 
@@ -346,12 +345,9 @@ def payment_record(access, data):
     input_schema=obj(
         {
             "kind": {"enum": list(records.DOCUMENT_KINDS)},
-            "contract_id": ID,
-            "shipment_id": ID,
-            "receipt_id": ID,
-            "invoice_id": ID,
-            "supply_point_id": ID,
-            "supplier_id": ID,
+            # From the declaration, like the attach schema. Listed by hand,
+            # this was the seventh place the same set of targets lived.
+            **{f"{name}_id": ID for name in records.DOCUMENT_LINKS},
         }
     ),
 )

@@ -25,6 +25,7 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import transaction
 
+from connect_labs.supply_chain import records
 from connect_labs.supply_chain.models import Document, Invoice, Payment, Receipt, ReceiptLine, Shipment, ShipmentLine
 from connect_labs.supply_chain.stock.services import posting
 
@@ -33,7 +34,8 @@ from connect_labs.supply_chain.stock.services import posting
 # external_url pointing at it.
 MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 
-_DOCUMENT_LINKS = ("contract", "shipment", "receipt", "invoice", "supply_point", "supplier")
+# Declared in records so the model, the schema and this query cannot drift.
+_DOCUMENT_LINKS = records.DOCUMENT_LINKS
 
 
 # Evidence is rendered as a link, so the scheme is executable surface.
@@ -223,6 +225,10 @@ class FulfilmentRepositoryMixin:
             qs = qs.filter(status=status)
         return list(qs)
 
+    def get_payment(self, payment_id):
+        """Scoped through the invoice's contract, like every other row here."""
+        return Payment.objects.filter(invoice__contract__program_id=self._require_program(), pk=payment_id).first()
+
     def get_invoice(self, invoice_id):
         return (
             Invoice.objects.filter(contract__program_id=self._require_program(), pk=invoice_id)
@@ -313,6 +319,20 @@ class FulfilmentRepositoryMixin:
             external_url = _safe_external_url(external_url)
             data = {**data, "external_url": external_url}
 
+        # At most one thing evidenced. Two links is one row claiming to be
+        # evidence for two different facts, which is two documents that can
+        # later disagree; none is a programme-level document, which is
+        # legitimate. Enforced here because this is the only write path, and
+        # a thirteen-term check constraint would be unreadable for a rule
+        # that states in one sentence.
+        named = [name for name in _DOCUMENT_LINKS if data.get(f"{name}_id") is not None]
+        if len(named) > 1:
+            raise ValueError(
+                "a document evidences one thing; got "
+                + ", ".join(f"{name}_id" for name in named)
+                + ". Attach it to the one it is evidence FOR, and reference that."
+            )
+
         fields = _columns(Document, data)
         fields.pop("storage_key", None)
 
@@ -341,17 +361,30 @@ class FulfilmentRepositoryMixin:
         return _fresh(document)
 
     def _resolve_document_link(self, name, value):
+        """The target row, scoped to this programme, or a refusal.
+
+        Resolved by convention -- `get_<name>` -- rather than from a dict
+        listing the targets. That dict was the FIFTH place the same list
+        lived, and it still held the original six, so attaching a document to
+        a quote raised `KeyError: 'quote'` instead of working. Looking the
+        getter up by name means a declared target either has a scoped getter
+        or says so.
+
+        Scoping matters here beyond tidiness: without it a caller could
+        attach a document to another programme's contract, and the
+        derivations that turn on a document EXISTING would then read
+        evidence they are not entitled to.
+        """
         if value is None:
             return None
-        getters = {
-            "contract": self.get_contract,
-            "shipment": self.get_shipment,
-            "receipt": self.get_receipt,
-            "invoice": self.get_invoice,
-            "supply_point": self.get_supply_point,
-            "supplier": self.get_supplier,
-        }
-        found = getters[name](value)
+        getter = getattr(self, f"get_{name}", None)
+        if getter is None:
+            raise ValueError(
+                f"{name} is declared in records.DOCUMENT_LINKS but has no get_{name} on the "
+                "data access, so a document cannot be attached to one without escaping the "
+                "programme scope"
+            )
+        found = getter(value)
         if found is None:
             raise ValueError(f"{name} {value} does not exist in this programme")
         return found

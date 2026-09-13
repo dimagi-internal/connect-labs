@@ -633,6 +633,11 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
             qs = qs.filter(round_id=round_id)
         return list(qs.all())
 
+    def get_award(self, award_id):
+        """Scoped through the round's programme, so a document cannot be
+        attached to another programme's award."""
+        return Award.objects.filter(round__program_id=self._require_program(), pk=award_id).first()
+
     def create_award(self, data):
         if not data.get("rationale"):
             raise ValueError("an award needs a rationale")
