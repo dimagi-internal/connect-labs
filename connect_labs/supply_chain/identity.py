@@ -136,10 +136,22 @@ def caller_org_ids(access) -> set[int] | None:
 def programme_party(access):
     """This programme's own party -- us.
 
-    Exactly one `programme_org` per programme; more than one is a
+    Looked up under BOTH scopes a reference row can live at, not just the
+    caller's. `scope_key` resolves to `org:<id>` when an organisation is in
+    context and `prog:<id>` otherwise (see `models.scope_key`), so the same
+    programme's parties sit under different keys depending on who wrote them:
+    an import driven by MCP carries no organisation and writes `prog:`, while
+    a web request with an organisation selected reads `org:`. Reading only
+    the caller's scope makes attribution depend on how the party happened to
+    be created, which is a refusal nobody could act on.
+
+    Exactly one `programme_org` across those scopes; more than one is a
     configuration error rather than something to choose between.
     """
-    found = list(Party.objects.filter(scope_key=access.scope_key, kind="programme_org")[:2])
+    scopes = {access.scope_key}
+    if access.program_id not in (None, ""):
+        scopes.add(f"prog:{access.program_id}")
+    found = list(Party.objects.filter(scope_key__in=scopes, kind="programme_org")[:2])
     if len(found) > 1:
         raise IdentityUnresolved(
             "this programme has more than one programme_org party, so there is no "

@@ -387,3 +387,41 @@ class TestRefusalsReachTheCaller:
 
         assert response.status_code == 400, response.status_code
         assert "party_upsert" in response.json()["error"]
+
+
+class TestPartyScope:
+    """Attribution must not depend on how the party happened to be created.
+
+    `scope_key` is `org:<id>` when an organisation is in context and
+    `prog:<id>` otherwise, so a party written by an MCP import (no
+    organisation) lands under `prog:` while a web request with an
+    organisation selected reads `org:`. Reading only the caller's scope made
+    a Dimagi user's write refuse with "add the party with party_upsert" when
+    the party was right there under the other key.
+
+    Raised by CodeRabbit on #1784. Not reachable through the API today --
+    organisation_id was not reaching the scope on those requests, verified
+    against labs -- but it depends on middleware behaviour rather than on
+    anything this module controls.
+    """
+
+    def test_a_party_written_under_the_programme_scope_is_found_from_an_org_context(self):
+        Party.objects.create(
+            scope_key=f"prog:{PROGRAM}", slug="programme", name="Programme team", kind="programme_org"
+        )
+        # A NUMERIC organisation, which is the reachable case: a synthetic
+        # org's slug is dropped by `data_access.scope_key`'s `_as_int`, so a
+        # labs-only programme always resolves to `prog:` regardless.
+        with_org = SupplyDataAccess(organization_id=77, program_id=PROGRAM, user=_dimagi_user())
+        assert with_org.scope_key == "org:77", "precondition: the scopes differ"
+        assert resolve_party(with_org).slug == "programme"
+
+    def test_a_party_written_under_the_org_scope_is_still_found(self):
+        Party.objects.create(scope_key="org:77", slug="programme", name="Programme team", kind="programme_org")
+        with_org = SupplyDataAccess(organization_id=77, program_id=PROGRAM, user=_dimagi_user())
+        assert resolve_party(with_org).slug == "programme"
+
+    def test_another_programmes_party_is_not_borrowed(self):
+        Party.objects.create(scope_key=f"prog:{PROGRAM + 1}", slug="elsewhere", name="Elsewhere", kind="programme_org")
+        access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user())
+        assert resolve_party(access) is None
