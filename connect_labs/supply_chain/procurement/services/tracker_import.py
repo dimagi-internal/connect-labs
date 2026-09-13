@@ -425,10 +425,13 @@ def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusa
     )
     counts["invitations"] = 1
 
-    for label, raw in (("outreach date", sent_on_raw), ("quote date", _cell(row, spec["quote_date"]))):
+    # `field`, not `label`: `label` is the round, and Python leaks a loop
+    # variable, so binding it here renamed the round to "quote date" in every
+    # refusal from this point on.
+    for field, raw in (("outreach date", sent_on_raw), ("quote date", _cell(row, spec["quote_date"]))):
         if ambiguous_numeric_date(raw):
             refusals.append(
-                f"{name}, {label}: {label} {raw!r} is ambiguous -- read month-first as "
+                f"{name}, {label}: {field} {raw!r} is ambiguous -- read month-first as "
                 f"{_date(raw)}, but the sheet's locale implies day-first. Confirm it."
             )
     if refusal:

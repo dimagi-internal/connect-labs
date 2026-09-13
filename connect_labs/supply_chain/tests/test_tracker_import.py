@@ -159,7 +159,7 @@ def _group_row(round_one="Round 1 Quote (500 cartons)", round_two="Feb Re-quote 
     return row
 
 
-def _row(*, price="$52.42", freight="Not specified", name="Harmattan Foods"):
+def _row(*, price="$52.42", freight="Not specified", name="Harmattan Foods", quote_date="2026-05-06"):
     """A tracker row in the sheet's own 20-column shape."""
     row = [""] * 20
     row[t.NAME] = name
@@ -168,7 +168,7 @@ def _row(*, price="$52.42", freight="Not specified", name="Harmattan Foods"):
     spec = t.ROUNDS[0]
     row[spec["contacted"]] = "2026-05-01"
     row[spec["responded"]] = "Yes"
-    row[spec["quote_date"]] = "2026-05-06"
+    row[spec["quote_date"]] = quote_date
     row[spec["price"]] = price
     row[spec["freight"]] = freight
     return row
@@ -291,3 +291,42 @@ class _FakeCreds:
 
     def refresh(self, _request):
         pass
+
+
+class TestRefusalAttribution:
+    """Every refusal names the round it belongs to.
+
+    A refusal on the 500-carton round and one on the 2,000-carton re-quote
+    are different follow-ups, so a message that cannot be attributed to a
+    round is close to useless. Threading the round label through
+    `_load_round` put it in scope of a loop that already bound `label` to a
+    date FIELD name ("outreach date", "quote date"). Python leaks the loop
+    variable, so from that loop onward every refusal reported the field
+    name where the round belonged -- silently, because the assertions only
+    ever matched the tail of the message.
+    """
+
+    @pytest.mark.django_db
+    def test_every_refusal_names_its_round(self, monkeypatch):
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+
+        refused = t.import_tracker(da, ensure_commodity=True, dry_run=True)["refused"]
+
+        assert refused
+        for message in refused:
+            assert "Round 1 Quote (500 cartons)" in message, message
+
+    @pytest.mark.django_db
+    def test_an_ambiguous_date_names_the_round_and_the_field(self, monkeypatch):
+        """The two are different things and the message needs both: which
+        round, and which of its dates could not be read."""
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row(quote_date="9/10/2026")]))
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+
+        refused = t.import_tracker(da, ensure_commodity=True, dry_run=True)["refused"]
+
+        ambiguous = [m for m in refused if "ambiguous" in m]
+        assert len(ambiguous) == 1, refused
+        assert "Round 1 Quote (500 cartons)" in ambiguous[0]
+        assert "quote date" in ambiguous[0]
