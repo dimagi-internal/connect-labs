@@ -86,6 +86,112 @@ def _contract(da, setup, **overrides):
     return op(da, "contract_create", data=data)
 
 
+@pytest.fixture
+def chain(da, setup):
+    """One row of every kind a document can be evidence for.
+
+    Built through the operations so each id is a real, scoped row -- the
+    point of the walking test is that a DECLARED target is actually
+    writable, and a fixture that faked the ids would prove nothing.
+    """
+    round_ = op(
+        da,
+        "round_create",
+        data={
+            "label": "Round 1",
+            "delivery_point": {"city": "Kano"},
+            "lines": [{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}],
+        },
+    )
+    op(da, "round_open", round_id=round_["id"])
+    quote = op(
+        da,
+        "quote_record",
+        data={
+            "round_id": round_["id"],
+            "supplier_id": setup["supplier"]["id"],
+            "commodity_slug": "rutf",
+            "as_quoted_amount": "52.42",
+            "as_quoted_unit": "per_pack",
+            "quantity_basis": "500",
+            "quantity_basis_unit": "carton",
+            "pack_spec_source": "not_stated",
+        },
+    )
+    award = op(da, "award_create", round_id=round_["id"], quote_id=quote["id"], rationale="only offer")
+    contract = _contract(da, setup)
+    shipment = op(
+        da,
+        "shipment_record",
+        data={
+            "contract_id": contract["id"],
+            "source": "partner_reported",
+            "lines": [{"item_id": setup["item"]["id"], "quantity": "500", "quantity_unit": "carton"}],
+        },
+    )
+    receipt = op(
+        da,
+        "receipt_record",
+        data={
+            "contract_id": contract["id"],
+            "shipment_id": shipment["id"],
+            "supply_point_id": setup["store"]["id"],
+            "received_on": "2026-06-01",
+            "source": "partner_reported",
+            "lines": [{"item_id": setup["item"]["id"], "quantity_accepted": "500", "quantity_unit": "carton"}],
+        },
+    )
+    invoice = op(
+        da,
+        "invoice_record",
+        data={
+            "contract_id": contract["id"],
+            "amount": "28396.58",
+            "currency": "USD",
+            "source": "supplier_reported",
+        },
+    )
+    payment = op(
+        da,
+        "payment_record",
+        data={
+            "invoice_id": invoice["id"],
+            "amount": "28396.58",
+            "currency": "USD",
+            "paid_on": "2026-06-15",
+            "source": "partner_reported",
+        },
+    )
+    count = op(
+        da,
+        "stock_count_record",
+        data={
+            "supply_point_id": setup["store"]["id"],
+            "commodity_slug": "rutf",
+            "item_id": setup["item"]["id"],
+            "kind": "physical_count",
+            "counted_on": "2026-06-20",
+            "quantity": "480",
+            "quantity_unit": "carton",
+            "source": "we_recorded",
+        },
+    )
+    return {
+        "round": round_["id"],
+        "quote": quote["id"],
+        "award": award["id"],
+        "contract": contract["id"],
+        "shipment": shipment["id"],
+        "receipt": receipt["id"],
+        "invoice": invoice["id"],
+        "payment": payment["id"],
+        "stock_count": count["id"],
+        "supply_point": setup["store"]["id"],
+        "supplier": setup["supplier"]["id"],
+        "item": setup["item"]["id"],
+    }
+
+
 class TestLandedCost:
     def test_a_relief_claimed_without_a_document_is_unconfirmed_not_zero(self, da, setup):
         contract = _contract(da, setup, duty_relief_claimed=True, duties_basis="excluded")
@@ -479,3 +585,107 @@ class TestPartnerWritesThroughTheSameSurface:
         ]:
             with pytest.raises(jsonschema.ValidationError):
                 op(da, name, data=data)
+
+
+class TestDocumentTargets:
+    """What a document can be evidence for.
+
+    A quote could not carry one, which is what prompted this: EHA's price
+    cites "Pro-Forma Invoice SO239306" and that invoice had nowhere to sit.
+    Nor could a payment, an award, a distribution, a stock count or an item --
+    so there was no home for a remittance advice, a worker's confirmation
+    that stock arrived, or a photograph of the product.
+    """
+
+    def _doc(self, da, **links):
+        payload = {"kind": "other", "title": "evidence", "source": "we_recorded", **links}
+        return call_operation("document_attach", da, {"data": payload})
+
+    def test_every_declared_target_can_actually_be_written(self, da, chain):
+        """The declaration, the model fields, the schema and the query have to
+        agree. Three of those four used to be maintained by hand, so this
+        walks the declared list rather than a list written here -- a target
+        added to records with no field or no schema entry fails here.
+        """
+        from connect_labs.supply_chain import records
+
+        assert len(records.DOCUMENT_LINKS) == 13
+        for name in records.DOCUMENT_LINKS:
+            target_id = chain.get(name)
+            if target_id is None:
+                continue
+            doc = self._doc(da, **{f"{name}_id": target_id, "external_url": "https://example.test/e.pdf"})
+            assert doc["links"][f"{name}_id"] == target_id, name
+            assert call_operation("document_list", da, {f"{name}_id": target_id}), name
+
+    def test_a_quote_carries_its_own_evidence(self, da, chain):
+        """The case that started this."""
+        doc = self._doc(
+            da,
+            kind="pro_forma_invoice",
+            quote_id=chain["quote"],
+            external_url="https://example.test/SO239306.pdf",
+        )
+        assert doc["links"]["quote_id"] == chain["quote"]
+        found = call_operation("document_list", da, {"quote_id": chain["quote"]})
+        assert [d["id"] for d in found] == [doc["id"]]
+
+    def test_a_document_evidences_one_thing(self, da, chain):
+        """Two links is one row claiming to be evidence for two facts, which
+        is two documents that can later disagree."""
+        with pytest.raises(ValueError, match="one thing"):
+            self._doc(
+                da,
+                quote_id=chain["quote"],
+                contract_id=chain["contract"],
+                external_url="https://example.test/e.pdf",
+            )
+
+    def test_a_programme_level_document_needs_no_target(self, da):
+        """None is legitimate -- a framework agreement or a tax ruling belongs
+        to the programme rather than to one row in it."""
+        doc = self._doc(da, external_url="https://example.test/policy.pdf")
+        assert all(doc["links"][f"{n}_id"] is None for n in ("quote", "contract", "supplier"))
+
+
+def test_every_place_that_knows_the_document_targets_reads_the_declaration():
+    """The same list lived in SEVEN places, and adding one target found each
+    of them in turn, as a different failure:
+
+      model fields          -- no column
+      _DOCUMENT_LINKS       -- the query silently ignored the filter
+      document_attach schema -- "additionalProperties" naming nothing
+      document_list schema  -- same
+      _resolve_document_link -- KeyError: 'quote'
+      the serializer        -- the id never came back
+      the data access       -- no scoped getter, so no way to check the
+                               target belongs to this programme
+
+    Each was found by a test failing, one at a time, which is six rounds of
+    the same discovery. So this asserts the agreement directly: every
+    declared target has a model field, a scoped getter, a slot in both
+    schemas, and a key in the published shape.
+    """
+    from connect_labs.supply_chain import records
+    from connect_labs.supply_chain.data_access import SupplyDataAccess
+    from connect_labs.supply_chain.models import Document
+    from connect_labs.supply_chain.operations import get_operation
+    from connect_labs.supply_chain.serializers import document as serialize
+
+    declared = set(records.DOCUMENT_LINKS)
+    assert declared, "no document targets declared"
+
+    fields = {f.name for f in Document._meta.get_fields() if f.many_to_one}
+    assert declared <= fields, f"declared with no model field: {sorted(declared - fields)}"
+
+    missing_getters = {n for n in declared if not hasattr(SupplyDataAccess, f"get_{n}")}
+    assert not missing_getters, f"declared with no scoped getter: {sorted(missing_getters)}"
+
+    attach = get_operation("document_attach").input_schema["properties"]["data"]["properties"]
+    listing = get_operation("document_list").input_schema["properties"]
+    for name in declared:
+        assert f"{name}_id" in attach, f"{name} cannot be attached"
+        assert f"{name}_id" in listing, f"{name} cannot be filtered on"
+
+    published = serialize(Document(kind="other"))["links"]
+    assert set(published) == {f"{n}_id" for n in declared}

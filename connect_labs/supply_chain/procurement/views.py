@@ -149,14 +149,12 @@ class QuoteDetailView(_Base):
         context["quote"] = quote
         context["round"] = self.op("round_get", round_id=quote["round_id"])
         context["supplier"] = self.op("supplier_get", supplier_id=quote["supplier_id"])
-        # `Document` has six explicit links -- contract, shipment, receipt,
-        # invoice, supply point, supplier -- and none to a quote, so a quote
-        # cannot carry evidence of its own yet. EHA's own note cites
-        # "Pro-Forma Invoice SO239306" as the source of its price, which is
-        # exactly a quote-level document, so this is a gap rather than a
-        # design. Showing the supplier's documents and saying so beats an
-        # empty panel that implies none exist.
-        context["documents"] = self.op("document_list", supplier_id=quote["supplier_id"])
+        # A quote carries its own evidence now -- a quotation PDF, or the
+        # pro-forma invoice a price came off, which is what EHA's note cites.
+        # The supplier's own documents are shown separately rather than mixed
+        # in: a certification belongs to the company, not to this offer.
+        context["documents"] = self.op("document_list", quote_id=quote["id"])
+        context["supplier_documents"] = self.op("document_list", supplier_id=quote["supplier_id"])
         # The invitation this quote answered, so the page can say how long the
         # supplier took rather than only when the quote landed.
         context["outreach"] = [
