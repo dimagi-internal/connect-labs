@@ -333,5 +333,10 @@ def stated_rows(quote):
             value = f"{value} months"
         if key == "lead_time_days" and value:
             value = f"{value} days"
-        rows.append({"label": label, "value": humanise(value) if key == "as_quoted_unit" else value})
+        # The enum-valued fields read as words, not as identifiers. Fixed in
+        # the round table and missed here, which is why "not_stated" reached
+        # the quote page.
+        if key in ("as_quoted_unit", "pack_spec_source"):
+            value = humanise(value)
+        rows.append({"label": label, "value": value})
     return rows

@@ -98,3 +98,30 @@ class TestZeroIsAnAmount:
 
         rows = {r["label"]: r["value"] for r in stated_rows({"freight_basis": "excluded", "freight_amount": None})}
         assert "not given" in rows["Freight"]
+
+
+def test_no_enum_identifier_reaches_the_stated_column():
+    """`not_stated` reached the quote page as an identifier. The same fix had
+    already been applied to the round table and missed here, so this asserts
+    the property rather than the two fields it currently applies to: nothing
+    in the stated column may carry an underscore where a word belongs.
+    """
+    from connect_labs.supply_chain.templatetags.supply_chain_extras import stated_rows
+
+    quote = {
+        "as_quoted_amount": "0.46",
+        "as_quoted_currency": "USD",
+        "as_quoted_unit": "per_base_unit",
+        "quantity_basis": "100000",
+        "quantity_basis_unit": "sachet",
+        "pack_spec_source": "not_stated",
+        "freight_basis": "not_specified",
+        "duties_basis": "not_specified",
+        "fx_rate_to_usd": "1",
+    }
+    offenders = [
+        (row["label"], row["value"])
+        for row in stated_rows(quote)
+        if isinstance(row["value"], str) and "_" in row["value"]
+    ]
+    assert offenders == [], offenders
