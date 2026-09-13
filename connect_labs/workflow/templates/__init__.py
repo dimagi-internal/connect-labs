@@ -328,6 +328,7 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     "llo_weekly_review": "reviews",
     "chc_nutrition_analysis": "reviews",
     "mbw_auditing_v5": "reviews",
+    "mbw_auditing_v6": "reviews",
     # Audits: a photo or record gets a verdict, plus the creators that spawn them.
     "bulk_image_audit": "audits",
     "muac_picture_audit": "audits",
