@@ -177,6 +177,8 @@ def test_a_negative_or_zero_quantity_is_rejected_on_both_the_string_and_the_numb
 
 def test_a_positive_quantity_is_accepted_as_either_a_string_or_a_number():
     access = MagicMock()
+    access.request = None
+    access.user = None
     access.create_contract.return_value = Contract(id=1, commodity=_RUTF)
     for good_quantity in ("10", 10, 10.5, "0.5"):
         call_operation("contract_create", access, _contract_payload(quantity=good_quantity))
@@ -272,6 +274,8 @@ def test_a_none_valued_parameter_is_treated_as_not_supplied():
     optional parameter to accept null would weaken the contract an agent
     reads to say the same thing."""
     access = MagicMock()
+    access.request = None
+    access.user = None
     access.list_contracts.return_value = []
     assert call_operation("contract_list", access, {"round_id": None, "status": None}) == []
     access.list_contracts.assert_called_once_with(round_id=None, status=None)
@@ -283,6 +287,12 @@ def test_a_none_inside_a_data_payload_is_still_passed_through():
     exemption is a real operation, and `duty_relief_document_id` is declared
     NULLABLE_ID for it."""
     access = MagicMock()
+    # Payload plumbing, not provenance: an unknowable caller (no request, no
+    # user) is the management-command route, which stamps nothing. Left as a
+    # bare MagicMock, `access.request` is a truthy auto-attribute and the
+    # identity derivation reads it as a real request with no organisations.
+    access.request = None
+    access.user = None
     access.update_contract.return_value = Contract(id=1, commodity=_RUTF)
     call_operation("contract_update", access, {"contract_id": 1, "data": {"duty_relief_document_id": None}})
     assert access.update_contract.call_args[0][1] == {"duty_relief_document_id": None}

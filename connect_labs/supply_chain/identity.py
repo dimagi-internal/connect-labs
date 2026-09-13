@@ -70,7 +70,13 @@ def caller_org_ids(access) -> set[int] | None:
         from connect_labs.labs.context import get_org_data
 
         org_data = get_org_data(request) or {}
-        return {int(o["id"]) for o in org_data.get("organizations", []) if o.get("id") is not None}
+        if "organizations" in org_data:
+            return {int(o["id"]) for o in org_data["organizations"] if o.get("id") is not None}
+        # A request whose session carries no organisation list at all is not
+        # evidence that the user belongs to nothing -- an expired or
+        # half-built session looks exactly like this. Fall through to the
+        # token rather than reporting a permission fact we have not
+        # established.
 
     user = getattr(access, "user", None)
     if user is None:
@@ -131,3 +137,86 @@ def resolve_party(access):
 def source_for(party) -> str | None:
     """How a fact from this party reached us, or None if it does not follow."""
     return SOURCE_FOR_PARTY_KIND.get(party.kind) if party is not None else None
+
+
+# Sources that assert first-hand knowledge. Only the programme's own staff and
+# a document can carry them; a partner claiming `we_recorded` would be
+# claiming that WE witnessed what they are telling us.
+WITNESSED_SOURCES = {"we_recorded", "document"}
+
+
+def takes_provenance(operation) -> bool:
+    """Whether this operation writes a row that records who said so.
+
+    Read off the schema rather than listed here, so an operation added later
+    is covered without anyone remembering to add it. Provenance is compulsory
+    below the contract (section 17.3), so procurement writes -- suppliers,
+    rounds, quotes, outreach -- are untouched by any of this.
+    """
+    if not operation.is_write:
+        return False
+    data = (operation.input_schema.get("properties") or {}).get("data") or {}
+    return "recorded_by_party_id" in (data.get("properties") or {})
+
+
+def stamp_provenance(access, operation, payload: dict) -> dict:
+    """Fill in who recorded this, and refuse a claim the caller cannot make.
+
+    Returns the payload to dispatch. Three cases, and the distinction between
+    the last two is the whole point:
+
+      - the operation records no provenance: untouched.
+      - the caller is UNKNOWABLE (a management command, no user, nobody to
+        ask): untouched. Such a caller must declare its own party, and the
+        commands that write provenance already do. Refusing here would turn a
+        missing argument into a permission error.
+      - the caller is KNOWABLE: the row is attributed to the party it acts
+        for, and a claim it is not entitled to make is refused.
+
+    The asymmetry between us and a partner is deliberate and is not a
+    privilege: we record a partner's receipt on their behalf routinely -- that
+    is what `partner_reported` is for -- so the programme's own staff may
+    attribute a row to another party. A partner may not, because a partner
+    attributing a row to us would make its own claim read as first-hand, which
+    is the substitution provenance exists to prevent.
+    """
+    if not takes_provenance(operation):
+        return payload
+
+    org_ids = caller_org_ids(access)
+    if org_ids is None:
+        return payload
+
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return payload
+
+    party = resolve_party(access)
+    if party is None:
+        raise IdentityUnresolved(
+            "this caller acts for no organisation in this programme, so a record "
+            "cannot be attributed to anyone. Add the party with party_upsert and "
+            "set its connect_organization_id, or call as a member of one."
+        )
+
+    claimed_party_id = data.get("recorded_by_party_id")
+    claimed_source = data.get("source")
+    is_programme = party.kind == "programme_org"
+
+    if claimed_party_id is not None and int(claimed_party_id) != party.pk and not is_programme:
+        raise IdentityUnresolved(
+            f"{party.name} cannot record this against another party. Omit "
+            "recorded_by_party_id and it will be attributed to you."
+        )
+    if claimed_source in WITNESSED_SOURCES and not is_programme:
+        raise IdentityUnresolved(
+            f"{party.name} cannot record {claimed_source!r}, which asserts first-hand "
+            "knowledge. Use 'partner_reported', or attach a document."
+        )
+
+    data = dict(data)
+    data.setdefault("recorded_by_party_id", party.pk)
+    derived = source_for(party)
+    if derived is not None:
+        data.setdefault("source", derived)
+    return {**payload, "data": data}

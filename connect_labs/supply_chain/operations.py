@@ -77,6 +77,17 @@ def all_operations() -> dict[str, Operation]:
     return dict(_REGISTRY)
 
 
+def _stamp_provenance_import():
+    """Imported lazily: identity reads models, and models import records."""
+    from connect_labs.supply_chain.identity import stamp_provenance
+
+    return stamp_provenance
+
+
+def stamp_provenance(access, operation, payload):
+    return _stamp_provenance_import()(access, operation, payload)
+
+
 def get_operation(name: str) -> Operation:
     return _REGISTRY[name]
 
@@ -98,6 +109,11 @@ def call_operation(name: str, access, payload: dict | None = None) -> Any:
     operation = get_operation(name)
     payload = {key: value for key, value in (payload or {}).items() if value is not None}
     jsonschema.validate(payload, operation.input_schema)
+    # After validation, so a malformed payload fails on its shape rather than
+    # on who sent it; before dispatch, because this is the one choke point both
+    # the HTTP adapter and the MCP tools pass through, and provenance derived
+    # in two places is provenance that can disagree with itself.
+    payload = stamp_provenance(access, operation, payload)
     return operation.handler(access, **payload)
 
 

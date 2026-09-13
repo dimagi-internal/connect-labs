@@ -155,3 +155,116 @@ class TestSource:
         partner's would misdescribe it. Those callers state their source."""
         assert source_for(Party(kind="agency")) is None
         assert source_for(None) is None
+
+
+class TestStamping:
+    """What `call_operation` does with the resolved party.
+
+    The asymmetry tested here is deliberate and is not a privilege: we record
+    a partner's receipt on their behalf routinely -- that is what
+    `partner_reported` is for -- so the programme's own staff may attribute a
+    row to another party. A partner may not, because a partner attributing a
+    row to us would make its own claim read as first-hand.
+    """
+
+    def _contract(self, **data):
+        payload = {
+            "round_id": 1,
+            "supplier_id": 2,
+            "commodity_slug": "rutf",
+            "buyer_of_record": "partner_org",
+            "buyer_party_id": 1,
+            "quantity": "10",
+            "unit_price": "10.00",
+            "currency": "USD",
+        }
+        payload.update(data)
+        return {"data": payload}
+
+    def _stamp(self, access, payload, operation_name="contract_create"):
+        from connect_labs.supply_chain.identity import stamp_provenance
+        from connect_labs.supply_chain.operations import get_operation
+
+        return stamp_provenance(access, get_operation(operation_name), payload)
+
+    def test_a_read_operation_is_untouched(self):
+        access, request = _session_access([7])
+        assert self._stamp(access, {"round_id": 1}, "contract_list") == {"round_id": 1}
+
+    def test_a_procurement_write_is_untouched_because_it_records_no_provenance(self):
+        """Provenance is compulsory BELOW the contract (section 17.3), so
+        suppliers, rounds, quotes and outreach carry none and must not start
+        being refused for lacking a party."""
+        access, request = _session_access([7])
+        payload = {"data": {"name": "Northwind"}}
+        assert self._stamp(access, payload, "supplier_create") == payload
+
+    def test_an_unknowable_caller_is_left_alone_to_declare_its_own(self):
+        """The management-command route. Refusing here would turn a missing
+        argument into a permission error, and the commands that write
+        provenance already pass their party."""
+        access = SupplyDataAccess(access_token="local", program_id=PROGRAM)
+        payload = self._contract(source="partner_reported", recorded_by_party_id=3)
+        assert self._stamp(access, payload) == payload
+
+    def test_a_knowable_caller_with_no_party_here_is_refused(self):
+        access, request = _session_access([999])
+        with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
+            with pytest.raises(IdentityUnresolved) as caught:
+                self._stamp(access, self._contract())
+        assert "party_upsert" in str(caught.value)
+
+    def test_the_party_and_source_are_stamped_from_the_session(self):
+        party = _party("dimagi", "programme_org", 7)
+        access, request = _session_access([7])
+        with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
+            stamped = self._stamp(access, self._contract())
+        assert stamped["data"]["recorded_by_party_id"] == party.pk
+        assert stamped["data"]["source"] == "we_recorded"
+
+    def test_a_partner_is_stamped_as_reporting_not_as_witnessing(self):
+        party = _party("kano-llo", "partner_org", 42)
+        access, request = _session_access([42])
+        with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
+            stamped = self._stamp(access, self._contract())
+        assert stamped["data"]["recorded_by_party_id"] == party.pk
+        assert stamped["data"]["source"] == "partner_reported"
+
+    def test_a_partner_cannot_claim_we_recorded_it(self):
+        """The defect this whole change exists to close: `we_recorded` asserts
+        that WE saw it, and it was previously accepted from the payload."""
+        _party("kano-llo", "partner_org", 42)
+        access, request = _session_access([42])
+        with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
+            with pytest.raises(IdentityUnresolved) as caught:
+                self._stamp(access, self._contract(source="we_recorded"))
+        assert "first-hand" in str(caught.value)
+
+    def test_a_partner_cannot_attribute_a_record_to_another_party(self):
+        _party("kano-llo", "partner_org", 42)
+        other = _party("someone-else", "partner_org", 43)
+        access, request = _session_access([42])
+        with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
+            with pytest.raises(IdentityUnresolved) as caught:
+                self._stamp(access, self._contract(recorded_by_party_id=other.pk))
+        assert "another party" in str(caught.value)
+
+    def test_we_may_record_on_a_partners_behalf(self):
+        """Not a privilege -- it is the normal case. Sophie enters what the
+        LLO told her, and the row has to say the LLO reported it."""
+        _party("dimagi", "programme_org", 7)
+        llo = _party("kano-llo", "partner_org", 42)
+        access, request = _session_access([7])
+        with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
+            stamped = self._stamp(access, self._contract(recorded_by_party_id=llo.pk, source="partner_reported"))
+        assert stamped["data"]["recorded_by_party_id"] == llo.pk
+        assert stamped["data"]["source"] == "partner_reported"
+
+    def test_a_caller_supplied_source_is_not_overwritten(self):
+        """A document is stronger evidence than the caller's own word, and a
+        derived source must not downgrade it."""
+        _party("dimagi", "programme_org", 7)
+        access, request = _session_access([7])
+        with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
+            stamped = self._stamp(access, self._contract(source="document"))
+        assert stamped["data"]["source"] == "document"
