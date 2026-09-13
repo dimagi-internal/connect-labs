@@ -129,32 +129,56 @@ unconfirmed figures on the right.
   </section>
 {% endif %}
 
-<section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
-  <header class="px-4 py-2.5 border-b border-brand-border-light">
-    <h2 class="text-sm font-semibold text-gray-900">Documents on file for {{ supplier.name }}</h2>
-    <p class="text-xs text-gray-500 mt-0.5">
-      Evidence attaches to a contract, shipment, receipt, invoice, supply point or supplier —
-      not yet to a quote, so a pro-forma invoice behind a price has nowhere of its own to sit.
-    </p>
-  </header>
-  {% if documents %}
-    <ul class="divide-y divide-brand-border-light/70">
-      {% for doc in documents %}
-        <li class="flex items-baseline gap-3 px-4 py-3">
-          <span class="text-xs text-gray-500 w-32 shrink-0">{{ doc.kind|humanise }}</span>
-          <span class="text-sm text-gray-900">{{ doc.title|default:doc.filename|default:"untitled" }}</span>
-          {% if doc.external_url %}
-            <a href="{{ doc.external_url }}" rel="noopener" class="text-sm text-brand-indigo hover:underline ml-auto">Open</a>
-          {% endif %}
-        </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <p class="px-4 py-6 text-sm text-gray-500">
-      Nothing attached. A quote's own evidence needs a link this model does not have yet.
-    </p>
-  {% endif %}
-</section>
+<div class="grid gap-4 lg:grid-cols-2">
+  <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <header class="px-4 py-2.5 border-b border-brand-border-light">
+      <h2 class="text-sm font-semibold text-gray-900">Evidence for this quote</h2>
+      <p class="text-xs text-gray-500 mt-0.5">The quotation itself, or the pro-forma invoice a price came off.</p>
+    </header>
+    {% if documents %}
+      <ul class="divide-y divide-brand-border-light/70">
+        {% for doc in documents %}
+          <li class="flex items-baseline gap-3 px-4 py-3">
+            <span class="text-xs text-gray-500 w-36 shrink-0">{{ doc.kind|humanise }}</span>
+            <span class="text-sm text-gray-900">{{ doc.title|default:doc.filename|default:"untitled" }}</span>
+            {% if doc.external_url %}
+              <a href="{{ doc.external_url }}" rel="noopener noreferrer" target="_blank"
+                 class="text-sm text-brand-indigo hover:underline ml-auto">Open</a>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="px-4 py-6 text-sm text-gray-500">
+        Nothing attached yet. Attach the quotation or its pro-forma invoice with
+        <code class="text-xs">document_attach</code>, giving this quote's id.
+      </p>
+    {% endif %}
+  </section>
+
+  <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <header class="px-4 py-2.5 border-b border-brand-border-light">
+      <h2 class="text-sm font-semibold text-gray-900">On file for {{ supplier.name }}</h2>
+      <p class="text-xs text-gray-500 mt-0.5">Belongs to the company rather than to this offer — a certification, a registration.</p>
+    </header>
+    {% if supplier_documents %}
+      <ul class="divide-y divide-brand-border-light/70">
+        {% for doc in supplier_documents %}
+          <li class="flex items-baseline gap-3 px-4 py-3">
+            <span class="text-xs text-gray-500 w-36 shrink-0">{{ doc.kind|humanise }}</span>
+            <span class="text-sm text-gray-900">{{ doc.title|default:doc.filename|default:"untitled" }}</span>
+            {% if doc.external_url %}
+              <a href="{{ doc.external_url }}" rel="noopener noreferrer" target="_blank"
+                 class="text-sm text-brand-indigo hover:underline ml-auto">Open</a>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="px-4 py-6 text-sm text-gray-500">Nothing on file for this supplier.</p>
+    {% endif %}
+  </section>
+</div>
 
 {% endif %}
 

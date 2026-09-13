@@ -136,6 +136,8 @@ INVOICE_STATUSES = ("received", "queried", "approved", "part_paid", "paid", "rej
 DOCUMENT_KINDS = (
     "purchase_order",
     "order_confirmation",
+    "quotation",
+    "pro_forma_invoice",
     "certificate_of_analysis",
     "certificate_of_conformity",
     "duty_exemption",
@@ -143,8 +145,44 @@ DOCUMENT_KINDS = (
     "goods_received_note",
     "invoice",
     "proof_of_payment",
+    "proof_of_delivery",
+    "specification_sheet",
+    "photo",
     "stock_report",
     "other",
+)
+
+# What a document can be evidence FOR. Declared here, once, because three
+# places need the same list: the model's foreign keys, the operation schema
+# that accepts `<name>_id`, and the query that filters on it. It used to live
+# in the repository with the schema restating it by hand, so a new target was
+# two edits and a silent omission.
+#
+# Explicit foreign keys rather than a GenericForeignKey, even at this length.
+# A document is not decoration here -- two derivations turn on one EXISTING
+# (a claimed duty relief, a batch's conformity) -- so a row pointing at a
+# deleted contract would silently un-evidence a figure. A generic relation
+# gives up the database's help with exactly that, and gives up joining.
+DOCUMENT_LINKS = (
+    # sourcing: what a supplier sent, and what we sent them
+    "quote",
+    "round",
+    "award",
+    # ordering and paying
+    "contract",
+    "shipment",
+    "receipt",
+    "invoice",
+    "payment",
+    # holding and handing out -- a worker's confirmation that stock arrived
+    # is the same kind of fact as a goods received note, one step further on
+    "distribution",
+    "stock_count",
+    "supply_point",
+    # the parties and things themselves: a certification, a spec sheet, a
+    # photograph of the product
+    "supplier",
+    "item",
 )
 
 BASIS = ("included", "excluded", "not_specified")

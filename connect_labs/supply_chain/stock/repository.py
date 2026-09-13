@@ -131,6 +131,11 @@ class StockRepositoryMixin:
 
     # ---- counts ----------------------------------------------------------
 
+    def get_stock_count(self, stock_count_id):
+        """Scoped by programme, so a document cannot be attached to another
+        programme's count."""
+        return StockCount.objects.filter(program_id=self._require_program(), pk=stock_count_id).first()
+
     def list_stock_counts(self, supply_point_id=None, item_id=None, kind=None, limit=500):
         qs = StockCount.objects.filter(program_id=self._require_program()).select_related("commodity")
         if supply_point_id is not None:
