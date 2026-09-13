@@ -582,3 +582,68 @@ class TestAge:
         assert len(found) == 1
         assert found[0]["since"] is None
         assert found[0]["days_open"] is None
+
+
+class TestCourseAppliesToTheCommodity:
+    """A ration table is only a gap where a course is a thing.
+
+    The catalogue flagged "No ration table set" against an infant scale --
+    equipment, which is not dispensed to a patient over days and will never
+    have sachets per course. A check that can never be closed is the same
+    defect as a backlog that can never reach zero: it is permanent noise, and
+    it teaches people to stop reading the list.
+
+    Which categories have a course is a FACT about the category, not a
+    judgement about the commodity, so it is derived from `category` rather
+    than stored per commodity or guessed from the name.
+    """
+
+    def _commodity(self, da, slug, category):
+        return op(
+            da,
+            "commodity_upsert",
+            data={
+                "slug": slug,
+                "name": slug.replace("-", " ").title(),
+                "category": category,
+                "base_unit": "unit",
+                "pack_unit": "box",
+                "base_per_pack": 1,
+            },
+        )
+
+    def test_equipment_with_no_ration_table_is_not_a_gap(self, da):
+        self._commodity(da, "infant-scale", "equipment")
+        found = [c for c in _read(da)["checks"] if c["kind"] == "commodity_course_undefined"]
+        assert found == []
+
+    def test_a_therapeutic_food_with_no_ration_table_still_is(self, da):
+        """The case the check exists for: cost per course and cost per child
+        are unconfirmed until the programme states its protocol."""
+        self._commodity(da, "rutf", "therapeutic_food")
+        found = [c for c in _read(da)["checks"] if c["kind"] == "commodity_course_undefined"]
+        assert len(found) == 1
+        assert found[0]["audience"] == "internal"
+
+    def test_a_commodity_with_no_category_is_still_flagged(self, da):
+        """Fails toward asking. An unset category is not evidence that a
+        course does not apply, and staying silent would hide a real gap on
+        every commodity created before anyone filled the field in.
+
+        Built through the ORM because the operation's schema will not accept
+        a blank category -- so this state is only reachable for rows written
+        before the field existed, which is exactly the population at risk.
+        """
+        from connect_labs.supply_chain.models import Commodity
+
+        Commodity.objects.create(
+            scope_key=da.scope_key,
+            slug="unknown-thing",
+            name="Unknown Thing",
+            category="",
+            base_unit="unit",
+            pack_unit="box",
+            base_per_pack=1,
+        )
+        found = [c for c in _read(da)["checks"] if c["kind"] == "commodity_course_undefined"]
+        assert len(found) == 1

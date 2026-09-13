@@ -36,6 +36,35 @@ MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 _DOCUMENT_LINKS = ("contract", "shipment", "receipt", "invoice", "supply_point", "supplier")
 
 
+# Evidence is rendered as a link, so the scheme is executable surface.
+# `Document.external_url` is a URLField, but `objects.create` does not run
+# field validation -- that happens through a form or `full_clean` -- so a
+# `javascript:` URL stored through `document_attach` sat harmlessly in the
+# table until a page linked it, and then ran on click.
+#
+# An allowlist rather than a denylist: the set of schemes a browser will
+# execute is not one this code can enumerate, and the set a document can
+# legitimately live at is exactly two.
+_SAFE_URL_SCHEMES = ("https://", "http://")
+
+
+def _safe_external_url(url: str) -> str:
+    """The URL as given, or a refusal naming what is acceptable.
+
+    A bare host is refused rather than prefixed: inventing a scheme the
+    caller did not state, on a field whose whole job is to point at one
+    specific place, is the same guess this domain refuses everywhere else.
+    """
+    cleaned = str(url).strip()
+    if cleaned.lower().startswith(_SAFE_URL_SCHEMES):
+        return cleaned
+    raise ValueError(
+        f"external_url must start with https:// (or http://); got {cleaned[:60]!r}. "
+        "A document is rendered as a link, so anything else is executable rather "
+        "than a location."
+    )
+
+
 class FulfilmentRepositoryMixin:
     # ---- shipments -------------------------------------------------------
 
@@ -280,6 +309,9 @@ class FulfilmentRepositoryMixin:
                 "give content_base64 or external_url, not both -- two locations for one "
                 "document is two documents that can disagree"
             )
+        if external_url:
+            external_url = _safe_external_url(external_url)
+            data = {**data, "external_url": external_url}
 
         fields = _columns(Document, data)
         fields.pop("storage_key", None)

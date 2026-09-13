@@ -27,17 +27,17 @@ figure here can go stale.
   <p class="text-sm text-gray-600">
     Bought by
     <b>{{ parties|dictkey:contract.buyer_party_id|dictkey:"name"|default:contract.buyer_of_record }}</b>
-    as <span class="text-gray-500">{{ contract.buyer_of_record }}</span>
+    as <span class="text-gray-500">{{ contract.buyer_of_record|humanise }}</span>
     {% if contract.incoterm %} · {{ contract.incoterm }}{% endif %}
-    {% if contract.status %} · {{ contract.status }}{% endif %}
+    {% if contract.status %} · {{ contract.status|humanise }}{% endif %}
   </p>
 </div>
 
 <div class="grid gap-3 md:grid-cols-2">
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100">
-      <span class="text-xs font-bold uppercase tracking-wide text-gray-500">Landed cost</span>
-      <span class="text-xs text-gray-400 ml-2">assuming {{ landed.buyer_of_record }} imports</span>
+      <span class="text-xs font-semibold text-gray-600">Landed cost</span>
+      <span class="text-xs text-gray-400 ml-2">assuming {{ landed.buyer_of_record|humanise }} imports</span>
     </div>
     <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
@@ -63,7 +63,7 @@ figure here can go stale.
       <div class="px-4 py-2 text-xs text-orange-800 bg-orange-50 border-t border-orange-100">{{ reason }}</div>
     {% endfor %}
     <div class="px-4 py-2.5 border-t border-gray-100">
-      <div class="text-xs font-bold uppercase tracking-wide text-gray-500 mb-1">The same order, per buyer</div>
+      <div class="text-xs font-semibold text-gray-500 mb-1">The same order, per buyer</div>
       <div class="overflow-x-auto">
       <table class="min-w-full text-sm">
         <tbody class="divide-y divide-gray-100">
@@ -92,8 +92,8 @@ figure here can go stale.
 
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100">
-      <span class="text-xs font-bold uppercase tracking-wide text-gray-500">Ordered · received · invoiced</span>
-      <span class="text-xs text-gray-400 ml-2">{{ match.status }}</span>
+      <span class="text-xs font-semibold text-gray-600">Ordered · received · invoiced</span>
+      <span class="text-xs text-gray-400 ml-2">{{ match.status|humanise }}</span>
     </div>
     <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
@@ -132,7 +132,7 @@ figure here can go stale.
   </div>
 </div>
 
-<h3 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mt-6 mb-2">Shipments</h3>
+<h3 class="text-sm font-semibold text-gray-900 mt-6 mb-2">Shipments</h3>
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   {% comment %}
   A scroll container is not focusable by default, so a keyboard-only user
@@ -187,7 +187,7 @@ figure here can go stale.
   </div>
 </div>
 
-<h3 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mt-6 mb-2">Received</h3>
+<h3 class="text-sm font-semibold text-gray-900 mt-6 mb-2">Received</h3>
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   {% comment %}
   A scroll container is not focusable by default, so a keyboard-only user
@@ -234,7 +234,7 @@ figure here can go stale.
   </div>
 </div>
 
-<h3 class="text-xs font-bold uppercase tracking-wider text-brand-indigo mt-6 mb-2">Evidence</h3>
+<h3 class="text-sm font-semibold text-gray-900 mt-6 mb-2">Evidence</h3>
 <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
   {% if documents %}
     <ul class="text-sm divide-y divide-gray-100">
