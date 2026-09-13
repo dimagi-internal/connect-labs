@@ -11,6 +11,7 @@ from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 
 from connect_labs.supply_chain.api_views import _access, has_program_context
+from connect_labs.supply_chain.checks import course_applies_to_category
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.compliance import spec_verdict
@@ -98,6 +99,12 @@ class CatalogueView(OperationBase):
             product["has_course_definition"] = bool(
                 (product.get("course_definition") or {}).get("base_units_per_course")
             )
+            # ...but only where a course is a thing. The page was warning
+            # "No ration table set" against an infant scale, which is not
+            # dispensed over days and will never have one. Same rule as the
+            # check, from the same place, so the page and the feed cannot
+            # disagree about whether something is missing.
+            product["course_applies"] = course_applies_to_category(product.get("category"))
 
         context["products"] = products
         context["orphan_items"] = [

@@ -97,24 +97,34 @@ of the reader who does not.
         </div>
       </dl>
 
-      {% if product.has_course_definition %}
-        <div class="mt-4 text-sm text-gray-700">
-          <span class="text-gray-500">Ration table</span>
-          {{ product.course_definition.base_units_per_course }} {{ product.base_unit }}s per course
-          {% if product.course_definition.source %}
-            <span class="text-gray-500">({{ product.course_definition.source }})</span>
-          {% endif %}
-        </div>
-      {% else %}
-        <div class="mt-4 rounded-md bg-message-warning border border-message-warning-border/50 px-3 py-2.5">
-          <p class="text-sm font-medium text-message-warning-text">No ration table set</p>
-          <p class="text-sm text-message-warning-text/90 mt-0.5 max-w-2xl">
-            Sachets per day and days per course is this programme's treatment
-            protocol, not part of the specification — so cost per course and
-            cost per child stay unconfirmed until it is set.
-            Nobody outside can answer it.
-          </p>
-        </div>
+      {% comment %}
+      Nothing at all for a category that has no course. An infant scale is
+      not dispensed over days, so "No ration table set" against one was a
+      warning that could never be closed -- permanent noise, which teaches a
+      reader to stop reading warnings. `course_applies` comes from the same
+      function the checks feed uses, so the page and the feed cannot disagree
+      about whether something is missing.
+      {% endcomment %}
+      {% if product.course_applies %}
+        {% if product.has_course_definition %}
+          <div class="mt-4 text-sm text-gray-700">
+            <span class="text-gray-500">Ration table</span>
+            {{ product.course_definition.base_units_per_course }} {{ product.base_unit }}s per course
+            {% if product.course_definition.source %}
+              <span class="text-gray-500">({{ product.course_definition.source }})</span>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="mt-4 rounded-md bg-message-warning border border-message-warning-border/50 px-3 py-2.5">
+            <p class="text-sm font-medium text-message-warning-text">No ration table set</p>
+            <p class="text-sm text-message-warning-text/90 mt-0.5 max-w-2xl">
+              Sachets per day and days per course is this programme's treatment
+              protocol, not part of the specification — so cost per course and
+              cost per child stay unconfirmed until it is set.
+              Nobody outside can answer it.
+            </p>
+          </div>
+        {% endif %}
       {% endif %}
 
       {% if product.spec_requirements %}
