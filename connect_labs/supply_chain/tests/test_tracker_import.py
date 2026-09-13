@@ -159,14 +159,16 @@ def _group_row(round_one="Round 1 Quote (500 cartons)", round_two="Feb Re-quote 
     return row
 
 
-def _row(*, price="$52.42", freight="Not specified", name="Harmattan Foods", quote_date="2026-05-06"):
+def _row(
+    *, price="$52.42", freight="Not specified", name="Harmattan Foods", quote_date="2026-05-06", contacted="2026-05-01"
+):
     """A tracker row in the sheet's own 20-column shape."""
     row = [""] * 20
     row[t.NAME] = name
     row[t.TYPE] = "Manufacturer"
     row[t.LOCATION] = "Nigeria"
     spec = t.ROUNDS[0]
-    row[spec["contacted"]] = "2026-05-01"
+    row[spec["contacted"]] = contacted
     row[spec["responded"]] = "Yes"
     row[spec["quote_date"]] = quote_date
     row[spec["price"]] = price
@@ -330,3 +332,78 @@ class TestRefusalAttribution:
         assert len(ambiguous) == 1, refused
         assert "Round 1 Quote (500 cartons)" in ambiguous[0]
         assert "quote date" in ambiguous[0]
+
+
+class TestRerun:
+    """A second run of the same sheet must not double the programme.
+
+    The operation is described as idempotent and is re-run whenever the sheet
+    is edited, but only ROUNDS and SUPPLIERS were matched before writing --
+    outreach and quotes were created unconditionally. Re-importing the real
+    tracker took labs programme 10063 from 3 quotes and 16 invitations to 6
+    and 32, with every supplier listed twice on the comparison screen.
+
+    It went unnoticed because the report counts what a RUN wrote, not what the
+    programme now holds, and those read identically on a first import.
+    """
+
+    @pytest.mark.django_db
+    def test_a_second_run_of_an_unchanged_sheet_adds_nothing(self, monkeypatch):
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+
+        t.import_tracker(da, ensure_commodity=True)
+        first_quotes = call_operation("quote_list", da, {})
+        first_outreach = call_operation("outreach_list", da, {})
+
+        t.import_tracker(da, ensure_commodity=True)
+
+        assert len(call_operation("quote_list", da, {})) == len(first_quotes)
+        assert len(call_operation("outreach_list", da, {})) == len(first_outreach)
+
+    @pytest.mark.django_db
+    def test_the_report_distinguishes_what_it_wrote_from_what_was_already_there(self, monkeypatch):
+        """The count that hid this. A run that writes nothing must not report
+        the same numbers as a run that created everything."""
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+
+        first = t.import_tracker(da, ensure_commodity=True)
+        second = t.import_tracker(da, ensure_commodity=True)
+
+        assert first["imported"]["quotes"] == 1
+        assert second["imported"]["quotes"] == 0
+        assert second["unchanged"]["quotes"] == 1
+
+    @pytest.mark.django_db
+    def test_a_changed_price_is_refused_rather_than_silently_replacing_the_quote(self, monkeypatch):
+        """A quote is a supplier's stated fact and carries its own revision
+        chain (version, superseded_by_quote_id, quote_correct). Overwriting it
+        because a spreadsheet cell moved would destroy that trail, so the
+        difference is reported and left for quote_correct."""
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row(price="$52.42")]))
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        t.import_tracker(da, ensure_commodity=True)
+
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row(price="$60.00")]))
+        result = t.import_tracker(da, ensure_commodity=True)
+
+        assert result["imported"]["quotes"] == 0
+        assert any("quote_correct" in r for r in result["refused"]), result["refused"]
+        assert any("52.42" in r and "60.00" in r for r in result["refused"]), result["refused"]
+        assert len(call_operation("quote_list", da, {})) == 1
+
+    @pytest.mark.django_db
+    def test_a_later_invitation_is_a_second_event_not_a_duplicate(self, monkeypatch):
+        """Outreach is deliberately NOT unique per (round, supplier) -- the
+        model says so, because re-inviting is a real event worth keeping. So
+        the match is on the date: the same invitation read twice is one event,
+        an invitation on a new date is two."""
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        t.import_tracker(da, ensure_commodity=True)
+
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row(contacted="2026-06-01")]))
+        t.import_tracker(da, ensure_commodity=True)
+
+        assert len(call_operation("outreach_list", da, {})) == 2
