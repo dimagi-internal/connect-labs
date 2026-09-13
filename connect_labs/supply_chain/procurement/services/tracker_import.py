@@ -399,8 +399,81 @@ def _ensure_supplier(op, row, name, refusals):
     return op("supplier_create", data=data)
 
 
+def _decimals_equal(left, right) -> bool:
+    """Compare two money/quantity values without tripping over formatting.
+
+    "52.42" and "52.4200" are the same stated price, and a re-import must not
+    report a supplier changing their quote because a serialiser padded it.
+    """
+    if left in (None, "") and right in (None, ""):
+        return True
+    if left in (None, "") or right in (None, ""):
+        return False
+    try:
+        return Decimal(str(left)) == Decimal(str(right))
+    except InvalidOperation:
+        return str(left) == str(right)
+
+
+# The facts a SUPPLIER stated. A re-import compares these and nothing else:
+# `notes` is our own prose and may be edited freely, and comparing it would
+# report a changed quote every time somebody tidied a sentence.
+_QUOTE_FACTS = (
+    "as_quoted_unit",
+    # The currency the supplier priced in, and the rate used to bring it to
+    # USD. The importer always writes USD at 1, so leaving these out meant a
+    # stored quote in another currency with an equal NUMBER read as unchanged
+    # -- agreeing silently with a figure that means something different.
+    "as_quoted_currency",
+    "fx_rate_to_usd",
+    "quantity_basis_unit",
+    "freight_basis",
+    "duties_basis",
+    "received_on",
+)
+_QUOTE_FIGURES = ("as_quoted_amount", "quantity_basis", "freight_amount", "duties_amount")
+
+
+def _quote_differences(existing: dict, data: dict) -> list[str]:
+    """What the sheet now says that the recorded quote does not."""
+    out = []
+    for field in _QUOTE_FACTS:
+        was, now = existing.get(field) or "", data.get(field) or ""
+        if str(was) != str(now):
+            out.append(f"{field} {was or 'unset'!r} -> {now or 'unset'!r}")
+    for field in _QUOTE_FIGURES:
+        if not _decimals_equal(existing.get(field), data.get(field)):
+            out.append(f"{field} {existing.get(field) or 'unset'} -> {data.get(field) or 'unset'}")
+    return out
+
+
+def _outreach_differs(existing: dict, data: dict) -> bool:
+    """Whether the sheet now says something different about this invitation."""
+    for field in ("responded", "response_kind", "notes", "channel"):
+        if field in data and existing.get(field) != data[field]:
+            return True
+    return False
+
+
+def _live_quote(op, round_id, supplier_id, commodity_slug):
+    """The quote currently standing for this supplier on this round.
+
+    Voided and superseded versions are skipped: they are history, and a
+    re-import should neither match them nor resurrect them.
+    """
+    for quote in op("quote_list", round_id=round_id):
+        if (
+            quote["supplier_id"] == supplier_id
+            and quote["commodity_slug"] == commodity_slug
+            and not quote["voided"]
+            and quote["superseded_by_quote_id"] is None
+        ):
+            return quote
+    return None
+
+
 def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusals):
-    counts = {"invitations": 0, "quotes": 0}
+    counts = {"invitations": 0, "quotes": 0, "unchanged_invitations": 0, "unchanged_quotes": 0}
     name = _cell(row, NAME)
     sent_on_raw = _cell(row, spec["contacted"])
     sent_on = _date(sent_on_raw)
@@ -411,19 +484,41 @@ def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusa
         return counts
 
     responded = responded_raw.startswith("yes") or amount is not None
-    op(
-        "outreach_log",
-        data={
-            "round_id": round_id,
-            "supplier_id": supplier["id"],
-            "channel": "manual",
-            **({"sent_on": sent_on} if sent_on else {}),
-            "responded": responded,
-            "response_kind": ("quote" if amount is not None else "needs_info" if responded else "no_reply"),
-            "notes": _cell(row, RATIONALE),
-        },
+    outreach_data = {
+        "round_id": round_id,
+        "supplier_id": supplier["id"],
+        "channel": "manual",
+        **({"sent_on": sent_on} if sent_on else {}),
+        "responded": responded,
+        "response_kind": ("quote" if amount is not None else "needs_info" if responded else "no_reply"),
+        "notes": _cell(row, RATIONALE),
+    }
+    # Matched on the DATE as well as the supplier. Outreach is deliberately not
+    # unique per (round, supplier) -- the model says so, because re-inviting is
+    # a real event worth keeping -- so the same invitation read twice is one
+    # event and an invitation on a new date is two. Creating unconditionally
+    # took programme 10063 from 16 invitations to 32 on a single re-run.
+    existing = next(
+        (
+            o
+            for o in op("outreach_list", round_id=round_id)
+            if o["supplier_id"] == supplier["id"] and (o["sent_on"] or None) == (sent_on or None)
+        ),
+        None,
     )
-    counts["invitations"] = 1
+    if existing:
+        # Only write when something actually differs, and report it as a write
+        # when it does. Counting an update as `unchanged` would reintroduce
+        # exactly the confusion this guards against: a report that does not
+        # say what the run did.
+        if _outreach_differs(existing, outreach_data):
+            op("outreach_update", outreach_id=existing["id"], data=outreach_data)
+            counts["invitations"] = 1
+        else:
+            counts["unchanged_invitations"] = 1
+    else:
+        op("outreach_log", data=outreach_data)
+        counts["invitations"] = 1
 
     # `field`, not `label`: `label` is the round, and Python leaks a loop
     # variable, so binding it here renamed the round to "quote date" in every
@@ -482,41 +577,74 @@ def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusa
         )
 
     received_on = _date(_cell(row, spec["quote_date"]))
-    op(
-        "quote_record",
-        data={
-            "round_id": round_id,
-            "supplier_id": supplier["id"],
-            "commodity_slug": commodity_slug,
-            "as_quoted_amount": str(amount),
-            "as_quoted_unit": unit,
-            "as_quoted_currency": "USD",
-            "fx_rate_to_usd": "1",
-            "quantity_basis": quantity_basis,
-            "quantity_basis_unit": quantity_unit,
-            # No quote in this tracker recorded sachets per carton, which is
-            # the single fact that blocks every per-sachet comparison.
-            "pack_spec_source": "not_stated",
-            **freight,
-            **duties,
-            **({"received_on": received_on} if received_on else {}),
-            "notes": _cell(row, RATIONALE),
-        },
-    )
+    quote_data = {
+        "round_id": round_id,
+        "supplier_id": supplier["id"],
+        "commodity_slug": commodity_slug,
+        "as_quoted_amount": str(amount),
+        "as_quoted_unit": unit,
+        "as_quoted_currency": "USD",
+        "fx_rate_to_usd": "1",
+        "quantity_basis": quantity_basis,
+        "quantity_basis_unit": quantity_unit,
+        # No quote in this tracker recorded sachets per carton, which is
+        # the single fact that blocks every per-sachet comparison.
+        "pack_spec_source": "not_stated",
+        **freight,
+        **duties,
+        **({"received_on": received_on} if received_on else {}),
+        "notes": _cell(row, RATIONALE),
+    }
+
+    # A quote already standing for this supplier on this round is not
+    # something to write over. It carries its own revision chain (version,
+    # superseded_by_quote_id, quote_correct), so replacing it because a
+    # spreadsheet cell moved would destroy the trail of what the supplier
+    # actually said and when. Unchanged means do nothing; changed means say
+    # so and leave the correction to the operation built for it.
+    standing = _live_quote(op, round_id, supplier["id"], commodity_slug)
+    if standing is not None:
+        differences = _quote_differences(standing, quote_data)
+        if differences:
+            refusals.append(
+                f"{name}, {label}: the sheet no longer matches quote {standing['id']} "
+                f"({'; '.join(differences)}). A quote is what the supplier stated, so this "
+                "is a correction rather than a re-import -- use quote_correct."
+            )
+        else:
+            counts["unchanged_quotes"] = 1
+        return counts
+
+    op("quote_record", data=quote_data)
     counts["quotes"] = 1
     return counts
 
 
-def _no_write_op(name, **payload):
-    """Every operation a dry run reaches, with the write taken out.
+def _no_write_op(access):
+    """Every operation a dry run reaches, with only the WRITES taken out.
 
-    A `_list` answers "nothing exists yet" so the traversal takes its create
-    branch, and a create answers with the one key its caller reads. Nothing
-    reaches the database.
+    Reads go through for real. Stubbing them was the bug: with every `_list`
+    answering "nothing exists yet", a preview could not see the quotes and
+    invitations already recorded, so it reported three quotes to import that
+    were already there and `unchanged` was permanently zero. That is the same
+    mistake as the hardcoded empty `refused` this function used to return --
+    suppressing a write by suppressing the read that informs it.
+
+    A stubbed write answers with the id its caller will read. `supplier_update`
+    echoes the supplier it was given, because the quote lookup keys on it and
+    a zero there would make every existing quote look new.
     """
-    if name.endswith("_list"):
-        return []
-    return {"id": 0}
+
+    def op(name, **payload):
+        from connect_labs.supply_chain.operations import call_operation, get_operation
+
+        if not get_operation(name).is_write:
+            return call_operation(name, access, payload)
+        if name == "supplier_update":
+            return {"id": payload["supplier_id"]}
+        return {"id": 0}
+
+    return op
 
 
 def describe(rows, labels) -> list[str]:
@@ -571,9 +699,15 @@ def import_tracker(
     # is not an absence of information; it asserts that nothing was refused,
     # which is the substitution of a confident zero for an unknown that the
     # rest of this domain exists to refuse.
-    op = _no_write_op if dry_run else lambda name, **payload: call_operation(name, access, payload)  # noqa: E731
+    op = (
+        _no_write_op(access) if dry_run else lambda name, **payload: call_operation(name, access, payload)
+    )  # noqa: E731
     refusals: list[str] = []
     imported = {"suppliers": 0, "rounds": 0, "invitations": 0, "quotes": 0}
+    # Reported separately from `imported`, because reading a RUN's write count
+    # as the programme's total is exactly how the duplication this guards
+    # against went unnoticed: on a first import the two read identically.
+    unchanged = {"invitations": 0, "quotes": 0}
 
     round_ids = _ensure_rounds(op, commodity_slug, labels)
     imported["rounds"] = len(round_ids)
@@ -586,6 +720,8 @@ def import_tracker(
             counts = _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusals)
             imported["invitations"] += counts["invitations"]
             imported["quotes"] += counts["quotes"]
+            unchanged["invitations"] += counts["unchanged_invitations"]
+            unchanged["quotes"] += counts["unchanged_quotes"]
 
     if dry_run:
         return {
@@ -593,11 +729,13 @@ def import_tracker(
             "rows": len(rows),
             "would_import": describe(rows, labels),
             "imported": {},
+            "unchanged": unchanged,
             "refused": sorted(set(refusals)),
         }
     return {
         "dry_run": False,
         "rows": len(rows),
         "imported": imported,
+        "unchanged": unchanged,
         "refused": sorted(set(refusals)),
     }
