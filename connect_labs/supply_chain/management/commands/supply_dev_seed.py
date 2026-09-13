@@ -28,7 +28,7 @@ produce a demo of a system that does not exist.
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
-from connect_labs.labs.synthetic.models import SyntheticOpportunity
+from connect_labs.labs.synthetic.provisioning import register_labs_only_opp
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
 
@@ -625,18 +625,27 @@ class Command(BaseCommand):
         return user
 
     def _synthetic_programme(self):
-        opp, created = SyntheticOpportunity.objects.update_or_create(
+        """Register through labs' own entry point, not by hand.
+
+        This used to call `SyntheticOpportunity.objects.update_or_create`
+        directly, which skips the two things `register_labs_only_opp` exists
+        to do -- invalidate the synthetic caches, and resync the visit count.
+        Its docstring says why it exists: "so the update_or_create idiom
+        lives in exactly one place". Writing the row by hand meant the seeded
+        programme could stay absent from `get_org_data` until a cache expired.
+
+        `allowed_domains` is left empty, meaning no domain restriction. Dimagi
+        staff get access regardless -- `is_accessible_to` treats them as
+        platform operators -- so naming the domain here would say nothing.
+        """
+        opp = register_labs_only_opp(
             opportunity_id=PROGRAMME_ID,
-            defaults={
-                "label": "RUTF Procurement (local demo)",
-                "gdrive_folder_id": "",
-                "enabled": True,
-                "labs_only": True,
-                "org_name": "Connect RUTF (local demo)",
-                "program_name": "RUTF Procurement (local demo)",
-                "program_id": PROGRAMME_ID,
-                "allowed_domains": [],
-            },
+            label="RUTF Procurement (local demo)",
+            gdrive_folder_id="",
+            org_name="Connect RUTF (local demo)",
+            program_name="RUTF Procurement (local demo)",
+            program_id=PROGRAMME_ID,
+            allowed_domains=[],
         )
-        self.stdout.write(f"synthetic programme {PROGRAMME_ID} {'created' if created else 'updated'}")
+        self.stdout.write(f"synthetic programme {PROGRAMME_ID} registered")
         return opp

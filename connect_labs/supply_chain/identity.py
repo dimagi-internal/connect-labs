@@ -28,6 +28,7 @@ Three ways in, and each knows the user:
 import logging
 
 from connect_labs.supply_chain.models import Party
+from connect_labs.utils.dimagi_user import is_dimagi_user
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +45,14 @@ SOURCE_FOR_PARTY_KIND = {
 }
 
 
-class IdentityUnresolved(Exception):
+class IdentityUnresolved(ValueError):
     """The caller cannot be attributed to a party.
+
+    A `ValueError` because that is what it is: the request cannot be carried
+    out as sent. It subclassed `Exception`, and the HTTP dispatch maps only
+    `jsonschema.ValidationError` and `ValueError` to 400 -- so every refusal
+    here was a 500, and the message naming the fix never reached anybody.
+    Found by attaching a document on labs, in a programme with no parties.
 
     Raised rather than returned so a write cannot proceed on a shrug. The
     message names what would fix it, because the two causes need different
@@ -126,20 +133,60 @@ def caller_org_ids(access) -> set[int] | None:
     return _integer_org_ids(org_data.get("organizations"))
 
 
-def resolve_party(access):
-    """The party this caller acts for, by organisation membership.
+def programme_party(access):
+    """This programme's own party -- us.
 
-    Returns None when the caller is knowable but matches no party here; raises
-    only for the ambiguous case, which is a configuration error rather than a
-    permission one.
+    Looked up under BOTH scopes a reference row can live at, not just the
+    caller's. `scope_key` resolves to `org:<id>` when an organisation is in
+    context and `prog:<id>` otherwise (see `models.scope_key`), so the same
+    programme's parties sit under different keys depending on who wrote them:
+    an import driven by MCP carries no organisation and writes `prog:`, while
+    a web request with an organisation selected reads `org:`. Reading only
+    the caller's scope makes attribution depend on how the party happened to
+    be created, which is a refusal nobody could act on.
+
+    Exactly one `programme_org` across those scopes; more than one is a
+    configuration error rather than something to choose between.
     """
+    scopes = {access.scope_key}
+    if access.program_id not in (None, ""):
+        scopes.add(f"prog:{access.program_id}")
+    found = list(Party.objects.filter(scope_key__in=scopes, kind="programme_org")[:2])
+    if len(found) > 1:
+        raise IdentityUnresolved(
+            "this programme has more than one programme_org party, so there is no "
+            "single 'us' to attribute a record to. Merge them."
+        )
+    return found[0] if found else None
+
+
+def resolve_party(access):
+    """The party this caller acts for.
+
+    Two rules, and no third for demo data. An earlier version resolved solely
+    by matching `Party.connect_organization_id` against the caller's Connect
+    organisations, which could not work in a labs-only programme at all: a
+    synthetic organisation is identified by SLUG (`labs-synthetic-...`, see
+    `labs/synthetic/org_tree`) while that column is an integer, so nothing
+    ever matched and no number of parties would have fixed it. Special-casing
+    synthetic programmes was the wrong repair -- provenance is the last place
+    that should behave differently in demo data, because then the demo proves
+    something the real system does not do.
+
+      1. Dimagi staff act for the programme. They are the platform operators
+         -- the same ACL `SyntheticOpportunity.is_accessible_to` already
+         grants them -- so their organisation membership is not the question.
+      2. Anyone else acts for the party their Connect organisation IS, which
+         is how a partner recording its own receipt is attributed to itself.
+    """
+    user = getattr(access, "user", None)
+    if user is not None and is_dimagi_user(user):
+        return programme_party(access)
+
     org_ids = caller_org_ids(access)
     if not org_ids:
         return None
 
-    # `scope_key`, not `reference_scope`: the latter names the TIER
-    # ("organization" / "program"), and filtering on it silently matches
-    # nothing rather than raising.
     candidates = [
         party for party in Party.objects.filter(scope_key=access.scope_key) if party.connect_organization_id in org_ids
     ]
@@ -147,13 +194,6 @@ def resolve_party(access):
         return None
     if len(candidates) == 1:
         return candidates[0]
-
-    # Two parties in one scope pointing at organisations this user belongs to.
-    # Picking one would silently attribute a record to an organisation the user
-    # did not intend, so the ambiguity is surfaced where it can be fixed.
-    programme = [p for p in candidates if p.kind == "programme_org"]
-    if len(programme) == 1:
-        return programme[0]
     raise IdentityUnresolved(
         "this caller belongs to more than one organisation acting in this programme "
         f"({', '.join(sorted(p.slug for p in candidates))}), so the party cannot be "

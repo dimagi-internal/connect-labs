@@ -22,6 +22,16 @@ PROGRAM = 10505
 SCOPE = f"prog:{PROGRAM}"
 
 
+def _dimagi_user():
+    """A user the shared `is_dimagi_user` recognises."""
+
+    class _User:
+        email = "sophie@dimagi.com"
+        is_authenticated = True
+
+    return _User()
+
+
 def _party(slug, kind, connect_organization_id):
     return Party.objects.create(
         scope_key=SCOPE,
@@ -163,14 +173,45 @@ class TestWhichParty:
         assert "recorded_by_party_id" in str(caught.value)
         assert "llo-a" in str(caught.value) and "llo-b" in str(caught.value)
 
-    def test_our_own_party_wins_over_a_partner_we_also_belong_to(self):
-        """Dimagi staff who are also members of a partner's Connect org are
-        common, and there the intent is not ambiguous: we are the programme."""
-        _party("dimagi", "programme_org", 7)
+    def test_dimagi_staff_act_for_the_programme_without_an_org_match(self):
+        """The rule that replaced org-matching for us.
+
+        Matching `Party.connect_organization_id` could never work in a
+        labs-only programme: a synthetic organisation is identified by slug
+        while that column is an integer. Rather than special-case demo data,
+        Dimagi staff resolve to the programme's own party by ACL -- the same
+        one `SyntheticOpportunity.is_accessible_to` already grants them.
+        """
+        _party("dimagi", "programme_org", None)
         _party("kano-llo", "partner_org", 8)
-        access, request = _session_access([7, 8])
-        with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
-            assert resolve_party(access).slug == "dimagi"
+        access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user())
+        assert resolve_party(access).slug == "dimagi"
+
+    def test_dimagi_staff_in_a_programme_with_no_party_of_ours_resolve_to_nothing(self):
+        """Which the stamping layer turns into a refusal naming party_upsert
+        -- the state programme 10063 was in, where no setup step had ever
+        created the programme's own party."""
+        _party("kano-llo", "partner_org", 8)
+        access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user())
+        assert resolve_party(access) is None
+
+    def test_two_parties_of_ours_is_a_configuration_error(self):
+        _party("dimagi", "programme_org", None)
+        _party("dimagi-two", "programme_org", None)
+        access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user())
+        with pytest.raises(IdentityUnresolved, match="more than one programme_org"):
+            resolve_party(access)
+
+    def test_a_synthetic_programme_needs_no_special_case(self):
+        """The point of the rewrite. A labs-only programme's organisation has
+        a slug where an integer would be, so org-matching is impossible there
+        -- and provenance must not behave differently in demo data, or the
+        demo proves something the real system cannot do."""
+        _party("dimagi", "programme_org", None)
+        access = SupplyDataAccess(program_id=10_600, user=_dimagi_user())
+        # A different (labs-only) programme: no party of ours there, and the
+        # answer is an honest None rather than a crash or a wrong match.
+        assert resolve_party(access) is None
 
 
 class TestSource:
@@ -297,3 +338,90 @@ class TestStamping:
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
             stamped = self._stamp(access, self._contract(source="document"))
         assert stamped["data"]["source"] == "document"
+
+
+class TestRefusalsReachTheCaller:
+    """A provenance refusal is a bad request, not a server error.
+
+    Found on labs, not in tests: attaching a document to a quote in programme
+    10063 returned 500. The refusal was CORRECT -- that programme has no
+    parties, so the write cannot be attributed to anyone -- but
+    `IdentityUnresolved` subclassed `Exception`, and the API dispatch maps
+    only `jsonschema.ValidationError` and `ValueError` to 400. So every
+    refusal built in #1777 was a server error, and the message naming the fix
+    ("add the party with party_upsert") never reached anybody.
+
+    The tests written for that work all called `stamp_provenance` directly
+    and asserted the raise, which is why they passed while the thing was
+    unusable through either surface.
+    """
+
+    def test_the_class_is_a_bad_request(self):
+        assert issubclass(IdentityUnresolved, ValueError)
+
+    @pytest.mark.django_db
+    def test_the_api_answers_400_and_names_the_fix(self, client, django_user_model):
+        user = django_user_model.objects.create_user(username="sophie", password="x")
+        client.force_login(user)
+
+        # A knowable caller belonging to an organisation with no party here:
+        # exactly programme 10063's state.
+        org_data = {"organizations": [{"id": 7, "slug": "dimagi"}]}
+        # Scoped directly: what is under test is the exception-to-status
+        # mapping, not whether the middleware admits a labs-only programme.
+        scoped = SupplyDataAccess(program_id=PROGRAM, user=user)
+        with patch("connect_labs.labs.context.get_org_data", return_value=org_data), patch(
+            "connect_labs.supply_chain.api_views._access", return_value=scoped
+        ):
+            response = client.post(
+                f"/supply/api/document_attach/?program_id={PROGRAM}",
+                data={
+                    "data": {
+                        "kind": "other",
+                        "source": "we_recorded",
+                        "external_url": "https://example.test/e.pdf",
+                    }
+                },
+                content_type="application/json",
+            )
+
+        assert response.status_code == 400, response.status_code
+        assert "party_upsert" in response.json()["error"]
+
+
+class TestPartyScope:
+    """Attribution must not depend on how the party happened to be created.
+
+    `scope_key` is `org:<id>` when an organisation is in context and
+    `prog:<id>` otherwise, so a party written by an MCP import (no
+    organisation) lands under `prog:` while a web request with an
+    organisation selected reads `org:`. Reading only the caller's scope made
+    a Dimagi user's write refuse with "add the party with party_upsert" when
+    the party was right there under the other key.
+
+    Raised by CodeRabbit on #1784. Not reachable through the API today --
+    organisation_id was not reaching the scope on those requests, verified
+    against labs -- but it depends on middleware behaviour rather than on
+    anything this module controls.
+    """
+
+    def test_a_party_written_under_the_programme_scope_is_found_from_an_org_context(self):
+        Party.objects.create(
+            scope_key=f"prog:{PROGRAM}", slug="programme", name="Programme team", kind="programme_org"
+        )
+        # A NUMERIC organisation, which is the reachable case: a synthetic
+        # org's slug is dropped by `data_access.scope_key`'s `_as_int`, so a
+        # labs-only programme always resolves to `prog:` regardless.
+        with_org = SupplyDataAccess(organization_id=77, program_id=PROGRAM, user=_dimagi_user())
+        assert with_org.scope_key == "org:77", "precondition: the scopes differ"
+        assert resolve_party(with_org).slug == "programme"
+
+    def test_a_party_written_under_the_org_scope_is_still_found(self):
+        Party.objects.create(scope_key="org:77", slug="programme", name="Programme team", kind="programme_org")
+        with_org = SupplyDataAccess(organization_id=77, program_id=PROGRAM, user=_dimagi_user())
+        assert resolve_party(with_org).slug == "programme"
+
+    def test_another_programmes_party_is_not_borrowed(self):
+        Party.objects.create(scope_key=f"prog:{PROGRAM + 1}", slug="elsewhere", name="Elsewhere", kind="programme_org")
+        access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user())
+        assert resolve_party(access) is None
