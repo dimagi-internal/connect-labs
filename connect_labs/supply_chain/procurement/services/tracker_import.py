@@ -48,6 +48,9 @@ from connect_labs.labs.synthetic.gdrive import _load_credentials
 # argument, overridable so a different programme's tracker can be loaded.
 SPREADSHEET_ID = "1O985Gh2aTp8ugqgg7QrlvPCy8VFdLAMkEMC12s2ByzA"
 TAB = "Sheet1"
+# Row 4 carries the merged group headers ("Round 1 Quote (500 cartons)",
+# "Feb Re-quote (2,000 cartons)"); row 5 the per-column ones.
+GROUP_HEADER_ROW = 4
 HEADER_ROW = 5
 
 # Her two rounds, and which columns hold each. Declared as data so the two are
@@ -55,7 +58,16 @@ HEADER_ROW = 5
 # second silently lacked the freight handling.
 ROUNDS = (
     {
-        "label": "Round 1 — May 2026",
+        # The round's NAME comes off the sheet's own group header, at this
+        # column. It used to be the literal "Round 1 — May 2026", which the
+        # sheet nowhere states: May was one supplier's quote date (DABS, 18
+        # May) promoted into the round's identity. Round 1 actually spans
+        # February to May across suppliers, so the label was wrong for EHA,
+        # whose quote is dated 23 Feb. A derived value stored as though
+        # stated -- in a string constant, where no derivation guard could
+        # see it.
+        "label_column": 8,
+        "fallback_label": "Round 1",
         "quantity": "500",
         "contacted": 6,
         "responded": 7,
@@ -65,7 +77,12 @@ ROUNDS = (
         "total": 11,
     },
     {
-        "label": "Round 2 — February re-quote",
+        # "Feb Re-quote" names the February DELIVERY requirement, not a
+        # February quote: it was re-contacted 9 Sep 2026. Round names in this
+        # tracker describe the requirement, never the quote date -- which is
+        # the rule the Round 1 label broke.
+        "label_column": 12,
+        "fallback_label": "Round 2",
         "quantity": "2000",
         "contacted": 12,
         "responded": 13,
@@ -224,7 +241,26 @@ class TrackerImportError(Exception):
     """The tracker could not be read or written, with a message worth showing."""
 
 
-def _read_rows(spreadsheet_id):
+def _round_labels(group_row):
+    """Each round's name as the SHEET states it.
+
+    Read rather than declared, so the label cannot drift from the sheet or
+    quietly assert something the sheet never said. A blank header falls back
+    to a bare ordinal -- never to a month inferred from a quote date.
+    """
+    labels = []
+    for spec in ROUNDS:
+        stated = _cell(group_row, spec["label_column"])
+        labels.append(stated or spec["fallback_label"])
+    return labels
+
+
+def _read_sheet(spreadsheet_id):
+    """Return (group header row, data rows).
+
+    One request covering row 4 onward: the group headers name the rounds and
+    everything from row 6 is a supplier.
+    """
     credentials = _load_credentials()
     if credentials is None:
         raise TrackerImportError(
@@ -233,7 +269,7 @@ def _read_rows(spreadsheet_id):
         )
     credentials.refresh(Request())
     response = httpx.get(
-        f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}" f"/values/{TAB}!A{HEADER_ROW + 1}:T200",
+        f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}" f"/values/{TAB}!A{GROUP_HEADER_ROW}:T200",
         headers={"Authorization": f"Bearer {credentials.token}"},
         timeout=60,
     )
@@ -247,7 +283,13 @@ def _read_rows(spreadsheet_id):
             f"(HTTP {response.status_code}). Share it as a reader with: {address}"
         )
     response.raise_for_status()
-    return [row for row in response.json().get("values", []) if _cell(row, NAME)]
+    values = response.json().get("values", [])
+    # Rows 4 and 5 are headers and both carry text in the name column
+    # ("Supplier Identification", "Supplier name"), so they cannot be
+    # filtered out by truthiness -- they are dropped by position.
+    offset = HEADER_ROW + 1 - GROUP_HEADER_ROW
+    group_row = values[0] if values else []
+    return group_row, [row for row in values[offset:] if _cell(row, NAME)]
 
 
 def ensure_rutf(access):
@@ -285,7 +327,7 @@ def ensure_rutf(access):
     )
 
 
-def _ensure_rounds(op, commodity_slug):
+def _ensure_rounds(op, commodity_slug, labels):
     """The tracker's rounds, by label, idempotently.
 
     Matched on label rather than created blindly: this is meant to be
@@ -294,14 +336,14 @@ def _ensure_rounds(op, commodity_slug):
     """
     existing = {r["label"]: r["id"] for r in op("round_list")}
     ids = []
-    for spec in ROUNDS:
-        if spec["label"] in existing:
-            ids.append(existing[spec["label"]])
+    for spec, label in zip(ROUNDS, labels, strict=True):
+        if label in existing:
+            ids.append(existing[label])
             continue
         created = op(
             "round_create",
             data={
-                "label": spec["label"],
+                "label": label,
                 "lines": [
                     {
                         "commodity_slug": commodity_slug,
@@ -346,7 +388,7 @@ def _ensure_supplier(op, row, name, refusals):
     return op("supplier_create", data=data)
 
 
-def _load_round(op, row, spec, round_id, supplier, commodity_slug, refusals):
+def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusals):
     counts = {"invitations": 0, "quotes": 0}
     name = _cell(row, NAME)
     sent_on_raw = _cell(row, spec["contacted"])
@@ -375,11 +417,11 @@ def _load_round(op, row, spec, round_id, supplier, commodity_slug, refusals):
     for label, raw in (("outreach date", sent_on_raw), ("quote date", _cell(row, spec["quote_date"]))):
         if ambiguous_numeric_date(raw):
             refusals.append(
-                f"{name}, {spec['label']}: {label} {raw!r} is ambiguous -- read month-first as "
+                f"{name}, {label}: {label} {raw!r} is ambiguous -- read month-first as "
                 f"{_date(raw)}, but the sheet's locale implies day-first. Confirm it."
             )
     if refusal:
-        refusals.append(f"{name}, {spec['label']}: {refusal}")
+        refusals.append(f"{name}, {label}: {refusal}")
     if amount is None:
         return counts
 
@@ -391,7 +433,7 @@ def _load_round(op, row, spec, round_id, supplier, commodity_slug, refusals):
         # Something that is not a number -- "Not specified", "Need to
         # confirm". That is the honest state, not a zero.
         freight = {"freight_basis": "not_specified"}
-        refusals.append(f"{name}, {spec['label']}: freight recorded as not specified, the note was {freight_raw!r}")
+        refusals.append(f"{name}, {label}: freight recorded as not specified, the note was {freight_raw!r}")
     else:
         freight = {"freight_basis": "not_specified"}
 
@@ -407,7 +449,7 @@ def _load_round(op, row, spec, round_id, supplier, commodity_slug, refusals):
             quantity_basis = str((total / amount).quantize(Decimal("1")))
             quantity_unit = "sachet"
             refusals.append(
-                f"{name}, {spec['label']}: priced per sachet for {quantity_basis} sachets, "
+                f"{name}, {label}: priced per sachet for {quantity_basis} sachets, "
                 f"not the round's {spec['quantity']} cartons"
             )
 
@@ -421,7 +463,7 @@ def _load_round(op, row, spec, round_id, supplier, commodity_slug, refusals):
     if any(word in note for word in ("duties", "duty", "idec", "taxes")):
         duties = {"duties_basis": "excluded"}
         refusals.append(
-            f"{name}, {spec['label']}: duties excluded with no amount -- the note mentions "
+            f"{name}, {label}: duties excluded with no amount -- the note mentions "
             "taxes or duties but states no figure"
         )
 
@@ -463,18 +505,18 @@ def _no_write_op(name, **payload):
     return {"id": 0}
 
 
-def describe(rows) -> list[str]:
+def describe(rows, labels) -> list[str]:
     """What a dry run reports: what would be imported, and what would not."""
     out = []
     for row in rows:
         name = _cell(row, NAME)
         bits = [f"{name} ({_cell(row, TYPE) or 'type not stated'}, {_country(_cell(row, LOCATION)) or '??'})"]
-        for spec in ROUNDS:
+        for spec, label in zip(ROUNDS, labels, strict=True):
             amount, unit, refusal = _price(_cell(row, spec["price"]))
             if amount is not None:
-                bits.append(f"{spec['label']}: {amount} {unit}")
+                bits.append(f"{label}: {amount} {unit}")
             elif refusal:
-                bits.append(f"{spec['label']}: {refusal}")
+                bits.append(f"{label}: {refusal}")
         out.append(" | ".join(bits))
     return out
 
@@ -505,7 +547,8 @@ def import_tracker(
         if not dry_run:
             ensure_rutf(access)
 
-    rows = _read_rows(spreadsheet_id)
+    group_row, rows = _read_sheet(spreadsheet_id)
+    labels = _round_labels(group_row)
 
     # A dry run walks the SAME traversal with the write stubbed out, rather
     # than taking a separate preview path. `refused` is the half of the report
@@ -518,15 +561,15 @@ def import_tracker(
     refusals: list[str] = []
     imported = {"suppliers": 0, "rounds": 0, "invitations": 0, "quotes": 0}
 
-    round_ids = _ensure_rounds(op, commodity_slug)
+    round_ids = _ensure_rounds(op, commodity_slug, labels)
     imported["rounds"] = len(round_ids)
 
     for row in rows:
         name = _cell(row, NAME)
         supplier = _ensure_supplier(op, row, name, refusals)
         imported["suppliers"] += 1
-        for spec, round_id in zip(ROUNDS, round_ids, strict=True):
-            counts = _load_round(op, row, spec, round_id, supplier, commodity_slug, refusals)
+        for spec, label, round_id in zip(ROUNDS, labels, round_ids, strict=True):
+            counts = _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusals)
             imported["invitations"] += counts["invitations"]
             imported["quotes"] += counts["quotes"]
 
@@ -534,7 +577,7 @@ def import_tracker(
         return {
             "dry_run": True,
             "rows": len(rows),
-            "would_import": describe(rows),
+            "would_import": describe(rows, labels),
             "imported": {},
             "refused": sorted(set(refusals)),
         }
