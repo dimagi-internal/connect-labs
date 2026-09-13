@@ -2805,212 +2805,211 @@ function WorkflowUI({
                 'Loading task...',
               )
             : taskDetail
-              ? React.createElement(
+            ? React.createElement(
+                'div',
+                null,
+                React.createElement(
                   'div',
-                  null,
+                  {
+                    className:
+                      'px-4 py-3 bg-blue-50 border-b border-blue-100 flex items-center justify-between',
+                  },
                   React.createElement(
                     'div',
-                    {
-                      className:
-                        'px-4 py-3 bg-blue-50 border-b border-blue-100 flex items-center justify-between',
-                    },
+                    { className: 'flex items-center gap-2' },
+                    React.createElement('i', {
+                      className: 'fa-solid fa-clipboard-list text-blue-600',
+                    }),
                     React.createElement(
-                      'div',
-                      { className: 'flex items-center gap-2' },
-                      React.createElement('i', {
-                        className: 'fa-solid fa-clipboard-list text-blue-600',
-                      }),
-                      React.createElement(
-                        'span',
-                        { className: 'font-medium text-sm text-blue-900' },
-                        taskDetail.title,
-                      ),
-                      React.createElement(
-                        'span',
-                        {
-                          className:
-                            'px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700',
-                        },
-                        taskDetail.status || 'investigating',
-                      ),
+                      'span',
+                      { className: 'font-medium text-sm text-blue-900' },
+                      taskDetail.title,
                     ),
                     React.createElement(
-                      'button',
+                      'span',
                       {
-                        className: 'text-gray-400 hover:text-gray-600 text-sm',
-                        onClick: function () {
-                          toggleTaskExpand(username);
-                        },
+                        className:
+                          'px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700',
                       },
-                      React.createElement('i', {
-                        className: 'fa-solid fa-xmark',
-                      }),
+                      taskDetail.status || 'investigating',
                     ),
                   ),
                   React.createElement(
+                    'button',
+                    {
+                      className: 'text-gray-400 hover:text-gray-600 text-sm',
+                      onClick: function () {
+                        toggleTaskExpand(username);
+                      },
+                    },
+                    React.createElement('i', {
+                      className: 'fa-solid fa-xmark',
+                    }),
+                  ),
+                ),
+                React.createElement(
+                  'div',
+                  { className: 'flex' },
+                  React.createElement(
                     'div',
-                    { className: 'flex' },
+                    {
+                      className: 'flex-1 min-w-0 border-r border-gray-100',
+                    },
                     React.createElement(
                       'div',
                       {
-                        className: 'flex-1 min-w-0 border-r border-gray-100',
+                        className:
+                          'px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center',
                       },
                       React.createElement(
-                        'div',
-                        {
-                          className:
-                            'px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center',
-                        },
-                        React.createElement(
-                          'span',
-                          { className: 'text-xs font-medium text-gray-600' },
-                          React.createElement('i', {
-                            className: 'fa-solid fa-comments mr-1',
-                          }),
-                          'AI Conversation',
-                        ),
+                        'span',
+                        { className: 'text-xs font-medium text-gray-600' },
+                        React.createElement('i', {
+                          className: 'fa-solid fa-comments mr-1',
+                        }),
+                        'AI Conversation',
                       ),
-                      React.createElement(
-                        'div',
-                        {
-                          className: 'p-3 overflow-y-auto space-y-2',
-                          style: { minHeight: '120px', maxHeight: '400px' },
-                        },
-                        taskTranscript && taskTranscript.length > 0
-                          ? taskTranscript.map(function (msg, idx) {
-                              var isAssistant = msg.role === 'assistant';
-                              return React.createElement(
+                    ),
+                    React.createElement(
+                      'div',
+                      {
+                        className: 'p-3 overflow-y-auto space-y-2',
+                        style: { minHeight: '120px', maxHeight: '400px' },
+                      },
+                      taskTranscript && taskTranscript.length > 0
+                        ? taskTranscript.map(function (msg, idx) {
+                            var isAssistant = msg.role === 'assistant';
+                            return React.createElement(
+                              'div',
+                              {
+                                key: idx,
+                                className:
+                                  'flex ' +
+                                  (isAssistant
+                                    ? 'justify-start'
+                                    : 'justify-end'),
+                              },
+                              React.createElement(
                                 'div',
                                 {
-                                  key: idx,
                                   className:
-                                    'flex ' +
+                                    'rounded-lg px-3 py-2 text-sm ' +
                                     (isAssistant
-                                      ? 'justify-start'
-                                      : 'justify-end'),
+                                      ? 'bg-gray-100 text-gray-800'
+                                      : 'bg-blue-500 text-white'),
+                                  style: { maxWidth: '85%' },
                                 },
                                 React.createElement(
                                   'div',
                                   {
                                     className:
-                                      'rounded-lg px-3 py-2 text-sm ' +
-                                      (isAssistant
-                                        ? 'bg-gray-100 text-gray-800'
-                                        : 'bg-blue-500 text-white'),
-                                    style: { maxWidth: '85%' },
+                                      'whitespace-pre-wrap break-words',
                                   },
+                                  msg.content,
+                                ),
+                                msg.created_at &&
                                   React.createElement(
                                     'div',
                                     {
                                       className:
-                                        'whitespace-pre-wrap break-words',
+                                        'text-xs mt-1 ' +
+                                        (isAssistant
+                                          ? 'text-gray-400'
+                                          : 'text-blue-200'),
                                     },
-                                    msg.content,
+                                    new Date(msg.created_at).toLocaleString(),
                                   ),
-                                  msg.created_at &&
-                                    React.createElement(
-                                      'div',
-                                      {
-                                        className:
-                                          'text-xs mt-1 ' +
-                                          (isAssistant
-                                            ? 'text-gray-400'
-                                            : 'text-blue-200'),
-                                      },
-                                      new Date(msg.created_at).toLocaleString(),
-                                    ),
-                                ),
-                              );
-                            })
-                          : taskTranscript && taskTranscript.length === 0
-                            ? transcriptOcsRequired ||
-                              (oauthStatus && !oauthStatus.ocs?.active)
-                              ? React.createElement(
-                                  'div',
-                                  { className: 'text-center py-4' },
-                                  React.createElement(
-                                    'div',
+                              ),
+                            );
+                          })
+                        : taskTranscript && taskTranscript.length === 0
+                        ? transcriptOcsRequired ||
+                          (oauthStatus && !oauthStatus.ocs?.active)
+                          ? React.createElement(
+                              'div',
+                              { className: 'text-center py-4' },
+                              React.createElement(
+                                'div',
+                                {
+                                  className: 'text-amber-600 text-sm mb-2',
+                                },
+                                React.createElement('i', {
+                                  className: 'fa-solid fa-link-slash mr-1',
+                                }),
+                                ' OCS authorization required to load AI conversation',
+                              ),
+                              oauthStatus &&
+                                oauthStatus.ocs &&
+                                oauthStatus.ocs.authorize_url
+                                ? React.createElement(
+                                    'a',
                                     {
-                                      className: 'text-amber-600 text-sm mb-2',
+                                      href: oauthStatus.ocs.authorize_url,
+                                      className:
+                                        'inline-block px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 no-underline',
                                     },
                                     React.createElement('i', {
-                                      className: 'fa-solid fa-link-slash mr-1',
+                                      className:
+                                        'fa-solid fa-arrow-right-to-bracket mr-1',
                                     }),
-                                    ' OCS authorization required to load AI conversation',
-                                  ),
-                                  oauthStatus &&
-                                    oauthStatus.ocs &&
-                                    oauthStatus.ocs.authorize_url
-                                    ? React.createElement(
-                                        'a',
-                                        {
-                                          href: oauthStatus.ocs.authorize_url,
-                                          className:
-                                            'inline-block px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 no-underline',
-                                        },
-                                        React.createElement('i', {
-                                          className:
-                                            'fa-solid fa-arrow-right-to-bracket mr-1',
-                                        }),
-                                        ' Connect to OCS',
-                                      )
-                                    : null,
-                                )
-                              : React.createElement(
-                                  'div',
-                                  {
-                                    className:
-                                      'text-center text-sm py-4 ' +
-                                      (taskTranscriptError
-                                        ? 'text-red-500'
-                                        : 'text-gray-400'),
-                                  },
-                                  React.createElement('i', {
-                                    className:
-                                      'fa-solid ' +
-                                      (taskTranscriptError
-                                        ? 'fa-circle-exclamation'
-                                        : 'fa-comment-slash') +
-                                      ' mr-1',
-                                  }),
-                                  taskTranscriptError || 'No messages yet',
-                                )
-                            : !taskDetailLoading
-                              ? React.createElement(
-                                  'div',
-                                  {
-                                    className:
-                                      'text-center text-gray-400 text-sm py-4',
-                                  },
-                                  'Loading conversation...',
-                                )
-                              : null,
-                      ),
-                    ),
-                    React.createElement(
-                      'div',
-                      {
-                        className:
-                          'w-56 p-4 space-y-3 bg-gray-50 flex-shrink-0',
-                      },
-                      React.createElement(
-                        'button',
-                        {
-                          className:
-                            'w-full px-3 py-2 rounded text-sm font-medium bg-green-600 text-white hover:bg-green-700',
-                          onClick: function () {
-                            handleMarkTaskResolved(username);
-                          },
-                        },
-                        React.createElement('i', {
-                          className: 'fa-solid fa-circle-check mr-1',
-                        }),
-                        'Resolve task',
-                      ),
+                                    ' Connect to OCS',
+                                  )
+                                : null,
+                            )
+                          : React.createElement(
+                              'div',
+                              {
+                                className:
+                                  'text-center text-sm py-4 ' +
+                                  (taskTranscriptError
+                                    ? 'text-red-500'
+                                    : 'text-gray-400'),
+                              },
+                              React.createElement('i', {
+                                className:
+                                  'fa-solid ' +
+                                  (taskTranscriptError
+                                    ? 'fa-circle-exclamation'
+                                    : 'fa-comment-slash') +
+                                  ' mr-1',
+                              }),
+                              taskTranscriptError || 'No messages yet',
+                            )
+                        : !taskDetailLoading
+                        ? React.createElement(
+                            'div',
+                            {
+                              className:
+                                'text-center text-gray-400 text-sm py-4',
+                            },
+                            'Loading conversation...',
+                          )
+                        : null,
                     ),
                   ),
-                )
-              : null,
+                  React.createElement(
+                    'div',
+                    {
+                      className: 'w-56 p-4 space-y-3 bg-gray-50 flex-shrink-0',
+                    },
+                    React.createElement(
+                      'button',
+                      {
+                        className:
+                          'w-full px-3 py-2 rounded text-sm font-medium bg-green-600 text-white hover:bg-green-700',
+                        onClick: function () {
+                          handleMarkTaskResolved(username);
+                        },
+                      },
+                      React.createElement('i', {
+                        className: 'fa-solid fa-circle-check mr-1',
+                      }),
+                      'Resolve task',
+                    ),
+                  ),
+                ),
+              )
+            : null,
         ),
       ),
     );
@@ -3198,15 +3197,15 @@ function WorkflowUI({
           val > followupRateAtTrigger
             ? 'up'
             : val < followupRateAtTrigger
-              ? 'down'
-              : 'same';
+            ? 'down'
+            : 'same';
         var arrowChar = fuDir === 'up' ? '▲' : fuDir === 'down' ? '▼' : '≈';
         var arrowColor =
           fuDir === 'up'
             ? 'text-green-600'
             : fuDir === 'down'
-              ? 'text-red-500'
-              : 'text-yellow-500';
+            ? 'text-red-500'
+            : 'text-yellow-500';
         deltaEl = React.createElement(
           'span',
           { className: arrowColor + ' ml-1 text-xs' },
@@ -3237,8 +3236,8 @@ function WorkflowUI({
           (flw.flags.type === 'red'
             ? 'border-l-4 border-red-400'
             : flw.flags.type === 'yellow'
-              ? 'border-l-4 border-yellow-400'
-              : ''),
+            ? 'border-l-4 border-yellow-400'
+            : ''),
       },
       React.createElement(
         'td',
@@ -4571,8 +4570,8 @@ function WorkflowUI({
                   ? band.pct_still_eligible >= 85
                     ? '#22c55e'
                     : band.pct_still_eligible >= 50
-                      ? '#eab308'
-                      : '#ef4444'
+                    ? '#eab308'
+                    : '#ef4444'
                   : undefined;
               return React.createElement(
                 'tr',
@@ -4883,10 +4882,10 @@ function WorkflowUI({
         activeTab === 'audit'
           ? React.createElement(Tab1, null)
           : activeTab === 'improvement'
-            ? React.createElement(Tab2, null)
-            : activeTab === 'summary'
-              ? React.createElement(Tab3, null)
-              : React.createElement(Tab4, null),
+          ? React.createElement(Tab2, null)
+          : activeTab === 'summary'
+          ? React.createElement(Tab3, null)
+          : React.createElement(Tab4, null),
       ),
     ),
 
