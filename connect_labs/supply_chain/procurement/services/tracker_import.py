@@ -252,6 +252,17 @@ def _round_labels(group_row):
     for spec in ROUNDS:
         stated = _cell(group_row, spec["label_column"])
         labels.append(stated or spec["fallback_label"])
+    if len(set(labels)) != len(labels):
+        # Reachable only since the label became data. `_ensure_rounds` keys on
+        # it, so two identical headers map both rounds to one id and the
+        # second round's prices land against the first -- two rounds collapsed
+        # into one, with every quantity and age on the wrong round. Refused
+        # rather than disambiguated: appending a suffix would invent a name,
+        # which is the defect this function exists to remove.
+        raise TrackerImportError(
+            f"the sheet's round headers must be distinct, and resolved to {labels!r}. "
+            "Give each round group its own header."
+        )
     return labels
 
 

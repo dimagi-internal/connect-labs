@@ -233,6 +233,28 @@ class TestRoundLabels:
         labels = t._round_labels(_group_row())
         assert not any("May" in label for label in labels)
 
+    def test_two_rounds_resolving_to_one_name_is_refused_not_merged(self):
+        """Reading the label off the sheet made a collision reachable for the
+        first time: as literals the two were distinct by construction.
+
+        `_ensure_rounds` keys on the label, so two identical headers map both
+        specs to ONE round id and `_load_round` then writes the Feb re-quote's
+        prices against Round 1 -- two rounds silently collapsed, with every
+        quantity and age attributed to the wrong one. Refused rather than
+        disambiguated: appending a suffix would invent a name, which is the
+        defect this whole change exists to remove.
+        """
+        with pytest.raises(t.TrackerImportError) as caught:
+            t._round_labels(_group_row(round_one="Quote", round_two="Quote"))
+        assert "distinct" in str(caught.value)
+        assert "Quote" in str(caught.value)
+
+    def test_a_stated_header_colliding_with_the_other_fallback_is_refused(self):
+        """The fallbacks are real labels too, so a header reading "Round 2"
+        on the FIRST round collides with the second's fallback."""
+        with pytest.raises(t.TrackerImportError):
+            t._round_labels(_group_row(round_one="Round 2", round_two=""))
+
     def test_a_blank_header_falls_back_to_an_ordinal_never_an_inferred_month(self):
         labels = t._round_labels(_group_row(round_one="", round_two=""))
         assert labels == ["Round 1", "Round 2"]
