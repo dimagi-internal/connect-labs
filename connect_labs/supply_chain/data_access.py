@@ -177,6 +177,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         program_id=None,
         opportunity_id=None,
         request=None,
+        user=None,
     ):
         if request is not None and hasattr(request, "labs_context"):
             context = request.labs_context
@@ -191,6 +192,14 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         self.organization_id = organization_id
         self.program_id = program_id
         self.opportunity_id = opportunity_id
+        # Kept so a write can derive WHO recorded it rather than believe what
+        # the payload claims (design doc section 27). The request is preferred
+        # where there is one: its organisation list was fetched at login and
+        # includes the labs-only synthetic orgs an entitled user can see, so
+        # resolution costs no round trip. `user` is the MCP route, which has a
+        # Connect token but no session.
+        self.request = request
+        self.user = user or getattr(request, "user", None)
 
     # ---- synthetic scopes ------------------------------------------------
 
