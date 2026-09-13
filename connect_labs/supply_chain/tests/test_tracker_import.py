@@ -407,3 +407,76 @@ class TestRerun:
         t.import_tracker(da, ensure_commodity=True)
 
         assert len(call_operation("outreach_list", da, {})) == 2
+
+
+class TestReviewFindings:
+    """Three gaps CodeRabbit found in the idempotency fix (#1778)."""
+
+    def test_a_currency_change_is_a_difference_even_at_the_same_number(self):
+        """The importer always writes USD, so comparing only the figure means
+        a stored quote in another currency with an equal number reads as
+        unchanged -- and a currency mismatch is precisely the kind of thing
+        that must not be silently agreed with."""
+        existing = {
+            "id": 1,
+            "as_quoted_amount": "52.42",
+            "as_quoted_unit": "per_pack",
+            "as_quoted_currency": "EUR",
+            "fx_rate_to_usd": "1",
+            "quantity_basis": "500",
+            "quantity_basis_unit": "carton",
+            "freight_basis": "excluded",
+            "freight_amount": None,
+            "duties_basis": "not_specified",
+            "duties_amount": None,
+            "received_on": "2026-05-06",
+        }
+        data = dict(existing, as_quoted_currency="USD")
+        differences = t._quote_differences(existing, data)
+        assert any("currency" in d for d in differences), differences
+
+    @pytest.mark.django_db
+    def test_a_changed_outreach_row_is_reported_as_written_not_unchanged(self, monkeypatch):
+        """It calls outreach_update -- a write -- so counting it as
+        `unchanged` reintroduces exactly the confusion this fix was for: a
+        report that does not say what the run did."""
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        t.import_tracker(da, ensure_commodity=True)
+
+        # Same date, different reply state: the invitation is the same event,
+        # but the row has to change.
+        row = _row()
+        row[t.ROUNDS[0]["responded"]] = "No"
+        row[t.ROUNDS[0]["price"]] = ""
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [row]))
+        result = t.import_tracker(da, ensure_commodity=True)
+
+        assert result["imported"]["invitations"] == 1
+        assert result["unchanged"]["invitations"] == 0
+        assert len(call_operation("outreach_list", da, {})) == 1
+
+    @pytest.mark.django_db
+    def test_an_unchanged_outreach_row_is_not_rewritten(self, monkeypatch):
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        t.import_tracker(da, ensure_commodity=True)
+        result = t.import_tracker(da, ensure_commodity=True)
+        assert result["imported"]["invitations"] == 0
+        assert result["unchanged"]["invitations"] == 1
+
+    @pytest.mark.django_db
+    def test_a_dry_run_sees_what_is_already_there(self, monkeypatch):
+        """Suppressing writes by suppressing READS made the preview claim it
+        would import three quotes that already existed -- the same mistake as
+        the hardcoded empty `refused`, in a new place."""
+        monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        t.import_tracker(da, ensure_commodity=True)
+
+        preview = t.import_tracker(da, ensure_commodity=True, dry_run=True)
+
+        assert preview["unchanged"]["quotes"] == 1
+        assert preview["unchanged"]["invitations"] == 1
+        # And still wrote nothing.
+        assert len(call_operation("quote_list", da, {})) == 1

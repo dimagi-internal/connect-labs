@@ -418,7 +418,19 @@ def _decimals_equal(left, right) -> bool:
 # The facts a SUPPLIER stated. A re-import compares these and nothing else:
 # `notes` is our own prose and may be edited freely, and comparing it would
 # report a changed quote every time somebody tidied a sentence.
-_QUOTE_FACTS = ("as_quoted_unit", "quantity_basis_unit", "freight_basis", "duties_basis", "received_on")
+_QUOTE_FACTS = (
+    "as_quoted_unit",
+    # The currency the supplier priced in, and the rate used to bring it to
+    # USD. The importer always writes USD at 1, so leaving these out meant a
+    # stored quote in another currency with an equal NUMBER read as unchanged
+    # -- agreeing silently with a figure that means something different.
+    "as_quoted_currency",
+    "fx_rate_to_usd",
+    "quantity_basis_unit",
+    "freight_basis",
+    "duties_basis",
+    "received_on",
+)
 _QUOTE_FIGURES = ("as_quoted_amount", "quantity_basis", "freight_amount", "duties_amount")
 
 
@@ -433,6 +445,14 @@ def _quote_differences(existing: dict, data: dict) -> list[str]:
         if not _decimals_equal(existing.get(field), data.get(field)):
             out.append(f"{field} {existing.get(field) or 'unset'} -> {data.get(field) or 'unset'}")
     return out
+
+
+def _outreach_differs(existing: dict, data: dict) -> bool:
+    """Whether the sheet now says something different about this invitation."""
+    for field in ("responded", "response_kind", "notes", "channel"):
+        if field in data and existing.get(field) != data[field]:
+            return True
+    return False
 
 
 def _live_quote(op, round_id, supplier_id, commodity_slug):
@@ -487,8 +507,15 @@ def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusa
         None,
     )
     if existing:
-        op("outreach_update", outreach_id=existing["id"], data=outreach_data)
-        counts["unchanged_invitations"] = 1
+        # Only write when something actually differs, and report it as a write
+        # when it does. Counting an update as `unchanged` would reintroduce
+        # exactly the confusion this guards against: a report that does not
+        # say what the run did.
+        if _outreach_differs(existing, outreach_data):
+            op("outreach_update", outreach_id=existing["id"], data=outreach_data)
+            counts["invitations"] = 1
+        else:
+            counts["unchanged_invitations"] = 1
     else:
         op("outreach_log", data=outreach_data)
         counts["invitations"] = 1
@@ -593,16 +620,31 @@ def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusa
     return counts
 
 
-def _no_write_op(name, **payload):
-    """Every operation a dry run reaches, with the write taken out.
+def _no_write_op(access):
+    """Every operation a dry run reaches, with only the WRITES taken out.
 
-    A `_list` answers "nothing exists yet" so the traversal takes its create
-    branch, and a create answers with the one key its caller reads. Nothing
-    reaches the database.
+    Reads go through for real. Stubbing them was the bug: with every `_list`
+    answering "nothing exists yet", a preview could not see the quotes and
+    invitations already recorded, so it reported three quotes to import that
+    were already there and `unchanged` was permanently zero. That is the same
+    mistake as the hardcoded empty `refused` this function used to return --
+    suppressing a write by suppressing the read that informs it.
+
+    A stubbed write answers with the id its caller will read. `supplier_update`
+    echoes the supplier it was given, because the quote lookup keys on it and
+    a zero there would make every existing quote look new.
     """
-    if name.endswith("_list"):
-        return []
-    return {"id": 0}
+
+    def op(name, **payload):
+        from connect_labs.supply_chain.operations import call_operation, get_operation
+
+        if not get_operation(name).is_write:
+            return call_operation(name, access, payload)
+        if name == "supplier_update":
+            return {"id": payload["supplier_id"]}
+        return {"id": 0}
+
+    return op
 
 
 def describe(rows, labels) -> list[str]:
@@ -657,7 +699,9 @@ def import_tracker(
     # is not an absence of information; it asserts that nothing was refused,
     # which is the substitution of a confident zero for an unknown that the
     # rest of this domain exists to refuse.
-    op = _no_write_op if dry_run else lambda name, **payload: call_operation(name, access, payload)  # noqa: E731
+    op = (
+        _no_write_op(access) if dry_run else lambda name, **payload: call_operation(name, access, payload)
+    )  # noqa: E731
     refusals: list[str] = []
     imported = {"suppliers": 0, "rounds": 0, "invitations": 0, "quotes": 0}
     # Reported separately from `imported`, because reading a RUN's write count
