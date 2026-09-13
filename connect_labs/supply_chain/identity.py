@@ -54,6 +54,33 @@ class IdentityUnresolved(Exception):
     """
 
 
+def _integer_org_ids(organizations) -> set[int]:
+    """The organisation ids that could match a party.
+
+    Labs folds labs-only synthetic opportunities into the user's organisation
+    list with `"id"` set to a SLUG rather than an integer (see
+    `labs/context.py`, `_merge_labs_only_opps`), so this list is not uniformly
+    typed. `Party.connect_organization_id` is an IntegerField, so a slug can
+    never match one -- it is skipped rather than coerced, and coercing it is
+    what made every provenance write by a user entitled to see synthetic
+    opportunities a 500.
+
+    A user whose organisations are ALL synthetic therefore resolves to the
+    empty set, which is honest: they belong to nothing a party can point at,
+    and the stamping layer turns that into a refusal naming `party_upsert`.
+    """
+    ids = set()
+    for org in organizations or []:
+        raw = org.get("id")
+        if isinstance(raw, bool) or raw is None:
+            continue
+        try:
+            ids.add(int(raw))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
 def caller_org_ids(access) -> set[int] | None:
     """Connect organisation ids the caller belongs to, or None if unknowable.
 
@@ -71,7 +98,7 @@ def caller_org_ids(access) -> set[int] | None:
 
         org_data = get_org_data(request) or {}
         if "organizations" in org_data:
-            return {int(o["id"]) for o in org_data["organizations"] if o.get("id") is not None}
+            return _integer_org_ids(org_data["organizations"])
         # A request whose session carries no organisation list at all is not
         # evidence that the user belongs to nothing -- an expired or
         # half-built session looks exactly like this. Fall through to the
@@ -96,7 +123,7 @@ def caller_org_ids(access) -> set[int] | None:
         # the empty set would read as "belongs to nothing" -- so say nothing is
         # known and let the caller's own error name the real cause.
         return None
-    return {int(o["id"]) for o in org_data.get("organizations", []) if o.get("id") is not None}
+    return _integer_org_ids(org_data.get("organizations"))
 
 
 def resolve_party(access):

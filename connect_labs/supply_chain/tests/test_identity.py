@@ -76,6 +76,35 @@ class TestWhoIsAsking:
         ):
             assert caller_org_ids(access) == {11}
 
+    def test_a_synthetic_orgs_slug_id_does_not_crash_the_derivation(self):
+        """Labs folds labs-only synthetic opportunities into the user's org
+        list with `"id": org_slug` -- a STRING, not an integer (see
+        labs/context.py `_merge_labs_only_opps`). `int()` over that list
+        raises, so every provenance write by a user entitled to see synthetic
+        opps would have been a 500 rather than a stamped row.
+
+        Only integer ids can match a party, because
+        `Party.connect_organization_id` is an IntegerField. So a slug is
+        skipped, not coerced and not crashed on.
+        """
+        access, request = _session_access([])
+        org_data = {
+            "organizations": [
+                {"id": "labs-synthetic-connect-rutf", "slug": "labs-synthetic-connect-rutf", "labs_only": True},
+                {"id": 7, "slug": "dimagi"},
+            ]
+        }
+        with patch("connect_labs.labs.context.get_org_data", return_value=org_data):
+            assert caller_org_ids(access) == {7}
+
+    def test_a_user_with_only_synthetic_orgs_belongs_to_nothing_matchable(self):
+        """Not a crash, and not silently permissive: an honest empty set,
+        which the stamping layer turns into a refusal naming party_upsert."""
+        access, request = _session_access([])
+        org_data = {"organizations": [{"id": "labs-synthetic-x", "slug": "labs-synthetic-x"}]}
+        with patch("connect_labs.labs.context.get_org_data", return_value=org_data):
+            assert caller_org_ids(access) == set()
+
     def test_a_failed_org_fetch_is_unknown_rather_than_empty(self):
         """A network blip is not a revoked permission. The empty set would
         read as "belongs to nothing" and get reported as a permission error."""
