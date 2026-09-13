@@ -73,3 +73,46 @@ def test_metric_tonnes_to_base_units_uses_the_sachet_weight():
 def test_metric_tonnes_to_base_units_rejects_a_zero_weight():
     with pytest.raises(ValueError):
         metric_tonnes_to_base_units(Decimal("1"), 0)
+
+
+class TestPublishedPrecision:
+    """A derived price is rounded on the way out, not on the way through.
+
+    A $50 carton at 150 sachets reported
+    `0.33333333333333333333333333 USD` per sachet on the quote page -- 26
+    digits off a two-decimal input, asserting a precision nobody has.
+
+    Quantizing at the DIVISION was the first attempt and was wrong: a figure
+    here is often the input to the next one, so rounding per-sachet made cost
+    per course 49.9950 rather than 50.00. The rounding belongs at the
+    boundary.
+    """
+
+    def test_a_published_price_carries_the_money_scale(self):
+        from decimal import Decimal
+
+        from connect_labs.supply_chain.values import MONEY_SCALE, Money, to_wire
+
+        wire = to_wire(Money(Decimal("50.00") / Decimal("150")))
+        assert wire["amount"] == "0.3333"
+        assert MONEY_SCALE == Decimal("0.0001")
+
+    def test_a_whole_amount_is_not_padded_to_the_scale(self):
+        """decimal_string still trims: 288 must not publish as 288.0000, or
+        the two producers of a figure describe one value two ways."""
+        from decimal import Decimal
+
+        from connect_labs.supply_chain.values import Money, to_wire
+
+        assert to_wire(Money(Decimal("288")))["amount"] == "288"
+
+    def test_derivations_downstream_keep_full_precision(self):
+        """The reason the rounding is at the boundary. Cost per course is the
+        per-sachet price times the ration, and must not inherit the rounding
+        of the figure it is computed from."""
+        from decimal import Decimal
+
+        from connect_labs.supply_chain.values import Money, to_wire
+
+        per_sachet = Decimal("50.00") / Decimal("150")
+        assert to_wire(Money(per_sachet * Decimal("150")))["amount"] == "50"

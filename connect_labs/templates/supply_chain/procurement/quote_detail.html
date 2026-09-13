@@ -1,0 +1,161 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+The two columns are the argument: what the supplier stated, and what we
+derive from it. An `Unconfirmed` is only legible next to its inputs -- the
+reason names the fact that is missing, and the fact is right there, blank.
+
+So the stated column deliberately shows empty rows rather than hiding them.
+"Sachets per carton — not stated" is the whole explanation for four
+unconfirmed figures on the right.
+{% endcomment %}
+
+{% block supply_content %}
+
+{% if not has_program_context %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4">
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
+    <p class="text-sm text-message-warning-text/90">
+      A quote belongs to a round, and a round belongs to a programme. Choose
+      one above to open it.
+    </p>
+  </div>
+{% else %}
+
+<nav class="text-sm text-gray-500 mb-3">
+  <a href="{% url 'supply_chain:procurement_round_board' %}" class="text-brand-indigo hover:underline">Sourcing</a>
+  <span class="mx-1.5 text-gray-300">/</span>
+  <a href="{% url 'supply_chain:procurement_round_detail' quote.round_id %}"
+     class="text-brand-indigo hover:underline">{{ round.label }}</a>
+  <span class="mx-1.5 text-gray-300">/</span>
+  <span class="text-gray-700">Quote {{ quote.id }}</span>
+</nav>
+
+<div class="flex flex-wrap items-start justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{{ supplier.name }}</h1>
+    <p class="text-sm text-gray-600 mt-1">
+      {{ quote.commodity_slug|humanise }} · quoted
+      {% if quote.received_on %}{{ quote.received_on }}{% else %}on a date the sheet did not give{% endif %}
+      {% for o in outreach %}{% if o.sent_on %}· asked {{ o.sent_on }}{% endif %}{% endfor %}
+    </p>
+  </div>
+  <div class="flex items-center gap-2">
+    {% if quote.voided %}
+      <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-message-error text-message-error-text">Voided</span>
+    {% elif quote.superseded_by_quote_id %}
+      <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-message-warning text-message-warning-text">Superseded</span>
+    {% else %}
+      <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-message-success text-message-success-text">Standing</span>
+    {% endif %}
+    <a href="{% url 'supply_chain:procurement_comparison' quote.round_id %}?commodity={{ quote.commodity_slug }}"
+       class="px-3 py-1.5 text-sm rounded-md border border-brand-indigo text-brand-indigo hover:bg-message-info">
+      Compare this round
+    </a>
+  </div>
+</div>
+
+{% if quote.voided and quote.void_reason %}
+  <div class="rounded-lg bg-message-error/40 border border-message-error-border/40 p-3 mb-5 text-sm text-message-error-text">
+    {{ quote.void_reason }}
+  </div>
+{% endif %}
+
+<div class="grid gap-4 lg:grid-cols-2 mb-6">
+
+  <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <header class="px-4 py-2.5 border-b border-brand-border-light">
+      <h2 class="text-sm font-semibold text-gray-900">What they stated</h2>
+      <p class="text-xs text-gray-500 mt-0.5">On the supplier's own terms. Blanks are facts nobody supplied.</p>
+    </header>
+    <dl class="divide-y divide-brand-border-light/70">
+      {% for row in quote|stated_rows %}
+        <div class="flex items-baseline gap-3 px-4 py-2.5">
+          <dt class="w-44 shrink-0 text-xs text-gray-500">{{ row.label }}</dt>
+          <dd class="text-sm {% if row.value %}text-gray-900{% else %}text-gray-400 italic{% endif %}">
+            {% if row.value %}{{ row.value }}{% else %}not stated{% endif %}
+          </dd>
+        </div>
+      {% endfor %}
+    </dl>
+  </section>
+
+  <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <header class="px-4 py-2.5 border-b border-brand-border-light">
+      <h2 class="text-sm font-semibold text-gray-900">What we derive</h2>
+      <p class="text-xs text-gray-500 mt-0.5">Computed on read, never stored. A gap names its missing input.</p>
+    </header>
+    <dl class="divide-y divide-brand-border-light/70">
+      {% for key, figure in detail.figures.items %}
+        <div class="px-4 py-2.5">
+          <div class="flex items-baseline gap-3">
+            <dt class="w-44 shrink-0 text-xs text-gray-500">{{ key|figure_label }}</dt>
+            <dd class="text-sm">
+              {% if figure.unconfirmed %}
+                <span class="text-gray-400">Unconfirmed</span>
+              {% else %}
+                <span class="text-gray-900 font-medium tabular-nums">{{ figure|figure_text }}</span>
+              {% endif %}
+            </dd>
+          </div>
+          {% for reason in figure.unconfirmed %}
+            <p class="text-xs text-gray-500 mt-1 ml-[11.75rem]">{{ reason }}</p>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </dl>
+  </section>
+
+</div>
+
+{% if questions %}
+  <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-6">
+    <header class="px-4 py-2.5 border-b border-brand-border-light flex items-baseline justify-between gap-3">
+      <h2 class="text-sm font-semibold text-gray-900">Still to answer</h2>
+      <span class="text-xs text-gray-500">{{ questions|length }} outstanding</span>
+    </header>
+    <ul class="divide-y divide-brand-border-light/70">
+      {% for q in questions %}
+        <li class="flex items-start gap-3 px-4 py-3">
+          <span class="mt-0.5 shrink-0 px-2 py-0.5 rounded text-[11px] font-medium
+            {% if q.audience == 'supplier' %}bg-message-warning text-message-warning-text
+            {% elif q.audience == 'partner' %}bg-message-info text-message-info-text
+            {% else %}bg-gray-100 text-gray-600{% endif %}">{{ q.audience|audience_label }}</span>
+          <span class="text-sm text-gray-800">{{ q.question }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}
+
+<section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+  <header class="px-4 py-2.5 border-b border-brand-border-light">
+    <h2 class="text-sm font-semibold text-gray-900">Documents on file for {{ supplier.name }}</h2>
+    <p class="text-xs text-gray-500 mt-0.5">
+      Evidence attaches to a contract, shipment, receipt, invoice, supply point or supplier —
+      not yet to a quote, so a pro-forma invoice behind a price has nowhere of its own to sit.
+    </p>
+  </header>
+  {% if documents %}
+    <ul class="divide-y divide-brand-border-light/70">
+      {% for doc in documents %}
+        <li class="flex items-baseline gap-3 px-4 py-3">
+          <span class="text-xs text-gray-500 w-32 shrink-0">{{ doc.kind|humanise }}</span>
+          <span class="text-sm text-gray-900">{{ doc.title|default:doc.filename|default:"untitled" }}</span>
+          {% if doc.external_url %}
+            <a href="{{ doc.external_url }}" rel="noopener" class="text-sm text-brand-indigo hover:underline ml-auto">Open</a>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="px-4 py-6 text-sm text-gray-500">
+      Nothing attached. A quote's own evidence needs a link this model does not have yet.
+    </p>
+  {% endif %}
+</section>
+
+{% endif %}
+
+{% endblock %}

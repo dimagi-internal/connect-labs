@@ -6,10 +6,13 @@ reaches the domain.
 """
 
 from django.contrib.auth.decorators import login_required
+from django.http import Http404
+from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 
 from connect_labs.supply_chain.api_views import _access, has_program_context
+from connect_labs.supply_chain.checks import course_applies_to_category
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.compliance import spec_verdict
@@ -97,6 +100,12 @@ class CatalogueView(OperationBase):
             product["has_course_definition"] = bool(
                 (product.get("course_definition") or {}).get("base_units_per_course")
             )
+            # ...but only where a course is a thing. The page was warning
+            # "No ration table set" against an infant scale, which is not
+            # dispensed over days and will never have one. Same rule as the
+            # check, from the same place, so the page and the feed cannot
+            # disagree about whether something is missing.
+            product["course_applies"] = course_applies_to_category(product.get("category"))
 
         context["products"] = products
         context["orphan_items"] = [
@@ -149,14 +158,49 @@ class DomainHomeView(OperationBase):
 
         checks = self.op("checks_list")
         context["checks"] = checks
-        context["checks_by_audience"] = [
-            {
-                "audience": audience,
-                "items": [c for c in checks["checks"] if c["audience"] == audience],
-            }
-            for audience in self.AUDIENCE_ORDER
-        ]
+        context["checks_by_audience"] = self._checks_by_audience(checks, rounds=context["rounds"])
         return context
+
+    # Where each audience's answering actually happens. The raw feed is
+    # deliberately unranked and unworded -- that is what makes it good agent
+    # surface -- so the page's job is to route, not to re-render it. A
+    # supplier's questions belong beside its figures on the comparison
+    # screen; ours belong on the record that is missing the fact.
+    def _checks_by_audience(self, checks, rounds):
+        first_round = rounds[0]["id"] if rounds else None
+        groups = []
+        for audience in self.AUDIENCE_ORDER:
+            items = [c for c in checks["checks"] if c["audience"] == audience]
+            if not items:
+                continue
+            kinds = {c["kind"] for c in items}
+            groups.append(
+                {
+                    "audience": audience,
+                    "items": items,
+                    "headline": self._headline(kinds, len(items)),
+                    "href": self._destination(audience, items, first_round),
+                }
+            )
+        return groups
+
+    def _headline(self, kinds, count):
+        """What the group is, in the words of the thing rather than the kind."""
+        if kinds == {"quote_not_comparable"}:
+            return f"{'quote' if count == 1 else 'quotes'} not yet comparable"
+        if kinds == {"commodity_course_undefined"}:
+            return "ration table not set"
+        return "open " + ("check" if count == 1 else "checks")
+
+    def _destination(self, audience, items, first_round):
+        if audience == "internal":
+            return reverse("supply_chain:catalogue")
+        rounds = {c["facts"].get("round_id") for c in items if c["facts"].get("round_id")}
+        # One round involved -- go straight to its comparison. Several, and
+        # the board is the honest landing place rather than picking one.
+        if len(rounds) == 1:
+            return reverse("supply_chain:procurement_comparison", args=[rounds.pop()])
+        return reverse("supply_chain:procurement_round_board")
 
 
 class OrdersView(OperationBase):
@@ -197,7 +241,14 @@ class OrderDetailView(OperationBase):
         if not context["has_program_context"]:
             return context
         contract_id = int(kwargs["contract_id"])
-        context["contract"] = self.op("contract_get", contract_id=contract_id)
+        # A contract that is not in this programme is a 404, not a 500. Without
+        # this, `contract_landed_cost` below is handed a missing contract and
+        # raises deep in a derivation, so a mistyped or stale URL returns a
+        # server error that names nothing.
+        contract = self.op("contract_get", contract_id=contract_id)
+        if contract is None:
+            raise Http404(f"no contract {contract_id} in this programme")
+        context["contract"] = contract
         context["landed"] = self.op("contract_landed_cost", contract_id=contract_id, compare_buyers=True)
         context["match"] = self.op("contract_match", contract_id=contract_id)
         context["shipments"] = self.op("shipment_list", contract_id=contract_id)

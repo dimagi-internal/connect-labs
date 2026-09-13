@@ -743,3 +743,49 @@ def test_with_nothing_comparable_the_page_does_not_claim_a_provisional_ranking(c
     # But nothing is ranked, so nothing can be provisionally ranked or beaten.
     assert "PROVISIONAL" not in body
     assert "could still beat it" not in body
+
+
+def test_the_quote_page_asks_for_a_programme_rather_than_raising(client, sophie):
+    """Every programme-scoped view in this app guards this; the quote page was
+    added without it. Unguarded, `quote_get` reaches `_require_program` and
+    raises ValueError -- a 500 on a page reached by an ordinary link, where
+    the honest answer is "choose a programme".
+
+    The operation must not be called at all: reaching it is the failure.
+    """
+    with patch("connect_labs.supply_chain.procurement.views.call_operation") as op:
+        response = client.get(reverse("supply_chain:procurement_quote_detail", args=[1]))
+
+    assert response.status_code == 200
+    assert "No programme selected" in response.content.decode()
+    assert not op.called, "a programme-scoped operation ran without a programme"
+
+
+@pytest.mark.parametrize(
+    "url_name,args",
+    [
+        ("supply_chain:order_detail", [9999]),
+        ("supply_chain:procurement_round_detail", [9999]),
+        ("supply_chain:procurement_comparison", [9999]),
+        ("supply_chain:procurement_quote_detail", [9999]),
+    ],
+)
+def test_a_detail_page_for_something_that_is_not_here_is_a_404(client, sophie, url_name, args):
+    """Found by walking every page with a made-up id, after shipping a
+    template that raised on a page I had never opened.
+
+    Three of these four were wrong and in two different ways. The order and
+    comparison pages tolerated a missing record as far as a DERIVATION, which
+    then raised -- so a stale bookmark returned a 500 that named nothing. The
+    round page answered 200 with "Round not found", which tells a browser, a
+    link checker and an uptime monitor that the page is fine, and that is the
+    one thing it is not.
+    """
+    with patch("connect_labs.supply_chain.views.has_program_context", return_value=True), patch(
+        "connect_labs.supply_chain.procurement.views.has_program_context", return_value=True
+    ), patch("connect_labs.supply_chain.views.call_operation", return_value=None), patch(
+        "connect_labs.supply_chain.procurement.views.call_operation", return_value=None
+    ):
+        response = client.get(reverse(url_name, args=args))
+
+    assert response.status_code == 404, f"{url_name} returned {response.status_code}"
