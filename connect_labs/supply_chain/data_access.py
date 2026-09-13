@@ -513,6 +513,27 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
             )
         )
 
+    def delete_outreach(self, outreach_id):
+        """Remove an invitation that was recorded in error.
+
+        A hard delete, unlike `quote_void`'s soft one, and the difference is
+        the kind of thing each row is. A voided quote stays readable because
+        it is a supplier's stated fact and the record of having received it
+        matters even once superseded. An outreach row saying we contacted
+        somebody we never contacted is not history -- it is a mistake, and
+        leaving it readable would keep asserting the contact.
+
+        Nothing references Outreach, so there is no cascade, and it is counted
+        in exactly one place (summary.py) -- so no soft-delete flag has to be
+        threaded through a count that could then disagree with the rows.
+        """
+        found = Outreach.objects.filter(round__program_id=self._require_program(), pk=outreach_id).first()
+        if found is None:
+            raise ValueError(f"outreach {outreach_id} not found")
+        round_id, supplier_id = found.round_id, found.supplier_id
+        found.delete()
+        return {"deleted": True, "outreach_id": outreach_id, "round_id": round_id, "supplier_id": supplier_id}
+
     def update_outreach(self, outreach_id, data):
         found = Outreach.objects.filter(round__program_id=self._require_program(), pk=outreach_id).first()
         if found is None:

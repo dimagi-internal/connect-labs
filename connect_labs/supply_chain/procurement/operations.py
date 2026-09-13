@@ -151,6 +151,25 @@ def outreach_update(access, outreach_id, data):
     return record(access.update_outreach(outreach_id, data))
 
 
+@register_operation(
+    name="outreach_delete",
+    summary=(
+        "Delete an invitation recorded in error, with a reason. An outreach row saying we "
+        "contacted somebody we never contacted is not history -- it is a mistake, and leaving "
+        "it readable would keep asserting the contact. Unlike quote_void this removes the row, "
+        "because a quote is a supplier's stated fact worth keeping once superseded and an "
+        "invitation we never sent is not. The reason is recorded in the write log."
+    ),
+    input_schema=obj(
+        {"outreach_id": ID, "reason": {"type": "string", "minLength": 1}},
+        required=("outreach_id", "reason"),
+    ),
+    is_write=True,
+)
+def outreach_delete(access, outreach_id, reason):
+    return access.delete_outreach(outreach_id)
+
+
 # ---- quotes ------------------------------------------------------------
 
 
