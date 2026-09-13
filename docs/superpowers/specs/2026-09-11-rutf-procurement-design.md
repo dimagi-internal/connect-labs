@@ -1112,6 +1112,34 @@ to **get smaller until it is gone**:
   marketplace-visibility profile. A profile is owned by its app and migrates
   on its own schedule.
 
+**Matching, when a key changes, and what a conflict is.** Left undefined in
+the first draft, which is the part of a reconciliation design that decides
+whether it works: a both-keys rule orphans an identity the moment one key
+changes, and an either-key rule merges two unrelated organisations the
+moment a slug is reused.
+
+- **`connect_organization_id` is the identity. The slug is a finding aid.**
+  The id is Connect's primary key and does not change; a slug is derived from
+  a name (`synthetic_org_slug`) and therefore does change. So a row with an
+  id matches on the id alone, and the slug on it is a cache of what Connect
+  last called it.
+- **The slug matches only a row that has no id yet.** That is the one job it
+  has: linking a local row to the Connect org it turns out to be. Once the
+  id is set, a slug that no longer agrees is updated, not treated as a
+  second candidate.
+- **A rename is not a new organisation.** Connect changing an org's name
+  changes its slug and not its id, so the link survives and the cached slug
+  is refreshed.
+- **Two local rows resolving to one Connect id is a conflict, and it is
+  reported, not merged.** Merging would fold two histories -- two supplier
+  profiles, two sets of contacts, two sets of documents -- on the strength
+  of a string, and the domain refuses that kind of guess everywhere else
+  (§22). A person decides which is which; `PulsePartnerAlias` already exists
+  because pulse reached the same conclusion about slugs no rule can settle.
+- **An id present on a row that Connect does not recognise is also a
+  conflict**, not a reason to clear the link. A deleted or merged org in
+  Connect is a thing to look at.
+
 **The trap, and the only thing that makes "shrinking" true rather than
 aspirational.** If `LabsOrg` accumulates domain attributes it can never
 migrate: the day Connect is ready, the blocker becomes Connect not having
@@ -1128,10 +1156,27 @@ the difference is a useful test:
   aliases. It **dissolves** into `LabsOrg` entirely, leaving no profile behind.
 - **`Supplier` is identity plus real domain state** — a sourcing lifecycle
   (identified → contacted → quoting → awarded) and prequalification. It
-  **sheds** name, country and contacts and **keeps** the lifecycle as a
-  profile.
+  **sheds** name and country and **keeps** the lifecycle as a profile.
+  **Contacts stay with the supplier profile**, not with the org: a named
+  buyer at a manufacturer, the address an RFQ was sent to, and
+  `Outreach.contact_email_used` are sourcing facts about dealing with that
+  company, and `pulse` has no use for them. Nothing is deleted in this
+  migration -- if a future org registry grows a contacts model, moving them
+  is its own decision with its own rule.
 - **`Party` is identity plus roles that are already recorded elsewhere.** It
-  **disappears**.
+  **loses its role as an organisation registry** -- which is the whole of
+  what was wrong with it. It does NOT disappear on that day, because
+  `recorded_by_party_id` is the provenance key on every fulfilment, network
+  and stock row (§17.3) and is now derived from the session (§27). Removing
+  the table means re-keying every one of those rows.
+
+  So, stated as a rule rather than left implied: `recorded_by_party_id` is
+  the current and only persisted provenance reference. Its replacement --
+  most likely an organisation reference, once §29 is answered -- is a
+  post-decision migration that must carry every existing value across, and
+  until it happens `Party` continues to hold the programme's own
+  `programme_org` row. The identity work merged in #1784 depends on that row
+  existing, and creates it during import.
 
 So: if a table's only content is identity, it dissolves; if it carries domain
 state, it keeps the state and sheds the identity.
@@ -1212,7 +1257,11 @@ is already pulse's stated rule, and is now a shared one.
 first mover: nine suppliers and a few parties, in one synthetic programme, all
 re-importable from the tracker in a single operation. `PulsePartner` is live,
 carries identity behind that gate, and holds two dating guards that are
-expensive to rediscover. Sequence: introduce `LabsOrg`, migrate supply onto
+expensive to rediscover. **Sequence, all of it after §29 is answered** --
+§29 freezes schema until then, and this ordering is what to do next rather
+than what to do now. The only work allowed before the decision is what
+costs nothing to discard: reading, and writing rules down. Sequence:
+introduce `LabsOrg`, migrate supply onto
 it, prove the pattern, then pulse.
 
 ## 29. The open question this part cannot answer
