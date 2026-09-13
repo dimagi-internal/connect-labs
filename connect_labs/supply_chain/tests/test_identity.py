@@ -297,3 +297,52 @@ class TestStamping:
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
             stamped = self._stamp(access, self._contract(source="document"))
         assert stamped["data"]["source"] == "document"
+
+
+class TestRefusalsReachTheCaller:
+    """A provenance refusal is a bad request, not a server error.
+
+    Found on labs, not in tests: attaching a document to a quote in programme
+    10063 returned 500. The refusal was CORRECT -- that programme has no
+    parties, so the write cannot be attributed to anyone -- but
+    `IdentityUnresolved` subclassed `Exception`, and the API dispatch maps
+    only `jsonschema.ValidationError` and `ValueError` to 400. So every
+    refusal built in #1777 was a server error, and the message naming the fix
+    ("add the party with party_upsert") never reached anybody.
+
+    The tests written for that work all called `stamp_provenance` directly
+    and asserted the raise, which is why they passed while the thing was
+    unusable through either surface.
+    """
+
+    def test_the_class_is_a_bad_request(self):
+        assert issubclass(IdentityUnresolved, ValueError)
+
+    @pytest.mark.django_db
+    def test_the_api_answers_400_and_names_the_fix(self, client, django_user_model):
+        user = django_user_model.objects.create_user(username="sophie", password="x")
+        client.force_login(user)
+
+        # A knowable caller belonging to an organisation with no party here:
+        # exactly programme 10063's state.
+        org_data = {"organizations": [{"id": 7, "slug": "dimagi"}]}
+        # Scoped directly: what is under test is the exception-to-status
+        # mapping, not whether the middleware admits a labs-only programme.
+        scoped = SupplyDataAccess(program_id=PROGRAM, user=user)
+        with patch("connect_labs.labs.context.get_org_data", return_value=org_data), patch(
+            "connect_labs.supply_chain.api_views._access", return_value=scoped
+        ):
+            response = client.post(
+                f"/supply/api/document_attach/?program_id={PROGRAM}",
+                data={
+                    "data": {
+                        "kind": "other",
+                        "source": "we_recorded",
+                        "external_url": "https://example.test/e.pdf",
+                    }
+                },
+                content_type="application/json",
+            )
+
+        assert response.status_code == 400, response.status_code
+        assert "party_upsert" in response.json()["error"]

@@ -44,8 +44,14 @@ SOURCE_FOR_PARTY_KIND = {
 }
 
 
-class IdentityUnresolved(Exception):
+class IdentityUnresolved(ValueError):
     """The caller cannot be attributed to a party.
+
+    A `ValueError` because that is what it is: the request cannot be carried
+    out as sent. It subclassed `Exception`, and the HTTP dispatch maps only
+    `jsonschema.ValidationError` and `ValueError` to 400 -- so every refusal
+    here was a 500, and the message naming the fix never reached anybody.
+    Found by attaching a document on labs, in a programme with no parties.
 
     Raised rather than returned so a write cannot proceed on a shrug. The
     message names what would fix it, because the two causes need different
