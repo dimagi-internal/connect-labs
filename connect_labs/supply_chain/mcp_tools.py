@@ -26,6 +26,11 @@ def _make_handler(operation):
             access_token=token,
             organization_id=organization_id,
             program_id=program_id,
+            # There is no session on this route, so identity resolution goes
+            # through the user's Connect token (cached with a TTL, so a write
+            # is not a round trip). Without this an MCP write could only
+            # believe whatever party the payload claimed.
+            user=user,
         )
         # Route through call_operation, not operation.handler directly. FastMCP's
         # own schema validation lives in FunctionTool.run, which RegistryTool

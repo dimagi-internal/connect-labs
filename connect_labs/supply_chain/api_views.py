@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def _access(request) -> SupplyDataAccess:
     token = (request.session.get("labs_oauth") or {}).get("access_token")
-    return SupplyDataAccess(access_token=token, request=request)
+    return SupplyDataAccess(access_token=token, request=request, user=request.user)
 
 
 def has_program_context(request) -> bool:
