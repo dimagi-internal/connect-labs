@@ -22,6 +22,16 @@ PROGRAM = 10505
 SCOPE = f"prog:{PROGRAM}"
 
 
+def _dimagi_user():
+    """A user the shared `is_dimagi_user` recognises."""
+
+    class _User:
+        email = "sophie@dimagi.com"
+        is_authenticated = True
+
+    return _User()
+
+
 def _party(slug, kind, connect_organization_id):
     return Party.objects.create(
         scope_key=SCOPE,
@@ -163,14 +173,45 @@ class TestWhichParty:
         assert "recorded_by_party_id" in str(caught.value)
         assert "llo-a" in str(caught.value) and "llo-b" in str(caught.value)
 
-    def test_our_own_party_wins_over_a_partner_we_also_belong_to(self):
-        """Dimagi staff who are also members of a partner's Connect org are
-        common, and there the intent is not ambiguous: we are the programme."""
-        _party("dimagi", "programme_org", 7)
+    def test_dimagi_staff_act_for_the_programme_without_an_org_match(self):
+        """The rule that replaced org-matching for us.
+
+        Matching `Party.connect_organization_id` could never work in a
+        labs-only programme: a synthetic organisation is identified by slug
+        while that column is an integer. Rather than special-case demo data,
+        Dimagi staff resolve to the programme's own party by ACL -- the same
+        one `SyntheticOpportunity.is_accessible_to` already grants them.
+        """
+        _party("dimagi", "programme_org", None)
         _party("kano-llo", "partner_org", 8)
-        access, request = _session_access([7, 8])
-        with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
-            assert resolve_party(access).slug == "dimagi"
+        access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user())
+        assert resolve_party(access).slug == "dimagi"
+
+    def test_dimagi_staff_in_a_programme_with_no_party_of_ours_resolve_to_nothing(self):
+        """Which the stamping layer turns into a refusal naming party_upsert
+        -- the state programme 10063 was in, where no setup step had ever
+        created the programme's own party."""
+        _party("kano-llo", "partner_org", 8)
+        access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user())
+        assert resolve_party(access) is None
+
+    def test_two_parties_of_ours_is_a_configuration_error(self):
+        _party("dimagi", "programme_org", None)
+        _party("dimagi-two", "programme_org", None)
+        access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user())
+        with pytest.raises(IdentityUnresolved, match="more than one programme_org"):
+            resolve_party(access)
+
+    def test_a_synthetic_programme_needs_no_special_case(self):
+        """The point of the rewrite. A labs-only programme's organisation has
+        a slug where an integer would be, so org-matching is impossible there
+        -- and provenance must not behave differently in demo data, or the
+        demo proves something the real system cannot do."""
+        _party("dimagi", "programme_org", None)
+        access = SupplyDataAccess(program_id=10_600, user=_dimagi_user())
+        # A different (labs-only) programme: no party of ours there, and the
+        # answer is an honest None rather than a crash or a wrong match.
+        assert resolve_party(access) is None
 
 
 class TestSource:
