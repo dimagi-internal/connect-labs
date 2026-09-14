@@ -34,9 +34,25 @@ unconfirmed figures on the right.
 
 <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
   <div>
-    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{{ supplier.name }}</h1>
+    <h1 class="text-2xl font-semibold leading-tight">
+      <a href="{% url 'supply_chain:supplier_detail' quote.supplier_id %}"
+         class="text-gray-900 hover:text-brand-indigo hover:underline">{{ supplier.name }}</a>
+    </h1>
     <p class="text-sm text-gray-600 mt-1">
-      {{ quote.commodity_slug|humanise }} · quoted
+      <a href="{% url 'supply_chain:product_detail' quote.commodity_slug %}"
+         class="text-brand-indigo hover:underline">{{ quote.commodity_slug|humanise }}</a>
+      {% comment %}
+      Which trade item they quoted was in the data and on no screen — and it
+      is the fact that decides whether a per-carton price can become a
+      per-sachet one, so its absence is worth saying out loud too.
+      {% endcomment %}
+      {% if detail.item %}
+        · <a href="{% url 'supply_chain:item_detail' detail.item.id %}"
+             class="text-brand-indigo hover:underline">{{ detail.item.sku }}</a>
+      {% else %}
+        · <span class="text-amber-800">no trade item named</span>
+      {% endif %}
+      · quoted
       {% if quote.received_on %}{{ quote.received_on }}{% else %}on a date the sheet did not give{% endif %}
       {% for o in outreach %}{% if o.sent_on %}· asked {{ o.sent_on }}{% endif %}{% endfor %}
     </p>

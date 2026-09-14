@@ -29,6 +29,55 @@ class OperationBase(TemplateView):
         return context
 
 
+def annotate_product(product, own_items):
+    """Hang a product's trade items off it, each measured against its spec.
+
+    Module-level rather than a method because two pages need identically
+    annotated products -- the catalogue list and one product on its own -- and
+    a second copy of this would be a second opinion about whether a trade item
+    passes its specification.
+    """
+    packs = {i["base_per_pack"] for i in own_items if i.get("base_per_pack")}
+    weights = {i["base_unit_grams"] for i in own_items if i.get("base_unit_grams")}
+
+    for item in own_items:
+        item["spec_verdict"] = spec_verdict(item.get("spec_attributes"), product.get("spec_requirements") or [])
+        # Two different kinds of disagreement, and they are not the same
+        # finding. Differing from the product's nominal pack is often
+        # legitimate -- a manufacturer may genuinely pack 144. Two trade items
+        # under one product differing from EACH OTHER is what makes a single
+        # per-sachet figure impossible.
+        item["differs_from_product"] = bool(
+            item.get("base_per_pack")
+            and product.get("base_per_pack")
+            and item["base_per_pack"] != product["base_per_pack"]
+        )
+        item["pack_disagrees_with_siblings"] = len(packs) > 1
+        item["weight_disagrees_with_siblings"] = len(weights) > 1
+        item["gtins"] = [
+            {"level": level, "value": item.get(key)}
+            for level, key in (
+                ("base unit", "gtin_base"),
+                ("pack", "gtin_pack"),
+                ("case", "gtin_case"),
+            )
+            if item.get(key)
+        ]
+
+    product["items"] = own_items
+    product["pack_values"] = sorted(packs)
+    product["weight_values"] = sorted(weights)
+    # The ration table is a programme decision, not part of the
+    # specification, so its absence is stated rather than defaulted.
+    product["has_course_definition"] = bool((product.get("course_definition") or {}).get("base_units_per_course"))
+    # ...but only where a course is a thing. The page was warning "No ration
+    # table set" against an infant scale, which is not dispensed over days and
+    # will never have one. Same rule as the check, from the same place, so the
+    # page and the feed cannot disagree about whether something is missing.
+    product["course_applies"] = course_applies_to_category(product.get("category"))
+    return product
+
+
 class CatalogueView(OperationBase):
     """What can be bought, at the two levels the supply chain actually uses.
 
@@ -62,50 +111,7 @@ class CatalogueView(OperationBase):
             by_product.setdefault(item["commodity_slug"], []).append(item)
 
         for product in products:
-            own = by_product.get(product["slug"], [])
-            packs = {i["base_per_pack"] for i in own if i.get("base_per_pack")}
-            weights = {i["base_unit_grams"] for i in own if i.get("base_unit_grams")}
-
-            for item in own:
-                item["spec_verdict"] = spec_verdict(
-                    item.get("spec_attributes"), product.get("spec_requirements") or []
-                )
-                # Two different kinds of disagreement, and they are not the
-                # same finding. Differing from the product's nominal pack is
-                # often legitimate -- a manufacturer may genuinely pack 144.
-                # Two trade items under one product differing from EACH OTHER
-                # is what makes a single per-sachet figure impossible.
-                item["differs_from_product"] = bool(
-                    item.get("base_per_pack")
-                    and product.get("base_per_pack")
-                    and item["base_per_pack"] != product["base_per_pack"]
-                )
-                item["pack_disagrees_with_siblings"] = len(packs) > 1
-                item["weight_disagrees_with_siblings"] = len(weights) > 1
-                item["gtins"] = [
-                    {"level": level, "value": item.get(key)}
-                    for level, key in (
-                        ("base unit", "gtin_base"),
-                        ("pack", "gtin_pack"),
-                        ("case", "gtin_case"),
-                    )
-                    if item.get(key)
-                ]
-
-            product["items"] = own
-            product["pack_values"] = sorted(packs)
-            product["weight_values"] = sorted(weights)
-            # The ration table is a programme decision, not part of the
-            # specification, so its absence is stated rather than defaulted.
-            product["has_course_definition"] = bool(
-                (product.get("course_definition") or {}).get("base_units_per_course")
-            )
-            # ...but only where a course is a thing. The page was warning
-            # "No ration table set" against an infant scale, which is not
-            # dispensed over days and will never have one. Same rule as the
-            # check, from the same place, so the page and the feed cannot
-            # disagree about whether something is missing.
-            product["course_applies"] = course_applies_to_category(product.get("category"))
+            annotate_product(product, by_product.get(product["slug"], []))
 
         context["products"] = products
         context["orphan_items"] = [
@@ -306,4 +312,213 @@ class DistributionView(OperationBase):
             return context
         context["runs"] = self.op("distribution_list")
         context["points"] = {p["id"]: p for p in self.op("supply_point_list", include_inactive=True)}
+        return context
+
+
+class ProductDetailView(OperationBase):
+    """One product: its specification, its trade items, and who can supply it.
+
+    The catalogue page answers "what can this programme buy against". This one
+    answers the question a buyer actually arrives with -- *who sells this, what
+    have they charged, and have we ever bought it* -- which is spread across
+    four tiers and was reachable only through the API.
+
+    The supply base here is derived, never stored. See
+    `procurement/services/supply_base.py` for why: a list of who supplies what
+    is an assertion nobody made, and it would read the same the day it was
+    typed and a year after the supplier stopped replying.
+    """
+
+    template_name = "supply_chain/product_detail.html"
+
+    def get_context_data(self, slug, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+
+        product = next((c for c in self.op("commodity_list") if c["slug"] == slug), None)
+        if product is None:
+            raise Http404(f"no product '{slug}' in this catalogue")
+        items = [i for i in self.op("item_list") if i["commodity_slug"] == slug]
+        context["product"] = annotate_product(product, items)
+
+        if not context["has_program_context"]:
+            # The specification is reference data and reads fine on its own.
+            # Everything below is programme-scoped, so it is omitted rather
+            # than half-rendered.
+            return context
+
+        context["supply_base"] = self.op("commodity_supply_base", commodity_slug=slug)
+        context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
+        context["rounds"] = {r["id"]: r for r in self.op("round_list")}
+        context["sourced_in"] = [
+            r
+            for r in context["rounds"].values()
+            if any((line or {}).get("commodity_slug") == slug for line in (r.get("lines") or []))
+        ]
+        context["quotes"] = [q for q in self.op("quote_list") if q["commodity_slug"] == slug]
+        context["contracts"] = [c for c in self.op("contract_list") if c["commodity_slug"] == slug]
+        context["items_by_id"] = {i["id"]: i for i in items}
+        return context
+
+
+class ItemDetailView(OperationBase):
+    """One trade item -- the level you can actually order and actually count.
+
+    A product cannot be shipped and a batch has not arrived yet; this is the
+    layer in between, and it is the only one that knows how many sachets are
+    in the carton. So this page carries the three things that hang off that
+    fact: what it was quoted at, what was contracted, and what is on hand.
+    """
+
+    template_name = "supply_chain/item_detail.html"
+
+    def get_context_data(self, item_id, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+
+        item = self.op("item_get", item_id=item_id)
+        if item is None:
+            raise Http404(f"no trade item {item_id} in this catalogue")
+        product = next((c for c in self.op("commodity_list") if c["slug"] == item["commodity_slug"]), None)
+        if product is not None:
+            # Annotated through its own product so the verdict, the sibling
+            # disagreements and the GTIN list are computed the one way.
+            siblings = [i for i in self.op("item_list") if i["commodity_slug"] == item["commodity_slug"]]
+            annotate_product(product, siblings)
+            item = next((i for i in siblings if i["id"] == item["id"]), item)
+        context["item"] = item
+        context["product"] = product
+
+        if not context["has_program_context"]:
+            return context
+
+        context["supply_base"] = self.op(
+            "commodity_supply_base", commodity_slug=item["commodity_slug"], item_id=item["id"]
+        )
+        context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
+        context["rounds"] = {r["id"]: r for r in self.op("round_list")}
+        context["quotes"] = [q for q in self.op("quote_list") if q["item_id"] == item["id"]]
+        context["contracts"] = [c for c in self.op("contract_list") if c["item_id"] == item["id"]]
+        context["documents"] = self.op("document_list", item_id=item["id"])
+        # Stock is per trade item, never per product: two manufacturers' RUTF
+        # in one store are two balances, and adding them needs the pack
+        # specification this page is about.
+        context["network"] = self.op("network_stock", item_id=item["id"])
+        return context
+
+
+class SupplierDirectoryView(OperationBase):
+    """Who we can buy from, and how far each relationship has got.
+
+    Replaces a "Registries" page that listed suppliers beside a second copy of
+    the commodity table, was linked from nowhere, and whose only supplier
+    columns were name, country, status and a GLN the model does not have. The
+    commodities live on the Catalogue tab; this page is about the companies.
+    """
+
+    template_name = "supply_chain/suppliers.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+        suppliers = self.op("supplier_list")
+        context["suppliers"] = suppliers
+        if not context["has_program_context"]:
+            return context
+
+        quotes = self.op("quote_list")
+        outreach = self.op("outreach_list")
+        contracts = self.op("contract_list")
+        for supplier in suppliers:
+            own_quotes = [q for q in quotes if q["supplier_id"] == supplier["id"]]
+            own_outreach = [o for o in outreach if o["supplier_id"] == supplier["id"]]
+            supplier["quote_count"] = len([q for q in own_quotes if not q["voided"]])
+            supplier["invitation_count"] = len(own_outreach)
+            supplier["contract_count"] = len([c for c in contracts if c["supplier_id"] == supplier["id"]])
+            # The most recent thing that happened either way, so a directory
+            # sorted by name still shows at a glance who has gone quiet.
+            dates = [q["received_on"] for q in own_quotes if q.get("received_on")]
+            dates += [o["sent_on"] for o in own_outreach if o.get("sent_on")]
+            supplier["last_activity"] = max(dates) if dates else None
+        return context
+
+
+class SupplierDetailView(OperationBase):
+    """One supplier, and everything this programme has ever done with them.
+
+    A supplier is reference data reused across rounds, so their history is
+    scattered by design: invitations sit under rounds, quotes under rounds
+    again, contracts under the programme, and receipts and invoices under the
+    contracts. Reading it meant four screens and an id in your head. This
+    gathers it in the order it happened to them -- we asked, they answered, we
+    chose, we ordered, it arrived, they billed us.
+    """
+
+    template_name = "supply_chain/supplier_detail.html"
+
+    def get_context_data(self, supplier_id, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+
+        supplier = self.op("supplier_get", supplier_id=supplier_id)
+        if supplier is None:
+            raise Http404(f"no supplier {supplier_id} on file")
+        context["supplier"] = supplier
+
+        if not context["has_program_context"]:
+            return context
+
+        rounds = {r["id"]: r for r in self.op("round_list")}
+        context["rounds"] = rounds
+
+        outreach = [o for o in self.op("outreach_list") if o["supplier_id"] == supplier_id]
+        for invitation in outreach:
+            invitation["round"] = rounds.get(invitation["round_id"])
+        context["outreach"] = outreach
+
+        # Each quote's derived figures come from `quote_get` rather than being
+        # recomputed here, so the number on this page and the number on the
+        # quote's own page cannot drift apart.
+        quotes = []
+        for quote in self.op("quote_list"):
+            if quote["supplier_id"] != supplier_id:
+                continue
+            detail = self.op("quote_get", quote_id=quote["id"])
+            quotes.append(
+                {
+                    **quote,
+                    "round": rounds.get(quote["round_id"]),
+                    "figures": (detail or {}).get("figures") or {},
+                    "unanswered": len((detail or {}).get("missing") or []),
+                }
+            )
+        context["quotes"] = quotes
+
+        context["awards"] = [a for a in self.op("award_list") if a["supplier_id"] == supplier_id]
+
+        contracts = [c for c in self.op("contract_list") if c["supplier_id"] == supplier_id]
+        for contract in contracts:
+            contract["shipments"] = self.op("shipment_list", contract_id=contract["id"])
+            contract["receipts"] = self.op("receipt_list", contract_id=contract["id"])
+            contract["invoices"] = self.op("invoice_list", contract_id=contract["id"])
+        context["contracts"] = contracts
+
+        context["documents"] = self.op("document_list", supplier_id=supplier_id)
+        commodities = {c["slug"]: c for c in self.op("commodity_list")}
+        context["commodities"] = commodities
+        context["items_by_id"] = {i["id"]: i for i in self.op("item_list")}
+
+        # What this supplier is connected to, read back off the same evidence
+        # the product pages use rather than off a list somebody maintained.
+        # Asked per product because the derivation is per product: the answer
+        # to "do they supply RUTF" is not the answer to "do they supply F-75".
+        supplies = []
+        for slug, commodity in commodities.items():
+            claim = next(
+                (c for c in self.op("commodity_supply_base", commodity_slug=slug) if c["supplier_id"] == supplier_id),
+                None,
+            )
+            if claim:
+                supplies.append({**claim, "slug": slug, "name": commodity["name"]})
+        context["supplies"] = supplies
         return context

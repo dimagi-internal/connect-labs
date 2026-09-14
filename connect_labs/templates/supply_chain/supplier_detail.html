@@ -1,0 +1,317 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+One supplier, and everything this programme has done with them.
+
+Ordered as it happened to them — we asked, they answered, we chose, we
+ordered, it arrived, they billed us — rather than by table. A supplier's
+history is scattered across four tiers by design, and reading it used to mean
+four screens and an id held in your head.
+{% endcomment %}
+
+{% block supply_content %}
+
+<nav class="text-sm text-gray-500 mb-3">
+  <a href="{% url 'supply_chain:suppliers' %}" class="text-brand-indigo hover:underline">Suppliers</a>
+  <span class="mx-1.5 text-gray-300">/</span>
+  <span class="text-gray-700">{{ supplier.name }}</span>
+</nav>
+
+<div class="flex flex-wrap items-start justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{{ supplier.name }}</h1>
+    <p class="text-sm text-gray-600 mt-1">
+      {% if supplier.type %}{{ supplier.type|humanise }}{% endif %}
+      {% if supplier.city %}· {{ supplier.city }}{% elif supplier.country %}· {{ supplier.country }}{% endif %}
+    </p>
+  </div>
+  <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+    {{ supplier.status|humanise|default:"identified" }}
+  </span>
+</div>
+
+<div class="grid gap-6 lg:grid-cols-3 mb-6">
+  <div class="lg:col-span-2 bg-white border border-brand-border-light rounded-lg px-5 py-4">
+    <h2 class="text-base font-semibold text-gray-900">Who to talk to</h2>
+    {% if supplier.contacts %}
+      <ul class="mt-2 space-y-1.5">
+        {% for contact in supplier.contacts %}
+          <li class="text-sm text-gray-800">
+            {% if contact.name %}<span class="font-medium">{{ contact.name }}</span>{% endif %}
+            {% if contact.email %}<span class="text-gray-700">{{ contact.email }}</span>{% endif %}
+            {% if contact.phone %}<span class="text-gray-700">{{ contact.phone }}</span>{% endif %}
+            {% if contact.role %}<span class="text-xs text-gray-500">· {{ contact.role|humanise }}</span>{% endif %}
+            {% if contact.note %}<div class="text-xs text-gray-500">{{ contact.note }}</div>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-sm text-gray-500 mt-1">
+        No contact recorded — so nothing can be sent to them from here.
+      </p>
+    {% endif %}
+
+    {% if supplier.notes %}
+      <div class="mt-4">
+        <div class="text-[11px] text-gray-500">Notes</div>
+        <p class="text-sm text-gray-700 mt-0.5 whitespace-pre-line">{{ supplier.notes }}</p>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="bg-white border border-brand-border-light rounded-lg px-5 py-4">
+    <h2 class="text-base font-semibold text-gray-900">Qualifications</h2>
+    {% if supplier.qualifications %}
+      <ul class="mt-2 space-y-1 text-sm text-gray-800 list-disc list-inside">
+        {% for qualification in supplier.qualifications %}
+          <li>{{ qualification.name|default:qualification }}
+            {% if qualification.expires_on %}<span class="text-xs text-gray-500">to {{ qualification.expires_on }}</span>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-sm text-gray-500 mt-1">
+        None on file. Prequalification is a fact about the company, not about
+        one offer, so it belongs here rather than on a quote.
+      </p>
+    {% endif %}
+
+    <div class="mt-4">
+      <div class="text-[11px] text-gray-500">Connect organisation</div>
+      <p class="text-sm mt-0.5 {% if supplier.connect_organization_id %}text-gray-800{% else %}text-gray-500{% endif %}">
+        {% if supplier.connect_organization_id %}
+          linked · {{ supplier.connect_organization_id }}
+        {% else %}
+          not linked — they cannot sign in and answer for themselves
+        {% endif %}
+      </p>
+    </div>
+  </div>
+</div>
+
+{% if not has_program_context %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4">
+    <p class="text-sm text-message-warning-text">
+      Choose a programme to see what this supplier has been asked for and what they answered.
+    </p>
+  </div>
+{% else %}
+
+{% comment %} ---- what they are connected to ---- {% endcomment %}
+<div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
+  <div class="px-5 py-4 border-b border-brand-border-light">
+    <h2 class="text-base font-semibold text-gray-900">What they supply</h2>
+    <p class="text-sm text-gray-500 mt-0.5 max-w-2xl">
+      Read back off what happened, not off a list somebody keeps. Each product
+      says the strongest thing we hold about them and it.
+    </p>
+  </div>
+  {% if supplies %}
+    <ul class="divide-y divide-gray-100">
+      {% for supply in supplies %}
+        <li class="px-5 py-3 flex flex-wrap items-baseline gap-x-3">
+          <a class="text-brand-indigo hover:underline font-medium"
+             href="{% url 'supply_chain:product_detail' supply.slug %}">{{ supply.name }}</a>
+          <span class="text-xs font-semibold uppercase tracking-wide rounded px-1.5 py-0.5
+            {% if supply.basis == 'contracted' or supply.basis == 'awarded' %}text-teal-700 bg-teal-50 border border-teal-200
+            {% elif supply.basis == 'quoted' %}text-brand-indigo bg-indigo-50 border border-indigo-200
+            {% else %}text-amber-800 bg-amber-50 border border-amber-200{% endif %}">{{ supply.basis|evidence_label }}</span>
+          <span class="text-xs text-gray-500">{{ supply.evidence|length }} record{{ supply.evidence|length|pluralize }}</span>
+          {% if supply.last_heard %}<span class="ml-auto text-xs text-gray-500">last dated {{ supply.last_heard }}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="px-5 py-5 text-sm text-gray-500">
+      Nothing connects them to anything in the catalogue yet — no invitation,
+      no quote, no order.
+    </p>
+  {% endif %}
+</div>
+
+{% comment %} ---- we asked ---- {% endcomment %}
+<div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
+  <div class="px-5 py-4 border-b border-brand-border-light">
+    <h2 class="text-base font-semibold text-gray-900">What we asked them for</h2>
+  </div>
+  {% if outreach %}
+    <ul class="divide-y divide-gray-100">
+      {% for invitation in outreach %}
+        <li class="px-5 py-3 text-sm">
+          <a class="text-brand-indigo hover:underline"
+             href="{% url 'supply_chain:procurement_round_detail' invitation.round_id %}">{{ invitation.round.label|default:invitation.round_id }}</a>
+          <span class="text-gray-500">
+            · {% if invitation.sent_on %}sent {{ invitation.sent_on }}{% else %}no date recorded{% endif %}
+            {% if invitation.channel %}· {{ invitation.channel|humanise }}{% endif %}
+          </span>
+          <span class="ml-2 text-xs font-medium
+            {% if invitation.responded %}text-teal-700{% else %}text-amber-800{% endif %}">
+            {% if invitation.responded %}replied{% if invitation.response_kind %} ({{ invitation.response_kind|humanise }}){% endif %}
+            {% else %}no reply{% endif %}
+          </span>
+          {% if invitation.last_reminder_on %}
+            <span class="text-xs text-gray-500">· last chased {{ invitation.last_reminder_on }}</span>
+          {% endif %}
+          {% if invitation.notes %}<div class="text-xs text-gray-500 mt-0.5">{{ invitation.notes }}</div>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="px-5 py-5 text-sm text-gray-500">We have never invited them to a round.</p>
+  {% endif %}
+</div>
+
+{% comment %} ---- they answered ---- {% endcomment %}
+<div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
+  <div class="px-5 py-4 border-b border-brand-border-light">
+    <h2 class="text-base font-semibold text-gray-900">What they quoted</h2>
+    <p class="text-sm text-gray-500 mt-0.5">
+      As stated, beside what it comes to once normalised. An Unconfirmed here
+      is a question outstanding with them, and the count says how many.
+    </p>
+  </div>
+  {% if quotes %}
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+      <table class="min-w-[44rem] w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+          <tr>
+            <th class="text-left px-4 py-2">Quote</th>
+            <th class="text-left px-4 py-2">For</th>
+            <th class="text-left px-4 py-2">As quoted</th>
+            <th class="text-left px-4 py-2">USD per base unit</th>
+            <th class="text-left px-4 py-2">Received</th>
+            <th class="text-left px-4 py-2">Standing</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for quote in quotes %}
+            <tr>
+              <td class="px-4 py-2.5">
+                <a class="text-brand-indigo hover:underline"
+                   href="{% url 'supply_chain:procurement_quote_detail' quote.id %}">Quote {{ quote.id }}</a>
+                <div class="text-xs text-gray-500">{{ quote.round.label|default:quote.round_id }}</div>
+              </td>
+              <td class="px-4 py-2.5">
+                <a class="text-brand-indigo hover:underline"
+                   href="{% url 'supply_chain:product_detail' quote.commodity_slug %}">{{ quote.commodity_slug|humanise }}</a>
+                {% if quote.item_id %}
+                  <div class="text-xs">
+                    <a class="text-brand-indigo hover:underline"
+                       href="{% url 'supply_chain:item_detail' quote.item_id %}">{{ items_by_id|dictkey:quote.item_id|dictkey:"sku" }}</a>
+                  </div>
+                {% endif %}
+              </td>
+              <td class="px-4 py-2.5 tabular-nums">
+                {% if quote.as_quoted_amount %}{{ quote.as_quoted_currency }} {{ quote.as_quoted_amount }}{% else %}—{% endif %}
+                <div class="text-xs text-gray-500">{{ quote.as_quoted_unit|humanise }}</div>
+              </td>
+              <td class="px-4 py-2.5 tabular-nums">
+                {{ quote.figures.usd_per_base_unit|figure_text }}
+                {% if quote.unanswered %}
+                  <div class="text-xs text-amber-800">{{ quote.unanswered }} question{{ quote.unanswered|pluralize }} outstanding</div>
+                {% endif %}
+              </td>
+              <td class="px-4 py-2.5 text-gray-600">{{ quote.received_on|default:"—" }}</td>
+              <td class="px-4 py-2.5">
+                {% if quote.voided %}<span class="text-xs text-red-700">voided</span>
+                {% elif quote.superseded_by_quote_id %}<span class="text-xs text-amber-800">superseded</span>
+                {% else %}<span class="text-xs text-teal-700">standing</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="px-5 py-5 text-sm text-gray-500">They have never quoted.</p>
+  {% endif %}
+</div>
+
+{% comment %} ---- we chose, we ordered ---- {% endcomment %}
+{% if awards %}
+  <div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
+    <div class="px-5 py-4 border-b border-brand-border-light">
+      <h2 class="text-base font-semibold text-gray-900">Awarded to them</h2>
+    </div>
+    <ul class="divide-y divide-gray-100">
+      {% for award in awards %}
+        <li class="px-5 py-3 text-sm">
+          <a class="text-brand-indigo hover:underline"
+             href="{% url 'supply_chain:procurement_comparison' award.round_id %}?commodity={{ award.commodity_slug }}">{{ award.commodity_slug|humanise }}</a>
+          <span class="text-gray-500">· {{ award.decided_on|default:"undated" }}</span>
+          {% if award.provisional %}
+            <span class="text-xs text-amber-800">· provisional</span>
+          {% endif %}
+          {% if award.rationale %}<div class="text-xs text-gray-600 mt-0.5">{{ award.rationale }}</div>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
+  <div class="px-5 py-4 border-b border-brand-border-light">
+    <h2 class="text-base font-semibold text-gray-900">Orders with them</h2>
+    <p class="text-sm text-gray-500 mt-0.5">
+      What was committed, what has shipped, what arrived, and what they billed.
+    </p>
+  </div>
+  {% if contracts %}
+    <ul class="divide-y divide-gray-100">
+      {% for contract in contracts %}
+        <li class="px-5 py-4">
+          <div class="flex flex-wrap items-baseline gap-x-3">
+            <a class="font-medium text-brand-indigo hover:underline"
+               href="{% url 'supply_chain:order_detail' contract.id %}">{{ contract.reference|default:"Contract" }} {{ contract.id }}</a>
+            <span class="text-sm text-gray-600">{{ contract.commodity_slug|humanise }}</span>
+            <span class="text-xs text-gray-500">{{ contract.status|humanise }}</span>
+            <span class="ml-auto text-xs text-gray-500">bought by {{ contract.buyer_of_record|humanise }}</span>
+          </div>
+          <div class="text-sm text-gray-700 mt-1 tabular-nums">
+            {% if contract.quantity %}{{ contract.quantity }} {{ contract.quantity_unit|humanise }}{% endif %}
+            {% if contract.unit_price %}at {{ contract.currency }} {{ contract.unit_price }} {{ contract.unit_price_unit|humanise }}{% endif %}
+            {% if contract.signed_on %}<span class="text-gray-500">· signed {{ contract.signed_on }}</span>{% endif %}
+          </div>
+          <div class="text-xs text-gray-500 mt-1">
+            {{ contract.shipments|length }} shipment{{ contract.shipments|length|pluralize }} ·
+            {{ contract.receipts|length }} receipt{{ contract.receipts|length|pluralize }} ·
+            {{ contract.invoices|length }} invoice{{ contract.invoices|length|pluralize }}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="px-5 py-5 text-sm text-gray-500">Nothing has been ordered from them.</p>
+  {% endif %}
+</div>
+
+<div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+  <div class="px-5 py-4 border-b border-brand-border-light">
+    <h2 class="text-base font-semibold text-gray-900">Documents</h2>
+    <p class="text-sm text-gray-500 mt-0.5">
+      Held against the company rather than one offer — a certification belongs
+      to the supplier, not to the quote that mentioned it.
+    </p>
+  </div>
+  {% if documents %}
+    <ul class="divide-y divide-gray-100">
+      {% for document in documents %}
+        <li class="px-5 py-3 text-sm">
+          {% if document.external_url %}
+            <a class="text-brand-indigo hover:underline" href="{{ document.external_url }}"
+               target="_blank" rel="noopener noreferrer">{{ document.title|default:document.kind|humanise }}</a>
+          {% else %}
+            <span class="text-gray-800">{{ document.title|default:document.kind|humanise }}</span>
+          {% endif %}
+          <span class="text-xs text-gray-500">· {{ document.kind|humanise }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="px-5 py-5 text-sm text-gray-500">No documents on file for this supplier.</p>
+  {% endif %}
+</div>
+
+{% endif %}
+{% endblock %}

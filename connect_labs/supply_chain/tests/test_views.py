@@ -789,3 +789,281 @@ def test_a_detail_page_for_something_that_is_not_here_is_a_404(client, sophie, u
         response = client.get(reverse(url_name, args=args))
 
     assert response.status_code == 404, f"{url_name} returned {response.status_code}"
+
+
+# --- Click-through: a catalogue you can only read is a document, not a
+# catalogue. These pin the destinations, because a link whose target 404s or
+# 500s is worse than no link -- it looks like the data is missing.
+
+
+PRODUCT = {
+    "slug": "rutf",
+    "name": "Ready-to-use therapeutic food",
+    "category": "therapeutic_food",
+    "base_unit": "sachet",
+    "pack_unit": "carton",
+    "base_per_pack": 150,
+    "base_unit_grams": 92,
+    "spec_requirements": [],
+    "course_definition": {},
+}
+TRADE_ITEM = {
+    "id": 7,
+    "sku": "RUTF-NW-92",
+    "name": "Northwind RUTF",
+    "commodity_slug": "rutf",
+    "manufacturer": "Northwind Foods",
+    "base_per_pack": 150,
+    "base_unit_grams": 92,
+    "spec_attributes": {},
+    "status": "active",
+}
+SUPPLIER = {"id": 1, "name": "Northwind Foods", "type": "manufacturer", "country": "NG", "status": "quoting"}
+QUOTE = {
+    "id": 10,
+    "round_id": 5,
+    "supplier_id": 1,
+    "item_id": 7,
+    "commodity_slug": "rutf",
+    "as_quoted_amount": "0.46",
+    "as_quoted_unit": "per_base_unit",
+    "as_quoted_currency": "USD",
+    "received_on": "2026-05-01",
+    "voided": False,
+    "superseded_by_quote_id": None,
+}
+CLAIM = {
+    "supplier_id": 1,
+    "supplier_name": "Northwind Foods",
+    "supplier_country": "NG",
+    "supplier_status": "quoting",
+    "basis": "quoted",
+    "last_heard": "2026-05-01",
+    "evidence": [{"kind": "quoted", "detail": "USD 0.46 per base unit", "on": "2026-05-01", "quote_id": 10}],
+}
+
+_CATALOGUE_RESPONSES = {
+    "commodity_list": [PRODUCT],
+    "item_list": [TRADE_ITEM],
+    "item_get": TRADE_ITEM,
+    "supplier_list": [SUPPLIER],
+    "supplier_get": SUPPLIER,
+    "round_list": [{"id": 5, "label": "Round 1", "status": "open", "lines": [{"commodity_slug": "rutf"}]}],
+    "quote_list": [QUOTE],
+    "quote_get": {"quote": QUOTE, "figures": {}, "missing": []},
+    "contract_list": [],
+    "outreach_list": [],
+    "award_list": [],
+    "document_list": [],
+    "shipment_list": [],
+    "receipt_list": [],
+    "invoice_list": [],
+    "network_stock": {"summary": {}, "points": []},
+    "commodity_supply_base": [CLAIM],
+}
+
+
+def _catalogue_dispatch(name, access, payload):
+    if name not in _CATALOGUE_RESPONSES:
+        raise AssertionError(f"unexpected operation {name}")
+    return _CATALOGUE_RESPONSES[name]
+
+
+# Everything below the reference tier needs a programme. A test that asserts
+# "renders with no programme selected" while its stub happily answers
+# `quote_list` proves nothing -- the view could be calling straight through to
+# a real SupplyDataAccess and the stub would hide it. So the no-programme
+# dispatcher refuses these by name.
+PROGRAMME_SCOPED_OPS = frozenset(
+    {
+        "quote_list",
+        "quote_get",
+        "contract_list",
+        "outreach_list",
+        "award_list",
+        "round_list",
+        "document_list",
+        "network_stock",
+        "commodity_supply_base",
+        "shipment_list",
+        "receipt_list",
+        "invoice_list",
+    }
+)
+
+
+def _no_programme_dispatch(name, access, payload):
+    if name in PROGRAMME_SCOPED_OPS:
+        raise AssertionError(f"{name} was called with no programme selected")
+    return _catalogue_dispatch(name, access, payload)
+
+
+def _with_programme(monkeypatch):
+    monkeypatch.setattr("connect_labs.supply_chain.views.has_program_context", lambda request: True)
+
+
+def test_the_catalogue_links_to_each_product_and_trade_item(client, sophie):
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_catalogue_dispatch):
+        response = client.get(reverse("supply_chain:catalogue"))
+    body = response.content.decode()
+    assert reverse("supply_chain:product_detail", args=["rutf"]) in body
+    assert reverse("supply_chain:item_detail", args=[7]) in body
+
+
+def test_a_product_page_names_who_can_supply_it_and_on_what_evidence(client, sophie, monkeypatch):
+    _with_programme(monkeypatch)
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_catalogue_dispatch):
+        response = client.get(reverse("supply_chain:product_detail", args=["rutf"]))
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert "Who can supply this" in body
+    assert "Northwind Foods" in body
+    # The evidence, not just the name: "quoted" and "under contract" are not
+    # the same claim and the page must not flatten them.
+    assert "Quoted" in body
+    assert reverse("supply_chain:supplier_detail", args=[1]) in body
+
+
+def test_a_product_that_is_not_in_the_catalogue_is_a_404_not_a_500(client, sophie, monkeypatch):
+    _with_programme(monkeypatch)
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_catalogue_dispatch):
+        response = client.get(reverse("supply_chain:product_detail", args=["no-such-thing"]))
+    assert response.status_code == 404
+
+
+def test_the_product_page_renders_its_specification_with_no_programme_selected(client, sophie):
+    """The specification is reference data and reads on its own; only the
+    programme-scoped half is withheld."""
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_no_programme_dispatch):
+        response = client.get(reverse("supply_chain:product_detail", args=["rutf"]))
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert "What it must be" in body
+    assert "Who can supply this" not in body
+
+
+def test_a_trade_item_page_shows_its_pack_configuration_and_where_it_is(client, sophie, monkeypatch):
+    _with_programme(monkeypatch)
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_catalogue_dispatch):
+        response = client.get(reverse("supply_chain:item_detail", args=[7]))
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert "How it is packed and identified" in body
+    assert "Where it is now" in body
+    assert reverse("supply_chain:product_detail", args=["rutf"]) in body
+
+
+def test_a_trade_item_that_does_not_exist_is_a_404(client, sophie, monkeypatch):
+    _with_programme(monkeypatch)
+
+    def _dispatch(name, access, payload):
+        if name == "item_get":
+            return None
+        return _catalogue_dispatch(name, access, payload)
+
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_dispatch):
+        response = client.get(reverse("supply_chain:item_detail", args=[999]))
+    assert response.status_code == 404
+
+
+def test_the_supplier_directory_links_to_each_supplier(client, sophie, monkeypatch):
+    _with_programme(monkeypatch)
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_catalogue_dispatch):
+        response = client.get(reverse("supply_chain:suppliers"))
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert reverse("supply_chain:supplier_detail", args=[1]) in body
+
+
+def test_a_supplier_page_gathers_the_history_that_was_spread_over_four_screens(client, sophie, monkeypatch):
+    _with_programme(monkeypatch)
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_catalogue_dispatch):
+        response = client.get(reverse("supply_chain:supplier_detail", args=[1]))
+    body = response.content.decode()
+    assert response.status_code == 200
+    for heading in ("What they supply", "What we asked them for", "What they quoted", "Orders with them"):
+        assert heading in body
+    assert reverse("supply_chain:procurement_quote_detail", args=[10]) in body
+
+
+def test_a_supplier_that_is_not_on_file_is_a_404(client, sophie, monkeypatch):
+    _with_programme(monkeypatch)
+
+    def _dispatch(name, access, payload):
+        if name == "supplier_get":
+            return None
+        return _catalogue_dispatch(name, access, payload)
+
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_dispatch):
+        response = client.get(reverse("supply_chain:supplier_detail", args=[999]))
+    assert response.status_code == 404
+
+
+def test_the_new_pages_do_not_500_with_no_programme_selected(client, sophie):
+    """Same guard as finding 3, for the three routes added with the
+    click-through. Each calls programme-scoped operations, so an unguarded
+    one raises deep in SupplyDataAccess rather than saying to pick a
+    programme."""
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_no_programme_dispatch):
+        for url in (
+            reverse("supply_chain:suppliers"),
+            reverse("supply_chain:supplier_detail", args=[1]),
+            reverse("supply_chain:item_detail", args=[7]),
+            reverse("supply_chain:product_detail", args=["rutf"]),
+        ):
+            assert client.get(url).status_code == 200, url
+
+
+def test_the_round_detail_page_links_each_supplier_it_names(client, sophie):
+    """Both tables on it name a supplier, and neither was a link. Rendered
+    here rather than trusted: `{% url %}` with a missing id is a 500, not a
+    missing link, so an untested link is worse than none."""
+    responses = {
+        "round_get": {"id": 5, "label": "Round 1", "status": "open", "lines": [{"commodity_slug": "rutf"}]},
+        "outreach_list": [{"id": 1, "round_id": 5, "supplier_id": 1, "sent_on": "2026-04-28", "responded": False}],
+        "quote_list": [QUOTE],
+        "supplier_list": [SUPPLIER],
+    }
+    with patch(
+        "connect_labs.supply_chain.procurement.views.call_operation",
+        side_effect=lambda name, access, payload: responses[name],
+    ):
+        response = client.get(reverse("supply_chain:procurement_round_detail", args=[5]))
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert reverse("supply_chain:supplier_detail", args=[1]) in body
+
+
+def test_an_order_links_out_to_the_supplier_it_is_with(client, sophie, monkeypatch):
+    _with_programme(monkeypatch)
+    contract = {
+        "id": 3,
+        "supplier_id": 1,
+        "commodity_slug": "rutf",
+        "buyer_of_record": "partner_org",
+        "buyer_org_id": 2,
+        "status": "placed",
+        "currency": "USD",
+        "reference": "PO-114",
+        "duty_relief_claimed": False,
+        "source": "we_recorded",
+        "witnessed": True,
+    }
+    responses = {
+        "contract_get": contract,
+        "contract_landed_cost": {"buyers": [], "landed_total": None},
+        "contract_match": {"lines": [], "payable_now": None},
+        "shipment_list": [],
+        "receipt_list": [],
+        "invoice_list": [],
+        "document_list": [],
+        "party_list": [{"id": 2, "name": "Dimagi", "slug": "dimagi"}],
+        "supplier_list": [SUPPLIER],
+    }
+    with patch(
+        "connect_labs.supply_chain.views.call_operation",
+        side_effect=lambda name, access, payload: responses[name],
+    ):
+        response = client.get(reverse("supply_chain:order_detail", args=[3]))
+    assert response.status_code == 200
+    assert reverse("supply_chain:supplier_detail", args=[1]) in response.content.decode()

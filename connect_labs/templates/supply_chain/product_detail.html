@@ -1,0 +1,319 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+One product: the specification, the manufacturers' versions of it, and
+everything this programme has done against it.
+
+The order is the buyer's question, not the schema's. "What must it be" first,
+because it decides everything below; then who can supply it; then what they
+charged; then what we ordered. Stock is deliberately absent -- a balance
+belongs to a trade item, since two manufacturers' cartons hold different
+numbers of sachets and adding them needs the pack spec.
+{% endcomment %}
+
+{% block supply_content %}
+
+<nav class="text-sm text-gray-500 mb-3">
+  <a href="{% url 'supply_chain:catalogue' %}" class="text-brand-indigo hover:underline">Catalogue</a>
+  <span class="mx-1.5 text-gray-300">/</span>
+  <span class="text-gray-700">{{ product.name }}</span>
+</nav>
+
+<div class="flex flex-wrap items-start justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{{ product.name }}</h1>
+    <p class="text-sm text-gray-600 mt-1">
+      <code class="text-xs bg-gray-50 border border-brand-border-light rounded px-1.5 py-0.5">{{ product.slug }}</code>
+      {% if product.category %}<span class="ml-1">{{ product.category|humanise }}</span>{% endif %}
+      · a specification, not something you can order
+    </p>
+  </div>
+  <span class="text-sm text-gray-500">
+    {{ product.items|length }} trade item{{ product.items|length|pluralize }}
+  </span>
+</div>
+
+{% comment %} ---- the specification ---- {% endcomment %}
+<div class="bg-white border border-brand-border-light rounded-lg mb-6">
+  <div class="px-5 py-4">
+    <h2 class="text-base font-semibold text-gray-900">What it must be</h2>
+    <dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-3 mt-3">
+      <div>
+        <dt class="text-[11px] text-gray-500">Unit ladder</dt>
+        <dd class="text-sm mt-0.5 {% if product.base_per_pack %}text-gray-900{% else %}text-message-warning-text{% endif %}">
+          {% if product.base_per_pack %}{{ product.base_per_pack }} {{ product.base_unit }}s / {{ product.pack_unit }}
+          {% else %}not stated{% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt class="text-[11px] text-gray-500">Unit weight</dt>
+        <dd class="text-sm mt-0.5 {% if product.base_unit_grams %}text-gray-900{% else %}text-message-warning-text{% endif %}">
+          {% if product.base_unit_grams %}{{ product.base_unit_grams }} g{% else %}not stated{% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt class="text-[11px] text-gray-500">Minimum shelf life</dt>
+        <dd class="text-sm mt-0.5 {% if product.shelf_life_months_minimum %}text-gray-900{% else %}text-message-warning-text{% endif %}">
+          {% if product.shelf_life_months_minimum %}{{ product.shelf_life_months_minimum }} months{% else %}not stated{% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt class="text-[11px] text-gray-500">UNICEF material no.</dt>
+        <dd class="text-sm mt-0.5 tabular-nums {% if product.unicef_material_number %}text-gray-900{% else %}text-gray-400{% endif %}">
+          {{ product.unicef_material_number|default:"not recorded" }}
+        </dd>
+      </div>
+      <div class="col-span-2 sm:col-span-3 lg:col-span-1">
+        <dt class="text-[11px] text-gray-500">Specification</dt>
+        <dd class="text-sm mt-0.5 {% if product.spec_reference %}text-gray-900{% else %}text-gray-400{% endif %}">
+          {{ product.spec_reference|default:"no reference recorded" }}
+        </dd>
+      </div>
+    </dl>
+
+    {% if product.spec_requirements %}
+      <div class="mt-4">
+        <div class="text-[11px] text-gray-500">Requirements every trade item is checked against</div>
+        <ul class="text-sm text-gray-600 list-disc list-inside mt-1">
+          {% for requirement in product.spec_requirements %}
+            <li>
+              {{ requirement.field }} {{ requirement.operator }} {{ requirement.value }}{{ requirement.unit }}
+              {% if requirement.rationale %}<span class="text-gray-400">— {{ requirement.rationale }}</span>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    {% if product.course_applies %}
+      {% if product.has_course_definition %}
+        <p class="mt-4 text-sm text-gray-700">
+          <span class="text-gray-500">Ration table</span>
+          {{ product.course_definition.base_units_per_course }} {{ product.base_unit }}s per course
+          {% if product.course_definition.source %}<span class="text-gray-500">({{ product.course_definition.source }})</span>{% endif %}
+        </p>
+      {% else %}
+        <div class="mt-4 rounded-md bg-message-warning border border-message-warning-border/50 px-3 py-2.5">
+          <p class="text-sm font-medium text-message-warning-text">No ration table set</p>
+          <p class="text-sm text-message-warning-text/90 mt-0.5 max-w-2xl">
+            Units per day and days per course is this programme's treatment
+            protocol, not part of the specification — so cost per course and
+            cost per child stay unconfirmed until it is set. Nobody outside
+            can answer it.
+          </p>
+        </div>
+      {% endif %}
+    {% endif %}
+
+    {% if product.pack_values|length > 1 or product.weight_values|length > 1 %}
+      <div class="mt-4 text-sm text-orange-800 bg-orange-50 border border-orange-200 rounded px-3 py-2">
+        {% if product.pack_values|length > 1 %}
+          Its trade items are packed {{ product.pack_values|join:" and " }} to the {{ product.pack_unit }}.
+        {% endif %}
+        {% if product.weight_values|length > 1 %}
+          Their unit weights differ: {{ product.weight_values|join:" g and " }} g.
+        {% endif %}
+        A single per&#8209;{{ product.base_unit }} figure across them is not one number.
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% comment %} ---- the orderable versions ---- {% endcomment %}
+<div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
+  <div class="px-5 py-4 border-b border-brand-border-light">
+    <h2 class="text-base font-semibold text-gray-900">What you can actually order</h2>
+    <p class="text-sm text-gray-500 mt-0.5">
+      One row per manufacturer's version. Only these can be quoted against,
+      shipped, or counted.
+    </p>
+  </div>
+  {% if product.items %}
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+      <table class="min-w-[40rem] w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+          <tr>
+            <th class="text-left px-4 py-2">Trade item</th>
+            <th class="text-left px-4 py-2">Manufacturer</th>
+            <th class="text-left px-4 py-2">Packed</th>
+            <th class="text-left px-4 py-2">Unit weight</th>
+            <th class="text-left px-4 py-2">Shelf life</th>
+            <th class="text-left px-4 py-2">Against the spec</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for item in product.items %}
+            <tr class="{% if item.pack_disagrees_with_siblings or item.weight_disagrees_with_siblings %}bg-amber-50{% endif %}">
+              <td class="px-4 py-2.5">
+                <a class="font-medium text-brand-indigo hover:underline"
+                   href="{% url 'supply_chain:item_detail' item.id %}">{{ item.name }}</a>
+                <div class="text-xs text-gray-500">{{ item.sku }}</div>
+              </td>
+              <td class="px-4 py-2.5 text-gray-700">{{ item.manufacturer|default:"—" }}</td>
+              <td class="px-4 py-2.5 tabular-nums">
+                {% if item.base_per_pack %}{{ item.base_per_pack }} / {{ item.pack_unit|default:product.pack_unit }}
+                {% else %}<span class="text-amber-800 text-xs">not stated</span>{% endif %}
+              </td>
+              <td class="px-4 py-2.5 tabular-nums">
+                {% if item.base_unit_grams %}{{ item.base_unit_grams }} g{% else %}<span class="text-amber-800 text-xs">not stated</span>{% endif %}
+              </td>
+              <td class="px-4 py-2.5 tabular-nums text-gray-600">
+                {% if item.shelf_life_months %}{{ item.shelf_life_months }} mo{% else %}—{% endif %}
+              </td>
+              <td class="px-4 py-2.5">
+                {% if "fail" in item.spec_verdict %}
+                  <span class="text-xs font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">{{ item.spec_verdict }}</span>
+                {% elif "not stated" in item.spec_verdict %}
+                  <span class="text-xs font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">{{ item.spec_verdict }}</span>
+                {% elif "No requirements" in item.spec_verdict %}
+                  <span class="text-xs text-gray-400">{{ item.spec_verdict }}</span>
+                {% else %}
+                  <span class="text-xs font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">{{ item.spec_verdict }}</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="px-5 py-5 text-sm text-gray-500 max-w-2xl">
+      No trade items yet. Nothing can be ordered against a product until at
+      least one manufacturer's version of it is on file, and a quote naming no
+      trade item cannot be turned into a per&#8209;{{ product.base_unit|default:"unit" }} price.
+    </p>
+  {% endif %}
+</div>
+
+{% if not has_program_context %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4">
+    <p class="text-sm text-message-warning-text">
+      Choose a programme to see who has quoted this and what was ordered.
+    </p>
+  </div>
+{% else %}
+
+  <div class="mb-6">
+    {% include "supply_chain/_supply_base.html" with scope_note="across this programme's rounds" %}
+  </div>
+
+  {% comment %} ---- what it has cost ---- {% endcomment %}
+  <div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
+    <div class="px-5 py-4 border-b border-brand-border-light">
+      <h2 class="text-base font-semibold text-gray-900">What has been quoted</h2>
+      <p class="text-sm text-gray-500 mt-0.5">
+        As each supplier stated it, on their own terms — not normalised. Two
+        prices here are only comparable once both name a pack specification,
+        which is what the round's comparison does.
+      </p>
+    </div>
+    {% if quotes %}
+      <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+        <table class="min-w-[40rem] w-full text-sm">
+          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+            <tr>
+              <th class="text-left px-4 py-2">Supplier</th>
+              <th class="text-left px-4 py-2">As quoted</th>
+              <th class="text-left px-4 py-2">Trade item</th>
+              <th class="text-left px-4 py-2">Round</th>
+              <th class="text-left px-4 py-2">Received</th>
+              <th class="text-left px-4 py-2">Standing</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for quote in quotes %}
+              <tr>
+                <td class="px-4 py-2.5">
+                  <a class="text-brand-indigo hover:underline"
+                     href="{% url 'supply_chain:supplier_detail' quote.supplier_id %}">{{ suppliers|dictkey:quote.supplier_id|dictkey:"name"|default:"—" }}</a>
+                </td>
+                <td class="px-4 py-2.5 tabular-nums">
+                  <a class="text-brand-indigo hover:underline"
+                     href="{% url 'supply_chain:procurement_quote_detail' quote.id %}">
+                    {% if quote.as_quoted_amount %}{{ quote.as_quoted_currency }} {{ quote.as_quoted_amount }}{% else %}no price{% endif %}
+                  </a>
+                  <div class="text-xs text-gray-500">{{ quote.as_quoted_unit|humanise|default:"basis not stated" }}</div>
+                </td>
+                <td class="px-4 py-2.5">
+                  {% if quote.item_id %}
+                    <a class="text-brand-indigo hover:underline"
+                       href="{% url 'supply_chain:item_detail' quote.item_id %}">{{ items_by_id|dictkey:quote.item_id|dictkey:"sku" }}</a>
+                  {% else %}
+                    <span class="text-xs text-amber-800">none named</span>
+                  {% endif %}
+                </td>
+                <td class="px-4 py-2.5">
+                  <a class="text-brand-indigo hover:underline"
+                     href="{% url 'supply_chain:procurement_round_detail' quote.round_id %}">{{ rounds|dictkey:quote.round_id|dictkey:"label"|default:quote.round_id }}</a>
+                </td>
+                <td class="px-4 py-2.5 text-gray-600">{{ quote.received_on|default:"—" }}</td>
+                <td class="px-4 py-2.5">
+                  {% if quote.voided %}<span class="text-xs text-red-700">voided</span>
+                  {% elif quote.superseded_by_quote_id %}<span class="text-xs text-amber-800">superseded</span>
+                  {% else %}<span class="text-xs text-teal-700">standing</span>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="px-5 py-5 text-sm text-gray-500">No quotes recorded against this product yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+      <div class="px-5 py-4 border-b border-brand-border-light">
+        <h2 class="text-base font-semibold text-gray-900">Sourced in</h2>
+      </div>
+      {% if sourced_in %}
+        <ul class="divide-y divide-gray-100">
+          {% for round in sourced_in %}
+            <li class="px-5 py-3 text-sm">
+              <a class="text-brand-indigo hover:underline"
+                 href="{% url 'supply_chain:procurement_round_detail' round.id %}">{{ round.label }}</a>
+              <span class="text-gray-500">· {{ round.status }}</span>
+              {% for line in round.lines %}
+                {% if line.commodity_slug == product.slug and line.quantity %}
+                  <div class="text-xs text-gray-500">
+                    {{ line.quantity }} {{ line.quantity_unit|humanise }} sought
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="px-5 py-5 text-sm text-gray-500">No round has asked for this yet.</p>
+      {% endif %}
+    </div>
+
+    <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+      <div class="px-5 py-4 border-b border-brand-border-light">
+        <h2 class="text-base font-semibold text-gray-900">Ordered</h2>
+      </div>
+      {% if contracts %}
+        <ul class="divide-y divide-gray-100">
+          {% for contract in contracts %}
+            <li class="px-5 py-3 text-sm">
+              <a class="text-brand-indigo hover:underline"
+                 href="{% url 'supply_chain:order_detail' contract.id %}">{{ contract.reference|default:"contract" }} {{ contract.id }}</a>
+              <span class="text-gray-500">· {{ contract.status|humanise }}</span>
+              <div class="text-xs text-gray-500">
+                {% if contract.quantity %}{{ contract.quantity }} {{ contract.quantity_unit|humanise }}{% endif %}
+                {% if contract.unit_price %}at {{ contract.currency }} {{ contract.unit_price }}{% endif %}
+                · bought by {{ contract.buyer_of_record|humanise }}
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="px-5 py-5 text-sm text-gray-500">Nothing contracted against this product yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+{% endif %}
+{% endblock %}

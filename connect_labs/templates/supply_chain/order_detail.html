@@ -21,7 +21,8 @@ figure here can go stale.
     {{ contract.reference|default:"no reference" }}
   </div>
   <h2 class="text-lg font-semibold text-brand-indigo">
-    {{ suppliers|dictkey:contract.supplier_id|dictkey:"name" }} ·
+    <a href="{% url 'supply_chain:supplier_detail' contract.supplier_id %}"
+       class="text-brand-indigo hover:underline">{{ suppliers|dictkey:contract.supplier_id|dictkey:"name" }}</a> ·
     {{ contract.quantity }} {{ contract.quantity_unit }}
   </h2>
   <p class="text-sm text-gray-600">
