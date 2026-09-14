@@ -29,6 +29,26 @@ class OperationBase(TemplateView):
         return context
 
 
+def newest_standing_first(quotes):
+    """Quotes ordered as a reader scans them: what stands, then what does not.
+
+    `quote_list` comes back newest-created first, which put a withdrawn
+    duplicate above the quote that replaced it -- so the first price on the
+    page was one that no longer applies. Two stable passes rather than one
+    compound key: sort by date, then by standing, and Python's stable sort
+    keeps the dates in order inside each group.
+    """
+
+    def standing(quote):
+        if quote.get("voided"):
+            return 2
+        return 1 if quote.get("superseded_by_quote_id") else 0
+
+    ordered = sorted(quotes, key=lambda q: q.get("received_on") or "", reverse=True)
+    ordered.sort(key=standing)
+    return ordered
+
+
 def annotate_product(product, own_items):
     """Hang a product's trade items off it, each measured against its spec.
 
@@ -75,6 +95,13 @@ def annotate_product(product, own_items):
     # will never have one. Same rule as the check, from the same place, so the
     # page and the feed cannot disagree about whether something is missing.
     product["course_applies"] = course_applies_to_category(product.get("category"))
+    # Same reasoning one field over. A height board has no gram weight per
+    # unit and does not expire, so amber "not stated" against those was a
+    # warning nobody could ever close -- and a permanent warning teaches a
+    # reader to stop reading warnings, which is what it costs. Only
+    # `equipment`: a diagnostic or a consumable genuinely can expire, so those
+    # keep the amber.
+    product["weight_and_shelf_life_apply"] = product.get("category") != "equipment"
     return product
 
 
@@ -355,7 +382,7 @@ class ProductDetailView(OperationBase):
             for r in context["rounds"].values()
             if any((line or {}).get("commodity_slug") == slug for line in (r.get("lines") or []))
         ]
-        context["quotes"] = [q for q in self.op("quote_list") if q["commodity_slug"] == slug]
+        context["quotes"] = newest_standing_first([q for q in self.op("quote_list") if q["commodity_slug"] == slug])
         context["contracts"] = [c for c in self.op("contract_list") if c["commodity_slug"] == slug]
         context["items_by_id"] = {i["id"]: i for i in items}
         return context
@@ -397,7 +424,7 @@ class ItemDetailView(OperationBase):
         )
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
         context["rounds"] = {r["id"]: r for r in self.op("round_list")}
-        context["quotes"] = [q for q in self.op("quote_list") if q["item_id"] == item["id"]]
+        context["quotes"] = newest_standing_first([q for q in self.op("quote_list") if q["item_id"] == item["id"]])
         context["contracts"] = [c for c in self.op("contract_list") if c["item_id"] == item["id"]]
         context["documents"] = self.op("document_list", item_id=item["id"])
         # Stock is per trade item, never per product: two manufacturers' RUTF
@@ -492,7 +519,7 @@ class SupplierDetailView(OperationBase):
                     "unanswered": len((detail or {}).get("missing") or []),
                 }
             )
-        context["quotes"] = quotes
+        context["quotes"] = newest_standing_first(quotes)
 
         context["awards"] = [a for a in self.op("award_list") if a["supplier_id"] == supplier_id]
 

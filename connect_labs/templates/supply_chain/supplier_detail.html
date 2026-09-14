@@ -194,7 +194,7 @@ four screens and an id held in your head.
               </td>
               <td class="px-4 py-2.5">
                 <a class="text-brand-indigo hover:underline"
-                   href="{% url 'supply_chain:product_detail' quote.commodity_slug %}">{{ quote.commodity_slug|humanise }}</a>
+                   href="{% url 'supply_chain:product_detail' quote.commodity_slug %}">{{ commodities|dictkey:quote.commodity_slug|dictkey:"name"|default:quote.commodity_slug }}</a>
                 {% if quote.item_id %}
                   <div class="text-xs">
                     <a class="text-brand-indigo hover:underline"

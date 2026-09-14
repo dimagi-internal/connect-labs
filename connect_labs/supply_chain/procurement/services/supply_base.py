@@ -260,7 +260,10 @@ def supply_base(
             supplier_id,
             Evidence(
                 kind="named_as_manufacturer",
-                detail=f"named as the manufacturer of {item.sku}",
+                # The kind is the sentence; the detail is which trade item it
+                # came off. Spelling it out again rendered as "Named as the
+                # manufacturer  named as the manufacturer of RUTF-...".
+                detail=item.sku,
                 item_id=item.pk,
             ),
         )
