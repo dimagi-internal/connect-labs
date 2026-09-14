@@ -39,6 +39,25 @@ _PARTY_DATA = _data_with(
 
 
 @register_operation(
+    name="org_merge",
+    summary=(
+        "Merge two organisation rows that turn out to be one organisation: every reference moves to "
+        "the one you keep, the merged-away slug is kept as an alias so a lookup by the old name still "
+        "finds the right body, and the empty row is deleted. Reconciliation REPORTS duplicates rather "
+        "than merging them, because folding two histories on a resemblance is not automatic — this is "
+        "the deliberate act after a person has decided. Refused when the two are linked to different "
+        "Connect organisations, which is positive evidence they are not one body."
+    ),
+    input_schema=obj({"keep_id": ID, "merge_id": ID}, required=("keep_id", "merge_id")),
+    is_write=True,
+)
+def org_merge(access, keep_id, merge_id):
+    from connect_labs.labs.org_merge import merge_orgs
+
+    return merge_orgs(keep_id=keep_id, merge_id=merge_id)
+
+
+@register_operation(
     name="party_list",
     summary=(
         "List the organisations that can act in this programme's supply chain — us, "
