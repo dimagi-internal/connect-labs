@@ -54,6 +54,35 @@ class TestBuildingsWithinWard:
     def test_empty_buildings_returns_empty(self):
         assert gaps.buildings_within_ward(object(), _buildings_df([])).empty
 
+    def test_pre_built_buildings_are_filtered_by_confidence_if_present(self, monkeypatch):
+        # Real gap this fixes: an uploaded frame's min_confidence used to be
+        # silently ignored entirely (only fetch_buildings honored it) --
+        # confirmed live this session that a reviewer's optional confidence
+        # column had zero effect on either the gap cells or the map's
+        # uploaded-building dots.
+        def boom(*a, **k):
+            raise AssertionError("fetch_buildings should not be called when buildings= is given")
+
+        monkeypatch.setattr(gaps, "fetch_buildings", boom)
+        buildings = pd.DataFrame(
+            {
+                "lon": [0.001, 0.002, 0.003],
+                "lat": [0.001, 0.002, 0.003],
+                "confidence": [0.9, 0.3, None],
+            }
+        )
+        result = gaps.buildings_within_ward(shape(_WARD_BOUNDARY), buildings, min_confidence=0.5)
+        # Kept: 0.9 (above threshold) and None (nothing to compare, kept
+        # per the same "unknown confidence isn't disqualifying" convention
+        # _apply_filters uses for a fetched frame) -- dropped: 0.3.
+        assert sorted(result["lon"]) == [0.001, 0.003]
+
+    def test_pre_built_buildings_without_a_confidence_column_are_unaffected(self, monkeypatch):
+        monkeypatch.setattr(gaps, "fetch_buildings", lambda *a, **k: (_ for _ in ()).throw(AssertionError()))
+        buildings = _buildings_df([(0.001, 0.001), (0.002, 0.002)]).drop(columns=["confidence"])
+        result = gaps.buildings_within_ward(shape(_WARD_BOUNDARY), buildings, min_confidence=0.9)
+        assert len(result) == 2
+
 
 class TestBuildingsNotCovered:
     def test_no_existing_boundaries_returns_everything(self, monkeypatch):
