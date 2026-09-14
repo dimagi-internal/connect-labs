@@ -455,7 +455,8 @@ function WorkflowUI({
         {
           name: 'Visit type',
           def: 'Which visit-type form was submitted.',
-          field: 'form_name (form.@name) -- one of: "ANC Visit ", "Post delivery visit", "1 Week Visit", "1 Month Visit", "3 Month Visit", "6 Month Visit"',
+          field:
+            'form_name (form.@name) -- one of: "ANC Visit ", "Post delivery visit", "1 Week Visit", "1 Month Visit", "3 Month Visit", "6 Month Visit"',
         },
         {
           name: 'Visit #',
