@@ -9,7 +9,10 @@
       <h1 class="text-2xl font-bold text-gray-900">CHC Mop-up</h1>
       <p class="text-sm text-gray-500">Program #{{ program_id }} — review past mop-up runs or start a new one.</p>
     </div>
-    <a href="{{ setup_url }}" class="button primary-dark">Start new mop-up</a>
+    <div class="text-right space-y-2">
+      <a href="{{ setup_url }}" class="button primary-dark block">Start new mop-up</a>
+      <button type="button" id="delete-selected-runs" class="button outline-style" disabled>Delete selected</button>
+    </div>
   </div>
 
   <section class="space-y-2">
@@ -18,6 +21,7 @@
       <table class="w-full text-sm border border-gray-200 rounded">
         <thead>
           <tr class="text-left text-gray-500 bg-gray-50">
+            <th class="p-2"><input type="checkbox" id="select-all-runs"></th>
             <th class="p-2">Run</th>
             <th class="p-2">Opportunity</th>
             <th class="p-2">Status</th>
@@ -25,9 +29,10 @@
             <th class="p-2"></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="run-rows">
           {% for run in runs %}
-            <tr class="border-t border-gray-100">
+            <tr class="border-t border-gray-100" data-run-id="{{ run.id }}">
+              <td class="p-2"><input type="checkbox" class="run-checkbox" value="{{ run.id }}"></td>
               <td class="p-2">{{ run.name }}</td>
               <td class="p-2">{{ run.opportunity_name }}</td>
               <td class="p-2 capitalize">{{ run.status }}</td>
@@ -42,4 +47,17 @@
     {% endif %}
   </section>
 </div>
+{% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+<script src="{% static 'mopup/program_home.js' %}"></script>
+<script>
+(function () {
+  MopupProgramHome.init({
+    deleteRunsUrl: "{{ delete_runs_url }}",
+    csrfToken: "{{ csrf_token }}",
+  });
+})();
+</script>
 {% endblock %}

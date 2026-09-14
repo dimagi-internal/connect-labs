@@ -35,7 +35,7 @@ from connect_labs.mopup.core.candidates import (
     gap_summary_by_ward,
     summarize_candidates_by_ward,
 )
-from connect_labs.mopup.core.data_access import MopupRunDataAccess
+from connect_labs.mopup.core.data_access import MopupRunDataAccess, MopupRunNotFoundError
 from connect_labs.mopup.core.models import STATUS_LOCKED
 from connect_labs.mopup.core.work_areas import fetch_connect_implementation_areas, list_work_areas, summarize_wards
 
@@ -255,7 +255,43 @@ class MopupProgramHomeView(LoginRequiredMixin, TemplateView):
             )
         runs.sort(key=lambda r: r["created_at"], reverse=True)
         context["runs"] = runs
+        context["delete_runs_url"] = reverse("mopup:delete_runs", args=[program_id])
         return context
+
+
+class MopupDeleteRunsView(LoginRequiredMixin, View):
+    """Phase 1's "Delete selected" action — a real, unrecoverable hard
+    delete (see `MopupRunDataAccess.delete_run`'s docstring for why a
+    single `delete_record` call is a complete cleanup: nothing about a run
+    lives anywhere except its own JSON record).
+
+    Accepts a JSON body `{"run_ids": [...]}`. Each id is deleted
+    independently — one bad id (already deleted, or belonging to another
+    program) doesn't block the rest, since a multi-select delete should
+    succeed for everything it validly can. Returns which ids were actually
+    deleted vs. not found, so the caller can report a partial failure
+    rather than silently drop it."""
+
+    def post(self, request, program_id):
+        da = MopupRunDataAccess(program_id, request=request)
+        try:
+            payload = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        run_ids = payload.get("run_ids")
+        if not isinstance(run_ids, list) or not run_ids:
+            return JsonResponse({"status": "error", "detail": "run_ids must be a non-empty list."}, status=400)
+
+        deleted, not_found = [], []
+        for run_id in run_ids:
+            try:
+                da.delete_run(run_id)
+                deleted.append(run_id)
+            except (MopupRunNotFoundError, TypeError, ValueError):
+                not_found.append(run_id)
+
+        return JsonResponse({"status": "ok", "deleted": deleted, "not_found": not_found})
 
 
 class MopupSetupView(LoginRequiredMixin, TemplateView):
