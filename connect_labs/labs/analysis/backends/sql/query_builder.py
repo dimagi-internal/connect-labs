@@ -346,6 +346,43 @@ def _paths_to_coalesce_sql(paths: list[str], column: str = "form_json") -> str:
     return f"COALESCE({', '.join(sql_paths)})"
 
 
+_BASE_FILTER_KEYS = frozenset({"entity_id", "status", "flagged", "date_from", "date_to"})
+
+
+def _field_filter_predicates(config: AnalysisPipelineConfig) -> list[str]:
+    """WHERE predicates for `config.filters` keys that name a declared field
+    rather than one of the base-column keys handled directly by
+    `_visit_filter_predicates`/`_entity_stage_filters_where`.
+
+    Those two functions used to silently drop any filter key outside their
+    small whitelist -- a pipeline schema filtering on `{"ward": ["Gwiwa"]}`
+    (a real FieldComputation extracted from a JSON path, not a base column)
+    compiled to a WHERE clause that never mentioned `ward` at all, and the
+    query still ran and returned rows (just unfiltered by ward), or zero rows
+    once combined with other conditions -- either way indistinguishable from
+    "no matching data," which it wasn't. Build the predicate from the exact
+    same extraction SQL a SELECT of that field would use (`_field_value_sql`),
+    so filtering on a field restricts rows the way reading that field's value
+    would lead you to expect.
+
+    A key matching no declared field is left for the caller to ignore, same
+    as before this existed -- this only fixes the case where the key WAS a
+    real field and its filter was being silently no-op'd.
+    """
+    predicates: list[str] = []
+    for key, value in config.filters.items():
+        if key in _BASE_FILTER_KEYS:
+            continue
+        field_comp = config.get_field(key)
+        if field_comp is None:
+            continue
+        value_sql = _field_value_sql(field_comp)
+        values = value if isinstance(value, list) else [value]
+        value_list = ", ".join(f"'{_sql_str(v)}'" for v in values)
+        predicates.append(f"{value_sql} IN ({value_list})")
+    return predicates
+
+
 def _visit_filter_predicates(config: AnalysisPipelineConfig) -> list[str]:
     """The row filters a schema's `filters` declares: every predicate in a visit
     extraction's WHERE except its pipeline scope.
@@ -375,6 +412,7 @@ def _visit_filter_predicates(config: AnalysisPipelineConfig) -> list[str]:
         predicates.append(f"visit_date >= '{_sql_str(config.filters['date_from'])}'")
     if "date_to" in config.filters:
         predicates.append(f"visit_date <= '{_sql_str(config.filters['date_to'])}'")
+    predicates.extend(_field_filter_predicates(config))
     return predicates
 
 
@@ -1482,6 +1520,8 @@ def _entity_stage_filters_where(config: AnalysisPipelineConfig) -> list[str]:
 
     if "date_to" in config.filters:
         predicates.append(f"visit_date <= '{_sql_str(config.filters['date_to'])}'")
+
+    predicates.extend(_field_filter_predicates(config))
 
     return predicates
 
