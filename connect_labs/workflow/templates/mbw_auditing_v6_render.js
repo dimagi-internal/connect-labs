@@ -4689,7 +4689,7 @@ function WorkflowUI({
           },
           {
             name: '% Still Eligible',
-            def: 'Of eligible mothers, % who have missed fewer than 2 visits. Green ≥85%, yellow 50–84%, red <50%.',
+            def: 'Of eligible mothers, % who have missed fewer than 2 visits. Green ≥85%, yellow 50–84%, red <50%. Hidden (shown as "—") for an FLW with fewer than 10 eligible mothers, since the % is not statistically meaningful at that sample size.',
           },
           {
             name: 'EBF %',
@@ -4718,6 +4718,35 @@ function WorkflowUI({
         ],
       },
       {
+        title: 'Other Table Columns',
+        items: [
+          {
+            name: 'Last Active',
+            def: "The FLW's most recent activity date, as reported by Connect (not computed from this audit's visit data).",
+          },
+          {
+            name: '# Mothers',
+            def: 'Total mother cases currently assigned to the FLW. The number in parentheses is the subset still eligible (fewer than 2 missed visits), which feeds % Still Eligible.',
+          },
+          {
+            name: 'Task Triggered',
+            def: 'The date/time a follow-up task was created for this FLW in the current run (blank if no task has been triggered).',
+          },
+          {
+            name: 'Task (audit requirement)',
+            def: '"Task Required" is set automatically for every red-flagged FLW and cannot be waived. "Not Required" is a PM override for a yellow-flagged FLW, recorded with a reason.',
+          },
+          {
+            name: 'Task Status',
+            def: 'Lifecycle of an open follow-up task: "investigating" (default, task open) → "closed"/"completed" (shown with a green check once resolved). Only FLWs with a task go through this column.',
+          },
+          {
+            name: 'Notes',
+            def: 'Free-text PM notes attached to the FLW for this run, saved independently of task status.',
+          },
+        ],
+      },
+      {
         title: 'Performance Categories',
         items: [
           {
@@ -4731,6 +4760,50 @@ function WorkflowUI({
           {
             name: 'Suspension ✗',
             def: 'FLW did not improve sufficiently and is recommended for suspension.',
+          },
+        ],
+      },
+      {
+        title: 'Improvement in Audit Tab (Post-Task Metrics)',
+        body: "Tab 2 lists only FLWs with an open or resolved task in this run. Its metric columns are the same calculations as the Audit Report tab (GS Score, Follow-up Rate, etc.), but recomputed from \"Compute Post-Task Metrics\" using only visit data submitted after each FLW's task was triggered — so they show whether the FLW's work actually improved since being flagged, not their all-time average.",
+      },
+      {
+        title: 'Program Monitoring Tab',
+        body: 'Rolls the FLWs currently assigned to each performance category (Eligible for Renewal / Requires Improvement / Suspension / uncategorized) up into one row per category, using each FLW\'s most recently saved metrics.',
+        items: [
+          {
+            name: 'Total Mothers / Eligible at Reg / Still Eligible',
+            def: 'Sum of # Mothers, and of the eligible-at-registration and still-eligible counts, across every FLW in that category.',
+          },
+          {
+            name: '% Still Eligible',
+            def: 'Still Eligible ÷ Eligible at Reg for the category as a whole (green ≥85%, yellow 50–84%, red <50% — same thresholds as the per-FLW metric).',
+          },
+          {
+            name: '% Received 5+ Visits',
+            def: 'Share of mothers in the category whose FLW has logged 5 or more visits to them.',
+          },
+          {
+            name: 'Avg Follow-up % / Avg GS Score',
+            def: "Mean of each FLW's Follow-up Rate / GS Score within the category.",
+          },
+        ],
+      },
+      {
+        title: 'Top KPI Bar',
+        items: [
+          { name: 'FLWs', def: 'Total number of FLWs in this run.' },
+          {
+            name: 'Red ⚑ / Yellow ⚑',
+            def: 'Count of FLWs currently carrying a red or yellow flag (see Flag Types above).',
+          },
+          {
+            name: 'Tasks',
+            def: 'Count of FLWs with a follow-up task open or resolved in this run.',
+          },
+          {
+            name: 'Categorized',
+            def: 'FLWs with a final performance category set, out of the total — this must reach the total before the run can be concluded.',
           },
         ],
       },
@@ -4790,7 +4863,7 @@ function WorkflowUI({
     { id: 'audit', label: 'Audit Report', icon: 'fa-table' },
     { id: 'improvement', label: 'Improvement in Audit', icon: 'fa-chart-line' },
     { id: 'summary', label: 'Program monitoring', icon: 'fa-chart-area' },
-    { id: 'guide', label: 'Guide', icon: 'fa-book' },
+    { id: 'definitions', label: 'Definitions', icon: 'fa-book' },
   ];
 
   var notesFlwName = notesModal ? flwNameMap[notesModal] || notesModal : '';
