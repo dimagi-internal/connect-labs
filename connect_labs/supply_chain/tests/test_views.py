@@ -497,6 +497,19 @@ def test_no_view_mutates_a_record_outside_an_operation():
     assert not forbidden, f"a view mutates directly via {sorted(forbidden)}; call an operation"
 
 
+def flat(response) -> str:
+    """A response body with its whitespace collapsed.
+
+    Django keeps a template's own newlines and indentation inside a sentence,
+    so `"how many tablets a course is" in body` is false for markup that reads
+    exactly that way on screen. Asserting on the rendered words means
+    normalising first.
+    """
+    import re
+
+    return re.sub(r"\s+", " ", response.content.decode())
+
+
 def test_the_catalogue_says_a_product_with_no_ration_table_blocks_per_course_cost(client, sophie):
     """The gap is OURS and nobody outside can close it, so the page says so
     rather than leaving a blank where a figure would go."""
@@ -522,9 +535,15 @@ def test_the_catalogue_says_a_product_with_no_ration_table_blocks_per_course_cos
 
     with patch("connect_labs.supply_chain.views.call_operation", side_effect=_dispatch):
         response = client.get(reverse("supply_chain:catalogue"))
-    body = response.content.decode()
-    assert "No ration table" in body
-    assert "Nobody outside can answer it" in body
+    body = flat(response)
+    assert "No ration table set" in body
+    # The full "nobody outside can answer it" explanation moved to the
+    # product's own page: seven copies of it down one catalogue was the
+    # permanent noise that teaches a reader to skip warnings. What the
+    # catalogue must still say is that the gap blocks a figure, and that it is
+    # ours to close.
+    assert "cost per course and cost per child stay unconfirmed" in body
+    assert "someone here says how many sachets a course is" in body
 
 
 def test_the_catalogue_names_a_pack_disagreement_between_trade_items(client, sophie):
@@ -1067,3 +1086,76 @@ def test_an_order_links_out_to_the_supplier_it_is_with(client, sophie, monkeypat
         response = client.get(reverse("supply_chain:order_detail", args=[3]))
     assert response.status_code == 200
     assert reverse("supply_chain:supplier_detail", args=[1]) in response.content.decode()
+
+
+class TestReadingOrderAndDeadWarnings:
+    """Polish found by looking at the deployed pages rather than by reasoning
+    about them — which is the only way any of these four surfaced."""
+
+    def test_a_withdrawn_quote_never_sits_above_the_one_that_replaced_it(self):
+        from connect_labs.supply_chain.views import newest_standing_first
+
+        quotes = [
+            {"id": 6, "received_on": "2026-09-10", "voided": True, "superseded_by_quote_id": None},
+            {"id": 3, "received_on": "2026-09-10", "voided": False, "superseded_by_quote_id": None},
+            {"id": 1, "received_on": "2026-05-18", "voided": False, "superseded_by_quote_id": 2},
+            {"id": 2, "received_on": "2026-05-18", "voided": False, "superseded_by_quote_id": None},
+        ]
+        assert [q["id"] for q in newest_standing_first(quotes)] == [3, 2, 1, 6]
+
+    def test_equipment_is_not_warned_about_a_weight_and_an_expiry_it_cannot_have(self, client, sophie):
+        board = {
+            "slug": "height-board",
+            "name": "Height and length measuring board, child",
+            "category": "equipment",
+            "base_unit": "board",
+            "pack_unit": "unit",
+            "base_per_pack": 1,
+            "base_unit_grams": None,
+            "shelf_life_months_minimum": None,
+            "spec_requirements": [],
+            "course_definition": {},
+        }
+
+        def _dispatch(name, access, payload):
+            if name == "commodity_list":
+                return [board]
+            if name == "item_list":
+                return []
+            raise AssertionError(name)
+
+        with patch("connect_labs.supply_chain.views.call_operation", side_effect=_dispatch):
+            body = flat(client.get(reverse("supply_chain:catalogue")))
+        assert "does not expire" in body
+        assert "not applicable" in body
+        # And no ration-table warning either, which the category rule already
+        # handled -- pinned here so the two stay consistent.
+        assert "No ration table set" not in body
+        # "1 boards / unit" was the naive pluralisation.
+        assert "1 board / unit" in body
+
+    def test_a_ration_table_warning_uses_the_products_own_unit_noun(self, client, sophie):
+        """It said "sachets per day" against a box of tablets."""
+        tablets = {
+            "slug": "amoxicillin-dt-250",
+            "name": "Amoxicillin dispersible tablets, 250 mg",
+            "category": "antibiotic",
+            "base_unit": "tablet",
+            "pack_unit": "box",
+            "base_per_pack": 100,
+            "shelf_life_months_minimum": 24,
+            "spec_requirements": [],
+            "course_definition": {},
+        }
+
+        def _dispatch(name, access, payload):
+            if name == "commodity_list":
+                return [tablets]
+            if name == "item_list":
+                return []
+            raise AssertionError(name)
+
+        with patch("connect_labs.supply_chain.views.call_operation", side_effect=_dispatch):
+            body = flat(client.get(reverse("supply_chain:catalogue")))
+        assert "how many tablets a course is" in body
+        assert "sachets" not in body

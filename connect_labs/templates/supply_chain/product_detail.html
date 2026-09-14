@@ -42,20 +42,24 @@ numbers of sachets and adding them needs the pack spec.
       <div>
         <dt class="text-[11px] text-gray-500">Unit ladder</dt>
         <dd class="text-sm mt-0.5 {% if product.base_per_pack %}text-gray-900{% else %}text-message-warning-text{% endif %}">
-          {% if product.base_per_pack %}{{ product.base_per_pack }} {{ product.base_unit }}s / {{ product.pack_unit }}
+          {% if product.base_per_pack %}{{ product.base_per_pack }} {{ product.base_unit }}{{ product.base_per_pack|pluralize }} / {{ product.pack_unit }}
           {% else %}not stated{% endif %}
         </dd>
       </div>
       <div>
         <dt class="text-[11px] text-gray-500">Unit weight</dt>
-        <dd class="text-sm mt-0.5 {% if product.base_unit_grams %}text-gray-900{% else %}text-message-warning-text{% endif %}">
-          {% if product.base_unit_grams %}{{ product.base_unit_grams }} g{% else %}not stated{% endif %}
+        <dd class="text-sm mt-0.5 {% if product.base_unit_grams %}text-gray-900{% elif product.weight_and_shelf_life_apply %}text-message-warning-text{% else %}text-gray-400{% endif %}">
+          {% if product.base_unit_grams %}{{ product.base_unit_grams }} g
+          {% elif product.weight_and_shelf_life_apply %}not stated
+          {% else %}not applicable{% endif %}
         </dd>
       </div>
       <div>
         <dt class="text-[11px] text-gray-500">Minimum shelf life</dt>
-        <dd class="text-sm mt-0.5 {% if product.shelf_life_months_minimum %}text-gray-900{% else %}text-message-warning-text{% endif %}">
-          {% if product.shelf_life_months_minimum %}{{ product.shelf_life_months_minimum }} months{% else %}not stated{% endif %}
+        <dd class="text-sm mt-0.5 {% if product.shelf_life_months_minimum %}text-gray-900{% elif product.weight_and_shelf_life_apply %}text-message-warning-text{% else %}text-gray-400{% endif %}">
+          {% if product.shelf_life_months_minimum %}{{ product.shelf_life_months_minimum }} months
+          {% elif product.weight_and_shelf_life_apply %}not stated
+          {% else %}does not expire{% endif %}
         </dd>
       </div>
       <div>
@@ -97,10 +101,10 @@ numbers of sachets and adding them needs the pack spec.
         <div class="mt-4 rounded-md bg-message-warning border border-message-warning-border/50 px-3 py-2.5">
           <p class="text-sm font-medium text-message-warning-text">No ration table set</p>
           <p class="text-sm text-message-warning-text/90 mt-0.5 max-w-2xl">
-            Units per day and days per course is this programme's treatment
-            protocol, not part of the specification — so cost per course and
-            cost per child stay unconfirmed until it is set. Nobody outside
-            can answer it.
+            {{ product.base_unit|capfirst }}s per day and days per course is
+            this programme's treatment protocol, not part of the specification
+            — so cost per course and cost per child stay unconfirmed until it
+            is set. Nobody outside can answer it.
           </p>
         </div>
       {% endif %}
