@@ -125,7 +125,13 @@ The dashboard has three tabs:
 
 The **KMC Worker Review** page opens when you click a worker row on the KMC Programme Metrics report. It shows that worker's full caseload: each case's weight series, growth chart, and a set of live columns — danger signs, referrals, discharge, skin-to-skin, alive-at-last-visit, gain, rounded, and implausible.
 
-**If you previously saw cases listed but with empty dashes in every live column and a "No weighings recorded." message on the growth chart**, this was caused by a page error that was displaying as missing data rather than as a clear error message. The underlying data was always there. This has been corrected — each case now shows its full weight series and growth chart, and all live columns populate as expected. If a live data request does fail, the page will say so rather than showing an empty cohort.
+**If you previously saw cases listed but with empty dashes in every live column and a "No weighings recorded." message on the growth chart**, this was caused by issues with how the page retrieved per-case data. Three separate causes have now been identified and corrected:
+
+1. A page error was displaying as missing data rather than as a clear error message.
+2. Scheduled runs were recomputing data for all of the report's opportunities on every load and discarding the result, causing unnecessary load and collisions.
+3. Per-case detail data was being looked up in the wrong location — the page was not reading from the pipeline where the referenced data actually lives.
+
+With all three fixes in place, opening a case on the Worker Review page shows the baby's full weight series and growth chart, and all live columns — danger signs, referrals, discharge, skin-to-skin, alive-at-last-visit, gain, rounded, and implausible — populate as expected. The underlying data was always there; it was simply not being retrieved correctly. If a live data request does fail, the page will say so rather than showing an empty cohort.
 
 Two further improvements that you will notice on the Worker Review page:
 
@@ -203,15 +209,3 @@ A dedicated **Scheduled Workflows** page in **Connect Labs Admin** lists every s
 | Workflow | The workflow being scheduled |
 | Owner | Who set the schedule up |
 | Cadence | How often it runs |
-| Next run | When it will run next |
-| Last run status | Whether the most recent scheduled run succeeded |
-
-From this page, administrators can **Disable** or **Delete** any schedule with a single click.
-
-If a schedule can no longer run because the owner's login has expired, it shows **"Needs re-login"** and pauses itself automatically instead of failing silently. The owner will need to log back in, after which the schedule can be re-enabled.
-
----
-
-## Opening a Workflow Run from a Link
-
-If someone shares a direct link to a workflow run, the system will open it automatically — you do not need to select
