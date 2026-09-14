@@ -71,9 +71,14 @@ def buildings_within_ward(
 
     `buildings`, if given, is used instead of calling `fetch_buildings` —
     the seam Step 2's "upload your own building data" mode uses (see
-    `buildings_from_upload`). `min_confidence`/`sources` are ignored when
-    `buildings` is given (they're `fetch_buildings`-specific filters with no
-    meaning for an already-built frame).
+    `buildings_from_upload`). `sources` is ignored when `buildings` is given
+    (an uploaded file has no `dataset`/source concept — it's whatever the
+    reviewer supplied). `min_confidence`, if given AND the frame has its own
+    `confidence` column (uploads don't have to include one — see
+    `buildings_from_upload`), drops rows below it the same way
+    `microplans.core.footprints._apply_filters` does for a fetched frame; a
+    row with no confidence value is kept regardless (there's nothing to
+    compare against).
 
     Unlike `fetch_buildings` (which only ever returns buildings whose
     centroid falls inside `ward_boundary` to begin with — an Overture query
@@ -93,6 +98,10 @@ def buildings_within_ward(
         return fetch_buildings(ward_boundary, min_confidence=min_confidence, sources=sources)
     if buildings.empty:
         return buildings
+    if min_confidence is not None and "confidence" in buildings.columns:
+        buildings = buildings[buildings["confidence"].isna() | (buildings["confidence"] >= float(min_confidence))]
+        if buildings.empty:
+            return buildings
     prepared_ward = prep(ward_boundary)
     inside = [prepared_ward.contains(Point(lon, lat)) for lon, lat in zip(buildings["lon"], buildings["lat"])]
     return buildings[pd.Series(inside, index=buildings.index)]
@@ -254,9 +263,11 @@ def planning_gap_features(
     target-spread group for the ward.
 
     `min_confidence`/`sources` are Phase 2 Step 2's building-source controls,
-    passed straight through to `buildings_within_ward`/`fetch_buildings` —
-    ignored when `buildings` is given (Step 2's "upload your own" mode
-    already has its buildings; see `buildings_from_upload`).
+    passed straight through to `buildings_within_ward`/`fetch_buildings`.
+    `sources` is meaningless once `buildings` is given (Step 2's "upload
+    your own" mode already has its buildings; see `buildings_from_upload`) —
+    but `min_confidence` still applies to an uploaded frame's own
+    `confidence` column, if it has one (see `buildings_within_ward`).
     `min_buildings_per_cell` drops any occupied grid cell with fewer
     buildings than this before it becomes a candidate work area — `grid_clusters`
     itself has no such floor (every occupied cell is a cluster).
