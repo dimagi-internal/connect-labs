@@ -44,7 +44,10 @@
     <tbody class="divide-y divide-gray-200">
       {% for o in outreach %}
       <tr>
-        <td class="px-4 py-2 text-sm text-gray-900">{{ supplier_names|dictkey:o.supplier_id|default:"Supplier" }}</td>
+        <td class="px-4 py-2 text-sm">
+          <a href="{% url 'supply_chain:supplier_detail' o.supplier_id %}"
+             class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:o.supplier_id|default:"Supplier" }}</a>
+        </td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ o.sent_on|default:"—" }}</td>
         <td class="px-4 py-2 text-sm text-gray-600">
           {{ o.days_waiting|default_if_none:"—" }}

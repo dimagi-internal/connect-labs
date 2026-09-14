@@ -312,13 +312,3 @@ class QuoteEntryView(_Base):
 
         url = reverse("supply_chain:procurement_comparison", args=[created["round_id"]])
         return redirect(f"{url}?commodity={created['commodity_slug']}")
-
-
-class RegistriesView(_Base):
-    template_name = "supply_chain/procurement/registries.html"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["commodities"] = self.op("commodity_list")
-        context["suppliers"] = self.op("supplier_list")
-        return context

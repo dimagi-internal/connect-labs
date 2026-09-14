@@ -52,7 +52,8 @@
             {% endif %}
           </td>
           <td class="px-4 py-2.5 text-gray-700">
-            {{ suppliers|dictkey:contract.supplier_id|dictkey:"name"|default:contract.supplier_id }}
+            <a href="{% url 'supply_chain:supplier_detail' contract.supplier_id %}"
+               class="text-brand-indigo hover:underline">{{ suppliers|dictkey:contract.supplier_id|dictkey:"name"|default:contract.supplier_id }}</a>
           </td>
           <td class="px-4 py-2.5">
             <div class="text-gray-900">

@@ -47,14 +47,18 @@ of the reader who does not.
   <div class="bg-white border border-brand-border-light rounded-lg mb-4 overflow-hidden">
     <div class="px-5 py-4 border-b border-brand-border-light">
       <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 class="text-lg font-semibold text-gray-900">{{ product.name }}</h2>
+        <h2 class="text-lg font-semibold">
+          <a href="{% url 'supply_chain:product_detail' product.slug %}"
+             class="text-gray-900 hover:text-brand-indigo hover:underline">{{ product.name }}</a>
+        </h2>
         <code class="text-xs text-gray-500 bg-gray-50 border border-brand-border-light rounded px-1.5 py-0.5">{{ product.slug }}</code>
         {% if product.category %}
           <span class="text-xs text-gray-500">{{ product.category|humanise }}</span>
         {% endif %}
-        <span class="ml-auto text-xs font-medium {% if product.items %}text-gray-600{% else %}text-message-warning-text{% endif %}">
+        <a href="{% url 'supply_chain:product_detail' product.slug %}"
+           class="ml-auto text-xs font-medium hover:underline {% if product.items %}text-gray-600{% else %}text-message-warning-text{% endif %}">
           {{ product.items|length }} trade item{{ product.items|length|pluralize }}
-        </span>
+        </a>
       </div>
 
       {% comment %}
@@ -187,7 +191,8 @@ of the reader who does not.
           {% for item in product.items %}
             <tr class="{% if item.pack_disagrees_with_siblings or item.weight_disagrees_with_siblings %}bg-amber-50{% endif %}">
               <td class="px-4 py-2.5">
-                <div class="font-medium text-gray-900">{{ item.name }}</div>
+                <a href="{% url 'supply_chain:item_detail' item.id %}"
+                   class="font-medium text-brand-indigo hover:underline">{{ item.name }}</a>
                 <div class="text-xs text-gray-500">{{ item.sku }}</div>
               </td>
               <td class="px-4 py-2.5 text-gray-700">{{ item.manufacturer|default:"—" }}</td>
@@ -263,7 +268,12 @@ of the reader who does not.
       they are the right thing.
     </p>
     <ul class="text-sm mt-1 list-disc list-inside">
-      {% for item in orphan_items %}<li>{{ item.name }} ({{ item.sku }})</li>{% endfor %}
+      {% for item in orphan_items %}
+        <li>
+          <a href="{% url 'supply_chain:item_detail' item.id %}"
+             class="text-brand-indigo hover:underline">{{ item.name }}</a> ({{ item.sku }})
+        </li>
+      {% endfor %}
     </ul>
   </div>
 {% endif %}
