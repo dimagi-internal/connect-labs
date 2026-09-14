@@ -2,21 +2,30 @@
 - Sept 26").
 
 Sibling of flw_daily_summary_report.py (Program 217's CHC version) for a
-different app/case model. RUTF has no households-vs-children registration
-split, no MUAC/deworming age-eligibility split, and no work-area/ward concept
-(no CommCare HQ token needed at all here, unlike the CHC version) -- so this
-computes 3 indicators from a single "approved visits" connect_csv pipeline:
+different app/case model. RUTF has no work-area/ward concept at all (no
+CommCare HQ token needed here, unlike the CHC version) -- but it DOES have a
+households-vs-children split and a MUAC/visit-count concept, computed from a
+single "visits" connect_csv pipeline (any status -- approved-only subsets are
+derived in Python, mirroring Program 217's hsd_visits/approved_visits split
+from one fetch instead of two):
 
-    1. total_children_registered      ("Register a New Family" form)
-    2. total_sam_children_registered  ("Screening " form, rutf_enrollment=yes)
-    3. total_sam_followup_visits      ("Visit Form" submissions)
+    1. total_households_registered  ("Register a New Family" form)
+    2. total_children_registered    ("Screening " form, every submission)
+    3. total_sam_children_registered ("Screening " form, rutf_enrollment=yes)
+    4. total_children_muac_measured ("Screening " form, MUAC photo captured)
+    5. total_visits                 ("Visit Form" submissions, any status)
+    6. total_sam_followup_visits    ("Visit Form" submissions, approved only)
 
 See connect_labs/workflow/flw_daily_summary_compute_rutf.py for the pure
-computation, and that module's docstring for exactly how these 3 fields were
+computation, and that module's docstring for exactly how these fields were
 verified against real submitted RUTF data (not guessed from the blank app
 schema) -- via an existing pipeline built for the RUTF Internal Test
 opportunity (id 2092), "RUTF FLW Service Delivery Indicators" (pipeline id
-19854).
+19854), and by reading the RUTF app's own question list. In particular:
+"Register a New Family" registers a HOUSEHOLD and, via an internal repeat
+group, can register several children in one submission -- so a distinct count
+of THAT form is households, not children; "Screening " registers exactly one
+child per submission and is the real per-child signal.
 
 Runs on a schedule (WorkflowSchedule, daily) via run_default below, exactly
 like flw_daily_summary_report.py: no interactive review step, the run is
@@ -35,27 +44,41 @@ from __future__ import annotations
 
 PIPELINE_SCHEMAS = [
     {
-        "alias": "approved_visits",
-        "name": "Approved Visits (RUTF Daily Summary)",
+        "alias": "visits",
+        "name": "Visits (RUTF Daily Summary)",
         "description": (
-            "Every APPROVED form submission on the deliver unit, with the fields the RUTF FLW "
-            "Daily Summary Report needs: registrations, SAM enrollments, and follow-up visits."
+            "Every form submission on the deliver unit, ANY status, with the fields the RUTF FLW "
+            "Daily Summary Report needs: household/child registrations, SAM enrollments, MUAC "
+            "photos, and follow-up visits. Status filtering is done in Python per indicator, "
+            "mirroring Program 217's hsd_visits/approved_visits split but from one fetch."
         ),
         "schema": {
             "data_source": {"type": "connect_csv"},
             "grouping_key": "username",
             "terminal_stage": "visit_level",
-            "filters": {"status": ["approved"]},
+            "filters": {},
             "fields": [
                 {"name": "form_display_name", "path": "form.@name", "aggregation": "first"},
+                {
+                    "name": "status",
+                    "path": "status",
+                    "aggregation": "first",
+                    "description": "Raw visit-cache column, e.g. approved/pending/rejected/over_limit. Used "
+                    "to derive the approved-only subset in Python; NOT pre-filtered here so an any-status "
+                    "total (Total Visits) is also available from the same fetch.",
+                },
                 {"name": "time_start", "path": "form.meta.timeStart", "aggregation": "first"},
                 {
                     "name": "entity_id",
                     "path": "entity_id",
                     "aggregation": "first",
-                    "description": "The CommCare case this visit is against -- a raw column on the "
-                    "visit cache itself (not a form.* path). Null on a Screening submission that "
-                    "screened a child OUT (rutf_enrollment=no), since no case is opened in that case.",
+                    "description": "The CommCare case this visit is against -- a raw column on the visit "
+                    "cache itself (not a form.* path). For 'Register a New Family' this is the HOUSEHOLD "
+                    "case (that module's deliver-unit case type), NOT a child -- that form registers a "
+                    "household and, via an internal repeat group, one or more children in a single "
+                    "submission, so distinct entity_id counts households, not children. For 'Screening ', "
+                    "this is the CHILD case; null when the child was screened OUT (rutf_enrollment=no), "
+                    "since no case is opened in that case.",
                 },
                 {
                     "name": "rutf_enrollment",
@@ -63,6 +86,14 @@ PIPELINE_SCHEMAS = [
                     "aggregation": "first",
                     "description": "Set on the Screening form only. 'yes' = child diagnosed SAM and "
                     "enrolled into RUTF/OTP treatment. Absent/blank on every other form.",
+                },
+                {
+                    "name": "muac_photo",
+                    "path": "form.anthropometric_appetite.muac_measurement.muac_photo",
+                    "aggregation": "first",
+                    "description": "MUAC photo attachment filename captured at Screening (the child's "
+                    "initial visit). Non-empty means a photo was taken. The follow-up Visit Form captures "
+                    "MUAC again at a different nested path -- not read here; scoped to Screening-time MUAC.",
                 },
             ],
         },
@@ -73,9 +104,9 @@ DEFINITION = {
     "name": "FLW Daily Summary Report (RUTF)",
     "description": (
         "Program 263 (RUTF - NG - Program 1 - Sept 26) daily per-FLW service-delivery summary -- "
-        "computed automatically every day. Plain counts only (children registered, SAM enrollment, "
-        "SAM follow-up visits) -- no fraud/data-quality thresholds, no interactive review (no "
-        "statuses to assign)."
+        "computed automatically every day. Plain counts only (households/children registered, SAM "
+        "enrollment, MUAC captured, visits, SAM follow-up visits) -- no fraud/data-quality "
+        "thresholds, no interactive review (no statuses to assign)."
     ),
     "version": 1,
     "templateType": "flw_daily_summary_report_rutf",
@@ -131,8 +162,11 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
                     <thead className="bg-gray-50">
                         <tr>
                             <th className="px-3 py-2 text-left font-semibold">FLW</th>
+                            <th className="px-3 py-2 text-right font-semibold">Households Registered</th>
                             <th className="px-3 py-2 text-right font-semibold">Children Registered</th>
                             <th className="px-3 py-2 text-right font-semibold">SAM Children Registered</th>
+                            <th className="px-3 py-2 text-right font-semibold">MUAC Measured</th>
+                            <th className="px-3 py-2 text-right font-semibold">Total Visits</th>
                             <th className="px-3 py-2 text-right font-semibold">SAM Follow-up Visits</th>
                         </tr>
                     </thead>
@@ -148,8 +182,11 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
                                             </span>
                                         )}
                                     </td>
+                                    <td className="px-3 py-2 text-right">{f.total_households_registered}</td>
                                     <td className="px-3 py-2 text-right">{f.total_children_registered}</td>
                                     <td className="px-3 py-2 text-right">{f.total_sam_children_registered}</td>
+                                    <td className="px-3 py-2 text-right">{f.total_children_muac_measured}</td>
+                                    <td className="px-3 py-2 text-right">{f.total_visits}</td>
                                     <td className="px-3 py-2 text-right">{f.total_sam_followup_visits}</td>
                                 </tr>
                             );
@@ -174,8 +211,9 @@ def run_default(*, definition, access_token, request=None, window=None, **_):
     half-open pair.
 
     Unlike the CHC version, there is no CommCare HQ token dependency at all --
-    every indicator here comes from the single approved_visits connect_csv
-    pipeline above, so this function is considerably smaller.
+    every indicator here comes from the single `visits` connect_csv pipeline
+    above (any status; approved-only subsets derived in
+    compute_flw_daily_summary_rutf), so this function is considerably smaller.
     """
     import logging
     from collections import defaultdict
@@ -215,13 +253,13 @@ def run_default(*, definition, access_token, request=None, window=None, **_):
         fetch_wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_ids[0])
     try:
         pipeline_data = fetch_wda.get_pipeline_data(definition.id, opportunity_id=opp_ids[0])
-        per_opp_meta = pipeline_data.get("approved_visits", {}).get("metadata", {}).get("per_opp", {})
+        per_opp_meta = pipeline_data.get("visits", {}).get("metadata", {}).get("per_opp", {})
         for opp_id in opp_ids:
             meta = per_opp_meta.get(str(opp_id)) or {}
             if meta.get("error"):
-                warnings.append(f"approved_visits unavailable for opp {opp_id}: {meta['error']}")
+                warnings.append(f"visits unavailable for opp {opp_id}: {meta['error']}")
             elif meta.get("raw_fetch_anomaly"):
-                warnings.append(f"approved_visits short-read anomaly for opp {opp_id}: {meta['raw_fetch_anomaly']}")
+                warnings.append(f"visits short-read anomaly for opp {opp_id}: {meta['raw_fetch_anomaly']}")
         roster_by_opp = {}
         for opp_id in opp_ids:
             try:
@@ -249,25 +287,25 @@ def run_default(*, definition, access_token, request=None, window=None, **_):
         dt = _parse(row.get("time_start"))
         return dt is not None and window_start <= dt < window_end
 
-    all_approved_rows = pipeline_data.get("approved_visits", {}).get("rows", [])
-    approved_rows = [r for r in all_approved_rows if _in_window(r)]
+    all_rows = pipeline_data.get("visits", {}).get("rows", [])
+    windowed_rows = [r for r in all_rows if _in_window(r)]
 
-    approved_by_opp_flw = defaultdict(lambda: defaultdict(list))
-    for r in approved_rows:
-        approved_by_opp_flw[r["opportunity_id"]][r["username"]].append(r)
+    rows_by_opp_flw = defaultdict(lambda: defaultdict(list))
+    for r in windowed_rows:
+        rows_by_opp_flw[r["opportunity_id"]][r["username"]].append(r)
 
     date_iso = wat_date(window_start)
     generated_at = datetime.now(timezone.utc).isoformat()
 
     opp_results = {}
     for opp_id in opp_ids:
-        opp_approved = approved_by_opp_flw.get(opp_id, {})
+        opp_rows = rows_by_opp_flw.get(opp_id, {})
         roster = {w["username"]: w for w in roster_by_opp.get(opp_id, []) if w.get("username")}
-        usernames = set(opp_approved.keys()) | set(roster.keys())
+        usernames = set(opp_rows.keys()) | set(roster.keys())
 
         flws = []
         for username in usernames:
-            indicators = compute_flw_daily_summary_rutf(opp_approved.get(username, []))
+            indicators = compute_flw_daily_summary_rutf(opp_rows.get(username, []))
             indicators["username"] = username
 
             worker = roster.get(username)
@@ -313,9 +351,9 @@ TEMPLATE = {
     "name": "FLW Daily Summary Report (RUTF)",
     "description": (
         "Program 263 (RUTF - NG - Program 1 - Sept 26) daily per-FLW service-delivery summary -- "
-        "computed automatically every day. Plain counts only (children registered, SAM enrollment, "
-        "SAM follow-up visits) -- no fraud/data-quality thresholds, no interactive review (no "
-        "statuses to assign)."
+        "computed automatically every day. Plain counts only (households/children registered, SAM "
+        "enrollment, MUAC captured, visits, SAM follow-up visits) -- no fraud/data-quality "
+        "thresholds, no interactive review (no statuses to assign)."
     ),
     "icon": "fa-clipboard-list",
     "color": "teal",
