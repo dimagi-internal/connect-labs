@@ -100,6 +100,15 @@ def list_approved_visits(
                 "deworming_given": c.get("deworming") == _DEWORMING_GIVEN_VALUE,
                 "muac_recorded": bool(c.get("muac")),
                 "vaccination_given": c.get("vaccination") == _VACCINATION_GIVEN_VALUE,
+                # Both already free on every row (same tier as entity_id/
+                # entity_name -- see AnalysisRow.username/.visit_date), not
+                # FieldComputation outputs -- this is the actual submitting
+                # FLW's Connect username, unlike the work-area CASE's own
+                # `owner_id` (a raw CommCare HQ user UUID in a different
+                # identifier space that `fetch_flw_names()` can never
+                # resolve). See `aggregate_visits_by_wa`'s use of these two.
+                "username": row.username,
+                "visit_date": row.visit_date,
             }
         )
     return visits
@@ -109,14 +118,32 @@ def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -
     """Roll up `list_approved_visits`' rows into one aggregate per
     `wa_case_id`: ``{"approved_hsd_count", "approved_ncf_count",
     "approved_inaccessible_count", "deworming_given", "muac_given",
-    "vaccination_given"}`` — the exact fields `core.indicators.wa_rate`
-    expects, minus the work-area case properties (ward/status/building_count/
-    etc.), which come from `core/work_areas.py` instead.
+    "vaccination_given", "flw_username"}`` — the count fields are the exact
+    ones `core.indicators.wa_rate` expects, minus the work-area case
+    properties (ward/status/building_count/etc.), which come from
+    `core/work_areas.py` instead.
+
+    `flw_username` is the Connect username of the work area's LAST
+    submitter — its own visits' `username`, ordered by `visit_date`, not the
+    work-area case's `owner_id` (see `list_approved_visits`'s comment on why
+    that distinction matters for name resolution). It shouldn't normally
+    happen that two different FLWs submit to the same work area, but if it
+    does, the most RECENT submitter wins over one just seen more often, on
+    the theory that a WA's current worker is more useful to show than
+    whoever historically logged the most visits there. A visit with no
+    `visit_date` never displaces an already-picked submitter (nothing to
+    compare it against); the first username-bearing visit encountered is
+    the initial pick regardless, so a WA where every visit lacks a date
+    still gets *a* submitter, not none.
 
     `wa_ids`, if given, restricts aggregation to those work areas (Phase 1's
     ward selection) — visits at any other WA are ignored. `None` means no
     restriction (every WA in the pulled visit data)."""
     agg: dict[str, dict] = {}
+    # (visit_date, username) of the current "last submitter" pick per WA --
+    # kept separate from `agg` so that internal bookkeeping never leaks into
+    # the returned per-WA dict shape.
+    latest_by_wa: dict[str, tuple] = {}
     for v in visits:
         wa_id = v.get("wa_case_id")
         if not wa_id:
@@ -132,6 +159,7 @@ def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -
                 "deworming_given": 0,
                 "muac_given": 0,
                 "vaccination_given": 0,
+                "flw_username": "",
             },
         )
         if v["form_name"] == HSD_FORM_NAME:
@@ -146,6 +174,14 @@ def aggregate_visits_by_wa(visits: list[dict], wa_ids: set[str] | None = None) -
             row["approved_ncf_count"] += 1
         elif v["form_name"] == INACCESSIBLE_FORM_NAME:
             row["approved_inaccessible_count"] += 1
+
+        username = v.get("username")
+        if username:
+            visit_date = v.get("visit_date")
+            prev = latest_by_wa.get(wa_id)
+            if prev is None or (visit_date is not None and (prev[0] is None or visit_date > prev[0])):
+                latest_by_wa[wa_id] = (visit_date, username)
+                row["flw_username"] = username
     return agg
 
 
@@ -157,7 +193,14 @@ def build_evaluation_rows(work_areas: list[dict], visit_aggregates: dict[str, di
     `lat`/`lon`/`boundary` are left `None`/unset here — `core/candidates.py`'s
     `build_evaluation_input` merges those in afterwards from
     `core.geometry.fetch_work_area_geometry` (this function only knows about
-    case data + visit aggregates, not geometry)."""
+    case data + visit aggregates, not geometry).
+
+    `flw_username` prefers `aggregate_visits_by_wa`'s visit-derived value
+    (the last submitter's Connect username — the id space
+    `labs.analysis.data_access.fetch_flw_names()` can actually resolve to a
+    display name) and falls back to the work-area case's own `owner_id`
+    (a raw CommCare HQ user UUID, never resolvable to a name) only for a WA
+    with no approved visits to derive a submitter from."""
     zero_agg = {
         "approved_hsd_count": 0,
         "approved_ncf_count": 0,
@@ -165,6 +208,7 @@ def build_evaluation_rows(work_areas: list[dict], visit_aggregates: dict[str, di
         "deworming_given": 0,
         "muac_given": 0,
         "vaccination_given": 0,
+        "flw_username": "",
     }
     rows = []
     for wa in work_areas:
@@ -176,13 +220,13 @@ def build_evaluation_rows(work_areas: list[dict], visit_aggregates: dict[str, di
                 "ward": wa["ward"],
                 "lga": wa["lga"],
                 "state": wa["state"],
-                "flw_username": wa.get("owner_id", ""),
                 "lat": None,
                 "lon": None,
                 "status": wa["status"],
                 "building_count": wa["building_count"],
                 "expected_visit_count": wa["expected_visit_count"],
                 **agg,
+                "flw_username": agg.get("flw_username") or wa.get("owner_id", ""),
             }
         )
     return rows
