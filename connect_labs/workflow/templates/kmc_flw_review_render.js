@@ -38,6 +38,23 @@ function WorkflowUI({
       out.push('owning_program_id=' + instance.program_id);
     return out.length ? '?' + out.join('&') : '';
   }
+  // This workflow's own id, for the endpoints keyed by definition. The
+  // `definition` prop is the record's `data` blob and the pk travels beside it
+  // as `definition_id` -- it is never written into `data`, so `definition.id`
+  // is undefined and both row fetches went to `/api/undefined/pipeline-rows/`.
+  // The run knows its definition, and so does the URL (/labs/workflow/<id>/run/).
+  // Same chain as the programme page's `definitionId()`.
+  function definitionId() {
+    var pathMatch = String(window.location.pathname || '').match(
+      /\/workflow\/(\d+)\//,
+    );
+    return (
+      (definition && (definition.id || definition.definition_id)) ||
+      (instance && instance.definition_id) ||
+      (pathMatch && Number(pathMatch[1])) ||
+      null
+    );
+  }
 
   var sourceRun = qp('source_run');
   var sKey = React.useState(qp('flw'));
@@ -281,7 +298,7 @@ function WorkflowUI({
       var sp = scopeParams();
       fetch(
         '/labs/workflow/api/' +
-          (definition && definition.id) +
+          definitionId() +
           '/pipeline-rows/' +
           sp +
           (sp ? '&' : '?') +
@@ -292,20 +309,33 @@ function WorkflowUI({
         { credentials: 'same-origin' },
       )
         .then(function (r) {
-          return r.ok ? r.json() : { rows: [] };
+          if (!r.ok) throw new Error('cases: HTTP ' + r.status);
+          return r.json();
         })
         .then(function (j) {
           if (!cancelled)
             setChildState({ status: 'ready', rows: j.rows || [] });
         })
-        .catch(function () {
-          if (!cancelled) setChildState({ status: 'ready', rows: [] });
+        .catch(function (e) {
+          // Never 'ready' with no rows on a failure: that is the shape that let a
+          // 404 read as a worker with no danger signs, referrals or weighings.
+          if (!cancelled)
+            setChildState({
+              status: 'error',
+              rows: [],
+              error: String((e && e.message) || e),
+            });
         });
       return function () {
         cancelled = true;
       };
     },
-    [definition && definition.id, flw && flw.opp, flw && flw.flw],
+    [
+      definition && definition.id,
+      instance && instance.definition_id,
+      flw && flw.opp,
+      flw && flw.flw,
+    ],
   );
   var childByKey = React.useMemo(
     function () {
@@ -379,7 +409,7 @@ function WorkflowUI({
       var sp = scopeParams();
       fetch(
         '/labs/workflow/api/' +
-          (definition && definition.id) +
+          definitionId() +
           '/pipeline-rows/' +
           sp +
           (sp ? '&' : '?') +
@@ -390,21 +420,29 @@ function WorkflowUI({
         { credentials: 'same-origin' },
       )
         .then(function (r) {
-          return r.ok ? r.json() : { rows: [] };
+          if (!r.ok) throw new Error('weighings: HTTP ' + r.status);
+          return r.json();
         })
         .then(function (j) {
           if (!cancelled)
             setVisitState({ status: 'ready', key: key, rows: j.rows || [] });
         })
-        .catch(function () {
+        .catch(function (e) {
+          // See the cases fetch: a failure must not render as "No weighings
+          // recorded." on a case that has five of them.
           if (!cancelled)
-            setVisitState({ status: 'ready', key: key, rows: [] });
+            setVisitState({
+              status: 'error',
+              key: key,
+              rows: [],
+              error: String((e && e.message) || e),
+            });
         });
       return function () {
         cancelled = true;
       };
     },
-    [definition && definition.id, caseKey],
+    [definition && definition.id, instance && instance.definition_id, caseKey],
   );
   var weighingsLoaded =
     visitState.status === 'ready' && visitState.key === caseKey;
@@ -1489,6 +1527,12 @@ function WorkflowUI({
                   gaWks={c.gestational_age_wks}
                   dob={built.dob}
                 />
+              ) : visitState.status === 'error' ? (
+                <div className="text-xs text-red-600 py-10 text-center">
+                  Could not load the weight series
+                  {visitState.error ? ' (' + visitState.error + ')' : ''}. This
+                  is a failed request, not an empty case — reload the page.
+                </div>
               ) : (
                 <div className="text-xs text-gray-400 py-10 text-center">
                   Loading the weight series…
@@ -1550,7 +1594,11 @@ function WorkflowUI({
                 })}
                 {!weighed.length && (
                   <div className="col-span-6 text-xs text-gray-400 py-4 text-center">
-                    {weighingsLoaded ? 'No weighings recorded.' : 'Loading…'}
+                    {visitState.status === 'error'
+                      ? 'Could not load weighings — reload the page.'
+                      : weighingsLoaded
+                      ? 'No weighings recorded.'
+                      : 'Loading…'}
                   </div>
                 )}
               </div>
@@ -1907,7 +1955,13 @@ function WorkflowUI({
                     colSpan={3 + SCORECARD.length}
                     className="px-3 py-6 text-center text-xs text-gray-400"
                   >
-                    {pipelinesLoaded
+                    {childState.status === 'error'
+                      ? 'Could not load this worker’s cases' +
+                        (childState.error
+                          ? ' (' + childState.error + ')'
+                          : '') +
+                        '. This is a failed request, not an empty cohort — reload the page.'
+                      : pipelinesLoaded
                       ? 'No cases for this worker in the report.'
                       : 'Loading cases…'}
                   </td>

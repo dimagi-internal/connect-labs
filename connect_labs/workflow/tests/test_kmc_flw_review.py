@@ -204,3 +204,38 @@ def test_the_runner_honours_the_opt_out():
     runner = (Path(__file__).resolve().parents[2] / "static" / "js" / "workflow-runner.tsx").read_text()
     assert "noPipelineStream" in runner
     assert "if (noPipelineStream) return;" in runner, "the stream is started anyway"
+
+
+def test_the_row_fetches_resolve_the_definition_id_instead_of_trusting_the_prop():
+    """Both `pipeline-rows` fetches must build their URL from a resolver, not from
+    a bare `definition.id`.
+
+    The `definition` prop is the record's `data` blob; the record's pk travels
+    beside it as `definition_id` and is never written into `data`. So
+    `definition.id` was always undefined and both fetches went to
+    `/labs/workflow/api/undefined/pipeline-rows/` -> 404 for every user, emptying
+    the case table's live columns and every weight series. The programme page
+    already resolves this (see its `definitionId()`); this is the same chain.
+    """
+    src = RENDER.read_text()
+    assert "function definitionId()" in src, "no resolver: the prop is being trusted"
+    # The fallbacks the prop needs, in the same dialect as the programme page.
+    assert "definition.definition_id" in src
+    assert "instance && instance.definition_id" in src
+    assert "window.location.pathname" in src, "the URL is the last resort and is never read"
+    # No fetch may interpolate the prop's id straight into an api path.
+    for m in re.finditer(r"'/labs/workflow/api/' \+\s*([^\n]+)", src):
+        assert "definition.id" not in m.group(1), f"bare prop id in a fetch URL: {m.group(1).strip()!r}"
+
+
+def test_a_failed_row_fetch_is_not_reported_as_an_empty_cohort():
+    """A 404/500 must not be laundered into `{rows: []}`.
+
+    That is what hid the bug above: both fetches mapped a non-OK response to no
+    rows, so a broken URL rendered as "No weighings recorded." and blank danger
+    signs/referrals/discharge -- indistinguishable from a worker who really has
+    none, with nothing in the UI to say a request had failed.
+    """
+    src = RENDER.read_text()
+    assert "r.ok ? r.json() : { rows: [] }" not in src, "a failed fetch still looks like absent data"
+    assert "status: 'error'" in src, "the row fetches need a failure state of their own"
