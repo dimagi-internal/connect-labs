@@ -319,6 +319,7 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     "flw_weekly_audit_report": "automatic",
     "flw_daily_indicator_report": "automatic",
     "flw_daily_summary_report": "automatic",
+    "flw_daily_summary_report_rutf": "automatic",
     # Worker reviews: one worker at a time.
     # The KMC review is the programme report's drill page — created WITH the
     # report as its companion, and creatable on its own (opened alone it reads
