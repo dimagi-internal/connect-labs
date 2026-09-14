@@ -1264,25 +1264,35 @@ costs nothing to discard: reading, and writing rules down. Sequence:
 introduce `LabsOrg`, migrate supply onto
 it, prove the pattern, then pulse.
 
-## 29. The open question this part cannot answer
+## 29. This does not wait on production — that is the point
 
-**Can an updated Connect `Organization` represent an organisation with no
-users, that delivers nothing, and that we merely buy from?**
+**An earlier draft of this section made `LabsOrg` conditional on a Connect
+decision: whether an updated `Organization` can represent a supplier with no
+users. That inverted the whole idea, and it is withdrawn.**
 
-If **yes**: `Supplier` becomes a profile on a Connect org and `LabsOrg` holds
-only organisations awaiting their Connect row.
+`LabsOrg` exists *because* labs builds ahead of production. Waiting for
+production to answer a question before labs may name an organisation is the
+exact dependency it removes. The consequence of the mistake was concrete:
+nothing was built for a day, the supply domain kept its own organisation
+registry, and an importer invented an unlinked "Programme team" row for an
+organisation that plainly exists in Connect — the precise behaviour §25
+argues against.
 
-If **no**: `LabsOrg` permanently carries the organisations we merely buy from.
+So the rule is the opposite of what was written:
 
-**Either answer is fine, and this is the part the first draft of §26 got
-wrong.** `LabsOrg` was framed as a waiting room that empties. It is better
-understood as the labs organisation register, of which *some* rows correspond
-to Connect orgs and some never will. What must shrink to zero is not the
-table — it is the **duplication**: every organisation that Connect does
-represent should be linked to it and should stop being separately edited here.
-`Party` is deleted in either case, because its problem was never that
-organisations live in labs; it was that it was a second registry of them.
+- **Labs names an organisation whenever it needs one.** No permission, no
+  precondition.
+- **It carries both join keys from the start** — `connect_organization_id`
+  and `connect_organization_slug` — so a row can be linked the moment
+  production has a counterpart, without a migration or a rewrite.
+- **Production catching up is a linking event, not a redesign.** When
+  Connect grows a home for suppliers, those rows link and stop being a
+  second source of truth. When it does not, they stay local, correctly.
+- **The backlog is rows that should be linked and are not** (§26), and it
+  trends down as production catches up. It never gates anything.
 
-Until that is known, no schema changes. The reasoning is recorded here because
-it is worth more than the code it will produce, and because the production
-entity lands on its own schedule rather than ours.
+The question the earlier draft asked — can a Connect `Organization` hold a
+users-less supplier — is still worth knowing, because the answer decides how
+small this table eventually gets. It decides nothing about whether to build
+it.
+
