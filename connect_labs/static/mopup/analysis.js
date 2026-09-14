@@ -122,11 +122,20 @@ window.MopupAnalysis = (function () {
       const isEvc = def.key === 'evc_shortfall';
       const isTier2 = TIER2_KEYS.includes(def.key);
       const rowDisabled = !cfg.enabled;
+      // Stored/sent as a plain 0-1 rate throughout (matches the backend's
+      // own comparison math) -- this is purely a display-layer convenience,
+      // shown/entered as a percentage since that reads more intuitively
+      // than "0.2". Rounded to 1 decimal place only to avoid floating-point
+      // noise (e.g. 0.7 * 100 -> 69.99999999999999) on round-trip; real
+      // precision beyond a tenth of a percent was never meaningful here.
       const thresholdCell = isNcf
         ? `<span class="text-gray-400 italic">n/a</span>`
-        : `<input type="number" step="0.01" min="0" max="1" class="ind-threshold base-input" style="width:6rem" value="${
-            cfg.threshold
-          }" ${rowDisabled ? 'disabled' : ''}>`;
+        : `<span class="inline-flex items-center gap-1">
+            <input type="number" step="0.1" min="0" max="100" class="ind-threshold base-input" style="width:5.5rem" value="${
+              Math.round(cfg.threshold * 1000) / 10
+            }" ${rowDisabled ? 'disabled' : ''}>
+            <span class="text-gray-500">%</span>
+          </span>`;
       // Table borders only render per-cell (a <tr> border is a no-op without
       // border-collapse), so each group's box is built from border-t on
       // every cell of its first row, border-b on its trailing sub-row
@@ -319,8 +328,11 @@ window.MopupAnalysis = (function () {
       const thresholdInput = tr.querySelector('.ind-threshold');
       out[key] = {
         enabled: enabledInput.checked,
+        // The input is a 0-100 percentage (display-only, see
+        // renderIndicatorRows) -- convert back to the 0-1 rate the backend
+        // has always stored/compared against.
         ...(thresholdInput
-          ? { threshold: parseFloat(thresholdInput.value) || 0 }
+          ? { threshold: (parseFloat(thresholdInput.value) || 0) / 100 }
           : {}),
       };
     });
@@ -382,7 +394,7 @@ window.MopupAnalysis = (function () {
         // than more columns — Step 2's new work areas are additional to,
         // not part of, the Connect-sourced totals above.
         const gapRow = `<tr class="border-b border-gray-100 bg-emerald-50 text-emerald-800 text-xs">
-          <td class="p-2 pl-2" colspan="7">+ Planning gaps (new)</td>
+          <td class="p-2 pl-2" colspan="8">+ Planning gaps (new)</td>
           <td class="p-2 ward-col-new ward-group-start">${gap.gap_wa_count}</td>
           <td class="p-2 ward-col-new">${gap.gap_buildings}</td>
           <td class="p-2 ward-col-new">${gap.gap_evc}</td>
@@ -418,7 +430,7 @@ window.MopupAnalysis = (function () {
         const num = detail.own_numerator;
         const denom = detail.own_denominator;
         if (rate == null || num == null || denom == null) return esc(label);
-        return esc(`${label} (${rate.toFixed(2)}; ${num}/${denom})`);
+        return esc(`${label} (${Math.round(rate * 100)}%; ${num}/${denom})`);
       })
       .join(', ');
   }
@@ -879,12 +891,22 @@ window.MopupAnalysis = (function () {
   }
 
   function collectPlanningGapsConfig() {
+    const mode = selectedGapMode();
+    // Upload mode's confidence field is a separate, optional input (blank
+    // by default -- no filtering unless the reviewer's file has a
+    // confidence column AND they choose to use it) from Overture mode's
+    // always-populated Google-confidence slider.
+    const confidenceInput =
+      mode === 'upload'
+        ? $('gap-cfg-upload-min-confidence')
+        : $('gap-cfg-min-confidence');
+    const confidenceValue = parseFloat(confidenceInput.value);
     return {
-      mode: selectedGapMode(),
+      mode,
       building_sources: [
         ...document.querySelectorAll('.gap-src-cb:checked'),
       ].map((cb) => cb.value),
-      min_confidence: parseFloat($('gap-cfg-min-confidence').value) || null,
+      min_confidence: Number.isNaN(confidenceValue) ? null : confidenceValue,
       min_buildings_per_cell:
         parseInt($('gap-cfg-min-buildings').value, 10) || 1,
       cell_size_m: parseFloat($('gap-cfg-cell-size').value) || 100,

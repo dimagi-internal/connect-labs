@@ -205,12 +205,17 @@ def preview_planning_gaps(
         this run's own ward(s) at upload time by
         `MopupUploadBuildingsView`/`core.gaps.filter_upload_to_wards`) ONCE
         for the whole run, then `core.gaps.buildings_from_upload` filters it
-        down to each ward's own rows. `building_sources`/`min_confidence`
-        are ignored in this mode (no such concept for user-supplied data).
-        Unlike Overture, this mode also keeps every individual building
-        position (`result["building_points"]`) for Step 2's map to plot —
-        an Overture-fetched remainder can be far larger, so that's skipped
-        for the other modes rather than bloating the run record.
+        down to each ward's own rows. `building_sources` is ignored in this
+        mode (no source concept for user-supplied data), but
+        `min_confidence` is still honored if the uploaded file carries its
+        own optional `confidence` column (see `buildings_within_ward`) — a
+        reviewer sets it via a separate upload-mode field, since it's
+        opt-in here rather than the always-on Google-confidence slider
+        Overture mode has. Unlike Overture, this mode also keeps every
+        individual building position (`result["building_points"]`) for
+        Step 2's map to plot — an Overture-fetched remainder can be far
+        larger, so that's skipped for the other modes rather than bloating
+        the run record.
 
     Does NOT persist its own result — `MopupPlanningGapsView` stores the
     returned features/config/warnings onto the run once this returns, so a
