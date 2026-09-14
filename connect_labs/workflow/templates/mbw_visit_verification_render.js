@@ -408,10 +408,123 @@ function WorkflowUI({
     URL.revokeObjectURL(url);
   }
 
+  // --- Definitions tab content --------------------------------------------
+  // One place documenting exactly what each column/metric means and how it's
+  // calculated, kept next to the logic it describes so the two don't drift.
+  var DEFINITION_SECTIONS = [
+    {
+      title: 'Which visits appear in this report',
+      body: "A visit only shows up if BOTH are true: (1) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes' (checked against both the test domain and opp 765's production domain), and (2) the visit's form has the verification block at all, detected via visit_location_has_prev_home_gps being present/non-blank. Visits from FLWs not flagged for verification, or submitted before the verification questions existed on that form, are excluded entirely -- not shown as blank rows.",
+    },
+    {
+      title: 'Table Columns',
+      items: [
+        { name: 'FLW ID', def: "The FLW's CommCare username." },
+        {
+          name: 'Mother ID',
+          def: 'The mother case this visit was made for (form.parents.parent.case.@case_id, with fallback paths for older submissions). Drives the per-mother grouping used for Visit # and Previous verification pass rate.',
+        },
+        {
+          name: 'Visit ID',
+          def: 'The form submission ID (form.meta.instanceID) -- unique per visit.',
+        },
+        {
+          name: 'Visit date',
+          def: 'form.meta.timeEnd, shown as "YYYY-MM-DD HH:MM:SS" (date and time to the second, exactly as submitted -- no timezone conversion).',
+        },
+        {
+          name: 'Visit type',
+          def: 'Which visit-type form was submitted (ANC, Post-Delivery, 1 Week, 1 Month, 3 Month, or 6 Month Visit).',
+        },
+        {
+          name: 'Visit #',
+          def: "This visit's position in the mother's own visit history, oldest first (1st, 2nd, 3rd...) -- counted per MOTHER across all her visits and visit types, not per FLW.",
+        },
+        {
+          name: 'GPS location',
+          def: "Where the FLW indicated the visit took place: the mother's home, a health facility, or other. Determines which GPS outcome logic applies (see below).",
+        },
+      ],
+    },
+    {
+      title: 'Outcome Columns & Their Logic',
+      items: [
+        {
+          name: 'GPS outcome',
+          def: "NA if the location was 'other' (GPS verification doesn't apply there), or if there was no prior-visit GPS point on record for that location type to compare against. Otherwise Pass if the visit's GPS matched the prior point on file, Fail if it didn't. ERROR means the location was home/health-facility with a prior GPS point on record, but the match field itself was missing -- flags a data issue worth investigating.",
+        },
+        {
+          name: 'QR outcome',
+          def: "The FLW's direct answer when a value is present. If blank AND the FLW separately indicated the mother didn't have her QR code photo available at this visit, shown as 'Not available' rather than NA (it wasn't skipped -- it genuinely couldn't be done). NA otherwise.",
+        },
+        {
+          name: 'Signature outcome',
+          def: "The FLW's direct answer for the mother's initial/signature verification; NA if blank.",
+        },
+        {
+          name: 'Mother questions outcome',
+          def: "Only applicable when the form's show_mother_questions flag is '1' for this visit; the answer is shown when applicable, NA otherwise (including when the flag is '0', meaning the question block didn't apply to this visit).",
+        },
+        {
+          name: 'ANC card outcome',
+          def: "The FLW's direct answer for ANC card verification; NA if blank.",
+        },
+        {
+          name: 'Final verification method(s)',
+          def: "Lists every method above (GPS / QR / Signature / Mother Questions / ANC Card) that was 'attempted' for this visit -- meaning the FLW provided information for it AND it resolved to Pass, Fail, or a Pending outcome (NA / Not available / ERROR / blank don't count as an attempt). Shows 'NA' if no method was attempted.",
+        },
+        {
+          name: 'Final verification outcome',
+          def: 'The overall verification result recorded on the form itself (form.verification_properties.visit_verification_outcome, falling back to form.visit_verification_outcome on older submissions) -- typically Pass, Fail, or Pending Audit. This is a single value the form/reviewer sets, independent of the per-method outcomes above.',
+        },
+        {
+          name: 'Previous verification pass rate',
+          def: 'For this mother, the Pass/Fail record across all her PRIOR visits only (not including the current row), shown as "X% (N)" where N is how many prior visits had a Pass/Fail final outcome. Reads "N/A (0)" for a mother\'s first visit or when no prior visit has a Pass/Fail outcome yet. Pending/blank prior outcomes don\'t count toward N.',
+        },
+      ],
+    },
+    {
+      title: 'Color Coding',
+      items: [
+        { name: 'Green', def: 'Pass' },
+        { name: 'Red', def: 'Fail' },
+        {
+          name: 'Yellow',
+          def: 'Any outcome containing "Pending" (e.g. Pending Audit)',
+        },
+        { name: 'Grey', def: 'NA or Not available' },
+        { name: 'Orange', def: 'ERROR (GPS outcome only -- see above)' },
+      ],
+    },
+    {
+      title: 'Verification Summary Tab',
+      body: 'The three percentages and the "n=" counts are all computed over the same filtered/eligible visit set as the table (see "Which visits appear" above), using each visit\'s Final verification outcome:',
+      items: [
+        {
+          name: '% Passed Verification',
+          def: 'Share of visits with Final verification outcome = Pass.',
+        },
+        {
+          name: '% Pending Audit',
+          def: 'Share of visits with Final verification outcome = Pending Audit.',
+        },
+        {
+          name: '% Failed Verification',
+          def: 'Share of visits with Final verification outcome = Fail.',
+        },
+        {
+          name: 'Stacked bar chart',
+          def: 'One bar per verification method (GPS, QR, Signature, Mother Questions, ANC Card), showing how many visits landed Pass (green) / Pending (yellow) / Fail (red) for that specific method -- independent of the overall Final verification outcome above.',
+        },
+      ],
+    },
+  ];
+
   // --- Tabs ----------------------------------------------------------------
   var TABS = [
     { key: 'summary', label: 'Verification Summary' },
     { key: 'table', label: 'Per FLW Verification View' },
+    { key: 'definitions', label: 'Definitions' },
   ];
   var _tab = React.useState('summary');
   var activeTab = _tab[0];
@@ -610,6 +723,44 @@ function WorkflowUI({
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'definitions' && (
+        <div className="max-w-3xl space-y-6">
+          {DEFINITION_SECTIONS.map(function (section, i) {
+            return (
+              <div
+                key={i}
+                className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
+              >
+                <h3 className="mb-3 text-lg font-semibold text-gray-900">
+                  {section.title}
+                </h3>
+                {section.body && (
+                  <p className="whitespace-pre-line text-sm text-gray-700">
+                    {section.body}
+                  </p>
+                )}
+                {section.items && (
+                  <dl className={section.body ? 'mt-3 space-y-2' : 'space-y-2'}>
+                    {section.items.map(function (item, j) {
+                      return (
+                        <div key={j}>
+                          <dt className="text-sm font-medium text-gray-900">
+                            {item.name}
+                          </dt>
+                          <dd className="ml-4 text-sm text-gray-600">
+                            {item.def}
+                          </dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
