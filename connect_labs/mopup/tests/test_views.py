@@ -84,6 +84,14 @@ def _make_fake_run_da(monkeypatch, runs=None):
             run.data.update(field_updates)
             return run
 
+        def delete_run(self, run_id):
+            from connect_labs.mopup.core.data_access import MopupRunNotFoundError
+
+            rid = int(run_id)
+            if rid not in runs:
+                raise MopupRunNotFoundError(f"run {rid} is not in program {self.program_id}")
+            del runs[rid]
+
         def set_ward_selection(self, run, *, wards, date_from=None, date_to=None):
             return self.update_run(
                 run, selected_wards=wards, date_from=date_from, date_to=date_to, status=STATUS_ANALYSIS
@@ -210,6 +218,114 @@ def test_program_home_shows_empty_state_with_no_runs(client, django_user_model, 
     resp = client.get(reverse("mopup:program_home", kwargs={"program_id": 217}))
     assert resp.status_code == 200
     assert b"No mop-up runs yet" in resp.content
+
+
+# --- MopupDeleteRunsView -----------------------------------------------------
+#
+# Phase 1's "select past runs + delete selected" feature — a real,
+# unrecoverable hard delete (MopupRunDataAccess.delete_run), so this view's
+# own request-validation and partial-failure reporting get direct coverage
+# rather than only being exercised implicitly through the JS.
+
+
+def test_delete_runs_requires_login(client):
+    resp = client.post(
+        reverse("mopup:delete_runs", kwargs={"program_id": 217}),
+        data=json.dumps({"run_ids": [1]}),
+        content_type="application/json",
+    )
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_delete_runs_removes_the_given_runs(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    from connect_labs.mopup.core.models import MopupRunRecord
+
+    runs[1] = MopupRunRecord(
+        {
+            "id": 1,
+            "experiment": "217",
+            "type": "mopup_run",
+            "opportunity_id": None,
+            "program_id": 217,
+            "organization_id": None,
+            "data": {},
+        }
+    )
+    runs[2] = MopupRunRecord(
+        {
+            "id": 2,
+            "experiment": "217",
+            "type": "mopup_run",
+            "opportunity_id": None,
+            "program_id": 217,
+            "organization_id": None,
+            "data": {},
+        }
+    )
+
+    resp = client.post(
+        reverse("mopup:delete_runs", kwargs={"program_id": 217}),
+        data=json.dumps({"run_ids": [1, 2]}),
+        content_type="application/json",
+    )
+    data = resp.json()
+    assert resp.status_code == 200
+    assert data["status"] == "ok"
+    assert sorted(data["deleted"]) == [1, 2]
+    assert data["not_found"] == []
+    assert runs == {}
+
+
+def test_delete_runs_reports_not_found_without_failing_the_rest(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    from connect_labs.mopup.core.models import MopupRunRecord
+
+    runs[1] = MopupRunRecord(
+        {
+            "id": 1,
+            "experiment": "217",
+            "type": "mopup_run",
+            "opportunity_id": None,
+            "program_id": 217,
+            "organization_id": None,
+            "data": {},
+        }
+    )
+
+    resp = client.post(
+        reverse("mopup:delete_runs", kwargs={"program_id": 217}),
+        data=json.dumps({"run_ids": [1, 999]}),
+        content_type="application/json",
+    )
+    data = resp.json()
+    assert data["deleted"] == [1]
+    assert data["not_found"] == [999]
+    assert 1 not in runs
+
+
+def test_delete_runs_rejects_empty_run_ids(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_run_da(monkeypatch)
+    resp = client.post(
+        reverse("mopup:delete_runs", kwargs={"program_id": 217}),
+        data=json.dumps({"run_ids": []}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_delete_runs_rejects_malformed_body(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_run_da(monkeypatch)
+    resp = client.post(
+        reverse("mopup:delete_runs", kwargs={"program_id": 217}),
+        data="not json",
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
 
 
 # --- MopupSetupView ---------------------------------------------------------
