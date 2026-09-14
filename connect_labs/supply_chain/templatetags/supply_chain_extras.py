@@ -340,3 +340,24 @@ def stated_rows(quote):
             value = humanise(value)
         rows.append({"label": label, "value": value})
     return rows
+
+
+# What each kind of evidence in a derived supply base means, in words. Here
+# rather than in the service for the same reason CHECK_LABELS is: the domain
+# states the kind, a client words it. The wording is deliberately plain about
+# how weak the weakest one is -- "named as manufacturer" is a string match on
+# a free-text field, and a page that let it read like a trading relationship
+# would be the invention the derivation exists to avoid.
+EVIDENCE_LABELS = {
+    "contracted": "Under contract",
+    "awarded": "Awarded",
+    "quoted": "Quoted",
+    "quoted_superseded": "Quoted, since superseded",
+    "invited": "Invited",
+    "named_as_manufacturer": "Named as the manufacturer",
+}
+
+
+@register.filter
+def evidence_label(kind):
+    return EVIDENCE_LABELS.get(kind, humanise(kind))

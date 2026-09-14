@@ -1,0 +1,81 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+Who we can buy from. Replaces a "Registries" page that no link in the product
+ever pointed at, listed suppliers beside a second copy of the commodity table,
+and showed a GLN column the model has no field for.
+
+Counts, not status words. "Quoting" is a label somebody typed; "3 quotes, last
+heard 12 Jun" is the record.
+{% endcomment %}
+
+{% block supply_content %}
+
+<div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Suppliers</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Everyone on file for this programme, and how far each has got.
+    </p>
+  </div>
+  <p class="text-sm text-gray-500">{{ suppliers|length }} on file</p>
+</div>
+
+<div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+  <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+    <table class="min-w-[44rem] w-full text-sm">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <tr>
+          <th class="text-left px-4 py-2">Supplier</th>
+          <th class="text-left px-4 py-2">Where</th>
+          <th class="text-left px-4 py-2">Status</th>
+          {% if has_program_context %}
+            <th class="text-right px-4 py-2">Invited</th>
+            <th class="text-right px-4 py-2">Quotes</th>
+            <th class="text-right px-4 py-2">Orders</th>
+            <th class="text-left px-4 py-2">Last dated record</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for supplier in suppliers %}
+          <tr>
+            <td class="px-4 py-2.5">
+              <a class="font-medium text-brand-indigo hover:underline"
+                 href="{% url 'supply_chain:supplier_detail' supplier.id %}">{{ supplier.name }}</a>
+              {% if supplier.type %}<div class="text-xs text-gray-500">{{ supplier.type|humanise }}</div>{% endif %}
+            </td>
+            <td class="px-4 py-2.5 text-gray-700">
+              {{ supplier.city|default:supplier.country|default:"—" }}
+            </td>
+            <td class="px-4 py-2.5 text-gray-600">{{ supplier.status|humanise|default:"identified" }}</td>
+            {% if has_program_context %}
+              <td class="px-4 py-2.5 text-right tabular-nums text-gray-700">{{ supplier.invitation_count }}</td>
+              <td class="px-4 py-2.5 text-right tabular-nums text-gray-700">{{ supplier.quote_count }}</td>
+              <td class="px-4 py-2.5 text-right tabular-nums text-gray-700">{{ supplier.contract_count }}</td>
+              <td class="px-4 py-2.5 text-gray-600">
+                {% if supplier.last_activity %}{{ supplier.last_activity }}
+                {% else %}<span class="text-gray-400">nothing dated</span>{% endif %}
+              </td>
+            {% endif %}
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="7" class="px-4 py-6 text-center text-gray-500">
+              No suppliers on file yet.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if not has_program_context %}
+  <p class="mt-4 text-sm text-gray-500">
+    Choose a programme to see what each has been asked for and what they answered.
+  </p>
+{% endif %}
+
+{% endblock %}

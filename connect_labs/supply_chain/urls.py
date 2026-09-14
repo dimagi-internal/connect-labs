@@ -12,6 +12,16 @@ urlpatterns = [
     # the master item list is domain-level reference data, not procurement's:
     # tracking and distribution will both read it
     path("catalogue/", views.CatalogueView.as_view(), name="catalogue"),
+    # Before the slug route: "items" is itself a valid slug, so the literal
+    # would otherwise lose to the converter and every trade item would 404
+    # looking for a product called "items".
+    path("catalogue/items/<int:item_id>/", views.ItemDetailView.as_view(), name="item_detail"),
+    path("catalogue/<slug:slug>/", views.ProductDetailView.as_view(), name="product_detail"),
+    # Suppliers are reference data reused across rounds, so they sit at the
+    # domain level rather than under procurement -- orders and receipts name
+    # them too.
+    path("suppliers/", views.SupplierDirectoryView.as_view(), name="suppliers"),
+    path("suppliers/<int:supplier_id>/", views.SupplierDetailView.as_view(), name="supplier_detail"),
     # shared API: one endpoint for the whole domain, because the registry is shared
     path("api/operations/", api_views.OperationListView.as_view(), name="api_operations"),
     path("api/<str:name>/", api_views.OperationDispatchView.as_view(), name="api_operation"),
@@ -41,11 +51,6 @@ urlpatterns = [
         "procurement/quotes/<int:quote_id>/",
         procurement_views.QuoteDetailView.as_view(),
         name="procurement_quote_detail",
-    ),
-    path(
-        "procurement/registries/",
-        procurement_views.RegistriesView.as_view(),
-        name="procurement_registries",
     ),
     path("orders/", views.OrdersView.as_view(), name="orders"),
     path("orders/<int:contract_id>/", views.OrderDetailView.as_view(), name="order_detail"),

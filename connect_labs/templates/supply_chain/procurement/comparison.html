@@ -97,7 +97,10 @@
           {% for row in comparison.comparable %}
             <tr>
               <td>{{ forloop.counter }}</td>
-              <td class="font-medium text-gray-900">{{ row.supplier_name }}</td>
+              <td class="font-medium">
+                <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
+                   class="text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
+              </td>
               {% for column in comparison.columns %}
                 {% with cell=row.figures|dictkey:column.key %}
                   {% if cell.unconfirmed %}
@@ -148,7 +151,10 @@
   </h2>
   {% for row in comparison.blocked %}
     <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
-      <h3 class="font-semibold text-gray-900 mb-2">{{ row.supplier_name }}</h3>
+      <h3 class="font-semibold mb-2">
+        <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
+           class="text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
+      </h3>
       {% for column in comparison.columns %}
         {% with cell=row.figures|dictkey:column.key %}
           {% if cell.unconfirmed %}

@@ -1,0 +1,90 @@
+{% load supply_chain_extras %}
+{% comment %}
+Who we think can supply this, and the record each belief rests on.
+
+Every row names its evidence rather than asserting a relationship, because
+there is no "supplies" table and there deliberately is not one -- see
+procurement/services/supply_base.py. The basis badge is the strongest thing
+we hold; the lines under it are everything, oldest kind last.
+
+Takes: supply_base (list of claims), and optionally `scope_note`.
+{% endcomment %}
+
+<div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+  <div class="px-5 py-4 border-b border-brand-border-light">
+    <h2 class="text-base font-semibold text-gray-900">Who can supply this</h2>
+    <p class="text-sm text-gray-500 mt-0.5 max-w-2xl">
+      Nobody is recorded as "a supplier of" anything — this is read back off
+      what actually happened{% if scope_note %}, {{ scope_note }}{% endif %}. A
+      contract and an unanswered email are both connections; they are not the
+      same connection, so each says which it is and when.
+    </p>
+  </div>
+
+  {% if supply_base %}
+    <ul class="divide-y divide-gray-100">
+      {% for claim in supply_base %}
+        <li class="px-5 py-4">
+          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <a class="font-medium text-brand-indigo hover:underline"
+               href="{% url 'supply_chain:supplier_detail' claim.supplier_id %}">{{ claim.supplier_name }}</a>
+            {% if claim.supplier_country %}
+              <span class="text-xs text-gray-500">{{ claim.supplier_country }}</span>
+            {% endif %}
+            <span class="text-xs font-semibold uppercase tracking-wide rounded px-1.5 py-0.5
+              {% if claim.basis == 'contracted' or claim.basis == 'awarded' %}
+                text-teal-700 bg-teal-50 border border-teal-200
+              {% elif claim.basis == 'quoted' %}
+                text-brand-indigo bg-indigo-50 border border-indigo-200
+              {% elif claim.basis == 'named_as_manufacturer' %}
+                text-gray-600 bg-gray-50 border border-gray-200
+              {% else %}
+                text-amber-800 bg-amber-50 border border-amber-200
+              {% endif %}">{{ claim.basis|evidence_label }}</span>
+            {% if claim.last_heard %}
+              <span class="ml-auto text-xs text-gray-500">last dated record {{ claim.last_heard }}</span>
+            {% endif %}
+          </div>
+
+          <ul class="mt-2 space-y-1">
+            {% for evidence in claim.evidence %}
+              <li class="text-sm text-gray-700 flex flex-wrap gap-x-2">
+                <span class="text-gray-500 min-w-[10rem]">{{ evidence.kind|evidence_label }}</span>
+                <span>
+                  {{ evidence.detail }}
+                  {% if evidence.on %}<span class="text-gray-500">· {{ evidence.on }}</span>{% endif %}
+                  {% if evidence.quote_id %}
+                    · <a class="text-brand-indigo hover:underline"
+                         href="{% url 'supply_chain:procurement_quote_detail' evidence.quote_id %}">quote {{ evidence.quote_id }}</a>
+                  {% endif %}
+                  {% if evidence.contract_id %}
+                    · <a class="text-brand-indigo hover:underline"
+                         href="{% url 'supply_chain:order_detail' evidence.contract_id %}">order</a>
+                  {% endif %}
+                  {% if evidence.round_id and not evidence.quote_id %}
+                    · <a class="text-brand-indigo hover:underline"
+                         href="{% url 'supply_chain:procurement_round_detail' evidence.round_id %}">round {{ evidence.round_id }}</a>
+                  {% endif %}
+                </span>
+              </li>
+            {% endfor %}
+          </ul>
+
+          {% if claim.basis == 'named_as_manufacturer' %}
+            <p class="mt-2 text-xs text-gray-500 max-w-2xl">
+              Matched on the manufacturer name typed on the trade item, which is
+              free text with no link to this company's record. They have never
+              quoted here.
+            </p>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="px-5 py-5 text-sm text-gray-500 max-w-2xl">
+      Nobody yet. Nothing has been quoted, awarded or contracted against this,
+      and no invitation has gone out — so there is nothing to read a supply
+      base off. Recording an RFQ invitation is what starts it.
+    </p>
+  {% endif %}
+</div>

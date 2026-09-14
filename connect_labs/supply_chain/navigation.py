@@ -15,6 +15,7 @@ from django.urls import reverse
 SUPPLY_TABS = (
     ("supply_chain:home", "Overview"),
     ("supply_chain:catalogue", "Catalogue"),
+    ("supply_chain:suppliers", "Suppliers"),
     ("supply_chain:procurement_round_board", "Sourcing"),
     ("supply_chain:orders", "Orders"),
     ("supply_chain:stock", "Stock"),
@@ -27,7 +28,12 @@ TAB_FOR_VIEW = {
     "supply_chain:procurement_round_detail": "supply_chain:procurement_round_board",
     "supply_chain:procurement_comparison": "supply_chain:procurement_round_board",
     "supply_chain:procurement_quote_entry": "supply_chain:procurement_round_board",
-    "supply_chain:procurement_registries": "supply_chain:catalogue",
+    # A quote's own page had no entry, so landing on it un-highlighted every
+    # tab and the nav read as though you had left the domain.
+    "supply_chain:procurement_quote_detail": "supply_chain:procurement_round_board",
+    "supply_chain:product_detail": "supply_chain:catalogue",
+    "supply_chain:item_detail": "supply_chain:catalogue",
+    "supply_chain:supplier_detail": "supply_chain:suppliers",
     "supply_chain:order_detail": "supply_chain:orders",
 }
 

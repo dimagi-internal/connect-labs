@@ -15,7 +15,7 @@ from typing import Any
 import jsonschema
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.supply_chain import models, records, serializers
+from connect_labs.supply_chain import models, records, reference_catalogue, serializers
 from connect_labs.supply_chain.values import to_wire
 
 # The published wire shape, per model. See serializers.py for why these are
@@ -353,9 +353,19 @@ _COMMODITY_DATA = _data_with(
     ("slug",),
     slug={"type": "string", "minLength": 1},
     name={"type": "string", "minLength": 1},
+    # `supplementary_food` and `oral_rehydration` are separate from
+    # `therapeutic_food` because a CMAM programme buys all three and they are
+    # not interchangeable: RUSF treats moderate malnutrition and RUTF severe,
+    # and ReSoMal is dosed against dehydration, not against a treatment
+    # course. Filing them under therapeutic_food would make "how much
+    # therapeutic food did we buy" answer with a number nobody asked for.
+    # Both still have a course, so neither joins the no-ration-table set in
+    # checks.py.
     category={
         "enum": [
             "therapeutic_food",
+            "supplementary_food",
+            "oral_rehydration",
             "micronutrient",
             "antibiotic",
             "antimalarial",
@@ -490,6 +500,59 @@ def item_get(access, item_id):
 )
 def item_upsert(access, data):
     return record(access.upsert_item(data))
+
+
+@register_operation(
+    name="catalogue_seed",
+    summary=(
+        "Add a starting catalogue for a malnutrition programme — supplementary food, the "
+        "two therapeutic milks, rehydration salts, MUAC tapes, amoxicillin and the "
+        "anthropometry equipment — plus a few manufacturers' trade items. Existing rows "
+        "are LEFT ALONE, never overwritten: a product already in this catalogue may carry "
+        "a ration table or a specification somebody set, and a seed that clobbered it "
+        "would destroy the programme's own work. Safe to re-run; use dry_run to see what "
+        "it would add."
+    ),
+    input_schema=obj({"dry_run": {"type": "boolean"}}),
+    is_write=True,
+)
+def catalogue_seed(access, dry_run=False):
+    existing_products = {c.slug for c in access.list_commodities()}
+    existing_items = {i.sku for i in access.list_items()}
+
+    added_products, kept_products = [], []
+    for product in reference_catalogue.PRODUCTS:
+        if product["slug"] in existing_products:
+            kept_products.append(product["slug"])
+            continue
+        if not dry_run:
+            access.upsert_commodity(dict(product))
+        added_products.append(product["slug"])
+
+    # Trade items after the products, and only where the product is really
+    # there. `Item.commodity` is not nullable, so one whose product is missing
+    # raises deep in the ORM rather than saying which product it wanted.
+    available = existing_products | set(added_products)
+    added_items, kept_items, refused = [], [], []
+    for item in reference_catalogue.TRADE_ITEMS:
+        if item["sku"] in existing_items:
+            kept_items.append(item["sku"])
+            continue
+        if item["commodity_slug"] not in available:
+            refused.append(f"{item['sku']} needs the product '{item['commodity_slug']}', which this catalogue lacks")
+            continue
+        if not dry_run:
+            access.upsert_item(dict(item))
+        added_items.append(item["sku"])
+
+    return {
+        "dry_run": dry_run,
+        "products_added": added_products,
+        "products_already_present": kept_products,
+        "trade_items_added": added_items,
+        "trade_items_already_present": kept_items,
+        "refused": refused,
+    }
 
 
 @register_operation(

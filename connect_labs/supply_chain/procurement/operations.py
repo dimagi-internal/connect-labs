@@ -20,6 +20,7 @@ from connect_labs.supply_chain.procurement.services.compliance import check_comp
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
 from connect_labs.supply_chain.procurement.services.questions import missing_facts
 from connect_labs.supply_chain.procurement.services.render import render_followup, render_initial_request
+from connect_labs.supply_chain.procurement.services.supply_base import supply_base, wire
 
 # ---- rounds and outreach ----------------------------------------------
 
@@ -405,6 +406,36 @@ def award_create(access, round_id, quote_id, rationale, decided_by=None):
 )
 def award_list(access, round_id=None):
     return [record(a) for a in access.list_awards(round_id=round_id)]
+
+
+@register_operation(
+    name="commodity_supply_base",
+    summary=(
+        "Who we think can supply a commodity, and the record each belief rests on — "
+        "contracted, awarded, quoted, invited, or merely named as the manufacturer of a "
+        "trade item. There is no stored list of who supplies what, on purpose: every "
+        "entry here is derived and dated, so a supplier that went quiet in April does "
+        "not read the same as one under contract. Pass item_id to narrow to one "
+        "manufacturer's version of the commodity."
+    ),
+    input_schema=obj(
+        {"commodity_slug": {"type": "string"}, "item_id": ID},
+        required=("commodity_slug",),
+    ),
+)
+def commodity_supply_base(access, commodity_slug, item_id=None):
+    claims = supply_base(
+        commodity_slug=commodity_slug,
+        item_id=item_id,
+        suppliers=access.list_suppliers(),
+        quotes=access.list_quotes(),
+        awards=access.list_awards(),
+        contracts=access.list_contracts(),
+        outreach=access.list_outreach(),
+        rounds=access.list_rounds(),
+        items=access.list_items(),
+    )
+    return [wire(claim) for claim in claims]
 
 
 # Purchases used to live here, as "what an LLO actually paid". They are gone:
