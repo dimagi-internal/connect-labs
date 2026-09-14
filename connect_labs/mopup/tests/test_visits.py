@@ -11,8 +11,10 @@ from connect_labs.mopup.core.visits import aggregate_visits_by_wa, build_evaluat
 
 
 class _FakeRow:
-    def __init__(self, entity_id, **computed):
+    def __init__(self, entity_id, username="", visit_date=None, **computed):
         self.entity_id = entity_id
+        self.username = username
+        self.visit_date = visit_date
         self.computed = computed
 
 
@@ -64,6 +66,8 @@ class TestListApprovedVisits:
         rows = [
             _FakeRow(
                 "v1",
+                username="flw-1",
+                visit_date="2026-01-05",
                 form_name="Health Service Delivery",
                 wa_case_id="wa-1",
                 deworming="DW Delivered",
@@ -84,6 +88,8 @@ class TestListApprovedVisits:
             "deworming_given": True,
             "muac_recorded": True,
             "vaccination_given": True,
+            "username": "flw-1",
+            "visit_date": "2026-01-05",
         }
 
     def test_missing_dq_fields_are_falsy_not_crashed(self):
@@ -124,6 +130,7 @@ class TestAggregateVisitsByWa:
             "deworming_given": 1,
             "muac_given": 2,
             "vaccination_given": 1,
+            "flw_username": "",
         }
         assert agg["wa-2"]["approved_hsd_count"] == 1
 
@@ -141,6 +148,67 @@ class TestAggregateVisitsByWa:
 
     def test_empty_input_returns_empty(self):
         assert aggregate_visits_by_wa([]) == {}
+
+    def test_flw_username_is_the_wards_last_submitter_by_visit_date(self):
+        # It shouldn't normally happen that two different FLWs submit to the
+        # same work area, but if it does, the most RECENT submitter wins.
+        visits = [
+            {
+                "wa_case_id": "wa-1",
+                "form_name": "Health Service Delivery",
+                "username": "flw-early",
+                "visit_date": "2026-01-01",
+            },
+            {
+                "wa_case_id": "wa-1",
+                "form_name": "Health Service Delivery",
+                "username": "flw-late",
+                "visit_date": "2026-01-10",
+            },
+        ]
+        agg = aggregate_visits_by_wa(visits)
+        assert agg["wa-1"]["flw_username"] == "flw-late"
+
+    def test_flw_username_out_of_order_visits_still_pick_the_latest(self):
+        # Same as above but the later-dated visit is encountered FIRST in
+        # iteration order -- the pick must be by date, not by arrival order.
+        visits = [
+            {
+                "wa_case_id": "wa-1",
+                "form_name": "Health Service Delivery",
+                "username": "flw-late",
+                "visit_date": "2026-01-10",
+            },
+            {
+                "wa_case_id": "wa-1",
+                "form_name": "Health Service Delivery",
+                "username": "flw-early",
+                "visit_date": "2026-01-01",
+            },
+        ]
+        agg = aggregate_visits_by_wa(visits)
+        assert agg["wa-1"]["flw_username"] == "flw-late"
+
+    def test_flw_username_first_seen_wins_when_no_visit_dates_available(self):
+        visits = [
+            {"wa_case_id": "wa-1", "form_name": "Health Service Delivery", "username": "flw-a"},
+            {"wa_case_id": "wa-1", "form_name": "Health Service Delivery", "username": "flw-b"},
+        ]
+        agg = aggregate_visits_by_wa(visits)
+        assert agg["wa-1"]["flw_username"] == "flw-a"
+
+    def test_flw_username_visit_without_username_does_not_clear_the_pick(self):
+        visits = [
+            {
+                "wa_case_id": "wa-1",
+                "form_name": "Health Service Delivery",
+                "username": "flw-a",
+                "visit_date": "2026-01-01",
+            },
+            {"wa_case_id": "wa-1", "form_name": "No Children Found"},  # no username at all
+        ]
+        agg = aggregate_visits_by_wa(visits)
+        assert agg["wa-1"]["flw_username"] == "flw-a"
 
 
 class TestBuildEvaluationRows:
@@ -207,3 +275,37 @@ class TestBuildEvaluationRows:
         rows = build_evaluation_rows(work_areas, {})
         assert rows[0]["approved_hsd_count"] == 0
         assert rows[0]["deworming_given"] == 0
+        # No visits at all -> nothing to derive a submitter from, falls
+        # back to the case's own owner_id (empty here, same as the fixture).
+        assert rows[0]["flw_username"] == ""
+
+    def test_visit_derived_flw_username_takes_priority_over_case_owner_id(self):
+        # The actual bug fix: a WA case's own `owner_id` is a raw CommCare
+        # HQ user UUID that fetch_flw_names() can never resolve to a name --
+        # the last submitting FLW's Connect username (aggregate_visits_by_wa's
+        # `flw_username`) is what should end up on the row.
+        work_areas = [
+            {
+                "case_id": "wa-1",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "building_count": 10,
+                "expected_visit_count": 8,
+                "status": "VISITED",
+                "owner_id": "3022f9e591b741f28a9b76a0c10692bd",
+            }
+        ]
+        aggregates = {
+            "wa-1": {
+                "approved_hsd_count": 1,
+                "approved_ncf_count": 0,
+                "approved_inaccessible_count": 0,
+                "deworming_given": 0,
+                "muac_given": 0,
+                "vaccination_given": 0,
+                "flw_username": "real_connect_username",
+            }
+        }
+        rows = build_evaluation_rows(work_areas, aggregates)
+        assert rows[0]["flw_username"] == "real_connect_username"
