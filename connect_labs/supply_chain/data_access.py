@@ -25,6 +25,7 @@ from datetime import date
 
 from django.db import transaction
 
+from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import gs1, scopes
 from connect_labs.supply_chain.fulfilment.repository import FulfilmentRepositoryMixin
 from connect_labs.supply_chain.models import (
@@ -38,7 +39,6 @@ from connect_labs.supply_chain.models import (
     Item,
     Movement,
     Outreach,
-    Party,
     Quote,
     Receipt,
     Round,
@@ -61,7 +61,7 @@ GTIN_FIELDS = ("gtin_base", "gtin_pack", "gtin_case")
 #
 # Anything NOT listed here passes through as a raw id -- which is the point:
 # an earlier version matched only field *names*, so every `*_id` a JSON
-# caller sent was silently discarded. `recorded_by_party_id` is on every
+# caller sent was silently discarded. `recorded_by_org_id` is on every
 # provenance-bearing write in the domain, and it was being dropped.
 _RESOLVED = {
     "commodity_slug",
@@ -69,10 +69,10 @@ _RESOLVED = {
     "supplier_id",
     "item_id",
     "quote_id",
-    "buyer_party_id",
+    "buyer_org_id",
     "supply_point_id",
     "parent_supply_point_id",
-    "managed_by_party_id",
+    "managed_by_org_id",
     "from_supply_point_id",
     "to_supply_point_id",
     "contract_id",
@@ -99,10 +99,10 @@ def _columns(model, data: dict) -> dict:
     """The keys of `data` that this model can actually be given.
 
     Two kinds count: a field's name, and a relation's attname -- `award_id`,
-    `recorded_by_party_id`, `delivery_supply_point_id`. The attnames matter
+    `recorded_by_org_id`, `delivery_supply_point_id`. The attnames matter
     because that is how a JSON caller names a relation, and an earlier
     version matched names only, so every `*_id` sent over the API was
-    silently discarded. `recorded_by_party_id` rides on every
+    silently discarded. `recorded_by_org_id` rides on every
     provenance-bearing write in the domain, and it was being dropped.
 
     Anything unrecognised is ignored rather than stored: a typo'd field name
@@ -259,7 +259,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         # Self-references are the same problem one table in: a worker's
         # holding names the store above it as its parent, so no ordering of
         # SupplyPoint deletes can work either.
-        SupplyPoint.objects.filter(program_id=program_id).update(parent=None, managed_by_party=None)
+        SupplyPoint.objects.filter(program_id=program_id).update(parent=None, managed_by_org=None)
 
         drop("documents", Document.objects.filter(program_id=program_id))
         drop("stock counts", StockCount.objects.filter(program_id=program_id))
@@ -281,7 +281,6 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
             drop("items", Item.objects.filter(scope_key=key))
             drop("suppliers", Supplier.objects.filter(scope_key=key))
             drop("commodities", Commodity.objects.filter(scope_key=key))
-            drop("parties", Party.objects.filter(scope_key=key))
         return counts
 
     # ---- scoping --------------------------------------------------------
@@ -387,18 +386,45 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         return _fresh(supplier)
 
     def list_parties(self):
-        return list(self._reference(Party).all())
+        return list(LabsOrg.objects.all())
 
     def get_party(self, party_id: int):
-        return self._reference(Party).filter(pk=party_id).first()
+        return LabsOrg.objects.filter(pk=party_id).first()
 
     def upsert_party(self, data: dict):
-        obj, _ = Party.objects.update_or_create(
-            scope_key=self.scope_key,
-            slug=data["slug"],
-            defaults=_columns(Party, {k: v for k, v in data.items() if k != "slug"}),
-        )
-        return _fresh(obj)
+        """Record an organisation.
+
+        Not programme-scoped, unlike the reference tier around it. An
+        organisation is the same organisation in every programme it appears
+        in, and scoping it per programme is what produced three registries of
+        the same thing.
+
+        `kind` and `roles` are accepted and not stored: what an organisation
+        IS to a purchase is a fact about the purchase
+        (`Contract.buyer_of_record`), not about the organisation. Storing it
+        here let one body be "the programme" in a way that could not be true
+        in a second programme.
+        """
+        fields = {k: v for k, v in data.items() if k not in ("slug", "kind", "roles", "contacts")}
+        columns = _columns(LabsOrg, fields)
+
+        # Located by the Connect id FIRST where there is one, because that is
+        # the identity and the slug is not. Keying only on the slug meant a
+        # linked organisation that had been RENAMED looked like a new row, and
+        # the insert then hit the unique constraint on connect_organization_id
+        # -- a rename failing as a database error rather than updating a name.
+        connect_id = columns.get("connect_organization_id")
+        existing = LabsOrg.objects.filter(connect_organization_id=connect_id).first() if connect_id else None
+        if existing is None:
+            existing = LabsOrg.objects.filter(slug=data["slug"]).first()
+
+        if existing is None:
+            obj = LabsOrg.objects.create(slug=data["slug"], **columns)
+            return _fresh(obj)
+        for key, value in {**columns, "slug": data["slug"]}.items():
+            setattr(existing, key, value)
+        existing.save()
+        return _fresh(existing)
 
     # ---- resolvers ------------------------------------------------------
     #
@@ -673,14 +699,14 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
     def create_contract(self, data):
         """The commitment. Separate from the award, which is only a decision.
 
-        `buyer_party_id` must name a party that exists, because the whole
+        `buyer_org_id` must name an organisation that exists, because the whole
         point of the field is that somebody other than us may be buying --
         and a contract whose buyer is a dangling id cannot answer the one
         question it was added to answer.
         """
-        party = self.get_party(data["buyer_party_id"])
+        party = self.get_party(data["buyer_org_id"])
         if party is None:
-            raise ValueError(f"party {data['buyer_party_id']} does not exist")
+            raise ValueError(f"organisation {data['buyer_org_id']} does not exist")
         return _fresh(
             Contract.objects.create(
                 program_id=self._require_program(),
@@ -688,7 +714,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
                 commodity=self._require_commodity(data["commodity_slug"]),
                 supplier=self._resolve_supplier(data.get("supplier_id")),
                 item=self._resolve_item(data.get("item_id")),
-                buyer_party=party,
+                buyer_org=party,
                 **_columns(Contract, data),
             )
         )

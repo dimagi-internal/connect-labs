@@ -235,15 +235,15 @@ class TestAwards:
 
 
 class TestContracts:
-    def test_a_contract_needs_a_buyer_party_that_exists(self, da, open_round):
+    def test_a_contract_needs_a_buyer_org_that_exists(self, da, open_round):
         supplier = da.create_supplier({"name": "Harmattan Foods"})
-        with pytest.raises(ValueError, match="party 999 does not exist"):
+        with pytest.raises(ValueError, match="organisation 999 does not exist"):
             da.create_contract(
                 {
                     "commodity_slug": "rutf",
                     "supplier_id": supplier.pk,
                     "buyer_of_record": "partner_org",
-                    "buyer_party_id": 999,
+                    "buyer_org_id": 999,
                     "source": "partner_reported",
                 }
             )
@@ -257,7 +257,7 @@ class TestContracts:
                 "commodity_slug": "rutf",
                 "supplier_id": supplier.pk,
                 "buyer_of_record": "partner_org",
-                "buyer_party_id": partner.pk,
+                "buyer_org_id": partner.pk,
                 "source": "partner_reported",
                 "quantity": "500",
                 "quantity_unit": "carton",
@@ -265,7 +265,7 @@ class TestContracts:
             }
         )
         assert contract.buyer_of_record == "partner_org"
-        assert contract.buyer_party_id == partner.pk
+        assert contract.buyer_org_id == partner.pk
         assert contract.witnessed is False, "a partner's report is a claim, not an observation"
         assert contract.unit_price == Decimal("52.4200")
 
@@ -277,7 +277,7 @@ class TestContracts:
                 "commodity_slug": "rutf",
                 "supplier_id": supplier.pk,
                 "buyer_of_record": "partner_org",
-                "buyer_party_id": partner.pk,
+                "buyer_org_id": partner.pk,
                 "source": "partner_reported",
                 "duty_relief_claimed": True,
             }
@@ -408,7 +408,7 @@ class TestSyntheticScopes:
                 "commodity_slug": "rutf",
                 "supplier_id": supplier.pk,
                 "buyer_of_record": "partner_org",
-                "buyer_party_id": partner.pk,
+                "buyer_org_id": partner.pk,
                 "source": "partner_reported",
                 "quantity": "100",
                 "quantity_unit": "carton",

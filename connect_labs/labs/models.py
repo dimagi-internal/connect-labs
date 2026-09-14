@@ -320,3 +320,95 @@ class WorkflowSchedule(models.Model):
         self.next_run_at = compute_next_run(self.cadence, self.hour, self.day_of_week, self.day_of_month, from_dt)
         if self.pk:
             self.save(update_fields=["next_run_at"])
+
+
+class LabsOrg(models.Model):
+    """An organisation, as labs knows it — until Connect knows it too.
+
+    Labs builds features ahead of production, so it routinely needs to name
+    organisations Connect has no row for: a manufacturer we buy cartons from,
+    a partner working with us before anyone creates their Connect account, a
+    delivery partner known only by a slug on an export. Every app that needed
+    one invented its own registry — `supply_chain.Party`,
+    `supply_chain.Supplier`, `pulse.PulsePartner` — three tables meaning "an
+    organisation in real life", drifting apart.
+
+    **This does not wait on production; that is the point.** Labs names an
+    organisation whenever it needs one. A row carries both join keys from the
+    start, so linking to Connect later is an update rather than a migration,
+    and production catching up is a linking event rather than a redesign.
+    What has to shrink to zero is not this table but the DUPLICATION: every
+    organisation Connect does represent should be linked to it and should
+    stop being separately edited here.
+
+    **Identity only.** Name, country, and the keys that join it to Connect.
+    Domain state belongs to the domain: a supplier's sourcing lifecycle and
+    its contacts stay on the supplier profile, a delivery partner's telemetry
+    stays in pulse. A field one feature invented makes the whole row
+    unmigratable, because the blocker becomes Connect not having that field.
+
+    **Two join keys, because Connect hands out two.** A real organisation has
+    an integer id; a labs-only synthetic one is identified by slug
+    (`labs-synthetic-…`, see `labs/synthetic/org_tree`). Holding only the
+    integer is what made synthetic organisations unrepresentable and pushed
+    callers into inventing unlinked local rows for organisations that plainly
+    exist.
+
+    Matching, stated so a reconciliation cannot be improvised later:
+
+      * `connect_organization_id` is the identity. It does not change.
+      * the slug is a finding aid, and matches only a row with no id yet.
+        Once an id is set, a slug that disagrees is refreshed rather than
+        treated as a second candidate — a rename is not a new organisation.
+      * two local rows resolving to one Connect id is a conflict, reported
+        and never merged: merging folds two histories — two supplier
+        profiles, two sets of contacts — on the strength of a string.
+    """
+
+    # A stable local handle, because an organisation needs referring to
+    # before Connect has one, and because pulse matches on slugs. Unique
+    # across labs: this is ONE registry. An organisation is the same
+    # organisation in every programme it appears in, which is the whole
+    # correction this model exists to make.
+    slug = models.SlugField(max_length=120, unique=True)
+    name = models.CharField(max_length=300)
+    short_name = models.CharField(max_length=120, blank=True, default="")
+    country = models.CharField(max_length=2, blank=True, default="")
+
+    # The join. Either, neither, or — once reconciled — both.
+    connect_organization_id = models.IntegerField(null=True, blank=True, unique=True, db_index=True)
+    connect_organization_slug = models.CharField(max_length=200, blank=True, default="", db_index=True)
+
+    # Slugs no matcher can reach, pointed here by a person. Pulse learned
+    # this the hard way: a wrong parent name is worse than a visible slug.
+    aliases = models.JSONField(default=list, blank=True)
+    notes = models.TextField(blank=True, default="")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "labs organisation"
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def is_linked(self) -> bool:
+        """Whether Connect represents this organisation. The rest is the backlog."""
+        return self.connect_organization_id is not None
+
+    def matches(self, *, organization_id=None, slug=None) -> bool:
+        """Whether this row is the organisation those keys describe."""
+        if self.connect_organization_id is not None:
+            # Linked: the id is the identity, and it is the ONLY thing that
+            # answers. Falling through to the slug here let a stale name
+            # resolve to an organisation that has already been reconciled --
+            # the opposite of the rule this docstring states, and the way a
+            # rename turns into a mis-attribution.
+            return organization_id is not None and int(organization_id) == self.connect_organization_id
+        if slug:
+            candidates = {self.connect_organization_slug, *(self.aliases or [])}
+            return slug in {c for c in candidates if c}
+        return False

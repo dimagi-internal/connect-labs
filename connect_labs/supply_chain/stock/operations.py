@@ -35,7 +35,7 @@ _SUPPLY_POINT_DATA = _data_with(
     kind={"enum": list(records.SUPPLY_POINT_KINDS)},
     opportunity_id=ID,
     parent_supply_point_id=ID,
-    managed_by_party_id=ID,
+    managed_by_org_id=ID,
     connect_username={"type": "string"},
     connect_user_id=ID,
     admin_area={"type": "string"},
@@ -45,7 +45,7 @@ _SUPPLY_POINT_DATA = _data_with(
     max_months_of_stock=MONEY,
     status={"enum": ["active", "inactive"]},
     source={"enum": list(records.SOURCES)},
-    recorded_by_party_id=ID,
+    recorded_by_org_id=ID,
 )
 
 _MOVEMENT_DATA = _data_with(
@@ -65,7 +65,7 @@ _MOVEMENT_DATA = _data_with(
     opportunity_id=ID,
     reference={"type": "string"},
     source={"enum": list(records.SOURCES)},
-    recorded_by_party_id=ID,
+    recorded_by_org_id=ID,
 )
 
 _STOCK_COUNT_DATA = _data_with(
@@ -86,7 +86,7 @@ _STOCK_COUNT_DATA = _data_with(
     visit_id={"type": "string"},
     connect_username={"type": "string"},
     source={"enum": list(records.SOURCES)},
-    recorded_by_party_id=ID,
+    recorded_by_org_id=ID,
 )
 
 _DISTRIBUTION_DATA = _data_with(
@@ -110,7 +110,7 @@ _DISTRIBUTION_DATA = _data_with(
         ),
     },
     source={"enum": list(records.SOURCES)},
-    recorded_by_party_id=ID,
+    recorded_by_org_id=ID,
 )
 
 

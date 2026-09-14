@@ -68,7 +68,7 @@ def _contract(da, setup, **overrides):
         "supplier_id": setup["supplier"]["id"],
         "item_id": setup["item"]["id"],
         "buyer_of_record": "partner_org",
-        "buyer_party_id": setup["partner"]["id"],
+        "buyer_org_id": setup["partner"]["id"],
         "source": "partner_reported",
         "quantity": "500",
         "quantity_unit": "carton",
@@ -567,9 +567,9 @@ class TestDocuments:
 
 class TestPartnerWritesThroughTheSameSurface:
     def test_a_partner_reported_row_is_marked_as_a_claim_not_an_observation(self, da, setup):
-        contract = _contract(da, setup, source="partner_reported", recorded_by_party_id=setup["partner"]["id"])
+        contract = _contract(da, setup, source="partner_reported", recorded_by_org_id=setup["partner"]["id"])
         assert contract["source"] == "partner_reported"
-        assert contract["recorded_by_party_id"] == setup["partner"]["id"]
+        assert contract["recorded_by_org_id"] == setup["partner"]["id"]
         assert contract["witnessed"] is False
 
     def test_our_own_record_is_an_observation(self, da, setup):

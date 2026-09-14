@@ -47,12 +47,19 @@ def party(obj) -> dict:
         "id": obj.pk,
         "slug": obj.slug,
         "name": obj.name,
-        "kind": obj.kind,
+        "short_name": obj.short_name,
+        # Both join keys, because a caller reconciling against Connect needs
+        # to know which is set: the id is the identity, the slug a finding
+        # aid (labs.models.LabsOrg). `kind` and `roles` are gone -- what an
+        # organisation IS to a purchase is a fact about the purchase
+        # (Contract.buyer_of_record), not about the organisation, and
+        # storing it here let one body be "the programme" in a way that
+        # could not be true in a second programme.
         "connect_organization_id": obj.connect_organization_id,
+        "connect_organization_slug": obj.connect_organization_slug,
         "is_linked": obj.is_linked,
-        "roles": obj.roles,
+        "aliases": obj.aliases,
         "country": obj.country,
-        "contacts": obj.contacts,
         "notes": obj.notes,
     }
 
@@ -110,7 +117,7 @@ def supplier(obj) -> dict:
         "contacts": obj.contacts,
         "qualifications": obj.qualifications,
         "connect_organization_id": obj.connect_organization_id,
-        "party_id": obj.party_id,
+        "party_id": obj.org_id,
         "notes": obj.notes,
         "reference_scope": _reference_scope(obj.scope_key),
     }
@@ -201,7 +208,7 @@ def award(obj) -> dict:
 def _sourced(obj) -> dict:
     return {
         "source": obj.source,
-        "recorded_by_party_id": obj.recorded_by_party_id,
+        "recorded_by_org_id": obj.recorded_by_org_id,
         "witnessed": obj.witnessed,
         "note": obj.note,
     }
@@ -216,7 +223,7 @@ def contract(obj) -> dict:
         "item_id": obj.item_id,
         "commodity_slug": obj.commodity.slug,
         "buyer_of_record": obj.buyer_of_record,
-        "buyer_party_id": obj.buyer_party_id,
+        "buyer_org_id": obj.buyer_org_id,
         "reference": obj.reference,
         "signed_on": _date(obj.signed_on),
         "status": obj.status,
@@ -363,7 +370,7 @@ def supply_point(obj) -> dict:
         "is_user_held": obj.is_user_held,
         "opportunity_id": obj.opportunity_id,
         "parent_supply_point_id": obj.parent_id,
-        "managed_by_party_id": obj.managed_by_party_id,
+        "managed_by_org_id": obj.managed_by_org_id,
         "connect_username": obj.connect_username,
         "connect_user_id": obj.connect_user_id,
         "admin_area": obj.admin_area,

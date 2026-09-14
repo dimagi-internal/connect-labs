@@ -53,7 +53,7 @@ def _movement(
         # The event and its movements agree about who said so by
         # construction, rather than by a caller remembering to pass it twice.
         source=event.source,
-        recorded_by_party=event.recorded_by_party,
+        recorded_by_org=event.recorded_by_org,
         **links,
     )
 
