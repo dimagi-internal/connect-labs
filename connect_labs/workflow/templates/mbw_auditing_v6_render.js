@@ -4765,11 +4765,11 @@ function WorkflowUI({
       },
       {
         title: 'Improvement in Audit Tab (Post-Task Metrics)',
-        body: "Tab 2 lists only FLWs with an open or resolved task in this run. Its metric columns are the same calculations as the Audit Report tab (GS Score, Follow-up Rate, etc.), but recomputed from \"Compute Post-Task Metrics\" using only visit data submitted after each FLW's task was triggered — so they show whether the FLW's work actually improved since being flagged, not their all-time average.",
+        body: 'Tab 2 lists only FLWs with an open or resolved task in this run. Its metric columns are the same calculations as the Audit Report tab (GS Score, Follow-up Rate, etc.), but recomputed from "Compute Post-Task Metrics" using only visit data submitted after each FLW\'s task was triggered — so they show whether the FLW\'s work actually improved since being flagged, not their all-time average.',
       },
       {
         title: 'Program Monitoring Tab',
-        body: 'Rolls the FLWs currently assigned to each performance category (Eligible for Renewal / Requires Improvement / Suspension / uncategorized) up into one row per category, using each FLW\'s most recently saved metrics.',
+        body: "Rolls the FLWs currently assigned to each performance category (Eligible for Renewal / Requires Improvement / Suspension / uncategorized) up into one row per category, using each FLW's most recently saved metrics.",
         items: [
           {
             name: 'Total Mothers / Eligible at Reg / Still Eligible',
