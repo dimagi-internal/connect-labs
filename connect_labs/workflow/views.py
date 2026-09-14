@@ -2241,6 +2241,10 @@ def pipeline_rows_api(request, definition_id):
     opportunity_id = _coerce_int(request.GET.get("rows_opportunity_id")) or _coerce_int(
         request.GET.get("opportunity_id")
     )
+    # The scope the RECORDS (workflow, pipeline) are read in, as distinct from the
+    # opportunity whose rows are wanted. They coincide for a single-opp caller and
+    # diverge on a multi-opp drill.
+    scope_opportunity_id = _coerce_int(request.GET.get("opportunity_id")) or opportunity_id
     if not alias or not opportunity_id:
         return JsonResponse({"error": "alias and opportunity_id are required"}, status=400)
     username = (request.GET.get("username") or "").strip()
@@ -2270,10 +2274,18 @@ def pipeline_rows_api(request, definition_id):
             return JsonResponse({"error": f"no pipeline source with alias {alias!r}"}, status=404)
 
         pipeline_id = int(source["pipeline_id"])
+        # Scoped to the WORKFLOW, not to the rows. A pipeline record lives with the
+        # workflow that references it (unless its source names a `home_scope`), and
+        # `PipelineDataAccess` already splits the two: the client's own scope governs
+        # the record read in `get_definition`, while `execute_pipeline` and
+        # `get_cached_pipeline_result` take the data opportunity as an explicit
+        # argument below. Building the client from the rows opp sent the record read
+        # into an opportunity that does not own it -- "pipeline 19776 not found",
+        # from a request that had already found the workflow.
         pipeline_access = PipelineDataAccess(
             request=request,
             access_token=(request.session.get("labs_oauth", {}) or {}).get("access_token"),
-            opportunity_id=opportunity_id,
+            opportunity_id=scope_opportunity_id,
         )
         # A referenced pipeline is read where it lives (its source's home_scope).
         pipeline_access.use_sources(definition.pipeline_sources)
