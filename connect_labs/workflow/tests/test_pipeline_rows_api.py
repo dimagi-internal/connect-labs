@@ -186,3 +186,52 @@ def test_the_review_sends_the_scope_and_the_rows_opp_under_different_names():
         head = chunk[:400]
         assert "'alias=" in head
         assert "&opportunity_id=" not in head, "a second opportunity_id re-scopes the whole request"
+
+
+class TestRecordsAreReadWhereTheyLiveNotWhereTheRowsAre:
+    """Three questions, historically one opportunity id.
+
+    A pipeline RECORD lives with the workflow that references it (unless its
+    source names a `home_scope`), while the ROWS wanted are some other spanned
+    opportunity's. `PipelineDataAccess` splits these already -- the client's own
+    scope governs `get_definition`, and `execute_pipeline` /
+    `get_cached_pipeline_result` take the data opportunity as an explicit
+    argument -- but this view built the client from the ROWS opp, so the record
+    read went looking in an opportunity that does not own it.
+
+    Verified against production 2026-09-14: pipeline 19776 reads as "KMC Case
+    Properties (SQL)" in opp 523 (the workflow's own) and "No pipeline with id
+    19776" in opp 874 (the worker's).
+    """
+
+    def _run(self, **params):
+        from connect_labs.workflow import views
+
+        pda = MagicMock()
+        pda.get_definition.return_value = MagicMock(schema={"fields": []})
+        pda._schema_to_config.return_value = object()
+        pda.get_cached_pipeline_result.return_value = {"rows": ROWS, "metadata": {}}
+        wda = MagicMock()
+        wda.get_definition.return_value = _definition(opps=(523, 524, 874))
+        with (
+            patch.object(views, "WorkflowDataAccess", return_value=wda),
+            patch.object(views, "PipelineDataAccess", return_value=pda) as pda_cls,
+        ):
+            response = views.pipeline_rows_api(_request(**params), DEF_ID)
+        return json.loads(response.content), response.status_code, pda, pda_cls
+
+    def test_the_pipeline_client_is_scoped_to_the_workflow_not_the_rows_opp(self):
+        body, status, pda, pda_cls = self._run(
+            alias="children", opportunity_id=523, rows_opportunity_id=874, username="flw_1"
+        )
+        assert status == 200, body
+        assert pda_cls.call_args.kwargs["opportunity_id"] == 523, "the pipeline record is read in the rows opp"
+        # ...while the rows themselves are still read for the opp that was asked for.
+        assert pda.get_cached_pipeline_result.call_args.args[1] == 874
+
+    def test_a_lone_opportunity_id_scopes_both(self):
+        """Single-opp callers: the two coincide, so nothing changes for them."""
+        _, status, pda, pda_cls = self._run(alias="children", opportunity_id=523, username="flw_1")
+        assert status == 200
+        assert pda_cls.call_args.kwargs["opportunity_id"] == 523
+        assert pda.get_cached_pipeline_result.call_args.args[1] == 523
