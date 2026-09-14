@@ -302,7 +302,11 @@ function WorkflowUI({
           '/pipeline-rows/' +
           sp +
           (sp ? '&' : '?') +
-          'alias=children&opportunity_id=' +
+          // `scopeParams()` already carries this workflow's own scope. The opp
+          // whose rows we want is a DIFFERENT question and needs its own name:
+          // a second `opportunity_id` here wins `QueryDict.get` and re-scopes
+          // the definition lookup to an opp that does not own it.
+          'alias=children&rows_opportunity_id=' +
           encodeURIComponent(flw.opp) +
           '&username=' +
           encodeURIComponent(flw.flw),
@@ -413,7 +417,8 @@ function WorkflowUI({
           '/pipeline-rows/' +
           sp +
           (sp ? '&' : '?') +
-          'alias=visits&opportunity_id=' +
+          // See the cases fetch: the rows opp travels under its own name.
+          'alias=visits&rows_opportunity_id=' +
           encodeURIComponent(selCase.opportunity_id) +
           '&case_ids=' +
           encodeURIComponent(selCase.entity_id),

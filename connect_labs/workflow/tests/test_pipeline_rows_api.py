@@ -127,3 +127,62 @@ class TestItRefusesTheRest:
             cached={"rows": many, "metadata": {}}, alias="children", opportunity_id=523, limit=10
         )
         assert len(body["rows"]) == 10 and body["metadata"]["truncated"] is True
+
+
+class TestTheScopeAndTheRowsAreDifferentQuestions:
+    """`opportunity_id` is the scope the workflow RECORD is read in; which opp's
+    rows are wanted is a separate question.
+
+    A multi-opp drill needs them to differ: the KMC worker review is owned by opp
+    523 and opens a worker in opp 874. The render sent both under one name
+    (`?opportunity_id=523&...&opportunity_id=874`), and `QueryDict.get` returns
+    the LAST -- so `extract_context_from_url` scoped `request.labs_context` to
+    874 and the definition was read in an opportunity that does not own it,
+    answering "Workflow not found" (404) with a correct-looking URL.
+    """
+
+    def test_the_rows_opp_may_differ_from_the_scope(self):
+        body, status, pda = _call(
+            cached={"rows": ROWS, "metadata": {}},
+            alias="children",
+            opportunity_id=523,
+            rows_opportunity_id=874,
+            username="flw_1",
+            definition=_definition(opps=(523, 524, 874)),
+        )
+        assert status == 200, body
+        # Rows came from the opp that was asked for, not the scope.
+        assert body["metadata"]["opportunity_id"] == 874
+        assert all(r["opportunity_id"] == 874 for r in body["rows"])
+
+    def test_it_still_honours_a_lone_opportunity_id(self):
+        """Single-opp callers predate the split and must be unaffected."""
+        body, status, _ = _call(
+            cached={"rows": ROWS, "metadata": {}}, alias="children", opportunity_id=523, username="flw_1"
+        )
+        assert status == 200
+        assert body["metadata"]["opportunity_id"] == 523
+
+    def test_the_rows_opp_is_still_checked_against_what_the_workflow_spans(self):
+        """The split must not become a way to read an opp the workflow has no claim to."""
+        body, status, _ = _call(
+            alias="children",
+            opportunity_id=523,
+            rows_opportunity_id=99999,
+            definition=_definition(opps=(523, 524, 874)),
+        )
+        assert status == 403, body
+
+
+def test_the_review_sends_the_scope_and_the_rows_opp_under_different_names():
+    """The render half: one `opportunity_id` per URL, and the rows opp named
+    separately -- otherwise the duplicate key silently re-scopes the request."""
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[1] / "templates" / "kmc_flw_review_render.js").read_text()
+    assert "rows_opportunity_id=" in src, "the rows opp still rides on opportunity_id"
+    # Neither pipeline-rows URL may append a second opportunity_id of its own.
+    for chunk in src.split("'/pipeline-rows/'")[1:]:
+        head = chunk[:400]
+        assert "'alias=" in head
+        assert "&opportunity_id=" not in head, "a second opportunity_id re-scopes the whole request"
