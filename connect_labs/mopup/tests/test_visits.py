@@ -148,6 +148,7 @@ class TestBuildEvaluationRows:
         work_areas = [
             {
                 "case_id": "wa-1",
+                "wa_name": "Household 12",
                 "ward": "Sabon Gari",
                 "lga": "Rano",
                 "state": "Kano",
@@ -171,6 +172,7 @@ class TestBuildEvaluationRows:
         assert rows == [
             {
                 "wa_id": "wa-1",
+                "wa_name": "Household 12",
                 "ward": "Sabon Gari",
                 "lga": "Rano",
                 "state": "Kano",

@@ -61,7 +61,7 @@ class TestFetchEvaluationData:
         fake_rows = [{"wa_id": "wa-1"}, {"wa_id": "wa-2"}]
         stages_seen = []
 
-        def fake_build_evaluation_input(opp_id, wards, pipeline=None, on_stage=None):
+        def fake_build_evaluation_input(opp_id, wards, pipeline=None, access_token=None, on_stage=None):
             if on_stage:
                 on_stage("Fetching work areas…")
             stages_seen.append((opp_id, wards))

@@ -48,6 +48,7 @@ def build_evaluation_input(
     *,
     request: HttpRequest | None = None,
     pipeline=None,
+    access_token: str | None = None,
     on_stage: Callable[[str], None] | None = None,
 ) -> list[dict]:
     """The full per-WA row list, scoped to `selected_wards` (empty = every
@@ -57,10 +58,19 @@ def build_evaluation_input(
     from a Celery task's resolved tokens) to fetch every stage through the
     SAME pipeline instance instead of `request`-deriving a fresh one per
     call. Merges in real centroid (`lat`/`lon`, for §6a's spatial neighbor
-    graph) and boundary geometry (for a locked candidate's Phase 3
-    hand-off) from `core.geometry.fetch_work_area_geometry` — a work area
-    with no geometry match just keeps `lat`/`lon`/`boundary` at `None`
-    (evaluate_run already degrades gracefully for that)."""
+    graph), boundary geometry (for a locked candidate's Phase 3
+    hand-off), and the work area's own WAG (Work Area Group) name from
+    `core.geometry.fetch_work_area_geometry` — a work area with no
+    geometry match just keeps `lat`/`lon`/`boundary` at `None` and
+    `wag_name` at `""` (evaluate_run already degrades gracefully for that).
+
+    `access_token`, if given, resolves each row's `flw_username` (the raw
+    Connect FLW id) into a real display name via
+    `labs.analysis.data_access.fetch_flw_names` — the same
+    cached-and-reused mechanism `audit`/`custom_analysis`/`workflow` already
+    use for this exact "raw FLW id -> display name" lookup. Without it,
+    `flw_name` falls back to the raw id (same as every other caller of that
+    helper does for a username with no resolved name)."""
 
     def stage(label: str) -> None:
         if on_stage:
@@ -84,6 +94,18 @@ def build_evaluation_input(
         row["lat"] = geo.get("lat")
         row["lon"] = geo.get("lon")
         row["boundary"] = geo.get("boundary")
+        row["wag_name"] = geo.get("wag_name") or ""
+
+    if access_token:
+        stage("Resolving FLW names…")
+        from connect_labs.labs.analysis.data_access import fetch_flw_names
+
+        flw_names = fetch_flw_names(access_token, opportunity_id)
+        for row in rows:
+            row["flw_name"] = flw_names.get(row["flw_username"], row["flw_username"])
+    else:
+        for row in rows:
+            row["flw_name"] = row["flw_username"]
 
     stage("Aggregating…")
     return rows
@@ -234,6 +256,9 @@ def build_map_features(
                 "geometry": boundary,
                 "properties": {
                     "wa_id": wa["wa_id"],
+                    "wa_name": wa.get("wa_name", ""),
+                    "wag_name": wa.get("wag_name", ""),
+                    "flw_name": wa.get("flw_name", ""),
                     "ward": wa.get("ward", ""),
                     "included": candidate is not None,
                     "first_indicator": triggered[0] if triggered else None,
@@ -290,10 +315,13 @@ def gap_feature_to_candidate_row(feature: dict) -> dict:
     props = feature.get("properties", {}) or {}
     return {
         "wa_id": props.get("cluster", ""),
+        "wa_name": "",
+        "wag_name": "",
         "ward": props.get("ward", ""),
         "lga": props.get("lga", ""),
         "state": props.get("state", ""),
         "flw_username": "",
+        "flw_name": "",
         "boundary": feature.get("geometry"),
         "building_count": props.get("building_count", 0),
         "expected_visit_count": props.get("expected_visit_count", 0),

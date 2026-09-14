@@ -113,13 +113,13 @@ class TestFetchWorkAreaGeometry:
         rows = [_FakeRow("103083", wa_case_id="wa-1", boundary=None, centroid=None)]
         pipeline = _FakePipeline(rows)
         geometry = fetch_work_area_geometry(1, pipeline=pipeline)
-        assert geometry["wa-1"] == {"lat": None, "lon": None, "boundary": None}
+        assert geometry["wa-1"] == {"lat": None, "lon": None, "boundary": None, "wag_name": ""}
 
     def test_malformed_geometry_does_not_raise(self):
         rows = [_FakeRow("103083", wa_case_id="wa-1", boundary="not json", centroid="also not json")]
         pipeline = _FakePipeline(rows)
         geometry = fetch_work_area_geometry(1, pipeline=pipeline)
-        assert geometry["wa-1"] == {"lat": None, "lon": None, "boundary": None}
+        assert geometry["wa-1"] == {"lat": None, "lon": None, "boundary": None, "wag_name": ""}
 
     def test_rows_with_no_wa_case_id_are_skipped(self):
         rows = [_FakeRow("103083", wa_case_id=None)]
