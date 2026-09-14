@@ -38,6 +38,7 @@ from connect_labs.workflow.templates import (
     schedule_options_for_definition,
     template_groups,
     template_supports_default_run,
+    with_inherited_config_flags,
 )
 from connect_labs.workflow.templates.weekly_dual_track_audit import CLASSIFIER_KEYS
 
@@ -1193,7 +1194,10 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
 
             # Prepare data for React (pass as dict, json_script will handle encoding)
             context["workflow_data"] = {
-                "definition": definition.data,
+                # Render-contract flags its template declares but its own config
+                # predates -- resolved on read, never written back. See
+                # templates.with_inherited_config_flags.
+                "definition": with_inherited_config_flags(definition.data, definition.template_type),
                 "definition_id": definition.id,
                 "opportunity_id": opportunity_id,
                 # Program-owned workflows (record has program_id, no owning opp)
