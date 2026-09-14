@@ -306,6 +306,23 @@ def build_map_features(
     return {"type": "FeatureCollection", "features": features}
 
 
+def filter_gap_features(gap_features: list[dict], excluded_wa_ids) -> list[dict]:
+    """Drops any planning-gap Feature whose `properties.cluster` is in
+    `excluded_wa_ids` — the map view's "Not include" action works on gap
+    cells the same way it works on real work areas (see
+    `views._apply_exclusions`), since a gap-cluster id like
+    "{area_id}-gap-{cluster}" never collides with a real CommCare wa_id and
+    is exactly what `build_map_features`/`gap_feature_to_candidate_row`
+    already expose as that feature's own `wa_id`. Called both from
+    `MopupCandidatesView` (live preview) and `handoff.create_plan_from_locked_run`
+    (so an exclusion made before hand-off is actually honored in the plan,
+    not just hidden from the UI)."""
+    excluded = set(excluded_wa_ids)
+    if not excluded:
+        return gap_features
+    return [f for f in gap_features if (f.get("properties", {}) or {}).get("cluster") not in excluded]
+
+
 def gap_feature_to_candidate_row(feature: dict) -> dict:
     """Adapts one Step 2 planning-gap GeoJSON Feature into the same shape
     `core.indicators.evaluate_run`'s candidates use, so the candidate table

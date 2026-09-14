@@ -25,6 +25,7 @@ from collections.abc import Callable
 from django.http import HttpRequest
 
 from connect_labs.mopup.core.areas import carry_forward_features, distinct_wards, ward_children_per_building
+from connect_labs.mopup.core.candidates import filter_gap_features
 from connect_labs.mopup.core.models import MopupRunRecord
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,12 @@ def create_plan_from_locked_run(
     if pipeline is None and request is not None:
         pipeline = AnalysisPipeline(request=request)
 
-    gap_features = run.planning_gap_features
+    # A map/table exclusion made after Step 2's last preview (up until the
+    # moment of hand-off) must still be honored -- gap features aren't
+    # re-frozen at lock time the way `candidate_work_areas` is (see this
+    # module's docstring), so this is the actual enforcement point, not just
+    # a UI nicety.
+    gap_features = filter_gap_features(run.planning_gap_features, run.excluded_wa_ids)
     planning_gap_warnings = run.planning_gap_warnings
 
     all_features = cf_features + gap_features

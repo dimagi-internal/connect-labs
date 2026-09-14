@@ -5,6 +5,7 @@ from __future__ import annotations
 from connect_labs.mopup.core.candidates import (
     build_evaluation_input,
     build_map_features,
+    filter_gap_features,
     gap_feature_to_candidate_row,
     gap_summary_by_ward,
     summarize_candidates_by_ward,
@@ -518,3 +519,21 @@ class TestGapFeatureToCandidateRow:
             "severity_count": 0,
             "detail": {},
         }
+
+
+class TestFilterGapFeatures:
+    def _feature(self, cluster):
+        return {"type": "Feature", "geometry": None, "properties": {"cluster": cluster}}
+
+    def test_drops_features_whose_cluster_id_is_excluded(self):
+        features = [self._feature("gap-1"), self._feature("gap-2")]
+        result = filter_gap_features(features, ["gap-1"])
+        assert result == [self._feature("gap-2")]
+
+    def test_no_exclusions_returns_all_features_unchanged(self):
+        features = [self._feature("gap-1"), self._feature("gap-2")]
+        assert filter_gap_features(features, []) == features
+
+    def test_exclusion_not_matching_any_cluster_id_is_a_no_op(self):
+        features = [self._feature("gap-1")]
+        assert filter_gap_features(features, ["some-real-wa-id"]) == features

@@ -239,6 +239,39 @@ class TestCreatePlanFromLockedRun:
         assert calls["create_plan"][0]["area_targets"]["mopup-kano-rano-sabon-gari"] == pytest.approx(2.0 * 103)
         assert calls["create_plan"][0]["run_meta"]["include_planning_gaps"] is True
 
+    def test_excluded_gap_cell_is_dropped_before_hand_off(self, monkeypatch):
+        # Item 4: a gap cell excluded via the map's "Not include" action
+        # (run.excluded_wa_ids) must actually be left out of the plan, not
+        # just hidden from Step 2's live preview -- gap_features aren't
+        # re-frozen at lock time, so this is the real enforcement point.
+        plans = {}
+        calls = _mock_microplans(monkeypatch, target_by_ward={"Sabon Gari": 2.0}, plans=plans)
+
+        gap_feature = {
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [[[9, 9], [9.001, 9], [9.001, 9.001], [9, 9.001], [9, 9]]]},
+            "properties": {
+                "cluster": "mopup-kano-rano-sabon-gari-gap-C0",
+                "area_id": "mopup-kano-rano-sabon-gari",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "building_count": 3,
+                "expected_visit_count": 3,
+                "cell_size_m": 100.0,
+            },
+        }
+        run = _run([_candidate("wa-1")])
+        run.data["planning_gap_features"] = [gap_feature]
+        run.data["excluded_wa_ids"] = ["mopup-kano-rano-sabon-gari-gap-C0"]
+
+        resp = create_plan_from_locked_run(run, 217)
+
+        assert resp["planning_gap_cells_added"] == 0
+        hulls = calls["create_plan"][0]["hulls"]
+        assert len(hulls["features"]) == 1
+        assert calls["create_plan"][0]["run_meta"]["include_planning_gaps"] is False
+
     def test_no_planning_gap_features_on_the_run_means_carry_forward_only(self, monkeypatch):
         plans = {}
         calls = _mock_microplans(monkeypatch, plans=plans)
