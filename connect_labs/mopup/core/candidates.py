@@ -209,7 +209,17 @@ def build_map_features(
     `run.planning_gap_building_points`, individual `{"lon", "lat"}` dicts),
     are appended as Point features tagged `properties.source =
     "uploaded_building"` — the real building positions behind the gap-fill
-    cells above, not just the gridded cells themselves."""
+    cells above, not just the gridded cells themselves.
+
+    Every `existing_wa`/`planning_gap` feature also carries the raw counts
+    the map's hover tooltip needs (`analysis.js`'s `mapHoverContent`) —
+    `approved_hsd_count`/`expected_visit_count`/`building_count`, plus
+    `deworming_given`/`muac_given`/`vaccination_given` for existing work
+    areas (a planning-gap cell has no visit history of its own, so those
+    three are meaningless for it and left out). Percentages (HSD/EVC,
+    deworming/EVC, etc.) are computed client-side from these raw numbers,
+    not here — same division-by-zero handling either language would need,
+    so no reason to duplicate it."""
     candidates_by_id = {c["wa_id"]: c for c in candidates}
     features = []
     for wa in all_rows:
@@ -228,6 +238,12 @@ def build_map_features(
                     "included": candidate is not None,
                     "first_indicator": triggered[0] if triggered else None,
                     "source": "existing_wa",
+                    "approved_hsd_count": wa.get("approved_hsd_count", 0),
+                    "expected_visit_count": wa.get("expected_visit_count", 0),
+                    "building_count": wa.get("building_count", 0),
+                    "deworming_given": wa.get("deworming_given", 0),
+                    "muac_given": wa.get("muac_given", 0),
+                    "vaccination_given": wa.get("vaccination_given", 0),
                 },
             }
         )
@@ -243,6 +259,8 @@ def build_map_features(
                     "included": True,
                     "first_indicator": None,
                     "source": "planning_gap",
+                    "building_count": props.get("building_count", 0),
+                    "expected_visit_count": props.get("expected_visit_count", 0),
                 },
             }
         )

@@ -685,6 +685,116 @@ def test_candidates_returns_map_features_for_the_map(client, django_user_model, 
     assert features[0]["properties"]["first_indicator"] == ind.EVC_SHORTFALL
 
 
+def test_candidates_excludes_manually_excluded_work_areas(client, django_user_model, monkeypatch):
+    # The map view's "Not include" action (item 4) -- a work area in
+    # run.excluded_wa_ids must be dropped from candidates/ward_summary/
+    # per_indicator_counts and marked not-included on the map, regardless of
+    # what the indicator thresholds would otherwise flag it for.
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    run.data["excluded_wa_ids"] = ["wa-1"]
+    boundary = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]}
+    _mock_ready_data(
+        monkeypatch,
+        run,
+        [
+            {
+                "wa_id": "wa-1",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "flw_username": "flw-1",
+                "lat": None,
+                "lon": None,
+                "status": "VISITED",
+                "building_count": 10,
+                "expected_visit_count": 10,
+                "approved_hsd_count": 1,
+                "approved_ncf_count": 0,
+                "approved_inaccessible_count": 0,
+                "deworming_given": 0,
+                "muac_given": 0,
+                "vaccination_given": 0,
+                "boundary": boundary,
+            }
+        ],
+    )
+    from connect_labs.mopup.core import indicators as ind
+
+    resp = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps(
+            {
+                "indicator_configs": {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}},
+                "global_config": {"cluster_aware_filter_enabled": False},
+            }
+        ),
+        content_type="application/json",
+    )
+    body = resp.json()
+    assert body["candidate_count"] == 0
+    assert body["per_indicator_counts"][ind.EVC_SHORTFALL] == 0
+    features = body["map_features"]["features"]
+    assert len(features) == 1
+    assert features[0]["properties"]["included"] is False
+
+
+# --- MopupExcludeWorkAreaView -------------------------------------------------
+
+
+def test_exclude_work_area_requires_login(client):
+    resp = client.post(
+        reverse("mopup:exclude_work_area", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"wa_id": "wa-1"}),
+        content_type="application/json",
+    )
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_exclude_work_area_adds_to_excluded_list(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)
+
+    resp = client.post(
+        reverse("mopup:exclude_work_area", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"wa_id": "wa-1", "excluded": True}),
+        content_type="application/json",
+    )
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["excluded_wa_ids"] == ["wa-1"]
+    assert runs[1].data["excluded_wa_ids"] == ["wa-1"]
+
+
+def test_exclude_work_area_can_re_include(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    run.data["excluded_wa_ids"] = ["wa-1", "wa-2"]
+
+    resp = client.post(
+        reverse("mopup:exclude_work_area", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"wa_id": "wa-1", "excluded": False}),
+        content_type="application/json",
+    )
+    body = resp.json()
+    assert body["excluded_wa_ids"] == ["wa-2"]
+
+
+def test_exclude_work_area_requires_wa_id(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)
+    resp = client.post(
+        reverse("mopup:exclude_work_area", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
 def test_candidates_includes_gap_candidates_already_stored_on_the_run(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
@@ -1082,6 +1192,75 @@ def test_lock_freezes_candidates_and_sets_status(client, django_user_model, monk
     assert runs[1].status == STATUS_LOCKED
     assert len(runs[1].candidate_work_areas) == 1
     assert runs[1].candidate_work_areas[0]["wa_id"] == "wa-1"
+
+
+def test_lock_excludes_manually_excluded_work_areas_from_the_frozen_set(client, django_user_model, monkeypatch):
+    # An exclusion made before locking must already be baked into
+    # candidate_work_areas -- nothing downstream of locking (Step 2, the
+    # final hand-off) has its own separate exclusion check.
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    run.data["excluded_wa_ids"] = ["wa-1"]
+    _mock_ready_data(
+        monkeypatch,
+        run,
+        [
+            {
+                "wa_id": "wa-1",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "flw_username": "flw-1",
+                "lat": None,
+                "lon": None,
+                "boundary": {"type": "Polygon", "coordinates": []},
+                "status": "VISITED",
+                "building_count": 10,
+                "expected_visit_count": 10,
+                "approved_hsd_count": 1,
+                "approved_ncf_count": 0,
+                "approved_inaccessible_count": 0,
+                "deworming_given": 0,
+                "muac_given": 0,
+                "vaccination_given": 0,
+            },
+            {
+                "wa_id": "wa-2",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "flw_username": "flw-1",
+                "lat": None,
+                "lon": None,
+                "boundary": {"type": "Polygon", "coordinates": []},
+                "status": "VISITED",
+                "building_count": 10,
+                "expected_visit_count": 10,
+                "approved_hsd_count": 1,
+                "approved_ncf_count": 0,
+                "approved_inaccessible_count": 0,
+                "deworming_given": 0,
+                "muac_given": 0,
+                "vaccination_given": 0,
+            },
+        ],
+    )
+    from connect_labs.mopup.core import indicators as ind
+
+    resp = client.post(
+        reverse("mopup:lock", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps(
+            {
+                "indicator_configs": {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}},
+                "global_config": {"cluster_aware_filter_enabled": False},
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["locked_count"] == 1
+    assert [c["wa_id"] for c in runs[1].candidate_work_areas] == ["wa-2"]
 
 
 def test_lock_refuses_while_data_still_loading(client, django_user_model, monkeypatch):

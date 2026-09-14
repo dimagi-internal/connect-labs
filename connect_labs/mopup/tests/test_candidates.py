@@ -329,7 +329,52 @@ class TestBuildMapFeatures:
             "included": False,
             "first_indicator": None,
             "source": "existing_wa",
+            "approved_hsd_count": 0,
+            "expected_visit_count": 0,
+            "building_count": 0,
+            "deworming_given": 0,
+            "muac_given": 0,
+            "vaccination_given": 0,
         }
+
+    def test_existing_wa_carries_raw_counts_for_the_hover_tooltip(self):
+        all_rows = [
+            {
+                "wa_id": "wa-1",
+                "ward": "Sabon Gari",
+                "boundary": self._BOUNDARY,
+                "approved_hsd_count": 8,
+                "expected_visit_count": 10,
+                "building_count": 12,
+                "deworming_given": 6,
+                "muac_given": 5,
+                "vaccination_given": 7,
+            }
+        ]
+        fc = build_map_features(all_rows, [])
+        props = fc["features"][0]["properties"]
+        assert props["approved_hsd_count"] == 8
+        assert props["expected_visit_count"] == 10
+        assert props["building_count"] == 12
+        assert props["deworming_given"] == 6
+        assert props["muac_given"] == 5
+        assert props["vaccination_given"] == 7
+
+    def test_gap_feature_carries_building_count_and_expected_visit_count(self):
+        gap_feature = {
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [[[2, 2], [3, 2], [3, 3], [2, 3], [2, 2]]]},
+            "properties": {
+                "cluster": "mopup-x-gap-C0",
+                "ward": "Sabon Gari",
+                "building_count": 3,
+                "expected_visit_count": 5,
+            },
+        }
+        fc = build_map_features([], [], gap_features=[gap_feature])
+        props = fc["features"][0]["properties"]
+        assert props["building_count"] == 3
+        assert props["expected_visit_count"] == 5
 
     def test_gap_features_appended_with_their_own_source(self):
         gap_feature = {

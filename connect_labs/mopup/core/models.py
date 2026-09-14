@@ -168,5 +168,18 @@ class MopupRunRecord(LocalLabsRecord):
         return self.data.get("planning_gap_warnings", {})
 
     @property
+    def excluded_wa_ids(self) -> list[str]:
+        """Work-area ids the reviewer manually excluded from the map view
+        (item 4's "Not include" button) — kept out of the candidate table,
+        ward summary, and the final plan regardless of what the indicator
+        thresholds would otherwise flag. Applied as a filter AFTER
+        `evaluate_run` in both `MopupCandidatesView` (live, pre- and
+        post-lock display) and `MopupLockView` (so an exclusion made before
+        locking is already baked into the frozen `candidate_work_areas`,
+        with nothing else downstream needing to know about it). Empty until
+        a reviewer excludes at least one work area."""
+        return self.data.get("excluded_wa_ids", [])
+
+    @property
     def created_at(self) -> str:
         return self.data.get("created_at", "")
