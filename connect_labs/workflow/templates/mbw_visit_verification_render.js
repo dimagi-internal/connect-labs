@@ -415,34 +415,59 @@ function WorkflowUI({
     {
       title: 'Which visits appear in this report',
       body: "A visit only shows up if BOTH are true: (1) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes' (checked against both the test domain and opp 765's production domain), and (2) the visit's form has the verification block at all, detected via visit_location_has_prev_home_gps being present/non-blank. Visits from FLWs not flagged for verification, or submitted before the verification questions existed on that form, are excluded entirely -- not shown as blank rows.",
+      items: [
+        {
+          name: 'FLW eligibility gate',
+          field:
+            "pipelines: eligible_flws + eligible_flws_prod (cchq_cases, case_type='commcare-user'). Fields: visit_verification (case.properties.visit_verification), entity_name (built-in, = case_name = FLW username). Joined to each visit row on username === entity_name.",
+        },
+        {
+          name: 'Verification-block-present gate',
+          field:
+            'visit_location_has_prev_home_gps (form.gps_verification.location_check.visit_location_has_prev_home_gps) must be non-null/undefined/empty-string.',
+        },
+      ],
     },
     {
       title: 'Table Columns',
       items: [
-        { name: 'FLW ID', def: "The FLW's CommCare username." },
+        {
+          name: 'FLW ID',
+          def: "The FLW's CommCare username.",
+          field: 'username (built-in row field)',
+        },
         {
           name: 'Mother ID',
-          def: 'The mother case this visit was made for (form.parents.parent.case.@case_id, with fallback paths for older submissions). Drives the per-mother grouping used for Visit # and Previous verification pass rate.',
+          def: 'The mother case this visit was made for. Drives the per-mother grouping used for Visit # and Previous verification pass rate.',
+          field:
+            'mother_case_id -- primary path form.parents.parent.case.@case_id, with 7 trailing fallback paths for older submissions: form.confirm_visit_information.{postnatal,one_week,one_month,three_month,six_month}_visit_logic.mother_case_id, form.visit_rescheduling.visit_rescheduling.mother_case_id, form.visit_rescheduling.postnatal_visit_logic.mother_case_id (first non-blank wins).',
         },
         {
           name: 'Visit ID',
-          def: 'The form submission ID (form.meta.instanceID) -- unique per visit.',
+          def: 'The form submission ID -- unique per visit.',
+          field: 'form_instance_id (form.meta.instanceID)',
         },
         {
           name: 'Visit date',
-          def: 'form.meta.timeEnd, shown as "YYYY-MM-DD HH:MM:SS" (date and time to the second, exactly as submitted -- no timezone conversion).',
+          def: 'Shown as "YYYY-MM-DD HH:MM:SS" (date and time to the second, exactly as submitted -- no timezone conversion).',
+          field: 'visit_datetime (form.meta.timeEnd)',
         },
         {
           name: 'Visit type',
-          def: 'Which visit-type form was submitted (ANC, Post-Delivery, 1 Week, 1 Month, 3 Month, or 6 Month Visit).',
+          def: 'Which visit-type form was submitted.',
+          field: 'form_name (form.@name) -- one of: "ANC Visit ", "Post delivery visit", "1 Week Visit", "1 Month Visit", "3 Month Visit", "6 Month Visit"',
         },
         {
           name: 'Visit #',
           def: "This visit's position in the mother's own visit history, oldest first (1st, 2nd, 3rd...) -- counted per MOTHER across all her visits and visit types, not per FLW.",
+          field:
+            'Computed client-side (visit_number) -- not a raw pipeline field: rows are grouped by mother_case_id, sorted by visit_datetime (fallback visit_date) ascending, then 1-indexed within each group.',
         },
         {
           name: 'GPS location',
           def: "Where the FLW indicated the visit took place: the mother's home, a health facility, or other. Determines which GPS outcome logic applies (see below).",
+          field:
+            'where_is_the_visit_being_conducted (form.visit_location.where_is_the_visit_being_conducted) -- values: mothers_home / health_facility / other',
         },
       ],
     },
@@ -452,34 +477,50 @@ function WorkflowUI({
         {
           name: 'GPS outcome',
           def: "NA if the location was 'other' (GPS verification doesn't apply there), or if there was no prior-visit GPS point on record for that location type to compare against. Otherwise Pass if the visit's GPS matched the prior point on file, Fail if it didn't. ERROR means the location was home/health-facility with a prior GPS point on record, but the match field itself was missing -- flags a data issue worth investigating.",
+          field:
+            'where_is_the_visit_being_conducted (form.visit_location.where_is_the_visit_being_conducted); visit_location_has_prev_home_gps (form.gps_verification.location_check.visit_location_has_prev_home_gps); visit_location_has_prev_health_facility_gps (form.gps_verification.location_check.visit_location_has_prev_health_facility_gps); gps_visit_verification_matches (form.gps_verification.location_check.gps_visit_verification_matches)',
         },
         {
           name: 'QR outcome',
           def: "The FLW's direct answer when a value is present. If blank AND the FLW separately indicated the mother didn't have her QR code photo available at this visit, shown as 'Not available' rather than NA (it wasn't skipped -- it genuinely couldn't be done). NA otherwise.",
+          field:
+            'qr_code_visit_verification (form.qr_code_verification.qr_code_visit_verification); mother_has_qr_code_available (form.qr_code_verification.qr_code_scan.Does_the_mother_have__the_QR_code_photo_she_took_at_registration)',
         },
         {
           name: 'Signature outcome',
           def: "The FLW's direct answer for the mother's initial/signature verification; NA if blank.",
+          field:
+            'mother_initial_visit_verification (form.additional_visit_verification_block.mother_initial_visit_verification)',
         },
         {
           name: 'Mother questions outcome',
           def: "Only applicable when the form's show_mother_questions flag is '1' for this visit; the answer is shown when applicable, NA otherwise (including when the flag is '0', meaning the question block didn't apply to this visit).",
+          field:
+            'show_mother_questions (form.additional_visit_verification_block.show_mother_questions); mother_questions_visit_verification (form.additional_visit_verification_block.mother_questions_visit_verification)',
         },
         {
           name: 'ANC card outcome',
           def: "The FLW's direct answer for ANC card verification; NA if blank.",
+          field:
+            'capture_anc_card_visit_verification (form.additional_visit_verification_block.capture_anc_card_visit_verification)',
         },
         {
           name: 'Final verification method(s)',
           def: "Lists every method above (GPS / QR / Signature / Mother Questions / ANC Card) that was 'attempted' for this visit -- meaning the FLW provided information for it AND it resolved to Pass, Fail, or a Pending outcome (NA / Not available / ERROR / blank don't count as an attempt). Shows 'NA' if no method was attempted.",
+          field:
+            'Computed client-side from the 5 outcome columns above (gpsOutcome/qrOutcome/signatureOutcome/motherQuestionsOutcome/ancCardOutcome) -- no raw field of its own.',
         },
         {
           name: 'Final verification outcome',
-          def: 'The overall verification result recorded on the form itself (form.verification_properties.visit_verification_outcome, falling back to form.visit_verification_outcome on older submissions) -- typically Pass, Fail, or Pending Audit. This is a single value the form/reviewer sets, independent of the per-method outcomes above.',
+          def: 'The overall verification result recorded on the form itself -- typically Pass, Fail, or Pending Audit. This is a single value the form/reviewer sets, independent of the per-method outcomes above.',
+          field:
+            'visit_verification_outcome -- primary path form.verification_properties.visit_verification_outcome, fallback form.visit_verification_outcome (used on submissions where the verification_properties group is absent entirely).',
         },
         {
           name: 'Previous verification pass rate',
           def: 'For this mother, the Pass/Fail record across all her PRIOR visits only (not including the current row), shown as "X% (N)" where N is how many prior visits had a Pass/Fail final outcome. Reads "N/A (0)" for a mother\'s first visit or when no prior visit has a Pass/Fail outcome yet. Pending/blank prior outcomes don\'t count toward N.',
+          field:
+            "Computed client-side (prior_verification_pass_rate) from visit_verification_outcome across this mother's earlier rows (grouped by mother_case_id, ordered by visit_datetime) -- not a raw pipeline field.",
         },
       ],
     },
@@ -503,18 +544,23 @@ function WorkflowUI({
         {
           name: '% Passed Verification',
           def: 'Share of visits with Final verification outcome = Pass.',
+          field: 'visit_verification_outcome === "Pass"',
         },
         {
           name: '% Pending Audit',
           def: 'Share of visits with Final verification outcome = Pending Audit.',
+          field: 'visit_verification_outcome === "Pending Audit"',
         },
         {
           name: '% Failed Verification',
           def: 'Share of visits with Final verification outcome = Fail.',
+          field: 'visit_verification_outcome === "Fail"',
         },
         {
           name: 'Stacked bar chart',
           def: 'One bar per verification method (GPS, QR, Signature, Mother Questions, ANC Card), showing how many visits landed Pass (green) / Pending (yellow) / Fail (red) for that specific method -- independent of the overall Final verification outcome above.',
+          field:
+            'Per row, per method: gpsOutcome() / qrOutcome() / signatureOutcome() / motherQuestionsOutcome() / ancCardOutcome() (same functions and underlying fields as the Outcome Columns section above), tallied into Pass/Pending/Fail counts.',
         },
       ],
     },
@@ -750,9 +796,16 @@ function WorkflowUI({
                           <dt className="text-sm font-medium text-gray-900">
                             {item.name}
                           </dt>
-                          <dd className="ml-4 text-sm text-gray-600">
-                            {item.def}
-                          </dd>
+                          {item.def && (
+                            <dd className="ml-4 text-sm text-gray-600">
+                              {item.def}
+                            </dd>
+                          )}
+                          {item.field && (
+                            <dd className="ml-4 font-mono text-xs text-gray-500">
+                              {item.field}
+                            </dd>
+                          )}
                         </div>
                       );
                     })}
