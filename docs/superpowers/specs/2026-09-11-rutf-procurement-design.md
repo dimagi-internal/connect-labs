@@ -1136,9 +1136,20 @@ moment a slug is reused.
   of a string, and the domain refuses that kind of guess everywhere else
   (§22). A person decides which is which; `PulsePartnerAlias` already exists
   because pulse reached the same conclusion about slugs no rule can settle.
-- **An id present on a row that Connect does not recognise is also a
-  conflict**, not a reason to clear the link. A deleted or merged org in
-  Connect is a thing to look at.
+- **An id present on a row that Connect does not recognise is NOT evidence
+  that the organisation is gone.** Connect answers `404` both for a record
+  that was deleted and for one outside the polling account's memberships
+  (`pulse/ingest.py` says so), and it publishes organisations only within
+  those memberships -- which is the whole reason `PulsePartner` exists. So
+  an absence read through a scoped account proves nothing, and treating it
+  as a conflict would raise one against every organisation we merely cannot
+  see.
+
+  Only an authoritative lookup -- one entitled to see the organisation --
+  can distinguish deleted or merged from out-of-scope or not-yet-synced.
+  Until the lookup can say which, the link stands and the row is left
+  alone. Clearing it on a 404 would unlink organisations by accident and
+  call it reconciliation.
 
 **The trap, and the only thing that makes "shrinking" true rather than
 aspirational.** If `LabsOrg` accumulates domain attributes it can never
@@ -1180,6 +1191,39 @@ the difference is a useful test:
 
 So: if a table's only content is identity, it dissolves; if it carries domain
 state, it keeps the state and sheds the identity.
+
+**Every reference moves before the table goes, and there are four of them.**
+Naming only `recorded_by_party_id` is how a migration discovers the rest at
+the worst moment: `Contract.buyer_party` is `PROTECT`, so deleting `Party`
+underneath it fails outright, and `Supplier.party` and
+`SupplyPoint.managed_by_party` would silently lose their links.
+
+Done in #1791 as three migrations rather than one, and the split is the part
+worth copying: add the columns, commit; copy every row and repoint every
+link, commit; only then drop. Postgres will not build an index on a table
+whose rows changed in the same transaction, so a single migration fails with
+"pending trigger events" -- against a POPULATED database, never against an
+empty test one.
+
+**Where each PulsePartner field goes, before anything is deleted.** §26 says
+the table dissolves and lists only identity, which leaves its other columns
+unaccounted for -- and the same omission about `Supplier` contacts was
+already one finding on this document:
+
+- **name, short name, aliases and their `why`** -> `LabsOrg`. The reason a
+  human pointed a slug at a partner is part of the identity record, not
+  disposable: it is what stops the next person re-deriving a mapping the
+  matcher already refused.
+- **location fields** -> a pulse profile keyed to the org. They come from
+  HQ, they are pulse's to maintain, and no other consumer wants them.
+- **`joined_at` with `joined_basis`** -> a pulse profile, and the BASIS
+  travels with the date or the date is worthless. §28 records why: the
+  spine cannot date anything before 2025-01-14, and handset timestamps run
+  to 2010, so a date without its provenance is a number nobody can defend.
+
+So `PulsePartner` does not dissolve outright after all -- identity moves and
+a thinner pulse profile remains. That is the same shape as `Supplier`, and
+the earlier claim that it "leaves no profile behind" was wrong.
 
 **An unlinked org is not necessarily a missing one.** Some organisations will
 never have a Connect counterpart and should not be waiting for one. A
@@ -1257,10 +1301,10 @@ is already pulse's stated rule, and is now a shared one.
 first mover: nine suppliers and a few parties, in one synthetic programme, all
 re-importable from the tracker in a single operation. `PulsePartner` is live,
 carries identity behind that gate, and holds two dating guards that are
-expensive to rediscover. **Sequence, all of it after §29 is answered** --
-§29 freezes schema until then, and this ordering is what to do next rather
-than what to do now. The only work allowed before the decision is what
-costs nothing to discard: reading, and writing rules down. Sequence:
+expensive to rediscover. **Nothing here waits on a decision.** An earlier
+draft deferred this sequence to §29, which is a leftover from when §29 was
+a gate; it is not one, and §29 now says so. The ordering below is about
+RISK, not permission: sequence:
 introduce `LabsOrg`, migrate supply onto
 it, prove the pattern, then pulse.
 
