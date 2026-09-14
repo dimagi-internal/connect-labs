@@ -81,6 +81,7 @@ def fetch_evaluation_data(self, program_id: int, run_id: int, user_id: int) -> d
         run.target_opportunity_id,
         run.selected_wards,
         pipeline=pipeline,
+        access_token=access_token,
         on_stage=on_stage,
     )
 
@@ -302,7 +303,9 @@ def preview_planning_gaps(
     pipeline = AnalysisPipeline(access_token=access_token, cchq_access_token=cchq_access_token)
 
     set_task_progress(self, "Fetching this run's visit history for the EVC estimate…")
-    all_rows = build_evaluation_input(run.target_opportunity_id, run.selected_wards, pipeline=pipeline)
+    all_rows = build_evaluation_input(
+        run.target_opportunity_id, run.selected_wards, pipeline=pipeline, access_token=access_token
+    )
 
     uploaded_df = None
     if mode == "upload":

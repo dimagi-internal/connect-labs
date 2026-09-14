@@ -8,8 +8,11 @@ layers are responsible for populating these — this module only computes):
 
     {
         "wa_id": str,
+        "wa_name": str,                # the WA case's own CommCare display name
+        "wag_name": str,                # Work Area Group name (Connect's own grouping)
         "ward": str, "lga": str, "state": str,
-        "flw_username": str,          # owner
+        "flw_username": str,          # owner (raw Connect id)
+        "flw_name": str,               # owner's display name
         "lat": float, "lon": float,   # centroid, for the spatial neighbor graph
         "status": str,                # NOT_VISITED/VISITED/EXPECTED_VISIT_REACHED/
                                        # REQUEST_FOR_INACCESSIBLE/INACCESSIBLE
@@ -413,10 +416,13 @@ def evaluate_run(
         candidates.append(
             {
                 "wa_id": wa["wa_id"],
+                "wa_name": wa.get("wa_name", ""),
+                "wag_name": wa.get("wag_name", ""),
                 "ward": wa.get("ward", ""),
                 "lga": wa.get("lga", ""),
                 "state": wa.get("state", ""),
                 "flw_username": wa.get("flw_username", ""),
+                "flw_name": wa.get("flw_name", ""),
                 # Carried through, not computed here, so the map and Phase 3's
                 # lock hand-off (carry_forward_features needs a geometry +
                 # building_count per candidate) don't need a second lookup.
