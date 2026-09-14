@@ -98,6 +98,10 @@
     {% if boundary_source_caption %}
     <p class="text-xs text-gray-400">{{ boundary_source_caption }} <span class="info-icon" tabindex="0" data-tip="Connect's own API doesn't yet expose ward-level boundary data — only individual work-area shapes. This ward outline instead comes from a public/curated boundary matched by ward name, which can disagree with what's actually uploaded in Connect for this ward.">ⓘ</span></p>
     {% endif %}
+    <div id="map-selection-bar" class="hidden flex items-center justify-between gap-3 border border-indigo-200 bg-indigo-50 rounded p-2 text-sm">
+      <span>Selected work area: <span id="map-selection-label" class="font-medium"></span> — also highlighted below</span>
+      <button type="button" id="map-exclude-button" class="button outline-style">Not include</button>
+    </div>
   </section>
 
   <section class="border border-gray-200 rounded p-4">
@@ -259,6 +263,7 @@
     createPlanUrl: "{{ create_plan_url }}",
     planningGapsUrl: "{{ planning_gaps_url }}",
     uploadBuildingsUrl: "{{ upload_buildings_url }}",
+    excludeWorkAreaUrl: "{{ exclude_work_area_url }}",
     csrfToken: "{{ csrf_token }}",
     locked: "{{ run.status }}" === "locked",
     mapboxToken: "{{ mapbox_token|escapejs }}",

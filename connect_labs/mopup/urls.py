@@ -39,4 +39,9 @@ urlpatterns = [
         views.MopupUploadBuildingsView.as_view(),
         name="upload_buildings",
     ),
+    path(
+        "program/<int:program_id>/run/<int:run_id>/exclude_work_area/",
+        views.MopupExcludeWorkAreaView.as_view(),
+        name="exclude_work_area",
+    ),
 ]
