@@ -353,6 +353,7 @@ EVIDENCE_LABELS = {
     "awarded": "Awarded",
     "quoted": "Quoted",
     "quoted_superseded": "Quoted, since superseded",
+    "quoted_voided": "Quoted, since withdrawn",
     "invited": "Invited",
     "named_as_manufacturer": "Named as the manufacturer",
 }

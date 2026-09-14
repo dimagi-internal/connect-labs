@@ -869,6 +869,35 @@ def _catalogue_dispatch(name, access, payload):
     return _CATALOGUE_RESPONSES[name]
 
 
+# Everything below the reference tier needs a programme. A test that asserts
+# "renders with no programme selected" while its stub happily answers
+# `quote_list` proves nothing -- the view could be calling straight through to
+# a real SupplyDataAccess and the stub would hide it. So the no-programme
+# dispatcher refuses these by name.
+PROGRAMME_SCOPED_OPS = frozenset(
+    {
+        "quote_list",
+        "quote_get",
+        "contract_list",
+        "outreach_list",
+        "award_list",
+        "round_list",
+        "document_list",
+        "network_stock",
+        "commodity_supply_base",
+        "shipment_list",
+        "receipt_list",
+        "invoice_list",
+    }
+)
+
+
+def _no_programme_dispatch(name, access, payload):
+    if name in PROGRAMME_SCOPED_OPS:
+        raise AssertionError(f"{name} was called with no programme selected")
+    return _catalogue_dispatch(name, access, payload)
+
+
 def _with_programme(monkeypatch):
     monkeypatch.setattr("connect_labs.supply_chain.views.has_program_context", lambda request: True)
 
@@ -905,7 +934,7 @@ def test_a_product_that_is_not_in_the_catalogue_is_a_404_not_a_500(client, sophi
 def test_the_product_page_renders_its_specification_with_no_programme_selected(client, sophie):
     """The specification is reference data and reads on its own; only the
     programme-scoped half is withheld."""
-    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_catalogue_dispatch):
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_no_programme_dispatch):
         response = client.get(reverse("supply_chain:product_detail", args=["rutf"]))
     body = response.content.decode()
     assert response.status_code == 200
@@ -975,11 +1004,12 @@ def test_the_new_pages_do_not_500_with_no_programme_selected(client, sophie):
     click-through. Each calls programme-scoped operations, so an unguarded
     one raises deep in SupplyDataAccess rather than saying to pick a
     programme."""
-    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_catalogue_dispatch):
+    with patch("connect_labs.supply_chain.views.call_operation", side_effect=_no_programme_dispatch):
         for url in (
             reverse("supply_chain:suppliers"),
             reverse("supply_chain:supplier_detail", args=[1]),
             reverse("supply_chain:item_detail", args=[7]),
+            reverse("supply_chain:product_detail", args=["rutf"]),
         ):
             assert client.get(url).status_code == 200, url
 

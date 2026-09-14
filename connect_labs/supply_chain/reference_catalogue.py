@@ -24,21 +24,51 @@ Identifiers that belong to somebody else are NOT invented:
     number. That is what a SKU is here -- `Item.sku` is unique per scope and
     nothing claims it came from the manufacturer.
 
-`spec_reference` is left blank rather than filled with an approximate
-citation. The page renders "no reference recorded", which is the true state.
+`spec_reference` is left blank wherever a precise citation is not to hand,
+rather than filled with an approximate one. The page renders "no reference
+recorded", which is the true state.
 
 Shelf life sits at two levels on purpose. The product carries the MINIMUM the
 programme will accept; the trade item carries what the manufacturer states.
 That is the pair a compliance check compares.
 """
 
-# One entry per product. `slug` is the key; re-seeding updates in place.
+# One entry per product, keyed by `slug`. Seeding SKIPS a slug that is already
+# in the catalogue rather than updating it -- see `catalogue_seed`.
 #
 # F-75's sachet is 102.5 g and `base_unit_grams` is an integer column, so it
 # is left unset rather than rounded to 102 -- a per-gram figure derived from a
 # rounded weight is wrong by half a percent and nothing downstream would say
 # so. The catalogue shows "not stated", which is accurate.
 PRODUCTS = (
+    # RUTF leads because it is what a CMAM programme is built around -- and
+    # because a trade item below names it. Seeding is skip-if-present, so a
+    # programme that already has RUTF (imported from its own tracker, perhaps
+    # carrying a ration table somebody set) keeps its own row untouched; a
+    # fresh one gets this. Without it the Plumpy'Nut item had no product to
+    # hang off and was silently refused, so the seed was incomplete on the one
+    # product every such programme needs.
+    {
+        "slug": "rutf",
+        "name": "Ready-to-use therapeutic food",
+        "category": "therapeutic_food",
+        "base_unit": "sachet",
+        "pack_unit": "carton",
+        "base_per_pack": 150,
+        "base_unit_grams": 92,
+        "shelf_life_months_minimum": 18,
+        "spec_reference": "WHO/WFP/UNICEF/UN-SCN joint statement, 2007",
+        "unicef_material_number": "S0000240",
+        "spec_requirements": [
+            {
+                "field": "shelf_life_months",
+                "operator": ">=",
+                "value": 18,
+                "unit": "months",
+                "rationale": "Sea freight and clearance routinely take four months of it.",
+            }
+        ],
+    },
     {
         "slug": "rusf",
         "name": "Ready-to-use supplementary food",

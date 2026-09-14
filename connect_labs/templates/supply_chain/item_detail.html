@@ -126,7 +126,7 @@ sachets are in the carton, and neither does a balance.
 {% else %}
 
   <div class="mb-6">
-    {% include "supply_chain/_supply_base.html" with scope_note="for this exact trade item rather than the product" %}
+    {% include "supply_chain/_supply_base.html" with scope_note="for this exact trade item rather than the product" narrowed_to_item=True %}
   </div>
 
   <div class="grid gap-6 lg:grid-cols-2 mb-6">

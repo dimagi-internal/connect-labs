@@ -102,13 +102,37 @@ class TestWhatCountsAsEvidence:
         # The warmest date across everything, not the date of the strongest.
         assert claims[0].last_heard == date(2026, 6, 2)
 
-    def test_a_voided_quote_is_reported_as_superseded_rather_than_standing(self):
+    def test_a_withdrawn_quote_is_not_reported_as_a_superseded_one(self):
+        """`quote_void` and `quote_correct` are different acts and the rest of
+        this domain keeps them apart. A voided quote has no replacement, so
+        rendering it "since superseded" asserts one that does not exist."""
         claims = supply_base(
             commodity_slug="rutf",
             suppliers=[supplier(1, "Northwind Foods")],
-            quotes=[quote(10, supplier_id=1, round_id=5, voided=True)],
+            quotes=[quote(10, supplier_id=1, round_id=5, voided=True, void_reason="sent in error")],
+        )
+        assert claims[0].basis == "quoted_voided"
+
+    def test_a_corrected_quote_is_reported_as_superseded(self):
+        replacement = quote(11, supplier_id=1, round_id=5, version=2)
+        original = quote(10, supplier_id=1, round_id=5, superseded_by=replacement)
+        claims = supply_base(
+            commodity_slug="rutf",
+            suppliers=[supplier(1, "Northwind Foods")],
+            quotes=[original],
         )
         assert claims[0].basis == "quoted_superseded"
+
+    def test_a_standing_quote_outranks_the_versions_it_replaced(self):
+        replacement = quote(11, supplier_id=1, round_id=5, version=2, received_on=date(2026, 6, 20))
+        original = quote(10, supplier_id=1, round_id=5, superseded_by=replacement)
+        claims = supply_base(
+            commodity_slug="rutf",
+            suppliers=[supplier(1, "Northwind Foods")],
+            quotes=[original, replacement],
+        )
+        assert claims[0].basis == "quoted"
+        assert [e.kind for e in claims[0].evidence] == ["quoted", "quoted_superseded"]
 
     def test_a_supplier_outside_this_scope_is_left_out_rather_than_named_as_an_id(self):
         claims = supply_base(
@@ -137,6 +161,27 @@ class TestTheManufacturerMatch:
         )
         assert claims[0].basis == "named_as_manufacturer"
         assert "RUTF-NW-92" in claims[0].evidence[0].detail
+
+    def test_a_name_shared_by_two_suppliers_matches_neither(self):
+        """`Supplier` has no uniqueness constraint on name and
+        `create_supplier` does not check for one, so two rows really can
+        normalise to the same string. Keeping the first would attach one
+        company's trade item to another company's record."""
+        claims = supply_base(
+            commodity_slug="rutf",
+            suppliers=[supplier(1, "Northwind Foods"), supplier(2, "northwind foods")],
+            items=[
+                Item(
+                    pk=7,
+                    scope_key=SCOPE,
+                    sku="RUTF-NW-92",
+                    name="NW RUTF",
+                    commodity=RUTF,
+                    manufacturer="Northwind Foods",
+                )
+            ],
+        )
+        assert claims == []
 
     def test_a_near_match_is_not_claimed(self):
         """Deciding that 'Northwind Foods' and 'Northwind Foods FZE' are one
@@ -231,3 +276,24 @@ class TestOrdering:
             ],
         )
         assert [c.supplier_name for c in claims] == ["Zzz Quoted In June", "Aaa Quoted In March"]
+
+
+class TestTheSeedCatalogue:
+    def test_every_trade_item_has_a_product_to_hang_off(self):
+        """`Item.commodity` is not nullable, and `catalogue_seed` refuses a
+        trade item whose product is absent -- silently, into `refused`. So a
+        trade item naming a slug this module does not define is not a crash,
+        it is a seed that quietly ships incomplete."""
+        from connect_labs.supply_chain import reference_catalogue
+
+        slugs = {product["slug"] for product in reference_catalogue.PRODUCTS}
+        missing = {item["commodity_slug"] for item in reference_catalogue.TRADE_ITEMS} - slugs
+        assert missing == set()
+
+    def test_no_gtin_is_invented(self):
+        """A fabricated GTIN that passes its check digit is an identifier that
+        may belong to a real, different product."""
+        from connect_labs.supply_chain import reference_catalogue
+
+        for item in reference_catalogue.TRADE_ITEMS:
+            assert not any(item.get(key) for key in ("gtin_base", "gtin_pack", "gtin_case")), item["sku"]

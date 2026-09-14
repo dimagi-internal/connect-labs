@@ -33,7 +33,13 @@ EVIDENCE_KINDS = (
     "contracted",
     "awarded",
     "quoted",
+    # Superseded and voided are not the same fact and this domain keeps them
+    # apart everywhere else -- `quote_correct` replaces an offer with a newer
+    # one from the same supplier, `quote_void` withdraws one that should never
+    # have counted. Collapsing them here would have rendered a withdrawn quote
+    # as "since superseded", which asserts a replacement that does not exist.
     "quoted_superseded",
+    "quoted_voided",
     "invited",
     "named_as_manufacturer",
 )
@@ -88,9 +94,13 @@ class SupplyClaim:
         return max(dates) if dates else None
 
 
-def _live(quote) -> bool:
-    """A quote that still stands: not voided, not replaced by a correction."""
-    return not quote.voided and quote.superseded_by_id is None
+def _quote_kind(quote) -> str:
+    """Whether a quote still stands, and if not, in which of the two ways."""
+    if quote.voided:
+        return "quoted_voided"
+    if quote.superseded_by_id is not None:
+        return "quoted_superseded"
+    return "quoted"
 
 
 def _commodity_on_round(round_, commodity_slug) -> bool:
@@ -194,7 +204,7 @@ def supply_base(
         add(
             quote.supplier_id,
             Evidence(
-                kind="quoted" if _live(quote) else "quoted_superseded",
+                kind=_quote_kind(quote),
                 detail=(
                     f"{quote.as_quoted_currency} {quote.as_quoted_amount} "
                     f"{(quote.as_quoted_unit or '').replace('_', ' ')}"
@@ -228,11 +238,16 @@ def supply_base(
                 ),
             )
 
-    by_name = {}
+    # `Supplier` carries no uniqueness constraint on name, so two rows in one
+    # scope really can normalise to the same string. Keeping the first would
+    # attach one company's trade item to another company's record -- the exact
+    # misattribution the strict match above exists to prevent -- so a name that
+    # is not unique stops being usable as a key at all.
+    by_name: dict[str, int | None] = {}
     for supplier in suppliers:
         key = (supplier.name or "").strip().casefold()
         if key:
-            by_name.setdefault(key, supplier.pk)
+            by_name[key] = None if key in by_name else supplier.pk
     for item in items:
         if item.commodity.slug != commodity_slug:
             continue

@@ -7,7 +7,9 @@ there is no "supplies" table and there deliberately is not one -- see
 procurement/services/supply_base.py. The basis badge is the strongest thing
 we hold; the lines under it are everything, oldest kind last.
 
-Takes: supply_base (list of claims), and optionally `scope_note`.
+Takes: supply_base (list of claims), `scope_note`, and `narrowed_to_item` --
+which changes the empty state, because a trade item's supply base excludes
+invitation evidence and so "send an invitation" is not the way to start it.
 {% endcomment %}
 
 <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
@@ -81,10 +83,20 @@ Takes: supply_base (list of claims), and optionally `scope_note`.
       {% endfor %}
     </ul>
   {% else %}
-    <p class="px-5 py-5 text-sm text-gray-500 max-w-2xl">
-      Nobody yet. Nothing has been quoted, awarded or contracted against this,
-      and no invitation has gone out — so there is nothing to read a supply
-      base off. Recording an RFQ invitation is what starts it.
-    </p>
+    {% if narrowed_to_item %}
+      <p class="px-5 py-5 text-sm text-gray-500 max-w-2xl">
+        Nobody yet. No quote, award or contract names this trade item — and an
+        invitation would not count here, because an RFQ is issued against the
+        product and says nothing about which manufacturer's version a supplier
+        would offer. Asking a supplier which trade item they are quoting is
+        what starts it.
+      </p>
+    {% else %}
+      <p class="px-5 py-5 text-sm text-gray-500 max-w-2xl">
+        Nobody yet. Nothing has been quoted, awarded or contracted against this,
+        and no invitation has gone out — so there is nothing to read a supply
+        base off. Recording an RFQ invitation is what starts it.
+      </p>
+    {% endif %}
   {% endif %}
 </div>
