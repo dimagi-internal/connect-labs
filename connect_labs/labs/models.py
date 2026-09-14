@@ -401,8 +401,13 @@ class LabsOrg(models.Model):
 
     def matches(self, *, organization_id=None, slug=None) -> bool:
         """Whether this row is the organisation those keys describe."""
-        if organization_id is not None and self.connect_organization_id is not None:
-            return int(organization_id) == self.connect_organization_id
+        if self.connect_organization_id is not None:
+            # Linked: the id is the identity, and it is the ONLY thing that
+            # answers. Falling through to the slug here let a stale name
+            # resolve to an organisation that has already been reconciled --
+            # the opposite of the rule this docstring states, and the way a
+            # rename turns into a mis-attribution.
+            return organization_id is not None and int(organization_id) == self.connect_organization_id
         if slug:
             candidates = {self.connect_organization_slug, *(self.aliases or [])}
             return slug in {c for c in candidates if c}

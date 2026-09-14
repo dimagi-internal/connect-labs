@@ -75,6 +75,16 @@ class IdentityUnresolved(ValueError):
     """
 
 
+def _as_org_id(value):
+    """An organisation id as an integer, or None for a synthetic slug."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def caller_org_slugs(organizations) -> set[str]:
     """The organisation slugs the caller belongs to.
 
@@ -203,17 +213,20 @@ def resolve_party(access):
         return dimagi_org()
 
     organizations = _caller_organizations(access)
-    if organizations is None:
+    if not organizations:
         return None
-    org_ids = _integer_org_ids(organizations)
-    slugs = caller_org_slugs(organizations)
-    if not org_ids and not slugs:
+
+    # Each entry's id and slug describe ONE organisation, so they are tested
+    # together. Tested independently, a caller's organisation 999 could match
+    # a linked row through some OTHER organisation's stale slug, and the
+    # record would be attributed to a body the caller has nothing to do with.
+    pairs = [(_as_org_id(entry.get("id")), entry.get("slug")) for entry in organizations]
+    pairs = [(i, s) for i, s in pairs if i is not None or s]
+    if not pairs:
         return None
 
     candidates = [
-        org
-        for org in LabsOrg.objects.all()
-        if any(org.matches(organization_id=i) for i in org_ids) or any(org.matches(slug=s) for s in slugs)
+        org for org in LabsOrg.objects.all() if any(org.matches(organization_id=i, slug=s) for i, s in pairs)
     ]
     if not candidates:
         return None
@@ -270,8 +283,16 @@ def stamp_provenance(access, operation, payload: dict) -> dict:
     if not takes_provenance(operation):
         return payload
 
-    org_ids = caller_org_ids(access)
-    if org_ids is None:
+    # Only a caller with NO USER AT ALL is left to declare its own party --
+    # a management command, run by an operator with a shell. A signed-in
+    # caller whose organisations could not be read is refused.
+    #
+    # These were conflated: `caller_org_ids` returns None both for "nobody to
+    # ask" and for "the org fetch failed", so a network blip made a signed-in
+    # user unknowable and their payload-supplied `recorded_by_org_id` and
+    # `source` were taken at face value. That is self-attribution, which is
+    # the one thing this function exists to stop.
+    if getattr(access, "user", None) is None and getattr(access, "request", None) is None:
         return payload
 
     data = payload.get("data")

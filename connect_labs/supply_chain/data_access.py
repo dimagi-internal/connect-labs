@@ -406,8 +406,25 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         in a second programme.
         """
         fields = {k: v for k, v in data.items() if k not in ("slug", "kind", "roles", "contacts")}
-        obj, _ = LabsOrg.objects.update_or_create(slug=data["slug"], defaults=_columns(LabsOrg, fields))
-        return _fresh(obj)
+        columns = _columns(LabsOrg, fields)
+
+        # Located by the Connect id FIRST where there is one, because that is
+        # the identity and the slug is not. Keying only on the slug meant a
+        # linked organisation that had been RENAMED looked like a new row, and
+        # the insert then hit the unique constraint on connect_organization_id
+        # -- a rename failing as a database error rather than updating a name.
+        connect_id = columns.get("connect_organization_id")
+        existing = LabsOrg.objects.filter(connect_organization_id=connect_id).first() if connect_id else None
+        if existing is None:
+            existing = LabsOrg.objects.filter(slug=data["slug"]).first()
+
+        if existing is None:
+            obj = LabsOrg.objects.create(slug=data["slug"], **columns)
+            return _fresh(obj)
+        for key, value in {**columns, "slug": data["slug"]}.items():
+            setattr(existing, key, value)
+        existing.save()
+        return _fresh(existing)
 
     # ---- resolvers ------------------------------------------------------
     #

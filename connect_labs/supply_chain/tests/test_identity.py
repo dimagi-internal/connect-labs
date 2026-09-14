@@ -392,3 +392,80 @@ class TestSyntheticOrgsMatchToo:
         org_data = {"organizations": [{"id": "labs-synthetic-other", "slug": "labs-synthetic-other"}]}
         with patch("connect_labs.labs.context.get_org_data", return_value=org_data):
             assert resolve_party(access) is None
+
+
+class TestReviewFindings1791:
+    """Five findings on the LabsOrg change, all in an hour's fast work.
+
+    Two mattered: a signed-in caller could be trusted to attribute a record
+    to anyone, and an id could be matched against another organisation's
+    stale slug.
+    """
+
+    def test_a_signed_in_caller_is_never_trusted_to_attribute_a_record(self):
+        """The bypass. `caller_org_ids` returned None both for "nobody to
+        ask" (a management command) and for "the org fetch failed", and
+        stamping treated None as "left alone to declare its own party". So a
+        network blip made a signed-in user unknowable and their claimed
+        `recorded_by_org_id` and `source` were taken at face value -- which
+        is self-attribution, the one thing this exists to stop.
+        """
+        from connect_labs.supply_chain.identity import stamp_provenance
+        from connect_labs.supply_chain.operations import get_operation
+
+        # A PARTNER user. Dimagi staff may attribute on a partner's behalf by
+        # design, so they are not the case this protects.
+        class _Partner:
+            email = "ops@kano-llo.example"
+            username = "kano-ops"
+            is_authenticated = True
+
+        access = SupplyDataAccess(program_id=PROGRAM, user=_Partner())
+        payload = {"data": {"kind": "other", "source": "we_recorded", "recorded_by_org_id": 999}}
+        with patch(
+            "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data", return_value=None
+        ), patch("connect_labs.labs.connect_tokens.get_valid_access_token", return_value="tok"):
+            with pytest.raises(IdentityUnresolved):
+                stamp_provenance(access, get_operation("document_attach"), payload)
+
+    def test_a_command_with_no_user_at_all_still_declares_its_own(self):
+        """The case the None was for, kept working: an operator with a shell."""
+        from connect_labs.supply_chain.identity import stamp_provenance
+        from connect_labs.supply_chain.operations import get_operation
+
+        access = SupplyDataAccess(access_token="local", program_id=PROGRAM)
+        payload = {"data": {"kind": "other", "source": "partner_reported", "recorded_by_org_id": 3}}
+        assert stamp_provenance(access, get_operation("document_attach"), payload) == payload
+
+    def test_an_id_is_not_matched_against_another_orgs_stale_slug(self):
+        """Ids and slugs were tested independently, so a caller's
+        organisation 999 could match a LINKED row through some other
+        organisation's old name."""
+        LabsOrg.objects.create(
+            slug="acme", name="Acme", connect_organization_id=42, connect_organization_slug="old-acme"
+        )
+        access, request = _session_access([])
+        org_data = {"organizations": [{"id": 999, "slug": "old-acme"}]}
+        with patch("connect_labs.labs.context.get_org_data", return_value=org_data):
+            assert resolve_party(access) is None
+
+    def test_a_linked_organisation_answers_on_its_id_alone(self):
+        """`matches()` fell through to the slug when the caller had no id,
+        contradicting the rule its own docstring states."""
+        org = LabsOrg.objects.create(
+            slug="acme", name="Acme", connect_organization_id=42, connect_organization_slug="old-acme"
+        )
+        assert org.matches(organization_id=42)
+        assert not org.matches(slug="old-acme")
+
+    @pytest.mark.django_db
+    def test_a_renamed_organisation_is_updated_rather_than_duplicated(self):
+        """Keyed only on the slug, a rename looked like a new organisation and
+        the insert hit the unique Connect id -- a rename failing as a database
+        error."""
+        access = SupplyDataAccess(program_id=PROGRAM)
+        first = access.upsert_party({"slug": "acme", "name": "Acme", "connect_organization_id": 42})
+        second = access.upsert_party({"slug": "acme-renamed", "name": "Acme Ltd", "connect_organization_id": 42})
+        assert first.pk == second.pk
+        assert second.slug == "acme-renamed" and second.name == "Acme Ltd"
+        assert LabsOrg.objects.count() == 1

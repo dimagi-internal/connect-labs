@@ -23,18 +23,27 @@ def carry_parties_across(apps, schema_editor):
 
     by_party_id = {}
     for party in Party.objects.all().order_by("pk"):
-        org, _ = LabsOrg.objects.get_or_create(
-            slug=party.slug,
-            defaults={
-                "name": party.name,
-                "country": party.country or "",
-                "connect_organization_id": party.connect_organization_id,
-                "notes": party.notes or "",
-            },
-        )
-        # A later duplicate of the same slug may carry the Connect id the
-        # first did not; take it rather than lose the link.
-        if org.connect_organization_id is None and party.connect_organization_id is not None:
+        # By Connect id FIRST. Party was unique on (scope_key, slug) only, so
+        # two programmes could hold the same organisation under DIFFERENT
+        # slugs with the same Connect id. Keying on the slug would then try a
+        # second insert and hit LabsOrg's unique id -- an IntegrityError in
+        # the middle of a data migration, on the real data, after the schema
+        # step had already committed.
+        org = None
+        if party.connect_organization_id is not None:
+            org = LabsOrg.objects.filter(connect_organization_id=party.connect_organization_id).first()
+        if org is None:
+            org = LabsOrg.objects.filter(slug=party.slug).first()
+        if org is None:
+            org = LabsOrg.objects.create(
+                slug=party.slug,
+                name=party.name,
+                country=party.country or "",
+                connect_organization_id=party.connect_organization_id,
+                notes=party.notes or "",
+            )
+        elif org.connect_organization_id is None and party.connect_organization_id is not None:
+            # A later duplicate carries the link the first one lacked.
             org.connect_organization_id = party.connect_organization_id
             org.save(update_fields=["connect_organization_id"])
         by_party_id[party.pk] = org
