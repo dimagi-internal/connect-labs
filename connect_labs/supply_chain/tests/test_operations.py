@@ -119,7 +119,7 @@ def _contract_payload(**overrides):
         "commodity_slug": "rutf",
         "supplier_id": 2,
         "buyer_of_record": "partner_org",
-        "buyer_party_id": 1,
+        "buyer_org_id": 1,
         "source": "partner_reported",
         "quantity": "10",
         "unit_price": "10.00",
@@ -141,7 +141,7 @@ def test_a_contract_must_name_its_buyer_of_record():
     """The field has no default on purpose: duty and VAT depend on who
     imports, so a landed cost derived without it hides an assumption."""
     access = MagicMock()
-    for missing in ("buyer_of_record", "buyer_party_id"):
+    for missing in ("buyer_of_record", "buyer_org_id"):
         payload = _contract_payload()
         del payload["data"][missing]
         with pytest.raises(jsonschema.ValidationError):

@@ -381,7 +381,7 @@ class Command(BaseCommand):
                 "commodity_slug": "rutf",
                 # The fork: we awarded it, the partner buys it.
                 "buyer_of_record": "partner_org",
-                "buyer_party_id": llo["id"],
+                "buyer_org_id": llo["id"],
                 "quantity": "2000",
                 "quantity_unit": "carton",
                 "unit_price": "50.00",
@@ -398,7 +398,7 @@ class Command(BaseCommand):
                 "status": "placed",
                 "signed_on": "2026-06-02",
                 "source": "partner_reported",
-                "recorded_by_party_id": llo["id"],
+                "recorded_by_org_id": llo["id"],
             },
         )
 
@@ -408,7 +408,7 @@ class Command(BaseCommand):
                 "slug": "central-store-kano",
                 "name": "Central store, Kano",
                 "kind": "central_store",
-                "managed_by_party_id": llo["id"],
+                "managed_by_org_id": llo["id"],
                 "admin_area": "Kano Municipal",
                 "min_months_of_stock": "2",
                 "max_months_of_stock": "6",
@@ -467,7 +467,7 @@ class Command(BaseCommand):
                 "reference": "GRN-001",
                 "received_on": "2026-06-18",
                 "source": "partner_reported",
-                "recorded_by_party_id": llo["id"],
+                "recorded_by_org_id": llo["id"],
                 "lines": [
                     {
                         "item_id": item_144["id"],
@@ -532,7 +532,7 @@ class Command(BaseCommand):
                 "distributed_on": "2026-08-02",
                 "reference": "DIST-2026-08",
                 "source": "partner_reported",
-                "recorded_by_party_id": llo["id"],
+                "recorded_by_org_id": llo["id"],
                 "lines": [
                     {
                         "to_supply_point_id": workers[0]["id"],

@@ -7,7 +7,7 @@ follow, and they shape every method here.
 **Anyone can write.** A local partner records its own shipments, receipts,
 invoices and documents through these same methods -- there is no
 partner-only path, no shadow model and no reduced validation. What differs
-between us and them is the `source` and `recorded_by_party` on the row, and
+between us and them is the `source` and `recorded_by_org` on the row, and
 nothing else. A design where the partner emails a spreadsheet and we retype
 it is the design this replaces.
 

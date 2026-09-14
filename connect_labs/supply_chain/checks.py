@@ -256,7 +256,7 @@ def _fulfilment(access, as_of):
             )
 
     for contract in Contract.objects.filter(program_id=access.program_id).select_related(
-        "commodity", "supplier", "buyer_party"
+        "commodity", "supplier", "buyer_org"
     ):
         if contract.status not in ("cancelled", "closed") and not contract.reference:
             out.append(

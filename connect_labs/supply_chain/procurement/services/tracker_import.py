@@ -338,34 +338,6 @@ def ensure_rutf(access):
     )
 
 
-def ensure_programme_party(op):
-    """The programme's own party -- us -- so provenance writes are possible.
-
-    Nothing created this. `tracker_import` built suppliers, rounds,
-    invitations and quotes, and no setup step ever established who the
-    programme itself is, so every provenance write in the programme was
-    refused: a document, a receipt, a shipment, an invoice, a distribution, a
-    stock count, by anybody. The refusal was correct and the omission was
-    upstream of it.
-
-    It belongs here because it is setup, and because importing the tracker is
-    the first thing that happens to a programme. Idempotent on the slug, so a
-    re-import neither duplicates it nor re-points the programme's owner.
-    """
-    existing = next((p for p in op("party_list") if p["kind"] == "programme_org"), None)
-    if existing:
-        return existing
-    return op(
-        "party_upsert",
-        data={
-            "slug": "programme",
-            "name": "Programme team",
-            "kind": "programme_org",
-            "roles": ["buyer", "receiver", "payer"],
-        },
-    )
-
-
 def _ensure_rounds(op, commodity_slug, labels):
     """The tracker's rounds, by label, idempotently.
 
@@ -737,7 +709,6 @@ def import_tracker(
     # against went unnoticed: on a first import the two read identically.
     unchanged = {"invitations": 0, "quotes": 0}
 
-    ensure_programme_party(op)
     round_ids = _ensure_rounds(op, commodity_slug, labels)
     imported["rounds"] = len(round_ids)
 

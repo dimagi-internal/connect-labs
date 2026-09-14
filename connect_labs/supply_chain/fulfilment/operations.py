@@ -127,7 +127,7 @@ def contract_update(access, contract_id, data):
 #
 # These are the operations a local partner uses when the partner is the buyer
 # of record. They are the SAME operations we use -- what differs is `source`
-# and `recorded_by_party` on the row. A partner-only write path would be a
+# and `recorded_by_org` on the row. A partner-only write path would be a
 # second set of rules to keep in step, and a second place for a bug to hide.
 
 _DATE = {"type": "string", "format": "date"}
@@ -152,7 +152,7 @@ _SHIPMENT_DATA = _data_with(
     carrier={"type": "string"},
     lines={"type": "array", "items": _SHIPMENT_LINE},
     source={"enum": list(records.SOURCES)},
-    recorded_by_party_id=ID,
+    recorded_by_org_id=ID,
 )
 
 _RECEIPT_DATA = _data_with(
@@ -180,7 +180,7 @@ _RECEIPT_DATA = _data_with(
         ),
     },
     source={"enum": list(records.SOURCES)},
-    recorded_by_party_id=ID,
+    recorded_by_org_id=ID,
 )
 
 _INVOICE_DATA = _data_with(
@@ -194,7 +194,7 @@ _INVOICE_DATA = _data_with(
     quantity_billed=QUANTITY,
     quantity_unit={"type": "string"},
     source={"enum": list(records.SOURCES)},
-    recorded_by_party_id=ID,
+    recorded_by_org_id=ID,
 )
 
 _PAYMENT_DATA = _data_with(
@@ -206,7 +206,7 @@ _PAYMENT_DATA = _data_with(
     method={"type": "string"},
     reference={"type": "string"},
     source={"enum": list(records.SOURCES)},
-    recorded_by_party_id=ID,
+    recorded_by_org_id=ID,
 )
 
 _DOCUMENT_DATA = _data_with(
@@ -218,7 +218,7 @@ _DOCUMENT_DATA = _data_with(
     content_base64={"type": "string"},
     external_url={"type": "string"},
     source={"enum": list(records.SOURCES)},
-    recorded_by_party_id=ID,
+    recorded_by_org_id=ID,
     # One `<name>_id` per thing a document can evidence, generated from the
     # single declaration. Written out by hand before, so adding a target
     # meant remembering this list too -- and forgetting it fails as

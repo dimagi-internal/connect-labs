@@ -63,20 +63,20 @@ class StockRepositoryMixin:
         if data.get("parent_supply_point_id") is not None:
             parent = self._require_supply_point(data["parent_supply_point_id"], "parent supply point")
         party = None
-        if data.get("managed_by_party_id") is not None:
-            party = self.get_party(data["managed_by_party_id"])
+        if data.get("managed_by_org_id") is not None:
+            party = self.get_party(data["managed_by_org_id"])
             if party is None:
-                raise ValueError(f"party {data['managed_by_party_id']} does not exist")
+                raise ValueError(f"party {data['managed_by_org_id']} does not exist")
 
         from connect_labs.supply_chain.data_access import _columns, _fresh
 
         defaults = _columns(SupplyPoint, {k: v for k, v in data.items() if k != "slug"})
         defaults["parent"] = parent
-        defaults["managed_by_party"] = party
+        defaults["managed_by_org"] = party
         point, _ = SupplyPoint.objects.update_or_create(
             program_id=self._require_program(), slug=data["slug"], defaults=defaults
         )
-        point.full_clean(exclude=["parent", "managed_by_party"])
+        point.full_clean(exclude=["parent", "managed_by_org"])
         return _fresh(point)
 
     # ---- the ledger ------------------------------------------------------
@@ -166,7 +166,7 @@ class StockRepositoryMixin:
             item=self._resolve_item(data.get("item_id")),
             **_columns(StockCount, data),
         )
-        count.full_clean(exclude=["supply_point", "commodity", "item", "adjustment_movement", "recorded_by_party"])
+        count.full_clean(exclude=["supply_point", "commodity", "item", "adjustment_movement", "recorded_by_org"])
         if count.kind == "override":
             posting.post_override(count, self._require_program())
         return _fresh(count)
