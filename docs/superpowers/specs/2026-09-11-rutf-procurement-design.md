@@ -1045,3 +1045,298 @@ client's can be open and wrong sometimes.
 The operation is named `checks_list` rather than `exceptions_list` for this
 reason: "exception" implies somebody judged something exceptional. A check
 has a definite pass or fail and claims nothing about importance.
+
+---
+
+# Part 3 — the organisation, and what `Party` got wrong
+
+*Added 2026-09-12, after Jonathan read §17. This part supersedes `Party` as a
+concept. No schema has changed yet, deliberately: Connect's `Organization`
+entity is being reworked in production and labs will inherit it, and a
+migration built against today's shape is the most likely thing here to be
+thrown away.*
+
+## 25. `Party` is a second organisation registry, and there are three of them
+
+§17 introduced `Party` to hold "an organisation that can act in the chain",
+because the Sophie case needs a buyer of record who is neither us nor the
+supplier. The need is real. The shape is wrong: a party is just an
+organisation, and an organisation is a thing Connect already models.
+
+Two tables in one codebase both meaning "an organisation in real life" will
+drift — the same organisation appears twice, under two names, with no way to
+tell that it is one body. That is not a hypothesis. Labs has invented this
+registry three times already:
+
+| Table | What it holds | How it joins to Connect |
+|---|---|---|
+| `supply_chain.Party` | an org that can buy, receive, distribute, pay | `connect_organization_id`, nullable |
+| `supply_chain.Supplier` | an org we buy from, with its own name/country/contacts | nothing at all |
+| `pulse.PulsePartner` + `PulsePartnerAlias` | a delivery partner, named from the LLO Directory | org **slug**, plus human-curated aliases |
+
+Three registries, three join strategies, none aware of the others.
+`PulsePartner`'s own docstring already states the posture this part
+generalises: *"the sheet is the source of truth and this table is its
+cache."*
+
+The target model is the one a reader would have guessed:
+
+- **An organisation is one row.** It may deliver Connect interventions, sell
+  us goods, and buy on our behalf, all at once. Those are not three entities.
+- **A supplier is a profile on an organisation**, not an organisation.
+- **Buyer, receiver, distributor, payer are roles**, recorded on the contract
+  or the movement that they apply to — which is already where they live.
+
+## 26. `LabsOrg`: an identity registry with a shrinking remit
+
+Labs will hold organisations that Connect does not represent for as long as
+labs builds features ahead of production. Most of this tracker's suppliers are
+the case in point: Nutriset, GC Rieber Compact, INSTA Products EPZ and Hilina
+are manufacturers in France, Norway, Kenya and Ethiopia. They have no Connect
+account, no users, and no reason to acquire either.
+
+So labs needs a local organisation registry. The honest version of it is named
+for what it is, lives in `labs/` rather than in any one domain, and is designed
+to **get smaller until it is gone**:
+
+- `LabsOrg` carries **identity only** — name, short name, country, aliases,
+  and the join keys.
+- It joins on **both** `connect_organization_id` **and** slug. Pulse matches
+  slugs; supply chain has ids; the reworked production entity may change one
+  and not the other.
+- **When a Connect id is present, Connect is authoritative** for identity. The
+  local row is a cache, and a labs feature must not be the place someone edits
+  an organisation's name.
+- Each domain attaches its own **profile**, keyed to the org: a supplier
+  profile, a delivery-partner profile, and — when it exists — a
+  marketplace-visibility profile. A profile is owned by its app and migrates
+  on its own schedule.
+
+**Matching, when a key changes, and what a conflict is.** Left undefined in
+the first draft, which is the part of a reconciliation design that decides
+whether it works: a both-keys rule orphans an identity the moment one key
+changes, and an either-key rule merges two unrelated organisations the
+moment a slug is reused.
+
+- **`connect_organization_id` is the identity. The slug is a finding aid.**
+  The id is Connect's primary key and does not change; a slug is derived from
+  a name (`synthetic_org_slug`) and therefore does change. So a row with an
+  id matches on the id alone, and the slug on it is a cache of what Connect
+  last called it.
+- **The slug matches only a row that has no id yet.** That is the one job it
+  has: linking a local row to the Connect org it turns out to be. Once the
+  id is set, a slug that no longer agrees is updated, not treated as a
+  second candidate.
+- **A rename is not a new organisation.** Connect changing an org's name
+  changes its slug and not its id, so the link survives and the cached slug
+  is refreshed.
+- **Two local rows resolving to one Connect id is a conflict, and it is
+  reported, not merged.** Merging would fold two histories -- two supplier
+  profiles, two sets of contacts, two sets of documents -- on the strength
+  of a string, and the domain refuses that kind of guess everywhere else
+  (§22). A person decides which is which; `PulsePartnerAlias` already exists
+  because pulse reached the same conclusion about slugs no rule can settle.
+- **An id present on a row that Connect does not recognise is NOT evidence
+  that the organisation is gone.** Connect answers `404` both for a record
+  that was deleted and for one outside the polling account's memberships
+  (`pulse/ingest.py` says so), and it publishes organisations only within
+  those memberships -- which is the whole reason `PulsePartner` exists. So
+  an absence read through a scoped account proves nothing, and treating it
+  as a conflict would raise one against every organisation we merely cannot
+  see.
+
+  Only an authoritative lookup -- one entitled to see the organisation --
+  can distinguish deleted or merged from out-of-scope or not-yet-synced.
+  Until the lookup can say which, the link stands and the row is left
+  alone. Clearing it on a 404 would unlink organisations by accident and
+  call it reconciliation.
+
+**The trap, and the only thing that makes "shrinking" true rather than
+aspirational.** If `LabsOrg` accumulates domain attributes it can never
+migrate: the day Connect is ready, the blocker becomes Connect not having
+`prequalification_status`. So the remit is narrow by rule, and the rule is
+worth more than the table:
+
+> Identity on `LabsOrg`. Domain state in the domain's own profile. Nothing a
+> single feature invented goes on the org.
+
+Applied to what exists, the three registries have three different fates, and
+the difference is a useful test:
+
+- **`PulsePartner` is identity only** — a directory name, a short name,
+  aliases. It **dissolves** into `LabsOrg` entirely, leaving no profile behind.
+- **`Supplier` is identity plus real domain state** — a sourcing lifecycle
+  (identified → contacted → quoting → awarded) and prequalification. It
+  **sheds** name and country and **keeps** the lifecycle as a profile.
+  **Contacts stay with the supplier profile**, not with the org: a named
+  buyer at a manufacturer, the address an RFQ was sent to, and
+  `Outreach.contact_email_used` are sourcing facts about dealing with that
+  company, and `pulse` has no use for them. Nothing is deleted in this
+  migration -- if a future org registry grows a contacts model, moving them
+  is its own decision with its own rule.
+- **`Party` is identity plus roles that are already recorded elsewhere.** It
+  **loses its role as an organisation registry** -- which is the whole of
+  what was wrong with it. It does NOT disappear on that day, because
+  `recorded_by_party_id` is the provenance key on every fulfilment, network
+  and stock row (§17.3) and is now derived from the session (§27). Removing
+  the table means re-keying every one of those rows.
+
+  So, stated as a rule rather than left implied: `recorded_by_party_id` is
+  the current and only persisted provenance reference. Its replacement --
+  most likely an organisation reference, once §29 is answered -- is a
+  post-decision migration that must carry every existing value across, and
+  until it happens `Party` continues to hold the programme's own
+  `programme_org` row. The identity work merged in #1784 depends on that row
+  existing, and creates it during import.
+
+So: if a table's only content is identity, it dissolves; if it carries domain
+state, it keeps the state and sheds the identity.
+
+**Every reference moves before the table goes, and there are four of them.**
+Naming only `recorded_by_party_id` is how a migration discovers the rest at
+the worst moment: `Contract.buyer_party` is `PROTECT`, so deleting `Party`
+underneath it fails outright, and `Supplier.party` and
+`SupplyPoint.managed_by_party` would silently lose their links.
+
+Done in #1791 as three migrations rather than one, and the split is the part
+worth copying: add the columns, commit; copy every row and repoint every
+link, commit; only then drop. Postgres will not build an index on a table
+whose rows changed in the same transaction, so a single migration fails with
+"pending trigger events" -- against a POPULATED database, never against an
+empty test one.
+
+**Where each PulsePartner field goes, before anything is deleted.** §26 says
+the table dissolves and lists only identity, which leaves its other columns
+unaccounted for -- and the same omission about `Supplier` contacts was
+already one finding on this document:
+
+- **name, short name, aliases and their `why`** -> `LabsOrg`. The reason a
+  human pointed a slug at a partner is part of the identity record, not
+  disposable: it is what stops the next person re-deriving a mapping the
+  matcher already refused.
+- **location fields** -> a pulse profile keyed to the org. They come from
+  HQ, they are pulse's to maintain, and no other consumer wants them.
+- **`joined_at` with `joined_basis`** -> a pulse profile, and the BASIS
+  travels with the date or the date is worthless. §28 records why: the
+  spine cannot date anything before 2025-01-14, and handset timestamps run
+  to 2010, so a date without its provenance is a number nobody can defend.
+
+So `PulsePartner` does not dissolve outright after all -- identity moves and
+a thinner pulse profile remains. That is the same shape as `Supplier`, and
+the earlier claim that it "leaves no profile behind" was wrong.
+
+**An unlinked org is not necessarily a missing one.** Some organisations will
+never have a Connect counterpart and should not be waiting for one. A
+manufacturer in Norway that we buy cartons from has no users, delivers
+nothing, and has no reason to hold a Connect account in any future worth
+planning for. It is a complete, correct `LabsOrg` with `connect_organization_id`
+permanently null — a terminal state, not an unfinished one.
+
+So `LabsOrg` has two populations, and conflating them is how the register
+stops being trusted:
+
+- **linked, or awaiting linking** — a partner, a programme org, ourselves.
+  Connect is or will be authoritative for identity; an unlinked row here is
+  real work outstanding.
+- **local for good** — an organisation we only buy from. Nothing is missing.
+
+**How much is left is a number, not a feeling — but only over the first
+population.** Counting every unlinked row makes the backlog include the
+suppliers that will never link, so it never reaches zero and everybody learns
+to ignore it. The backlog is: rows with no `connect_organization_id` whose
+profiles imply they need one.
+
+And that is **derived, not declared**. An organisation that delivers Connect
+interventions must be a Connect org — that is what an LLO is — so a delivery
+profile implies the link is expected. An organisation carrying only a supplier
+profile implies nothing of the kind. Storing a `should_be_in_connect` flag
+would be storing an opinion, and this document refuses that everywhere else
+(§22); the profiles already carry the fact.
+
+It belongs on a page somewhere, because a transitional register with no
+visible backlog becomes a permanent one by default rather than by decision.
+
+## 27. What this changes about authorisation
+
+§17.2 says a partner is a party with the same operations as us, and the
+partner write paths are still unbuilt. Part 3 makes that work simpler and
+removes a decision.
+
+Labs already receives the signed-in user's Connect organisations in the OAuth
+session (`labs/context.py`, `get_org_data`). If a party is an organisation,
+then *"which party is this user acting for"* is *"which organisations is this
+user a member of"* — a question already answered on every request. No new
+grant mechanism, and the per-programme-grant question raised earlier mostly
+dissolves.
+
+Three gaps remain, and only the last is a screen:
+
+1. **Nothing resolves a signed-in user to an organisation acting in the
+   chain.** The join key exists; the resolution does not.
+2. **`recorded_by_party_id` is supplied by the caller** on every provenance
+   write. A partner can therefore claim to be any party, including us. §17.3
+   makes provenance compulsory precisely so a figure traces to whoever
+   asserted it, and a self-asserted assertion carries no weight. It must be
+   **derived from the session**, not accepted from the payload.
+3. **Authorisation is `login_required` plus "is a programme selected?"** Any
+   authenticated labs user who sets a programme in context can call all 30
+   write operations against any programme.
+
+Those precede the four partner screens (record a receipt, record a
+distribution run, record a count or override, raise a contract). Shipping the
+screens first would put a partner-facing surface on a model where anyone can
+write as anyone — worse than no screens, because it would look trustworthy
+while the provenance beneath it is unverified.
+
+## 28. Two hazards to carry into the migration
+
+**Partner names are entitled, and the gate is not on the table.** Pulse's read
+API is otherwise unauthenticated, so partner names sit behind
+`_partner_names_allowed` (`pulse/api.py`, enforced in `network_api.py`). Move
+names onto `LabsOrg` without moving that gate and it silently opens. Any new
+endpoint that carries organisation identity has to gate the same way — which
+is already pulse's stated rule, and is now a shared one.
+
+**Pulse is the riskiest mover and should go last.** Supply chain is the safe
+first mover: nine suppliers and a few parties, in one synthetic programme, all
+re-importable from the tracker in a single operation. `PulsePartner` is live,
+carries identity behind that gate, and holds two dating guards that are
+expensive to rediscover. **Nothing here waits on a decision.** An earlier
+draft deferred this sequence to §29, which is a leftover from when §29 was
+a gate; it is not one, and §29 now says so. The ordering below is about
+RISK, not permission: sequence:
+introduce `LabsOrg`, migrate supply onto
+it, prove the pattern, then pulse.
+
+## 29. This does not wait on production — that is the point
+
+**An earlier draft of this section made `LabsOrg` conditional on a Connect
+decision: whether an updated `Organization` can represent a supplier with no
+users. That inverted the whole idea, and it is withdrawn.**
+
+`LabsOrg` exists *because* labs builds ahead of production. Waiting for
+production to answer a question before labs may name an organisation is the
+exact dependency it removes. The consequence of the mistake was concrete:
+nothing was built for a day, the supply domain kept its own organisation
+registry, and an importer invented an unlinked "Programme team" row for an
+organisation that plainly exists in Connect — the precise behaviour §25
+argues against.
+
+So the rule is the opposite of what was written:
+
+- **Labs names an organisation whenever it needs one.** No permission, no
+  precondition.
+- **It carries both join keys from the start** — `connect_organization_id`
+  and `connect_organization_slug` — so a row can be linked the moment
+  production has a counterpart, without a migration or a rewrite.
+- **Production catching up is a linking event, not a redesign.** When
+  Connect grows a home for suppliers, those rows link and stop being a
+  second source of truth. When it does not, they stay local, correctly.
+- **The backlog is rows that should be linked and are not** (§26), and it
+  trends down as production catches up. It never gates anything.
+
+The question the earlier draft asked — can a Connect `Organization` hold a
+users-less supplier — is still worth knowing, because the answer decides how
+small this table eventually gets. It decides nothing about whether to build
+it.
+
