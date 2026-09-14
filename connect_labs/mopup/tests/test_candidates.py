@@ -102,6 +102,70 @@ class TestBuildEvaluationInput:
         assert rows[0]["lon"] == 11.18
         assert rows[0]["boundary"]["type"] == "Polygon"
 
+    def _stub_work_area_and_geometry(self, monkeypatch, candidates_module, owner_id="flw-1"):
+        monkeypatch.setattr(
+            candidates_module,
+            "list_work_areas",
+            lambda opportunity_id, request=None, pipeline=None: [
+                {
+                    "case_id": "wa-1",
+                    "wa_name": "Household 12",
+                    "ward": "Sabon Gari",
+                    "lga": "Rano",
+                    "state": "Kano",
+                    "building_count": 10,
+                    "expected_visit_count": 8,
+                    "status": "VISITED",
+                    "owner_id": owner_id,
+                }
+            ],
+        )
+        monkeypatch.setattr(candidates_module, "list_approved_visits", lambda *a, **k: [])
+        monkeypatch.setattr(
+            candidates_module,
+            "fetch_work_area_geometry",
+            lambda opportunity_id, request=None, pipeline=None: {
+                "wa-1": {"lat": None, "lon": None, "boundary": None, "wag_name": "North Group"}
+            },
+        )
+
+    def test_wag_name_is_merged_in_from_geometry(self, monkeypatch):
+        import connect_labs.mopup.core.candidates as candidates_module
+
+        self._stub_work_area_and_geometry(monkeypatch, candidates_module)
+        rows = build_evaluation_input(1, [], request=object())
+        assert rows[0]["wa_name"] == "Household 12"
+        assert rows[0]["wag_name"] == "North Group"
+
+    def test_flw_name_resolved_when_access_token_given(self, monkeypatch):
+        import connect_labs.mopup.core.candidates as candidates_module
+
+        self._stub_work_area_and_geometry(monkeypatch, candidates_module)
+        monkeypatch.setattr(
+            "connect_labs.labs.analysis.data_access.fetch_flw_names",
+            lambda access_token, opportunity_id: {"flw-1": "Jane Doe"},
+        )
+        rows = build_evaluation_input(1, [], request=object(), access_token="tok")
+        assert rows[0]["flw_name"] == "Jane Doe"
+
+    def test_flw_name_falls_back_to_raw_username_without_a_match(self, monkeypatch):
+        import connect_labs.mopup.core.candidates as candidates_module
+
+        self._stub_work_area_and_geometry(monkeypatch, candidates_module, owner_id="unmapped-id")
+        monkeypatch.setattr(
+            "connect_labs.labs.analysis.data_access.fetch_flw_names",
+            lambda access_token, opportunity_id: {"flw-1": "Jane Doe"},
+        )
+        rows = build_evaluation_input(1, [], request=object(), access_token="tok")
+        assert rows[0]["flw_name"] == "unmapped-id"
+
+    def test_flw_name_falls_back_to_raw_username_without_an_access_token(self, monkeypatch):
+        import connect_labs.mopup.core.candidates as candidates_module
+
+        self._stub_work_area_and_geometry(monkeypatch, candidates_module)
+        rows = build_evaluation_input(1, [], request=object())
+        assert rows[0]["flw_name"] == "flw-1"
+
     def test_empty_selection_means_every_ward(self, monkeypatch):
         import connect_labs.mopup.core.candidates as candidates_module
 
@@ -325,6 +389,9 @@ class TestBuildMapFeatures:
         props = fc["features"][0]["properties"]
         assert props == {
             "wa_id": "wa-1",
+            "wa_name": "",
+            "wag_name": "",
+            "flw_name": "",
             "ward": "Sabon Gari",
             "included": False,
             "first_indicator": None,
@@ -436,10 +503,13 @@ class TestGapFeatureToCandidateRow:
         row = gap_feature_to_candidate_row(feature)
         assert row == {
             "wa_id": "mopup-kano-rano-sabon-gari-gap-C0",
+            "wa_name": "",
+            "wag_name": "",
             "ward": "Sabon Gari",
             "lga": "Rano",
             "state": "Kano",
             "flw_username": "",
+            "flw_name": "",
             "boundary": boundary,
             "building_count": 3,
             "expected_visit_count": 7,

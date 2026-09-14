@@ -164,6 +164,8 @@
           <tr class="text-left text-gray-500">
             <th class="p-2">Ward</th><th class="p-2">LGA</th><th class="p-2">State</th>
             <th class="p-2">FLW</th>
+            <th class="p-2">WA Name</th>
+            <th class="p-2">WAG Name</th>
             <th class="p-2">Total buildings</th><th class="p-2">Total EVC</th>
             <th class="p-2">Tier <span class="info-icon" tabindex="0" data-tip="Tier 1 (EVC shortfall, NCF/inaccessible — did we find/register children at all) generally outranks Tier 2 (deworming, MUAC, vaccination — for children found, did they get complete services).">ⓘ</span></th>
             <th class="p-2 cursor-pointer" id="sort-severity">Severity <span class="info-icon" tabindex="0" data-tip="How many of the currently-enabled indicators flagged this work area. A plain count, not a weighted score.">ⓘ</span> ↕</th>
@@ -218,10 +220,6 @@
       </label>
       <button type="button" id="gap-upload-button" class="button outline-style">Upload</button>
       <p id="gap-upload-status" class="text-xs text-gray-500">{% if uploaded_buildings_filename %}Uploaded: {{ uploaded_buildings_filename }} ({{ uploaded_buildings_row_count }} row(s) matched this run's ward(s)){% endif %}</p>
-      <label class="block space-y-1">
-        <span class="text-gray-600">Min confidence (optional) <span class="info-icon" tabindex="0" data-tip="Only meaningful if your uploaded file has its own confidence column (0-1) -- drops rows below this score before they're gridded into new work areas or shown on the map. Leave blank to keep every uploaded building regardless of confidence.">ⓘ</span></span>
-        <input type="number" id="gap-cfg-upload-min-confidence" class="base-input" min="0" max="1" step="0.05" placeholder="none" style="width:8rem">
-      </label>
     </div>
 
     <div id="gap-mode-shared-controls" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -235,6 +233,10 @@
           <option value="50">50m</option>
           <option value="100" selected>100m</option>
         </select>
+      </label>
+      <label id="gap-mode-upload-confidence-wrap" class="space-y-1">
+        <span class="text-gray-600">Min confidence (optional) <span class="info-icon" tabindex="0" data-tip="Only meaningful if your uploaded file has its own confidence column (0-1) -- drops rows below this score before they're gridded into new work areas or shown on the map. Leave blank to keep every uploaded building regardless of confidence.">ⓘ</span></span>
+        <input type="number" id="gap-cfg-upload-min-confidence" class="base-input" min="0" max="1" step="0.05" placeholder="none">
       </label>
     </div>
 
