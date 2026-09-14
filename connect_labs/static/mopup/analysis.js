@@ -436,7 +436,9 @@ window.MopupAnalysis = (function () {
   }
 
   function candidateRowHtml(c, extraClass) {
-    return `<tr class="border-b border-gray-50 ${extraClass || ''}">
+    return `<tr class="border-b border-gray-50 ${
+      extraClass || ''
+    }" data-wa-id="${esc(c.wa_id)}">
           <td class="p-2">${esc(c.ward)}</td><td class="p-2">${esc(
             c.lga,
           )}</td><td class="p-2">${esc(c.state)}</td>
@@ -467,6 +469,11 @@ window.MopupAnalysis = (function () {
       .map((c) => candidateRowHtml(c, 'bg-emerald-50'))
       .join('');
     $('candidate-rows').innerHTML = html + gapHtml;
+    // A full re-render (every Recompute, including the one triggered right
+    // after excluding a work area) replaces every <tr> wholesale -- re-apply
+    // whatever's currently selected via the map rather than losing the
+    // highlight on the next unrelated setting change.
+    highlightCandidateRow(selectedWaId);
   }
 
   // ---------------------------------------------------------------------
@@ -612,6 +619,156 @@ window.MopupAnalysis = (function () {
   }
 
   let lastMapFeatures = null;
+  let selectedWaId = null;
+
+  // Highlights the candidate/gap-fill table row for `waId` (null clears any
+  // highlight) and scrolls it into view -- called both right after a map
+  // click and after every renderCandidates() re-render, so the highlight
+  // survives an unrelated Recompute rather than only showing until the next
+  // setting change wipes the table's innerHTML.
+  function highlightCandidateRow(waId) {
+    document
+      .querySelectorAll('#candidate-rows tr[data-wa-id]')
+      .forEach((tr) => {
+        tr.classList.toggle(
+          'bg-yellow-100',
+          waId != null && tr.dataset.waId === waId,
+        );
+      });
+    if (waId == null) return;
+    const row = document.querySelector(
+      `#candidate-rows tr[data-wa-id="${CSS.escape(waId)}"]`,
+    );
+    if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  function selectWorkArea(waId, ward) {
+    selectedWaId = waId;
+    $('map-selection-label').textContent = `${waId} (${ward})`;
+    $('map-selection-bar').classList.remove('hidden');
+    highlightCandidateRow(waId);
+  }
+
+  function deselectWorkArea() {
+    selectedWaId = null;
+    $('map-selection-bar').classList.add('hidden');
+    highlightCandidateRow(null);
+  }
+
+  // Excludes/re-includes are relative to EVC (expected visit count), not
+  // the underlying rate's own denominator -- e.g. deworming/MUAC/vaccination
+  // are normally rates OF actual HSD visits, but the hover tooltip
+  // deliberately shows them against EVC instead (a broader "how much of
+  // what we EXPECTED here got the service" view), per explicit design.
+  function evcPercentText(numerator, evc) {
+    if (!evc) return '—';
+    return `${Math.round((numerator / evc) * 100)}%`;
+  }
+
+  function mapHoverHtml(props) {
+    if (props.source === 'planning_gap') {
+      return `<div class="text-xs leading-snug space-y-0.5">
+        <div class="font-semibold mb-1">Planning gap work area</div>
+        <div>EVC: ${props.expected_visit_count}</div>
+        <div>Buildings: ${props.building_count}</div>
+      </div>`;
+    }
+    if (props.source !== 'existing_wa') return null; // uploaded-building dots: no tooltip
+    const evc = props.expected_visit_count;
+    return `<div class="text-xs leading-snug space-y-0.5">
+      <div class="font-semibold mb-1">${esc(props.wa_id)}</div>
+      <div>HSD visits: ${props.approved_hsd_count}</div>
+      <div>EVC: ${evc}</div>
+      <div>HSD visits / EVC: ${evcPercentText(
+        props.approved_hsd_count,
+        evc,
+      )}</div>
+      <div>Buildings: ${props.building_count}</div>
+      <div>Deworming / EVC: ${evcPercentText(props.deworming_given, evc)}</div>
+      <div>MUAC-recorded / EVC: ${evcPercentText(props.muac_given, evc)}</div>
+      <div>Vaccination-given / EVC: ${evcPercentText(
+        props.vaccination_given,
+        evc,
+      )}</div>
+    </div>`;
+  }
+
+  // Registered once (from initMap's 'load' handler), not per-render -- safe
+  // to attach layer-scoped listeners before the layers themselves exist
+  // (PlanLayers.workAreas adds them lazily, on the first renderMap call);
+  // Mapbox GL simply won't fire them until there's something to hit.
+  function attachMapInteractivity() {
+    const layerIds = ['wa-fill', 'wa-fill-dot'];
+    const hoverPopup = new mapboxgl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      maxWidth: '260px',
+    });
+
+    layerIds.forEach((layerId) => {
+      map.on('mousemove', layerId, (e) => {
+        if (!e.features.length) return;
+        map.getCanvas().style.cursor = 'pointer';
+        const html = mapHoverHtml(e.features[0].properties);
+        if (!html) {
+          hoverPopup.remove();
+          return;
+        }
+        hoverPopup.setLngLat(e.lngLat).setHTML(html).addTo(map);
+      });
+      map.on('mouseleave', layerId, () => {
+        map.getCanvas().style.cursor = '';
+        hoverPopup.remove();
+      });
+      map.on('click', layerId, (e) => {
+        if (!e.features.length) return;
+        const props = e.features[0].properties;
+        if (props.source !== 'existing_wa') return;
+        selectWorkArea(props.wa_id, props.ward);
+      });
+    });
+
+    // A click that hit no work-area feature at all (empty map background)
+    // clears the current selection -- checked via a fresh query rather than
+    // a flag set by the layer-specific handlers above, since those and this
+    // plain click handler all fire for the same click event regardless of
+    // registration order.
+    map.on('click', (e) => {
+      const hitLayers = layerIds.filter((id) => map.getLayer(id));
+      if (!hitLayers.length) return;
+      const hits = map.queryRenderedFeatures(e.point, { layers: hitLayers });
+      if (!hits.length) deselectWorkArea();
+    });
+  }
+
+  async function excludeSelectedWorkArea() {
+    if (!selectedWaId) return;
+    const button = $('map-exclude-button');
+    button.disabled = true;
+    try {
+      const resp = await fetch(CFG.excludeWorkAreaUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': CFG.csrfToken,
+        },
+        body: JSON.stringify({ wa_id: selectedWaId, excluded: true }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== 'ok') {
+        alert(data.detail || 'Failed to exclude this work area.');
+        return;
+      }
+      deselectWorkArea();
+      // Reuses the normal Recompute path -- the server-side exclusion
+      // filter (_apply_exclusions) is applied there, so this one fetch
+      // already re-renders the candidate table/ward summary/map correctly;
+      // no separate rendering logic needed here.
+      pollOrEvaluate();
+    } finally {
+      button.disabled = false;
+    }
+  }
 
   function renderMap(rawMapFeatures) {
     lastMapFeatures = rawMapFeatures;
@@ -659,6 +816,7 @@ window.MopupAnalysis = (function () {
     }
     map.on('load', () => {
       mapReady = true;
+      attachMapInteractivity();
       if (wardBoundariesData.features.length) {
         window.PlanLayers.setSource(
           map,
@@ -1045,6 +1203,7 @@ window.MopupAnalysis = (function () {
       .forEach((r) => r.addEventListener('change', updateGapModeVisibility));
     updateGapModeVisibility();
     $('gap-upload-button').addEventListener('click', uploadBuildingsFile);
+    $('map-exclude-button').addEventListener('click', excludeSelectedWorkArea);
     initTooltips();
     showLoadingPanel(
       'Loading work-area, visit, and geometry data for this opportunity…',

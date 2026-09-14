@@ -57,6 +57,19 @@ def _resolve_thresholds(run, payload: dict) -> tuple[dict, dict]:
     return indicator_configs, global_config
 
 
+def _apply_exclusions(candidates: list[dict], run) -> list[dict]:
+    """Drops any candidate whose wa_id is in `run.excluded_wa_ids` (the map
+    view's "Not include" action) — called right after `evaluate_run` in
+    both `MopupCandidatesView` (the live view) and `MopupLockView` (so an
+    exclusion made before locking is already baked into the frozen
+    `candidate_work_areas`; nothing downstream of locking needs its own
+    separate exclusion check)."""
+    excluded = set(run.excluded_wa_ids)
+    if not excluded:
+        return candidates
+    return [c for c in candidates if c["wa_id"] not in excluded]
+
+
 def _rows_or_progress(da, run, request, program_id) -> tuple[list[dict] | None, dict | None]:
     """Ensure a fetch task exists for `run` (dispatching one if it's never
     been started, or if the last one failed and was cleared), and report on
@@ -381,6 +394,7 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         context["create_plan_url"] = reverse("mopup:create_plan", args=[program_id, run_id])
         context["planning_gaps_url"] = reverse("mopup:planning_gaps", args=[program_id, run_id])
         context["upload_buildings_url"] = reverse("mopup:upload_buildings", args=[program_id, run_id])
+        context["exclude_work_area_url"] = reverse("mopup:exclude_work_area", args=[program_id, run_id])
         context["planning_gap_config"] = run.planning_gap_config
         context["uploaded_buildings_filename"] = run.uploaded_buildings_filename
         context["uploaded_buildings_row_count"] = run.uploaded_buildings_row_count
@@ -526,7 +540,7 @@ class MopupCandidatesView(LoginRequiredMixin, View):
             return JsonResponse(progress)
 
         indicator_configs, global_config = _resolve_thresholds(run, payload)
-        candidates = ind.evaluate_run(rows, indicator_configs, global_config)
+        candidates = _apply_exclusions(ind.evaluate_run(rows, indicator_configs, global_config), run)
         ward_summary = summarize_candidates_by_ward(candidates, rows)
         da.update_run(run, thresholds={"indicator_configs": indicator_configs, "global_config": global_config})
 
@@ -582,7 +596,7 @@ class MopupLockView(LoginRequiredMixin, View):
             return JsonResponse(progress)
 
         indicator_configs, global_config = _resolve_thresholds(run, payload)
-        candidates = ind.evaluate_run(rows, indicator_configs, global_config)
+        candidates = _apply_exclusions(ind.evaluate_run(rows, indicator_configs, global_config), run)
 
         if not candidates:
             return JsonResponse(
@@ -764,3 +778,42 @@ class MopupUploadBuildingsView(LoginRequiredMixin, View):
         )
 
         return JsonResponse({"status": "ok", "filename": upload.name, "matched_rows": len(filtered)})
+
+
+class MopupExcludeWorkAreaView(LoginRequiredMixin, View):
+    """The map view's "Not include" action (item 4): manually excludes (or
+    re-includes) one work area from this run's candidate set, regardless of
+    what the indicator thresholds would otherwise flag.
+
+    Persists onto `run.excluded_wa_ids` and returns immediately — it does
+    NOT itself re-evaluate/return updated candidates/ward_summary/map_features.
+    The caller (analysis.js) triggers a normal Recompute right after a
+    successful response, which already applies `_apply_exclusions` (see
+    `MopupCandidatesView`) and re-renders everything from that one response,
+    same as any other setting change. Keeping this endpoint single-purpose
+    avoids duplicating that rendering path here."""
+
+    def post(self, request, program_id, run_id):
+        da = MopupRunDataAccess(program_id, request=request)
+        run = da.get_run(run_id)
+        if run is None:
+            return JsonResponse({"status": "error", "detail": "Run not found."}, status=404)
+
+        try:
+            payload = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        wa_id = payload.get("wa_id")
+        if not wa_id:
+            return JsonResponse({"status": "error", "detail": "wa_id is required."}, status=400)
+        excluded = bool(payload.get("excluded", True))
+
+        current = set(run.excluded_wa_ids)
+        if excluded:
+            current.add(wa_id)
+        else:
+            current.discard(wa_id)
+        da.update_run(run, excluded_wa_ids=sorted(current))
+
+        return JsonResponse({"status": "ok", "excluded_wa_ids": sorted(current)})
