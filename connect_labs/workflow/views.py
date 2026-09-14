@@ -2220,13 +2220,27 @@ def pipeline_rows_api(request, definition_id):
     and minutes cold, on a 1-vCPU web task that everything else then queues behind
     (measured 2026-09-11).
 
-    Params: `alias` and `opportunity_id` (both required), then any of `username`,
+    Params: `alias` and an opportunity (both required), then any of `username`,
     `case_ids` (comma-separated, the pipeline's entity/baby key) and `limit`. The
     read prefers the processed cache and falls back to executing THAT pipeline for
     THAT opportunity -- never the whole cohort.
+
+    Two different questions, which one param used to answer badly.
+    `opportunity_id` is the SCOPE the workflow record is read in -- the context
+    middleware takes it off the query string into `request.labs_context`, and a
+    definition can only be read in the scope that owns it. `rows_opportunity_id`
+    is which of the spanned opportunities to read rows for. A multi-opp drill
+    needs them to DIFFER: the KMC worker review is owned by opp 523 and opens a
+    worker in opp 874. Sending both under one name meant `QueryDict.get` took the
+    last, the definition was looked up in an opportunity that does not own it, and
+    the endpoint answered "Workflow not found" from a correct-looking URL.
+    `rows_opportunity_id` falls back to `opportunity_id`, so a single-opp caller
+    (where the two genuinely coincide) is unchanged.
     """
     alias = (request.GET.get("alias") or "").strip()
-    opportunity_id = _coerce_int(request.GET.get("opportunity_id"))
+    opportunity_id = _coerce_int(request.GET.get("rows_opportunity_id")) or _coerce_int(
+        request.GET.get("opportunity_id")
+    )
     if not alias or not opportunity_id:
         return JsonResponse({"error": "alias and opportunity_id are required"}, status=400)
     username = (request.GET.get("username") or "").strip()
