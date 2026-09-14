@@ -650,6 +650,49 @@ def _with_inherited_safety_flags(instance_inputs: dict, template_key: str | None
     return {**instance_inputs, **missing}
 
 
+# The same argument as _INHERITED_SAFETY_FLAGS, one level up: a definition's
+# `config` is also stamped at create-from-template time and never migrates, so a
+# template that gains a config flag later cannot reach the workflows already
+# created from it.
+#
+# `noPipelineStream` is not a preference an instance holds. It records that the
+# template's RENDER fetches the few rows it needs itself (the `pipeline-rows`
+# endpoint), so the framework must not also stream every pipeline for every
+# opportunity the workflow spans. That is a property of the template's code, and
+# no instance record can make it untrue -- an instance stamped before the flag
+# existed still has a render that fetches its own rows, and streaming for it is
+# pure waste.
+#
+# Measured on live workflow 19780 (JJ - KMC Worker Review, 12 opportunities):
+# stamped before the flag, so it streamed all twelve serially on every load --
+# minutes of recompute the page discards, and long enough to collide with the
+# programme report it shares pipelines 19776/19777 with, aborting the stream on
+# a ComputedEntityCache unique-constraint violation (opp 1487). The flag was
+# deployed and inert on the one workflow it was written for.
+_INHERITED_CONFIG_FLAGS = ("noPipelineStream",)
+
+
+def with_inherited_config_flags(definition_data: dict, template_key: str | None) -> dict:
+    """Definition data with any render-contract flag its template declares and it lacks.
+
+    Read-time only: nothing is written back, so a stale instance is corrected on
+    every load without a migration. An instance that sets the flag explicitly --
+    to either value -- keeps its own, so a deliberate opt-out still works.
+    """
+    template = TEMPLATES.get(template_key) if template_key else None
+    template_config = ((template or {}).get("definition") or {}).get("config") or {}
+    config = definition_data.get("config")
+    config = config if isinstance(config, dict) else {}
+    missing = {
+        flag: template_config[flag]
+        for flag in _INHERITED_CONFIG_FLAGS
+        if flag in template_config and flag not in config
+    }
+    if not missing:
+        return definition_data
+    return {**definition_data, "config": {**config, **missing}}
+
+
 def resolve_snapshot_contract(definition) -> dict:
     """Resolve which snapshot contract governs run completion for a workflow.
 
