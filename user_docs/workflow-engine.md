@@ -102,6 +102,12 @@ Before this change, creating the KMC Programme Metrics report by hand left worke
 
 The **MBW Visit Verification** template creates a single-table dashboard for opportunity 765. Each row represents one visit and shows whether GPS location, QR code scan, mother's signature, ANC card capture, and the mother-questions check each came back **Pass**, **Fail**, or **NA**, along with the visit's overall verification outcome and the field worker's pass rate on that mother's earlier visits. Only field workers flagged with the `visit_verification` property in CommCare appear as rows in the table.
 
+The dashboard has three tabs:
+
+- **Dashboard** — the main visit-by-visit table described above.
+- **Verification Summary** — aggregated pass rates and a stacked bar chart showing how verification outcomes break down across field workers or visits.
+- **Definitions** — a reference tab that documents exactly how every column and metric in the dashboard is calculated. This includes which visits are included (the field worker must be flagged for verification and the visit's form must contain the verification questions), what each of the 15 table columns means, the exact logic behind each Pass / Fail / NA / Not available / ERROR outcome for GPS, QR code, signature, mother questions, and ANC card checks, what counts as an "attempted" verification method, the colour legend, and how the three Verification Summary percentages and the stacked bar chart are computed. If you are unsure what a result means, the Definitions tab is the first place to check.
+
 !!! warning "This template currently reads from a test app, not the live production app"
     The verification questions that this dashboard depends on have not yet been deployed to opportunity 765's live production app — they exist only in a test CommCare app. Until the live app is updated, this template reads from that test app rather than live field data.
 
@@ -213,19 +219,4 @@ If you open a workflow run page without a specific run selected — for example,
 
 ## Renaming a Run
 
-By default, every run is labelled with a generic identifier such as **Run #5110**. You can replace this with a meaningful name — for example, **Week 30 Audit** — so that runs are easier to identify in lists and on individual run pages such as the Muac Picture Audit.
-
-To rename a run:
-
-1. Open the run you want to rename.
-2. Click the **Rename** action (available in the run's action menu or alongside the run title).
-3. Type the new name and confirm.
-
-The custom name replaces the generic label everywhere the run appears: the workflow list page and any template that displays individual runs. Renaming is allowed regardless of whether the run is in progress or has already been completed.
-
-!!! note "Renaming does not affect the run's data or status"
-    Giving a run a custom name is purely a display change. The underlying data, audit records, and status of the run are not affected.
-
----
-
-## Creating a Run
+By default, every run is labelled with a generic identifier such as **
