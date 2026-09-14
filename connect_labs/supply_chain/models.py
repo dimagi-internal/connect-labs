@@ -92,8 +92,8 @@ class SourcedModel(TimestampedModel):
     """
 
     source = models.CharField(max_length=32, choices=_choices(records.SOURCES))
-    recorded_by_party = models.ForeignKey(
-        "supply_chain.Party", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
+    recorded_by_org = models.ForeignKey(
+        "labs.LabsOrg", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
     )
     note = models.TextField(blank=True, default="")
 
@@ -113,50 +113,6 @@ class SourcedModel(TimestampedModel):
 # ======================================================================
 # Reference tier -- reused across a programme's rounds
 # ======================================================================
-
-
-class Party(TimestampedModel):
-    """An organisation that can act in the chain, including us.
-
-    Separate from `Supplier` on purpose. A supplier has a sourcing lifecycle
-    (identified, contacted, quoting, awarded) and prequalification state; a
-    party is simply an actor that can buy, receive, distribute or pay. A
-    supplier that also acts -- holding consignment stock, say -- links through
-    `Supplier.party` rather than being crammed into one table with two
-    lifecycles.
-
-    `connect_organization_id` is nullable because a local partner is usually
-    working with us before anybody creates its Connect organisation, and
-    refusing to record the party until that link exists would make the system
-    unusable exactly when it is most needed.
-    """
-
-    scope_key = models.CharField(max_length=64, db_index=True)
-    slug = models.SlugField(max_length=64)
-    name = models.CharField(max_length=255)
-    kind = models.CharField(max_length=32, choices=_choices(records.PARTY_KINDS))
-    connect_organization_id = models.IntegerField(null=True, blank=True, db_index=True)
-    roles = models.JSONField(default=list, blank=True)
-    country = models.CharField(max_length=2, blank=True, default="")
-    contacts = models.JSONField(default=list, blank=True)
-    notes = models.TextField(blank=True, default="")
-
-    class Meta:
-        constraints = [models.UniqueConstraint(fields=["scope_key", "slug"], name="uniq_party_scope_slug")]
-        ordering = ["name"]
-        verbose_name_plural = "parties"
-
-    def __str__(self):
-        return self.name
-
-    @property
-    def is_linked(self) -> bool:
-        """Whether this party is bound to a real Connect organisation.
-
-        An unlinked party can still record everything; the binding is what
-        lets its own staff sign in and do it themselves.
-        """
-        return self.connect_organization_id is not None
 
 
 class Commodity(TimestampedModel):
@@ -233,7 +189,7 @@ class Supplier(TimestampedModel):
     scope_key = models.CharField(max_length=64, db_index=True)
     name = models.CharField(max_length=255)
     # `type` rather than `kind` because the sourcing services already read
-    # supplier.type; renaming it here would buy consistency with Party.kind at
+    # supplier.type; renaming it here would buy consistency at
     # the cost of touching working, tested code for no behavioural gain.
     type = models.CharField(max_length=32, blank=True, default="")
     country = models.CharField(max_length=2, blank=True, default="")
@@ -242,7 +198,9 @@ class Supplier(TimestampedModel):
     contacts = models.JSONField(default=list, blank=True)
     qualifications = models.JSONField(default=list, blank=True)
     connect_organization_id = models.IntegerField(null=True, blank=True, db_index=True)
-    party = models.ForeignKey(Party, null=True, blank=True, on_delete=models.SET_NULL, related_name="supplier_roles")
+    org = models.ForeignKey(
+        "labs.LabsOrg", null=True, blank=True, on_delete=models.SET_NULL, related_name="supplier_profiles"
+    )
     notes = models.TextField(blank=True, default="")
 
     class Meta:
@@ -445,7 +403,9 @@ class Contract(SourcedModel):
     item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
 
     buyer_of_record = models.CharField(max_length=16, choices=_choices(records.BUYER_OF_RECORD))
-    buyer_party = models.ForeignKey(Party, on_delete=models.PROTECT, related_name="contracts")
+    buyer_org = models.ForeignKey(
+        "labs.LabsOrg", null=True, blank=True, on_delete=models.PROTECT, related_name="supply_contracts"
+    )
 
     # May be the partner's PO number rather than ours, which is why it is
     # nullable and why `source` says who told us it.
@@ -673,8 +633,8 @@ class SupplyPoint(SourcedModel):
     name = models.CharField(max_length=255)
     kind = models.CharField(max_length=24, choices=_choices(records.SUPPLY_POINT_KINDS))
     parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="children")
-    managed_by_party = models.ForeignKey(
-        Party, null=True, blank=True, on_delete=models.PROTECT, related_name="supply_points"
+    managed_by_org = models.ForeignKey(
+        "labs.LabsOrg", null=True, blank=True, on_delete=models.PROTECT, related_name="supply_points"
     )
 
     connect_username = models.CharField(max_length=150, blank=True, default="", db_index=True)

@@ -14,13 +14,14 @@ from typing import Any
 
 import jsonschema
 
+from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import models, records, serializers
 from connect_labs.supply_chain.values import to_wire
 
 # The published wire shape, per model. See serializers.py for why these are
 # a contract and not an implementation detail.
 _SERIALIZERS = {
-    models.Party: serializers.party,
+    LabsOrg: serializers.party,
     models.Commodity: serializers.commodity,
     models.Item: serializers.item,
     models.Supplier: serializers.supplier,
@@ -314,7 +315,7 @@ _CONTRACT_DATA = _data_with(
     item_id=ID,
     commodity_slug={"type": "string", "minLength": 1},
     buyer_of_record={"enum": list(records.BUYER_OF_RECORD)},
-    buyer_party_id=ID,
+    buyer_org_id=ID,
     reference={"type": "string"},
     status={"enum": list(records.CONTRACT_STATUSES)},
     currency={"type": "string", "minLength": 3, "maxLength": 3},
@@ -334,7 +335,7 @@ _CONTRACT_DATA = _data_with(
     delivery_supply_point_id=ID,
     promised_lead_time_days=_NON_NEGATIVE_INT,
     source={"enum": list(records.SOURCES)},
-    recorded_by_party_id=ID,
+    recorded_by_org_id=ID,
 )
 
 # contract_create builds a row from nothing, so it must name the buyer of
@@ -345,7 +346,7 @@ _CONTRACT_DATA = _data_with(
 # meant to touch.
 _CONTRACT_DATA_CREATE = {
     **_CONTRACT_DATA,
-    "required": ["commodity_slug", "supplier_id", "buyer_of_record", "buyer_party_id", "source"],
+    "required": ["commodity_slug", "supplier_id", "buyer_of_record", "buyer_org_id", "source"],
 }
 
 _COMMODITY_DATA = _data_with(

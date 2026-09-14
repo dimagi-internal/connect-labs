@@ -165,7 +165,7 @@ class TestFulfilment:
                 "commodity_slug": "rutf",
                 "supplier_id": supplier["id"],
                 "buyer_of_record": "partner_org",
-                "buyer_party_id": partner["id"],
+                "buyer_org_id": partner["id"],
                 "source": "partner_reported",
                 "quantity": "500",
                 "quantity_unit": "carton",

@@ -1,6 +1,6 @@
 """Who is writing, derived from who is signed in.
 
-Every provenance-bearing row records `recorded_by_party` and a `source`
+Every provenance-bearing row records `recorded_by_org` and a `source`
 (design doc section 17.3), because a fact we did not witness is a claim and a
 claim is worth only as much as its claimant. Until now both arrived **in the
 payload**, which means a caller could assert any of them: a partner could
@@ -10,7 +10,7 @@ be derived from the session rather than accepted from the request body.
 
 The derivation is org membership, and it needs no new grant mechanism.
 Connect already knows which organisations a user belongs to, labs already
-carries that list, and `Party.connect_organization_id` already points at it
+carries that list, and `LabsOrg` already joins on both of Connect's keys
 (design doc section 27). So "which party is this caller acting for" is a join,
 not a new concept.
 
@@ -27,7 +27,7 @@ Three ways in, and each knows the user:
 
 import logging
 
-from connect_labs.supply_chain.models import Party
+from connect_labs.labs.models import LabsOrg
 from connect_labs.utils.dimagi_user import is_dimagi_user
 
 logger = logging.getLogger(__name__)
@@ -38,11 +38,25 @@ logger = logging.getLogger(__name__)
 # organisation. `agency` and `supplier` are deliberately absent: an agency's
 # report is not a partner's, and SOURCES has no term for it, so those callers
 # state their source rather than have one guessed.
-SOURCE_FOR_PARTY_KIND = {
-    "programme_org": "we_recorded",
-    "partner_org": "partner_reported",
-    "supplier": "supplier_reported",
-}
+# Dimagi, as one organisation across all of labs.
+DIMAGI_ORG_SLUG = "dimagi"
+
+
+def source_for(party) -> str | None:
+    """How a fact from this organisation reached us.
+
+    Derived from WHO is acting rather than from a field on the organisation.
+    It used to read `Party.kind`, which made "is the programme" a property of
+    the organisation -- so one body could be the programme everywhere, which
+    is not true of any organisation operating in more than one programme.
+
+    `we_recorded` is not a default. It is what is TRUE when Dimagi's own
+    staff enter something, and it is only reachable by them. Everyone else
+    is reporting, which is exactly what `partner_reported` says.
+    """
+    if party is None:
+        return None
+    return "we_recorded" if party.slug == DIMAGI_ORG_SLUG else "partner_reported"
 
 
 class IdentityUnresolved(ValueError):
@@ -61,13 +75,24 @@ class IdentityUnresolved(ValueError):
     """
 
 
+def caller_org_slugs(organizations) -> set[str]:
+    """The organisation slugs the caller belongs to.
+
+    Collected alongside the integer ids because `LabsOrg` matches on either,
+    and a labs-only organisation has ONLY a slug. Reading just the integers
+    is what made a synthetic organisation unmatchable and pushed an importer
+    into inventing a local row for it.
+    """
+    return {org["slug"] for org in organizations or [] if org.get("slug")}
+
+
 def _integer_org_ids(organizations) -> set[int]:
     """The organisation ids that could match a party.
 
     Labs folds labs-only synthetic opportunities into the user's organisation
     list with `"id"` set to a SLUG rather than an integer (see
     `labs/context.py`, `_merge_labs_only_opps`), so this list is not uniformly
-    typed. `Party.connect_organization_id` is an IntegerField, so a slug can
+    typed. `LabsOrg.connect_organization_id` is an integer, so a slug can
     never match one -- it is skipped rather than coerced, and coercing it is
     what made every provenance write by a user entitled to see synthetic
     opportunities a 500.
@@ -88,13 +113,16 @@ def _integer_org_ids(organizations) -> set[int]:
     return ids
 
 
-def caller_org_ids(access) -> set[int] | None:
-    """Connect organisation ids the caller belongs to, or None if unknowable.
+def _caller_organizations(access):
+    """The caller's Connect organisations, or None if unknowable.
 
-    None and the empty set mean different things and must not be conflated.
-    None is "there is nobody to ask" -- a management command. The empty set is
-    "we asked, and this user belongs to nothing", which is a real answer and a
-    refusal.
+    None and the empty list mean different things and must not be conflated.
+    None is "there is nobody to ask" -- a management command, or a fetch that
+    failed. The empty list is "we asked, and this user belongs to nothing",
+    which is a real answer and a refusal.
+
+    Returns the raw entries rather than ids, because an organisation is
+    matched on either key and a labs-only one has only a slug.
     """
     request = getattr(access, "request", None)
     if request is not None:
@@ -105,7 +133,7 @@ def caller_org_ids(access) -> set[int] | None:
 
         org_data = get_org_data(request) or {}
         if "organizations" in org_data:
-            return _integer_org_ids(org_data["organizations"])
+            return org_data["organizations"]
         # A request whose session carries no organisation list at all is not
         # evidence that the user belongs to nothing -- an expired or
         # half-built session looks exactly like this. Fall through to the
@@ -123,87 +151,79 @@ def caller_org_ids(access) -> set[int] | None:
         token = get_valid_access_token(user)
     except Exception:
         logger.info("supply identity: no usable Connect token for %s", getattr(user, "username", user))
-        return set()
+        return []
     org_data = fetch_user_organization_data(token, owner=getattr(user, "username", None))
     if org_data is None:
-        # A network blip is not a revoked permission. Refusing is right, but
-        # the empty set would read as "belongs to nothing" -- so say nothing is
-        # known and let the caller's own error name the real cause.
+        # A network blip is not a revoked permission, so say nothing is known
+        # rather than reporting a permission fact we have not established.
         return None
-    return _integer_org_ids(org_data.get("organizations"))
+    return org_data.get("organizations") or []
 
 
-def programme_party(access):
-    """This programme's own party -- us.
+def caller_org_ids(access) -> set[int] | None:
+    """The integer organisation ids the caller belongs to, or None."""
+    organizations = _caller_organizations(access)
+    return None if organizations is None else _integer_org_ids(organizations)
 
-    Looked up under BOTH scopes a reference row can live at, not just the
-    caller's. `scope_key` resolves to `org:<id>` when an organisation is in
-    context and `prog:<id>` otherwise (see `models.scope_key`), so the same
-    programme's parties sit under different keys depending on who wrote them:
-    an import driven by MCP carries no organisation and writes `prog:`, while
-    a web request with an organisation selected reads `org:`. Reading only
-    the caller's scope makes attribution depend on how the party happened to
-    be created, which is a refusal nobody could act on.
 
-    Exactly one `programme_org` across those scopes; more than one is a
-    configuration error rather than something to choose between.
+def dimagi_org():
+    """Dimagi, as one organisation across all of labs.
+
+    One row, not one per programme. The previous version created a
+    `programme_org` party inside each programme -- so an importer invented a
+    "Programme team" record for an organisation that plainly exists in
+    Connect, which is the second-registry behaviour this work exists to
+    remove. Dimagi is Dimagi in every programme it appears in.
+
+    Created on first use rather than by a setup step, because an
+    organisation labs already acts as is not something to wait for.
     """
-    scopes = {access.scope_key}
-    if access.program_id not in (None, ""):
-        scopes.add(f"prog:{access.program_id}")
-    found = list(Party.objects.filter(scope_key__in=scopes, kind="programme_org")[:2])
-    if len(found) > 1:
-        raise IdentityUnresolved(
-            "this programme has more than one programme_org party, so there is no "
-            "single 'us' to attribute a record to. Merge them."
-        )
-    return found[0] if found else None
+    org, _ = LabsOrg.objects.get_or_create(slug=DIMAGI_ORG_SLUG, defaults={"name": "Dimagi", "short_name": "Dimagi"})
+    return org
 
 
 def resolve_party(access):
-    """The party this caller acts for.
+    """The organisation this caller acts for.
 
-    Two rules, and no third for demo data. An earlier version resolved solely
-    by matching `Party.connect_organization_id` against the caller's Connect
-    organisations, which could not work in a labs-only programme at all: a
-    synthetic organisation is identified by SLUG (`labs-synthetic-...`, see
-    `labs/synthetic/org_tree`) while that column is an integer, so nothing
-    ever matched and no number of parties would have fixed it. Special-casing
-    synthetic programmes was the wrong repair -- provenance is the last place
-    that should behave differently in demo data, because then the demo proves
-    something the real system does not do.
+    Two rules, and no third for demo data:
 
-      1. Dimagi staff act for the programme. They are the platform operators
-         -- the same ACL `SyntheticOpportunity.is_accessible_to` already
-         grants them -- so their organisation membership is not the question.
-      2. Anyone else acts for the party their Connect organisation IS, which
-         is how a partner recording its own receipt is attributed to itself.
+      1. Dimagi staff act for Dimagi -- the ACL
+         `SyntheticOpportunity.is_accessible_to` already grants them as
+         platform operators, so their membership list is not the question.
+      2. Anyone else acts for the organisation they belong to, matched on
+         `LabsOrg`'s own rule: the Connect id where there is one, the slug
+         where there is not.
+
+    The slug half matters. A labs-only organisation has no integer id, so an
+    earlier version could never match one and no number of local rows would
+    have fixed it.
     """
     user = getattr(access, "user", None)
     if user is not None and is_dimagi_user(user):
-        return programme_party(access)
+        return dimagi_org()
 
-    org_ids = caller_org_ids(access)
-    if not org_ids:
+    organizations = _caller_organizations(access)
+    if organizations is None:
+        return None
+    org_ids = _integer_org_ids(organizations)
+    slugs = caller_org_slugs(organizations)
+    if not org_ids and not slugs:
         return None
 
     candidates = [
-        party for party in Party.objects.filter(scope_key=access.scope_key) if party.connect_organization_id in org_ids
+        org
+        for org in LabsOrg.objects.all()
+        if any(org.matches(organization_id=i) for i in org_ids) or any(org.matches(slug=s) for s in slugs)
     ]
     if not candidates:
         return None
     if len(candidates) == 1:
         return candidates[0]
     raise IdentityUnresolved(
-        "this caller belongs to more than one organisation acting in this programme "
-        f"({', '.join(sorted(p.slug for p in candidates))}), so the party cannot be "
-        "chosen for them. Pass recorded_by_party_id to say which."
+        "this caller belongs to more than one organisation acting here "
+        f"({', '.join(sorted(o.slug for o in candidates))}), so one cannot be chosen "
+        "for them. Pass recorded_by_org_id to say which."
     )
-
-
-def source_for(party) -> str | None:
-    """How a fact from this party reached us, or None if it does not follow."""
-    return SOURCE_FOR_PARTY_KIND.get(party.kind) if party is not None else None
 
 
 # Sources that assert first-hand knowledge. Only the programme's own staff and
@@ -223,7 +243,7 @@ def takes_provenance(operation) -> bool:
     if not operation.is_write:
         return False
     data = (operation.input_schema.get("properties") or {}).get("data") or {}
-    return "recorded_by_party_id" in (data.get("properties") or {})
+    return "recorded_by_org_id" in (data.get("properties") or {})
 
 
 def stamp_provenance(access, operation, payload: dict) -> dict:
@@ -266,14 +286,18 @@ def stamp_provenance(access, operation, payload: dict) -> dict:
             "set its connect_organization_id, or call as a member of one."
         )
 
-    claimed_party_id = data.get("recorded_by_party_id")
+    claimed_party_id = data.get("recorded_by_org_id")
     claimed_source = data.get("source")
-    is_programme = party.kind == "programme_org"
+    # Ours, rather than "an organisation whose kind says programme". The
+    # distinction is the whole correction: being the programme is a fact
+    # about who is acting here, not a property the organisation carries into
+    # every other programme it appears in.
+    is_programme = party.slug == DIMAGI_ORG_SLUG
 
     if claimed_party_id is not None and int(claimed_party_id) != party.pk and not is_programme:
         raise IdentityUnresolved(
             f"{party.name} cannot record this against another party. Omit "
-            "recorded_by_party_id and it will be attributed to you."
+            "recorded_by_org_id and it will be attributed to you."
         )
     if claimed_source in WITNESSED_SOURCES and not is_programme:
         raise IdentityUnresolved(
@@ -282,7 +306,7 @@ def stamp_provenance(access, operation, payload: dict) -> dict:
         )
 
     data = dict(data)
-    data.setdefault("recorded_by_party_id", party.pk)
+    data.setdefault("recorded_by_org_id", party.pk)
     derived = source_for(party)
     if derived is not None:
         data.setdefault("source", derived)

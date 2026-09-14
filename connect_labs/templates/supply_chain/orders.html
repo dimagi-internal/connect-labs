@@ -56,7 +56,7 @@
           </td>
           <td class="px-4 py-2.5">
             <div class="text-gray-900">
-              {{ parties|dictkey:contract.buyer_party_id|dictkey:"name"|default:contract.buyer_of_record }}
+              {{ parties|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record }}
             </div>
             <div class="text-xs text-gray-500">{{ contract.buyer_of_record }}</div>
           </td>
