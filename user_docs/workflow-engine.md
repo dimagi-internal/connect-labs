@@ -121,6 +121,17 @@ The dashboard has three tabs:
 !!! note "Empty table fix"
     A previous issue caused the MBW Visit Verification dashboard to display an empty table even when real visit data was available. This has been corrected — visits now appear as expected.
 
+### KMC Worker Review
+
+The **KMC Worker Review** page opens when you click a worker row on the KMC Programme Metrics report. It shows that worker's full caseload: each case's weight series, growth chart, and a set of live columns — danger signs, referrals, discharge, skin-to-skin, alive-at-last-visit, gain, rounded, and implausible.
+
+**If you previously saw cases listed but with empty dashes in every live column and a "No weighings recorded." message on the growth chart**, this was caused by a page error that was displaying as missing data rather than as a clear error message. The underlying data was always there. This has been corrected — each case now shows its full weight series and growth chart, and all live columns populate as expected. If a live data request does fail, the page will say so rather than showing an empty cohort.
+
+Two further improvements that you will notice on the Worker Review page:
+
+- **The page now loads in seconds rather than minutes.** It was previously recomputing data for all of the report's opportunities on every load and discarding the result. That wasted work has been removed.
+- **The red "Another pipeline run for this opportunity is already in progress" banner should no longer appear.** That banner was a side effect of the same unnecessary recompute colliding with the programme report. With the recompute removed, the banner no longer fires.
+
 ### Selecting opportunities with the multi-opportunity picker
 
 When a template asks you to choose which opportunities to include, the picker offers several ways to build your selection quickly.
@@ -203,12 +214,4 @@ If a schedule can no longer run because the owner's login has expired, it shows 
 
 ## Opening a Workflow Run from a Link
 
-If someone shares a direct link to a workflow run, the system will open it automatically — you do not need to select the opportunity from a context picker first. The run page reads the opportunity from the link and goes straight to the dashboard.
-
-If a link was copy-pasted with extra text accidentally appended to it (for example, `?opportunity_id=1251 stacked bar chart`), the system will still recover the correct opportunity and clean up the address bar so everything works normally from that point on.
-
-If the opportunity genuinely cannot be determined from the link, you will see a message explaining exactly what the system could not read, so it is clear the link itself is the problem rather than your access or context settings.
-
-If the workflow belongs to an opportunity you are not a member of, you will see a message telling you exactly that — for example, *"This workflow belongs to opportunity 1251, which isn't one of your opportunities. Ask whoever shared it to give you access, then reopen the link."* This is different from a broken link: the link is valid, but you need to be added to that opportunity before you can open it. Contact whoever shared the link and ask them to give you access.
-
-If the workflow cannot be loaded at all — for example, because your account has no opportunities listed or you are not a member of the organisation that owns the workflow — you will see a clear message such as: *"This workflow couldn't be loaded for opportunity 1251. You may not have access to that opportunity, or the workflow may have been removed. Ask whoever shared the link to confirm you
+If someone shares a direct link to a workflow run, the system will open it automatically — you do not need to select
