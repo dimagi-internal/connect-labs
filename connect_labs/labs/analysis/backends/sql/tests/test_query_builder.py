@@ -10,9 +10,12 @@ import pytest
 from connect_labs.labs.analysis.backends.sql.query_builder import (
     _aggregation_to_sql,
     _date_window_where,
+    _entity_stage_filters_where,
+    _field_filter_predicates,
     _pipeline_scope_where,
     _sql_ident,
     _sql_str,
+    _visit_filter_predicates,
     build_flw_aggregation_query,
 )
 from connect_labs.labs.analysis.config import AnalysisPipelineConfig, FieldComputation
@@ -252,3 +255,101 @@ class TestPipelineScopeWhere:
         assert "rv.pipeline_id = 7" in where
         assert "rv.visit_count > 0" in where
         assert " visit_count" not in where.replace("rv.visit_count", "")
+
+
+class TestFieldFilterPredicates:
+    """A `config.filters` key that names a real FieldComputation (not one of the
+    base-column keys `_visit_filter_predicates`/`_entity_stage_filters_where`
+    special-case) used to be silently dropped -- the WHERE clause never
+    mentioned it, yet the pipeline still ran and looked like it had applied the
+    filter. `pipeline 12986` filtering on `ward` (a JSON-path field, not a base
+    column) was the real-world case that surfaced this (2026-09-14)."""
+
+    def _config_with_filters(self, fields, filters):
+        return AnalysisPipelineConfig(
+            grouping_key="username",
+            fields=fields,
+            histograms=[],
+            filters=filters,
+            experiment="test",
+        )
+
+    def test_json_path_field_filter_builds_a_real_predicate(self):
+        config = self._config_with_filters(
+            [FieldComputation(name="ward", path="form.work_area_info.wa_ward", aggregation="first")],
+            filters={"ward": ["Gwiwa"]},
+        )
+        predicates = _field_filter_predicates(config)
+        assert len(predicates) == 1
+        assert "form_json->'form'->'work_area_info'->>'wa_ward'" in predicates[0]
+        assert "IN ('Gwiwa')" in predicates[0]
+
+    def test_multi_path_field_filter_uses_coalesce(self):
+        config = self._config_with_filters(
+            [
+                FieldComputation(
+                    name="wa_case_id",
+                    paths=["form.work_area_info.wa_caseid", "form.wa_case_id"],
+                    aggregation="first",
+                )
+            ],
+            filters={"wa_case_id": ["abc-123"]},
+        )
+        predicates = _field_filter_predicates(config)
+        assert len(predicates) == 1
+        assert predicates[0].startswith("COALESCE(")
+        assert "IN ('abc-123')" in predicates[0]
+
+    def test_scalar_filter_value_is_wrapped_as_single_item_list(self):
+        config = self._config_with_filters(
+            [FieldComputation(name="ward", path="form.work_area_info.wa_ward", aggregation="first")],
+            filters={"ward": "Gwiwa"},
+        )
+        predicates = _field_filter_predicates(config)
+        assert "IN ('Gwiwa')" in predicates[0]
+
+    def test_single_quote_in_filter_value_is_escaped(self):
+        config = self._config_with_filters(
+            [FieldComputation(name="ward", path="form.work_area_info.wa_ward", aggregation="first")],
+            filters={"ward": ["O'Brien"]},
+        )
+        predicates = _field_filter_predicates(config)
+        assert "O''Brien" in predicates[0]
+        assert "O'Brien" not in predicates[0].replace("O''Brien", "")
+
+    def test_unmatched_filter_key_is_silently_skipped_same_as_before(self):
+        """A filter key that names neither a base column nor a declared field
+        stays a no-op, unchanged from pre-fix behavior -- this fix only stops
+        silently dropping a filter that SHOULD have applied."""
+        config = self._config_with_filters(
+            [FieldComputation(name="ward", path="form.work_area_info.wa_ward", aggregation="first")],
+            filters={"some_typo_field": ["x"]},
+        )
+        assert _field_filter_predicates(config) == []
+
+    def test_base_column_keys_are_not_double_handled(self):
+        """status/flagged/date_from/date_to/entity_id stay handled by their own
+        dedicated branch -- _field_filter_predicates must not also emit a
+        predicate for them even if a field happens to share the name."""
+        config = self._config_with_filters(
+            [FieldComputation(name="status", path="form.some_other_status", aggregation="first")],
+            filters={"status": ["approved"]},
+        )
+        assert _field_filter_predicates(config) == []
+
+    def test_visit_filter_predicates_includes_field_filters(self):
+        config = self._config_with_filters(
+            [FieldComputation(name="ward", path="form.work_area_info.wa_ward", aggregation="first")],
+            filters={"status": ["approved"], "ward": ["Gwiwa"]},
+        )
+        predicates = _visit_filter_predicates(config)
+        assert any("status IN" in p for p in predicates)
+        assert any("wa_ward" in p and "Gwiwa" in p for p in predicates)
+
+    def test_entity_stage_filters_where_includes_field_filters(self):
+        config = self._config_with_filters(
+            [FieldComputation(name="ward", path="form.work_area_info.wa_ward", aggregation="first")],
+            filters={"ward": ["Gwiwa"]},
+        )
+        predicates = _entity_stage_filters_where(config)
+        assert any("wa_ward" in p and "Gwiwa" in p for p in predicates)
