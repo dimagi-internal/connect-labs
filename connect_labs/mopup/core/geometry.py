@@ -34,11 +34,11 @@ def fetch_work_area_geometry(
     request: HttpRequest | None = None,
     pipeline=None,
 ) -> dict[str, dict]:
-    """``{wa_case_id: {"lat": float|None, "lon": float|None, "boundary": dict|None}}``
+    """``{wa_case_id: {"lat": float|None, "lon": float|None, "boundary": dict|None, "wag_name": str}}``
     for every work area in `opportunity_id`. A row with unparseable/missing
-    geometry maps to ``{"lat": None, "lon": None, "boundary": None}`` rather
-    than being skipped — callers should treat a missing entry the same way
-    (this function never raises on a single bad row)."""
+    geometry maps to ``{"lat": None, "lon": None, "boundary": None, "wag_name": ""}``
+    rather than being skipped — callers should treat a missing entry the
+    same way (this function never raises on a single bad row)."""
     from connect_labs.labs.analysis.config import (
         AnalysisPipelineConfig,
         CacheStage,
@@ -70,6 +70,11 @@ def fetch_work_area_geometry(
             FieldComputation(name="wa_case_id", path="work_area.case_id", aggregation="first"),
             FieldComputation(name="boundary", path="work_area.boundary", aggregation="first"),
             FieldComputation(name="centroid", path="work_area.centroid", aggregation="first"),
+            # Already on this SAME export record (WorkAreaDataSerializer's
+            # own `work_area_group_name` SerializerMethodField, verified
+            # against commcare-connect's real serializer) -- no separate
+            # `work_area_groups` endpoint/join needed.
+            FieldComputation(name="wag_name", path="work_area.work_area_group_name", aggregation="first"),
         ],
         # Real production bug, found live this session: without this, this
         # ad-hoc config shares ONE raw-visit-cache slot per opportunity with
@@ -116,6 +121,6 @@ def fetch_work_area_geometry(
             except (TypeError, json.JSONDecodeError):
                 boundary = None
 
-        geometry[wa_case_id] = {"lat": lat, "lon": lon, "boundary": boundary}
+        geometry[wa_case_id] = {"lat": lat, "lon": lon, "boundary": boundary, "wag_name": c.get("wag_name") or ""}
 
     return geometry

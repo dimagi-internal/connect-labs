@@ -172,6 +172,7 @@ def build_evaluation_rows(work_areas: list[dict], visit_aggregates: dict[str, di
         rows.append(
             {
                 "wa_id": wa["case_id"],
+                "wa_name": wa.get("wa_name", ""),
                 "ward": wa["ward"],
                 "lga": wa["lga"],
                 "state": wa["state"],

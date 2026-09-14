@@ -442,7 +442,9 @@ window.MopupAnalysis = (function () {
           <td class="p-2">${esc(c.ward)}</td><td class="p-2">${esc(
             c.lga,
           )}</td><td class="p-2">${esc(c.state)}</td>
-          <td class="p-2">${esc(c.flw_username)}</td>
+          <td class="p-2">${esc(c.flw_name || c.flw_username)}</td>
+          <td class="p-2">${esc(c.wa_name)}</td>
+          <td class="p-2">${esc(c.wag_name)}</td>
           <td class="p-2">${c.building_count}</td><td class="p-2">${
             c.expected_visit_count
           }</td>
@@ -622,10 +624,13 @@ window.MopupAnalysis = (function () {
   let selectedWaId = null;
 
   // Highlights the candidate/gap-fill table row for `waId` (null clears any
-  // highlight) and scrolls it into view -- called both right after a map
-  // click and after every renderCandidates() re-render, so the highlight
-  // survives an unrelated Recompute rather than only showing until the next
-  // setting change wipes the table's innerHTML.
+  // highlight) -- called both right after a map click and after every
+  // renderCandidates() re-render, so the highlight survives an unrelated
+  // Recompute rather than only showing until the next setting change wipes
+  // the table's innerHTML. Deliberately does NOT scroll the row into view
+  // (tried that first; per user feedback, selecting a work area on the map
+  // shouldn't also jump the page around) -- the highlight alone is enough
+  // to find it if the row's already on screen.
   function highlightCandidateRow(waId) {
     document
       .querySelectorAll('#candidate-rows tr[data-wa-id]')
@@ -635,11 +640,6 @@ window.MopupAnalysis = (function () {
           waId != null && tr.dataset.waId === waId,
         );
       });
-    if (waId == null) return;
-    const row = document.querySelector(
-      `#candidate-rows tr[data-wa-id="${CSS.escape(waId)}"]`,
-    );
-    if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   function selectWorkArea(waId, ward) {
@@ -676,7 +676,11 @@ window.MopupAnalysis = (function () {
     if (props.source !== 'existing_wa') return null; // uploaded-building dots: no tooltip
     const evc = props.expected_visit_count;
     return `<div class="text-xs leading-snug space-y-0.5">
-      <div class="font-semibold mb-1">${esc(props.wa_id)}</div>
+      <div class="font-semibold">FLW Name: ${esc(props.flw_name || '—')}</div>
+      <div class="font-semibold">WA Name: ${esc(props.wa_name || '—')}</div>
+      <div class="font-semibold mb-1">WAG Name: ${esc(
+        props.wag_name || '—',
+      )}</div>
       <div>HSD visits: ${props.approved_hsd_count}</div>
       <div>EVC: ${evc}</div>
       <div>HSD visits / EVC: ${evcPercentText(
@@ -1045,6 +1049,14 @@ window.MopupAnalysis = (function () {
     );
     $('gap-mode-upload-controls').classList.toggle('hidden', mode !== 'upload');
     $('gap-mode-shared-controls').classList.toggle('hidden', mode === 'skip');
+    // Lives inside gap-mode-shared-controls (next to Min buildings per work
+    // area / Work-area size), but only means anything in upload mode -- no
+    // confidence-column concept for the automated sources, which have their
+    // own always-on confidence slider in gap-mode-overture-controls instead.
+    $('gap-mode-upload-confidence-wrap').classList.toggle(
+      'hidden',
+      mode !== 'upload',
+    );
     $('planning-gaps-recompute').classList.toggle('hidden', mode === 'skip');
   }
 

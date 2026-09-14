@@ -58,7 +58,7 @@ def list_work_areas(
     pipeline=None,
 ) -> list[dict]:
     """One dict per work-area case in `opportunity_id`:
-    ``{"case_id", "ward", "lga", "state", "building_count",
+    ``{"case_id", "wa_name", "ward", "lga", "state", "building_count",
     "expected_visit_count", "status", "owner_id"}``.
 
     Reuses the same `cchq_cases`/`work-area` pipeline shape as
@@ -118,6 +118,11 @@ def list_work_areas(
         work_areas.append(
             {
                 "case_id": row.entity_id,
+                # The work area's own CommCare case display name (`case_name`,
+                # NOT a properties.* field) -- already denormalized onto every
+                # cchq_cases row for free by the shared pipeline plumbing (see
+                # cchq_cases_fetcher.py), just never read here before.
+                "wa_name": row.entity_name or "",
                 "ward": c.get("ward") or "",
                 "lga": c.get("lga") or "",
                 "state": c.get("state") or "",

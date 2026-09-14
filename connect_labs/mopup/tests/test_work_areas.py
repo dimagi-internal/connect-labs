@@ -11,8 +11,9 @@ from connect_labs.mopup.core.work_areas import fetch_connect_implementation_area
 
 
 class _FakeRow:
-    def __init__(self, entity_id, **computed):
+    def __init__(self, entity_id, entity_name="", **computed):
         self.entity_id = entity_id
+        self.entity_name = entity_name
         self.computed = computed
 
 
@@ -75,12 +76,13 @@ class TestListWorkAreas:
         # A real case hit against production data (program 217, opportunity
         # 2154): row.computed is None (not {}) when field extraction found
         # nothing to compute for that case.
-        rows = [SimpleNamespace(entity_id="wa-1", computed=None)]
+        rows = [SimpleNamespace(entity_id="wa-1", entity_name="", computed=None)]
         pipeline = _FakePipeline(rows)
         result = list_work_areas(1, pipeline=pipeline)
         assert result == [
             {
                 "case_id": "wa-1",
+                "wa_name": "",
                 "ward": "",
                 "lga": "",
                 "state": "",
@@ -95,6 +97,7 @@ class TestListWorkAreas:
         rows = [
             _FakeRow(
                 "wa-1",
+                entity_name="Household 12",
                 ward="Sabon Gari",
                 lga="Rano",
                 state="Kano",
@@ -119,6 +122,7 @@ class TestListWorkAreas:
         assert result == [
             {
                 "case_id": "wa-1",
+                "wa_name": "Household 12",
                 "ward": "Sabon Gari",
                 "lga": "Rano",
                 "state": "Kano",
@@ -129,6 +133,7 @@ class TestListWorkAreas:
             },
             {
                 "case_id": "wa-2",
+                "wa_name": "",
                 "ward": "Sabon Gari",
                 "lga": "Rano",
                 "state": "Kano",
