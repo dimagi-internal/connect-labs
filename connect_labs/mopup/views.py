@@ -31,6 +31,7 @@ from connect_labs.labs.context import get_org_data
 from connect_labs.mopup.core import indicators as ind
 from connect_labs.mopup.core.candidates import (
     build_map_features,
+    filter_gap_features,
     gap_feature_to_candidate_row,
     gap_summary_by_ward,
     summarize_candidates_by_ward,
@@ -63,7 +64,10 @@ def _apply_exclusions(candidates: list[dict], run) -> list[dict]:
     both `MopupCandidatesView` (the live view) and `MopupLockView` (so an
     exclusion made before locking is already baked into the frozen
     `candidate_work_areas`; nothing downstream of locking needs its own
-    separate exclusion check)."""
+    separate exclusion check). Real work areas only — see
+    `candidates.filter_gap_features` for the planning-gap-cell sibling of
+    this, applied separately since gap features are GeoJSON Features, not
+    candidate dicts."""
     excluded = set(run.excluded_wa_ids)
     if not excluded:
         return candidates
@@ -589,7 +593,7 @@ class MopupCandidatesView(LoginRequiredMixin, View):
             for key in c["triggered_indicators"]:
                 per_indicator_counts[key] = per_indicator_counts.get(key, 0) + 1
 
-        gap_features = run.planning_gap_features
+        gap_features = filter_gap_features(run.planning_gap_features, run.excluded_wa_ids)
         gap_candidates = [gap_feature_to_candidate_row(f) for f in gap_features]
 
         return JsonResponse(
@@ -818,16 +822,21 @@ class MopupUploadBuildingsView(LoginRequiredMixin, View):
 
 class MopupExcludeWorkAreaView(LoginRequiredMixin, View):
     """The map view's "Not include" action (item 4): manually excludes (or
-    re-includes) one work area from this run's candidate set, regardless of
-    what the indicator thresholds would otherwise flag.
+    re-includes) one work area OR one planning-gap cell from this run's
+    candidate set, regardless of what the indicator thresholds would
+    otherwise flag. Works identically for both since `wa_id` here is
+    whatever the map/table already used to identify the row — a real
+    CommCare wa_id, or a gap cell's own `"{area_id}-gap-{cluster}"` id — and
+    `run.excluded_wa_ids` doesn't distinguish between the two shapes.
 
     Persists onto `run.excluded_wa_ids` and returns immediately — it does
     NOT itself re-evaluate/return updated candidates/ward_summary/map_features.
     The caller (analysis.js) triggers a normal Recompute right after a
-    successful response, which already applies `_apply_exclusions` (see
-    `MopupCandidatesView`) and re-renders everything from that one response,
-    same as any other setting change. Keeping this endpoint single-purpose
-    avoids duplicating that rendering path here."""
+    successful response, which already applies `_apply_exclusions`/
+    `filter_gap_features` (see `MopupCandidatesView`) and re-renders
+    everything from that one response, same as any other setting change.
+    Keeping this endpoint single-purpose avoids duplicating that rendering
+    path here."""
 
     def post(self, request, program_id, run_id):
         da = MopupRunDataAccess(program_id, request=request)

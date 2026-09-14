@@ -945,6 +945,43 @@ def test_candidates_includes_gap_candidates_already_stored_on_the_run(client, dj
     assert "planning_gap" in map_sources
 
 
+def test_candidates_excludes_manually_excluded_gap_cells(client, django_user_model, monkeypatch):
+    # Item 4: the map view's "Not include" action also works on planning-gap
+    # cells (not just real work areas) -- an excluded cluster id must be
+    # dropped from gap_candidates and the map, same as test_candidates_
+    # excludes_manually_excluded_work_areas does for a real wa_id.
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    run.data["excluded_wa_ids"] = ["mopup-x-gap-C0"]
+    gap_boundary = {"type": "Polygon", "coordinates": [[[2, 2], [3, 2], [3, 3], [2, 3], [2, 2]]]}
+    run.data["planning_gap_features"] = [
+        {
+            "type": "Feature",
+            "geometry": gap_boundary,
+            "properties": {
+                "cluster": "mopup-x-gap-C0",
+                "ward": "Sabon Gari",
+                "lga": "Rano",
+                "state": "Kano",
+                "building_count": 4,
+                "expected_visit_count": 9,
+            },
+        }
+    ]
+    _mock_ready_data(monkeypatch, run, [])
+
+    resp = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["gap_candidates"] == []
+    map_sources = {f["properties"]["source"] for f in body["map_features"]["features"]}
+    assert "planning_gap" not in map_sources
+
+
 def test_candidates_persists_thresholds_used(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)

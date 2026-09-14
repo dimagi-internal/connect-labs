@@ -727,7 +727,13 @@ window.MopupAnalysis = (function () {
       map.on('click', layerId, (e) => {
         if (!e.features.length) return;
         const props = e.features[0].properties;
-        if (props.source !== 'existing_wa') return;
+        // Both real work areas and Step 2's planning-gap cells are
+        // selectable/excludable -- uploaded-building dots (their own
+        // source, not one of these two) are the only thing NOT clickable
+        // here, same as they get no hover tooltip above.
+        if (props.source !== 'existing_wa' && props.source !== 'planning_gap') {
+          return;
+        }
         selectWorkArea(props.wa_id, props.ward);
       });
     });
