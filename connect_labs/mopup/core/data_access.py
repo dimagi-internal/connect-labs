@@ -14,6 +14,18 @@ from connect_labs.mopup.core.models import STATUS_SETUP, TYPE_RUN, MopupRunRecor
 from connect_labs.workflow.data_access import BaseDataAccess
 
 
+class MopupRunNotFoundError(Exception):
+    """A delete targeted a run id that isn't in this program — it doesn't
+    exist, or it belongs to another program the caller can't see. Refused
+    rather than deleted by raw id: the production DELETE endpoint
+    authorizes the caller's *membership* of any scope in the payload but
+    then deletes by `pk__in` without checking the record actually belongs
+    there, so a bare id would let a member of one program delete another
+    program's run. Reading the run scoped to this program first (404 →
+    None) closes that — same reasoning as
+    `microplans.core.data_access.RecordNotInProgramError`."""
+
+
 class MopupRunDataAccess(BaseDataAccess):
     """CRUD for MopupRunRecord, scoped to one program."""
 
@@ -53,6 +65,19 @@ class MopupRunDataAccess(BaseDataAccess):
             program_id=self.program_id,
             model_class=MopupRunRecord,
         )
+
+    def delete_run(self, run_id: int) -> None:
+        """Hard-delete a run — no soft-delete/archive concept for mop-up
+        runs today, so this is a real, unrecoverable removal. Everything
+        the run owns (thresholds, locked candidates, uploaded building CSV,
+        planning-gap features, Celery task ids) lives directly in the
+        record's own JSON `data` (see `core/models.py`), so deleting the
+        record itself is a complete cleanup — nothing else to garbage
+        collect. See `MopupRunNotFoundError` for why this reads the run
+        scoped to this program first rather than deleting by raw id."""
+        if self.get_run(int(run_id)) is None:
+            raise MopupRunNotFoundError(f"run {run_id} is not in program {self.program_id}")
+        self.labs_api.delete_record(int(run_id))
 
     def update_run(self, run: MopupRunRecord, **field_updates) -> MopupRunRecord:
         """Merge `field_updates` into the run's stored data and save."""
