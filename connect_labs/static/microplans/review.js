@@ -792,7 +792,7 @@
     if (data && data.area_populations) AREA_POPS = data.area_populations;
     if (data && data.area_targets) AREA_TARGETS = data.area_targets;
     lastPlanData = data; // for the map-load retry of the boundary overlay
-    // Purely informational — CHC Mop-up's Phase 3 hand-off tags every plan it
+    // Purely informational — WA Revisit's Phase 3 hand-off tags every plan it
     // creates via run_meta.source (core/handoff.py:create_plan_from_locked_run).
     // No other review-page behavior branches on this; it's additive labeling
     // only, per this app's zero-footprint architecture constraint.
@@ -806,7 +806,7 @@
       banner.classList.toggle('hidden', !isMopup);
       if (isMopup)
         banner.textContent =
-          '↻ Mop-up plan (run #' + data.run_meta.mopup_run_id + ')';
+          '↻ WA Revisit plan (run #' + data.run_meta.mopup_run_id + ')';
     }
     renderSummary(data.summary || {});
     renderKpis(data.kpis || {});

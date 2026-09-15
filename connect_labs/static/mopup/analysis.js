@@ -177,7 +177,7 @@ window.MopupAnalysis = (function () {
             `<span class="inline-flex items-center gap-1">
               WA min EVC count
               <input type="number" id="cfg-min-evc-floor" class="base-input" style="width:5rem" min="0">
-              <span class="info-icon" tabindex="0" data-tip="Excludes a work area from EVC shortfall entirely if its own EXPECTED visit count is below this — a plain worth-visiting cutoff, so a WA with both a low HSD/EVC ratio AND a low total EVC isn't considered for mop-up.">ⓘ</span>
+              <span class="info-icon" tabindex="0" data-tip="Excludes a work area from EVC shortfall entirely if its own EXPECTED visit count is below this — a plain worth-visiting cutoff, so a WA with both a low HSD/EVC ratio AND a low total EVC isn't considered for WA Revisit.">ⓘ</span>
             </span>`,
             `border-l-2 border-r-2 border-b-2 ${GROUP_BORDER}`,
           ),
