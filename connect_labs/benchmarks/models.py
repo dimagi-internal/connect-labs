@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from django.db import models
 
+from connect_labs.audit_trail.service import record as audit_record
+
 
 class BenchmarkCohort(models.Model):
     """A named set of opportunities that may be benchmarked against each other.
@@ -76,3 +78,105 @@ class BenchmarkCohortMember(models.Model):
 
     def __str__(self) -> str:
         return f"opp {self.opportunity_id} in {self.cohort_id}"
+
+
+class BenchmarkPublication(models.Model):
+    """One publish event -- the audit row, and what every value hangs off.
+
+    A publication is immutable. Re-publishing creates a new one, so a figure a
+    partner saw can always be reconstructed.
+    """
+
+    cohort = models.ForeignKey(BenchmarkCohort, on_delete=models.CASCADE, related_name="publications")
+    source_workflow_id = models.IntegerField()
+    source_run_id = models.IntegerField()
+    registry_id = models.IntegerField(null=True, blank=True)
+    # The as-of date of the snapshot these figures were computed from.
+    as_of = models.DateField()
+    published_by = models.CharField(max_length=200, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = "benchmarks"
+        db_table = "labs_benchmark_publication"
+        indexes = [models.Index(fields=["cohort", "-created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.cohort_id} as of {self.as_of}"
+
+
+class _BenchmarkValueQuerySet(models.QuerySet):
+    def with_source(self):
+        """The named, audited way to read values for their source opportunity.
+
+        This is a NAMING and AUDIT boundary, not a technical one -- the column is
+        on the model and `row.opportunity_id` works on any instance. Django's
+        `defer()` was tried here and rejected: a deferred field lazily loads on
+        access rather than raising, so it reads as a guard while guarding
+        nothing, which is worse than no guard at all.
+
+        What actually holds the boundary is three things, in this order:
+          1. `to_public()` is the only projection any view may call.
+          2. A contract test asserts no benchmark response carries an
+             opportunity id, over the payload rather than per-endpoint.
+          3. A source-level test pins which modules may mention `with_source`,
+             so widening that set is a reviewed act.
+
+        Three callers are legitimate: the publisher, the debugging path and
+        republication.
+        """
+        audit_record(
+            "read",
+            resource_type="benchmark_value_identified",
+            metadata={"model": "BenchmarkValue"},
+        )
+        return self
+
+
+class _BenchmarkValueManager(models.Manager):
+    def get_queryset(self):
+        return _BenchmarkValueQuerySet(self.model, using=self._db)
+
+    def with_source(self):
+        return self.get_queryset().with_source()
+
+
+class BenchmarkValue(models.Model):
+    """One published figure: an indicator, for one anonymous peer, at one period.
+
+    `peer_index` is assigned at publish time by sorting peers on value WITHIN
+    this indicator (rule R4), so the index carries no identity and cannot be
+    joined across indicators into a per-opportunity profile.
+    """
+
+    publication = models.ForeignKey(BenchmarkPublication, on_delete=models.CASCADE, related_name="values")
+    series = models.CharField(max_length=16)
+    indicator_id = models.CharField(max_length=64, db_index=True)
+    # None for a point-in-time value; "YYYY-MM" for a series point.
+    period = models.CharField(max_length=7, null=True, blank=True)
+    peer_index = models.PositiveIntegerField()
+    value = models.FloatField()
+
+    # Provenance. Stored deliberately (Jonathan, 2026-09-14) and never
+    # displayed: every read for display goes through `to_public()`, and reading
+    # it for its source is spelled `with_source()` so it is greppable and
+    # audited. See _BenchmarkValueQuerySet.with_source for why this is a naming
+    # boundary rather than a technical one.
+    opportunity_id = models.IntegerField(db_index=True)
+
+    objects = _BenchmarkValueManager()
+
+    class Meta:
+        app_label = "benchmarks"
+        db_table = "labs_benchmark_value"
+        indexes = [models.Index(fields=["publication", "series", "indicator_id", "period"])]
+
+    def to_public(self) -> dict:
+        """The ONLY projection a view, serializer or API may call."""
+        return {
+            "series": self.series,
+            "indicator_id": self.indicator_id,
+            "period": self.period,
+            "peer_index": self.peer_index,
+            "value": self.value,
+        }
