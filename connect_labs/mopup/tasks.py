@@ -212,11 +212,10 @@ def preview_planning_gaps(
         own optional `confidence` column (see `buildings_within_ward`) — a
         reviewer sets it via a separate upload-mode field, since it's
         opt-in here rather than the always-on Google-confidence slider
-        Overture mode has. Unlike Overture, this mode also keeps every
-        individual building position (`result["building_points"]`) for
-        Step 2's map to plot — an Overture-fetched remainder can be far
-        larger, so that's skipped for the other modes rather than bloating
-        the run record.
+        Overture mode has.
+
+    Every mode's individual building positions (`result["building_points"]`)
+    are kept for Step 2's map to plot, same layer regardless of source.
 
     Does NOT persist its own result — `MopupPlanningGapsView` stores the
     returned features/config/warnings onto the run once this returns, so a
@@ -352,8 +351,7 @@ def preview_planning_gaps(
                 buildings=ward_buildings,
             )
             gap_features += features
-            if mode == "upload":
-                building_points += points
+            building_points += points
         except Exception as e:  # noqa: BLE001
             warnings[w["ward"]] = str(e)
             logger.exception(
