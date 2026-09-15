@@ -15,6 +15,13 @@ one of them would destroy the only signal it had.
   </div>
 {% else %}
 
+<div class="flex flex-wrap items-center justify-end gap-2 mb-3">
+  <a href="{% url 'supply_chain:stock_count_record' %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record a count</a>
+  <a href="{% url 'supply_chain:movement_record' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+    <i class="fa-solid fa-plus mr-1"></i> Post a movement
+  </a>
+</div>
+
 <div class="flex items-baseline gap-3 mb-1">
   <h2 class="text-lg font-semibold text-brand-indigo">Stock across the network</h2>
   <span class="text-sm text-gray-500">
