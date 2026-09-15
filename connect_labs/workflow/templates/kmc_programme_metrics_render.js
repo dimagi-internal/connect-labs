@@ -838,6 +838,14 @@ function WorkflowUI({
   var s14 = React.useState('opportunity');
   var cohortDim = s14[0],
     setCohortDim = s14[1];
+  // Dots show every peer as an individual; bars count how many peers sit in
+  // each band. The question "who else is where I am" and the question "how
+  // many people are at roughly my level" want different marks, and neither
+  // answers the other well: 91 dots overlap into a smear, and bars lose the
+  // individual.
+  var s15 = React.useState('dots');
+  var cohortView = s15[0],
+    setCohortView = s15[1];
 
   // ── Weekly trend ───────────────────────────────────────────────────────────
   // Two halves. ACTIVITY (visits, registrations) by week comes off this payload,
@@ -2349,41 +2357,54 @@ function WorkflowUI({
                 var reviewUrl = flwReviewUrl(f);
                 var nf = nByFLW[f.key];
                 return (
-                  <tr
-                    key={f.key}
-                    className={
-                      'border-t border-gray-100 cursor-pointer hover:bg-indigo-50 ' +
-                      (on ? 'bg-indigo-50' : '')
-                    }
-                    onClick={function () {
-                      setSelFLW(on ? null : f.key);
-                      setSelOpp(on ? null : f.opp);
-                    }}
-                  >
-                    <td className="px-3 py-2 font-semibold text-indigo-700 whitespace-nowrap">
-                      {f.flw}
-                    </td>
-                    <td className="px-1.5 py-2 text-gray-600 whitespace-nowrap">
-                      {oppLabel(f.opp)}
-                    </td>
-                    {scorecardCells(nf && nf.ind)}
-                    {attentionCell(f.reds, f.yellows)}
-                    <td className="px-1.5 py-2 text-right whitespace-nowrap">
-                      {reviewUrl ? (
-                        <a
-                          className="inline-block px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 text-indigo-700 hover:bg-indigo-50 bg-white"
-                          href={reviewUrl}
-                          target="_blank"
-                          rel="noopener"
-                          onClick={function (ev) {
-                            ev.stopPropagation();
-                          }}
-                        >
-                          Review →
-                        </a>
-                      ) : null}
-                    </td>
-                  </tr>
+                  <React.Fragment key={f.key}>
+                    <tr
+                      className={
+                        'border-t border-gray-100 cursor-pointer hover:bg-indigo-50 ' +
+                        (on ? 'bg-indigo-50' : '')
+                      }
+                      onClick={function () {
+                        setSelFLW(on ? null : f.key);
+                        setSelOpp(on ? null : f.opp);
+                      }}
+                    >
+                      <td className="px-3 py-2 font-semibold text-indigo-700 whitespace-nowrap">
+                        {f.flw}
+                      </td>
+                      <td className="px-1.5 py-2 text-gray-600 whitespace-nowrap">
+                        {oppLabel(f.opp)}
+                      </td>
+                      {scorecardCells(nf && nf.ind)}
+                      {attentionCell(f.reds, f.yellows)}
+                      <td className="px-1.5 py-2 text-right whitespace-nowrap">
+                        {reviewUrl ? (
+                          <a
+                            className="inline-block px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 text-indigo-700 hover:bg-indigo-50 bg-white"
+                            href={reviewUrl}
+                            target="_blank"
+                            rel="noopener"
+                            onClick={function (ev) {
+                              ev.stopPropagation();
+                            }}
+                          >
+                            Review →
+                          </a>
+                        ) : null}
+                      </td>
+                    </tr>
+                    {/* The peer comparison opens IN the table, directly under the
+                      worker it is about -- the same expand-in-place move the
+                      indicator definitions use. Below the table it was a long
+                      scroll from the row you clicked, and you lost the row's own
+                      numbers while reading how they compare. */}
+                    {on ? (
+                      <tr className="bg-gray-50">
+                        <td colSpan={SCORECARD.length + 4} className="p-0">
+                          <PeerCohorts f={f} />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -2467,13 +2488,35 @@ function WorkflowUI({
       return !c.denOnly && valueOf(f, c.id) != null;
     });
 
+    // Equal-width bands over the cohort's own range. Deliberately NOT the
+    // merge-thin-bands rule in `semantic/cohorts.py`: that rule exists to stop
+    // a published band identifying a person, and nothing here is published --
+    // this reader can already see every one of these workers by name. Merging
+    // would only hide the true shape of the distribution from someone entitled
+    // to it.
+    var NBINS = 12;
+    function binsOf(vals, lo, hi) {
+      var w = (hi - lo) / NBINS || 1;
+      var out = [];
+      for (var i = 0; i < NBINS; i++) {
+        var a = lo + i * w;
+        var b = i === NBINS - 1 ? hi : lo + (i + 1) * w;
+        out.push({ lo: a, hi: b, count: 0 });
+      }
+      vals.forEach(function (v) {
+        var i = Math.min(NBINS - 1, Math.floor((v - lo) / w));
+        if (i >= 0) out[i].count++;
+      });
+      return out;
+    }
+
     return (
       <div className="border-t border-gray-100 px-4 py-3">
         <div className="flex items-baseline justify-between gap-3 flex-wrap mb-3">
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
             Against comparable workers
           </div>
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex items-center gap-2 text-xs flex-wrap">
             <span className="text-gray-400">Compare with workers</span>
             <select
               className="border border-gray-200 rounded px-2 py-1 text-xs bg-white"
@@ -2489,6 +2532,17 @@ function WorkflowUI({
                   </option>
                 );
               })}
+            </select>
+            <span className="text-gray-400">shown as</span>
+            <select
+              className="border border-gray-200 rounded px-2 py-1 text-xs bg-white"
+              value={cohortView}
+              onChange={function (e) {
+                setCohortView(e.target.value);
+              }}
+            >
+              <option value="dots">one dot per worker</option>
+              <option value="bins">how many per band</option>
             </select>
           </div>
         </div>
@@ -2552,7 +2606,12 @@ function WorkflowUI({
                 return (
                   <div
                     key={c.id + c.label}
-                    className="flex items-center gap-2 text-xs"
+                    className={
+                      'flex gap-2 text-xs ' +
+                      (cohortView === 'dots'
+                        ? 'items-center'
+                        : 'items-end pb-1')
+                    }
                   >
                     <div
                       className="w-24 shrink-0 text-gray-500 truncate"
@@ -2563,28 +2622,90 @@ function WorkflowUI({
                     <div className="w-14 shrink-0 text-right font-medium text-gray-900 tabular-nums">
                       {fmt(c.id, mineV)}
                     </div>
-                    <div className="relative flex-1 h-3.5 min-w-[80px]">
-                      <div className="absolute left-0 right-0 top-1/2 h-px bg-gray-100" />
-                      {vals.map(function (v, i) {
-                        return (
-                          <span
-                            key={i}
-                            className="absolute top-1/2 w-1.5 h-1.5 rounded-full bg-gray-400 opacity-70"
-                            style={{
-                              left: ((v - lo) / span) * 100 + '%',
-                              transform: 'translate(-50%,-50%)',
-                            }}
-                          />
+                    {cohortView === 'dots' ? (
+                      <div className="relative flex-1 h-3.5 min-w-[80px]">
+                        <div className="absolute left-0 right-0 top-1/2 h-px bg-gray-100" />
+                        {vals.map(function (v, i) {
+                          return (
+                            <span
+                              key={i}
+                              className="absolute top-1/2 w-1.5 h-1.5 rounded-full bg-gray-400 opacity-70"
+                              style={{
+                                left: ((v - lo) / span) * 100 + '%',
+                                transform: 'translate(-50%,-50%)',
+                              }}
+                            />
+                          );
+                        })}
+                        <span
+                          className="absolute top-1/2 w-2.5 h-2.5 rounded-full bg-indigo-600 ring-2 ring-white"
+                          style={{
+                            left: ((mineV - lo) / span) * 100 + '%',
+                            transform: 'translate(-50%,-50%)',
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      (function () {
+                        var bins = binsOf(vals, lo, hi);
+                        var tall = Math.max.apply(
+                          null,
+                          bins.map(function (b) {
+                            return b.count;
+                          }),
                         );
-                      })}
-                      <span
-                        className="absolute top-1/2 w-2.5 h-2.5 rounded-full bg-indigo-600 ring-2 ring-white"
-                        style={{
-                          left: ((mineV - lo) / span) * 100 + '%',
-                          transform: 'translate(-50%,-50%)',
-                        }}
-                      />
-                    </div>
+                        return (
+                          <div className="flex-1 min-w-[80px] flex items-end gap-px h-9 border-b border-gray-200">
+                            {bins.map(function (b, i) {
+                              var mine = mineV >= b.lo && mineV <= b.hi;
+                              return (
+                                <div
+                                  key={i}
+                                  title={
+                                    b.count +
+                                    (b.count === 1 ? ' worker' : ' workers') +
+                                    ' between ' +
+                                    fmt(c.id, b.lo) +
+                                    ' and ' +
+                                    fmt(c.id, b.hi) +
+                                    (mine ? ' — including this worker' : '')
+                                  }
+                                  className="flex-1 flex flex-col justify-end items-stretch"
+                                >
+                                  {b.count ? (
+                                    <div
+                                      className={
+                                        'text-[8px] text-center leading-none mb-0.5 ' +
+                                        (mine
+                                          ? 'text-indigo-700 font-semibold'
+                                          : 'text-gray-400')
+                                      }
+                                    >
+                                      {b.count}
+                                    </div>
+                                  ) : null}
+                                  <div
+                                    className={
+                                      'rounded-t-sm ' +
+                                      (mine ? 'bg-indigo-600' : 'bg-gray-300')
+                                    }
+                                    style={{
+                                      height:
+                                        Math.max(
+                                          b.count ? 2 : 0,
+                                          Math.round(
+                                            (22 * b.count) / (tall || 1),
+                                          ),
+                                        ) + 'px',
+                                    }}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()
+                    )}
                     <div className="w-36 shrink-0 text-right text-gray-400 tabular-nums">
                       {'above ' + rank + '% of ' + vals.length}
                     </div>
@@ -2602,6 +2723,9 @@ function WorkflowUI({
               positional, not a judgement — on an indicator where low is good it
               is the worse end. Rows with fewer than {MIN_COHORT} scoring peers
               are omitted rather than drawn thin.
+              {cohortView === 'bins'
+                ? ' Bands are equal-width over the cohort\u2019s range and every band is drawn, including empty ones \u2014 a gap in the distribution is information. Bands are NOT merged when thin: that rule guards a published benchmark from identifying someone, and nothing here is published to anyone who cannot already see these workers by name.'
+                : ''}
             </div>
           </div>
         )}
@@ -2698,7 +2822,6 @@ function WorkflowUI({
             Could not open the audit: {st.message}
           </div>
         )}
-        <PeerCohorts f={f} />
         <div className="grid grid-cols-1 lg:grid-cols-2">
           <div className="border-t border-gray-100 px-4 py-3">
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
