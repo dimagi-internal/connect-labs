@@ -439,16 +439,13 @@ window.MopupAnalysis = (function () {
     return `<tr class="border-b border-gray-50 ${
       extraClass || ''
     }" data-wa-id="${esc(c.wa_id)}">
-          <td class="p-2">${esc(c.ward)}</td><td class="p-2">${esc(
-            c.lga,
-          )}</td><td class="p-2">${esc(c.state)}</td>
+          <td class="p-2">${esc(c.ward)}</td>
           <td class="p-2">${esc(c.flw_name || c.flw_username)}</td>
           <td class="p-2">${esc(c.wa_name)}</td>
           <td class="p-2">${esc(c.wag_name)}</td>
           <td class="p-2">${c.building_count}</td><td class="p-2">${
             c.expected_visit_count
           }</td>
-          <td class="p-2">${c.tier ? `Tier ${c.tier}` : '—'}</td>
           <td class="p-2" title="${esc(SEVERITY_TOOLTIP)}">${
             c.severity_count
           }</td>
