@@ -53,12 +53,25 @@ class Operation:
     input_schema: dict
     handler: Callable[..., Any]
     is_write: bool = False
+    # Engineer-only, and so kept OFF the MCP catalogue. Bulk loads, seeds and
+    # imports are run deliberately by someone with a shell (ECS Exec against
+    # the labs task, see docs/OUTBOUND_EMAIL.md for the recipe), the way every
+    # other labs app does it -- `bootstrap_targeting`, `load_indicators`,
+    # `pulse_partner_import`, `seed_semantic_registry` are all management
+    # commands and none of them is an MCP tool.
+    #
+    # They stay in THIS registry rather than being deleted from it, because
+    # their management commands go through `call_operation` and would
+    # otherwise lose the schema validation and the provenance stamping that
+    # every other write gets. One registry, one validation path, one
+    # provenance choke point -- just not advertised to every MCP client.
+    internal: bool = False
 
 
 _REGISTRY: dict[str, Operation] = {}
 
 
-def register_operation(*, name: str, summary: str, input_schema: dict, is_write: bool = False):
+def register_operation(*, name: str, summary: str, input_schema: dict, is_write: bool = False, internal: bool = False):
     def decorator(fn):
         if name in _REGISTRY:
             raise ValueError(f"operation {name!r} already registered")
@@ -68,10 +81,16 @@ def register_operation(*, name: str, summary: str, input_schema: dict, is_write:
             input_schema=input_schema,
             handler=fn,
             is_write=is_write,
+            internal=internal,
         )
         return fn
 
     return decorator
+
+
+def agent_operations() -> dict[str, Operation]:
+    """The operations an MCP client is offered — everything but the internals."""
+    return {name: op for name, op in _REGISTRY.items() if not op.internal}
 
 
 def all_operations() -> dict[str, Operation]:
@@ -511,6 +530,7 @@ def item_upsert(access, data):
     ),
     input_schema=obj({"dry_run": {"type": "boolean"}}),
     is_write=True,
+    internal=True,
 )
 def catalogue_seed(access, dry_run=False):
     existing_products = {c.slug for c in access.list_commodities()}
