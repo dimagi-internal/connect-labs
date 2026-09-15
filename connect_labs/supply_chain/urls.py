@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.urls import path
 
-from connect_labs.supply_chain import api_views, network_views, reference_views, views
+from connect_labs.supply_chain import api_views, fulfilment_views, network_views, reference_views, views
 from connect_labs.supply_chain.procurement import views as procurement_views
 
 app_name = "supply_chain"
@@ -113,7 +113,28 @@ urlpatterns = [
         name="procurement_quote_detail",
     ),
     path("orders/", views.OrdersView.as_view(), name="orders"),
+    # "new" before the int route, so the literal cannot be read as an id.
+    path("orders/new/", fulfilment_views.ContractCreateView.as_view(), name="contract_create"),
     path("orders/<int:contract_id>/", views.OrderDetailView.as_view(), name="order_detail"),
+    path("orders/<int:contract_id>/edit/", fulfilment_views.ContractUpdateView.as_view(), name="contract_edit"),
+    # Everything below hangs off the order it belongs to: an invoice with no
+    # contract is an invoice against nothing, and the URL is where that is said.
+    path(
+        "orders/<int:contract_id>/invoices/new/",
+        fulfilment_views.InvoiceRecordView.as_view(),
+        name="invoice_record",
+    ),
+    path(
+        "orders/<int:contract_id>/documents/new/",
+        fulfilment_views.DocumentAttachView.as_view(),
+        name="document_attach",
+    ),
+    path("invoices/<int:invoice_id>/edit/", fulfilment_views.InvoiceUpdateView.as_view(), name="invoice_edit"),
+    path(
+        "invoices/<int:invoice_id>/payments/new/",
+        fulfilment_views.PaymentRecordView.as_view(),
+        name="payment_record",
+    ),
     # Before Stock, the way the work runs: stock has to have somewhere to rest
     # before there is any to look at.
     path("network/", network_views.NetworkView.as_view(), name="network"),

@@ -32,6 +32,11 @@ figure here can go stale.
     {% if contract.incoterm %} · {{ contract.incoterm }}{% endif %}
     {% if contract.status %} · {{ contract.status|humanise }}{% endif %}
   </p>
+  <div class="flex flex-wrap gap-2 mt-3">
+    <a href="{% url 'supply_chain:contract_edit' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit order</a>
+    <a href="{% url 'supply_chain:invoice_record' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record an invoice</a>
+    <a href="{% url 'supply_chain:document_attach' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Attach a document</a>
+  </div>
 </div>
 
 <div class="grid gap-3 md:grid-cols-2">
@@ -235,7 +240,68 @@ figure here can go stale.
   </div>
 </div>
 
-<h3 class="text-sm font-semibold text-gray-900 mt-6 mb-2">Evidence</h3>
+<div class="flex items-baseline justify-between mt-6 mb-2">
+  <h3 class="text-sm font-semibold text-gray-900">Invoices</h3>
+  <a href="{% url 'supply_chain:invoice_record' contract.id %}"
+     class="text-sm text-brand-indigo hover:underline">+ Record an invoice</a>
+</div>
+<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+  <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+  <table class="min-w-[44rem] w-full text-sm">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+      <tr>
+        <th class="text-left px-4 py-2">Invoice</th>
+        <th class="text-left px-4 py-2">Issued</th>
+        <th class="text-right px-4 py-2">Amount</th>
+        <th class="text-right px-4 py-2">Billed</th>
+        <th class="text-left px-4 py-2">Status</th>
+        <th class="text-left px-4 py-2">Told by</th>
+        <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for invoice in invoices %}
+        <tr>
+          <td class="px-4 py-2 font-medium text-gray-900">{{ invoice.reference|default:invoice.id }}</td>
+          <td class="px-4 py-2 text-gray-600">{{ invoice.issued_on|default:"—" }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">
+            {{ invoice.amount|default:"—" }} {{ invoice.currency }}
+          </td>
+          <td class="px-4 py-2 text-right tabular-nums">
+            {% if invoice.quantity_billed %}
+              {{ invoice.quantity_billed }} {{ invoice.quantity_unit }}
+            {% else %}
+              {% comment %}
+              Said rather than dashed: without a billed quantity the three-way
+              match cannot be run at all, which is a different thing from a
+              match that ran and found nothing wrong.
+              {% endcomment %}
+              <span class="text-message-warning-text text-xs">not given</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2 text-gray-700">{{ invoice.status|humanise }}</td>
+          <td class="px-4 py-2 text-xs text-gray-500">{{ invoice.source|humanise }}</td>
+          <td class="px-4 py-2 text-right whitespace-nowrap">
+            <a href="{% url 'supply_chain:payment_record' invoice.id %}"
+               class="text-brand-indigo hover:underline">Pay</a>
+            <span class="mx-1 text-gray-300">·</span>
+            <a href="{% url 'supply_chain:invoice_edit' invoice.id %}"
+               class="text-brand-indigo hover:underline">Edit</a>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">Nothing billed yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="flex items-baseline justify-between mt-6 mb-2">
+  <h3 class="text-sm font-semibold text-gray-900">Evidence</h3>
+  <a href="{% url 'supply_chain:document_attach' contract.id %}"
+     class="text-sm text-brand-indigo hover:underline">+ Attach a document</a>
+</div>
 <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
   {% if documents %}
     <ul class="text-sm divide-y divide-gray-100">
