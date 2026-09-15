@@ -95,6 +95,40 @@ def to_payload(cleaned: dict) -> dict:
     return payload
 
 
+def set_choices(form, name, choices, required=None):
+    """Give a select its options, whatever kind of field it came from.
+
+    This exists because of a defect that shipped four times. A model
+    `CharField` WITHOUT `choices=` becomes a `forms.CharField` on a ModelForm,
+    and a `forms.CharField` has no `choices` — so
+
+        set_choices(self, "channel", [...])
+
+    silently set an attribute nothing reads, and the `forms.Select` from
+    `Meta.widgets` then rendered **a dropdown with no options at all**. Nine
+    fields across five forms were unusable that way, and every test passed:
+    they asserted the field was on the page, which it was.
+
+    Where the model DOES declare `choices=`, ModelForm builds a
+    `TypedChoiceField` and the assignment works — which is why it looked
+    fine in half the places and was broken in the other half.
+
+    Replacing the field outright removes the distinction. `TestNoSelectIsEmpty`
+    renders every write screen and fails on any select with no options, so this
+    cannot come back quietly.
+    """
+    existing = form.fields[name]
+    form.fields[name] = forms.ChoiceField(
+        choices=choices,
+        label=existing.label,
+        help_text=existing.help_text,
+        required=existing.required if required is None else required,
+        initial=existing.initial,
+        widget=existing.widget,
+    )
+    return form.fields[name]
+
+
 class ScopedForm(forms.ModelForm):
     """A ModelForm that knows whose data it may offer in its dropdowns."""
 
@@ -220,7 +254,7 @@ class RoundLineForm(forms.Form):
 
     def __init__(self, *args, commodities=(), **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["commodity_slug"].choices = [("", "—")] + list(commodities)
+        set_choices(self, "commodity_slug", [("", "—")] + list(commodities))
 
 
 # `extra=0`, not `extra=1`. A formset renders `max(initial, min_num) + extra`
@@ -259,12 +293,16 @@ class OutreachForm(ScopedForm):
             else Supplier.objects.none()
         )
         self.fields["supplier"].empty_label = _("Select a supplier…")
-        self.fields["channel"].choices = [
-            ("manual", _("By hand (email, call)")),
-            ("ses", _("Sent by the system")),
-            ("api", _("Via the API")),
-            ("mcp", _("Via an agent")),
-        ]
+        set_choices(
+            self,
+            "channel",
+            [
+                ("manual", _("By hand (email, call)")),
+                ("ses", _("Sent by the system")),
+                ("api", _("Via the API")),
+                ("mcp", _("Via an agent")),
+            ],
+        )
         self.fields["sent_on"].initial = date.today
         self.helper.layout = Layout(
             Field("supplier"),
@@ -295,13 +333,17 @@ class OutreachReplyForm(ScopedForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["response_kind"].required = False
-        self.fields["response_kind"].choices = [
-            ("", "—"),
-            ("quote", _("A quote")),
-            ("declined", _("Declined to quote")),
-            ("needs_info", _("Asked us for more information")),
-            ("no_reply", _("No reply")),
-        ]
+        set_choices(
+            self,
+            "response_kind",
+            [
+                ("", "—"),
+                ("quote", _("A quote")),
+                ("declined", _("Declined to quote")),
+                ("needs_info", _("Asked us for more information")),
+                ("no_reply", _("No reply")),
+            ],
+        )
         self.helper.layout = Layout(
             Field("responded"),
             Row(Column("response_kind"), Column("last_reminder_on"), css_class="grid md:grid-cols-2 gap-x-6"),
@@ -448,20 +490,28 @@ class QuoteForm(ScopedForm):
         self.fields["item"].empty_label = _("Not stated")
 
         basis = [("not_specified", _("Not specified")), ("included", _("Included")), ("excluded", _("Excluded"))]
-        self.fields["freight_basis"].choices = basis
-        self.fields["duties_basis"].choices = basis
-        self.fields["as_quoted_unit"].choices = [
-            ("", "\u2014"),
-            ("per_base_unit", _("Per unit (sachet, tablet)")),
-            ("per_pack", _("Per pack (carton)")),
-            ("per_lot_total", _("Total for the lot")),
-            ("per_metric_tonne", _("Per metric tonne")),
-        ]
-        self.fields["pack_spec_source"].choices = [
-            ("not_stated", _("They did not say")),
-            ("stated_on_quote", _("Stated on the quote")),
-            ("trade_item_confirmed", _("Confirmed against the trade item")),
-        ]
+        set_choices(self, "freight_basis", basis)
+        set_choices(self, "duties_basis", basis)
+        set_choices(
+            self,
+            "as_quoted_unit",
+            [
+                ("", "\u2014"),
+                ("per_base_unit", _("Per unit (sachet, tablet)")),
+                ("per_pack", _("Per pack (carton)")),
+                ("per_lot_total", _("Total for the lot")),
+                ("per_metric_tonne", _("Per metric tonne")),
+            ],
+        )
+        set_choices(
+            self,
+            "pack_spec_source",
+            [
+                ("not_stated", _("They did not say")),
+                ("stated_on_quote", _("Stated on the quote")),
+                ("trade_item_confirmed", _("Confirmed against the trade item")),
+            ],
+        )
         self.helper.layout = self.build_layout()
 
     # ---- the two halves a correction reuses ----------------------------

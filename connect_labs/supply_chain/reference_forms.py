@@ -31,7 +31,7 @@ from crispy_forms.layout import Column, Field, Fieldset, Layout, Row
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from connect_labs.supply_chain.forms import INPUT, SEARCHABLE, SELECT, TEXTAREA, ScopedForm, to_payload
+from connect_labs.supply_chain.forms import INPUT, SEARCHABLE, SELECT, TEXTAREA, ScopedForm, set_choices, to_payload
 from connect_labs.supply_chain.models import Commodity, Item, Supplier
 
 __all__ = [
@@ -160,19 +160,23 @@ class CommodityForm(KeyedUpsertForm):
         # The schema's enum, spelled for a reader. Kept here rather than on
         # the model because the model's own choices are the storage contract
         # and these are the wording, which changes more often.
-        self.fields["category"].choices = [
-            ("", "—"),
-            ("therapeutic_food", _("Therapeutic food (treats severe malnutrition)")),
-            ("supplementary_food", _("Supplementary food (treats moderate)")),
-            ("oral_rehydration", _("Oral rehydration")),
-            ("micronutrient", _("Micronutrient")),
-            ("antibiotic", _("Antibiotic")),
-            ("antimalarial", _("Antimalarial")),
-            ("anthelmintic", _("Anthelmintic")),
-            ("diagnostic", _("Diagnostic")),
-            ("equipment", _("Equipment")),
-            ("consumable", _("Consumable")),
-        ]
+        set_choices(
+            self,
+            "category",
+            [
+                ("", "—"),
+                ("therapeutic_food", _("Therapeutic food (treats severe malnutrition)")),
+                ("supplementary_food", _("Supplementary food (treats moderate)")),
+                ("oral_rehydration", _("Oral rehydration")),
+                ("micronutrient", _("Micronutrient")),
+                ("antibiotic", _("Antibiotic")),
+                ("antimalarial", _("Antimalarial")),
+                ("anthelmintic", _("Anthelmintic")),
+                ("diagnostic", _("Diagnostic")),
+                ("equipment", _("Equipment")),
+                ("consumable", _("Consumable")),
+            ],
+        )
 
         course = (self.instance.course_definition or {}) if self.instance else {}
         self.fields["base_units_per_day"].initial = course.get("base_units_per_day")
@@ -345,10 +349,14 @@ class ItemForm(KeyedUpsertForm):
             else Commodity.objects.none()
         )
         self.fields["commodity"].empty_label = _("Select a product…")
-        self.fields["status"].choices = [
-            ("active", _("Active")),
-            ("discontinued", _("Discontinued")),
-        ]
+        set_choices(
+            self,
+            "status",
+            [
+                ("active", _("Active")),
+                ("discontinued", _("Discontinued")),
+            ],
+        )
         self.helper.layout = Layout(
             Row(Column("sku"), Column("name"), css_class="grid md:grid-cols-[1fr,2fr] gap-x-6"),
             Row(Column("commodity"), Column("manufacturer"), css_class="grid md:grid-cols-2 gap-x-6"),
@@ -445,21 +453,29 @@ class SupplierForm(ScopedForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["type"].required = False
-        self.fields["type"].choices = [
-            ("", "—"),
-            ("manufacturer", _("Manufacturer")),
-            ("distributor", _("Distributor")),
-            ("trader", _("Trader")),
-        ]
-        self.fields["status"].choices = [
-            ("identified", _("Identified — we know they exist")),
-            ("contacted", _("Contacted")),
-            ("responsive", _("Responsive")),
-            ("quoting", _("Quoting")),
-            ("awarded", _("Awarded")),
-            ("declined", _("Declined")),
-            ("unusable", _("Unusable")),
-        ]
+        set_choices(
+            self,
+            "type",
+            [
+                ("", "—"),
+                ("manufacturer", _("Manufacturer")),
+                ("distributor", _("Distributor")),
+                ("trader", _("Trader")),
+            ],
+        )
+        set_choices(
+            self,
+            "status",
+            [
+                ("identified", _("Identified — we know they exist")),
+                ("contacted", _("Contacted")),
+                ("responsive", _("Responsive")),
+                ("quoting", _("Quoting")),
+                ("awarded", _("Awarded")),
+                ("declined", _("Declined")),
+                ("unusable", _("Unusable")),
+            ],
+        )
         self.helper.layout = Layout(
             Field("name"),
             Row(Column("type"), Column("status"), css_class="grid md:grid-cols-2 gap-x-6"),
