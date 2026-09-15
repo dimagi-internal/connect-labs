@@ -45,7 +45,12 @@ from connect_labs.supply_chain.network_forms import SOURCE_CHOICES
 
 __all__ = ["ContractForm", "DocumentForm", "InvoiceForm", "PaymentForm"]
 
-MONEY_INPUT = {**INPUT, "step": "0.01", "inputmode": "decimal"}
+# `step="any"`, not `step="0.01"`. Money here is stored to FOUR decimal places
+# (models.MONEY), because a per-sachet price is routinely something like
+# 0.3495 -- and a browser enforcing a two-decimal step refuses exactly that
+# figure, in the one domain built around not losing it. Precision is the
+# model's and the schema's job; the widget's job is not to get in the way.
+MONEY_INPUT = {**INPUT, "step": "any", "inputmode": "decimal"}
 
 
 class ProvenancedForm(ScopedForm):
