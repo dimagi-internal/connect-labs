@@ -26,6 +26,16 @@ const RENDERS = [
   'kmc_flw_review_render.js',
   'kmc_opp_report_render.js',
 ];
+// The renders that read a server-BUILT snapshot: every cell reaches them
+// already graded, so deriving credibility in the browser would be a second copy
+// of semantic/gates.py. kmc_opp_report_render.js is NOT one of these — it grades
+// LIVE endpoint rows itself, so the compiled `<measure>_suppressed` flag is the
+// only form the registry's decision can reach it in, and IGNORING it is that
+// render's failure mode. Each file is held to the rule that fits its source.
+const SNAPSHOT_READERS = new Set([
+  'kmc_programme_metrics_render.js',
+  'kmc_flw_review_render.js',
+]);
 
 for (const file of RENDERS) {
   const src = readFileSync(join(HERE, '..', file), 'utf8');
@@ -153,7 +163,25 @@ function checks(file, src, ast) {
     );
   });
 
-  test(`${file}: credibility is never derived in the render`, () => {
+  test(`${file}: credibility is honoured, not re-decided`, () => {
+    if (!SNAPSHOT_READERS.has(file)) {
+      // A render that grades live rows must READ the compiled flag, and must
+      // map it to a withheld band rather than a colour: banding a suppressed
+      // figure publishes a number the registry says is not trustworthy.
+      assert.ok(
+        /_suppressed/.test(src),
+        'this render grades live rows and never reads the credibility flag',
+      );
+      assert.ok(
+        src.includes("out.band = 'notcredible';"),
+        'the suppressed branch must withhold, not band',
+      );
+      assert.ok(
+        !src.includes('function cCredibleSet'),
+        'cCredibleSet is a second copy of the gate',
+      );
+      return;
+    }
     // `<measure>_suppressed` is `(props.llo IS NULL OR props.llo NOT IN (credible))`,
     // and props.llo is NULL in every grouping set that does not group BY llo, so
     // trusting the column outside the llo scope rendered "recording not credible"

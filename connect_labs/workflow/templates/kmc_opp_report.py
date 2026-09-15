@@ -43,7 +43,9 @@ programme report's completed run that a benchmark is published from.
 
 from pathlib import Path
 
-from connect_labs.workflow.templates.kmc_programme_metrics import CASE_PROPERTIES_SCHEMA, WEIGHT_SERIES_SCHEMA
+from connect_labs.workflow.templates.kmc_programme_metrics import CASE_PROPERTIES_SCHEMA
+from connect_labs.workflow.templates.kmc_programme_metrics import SNAPSHOT_INPUTS as PROGRAMME_SNAPSHOT_INPUTS
+from connect_labs.workflow.templates.kmc_programme_metrics import WEIGHT_SERIES_SCHEMA
 
 _RENDER = (Path(__file__).parent / "kmc_opp_report_render.js").read_text()
 
@@ -79,6 +81,27 @@ DEFINITION = {
         # The render's fallback for a measure that declares no min_denominator
         # of its own, matching the programme report's `var MIN_DEN = 25`.
         "min_denominator_default": 25,
+        # WHICH INDICATORS ARE GATED ON RECORDING CREDIBILITY, taken from the
+        # programme report's own credibility map so there is ONE copy of the
+        # fact in the repo, and carried on the definition so it is patchable
+        # through `workflow_update_definition` with no deploy.
+        #
+        # Two mechanisms reach the render, covering different indicators:
+        #
+        #   * the registry's own `suppression:` rules compile to a
+        #     `<measure>_suppressed` column that the live semantic endpoint
+        #     returns on every row. Today that is C14, and only in the C series
+        #     -- `filter_to_series` drops the C measures, and with them the
+        #     rule's target, when the N scorecard is asked for.
+        #   * this list, which is what the render falls back to when a gated
+        #     indicator arrives with no flag. It cannot say WHETHER the figure
+        #     is credible, only that nothing established it -- so the render
+        #     withholds rather than bands. Today that bites N13, the scorecard's
+        #     mortality metric, which is C14 under another name.
+        #
+        # C18 and C22 are in the map and are not computed by this registry at
+        # all; they are carried so the two surfaces cannot drift if they are.
+        "credibility_gated_indicators": sorted(PROGRAMME_SNAPSHOT_INPUTS["credibility"]),
     },
     "pipeline_sources": [],
 }
