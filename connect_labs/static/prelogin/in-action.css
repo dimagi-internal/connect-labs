@@ -326,15 +326,21 @@
 }
 .cia-facts {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  justify-content: space-between;
   gap: 22px 0;
   margin: clamp(38px, 4.6vw, 62px) 0 0;
   padding-top: 30px;
   border-top: 1px solid rgba(255, 255, 255, 0.24);
 }
+/* Items are spaced by justify-content (space-between), not a fixed right
+   margin, so the CTA rides at the far edge and the whole row divides evenly.
+   flex 0 1 auto + min-width:0 lets columns give a little on mid widths instead
+   of wrapping the CTA onto a second line. */
 .cia-facts div {
+  flex: 0 1 auto;
+  min-width: 0;
   padding-right: clamp(22px, 2.8vw, 44px);
-  margin-right: clamp(22px, 2.8vw, 44px);
   border-right: 1px solid rgba(255, 255, 255, 0.2);
 }
 .cia-facts div:last-child {
@@ -342,24 +348,29 @@
   margin-right: 0;
   padding-right: 0;
 }
-/* An early ask for readers who leave before the closing CTA. Absolutely placed
-   at the right of the stats row and dropped onto the numbers line (past the
-   label row) so it reads as a peer of the figures rather than a separate block.
-   Kept compact; .btn qualifier so it outranks the base .cia .btn size. */
-.cia-facts {
-  position: relative;
-}
+/* An early ask for readers who leave before the closing CTA. It rides as the
+   final item of the space-between row (so the row divides evenly, no odd gap),
+   dropped onto the numbers line past the label row so it reads as a peer of the
+   figures. Kept compact; .btn qualifier so it outranks the base .cia .btn size. */
 .cia-facts-cta {
-  position: absolute;
-  right: 0;
-  top: 50px;
   margin: 0;
-  padding: 0;
+  padding-top: 22px;
   border: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
 }
 .btn.cia-facts-btn {
   padding: 9px 20px;
   font-size: 13px;
+}
+/* Subline under the hero CTA, echoing the closing CTA's note. */
+.cia-facts-cta-note {
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.62);
+  max-width: 210px;
 }
 .cia-facts dt {
   font-family: var(--mono);
@@ -1862,14 +1873,15 @@
     flex: 1 0 44%;
   }
   .cia-facts {
+    flex-wrap: wrap;
     gap: 18px 24px;
   }
   /* Outrank the `.cia-facts div` grid rule above so the CTA drops to its own
      full-width line on a phone instead of squeezing beside a stat. */
   .cia-facts .cia-facts-cta {
-    position: static;
     flex: 1 0 100%;
     margin: 2px 0 0;
+    padding-top: 0;
   }
   /* One column, with the thread redrawn as a rail down the left margin. */
   .cia-rows {
