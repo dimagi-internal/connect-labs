@@ -1,0 +1,87 @@
+{% extends 'supply_chain/base.html' %}
+{% load crispy_forms_tags %}
+
+{% comment %}
+The page around a write form. Crispy renders the fields from the form's own
+Layout; this supplies the card, the heading, the error summary and the action
+bar, so every write screen in the domain is framed the same way and improving
+that framing is one edit rather than twenty-eight.
+
+`danger` switches the accent for an operation that destroys something. Those
+operations already require a reason, so the form asks for one as an ordinary
+field rather than bolting on a confirmation dialogue nobody reads.
+{% endcomment %}
+
+{% block supply_content %}
+
+{% if breadcrumb %}
+  <nav class="text-sm text-gray-500 mb-3">
+    {% for crumb in breadcrumb %}
+      {% if crumb.href %}
+        <a href="{{ crumb.href }}" class="text-brand-indigo hover:underline">{{ crumb.label }}</a>
+        <span class="mx-1.5 text-gray-300">/</span>
+      {% else %}
+        <span class="text-gray-700">{{ crumb.label }}</span>
+      {% endif %}
+    {% endfor %}
+  </nav>
+{% endif %}
+
+{% if not has_program_context %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
+    <p class="text-sm text-message-warning-text/90">
+      Choose a programme above. Everything on this screen belongs to one.
+    </p>
+  </div>
+{% else %}
+
+<form method="post" class="max-w-3xl">
+  {% csrf_token %}
+
+  <div class="bg-white border rounded-lg overflow-hidden
+              {% if danger %}border-message-error-border/50{% else %}border-brand-border-light{% endif %}">
+
+    <div class="px-5 py-4 border-b
+                {% if danger %}border-message-error-border/40 bg-message-error/20{% else %}border-brand-border-light{% endif %}">
+      <h1 class="text-base font-semibold {% if danger %}text-message-error-text{% else %}text-gray-900{% endif %}">{{ title }}</h1>
+      {% if intro %}
+        <p class="text-sm mt-0.5 max-w-2xl {% if danger %}text-message-error-text/90{% else %}text-gray-500{% endif %}">{{ intro }}</p>
+      {% endif %}
+    </div>
+
+    {% if form.non_field_errors %}
+      <div class="px-5 py-3 border-b border-red-200 bg-red-50">
+        {% for error in form.non_field_errors %}
+          <p class="text-sm text-red-800"><strong>Not saved:</strong> {{ error }}</p>
+        {% endfor %}
+        <p class="text-xs text-red-700 mt-0.5">Nothing you typed was lost — fix what is marked and submit again.</p>
+      </div>
+    {% endif %}
+
+    <div class="px-5 py-4 space-y-4">
+      {% crispy form %}
+      {% block extra_fields %}{% endblock %}
+    </div>
+
+    <div class="px-5 py-3 border-t border-brand-border-light bg-gray-50/60 flex items-center justify-end gap-3">
+      {% if cancel_href %}
+        <a href="{{ cancel_href }}" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</a>
+      {% endif %}
+      <button type="submit"
+              class="px-4 py-2 text-sm font-medium rounded-md text-white transition
+                     focus:outline-none focus:ring-2 focus:ring-offset-2
+                     {% if danger %}bg-red-600 hover:bg-red-700 focus:ring-red-500
+                     {% else %}bg-brand-indigo hover:bg-brand-deep-purple focus:ring-brand-indigo{% endif %}">
+        {{ submit_label }}
+      </button>
+    </div>
+  </div>
+
+  {% if footnote %}
+    <p class="text-xs text-gray-500 mt-3 max-w-2xl">{{ footnote }}</p>
+  {% endif %}
+</form>
+
+{% endif %}
+{% endblock %}
