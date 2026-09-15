@@ -151,14 +151,16 @@ A dropdown lets you choose what "comparable" means:
 A second dropdown controls how each indicator's peer distribution is displayed:
 
 - **One dot per worker** — shows every individual peer as a dot, with this worker's own value marked. Use this when you want to see exactly where specific individuals sit relative to each other.
-- **How many workers sit in each band** — groups peers into bands and shows a count for each band, with taller bars for bands that contain more workers. Use this when you want a sense of how many people are performing at roughly the same level. Each bar is given enough height to show real differences in size, so the shape of the distribution is readable at a glance rather than every band appearing the same height.
+- **How many workers sit in each band** — groups peers into bands and shows a count for each band, with taller bars for bands that contain more workers. Use this when you want a sense of how many people are performing at roughly the same level. Each bar is given enough height to show real differences in size, so the shape of the distribution is readable at a glance rather than every band appearing the same height. **Value labels along the bottom of the chart mark every third band edge plus the top of the range**, so you can see not only how many workers sit in a band but what scores that band actually covers.
 
 Neither view substitutes for the other. With a large peer group, individual dots can overlap into an unreadable cluster, making the banded count more useful; with a small peer group, the counts can obscure who the individuals are, making the dots more useful.
 
-For each indicator, this worker's own value is marked and their position is shown as **"above X% of N"** — where X is the percentage of peers this worker scored above, and N is the number of peers who actually scored that indicator. The count shown may be lower than the total cohort size because it reflects only those peers who met that indicator's minimum denominator; a footnote on the page explains this. The three cohort views are designed to give you different perspectives: a worker can look strong compared with their own team but below average compared with peers who started at the same time, and that disagreement is itself a meaningful finding.
+For each indicator, this worker's own value is marked and their position in the peer group is shown as an **exact rank** — for example, **"2nd of 24"**. Workers who share the same figure share the same place, and the next worker takes the place after the tie (so two joint-seconds are followed by a fourth, not a third). Where an indicator has a clearly better end, first place is the better end: for indicators where a higher value is better, the largest value ranks first; for indicators where a lower value is better, the smallest value ranks first. Indicators whose target is a middle value — where being at either extreme is worse — have no single better end, so they are described as **"4th highest of 24"**, indicating the ordering without implying it is a league table. The count shown may be lower than the total cohort size because it reflects only those peers who actually scored that indicator; a footnote on the page explains this.
 
-!!! note "Reading the peer position figure"
-    "Above 96% of 24" means this worker scored higher than 96% of the 24 peers who recorded a result for that indicator. Note that for indicators where a **lower** value is better — such as implausible weights — being above most peers is the less favourable end, not the strong end.
+The three cohort views are designed to give you different perspectives: a worker can look strong compared with their own team but below average compared with peers who started at the same time, and that disagreement is itself a meaningful finding.
+
+!!! note "Reading the rank figure"
+    "2nd of 24" means this worker's value placed them second among the 24 peers who recorded a result for that indicator. For indicators where a **lower** value is better — such as implausible weights — first place goes to the worker with the lowest figure, so ranking near the top is the favourable end.
 
 Where a comparison would not be meaningful, the report says so clearly rather than showing a potentially misleading figure:
 
@@ -182,12 +184,4 @@ One row per field worker, one column per indicator, colour-banded so you can see
 Anonymous bars showing each indicator's distribution across other opportunities in the same benchmarking cohort, with this opportunity's own value marked. No partner's name is ever shown against another partner's figure.
 
 !!! note "Nothing changes until a cohort exists"
-    The peer benchmarking section only populates once a cohort has been created and figures have been published to it. Until then, the peer section displays an explanatory message and the rest of the report works normally. If you see that message, it means your opportunity has not yet been added to a cohort — contact your programme administrator.
-
-#### Withheld indicators
-
-Where the programme's own records indicate that a particular indicator is not credibly collected for this opportunity, the report withholds that indicator's band rather than showing a potentially misleading figure. Withheld indicators are named in a footnote at the bottom of the page, so a blank column reads as *deliberately withheld* rather than *data missing*. This matches the behaviour of the KMC Programme Metrics report.
-
-#### Cohort administration
-
-Benchmarking cohorts — the groups of opportunities whose figures are compared — are managed by programme administrators. Administrators can create a cohort, add opportunities
+    The peer benchmarking section only populates once a cohort has been created and figures have been published to it. Until then, the peer section displays an explanatory message and the rest of the report works normally.
