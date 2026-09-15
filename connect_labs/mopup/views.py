@@ -487,51 +487,37 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         existed.
 
         Also returns a caption naming which boundary source(s) actually
-        resolved (`None` if nothing did)."""
-        from connect_labs.microplans.core.admin_boundaries import SOURCE_LABELS, find_ward_boundary
+        resolved (`None` if nothing did).
 
-        def _norm(s: str) -> str:
-            return " ".join((s or "").strip().casefold().split())
+        The actual Connect-native-preferred matching is
+        `core.work_areas.resolve_ward_boundaries` — shared with
+        `mopup.tasks.preview_planning_gaps`, so Step 2's building fetch/
+        gridding boundary always agrees with the boundary drawn here (see
+        that function's docstring for why this matters)."""
+        from connect_labs.microplans.core.admin_boundaries import SOURCE_LABELS
+        from connect_labs.mopup.core.work_areas import resolve_ward_boundaries
 
-        connect_areas_by_name: dict[str, dict] = {}
-        if opportunity_id and access_token:
-            for area in fetch_connect_implementation_areas(opportunity_id, access_token):
-                name = _norm(area.get("name"))
-                if name:
-                    connect_areas_by_name[name] = area
+        connect_areas = (
+            fetch_connect_implementation_areas(opportunity_id, access_token) if opportunity_id and access_token else []
+        )
+        resolved = resolve_ward_boundaries(selected_wards, connect_areas)
 
         features = []
         sources_seen: set[str] = set()
         for sw in selected_wards:
-            connect_area = connect_areas_by_name.get(_norm(sw.get("ward", "")))
-            if connect_area is not None:
-                sources_seen.add("connect")
-                features.append(
-                    {
-                        "type": "Feature",
-                        "geometry": connect_area["boundary"],
-                        "properties": {
-                            "ward": sw.get("ward", ""),
-                            "lga": sw.get("lga", ""),
-                            "state": sw.get("state", ""),
-                            "source": "connect",
-                        },
-                    }
-                )
+            match = resolved.get(sw.get("ward", ""))
+            if match is None:
                 continue
-            boundary = find_ward_boundary(sw.get("state", ""), sw.get("lga", ""), sw.get("ward", ""))
-            if boundary is None or boundary.geometry is None:
-                continue
-            sources_seen.add(boundary.source)
+            sources_seen.add(match["source"])
             features.append(
                 {
                     "type": "Feature",
-                    "geometry": json.loads(boundary.geometry.geojson),
+                    "geometry": match["geometry"],
                     "properties": {
                         "ward": sw.get("ward", ""),
                         "lga": sw.get("lga", ""),
                         "state": sw.get("state", ""),
-                        "source": boundary.source,
+                        "source": match["source"],
                     },
                 }
             )

@@ -14,6 +14,7 @@ A Phase 1 "refresh wards" button just needs to re-request with that param.
 
 from __future__ import annotations
 
+import json
 import logging
 
 from django.http import HttpRequest
@@ -188,3 +189,65 @@ def fetch_connect_implementation_areas(opportunity_id: int, access_token: str, t
     except ExportAPIError as e:
         logger.warning(f"Failed to fetch Connect implementation areas for opportunity {opportunity_id}: {e}")
         return []
+
+
+def resolve_ward_boundaries(wards: list[dict], connect_implementation_areas: list[dict]) -> dict[str, dict]:
+    """Resolves each of `wards`' (`{"ward", "lga", "state", ...}`) actual
+    boundary, preferring `connect_implementation_areas` (this opportunity's
+    own Connect-native Implementation Area boundaries — ground truth, what
+    this opportunity's microplanning was actually built against; pass
+    `fetch_connect_implementation_areas`'s own output, or `[]` when no
+    opportunity_id/access_token is available yet) over the third-party
+    name-matched resolver (`microplans.core.admin_boundaries.find_ward_boundary`)
+    for any ward Connect doesn't cover.
+
+    Pure matching, no I/O of its own — the caller fetches
+    `connect_implementation_areas` itself (so `MopupAnalysisView` can keep
+    patching/mocking its own module-level `fetch_connect_implementation_areas`
+    import in tests, and a headless Celery caller can fetch with whatever
+    access token it already resolved).
+
+    Both `MopupAnalysisView._ward_boundaries_geojson` (the map's own ward
+    outline) and `tasks.preview_planning_gaps` (Step 2's building fetch/
+    gridding boundary) call this — they MUST stay in agreement, or a
+    gap-fill work area can land outside the boundary actually drawn on the
+    map. Confirmed live: an opportunity with Connect-native Implementation
+    Areas uploaded (e.g. Doka Dawa ward) showed gap-fill work areas and
+    building points spilling outside the map's own ward outline, because
+    Step 2 used to always take the third-party fallback boundary via
+    `find_ward_boundary_geometry` directly, with no Connect-native check at
+    all — a genuinely different (and less accurate) boundary than what the
+    map itself drew for that same ward.
+
+    Returns `{ward_name: {"geometry": <GeoJSON dict>, "source": "connect" |
+    <third-party source string>}}`, keyed by each input ward dict's own
+    `"ward"` value verbatim (not normalized — name-matching against
+    `connect_implementation_areas` is normalized internally, but the
+    returned keys need no normalization on the caller's side since callers
+    already have the exact same ward strings in hand). A ward with no
+    boundary match from either source is simply absent from the result."""
+    from connect_labs.microplans.core.admin_boundaries import find_ward_boundary
+
+    def _norm(s: str) -> str:
+        return " ".join((s or "").strip().casefold().split())
+
+    connect_areas_by_name: dict[str, dict] = {}
+    for area in connect_implementation_areas:
+        name = _norm(area.get("name"))
+        if name:
+            connect_areas_by_name[name] = area
+
+    resolved: dict[str, dict] = {}
+    for w in wards:
+        ward_name = w.get("ward", "")
+        if not ward_name:
+            continue
+        connect_area = connect_areas_by_name.get(_norm(ward_name))
+        if connect_area is not None:
+            resolved[ward_name] = {"geometry": connect_area["boundary"], "source": "connect"}
+            continue
+        boundary = find_ward_boundary(w.get("state", ""), w.get("lga", ""), ward_name)
+        if boundary is None or boundary.geometry is None:
+            continue
+        resolved[ward_name] = {"geometry": json.loads(boundary.geometry.geojson), "source": boundary.source}
+    return resolved
