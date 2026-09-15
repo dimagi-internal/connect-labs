@@ -316,6 +316,26 @@ class TestPlanningGapFeatures:
         # the raw point list still carries every building in the remainder.
         assert len(points) == 3
 
+    def test_gap_features_carry_roof_area_and_isolation_distance(self, monkeypatch):
+        # Same building layout as test_min_buildings_per_cell_drops_small_cells:
+        # one isolated building (its own cell, n_buildings=1) plus two close
+        # together (share a cell, n_buildings=2). Phase 3's "min rooftop
+        # area"/"drop lone buildings far from any cluster" filters
+        # (microplans.core.filters.apply_cell_filters, driven by
+        # review.js's matchesExclusion) read roof_area_m2/dist_to_multi_m
+        # straight off each work area's own properties -- without these,
+        # both filters silently matched nothing for mop-up-created plans.
+        buildings = _buildings_df([(0.009, 0.009), (0.0001, 0.0001), (0.00011, 0.00011)])
+        monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: buildings)
+        features, _ = gaps.planning_gap_features(
+            "Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), []
+        )
+        by_count = {f["properties"]["building_count"]: f["properties"] for f in features}
+        assert by_count[1]["roof_area_m2"] == pytest.approx(50.0)
+        assert by_count[1]["dist_to_multi_m"] > 0
+        assert by_count[2]["roof_area_m2"] == pytest.approx(100.0)
+        assert by_count[2]["dist_to_multi_m"] == 0.0
+
     def test_min_confidence_and_sources_are_forwarded_to_fetch_buildings(self, monkeypatch):
         seen = {}
 
