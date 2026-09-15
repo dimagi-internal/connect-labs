@@ -19,9 +19,13 @@ import babel from '@babel/core';
 
 const { parseSync, traverse } = babel;
 const HERE = dirname(fileURLToPath(import.meta.url));
-// Every KMC render is held to the same checks: the programme report, and the
-// worker review it drills into.
-const RENDERS = ['kmc_programme_metrics_render.js', 'kmc_flw_review_render.js'];
+// Every KMC render is held to the same checks: the programme report, the
+// worker review it drills into, and the single-opportunity report.
+const RENDERS = [
+  'kmc_programme_metrics_render.js',
+  'kmc_flw_review_render.js',
+  'kmc_opp_report_render.js',
+];
 
 for (const file of RENDERS) {
   const src = readFileSync(join(HERE, '..', file), 'utf8');
