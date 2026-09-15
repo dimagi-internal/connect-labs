@@ -19,6 +19,7 @@ something to leave one tool call away from every MCP client.
 
 from django.core.management.base import BaseCommand, CommandError
 
+from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.tracker_import import SPREADSHEET_ID, TrackerImportError
@@ -42,7 +43,9 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
-        access = SupplyDataAccess(access_token="local", program_id=options["program"])
+        # An operator-run import: the programme comes from argv, with no
+        # signed-in caller behind it whose access could be consulted.
+        access = SupplyDataAccess(access_token="local", program_id=options["program"], caller=SYSTEM)
         try:
             report = call_operation(
                 "tracker_import",

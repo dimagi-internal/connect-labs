@@ -28,6 +28,7 @@ produce a demo of a system that does not exist.
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
+from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.labs.synthetic.provisioning import register_labs_only_opp
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
@@ -47,7 +48,9 @@ class Command(BaseCommand):
         self._dev_user()
         self._synthetic_programme()
 
-        access = SupplyDataAccess(access_token="local-dev", program_id=PROGRAMME_ID)
+        # A local developer seeder: no request, no Connect token, no user to
+        # authorise. It writes only to the labs-only synthetic programme below.
+        access = SupplyDataAccess(access_token="local-dev", program_id=PROGRAMME_ID, caller=SYSTEM)
 
         if options["reset"]:
             counts = access.purge()

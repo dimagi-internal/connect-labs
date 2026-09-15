@@ -14,6 +14,7 @@ from decimal import Decimal
 
 import pytest
 
+from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
@@ -191,7 +192,7 @@ class TestDryRun:
     @pytest.mark.django_db
     def test_a_dry_run_reports_the_same_refusals_the_real_run_makes(self, monkeypatch):
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
-        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
 
         dry = t.import_tracker(da, ensure_commodity=True, dry_run=True)
         real = t.import_tracker(da, ensure_commodity=True)
@@ -205,7 +206,7 @@ class TestDryRun:
         """The refusals now come from walking the same code, so the write is
         what has to be suppressed -- not the traversal."""
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
-        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
 
         t.import_tracker(da, ensure_commodity=True, dry_run=True)
 
@@ -312,7 +313,7 @@ class TestRefusalAttribution:
     @pytest.mark.django_db
     def test_every_refusal_names_its_round(self, monkeypatch):
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
-        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
 
         refused = t.import_tracker(da, ensure_commodity=True, dry_run=True)["refused"]
 
@@ -325,7 +326,7 @@ class TestRefusalAttribution:
         """The two are different things and the message needs both: which
         round, and which of its dates could not be read."""
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row(quote_date="9/10/2026")]))
-        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
 
         refused = t.import_tracker(da, ensure_commodity=True, dry_run=True)["refused"]
 
@@ -351,7 +352,7 @@ class TestRerun:
     @pytest.mark.django_db
     def test_a_second_run_of_an_unchanged_sheet_adds_nothing(self, monkeypatch):
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
-        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
 
         t.import_tracker(da, ensure_commodity=True)
         first_quotes = call_operation("quote_list", da, {})
@@ -367,7 +368,7 @@ class TestRerun:
         """The count that hid this. A run that writes nothing must not report
         the same numbers as a run that created everything."""
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
-        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
 
         first = t.import_tracker(da, ensure_commodity=True)
         second = t.import_tracker(da, ensure_commodity=True)
@@ -383,7 +384,7 @@ class TestRerun:
         because a spreadsheet cell moved would destroy that trail, so the
         difference is reported and left for quote_correct."""
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row(price="$52.42")]))
-        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
         t.import_tracker(da, ensure_commodity=True)
 
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row(price="$60.00")]))
@@ -401,7 +402,7 @@ class TestRerun:
         the match is on the date: the same invitation read twice is one event,
         an invitation on a new date is two."""
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
-        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
         t.import_tracker(da, ensure_commodity=True)
 
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row(contacted="2026-06-01")]))
@@ -442,7 +443,7 @@ class TestReviewFindings:
         `unchanged` reintroduces exactly the confusion this fix was for: a
         report that does not say what the run did."""
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
-        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
         t.import_tracker(da, ensure_commodity=True)
 
         # Same date, different reply state: the invitation is the same event,
@@ -460,7 +461,7 @@ class TestReviewFindings:
     @pytest.mark.django_db
     def test_an_unchanged_outreach_row_is_not_rewritten(self, monkeypatch):
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
-        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
         t.import_tracker(da, ensure_commodity=True)
         result = t.import_tracker(da, ensure_commodity=True)
         assert result["imported"]["invitations"] == 0
@@ -472,7 +473,7 @@ class TestReviewFindings:
         would import three quotes that already existed -- the same mistake as
         the hardcoded empty `refused`, in a new place."""
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
-        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
         t.import_tracker(da, ensure_commodity=True)
 
         preview = t.import_tracker(da, ensure_commodity=True, dry_run=True)
@@ -496,7 +497,7 @@ class TestNoInventedOrganisation:
     @pytest.mark.django_db
     def test_an_import_creates_no_organisation(self, monkeypatch):
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
-        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
 
         t.import_tracker(da, ensure_commodity=True)
 
@@ -509,11 +510,11 @@ class TestNoInventedOrganisation:
         from connect_labs.supply_chain.identity import resolve_org
 
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
-        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
         t.import_tracker(da, ensure_commodity=True)
 
         class _User:
             email = "sophie@dimagi.com"
             is_authenticated = True
 
-        assert resolve_org(SupplyDataAccess(program_id=PROGRAM, user=_User())).slug == "dimagi"
+        assert resolve_org(SupplyDataAccess(program_id=PROGRAM, user=_User(), caller=SYSTEM)).slug == "dimagi"
