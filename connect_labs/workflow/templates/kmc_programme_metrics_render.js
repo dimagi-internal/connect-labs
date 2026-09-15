@@ -831,6 +831,13 @@ function WorkflowUI({
   var s4 = React.useState(null);
   var selFLW = s4[0],
     setSelFLW = s4[1];
+  // Which peer group the selected worker is measured against. Three, because
+  // they disagree on purpose: your own team, your intake, and workers carrying
+  // a comparable load. A worker can look fine against one and poor against
+  // another, and that disagreement is the finding, not a defect.
+  var s14 = React.useState('opportunity');
+  var cohortDim = s14[0],
+    setCohortDim = s14[1];
 
   // ── Weekly trend ───────────────────────────────────────────────────────────
   // Two halves. ACTIVITY (visits, registrations) by week comes off this payload,
@@ -2403,6 +2410,200 @@ function WorkflowUI({
     );
   }
 
+  // ── Where this worker sits among comparable workers ───────────────────────
+  // The cohort KEYS (`startMonth`, `caseloadBand`) are assigned server-side and
+  // travel on the payload: a band is a quantile over the whole population, so a
+  // client deriving its own from a filtered table would band people against a
+  // different population than the payload describes. Here we only GROUP by a
+  // key someone else assigned.
+  var COHORT_DIMS = [
+    { id: 'opportunity', label: 'in the same opportunity' },
+    { id: 'start_month', label: 'who started the same month' },
+    { id: 'caseload', label: 'carrying a similar caseload' },
+  ];
+
+  function cohortKeyOf(x, dim) {
+    if (dim === 'opportunity') return x.opp == null ? null : 'o:' + x.opp;
+    if (dim === 'start_month') return x.startMonth ? 'm:' + x.startMonth : null;
+    return x.caseloadBand == null ? null : 'c:' + x.caseloadBand;
+  }
+
+  function cohortLabelOf(x, dim) {
+    if (dim === 'opportunity') return oppLabel(x.opp);
+    if (dim === 'start_month') return 'started ' + (x.startMonth || '—');
+    return (x.caseloadLabel || '—') + ' caseload';
+  }
+
+  function PeerCohorts(props) {
+    var f = props.f;
+    // A cohort key is absent on runs saved before these keys existed. Say so,
+    // rather than rendering an empty panel that reads as "no peers".
+    var hasKeys = (P.byFLW || []).some(function (x) {
+      return x.startMonth || x.caseloadBand != null;
+    });
+    var mine = cohortKeyOf(f, cohortDim);
+    var peers = mine
+      ? byFLW.filter(function (x) {
+          return cohortKeyOf(x, cohortDim) === mine;
+        })
+      : [];
+    var MIN_COHORT = 8;
+
+    function valueOf(x, id) {
+      var n = nByFLW[x.key];
+      var e = n && n.ind && n.ind[id];
+      return e && typeof e.value === 'number' ? e.value : null;
+    }
+
+    function fmt(id, v) {
+      if (v == null) return '—';
+      var m = N_BY_ID[id] || {};
+      return m.unit === '%'
+        ? (v * 100).toFixed(1) + '%'
+        : Math.round(v * 10) / 10;
+    }
+
+    var indicators = SCORECARD.filter(function (c) {
+      return !c.denOnly && valueOf(f, c.id) != null;
+    });
+
+    return (
+      <div className="border-t border-gray-100 px-4 py-3">
+        <div className="flex items-baseline justify-between gap-3 flex-wrap mb-3">
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Against comparable workers
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-gray-400">Compare with workers</span>
+            <select
+              className="border border-gray-200 rounded px-2 py-1 text-xs bg-white"
+              value={cohortDim}
+              onChange={function (e) {
+                setCohortDim(e.target.value);
+              }}
+            >
+              {COHORT_DIMS.map(function (d) {
+                return (
+                  <option key={d.id} value={d.id}>
+                    {d.label}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        </div>
+
+        {!hasKeys ? (
+          <div className="text-xs text-gray-500">
+            This saved run predates peer cohorts, so it carries no start month
+            or caseload band. Re-run the report to compare this worker.
+          </div>
+        ) : !mine ? (
+          <div className="text-xs text-gray-500">
+            {f.flw} cannot be placed in this cohort
+            {cohortDim === 'start_month'
+              ? ' — no dated case, so there is no month they started.'
+              : cohortDim === 'caseload'
+              ? ' — too few workers on this run to band caseloads at all.'
+              : '.'}{' '}
+            They are left out rather than pooled with everyone else unplaceable.
+          </div>
+        ) : peers.length < MIN_COHORT ? (
+          <div className="text-xs text-gray-500">
+            Only {peers.length} worker{peers.length === 1 ? '' : 's'}{' '}
+            {cohortLabelOf(f, cohortDim)} — too few to rank against. A
+            percentile over {peers.length} people is noise, so none is shown.
+          </div>
+        ) : (
+          <div>
+            <div className="text-xs text-gray-400 mb-2">
+              {peers.length} workers {cohortLabelOf(f, cohortDim)}
+              {cohortDim === 'caseload' && (P.cohortEdges || {}).caseload
+                ? ' · bands cut at ' +
+                  (P.cohortEdges.caseload || []).join(' and ') +
+                  ' cases'
+                : ''}
+              {' · '}
+              <span className="inline-block w-2 h-2 rounded-full bg-indigo-600 align-middle" />{' '}
+              this worker{' · '}
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-gray-400 align-middle" />{' '}
+              a peer
+            </div>
+            <div className="space-y-1.5">
+              {indicators.map(function (c) {
+                var vals = peers
+                  .map(function (x) {
+                    return valueOf(x, c.id);
+                  })
+                  .filter(function (v) {
+                    return v != null;
+                  });
+                var mineV = valueOf(f, c.id);
+                if (vals.length < MIN_COHORT) return null;
+                var lo = Math.min.apply(null, vals);
+                var hi = Math.max.apply(null, vals);
+                var span = hi - lo || 1;
+                var below = vals.filter(function (v) {
+                  return v < mineV;
+                }).length;
+                // Strictly below, so a worker tied with the whole cohort reads
+                // 0 rather than 50 -- "nobody is worse" is the true statement.
+                var rank = Math.round((100 * below) / vals.length);
+                return (
+                  <div
+                    key={c.id + c.label}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <div
+                      className="w-24 shrink-0 text-gray-500 truncate"
+                      title={c.title}
+                    >
+                      {c.label}
+                    </div>
+                    <div className="w-14 shrink-0 text-right font-medium text-gray-900 tabular-nums">
+                      {fmt(c.id, mineV)}
+                    </div>
+                    <div className="relative flex-1 h-3.5 min-w-[80px]">
+                      <div className="absolute left-0 right-0 top-1/2 h-px bg-gray-100" />
+                      {vals.map(function (v, i) {
+                        return (
+                          <span
+                            key={i}
+                            className="absolute top-1/2 w-1.5 h-1.5 rounded-full bg-gray-400 opacity-70"
+                            style={{
+                              left: ((v - lo) / span) * 100 + '%',
+                              transform: 'translate(-50%,-50%)',
+                            }}
+                          />
+                        );
+                      })}
+                      <span
+                        className="absolute top-1/2 w-2.5 h-2.5 rounded-full bg-indigo-600 ring-2 ring-white"
+                        style={{
+                          left: ((mineV - lo) / span) * 100 + '%',
+                          transform: 'translate(-50%,-50%)',
+                        }}
+                      />
+                    </div>
+                    <div className="w-32 shrink-0 text-right text-gray-400 tabular-nums">
+                      {rank}th of {vals.length}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="text-[11px] text-gray-400 mt-2">
+              Each row is scaled to its own cohort's range, so position compares
+              workers on that indicator only — never one indicator against
+              another. Indicators where fewer than {MIN_COHORT} peers have a
+              value are omitted rather than drawn thin.
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ── The selected worker: their full indicator set, the review link, the audit, their cases ──
   function FLWPanel(props) {
     var f = props.f;
@@ -2492,6 +2693,7 @@ function WorkflowUI({
             Could not open the audit: {st.message}
           </div>
         )}
+        <PeerCohorts f={f} />
         <div className="grid grid-cols-1 lg:grid-cols-2">
           <div className="border-t border-gray-100 px-4 py-3">
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">

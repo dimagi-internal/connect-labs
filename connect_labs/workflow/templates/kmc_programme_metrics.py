@@ -499,7 +499,18 @@ SNAPSHOT_SCHEMA = {
             "`state.snapshot.cases`, not case records — a saved run has no live pipeline "
             "behind it, so an empty `rows` would end the drill at the worker, but holding the "
             "records here as well as in `cases` stored every case twice and put the payload "
-            "over the 5 MB cap. The render rehydrates on load"
+            "over the 5 MB cap. The render rehydrates on load. `startMonth` (YYYY-MM, the "
+            "month the worker first appeared) and `caseloadBand`/`caseloadLabel` are the peer-"
+            "cohort keys: which workers this one is fairly compared against. Either can be "
+            "null for a worker who cannot be placed — no dated case, or too few workers on the "
+            "run to band at all — and such a worker is left OUT of that cohort rather than "
+            "pooled into a catch-all"
+        ),
+        "state.snapshot.cohortEdges": (
+            "The cut-points behind `byFLW[].caseloadBand`, as {caseload: [lo, hi]} — quantiles "
+            "over the whole worker population, computed once here so no two readers band "
+            "differently and so a run stays comparable to the run before it. Empty when there "
+            "were too few workers to band"
         ),
         "state.snapshot.cases": (
             "Flat index of every case in the snapshot, and the ONLY copy of the case records — "

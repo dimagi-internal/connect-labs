@@ -39,7 +39,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from connect_labs.semantic import gates
+from connect_labs.semantic import cohorts, gates
 
 # `grade`'s answer when a measure has no row at all.
 _NODATA = "nodata"
@@ -334,6 +334,7 @@ def build(
         opp = r.get("opportunity_id")
         username = r.get("username")
         ind = grade_all(r, measures, **grade_kw)
+        case_idx = case_idx_by_flw.get((opp, username), [])
         by_flw.append(
             {
                 # The render's selection identity AND its React key
@@ -347,8 +348,15 @@ def build(
                 "flw": username,
                 "username": username,
                 "llo": llo_of_row(r, llo_map),
-                "rows": case_idx_by_flw.get((opp, username), []),
+                "rows": case_idx,
                 "ind": ind,
+                # The month this worker first appeared, for the "started the same
+                # month" peer cohort. A FIXED key, deliberately not a tenure band:
+                # a band reclassifies people as time passes, so the same worker
+                # drifts between cohorts without doing anything. Computed here
+                # because the case positions are already in hand -- the alternative
+                # is every consumer re-deriving it from the case index.
+                "startMonth": cohorts.start_month([cases[i] for i in case_idx]),
                 # The red/yellow badges on the worker table. by_llo computed these and
                 # byFLW did not, so the badges simply did not appear on a saved run.
                 "reds": sum(1 for c in ind.values() if c["band"] == "red"),
@@ -356,6 +364,18 @@ def build(
                 "n": int(float(r.get("n_cases") or 0)),
             }
         )
+
+    # Caseload bands, assigned ONCE over the whole worker population and carried
+    # per worker. Deliberately not left to the render: a band is a quantile over
+    # everyone, so a client computing its own edges from a filtered subset would
+    # silently band workers against a different population than the one the
+    # payload describes -- and two clients would disagree. Frozen here, a saved
+    # run also stays comparable to the run before it.
+    caseload_edges = cohorts.quantile_edges([f["n"] for f in by_flw], bands=3)
+    for f in by_flw:
+        idx = cohorts.band_index(f["n"], caseload_edges) if caseload_edges else None
+        f["caseloadBand"] = idx
+        f["caseloadLabel"] = cohorts.caseload_label(idx) if idx is not None else None
 
     # For every credibility-gated indicator, the figure pooled over the recorders
     # the workbook accepts. The programme-wide row pools EVERY LLO, so on an
@@ -591,6 +611,10 @@ def build(
         "byLLO": by_llo,
         "byOpp": by_opp,
         "byFLW": by_flw,
+        # The cut-points behind `caseloadBand`, so a reader can see what
+        # "similar caseload" actually meant on this run rather than trusting a
+        # label. Empty when there were too few workers to band at all.
+        "cohortEdges": {"caseload": caseload_edges},
         "monthly": monthly,
         "monthlyByScope": monthly_by_scope,
         "nSeries": None,  # a template's own extra tab, captured only when it was run
