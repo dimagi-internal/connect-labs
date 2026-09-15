@@ -4,9 +4,8 @@ Each submodule registers its tools with the @register decorator at import time.
 Importing this package triggers all registration.
 """
 
-from connect_labs.benchmarks import mcp_tools as _benchmarks_mcp_tools  # noqa: F401  -- registers benchmarks_cohort_*
-
 from . import apps  # noqa: F401
+from . import benchmarks  # noqa: F401  -- registers benchmarks_cohort_*
 from . import campaign  # noqa: F401  -- registers campaign_build_national
 from . import custom_analysis_run  # noqa: F401  -- registers custom_analysis_run
 from . import funds  # noqa: F401
