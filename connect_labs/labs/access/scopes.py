@@ -67,8 +67,23 @@ def _org_data(caller: Caller) -> dict | None:
 
 
 def org_slugs(caller: Caller) -> set[str]:
+    """Every string a caller could legitimately name one of their orgs by.
+
+    BOTH `id` and `slug`, not whichever comes first. Labs carries both and they
+    are not the same thing across the codebase: `registry_source` identifies an
+    organisation as `{"organization_id": 179}` while `benchmarks` uses slugs
+    like `"dimagi-kmc"`. Taking only one convention refuses a caller using the
+    other -- a permission failure with no permission problem behind it, which
+    is the hardest kind to diagnose.
+    """
     data = _org_data(caller) or {}
-    return {str(o.get("slug") or o.get("id")) for o in data.get("organizations", []) if o.get("slug") or o.get("id")}
+    out: set[str] = set()
+    for o in data.get("organizations", []):
+        for key in ("slug", "id"):
+            value = o.get(key)
+            if value is not None and value != "":
+                out.add(str(value))
+    return out
 
 
 def opportunity_ids(caller: Caller) -> set[int]:

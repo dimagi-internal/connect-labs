@@ -190,12 +190,18 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         # This is the only place that can do it. The labs database is this app's
         # system of record, so unlike every other labs app there is no downstream
         # LabsRecord call at which Connect would check membership: an unchecked
-        # organization_id here reaches Postgres and is answered. A caller that
-        # cannot be resolved is refused rather than trusted; `SYSTEM` is the
-        # explicit, greppable escape for entry points that have no user.
+        # program_id here reaches Postgres and is answered. A caller that cannot
+        # be resolved is refused rather than trusted; `SYSTEM` is the explicit,
+        # greppable escape for entry points that have no user.
+        #
+        # `organization_id` is deliberately NOT authorised. It selects nothing --
+        # mcp_tools.py's own schema says so: "Connect organisation, carried as
+        # context. It does NOT select a registry: commodities, trade items and
+        # suppliers are scoped to the programme." Checking a value that reaches
+        # no query protects nothing and only adds a way to refuse a legitimate
+        # caller, so only the scopes that actually select data are checked.
         denied = may_use(
             caller,
-            organization_id=organization_id,
             program_id=program_id,
             opportunity_id=opportunity_id,
         )
