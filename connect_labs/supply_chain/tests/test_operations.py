@@ -296,3 +296,48 @@ def test_a_none_inside_a_data_payload_is_still_passed_through():
     access.update_contract.return_value = Contract(id=1, commodity=_RUTF)
     call_operation("contract_update", access, {"contract_id": 1, "data": {"duty_relief_document_id": None}})
     assert access.update_contract.call_args[0][1] == {"duty_relief_document_id": None}
+
+
+class TestTheCreateUpdateVersusUpsertRule:
+    """Which reference operations are upserts, and why one is not.
+
+    Raised as an inconsistency to fix; it is the opposite. An upsert needs a
+    natural key to be keyed on, and a supplier has none — two suppliers can
+    share a name. Written down here because "make it consistent" is a plausible
+    enough tidy-up that somebody will reach for it.
+    """
+
+    NATURAL_KEYS = {
+        "Commodity": "slug",
+        "Item": "sku",
+        "SupplyPoint": "slug",
+    }
+
+    def test_every_reference_model_with_a_natural_key_has_an_upsert(self):
+        from connect_labs.supply_chain import models
+        from connect_labs.supply_chain.operations import all_operations
+
+        registered = set(all_operations())
+        for model_name, key in self.NATURAL_KEYS.items():
+            model = getattr(models, model_name)
+            constrained = {
+                field for constraint in model._meta.constraints for field in getattr(constraint, "fields", ())
+            }
+            assert key in constrained, f"{model_name} was expected to be unique on {key}"
+
+        assert {"commodity_upsert", "item_upsert", "supply_point_upsert", "org_upsert"} <= registered
+
+    def test_a_supplier_has_no_natural_key_and_so_has_no_upsert(self):
+        """Two companies can share a name, so an upsert keyed on one would
+        rewrite the first with the second."""
+        from connect_labs.supply_chain.models import Supplier
+        from connect_labs.supply_chain.operations import all_operations
+
+        constrained = {
+            field for constraint in Supplier._meta.constraints for field in getattr(constraint, "fields", ())
+        }
+        assert not constrained, "if a supplier gains a natural key, this rule changes and so should the operations"
+
+        registered = set(all_operations())
+        assert "supplier_upsert" not in registered
+        assert {"supplier_create", "supplier_update"} <= registered

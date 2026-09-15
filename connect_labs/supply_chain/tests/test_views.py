@@ -1,12 +1,11 @@
 import ast
 import pathlib
+import re
 from unittest.mock import patch
 
 import jsonschema
 import pytest
 from django.urls import reverse
-
-from connect_labs.supply_chain.operations import call_operation as real_call_operation
 
 pytestmark = pytest.mark.django_db
 
@@ -298,114 +297,6 @@ def test_award_post_without_a_rationale_does_not_500(client, sophie):
         )
     assert response.status_code == 200
     assert "rationale" in response.content.decode().lower()
-
-
-def test_quote_entry_post_with_a_malformed_amount_does_not_500(client, sophie):
-    """A European decimal comma ("52,42" for "52.42") is an ordinary typo for
-    someone transcribing a supplier's quote by hand, not a reason to 500.
-
-    Dispatches "quote_record" to the REAL call_operation, so this exercises
-    the actual MONEY_NONZERO pattern in operations.py rather than a guess at what it
-    rejects — and confirms the rejection happens before anything is written
-    (SupplyDataAccess.create_quote is never reached: jsonschema.validate
-    raises first).
-    """
-
-    def _dispatch(name, access, payload):
-        if name == "quote_record":
-            return real_call_operation(name, access, payload)
-        return []
-
-    # has_program_context patched True: this test is about the malformed-
-    # amount rejection, orthogonal to finding 3/C's no-programme guard, and
-    # `sophie` carries no programme context by default.
-    with (
-        patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch),
-        patch("connect_labs.supply_chain.procurement.views.has_program_context", return_value=True),
-    ):
-        response = client.post(
-            reverse("supply_chain:procurement_quote_entry"),
-            {"as_quoted_amount": "52,42", "as_quoted_unit": "per_pack", "as_quoted_currency": "USD"},
-        )
-    assert response.status_code == 200
-    body = response.content.decode()
-    assert "52,42" in body
-
-
-def test_quote_entry_post_preserves_entered_values_on_error(client, sophie):
-    """Losing the form on a validation error means re-typing the whole quote."""
-
-    def _dispatch(name, access, payload):
-        if name == "quote_record":
-            return real_call_operation(name, access, payload)
-        if name == "commodity_list":
-            return [{"id": 1, "slug": "rutf", "name": "RUTF"}]
-        return []
-
-    with (
-        patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch),
-        patch("connect_labs.supply_chain.procurement.views.has_program_context", return_value=True),
-    ):
-        response = client.post(
-            reverse("supply_chain:procurement_quote_entry"),
-            {
-                "as_quoted_amount": "52,42",
-                "as_quoted_unit": "per_pack",
-                "as_quoted_currency": "EUR",
-                "commodity_slug": "rutf",
-                "quantity_basis": "667",
-            },
-        )
-    body = response.content.decode()
-    assert response.status_code == 200
-    assert 'value="52,42"' in body
-    assert 'value="EUR"' in body
-    assert 'value="667"' in body
-    assert 'value="rutf"' in body and "selected" in body
-
-
-def test_a_quoted_submitted_value_cannot_break_out_of_the_x_data_js_context(client, sophie):
-    """The previously-submitted pack_spec_source used to be interpolated
-    straight into an `x-data="quoteEntryForm('...')"` JS-string literal.
-    Django HTML-escapes `'` to `&#x27;`, but the browser HTML-decodes an
-    attribute value BEFORE Alpine evaluates x-data as JavaScript — so a
-    submitted value containing a quote could break out of that string and
-    inject arbitrary JS. Regression guard: the value must never again be
-    interpolated into any JS expression at all, only carried in a data-*
-    attribute (HTML-escaped, decoded back to an inert string by .dataset,
-    never re-parsed as code).
-    """
-    payload = "not_stated');alert(document.cookie);//"
-
-    def _dispatch(name, access, payload_):
-        if name == "quote_record":
-            return real_call_operation(name, access, payload_)
-        return []
-
-    with (
-        patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch),
-        patch("connect_labs.supply_chain.procurement.views.has_program_context", return_value=True),
-    ):
-        response = client.post(
-            reverse("supply_chain:procurement_quote_entry"),
-            {"as_quoted_amount": "52,42", "pack_spec_source": payload},
-        )
-    assert response.status_code == 200
-    body = response.content.decode()
-
-    # The raw, unescaped payload must never appear verbatim anywhere in the
-    # page — if it does, something HTML-escaped-but-JS-unsafe (or unescaped
-    # entirely) let it through.
-    assert payload not in body
-
-    # x-data must carry zero interpolation — no call arguments at all — so
-    # there is no JS-string context for a submitted value to land in, ever.
-    assert 'x-data="quoteEntryForm()"' in body
-
-    # The value only ever reaches the page via a data-* attribute, which is
-    # HTML-escaped (single quote becomes &#x27;) and read back as an inert
-    # string through $el.dataset — never evaluated as JavaScript.
-    assert 'data-pack-spec-source="not_stated&#x27;);alert(document.cookie);//"' in body
 
 
 def test_comparison_without_a_commodity_shows_a_chooser_instead_of_500ing(client, sophie):
@@ -1159,3 +1050,113 @@ class TestReadingOrderAndDeadWarnings:
             body = flat(client.get(reverse("supply_chain:catalogue")))
         assert "how many tablets a course is" in body
         assert "sachets" not in body
+
+
+# ---- the quote entry screen, after it moved onto the shared form layer ----
+#
+# These three properties were guarded against a hand-rolled template and a
+# hand-rolled POST handler, both now deleted. Every one of them still has to
+# hold; what changed is that Django provides them rather than this view.
+
+
+@pytest.fixture
+def scoped_quote_screen(client, sophie, monkeypatch):
+    """A signed-in caller with a programme, for the quote entry screen.
+
+    Patches the call sites, and imports every module first — see
+    `test_write_screens.scoped` for the leak that follows from doing either
+    the other way round.
+    """
+    from connect_labs.supply_chain import form_views  # noqa: F401  -- bind before patching
+    from connect_labs.supply_chain.api_views import _access as real_access
+    from connect_labs.supply_chain.procurement import views as procurement_views  # noqa: F401
+
+    def _scoped(request):
+        access = real_access(request)
+        access.program_id = 10507
+        return access
+
+    for module in ("form_views", "procurement.views"):
+        monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)
+        monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
+    return client
+
+
+def test_a_malformed_amount_does_not_500_and_is_not_lost(scoped_quote_screen):
+    """A European decimal comma ("52,42" for "52.42") is an ordinary typo for
+    somebody transcribing a supplier's quote by hand, not a reason to 500 —
+    and not a reason to make them retype the other fourteen fields.
+
+    The old view coerced by hand and rebuilt the page out of `request.POST`.
+    A bound `DecimalField` does both, and reports the problem on the field the
+    value came from instead of as a sentence naming a payload key.
+    """
+    response = scoped_quote_screen.post(
+        reverse("supply_chain:procurement_quote_entry"),
+        {"as_quoted_amount": "52,42", "as_quoted_unit": "per_pack", "as_quoted_currency": "USD"},
+    )
+    assert response.status_code == 200
+    assert "as_quoted_amount" in response.context["form"].errors
+    assert 'value="52,42"' in response.content.decode(), "what was typed survives the refusal"
+
+
+def test_every_entered_value_survives_a_refusal(scoped_quote_screen):
+    """Losing the form on a validation error means re-typing the whole quote."""
+    from connect_labs.supply_chain.models import Commodity
+
+    rutf = Commodity.objects.create(scope_key="prog:10507", slug="rutf", name="RUTF")
+
+    response = scoped_quote_screen.post(
+        reverse("supply_chain:procurement_quote_entry"),
+        {
+            "as_quoted_amount": "52,42",  # the thing that will be refused
+            "as_quoted_unit": "per_pack",
+            "as_quoted_currency": "EUR",
+            "commodity": rutf.pk,
+            "quantity_basis": "667",
+            "quantity_basis_unit": "carton",
+        },
+    )
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert 'value="52,42"' in body
+    assert 'value="EUR"' in body
+    assert 'value="667"' in body
+    assert 'value="carton"' in body
+    assert re.search(rf'<option value="{rutf.pk}"\s+selected', body)
+
+
+def test_a_submitted_value_cannot_reach_a_javascript_context(scoped_quote_screen):
+    """The property this guards outlived the markup it was written against.
+
+    `pack_spec_source` used to be interpolated into an
+    `x-data="quoteEntryForm('...')"` JS string literal. Django escapes `'` to
+    `&#x27;`, but a browser HTML-decodes an attribute BEFORE Alpine evaluates
+    x-data as JavaScript — so a submitted quote could break out of that string
+    and inject arbitrary JS.
+
+    That template is deleted and the screen now renders through crispy, which
+    puts submitted values only in ordinary attribute positions. Kept, and
+    rewritten to assert the PROPERTY rather than the old markup: a submitted
+    value never appears unescaped, and never lands anywhere a browser would
+    re-parse it as code.
+    """
+    payload = "not_stated');alert(document.cookie);//"
+
+    response = scoped_quote_screen.post(
+        reverse("supply_chain:procurement_quote_entry"),
+        {"as_quoted_amount": "52,42", "pack_spec_source": payload},
+    )
+    assert response.status_code == 200
+    body = response.content.decode()
+
+    # Never verbatim: if the raw payload is in the page, something escaped it
+    # not at all, or escaped it in a way that decodes back before evaluation.
+    assert payload not in body
+
+    # And no JS-evaluating attribute carries anything but a literal. `x-data`,
+    # `@click` and `x-on:` are the three this project uses; a submitted value
+    # inside any of them is a JS context, whatever it was escaped to.
+    for attribute in re.findall(r'(?:x-data|@click|x-on:\w+)="([^"]*)"', body):
+        assert "alert(" not in attribute
+        assert "document.cookie" not in attribute

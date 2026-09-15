@@ -33,7 +33,14 @@ from django.views.generic import TemplateView
 
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
-from connect_labs.supply_chain.forms import OutreachForm, OutreachReplyForm, ReasonForm, RoundForm, RoundLineFormSet
+from connect_labs.supply_chain.forms import (
+    OutreachForm,
+    OutreachReplyForm,
+    QuoteForm,
+    ReasonForm,
+    RoundForm,
+    RoundLineFormSet,
+)
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 
@@ -59,17 +66,6 @@ def _days_waiting(sent_on):
 # operations.ID / _NON_NEGATIVE_INT). jsonschema does not coerce "5" to 5,
 # so passing request.POST straight through 400s on every real submission
 # that names a round, supplier, or item — i.e. every one of them.
-_QUOTE_INT_FIELDS = {
-    "round_id",
-    "supplier_id",
-    "item_id",
-    "base_per_pack_stated",
-    "base_unit_grams_stated",
-    "shelf_life_months_stated",
-    "lead_time_days",
-}
-
-
 @method_decorator(login_required, name="dispatch")
 class _Base(TemplateView):
     def op(self, name, **payload):
@@ -256,64 +252,52 @@ class ComparisonView(_Base):
 # client can make better than a hardcoded page can.
 
 
-class QuoteEntryView(_Base):
-    template_name = "supply_chain/procurement/quote_entry.html"
+class QuoteEntryView(OperationFormView):
+    """Record a quote, as the supplier stated it.
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["has_program_context"] = has_program_context(self.request)
-        context["commodities"] = self.op("commodity_list")
-        context["suppliers"] = self.op("supplier_list")
-        # For the pack_spec_source=trade_item_confirmed picker.
-        context["items"] = self.op("item_list")
-        # round_list is programme-scoped; the round board's "Record a quote"
-        # button is only shown once a programme is selected (finding 3's
-        # fix), but this route must stay safe however it is reached --
-        # a bookmark, a direct URL, or a raw POST.
-        context["rounds"] = self.op("round_list") if context["has_program_context"] else []
-        return context
+    This was the last screen in the domain built by hand — a 281-line
+    template, a set of field names to coerce to integers, and a POST handler
+    that rebuilt the page out of `request.POST` on a rejection so the typist
+    did not lose their work.
 
-    def post(self, request, *args, **kwargs):
-        """Record a quote. The person filling this in is transcribing figures
-        out of a supplier email — "52,42" instead of "52.42", a European
-        decimal comma from a francophone supplier — is an ordinary typo, not
-        a reason to lose their work. A schema rejection (or a field that
-        doesn't even coerce to the integer the schema wants) re-renders this
-        same form with what's wrong AND what they typed, rather than 500ing
-        or discarding the entry.
-        """
-        if not has_program_context(request):
-            return self.render_to_response(self.get_context_data(**kwargs))
+    Django does all three. A bound form re-renders with what was typed; a
+    `ModelChoiceField` coerces and validates an id; a `DecimalField` reports a
+    bad number on the field it came from, rather than as a sentence naming a
+    payload key. The care in the original was right — somebody transcribing
+    figures out of a supplier email will type "52,42" — and it is now the
+    framework's job rather than this view's.
+    """
 
-        submitted = {key: value for key, value in request.POST.items() if key != "csrfmiddlewaretoken"}
-        data = {}
-        error = None
-        for key, value in submitted.items():
-            if value == "":
-                continue
-            if key in _QUOTE_INT_FIELDS:
-                try:
-                    data[key] = int(value)
-                except ValueError:
-                    error = f"'{value}' is not a whole number for {key.replace('_', ' ')}."
-                    break
-            else:
-                data[key] = value
+    operation = "quote_record"
+    form_class = QuoteForm
+    title = "Record a quote"
+    intro = (
+        "As the supplier stated it. Converting it to a comparable basis happens in the "
+        "comparison, not here — a screen that normalised on entry would throw away the only "
+        "record of what they actually wrote."
+    )
+    submit_label = "Record quote"
 
-        if error is None:
-            try:
-                created = self.op("quote_record", data=data)
-            except jsonschema.ValidationError as exc:
-                error = exc.message
+    def get_initial(self):
+        initial = super().get_initial()
+        # Arriving from a round, that round is the answer.
+        round_id = self.request.GET.get("round")
+        if round_id and str(round_id).isdigit():
+            initial.setdefault("round", int(round_id))
+        return initial
 
-        if error is not None:
-            context = self.get_context_data(**kwargs)
-            context["quote_error"] = error
-            context["submitted"] = submitted
-            return self.render_to_response(context)
+    def breadcrumb(self, **kwargs):
+        return [
+            {"label": "Sourcing", "href": reverse("supply_chain:procurement_round_board")},
+            {"label": self.title},
+        ]
 
-        url = reverse("supply_chain:procurement_comparison", args=[created["round_id"]])
-        return redirect(f"{url}?commodity={created['commodity_slug']}")
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:procurement_round_board")
+
+    def redirect_to(self, result):
+        url = reverse("supply_chain:procurement_comparison", args=[result["round_id"]])
+        return f"{url}?commodity={result['commodity_slug']}"
 
 
 # ---- write screens -------------------------------------------------------
