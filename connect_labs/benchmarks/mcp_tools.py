@@ -21,6 +21,60 @@ from connect_labs.workflow.data_access import WorkflowDataAccess
 from connect_labs.workflow.templates import resolve_snapshot_contract
 
 
+def _caller_organization_data(user, access_token: str) -> dict[str, Any]:
+    """The caller's org tree from production Connect, or a named upstream refusal.
+
+    ``fetch_user_organization_data`` returns ``None`` when it cannot REACH
+    Connect, which is a different thing from "this caller belongs to nothing".
+    ``workflows.py`` draws exactly that line (UPSTREAM_ERROR vs
+    PERMISSION_DENIED) so an authorised publisher hitting a network blip is
+    not told they lack permission. Both branches still fail CLOSED -- this
+    raises either way, and nothing is written.
+    """
+    data = fetch_user_organization_data(access_token, owner=getattr(user, "username", None))
+    if not data:
+        raise MCPToolError(
+            "UPSTREAM_ERROR",
+            "Could not reach production Connect to read your organisations, so organisation "
+            "access could not be checked. Nothing was written -- retry.",
+        )
+    return data
+
+
+def _caller_organization_slugs(data: dict[str, Any]) -> set[str]:
+    """Connect organisation slugs the caller belongs to, per production Connect."""
+    return {str(org.get("slug")) for org in (data.get("organizations") or []) if org.get("slug")}
+
+
+def _caller_opportunity_ids(user, data: dict[str, Any]) -> set[int]:
+    """Opportunity ids the caller holds: production's, plus the labs-only
+    synthetic opps that never appear in production's list (same merge
+    ``workflows.py`` does before validating multi-opp writes)."""
+    from connect_labs.mcp.tools.workflows import _collect_labs_only_opp_ids
+
+    held = {int(opp["id"]) for opp in (data.get("opportunities") or []) if opp.get("id") is not None}
+    return held | _collect_labs_only_opp_ids(user)
+
+
+def _require_organization_access(user, organization_id: str, what: str) -> tuple[str, dict[str, Any]]:
+    """The single organisation gate for every write in this module.
+
+    Membership of a cohort IS the read permission (models.py), so a caller who
+    can add an opportunity they hold to someone else's cohort has granted
+    themselves that cohort's published peer figures without ever calling
+    publish. Every write therefore passes through here, and the caller's org
+    tree is returned so an opportunity-level check costs no extra round trip.
+    """
+    token = require_connect_token(user)
+    data = _caller_organization_data(user, token)
+    if organization_id not in _caller_organization_slugs(data):
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            f"You do not have access to organisation {organization_id!r}, which {what}.",
+        )
+    return token, data
+
+
 def _serialize_cohort(cohort: BenchmarkCohort) -> dict[str, Any]:
     return {
         "id": cohort.pk,
@@ -39,7 +93,8 @@ def _serialize_cohort(cohort: BenchmarkCohort) -> dict[str, Any]:
     description=(
         "Create a benchmark cohort -- a named set of opportunities that may be "
         "benchmarked against each other. Membership IS the grant: an opportunity "
-        "sees benchmarks for the cohorts it belongs to and nothing else. "
+        "sees benchmarks for the cohorts it belongs to and nothing else, so the "
+        "caller must belong to the organisation the cohort is created under. "
         f"min_peers must be >= {MIN_PEERS_FLOOR} (below that, the reader is one "
         "of the contributors, so the one remaining bar is a named peer's exact "
         "value)."
@@ -87,6 +142,7 @@ def benchmarks_cohort_create(
             f"min_peers must be >= {MIN_PEERS_FLOOR}: at {min_peers} the reader is one of the "
             "contributors, so the one remaining bar is a named peer's exact value.",
         )
+    _require_organization_access(user, organization_id, "you are creating this cohort under")
     cohort = BenchmarkCohort.objects.create(
         name=name,
         organization_id=organization_id,
@@ -100,9 +156,12 @@ def benchmarks_cohort_create(
 @register(
     name="benchmarks_cohort_add_opportunities",
     description=(
-        "Add opportunities to a benchmark cohort. Idempotent -- re-adding an "
-        "opportunity already in the cohort is a no-op. Returns the cohort's "
-        "full membership after the add."
+        "Add opportunities to a benchmark cohort. Refuses a caller who does not "
+        "belong to the cohort's organisation, or who does not hold one of the "
+        "opportunities being added -- membership IS the read grant, so adding an "
+        "opportunity to a cohort hands it that cohort's peer figures. Idempotent "
+        "-- re-adding an opportunity already in the cohort is a no-op. Returns "
+        "the cohort's full membership after the add."
     ),
     input_schema={
         "type": "object",
@@ -128,6 +187,21 @@ def benchmarks_cohort_add_opportunities(
         cohort = BenchmarkCohort.objects.get(pk=cohort_id)
     except BenchmarkCohort.DoesNotExist as exc:
         raise MCPToolError("NOT_FOUND", f"No cohort with id {cohort_id}") from exc
+
+    _, org_data = _require_organization_access(user, cohort.organization_id, f"owns cohort {cohort_id}")
+
+    # The org gate alone would still let a member of org A add an opportunity
+    # belonging to org B into A's cohort, which publishes B's figures into a
+    # cohort B never joined. The caller's opportunity list came back on the
+    # SAME fetch the org gate already made, so this costs no extra round trip.
+    held = _caller_opportunity_ids(user, org_data)
+    unheld = sorted({int(oid) for oid in opportunity_ids} - held)
+    if unheld:
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            f"You do not hold opportunities {unheld}, so you cannot add them to cohort {cohort_id}.",
+            details={"unheld_opportunity_ids": unheld},
+        )
 
     for opportunity_id in opportunity_ids:
         BenchmarkCohortMember.objects.get_or_create(cohort=cohort, opportunity_id=int(opportunity_id))
@@ -164,24 +238,14 @@ def benchmarks_cohort_list(user, *, organization_id: str) -> dict[str, Any]:
     }
 
 
-def _caller_organization_slugs(user, access_token: str) -> set[str]:
-    """Connect organisation slugs the caller belongs to, per production Connect.
-
-    Mirrors ``workflows.py``'s ``_collect_user_opportunity_ids`` -- same fetch,
-    same cache, read for organisation slugs instead of opportunity ids.
-    """
-    data = fetch_user_organization_data(access_token, owner=getattr(user, "username", None))
-    if not data:
-        return set()
-    return {str(org.get("slug")) for org in (data.get("organizations") or []) if org.get("slug")}
-
-
 @register(
     name="benchmarks_publish",
     description=(
         "Publish a completed workflow run's graded figures to a benchmark cohort. Refuses "
-        "a run that is not completed -- its figures are still moving -- and refuses a caller "
-        "who lacks access to the cohort's organisation. Everything the publisher's own "
+        "a run that is not completed -- its figures are still moving -- refuses a caller "
+        "who lacks access to the cohort's organisation, refuses a run that does not belong "
+        "to the workflow_id given (that would record false provenance), and refuses a run "
+        "that carries no as-of date. Everything the publisher's own "
         "disclosure rules withhold (non-rate indicators, cohorts below min_peers/min_denominator "
         "after the rules run) is withheld and reported back, never silently dropped. If the "
         "run's snapshot is not the shape this publisher reads -- or yields no benchmarkable "
@@ -225,18 +289,24 @@ def benchmarks_publish(
     except BenchmarkCohort.DoesNotExist as exc:
         raise MCPToolError("NOT_FOUND", f"Benchmark cohort {cohort_id} not found.") from exc
 
-    token = require_connect_token(user)
-    if cohort.organization_id not in _caller_organization_slugs(user, token):
-        raise MCPToolError(
-            "PERMISSION_DENIED",
-            f"You do not have access to organisation {cohort.organization_id!r}, which owns cohort {cohort_id}.",
-        )
+    token, _ = _require_organization_access(user, cohort.organization_id, f"owns cohort {cohort_id}")
 
     wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         run = wda.get_run(run_id)
         if run is None:
             raise MCPToolError("NOT_FOUND", f"Run {run_id} not found.")
+        # A run loads fine under a workflow_id that is not its own, and the
+        # mismatch would be invisible: the state_key would be resolved from a
+        # FOREIGN definition's contract and `source_workflow_id` -- the
+        # provenance an anonymised figure's defensibility rests on -- would be
+        # written false.
+        if run.definition_id and int(run.definition_id) != int(workflow_id):
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                f"Run {run_id} belongs to workflow {int(run.definition_id)}, not {workflow_id}. "
+                "Publishing it under the wrong workflow would record false provenance.",
+            )
         if not run.is_completed:
             raise MCPToolError(
                 "INVALID_SCHEMA",
@@ -269,6 +339,17 @@ def benchmarks_publish(
             or (str(run.period_end)[:10] if run.period_end else None)
             or (str(run.completed_at)[:10] if run.completed_at else None)
         )
+        if not as_of:
+            # `as_of` is NOT NULL on BenchmarkPublication, so without this the
+            # refusal is a raw psycopg IntegrityError naming a column, which
+            # tells a caller nothing about which of the three sources it should
+            # have populated.
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                f"Run {run_id} carries no as-of date: its snapshot has no meta.as_of, and the run "
+                "has neither a period_end nor a completed_at to fall back on. A publication must "
+                "be dated, so there is nothing to publish.",
+            )
 
         publication = publish_benchmark(
             cohort,
