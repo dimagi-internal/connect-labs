@@ -2476,6 +2476,10 @@ function WorkflowUI({
       return e && typeof e.value === 'number' ? e.value : null;
     }
 
+    function dirOf(id) {
+      return (N_BY_ID[id] || {}).direction;
+    }
+
     function fmt(id, v) {
       if (v == null) return '—';
       var m = N_BY_ID[id] || {};
@@ -2494,6 +2498,38 @@ function WorkflowUI({
     // this reader can already see every one of these workers by name. Merging
     // would only hide the true shape of the distribution from someone entitled
     // to it.
+    // 1st/2nd/3rd/4th. The teens are the exception every naive version gets
+    // wrong (11th, not 11st) -- and the version before this one simply glued
+    // "th" on, so the live page showed "23th" and "92th".
+    function ordinal(n) {
+      var t = n % 100;
+      if (t >= 11 && t <= 13) return n + 'th';
+      return n + (['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+    }
+
+    // Position in the cohort, ties sharing a place (1, 2, 2, 4 -- never 1, 2,
+    // 2, 3): two workers on the same figure are the same rank, and the next
+    // worker is genuinely fourth.
+    //
+    // WHICH END IS FIRST is the registry's call, not ours. `higher` ranks the
+    // largest first, `lower` the smallest. `mid`/`mid2`/`none` have no best
+    // end at all -- a mid-target indicator is worst at BOTH extremes -- so
+    // ranking them best-first would invent a judgement the registry refuses to
+    // make. Those say "highest" instead, which describes the ordering without
+    // claiming it is a league table.
+    function rankOf(vals, v, dir) {
+      var better;
+      if (dir === 'lower')
+        better = function (x) {
+          return x < v;
+        };
+      else
+        better = function (x) {
+          return x > v;
+        };
+      return vals.filter(better).length + 1;
+    }
+
     var NBINS = 12;
     function binsOf(vals, lo, hi) {
       var w = (hi - lo) / NBINS || 1;
@@ -2599,12 +2635,6 @@ function WorkflowUI({
                 var lo = Math.min.apply(null, vals);
                 var hi = Math.max.apply(null, vals);
                 var span = hi - lo || 1;
-                var below = vals.filter(function (v) {
-                  return v < mineV;
-                }).length;
-                // Strictly below, so a worker tied with the whole cohort reads
-                // 0 rather than 50 -- "nobody is worse" is the true statement.
-                var rank = Math.round((100 * below) / vals.length);
                 return (
                   <div
                     key={c.id + c.label}
@@ -2657,59 +2687,86 @@ function WorkflowUI({
                           }),
                         );
                         return (
-                          <div className="flex-1 min-w-[80px] flex items-end gap-px h-14 border-b border-gray-200">
-                            {bins.map(function (b, i) {
-                              var mine = mineV >= b.lo && mineV <= b.hi;
-                              return (
-                                <div
-                                  key={i}
-                                  title={
-                                    b.count +
-                                    (b.count === 1 ? ' worker' : ' workers') +
-                                    ' between ' +
-                                    fmt(c.id, b.lo) +
-                                    ' and ' +
-                                    fmt(c.id, b.hi) +
-                                    (mine ? ' — including this worker' : '')
-                                  }
-                                  className="flex-1 flex flex-col justify-end items-stretch"
-                                >
-                                  {b.count ? (
+                          <div className="flex-1 min-w-[80px]">
+                            <div className="flex items-end gap-px h-14 border-b border-gray-200">
+                              {bins.map(function (b, i) {
+                                var mine = mineV >= b.lo && mineV <= b.hi;
+                                return (
+                                  <div
+                                    key={i}
+                                    title={
+                                      b.count +
+                                      (b.count === 1 ? ' worker' : ' workers') +
+                                      ' between ' +
+                                      fmt(c.id, b.lo) +
+                                      ' and ' +
+                                      fmt(c.id, b.hi) +
+                                      (mine ? ' — including this worker' : '')
+                                    }
+                                    className="flex-1 flex flex-col justify-end items-stretch"
+                                  >
+                                    {b.count ? (
+                                      <div
+                                        className={
+                                          'text-[8px] text-center leading-none mb-0.5 ' +
+                                          (mine
+                                            ? 'text-indigo-700 font-semibold'
+                                            : 'text-gray-400')
+                                        }
+                                      >
+                                        {b.count}
+                                      </div>
+                                    ) : null}
                                     <div
                                       className={
-                                        'text-[8px] text-center leading-none mb-0.5 ' +
-                                        (mine
-                                          ? 'text-indigo-700 font-semibold'
-                                          : 'text-gray-400')
+                                        'rounded-t-sm ' +
+                                        (mine ? 'bg-indigo-600' : 'bg-gray-300')
                                       }
-                                    >
-                                      {b.count}
-                                    </div>
-                                  ) : null}
-                                  <div
-                                    className={
-                                      'rounded-t-sm ' +
-                                      (mine ? 'bg-indigo-600' : 'bg-gray-300')
-                                    }
-                                    style={{
-                                      height:
-                                        Math.max(
-                                          b.count ? 2 : 0,
-                                          Math.round(
-                                            (40 * b.count) / (tall || 1),
-                                          ),
-                                        ) + 'px',
-                                    }}
-                                  />
-                                </div>
-                              );
-                            })}
+                                      style={{
+                                        height:
+                                          Math.max(
+                                            b.count ? 2 : 0,
+                                            Math.round(
+                                              (40 * b.count) / (tall || 1),
+                                            ),
+                                          ) + 'px',
+                                      }}
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {/* What the bands actually COVER. Without it a bar
+                              says how many workers, never at what value --
+                              which is most of the question. Every third edge
+                              plus the top, so the labels do not collide. */}
+                            <div className="relative h-3 mt-0.5">
+                              {bins.map(function (b, i) {
+                                if (i % 3) return null;
+                                return (
+                                  <span
+                                    key={i}
+                                    className="absolute top-0 text-[8px] text-gray-400 tabular-nums"
+                                    style={{ left: (i / NBINS) * 100 + '%' }}
+                                  >
+                                    {fmt(c.id, b.lo)}
+                                  </span>
+                                );
+                              })}
+                              <span className="absolute top-0 right-0 text-[8px] text-gray-400 tabular-nums">
+                                {fmt(c.id, hi)}
+                              </span>
+                            </div>
                           </div>
                         );
                       })()
                     )}
                     <div className="w-36 shrink-0 text-right text-gray-400 tabular-nums">
-                      {'above ' + rank + '% of ' + vals.length}
+                      {ordinal(rankOf(vals, mineV, dirOf(c.id))) +
+                        (dirOf(c.id) === 'higher' || dirOf(c.id) === 'lower'
+                          ? ' of '
+                          : ' highest of ') +
+                        vals.length}
                     </div>
                   </div>
                 );
@@ -2721,10 +2778,12 @@ function WorkflowUI({
               another. The count is the peers who actually SCORED that
               indicator, which is why it differs per row and is below the{' '}
               {peers.length} in the cohort: a peer under the indicator's minimum
-              denominator has no value to rank against. "Above 40%" is
-              positional, not a judgement — on an indicator where low is good it
-              is the worse end. Rows with fewer than {MIN_COHORT} scoring peers
-              are omitted rather than drawn thin.
+              denominator has no value to rank against. Rank counts ties as one
+              place, and runs best-first only where the registry says which end
+              is better — an indicator whose target is a middle value has no
+              best end, so it reads "highest of" and is an ordering, not a
+              league table. Rows with fewer than {MIN_COHORT} scoring peers are
+              omitted rather than drawn thin.
               {cohortView === 'bins'
                 ? ' Bands are equal-width over the cohort\u2019s range and every band is drawn, including empty ones \u2014 a gap in the distribution is information. Bands are NOT merged when thin: that rule guards a published benchmark from identifying someone, and nothing here is published to anyone who cannot already see these workers by name.'
                 : ''}
