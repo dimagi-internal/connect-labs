@@ -29,7 +29,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from connect_labs.supply_chain import records
-from connect_labs.supply_chain.forms import DATE, INPUT, SEARCHABLE, SELECT, TEXTAREA, to_payload
+from connect_labs.supply_chain.forms import DATE, INPUT, SEARCHABLE, SELECT, TEXTAREA, set_choices, to_payload
 from connect_labs.supply_chain.fulfilment_forms import ProvenancedForm
 from connect_labs.supply_chain.models import Commodity, Item, Movement, Receipt, Shipment, StockCount, SupplyPoint
 
@@ -141,9 +141,11 @@ class ShipmentForm(ProvenancedForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["status"].choices = [
-            (value, str(value).replace("_", " ").capitalize()) for value in records.SHIPMENT_STATUSES
-        ]
+        set_choices(
+            self,
+            "status",
+            [(value, str(value).replace("_", " ").capitalize()) for value in records.SHIPMENT_STATUSES],
+        )
         self.helper.layout = Layout(
             Row(Column("reference"), Column("sscc"), Column("carrier"), css_class="grid md:grid-cols-3 gap-x-6"),
             Row(
@@ -172,9 +174,11 @@ class ShipmentStatusForm(ProvenancedForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["status"].choices = [
-            (value, str(value).replace("_", " ").capitalize()) for value in records.SHIPMENT_STATUSES
-        ]
+        set_choices(
+            self,
+            "status",
+            [(value, str(value).replace("_", " ").capitalize()) for value in records.SHIPMENT_STATUSES],
+        )
         self.helper.layout = Layout(
             Row(Column("status"), Column("expected_on"), css_class="grid md:grid-cols-2 gap-x-6"),
             Field("source"),
@@ -292,9 +296,11 @@ class MovementForm(ProvenancedForm):
         self.fields["commodity"].empty_label = _("Select a product…")
         self.fields["commodity"].required = True
         self.fields["occurred_on"].required = True
-        self.fields["kind"].choices = [
-            (value, str(value).replace("_", " ").capitalize()) for value in records.MOVEMENT_KINDS
-        ]
+        set_choices(
+            self,
+            "kind",
+            [(value, str(value).replace("_", " ").capitalize()) for value in records.MOVEMENT_KINDS],
+        )
         self.helper.layout = Layout(
             Row(Column("kind"), Column("occurred_on"), css_class="grid md:grid-cols-2 gap-x-6"),
             Row(
@@ -398,11 +404,15 @@ class StockCountForm(ProvenancedForm):
         self.fields["item"].empty_label = _("Not recorded")
         self.fields["commodity"].required = True
         self.fields["counted_on"].required = True
-        self.fields["kind"].choices = [
-            ("self_reported", _("Somebody reported it")),
-            ("physical_count", _("Physically counted")),
-            ("override", _("Set by hand, overriding both")),
-        ]
+        set_choices(
+            self,
+            "kind",
+            [
+                ("self_reported", _("Somebody reported it")),
+                ("physical_count", _("Physically counted")),
+                ("override", _("Set by hand, overriding both")),
+            ],
+        )
         self.helper.layout = Layout(
             Row(
                 Column("supply_point"),

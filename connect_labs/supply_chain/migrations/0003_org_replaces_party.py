@@ -12,7 +12,6 @@ import django.db.models.deletion
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("labs", "0023_labsorg"),
         ("supply_chain", "0002_document_link_targets"),

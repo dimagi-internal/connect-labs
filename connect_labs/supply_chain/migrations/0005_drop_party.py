@@ -4,7 +4,6 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [("supply_chain", "0004_carry_parties_across")]
 
     operations = [

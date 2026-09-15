@@ -52,8 +52,16 @@ def carry_parties_across(apps, schema_editor):
         return
 
     sourced = (
-        "Contract", "Shipment", "Receipt", "Invoice", "Payment", "Document",
-        "Movement", "StockCount", "Distribution", "SupplyPoint",
+        "Contract",
+        "Shipment",
+        "Receipt",
+        "Invoice",
+        "Payment",
+        "Document",
+        "Movement",
+        "StockCount",
+        "Distribution",
+        "SupplyPoint",
     )
     for name in sourced:
         model = apps.get_model("supply_chain", name)
@@ -88,7 +96,6 @@ def unmigrate(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [("supply_chain", "0003_org_replaces_party")]
 
     operations = [
