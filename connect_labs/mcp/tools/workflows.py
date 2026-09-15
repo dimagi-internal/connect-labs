@@ -38,14 +38,15 @@ def _collect_labs_only_opp_ids(user) -> set[int]:
     labs_context — without this, multi-opp validation rejects the very synthetic
     opps the caller can see and run workflows on (e.g. a clone cohort under a
     labs-only program), because they never appear in production's opp list.
-    """
-    from connect_labs.labs.synthetic.models import SyntheticOpportunity
 
-    try:
-        candidates = SyntheticOpportunity.objects.filter(labs_only=True, enabled=True)
-        return {o.opportunity_id for o in candidates if o.is_visible_to(user)}
-    except Exception:  # noqa: BLE001 — registry trouble must not break validation of real opps
-        return set()
+    The walk itself now lives in ``labs/access/scopes.py`` alongside the
+    programme and organisation projections of the same query, so there is one
+    place that decides which synthetic opps a caller can see rather than one
+    per consumer.
+    """
+    from connect_labs.labs.access.scopes import labs_only_opportunity_ids
+
+    return labs_only_opportunity_ids(user)
 
 
 def _data_access(user, opportunity_id=None, program_id=None, organization_id=None) -> WorkflowDataAccess:

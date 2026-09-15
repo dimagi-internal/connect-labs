@@ -15,6 +15,7 @@ was no way to take the phantom invitations back out.
 import jsonschema
 import pytest
 
+from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
 
@@ -25,7 +26,7 @@ PROGRAM = 10509
 
 @pytest.fixture
 def da():
-    return SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+    return SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
 
 
 def op(da, name, **payload):
@@ -105,7 +106,7 @@ def test_another_programmes_invitation_is_not_reachable(da, invited):
     """The scope check that stops a delete crossing programmes. `not found`
     rather than `forbidden` on purpose: a caller outside the scope learns
     nothing about what exists inside it."""
-    other = SupplyDataAccess(access_token="unused", program_id=PROGRAM + 1)
+    other = SupplyDataAccess(access_token="unused", program_id=PROGRAM + 1, caller=SYSTEM)
     with pytest.raises(ValueError, match="not found"):
         op(other, "outreach_delete", outreach_id=invited["outreach"]["id"], reason="wrong programme")
     assert len(op(da, "outreach_list")) == 1

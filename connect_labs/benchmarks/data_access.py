@@ -19,14 +19,7 @@ without saying which set of peers it was drawn from.
 from __future__ import annotations
 
 from connect_labs.benchmarks.models import BenchmarkCohort, BenchmarkValue
-
-
-def _accessible_opp_ids(request) -> set[int]:
-    # Shared chokepoint with the synthetic registry, so labs-only opps and
-    # real Connect membership are resolved exactly one way.
-    from connect_labs.labs.synthetic.registry import accessible_opp_ids
-
-    return accessible_opp_ids(request)
+from connect_labs.labs.access.scopes import Caller, may_use
 
 
 def benchmarks_for_opportunity(request, opportunity_id: int) -> dict:
@@ -45,7 +38,7 @@ def benchmarks_for_opportunity(request, opportunity_id: int) -> dict:
     """
     opportunity_id = int(opportunity_id)
     empty: dict = {"as_of": None, "cohorts": {}, "indicators": {}}
-    if opportunity_id not in _accessible_opp_ids(request):
+    if may_use(Caller(request=request), opportunity_id=opportunity_id) is not None:
         return empty
 
     cohorts = list(BenchmarkCohort.for_opportunity(opportunity_id))

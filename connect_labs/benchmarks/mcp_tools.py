@@ -6,94 +6,91 @@ published and the read API returned ``{}`` forever. These are plain local
 ORM writes against ``BenchmarkCohort`` / ``BenchmarkCohortMember`` -- the labs
 DB is the system of record for benchmarks (see models.py), so unlike most
 labs apps there is no Connect token or LabsRecord API involved here.
+
+Who-is-this-caller used to be answered here twice -- once for organisation
+membership, once for opportunity holding -- reimplementing what
+``connect_labs.labs.access.scopes`` (``may_use``) now answers once, for every
+REAL-scoped app that keeps its own data in local Postgres (``data_access.py``
+consults the same module for the web read path). That module owns the
+network fetch and its TTL cache; this module keeps only what is genuinely its
+own. The labs-only synthetic-opp merge used to live here too -- it is now
+inside ``scopes`` itself, because the token surface needed it just as much as
+the web one and only the web one had it.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NoReturn
 
 from connect_labs.benchmarks.models import MIN_PEERS_FLOOR, BenchmarkCohort, BenchmarkCohortMember
 from connect_labs.benchmarks.publish import publish_benchmark
-from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data
+from connect_labs.labs.access import scopes
+from connect_labs.labs.access.scopes import Caller, may_use
 from connect_labs.mcp.connect_token import require_connect_token
 from connect_labs.mcp.tool_registry import MCPToolError, register
 from connect_labs.workflow.data_access import WorkflowDataAccess
 from connect_labs.workflow.templates import create_workflow_from_template, get_template, resolve_snapshot_contract
 
 
-def _caller_organization_data(user, access_token: str) -> dict[str, Any]:
-    """The caller's org tree from production Connect, or a named upstream refusal.
+def _raise_for_denial(reason: str | None, *, what: str | None = None) -> None:
+    """Map a `may_use` refusal onto this registry's error codes.
 
-    ``fetch_user_organization_data`` returns ``None`` when it cannot REACH
-    Connect, which is a different thing from "this caller belongs to nothing".
-    ``workflows.py`` draws exactly that line (UPSTREAM_ERROR vs
-    PERMISSION_DENIED) so an authorised publisher hitting a network blip is
-    not told they lack permission. Both branches still fail CLOSED -- this
-    raises either way, and nothing is written.
+    `may_use` returns the one named string ``scopes.UNKNOWABLE`` when it could
+    not REACH Connect to check -- a network blip, not "you belong to
+    nothing". ``workflows.py`` draws exactly that
+    line (UPSTREAM_ERROR vs PERMISSION_DENIED) so an authorised publisher
+    hitting a blip is not told they lack permission. Both branches still fail
+    CLOSED -- this raises either way, and nothing is written.
     """
-    data = fetch_user_organization_data(access_token, owner=getattr(user, "username", None))
-    if not data:
-        raise MCPToolError(
-            "UPSTREAM_ERROR",
-            "Could not reach production Connect to read your organisations, so organisation "
-            "access could not be checked. Nothing was written -- retry.",
-        )
-    return data
+    if reason is None:
+        return
+    if reason == scopes.UNKNOWABLE:
+        _raise_upstream()
+    raise MCPToolError("PERMISSION_DENIED", f"{reason}, which {what}." if what else reason)
 
 
-def _caller_organization_slugs(data: dict[str, Any]) -> set[str]:
-    """Connect organisation slugs the caller belongs to, per production Connect."""
-    return {str(org.get("slug")) for org in (data.get("organizations") or []) if org.get("slug")}
+def _raise_upstream() -> NoReturn:
+    raise MCPToolError(
+        "UPSTREAM_ERROR",
+        "Could not reach production Connect to check your access, so nothing could be "
+        "verified. Nothing was written -- retry.",
+    )
 
 
-def _caller_opportunity_ids(user, data: dict[str, Any]) -> set[int]:
-    """Opportunity ids the caller holds: production's, plus the labs-only
-    synthetic opps that never appear in production's list (same merge
-    ``workflows.py`` does before validating multi-opp writes)."""
-    # Lazy: connect_labs.mcp.tools.__init__ imports this module (via its
-    # wrapper), so a module-level import would close an import cycle. Promoting
-    # _collect_labs_only_opp_ids out of workflows.py into a shared module is the
-    # real fix and is a pending follow-up -- until then, import it here.
-    from connect_labs.mcp.tools.workflows import _collect_labs_only_opp_ids
+def _caller_opportunity_ids(caller: Caller) -> set[int]:
+    """Opportunity ids the caller holds -- production's and labs-only alike.
 
-    held = {int(opp["id"]) for opp in (data.get("opportunities") or []) if opp.get("id") is not None}
-    return held | _collect_labs_only_opp_ids(user)
-
-
-def _caller_labs_only_program_ids(user) -> set[int]:
-    """Labs-only synthetic program ids the caller can see (registry-backed, no prod call).
-
-    The program-scope mirror of ``_collect_labs_only_opp_ids``, using the same
-    derivation ``labs/context._merge_labs_only_opps`` uses for the org tree, so
-    the two surfaces cannot disagree about which program a synthetic opp is in.
+    The labs-only merge now happens inside the shared policy (which the web
+    surface got for free via ``get_org_data`` and the token surface did not),
+    so this is a straight delegation plus the one thing a set cannot carry:
+    ``ScopesUnavailable`` means Connect could not be REACHED. Returning an
+    empty set there would tell an authorised caller "you do not hold
+    opportunity N" because of a network blip -- the exact misdiagnosis
+    ``_raise_for_denial``'s UPSTREAM_ERROR branch exists to prevent. This is a
+    SECOND resolution (the organisation gate made the first), so the window
+    between them is real: a TTL expiry plus a blip lands exactly here.
     """
-    from connect_labs.labs.synthetic.models import SyntheticOpportunity
-    from connect_labs.labs.synthetic.org_tree import synthetic_program_id
-
     try:
-        candidates = SyntheticOpportunity.objects.filter(labs_only=True, enabled=True)
-        return {synthetic_program_id(opp) for opp in candidates if opp.is_visible_to(user)}
-    except Exception:  # noqa: BLE001 -- registry trouble must not break validation of real scopes
-        return set()
+        return scopes.opportunity_ids(caller)
+    except scopes.ScopesUnavailable:
+        _raise_upstream()
 
 
-def _require_organization_access(user, organization_id: str, what: str) -> tuple[str, dict[str, Any]]:
+def _require_organization_access(user, organization_id: str, what: str) -> tuple[str, Caller]:
     """The single organisation gate for every write in this module.
 
     Membership of a cohort IS the read permission (models.py), so a caller who
     can add an opportunity they hold to someone else's cohort has granted
     themselves that cohort's published peer figures without ever calling
-    publish. Every write therefore passes through here, and the caller's org
-    tree is returned so an opportunity-level check costs no extra round trip.
+    publish. Every write therefore passes through here, gated by the same
+    policy `data_access.py`'s read path consults -- and the resolved caller is
+    returned so an opportunity-level check costs no extra round trip (Connect's
+    own TTL cache absorbs the repeat fetch).
     """
     token = require_connect_token(user)
-    data = _caller_organization_data(user, token)
-    if organization_id not in _caller_organization_slugs(data):
-        raise MCPToolError(
-            "PERMISSION_DENIED",
-            f"You do not have access to organisation {organization_id!r}, which {what}.",
-        )
-    return token, data
+    caller = Caller(user=user, access_token=token)
+    _raise_for_denial(may_use(caller, organization_id=organization_id), what=what)
+    return token, caller
 
 
 def _serialize_cohort(cohort: BenchmarkCohort) -> dict[str, Any]:
@@ -209,13 +206,13 @@ def benchmarks_cohort_add_opportunities(
     except BenchmarkCohort.DoesNotExist as exc:
         raise MCPToolError("NOT_FOUND", f"No cohort with id {cohort_id}") from exc
 
-    _, org_data = _require_organization_access(user, cohort.organization_id, f"owns cohort {cohort_id}")
+    _, caller = _require_organization_access(user, cohort.organization_id, f"owns cohort {cohort_id}")
 
     # The org gate alone would still let a member of org A add an opportunity
     # belonging to org B into A's cohort, which publishes B's figures into a
     # cohort B never joined. The caller's opportunity list came back on the
     # SAME fetch the org gate already made, so this costs no extra round trip.
-    held = _caller_opportunity_ids(user, org_data)
+    held = _caller_opportunity_ids(caller)
     unheld = sorted({int(oid) for oid in opportunity_ids} - held)
     if unheld:
         raise MCPToolError(
@@ -436,7 +433,7 @@ def benchmarks_publish(
 def _shared_inheritance(
     user,
     token: str,
-    org_data: dict[str, Any],
+    caller: Caller,
     template_key: str,
     source_workflow_id,
     source_opportunity_id,
@@ -477,7 +474,7 @@ def _shared_inheritance(
     if source_opportunity_id is not None:
         # The same held-opportunities check every sibling write in this module
         # makes, off the SAME fetch, so it costs no extra round trip.
-        if int(source_opportunity_id) not in _caller_opportunity_ids(user, org_data):
+        if int(source_opportunity_id) not in _caller_opportunity_ids(caller):
             raise MCPToolError(
                 "PERMISSION_DENIED",
                 f"You do not hold opportunity {int(source_opportunity_id)}, so you cannot read a "
@@ -494,14 +491,14 @@ def _shared_inheritance(
         #
         # A REAL program id goes to production Connect, which checks the token's
         # user has membership of the owning entity and 404s otherwise. That is a
-        # deliberate residual: `org_data["programs"]` is on the same fetch and
-        # would be cheap to test, but its exact semantics (owning org vs.
-        # delivery partner) are production's to define, and mirroring them here
-        # would refuse legitimate callers for a check production already makes.
+        # deliberate residual: `may_use(caller, program_id=...)` would be cheap
+        # to call here, but its exact semantics (owning org vs. delivery
+        # partner) are production's to define, and mirroring them here would
+        # refuse legitimate callers for a check production already makes.
         from connect_labs.labs.synthetic.local_records_backend import is_labs_only_program_id
 
         program_id = int(source_program_id)
-        if is_labs_only_program_id(program_id) and program_id not in _caller_labs_only_program_ids(user):
+        if is_labs_only_program_id(program_id) and program_id not in scopes.labs_only_program_ids(user):
             raise MCPToolError(
                 "PERMISSION_DENIED",
                 f"You cannot see labs-only program {program_id}, so you cannot read a workflow "
@@ -509,7 +506,8 @@ def _shared_inheritance(
                 details={"unheld_program_ids": [program_id]},
             )
 
-    # Lazy, for the same import-cycle reason _caller_opportunity_ids documents.
+    # Lazy: connect_labs.mcp.tools.__init__ imports this module (via its wrapper),
+    # so a module-level import of a sibling tool module would close an import cycle.
     from connect_labs.mcp.tools.workflows import _linked_sources
 
     source_scope = (
@@ -611,7 +609,7 @@ def benchmarks_create_opp_reports(
     # bookkeeping here either: a cohort's membership IS the read grant for its
     # published peer figures, so a tool that creates the very workflows which
     # read them, against someone else's cohort, is another way in.
-    token, org_data = _require_organization_access(user, cohort.organization_id, f"owns cohort {cohort_id}")
+    token, caller = _require_organization_access(user, cohort.organization_id, f"owns cohort {cohort_id}")
 
     opportunity_ids = sorted(cohort.opportunity_ids)
     if not opportunity_ids:
@@ -620,7 +618,7 @@ def benchmarks_create_opp_reports(
     # Creating a workflow inside an opportunity's scope is a write into that
     # opportunity, so holding it is required -- the same check, off the same
     # fetch, as benchmarks_cohort_add_opportunities.
-    unheld = sorted(set(opportunity_ids) - _caller_opportunity_ids(user, org_data))
+    unheld = sorted(set(opportunity_ids) - _caller_opportunity_ids(caller))
     if unheld:
         raise MCPToolError(
             "PERMISSION_DENIED",
@@ -629,7 +627,7 @@ def benchmarks_create_opp_reports(
         )
 
     pipeline_sources, registry_source = _shared_inheritance(
-        user, token, org_data, template_key, source_workflow_id, source_opportunity_id, source_program_id
+        user, token, caller, template_key, source_workflow_id, source_opportunity_id, source_program_id
     )
 
     created: list[dict[str, Any]] = []
