@@ -11,10 +11,20 @@ on the Stock page.
 {% block supply_content %}
 
 <div class="flex flex-wrap items-end justify-between gap-4 mb-1">
-  <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Catalogue</h1>
-  <p class="text-sm text-gray-500">
-    {{ products|length }} product{{ products|length|pluralize }} this programme can buy against
-  </p>
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Catalogue</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      {{ products|length }} product{{ products|length|pluralize }} this programme can buy against
+    </p>
+  </div>
+  <div class="flex flex-wrap gap-2">
+    <a href="{% url 'supply_chain:item_create' %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">
+      <i class="fa-solid fa-plus mr-1"></i> Trade item
+    </a>
+    <a href="{% url 'supply_chain:product_create' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+      <i class="fa-solid fa-plus mr-1"></i> Product
+    </a>
+  </div>
 </div>
 
 {% comment %}
