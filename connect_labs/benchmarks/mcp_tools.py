@@ -13,13 +13,14 @@ membership, once for opportunity holding -- reimplementing what
 REAL-scoped app that keeps its own data in local Postgres (``data_access.py``
 consults the same module for the web read path). That module owns the
 network fetch and its TTL cache; this module keeps only what is genuinely its
-own: the labs-only synthetic-opp merge, which ``scopes`` deliberately leaves
-to the labs-only registry (see its module docstring).
+own. The labs-only synthetic-opp merge used to live here too -- it is now
+inside ``scopes`` itself, because the token surface needed it just as much as
+the web one and only the web one had it.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NoReturn
 
 from connect_labs.benchmarks.models import MIN_PEERS_FLOOR, BenchmarkCohort, BenchmarkCohortMember
 from connect_labs.benchmarks.publish import publish_benchmark
@@ -34,54 +35,45 @@ from connect_labs.workflow.templates import create_workflow_from_template, get_t
 def _raise_for_denial(reason: str | None, *, what: str | None = None) -> None:
     """Map a `may_use` refusal onto this registry's error codes.
 
-    `may_use` returns the one specific string "cannot establish what this
-    caller may access" when it could not REACH Connect to check -- a network
-    blip, not "you belong to nothing". ``workflows.py`` draws exactly that
+    `may_use` returns the one named string ``scopes.UNKNOWABLE`` when it could
+    not REACH Connect to check -- a network blip, not "you belong to
+    nothing". ``workflows.py`` draws exactly that
     line (UPSTREAM_ERROR vs PERMISSION_DENIED) so an authorised publisher
     hitting a blip is not told they lack permission. Both branches still fail
     CLOSED -- this raises either way, and nothing is written.
     """
     if reason is None:
         return
-    if reason == "cannot establish what this caller may access":
-        raise MCPToolError(
-            "UPSTREAM_ERROR",
-            "Could not reach production Connect to check your access, so nothing could be "
-            "verified. Nothing was written -- retry.",
-        )
+    if reason == scopes.UNKNOWABLE:
+        _raise_upstream()
     raise MCPToolError("PERMISSION_DENIED", f"{reason}, which {what}." if what else reason)
 
 
-def _caller_opportunity_ids(user, caller: Caller) -> set[int]:
-    """Opportunity ids the caller holds: production's (via the shared policy),
-    plus the labs-only synthetic opps that never appear in production's list
-    (same merge ``workflows.py`` does before validating multi-opp writes)."""
-    # Lazy: connect_labs.mcp.tools.__init__ imports this module (via its
-    # wrapper), so a module-level import would close an import cycle. Promoting
-    # _collect_labs_only_opp_ids out of workflows.py into a shared module is the
-    # real fix and is a pending follow-up -- until then, import it here.
-    from connect_labs.mcp.tools.workflows import _collect_labs_only_opp_ids
-
-    return scopes.opportunity_ids(caller) | _collect_labs_only_opp_ids(user)
+def _raise_upstream() -> NoReturn:
+    raise MCPToolError(
+        "UPSTREAM_ERROR",
+        "Could not reach production Connect to check your access, so nothing could be "
+        "verified. Nothing was written -- retry.",
+    )
 
 
-def _caller_labs_only_program_ids(user) -> set[int]:
-    """Labs-only synthetic program ids the caller can see (registry-backed, no prod call).
+def _caller_opportunity_ids(caller: Caller) -> set[int]:
+    """Opportunity ids the caller holds -- production's and labs-only alike.
 
-    The program-scope mirror of ``_collect_labs_only_opp_ids``, using the same
-    derivation ``labs/context._merge_labs_only_opps`` uses for the org tree, so
-    the two surfaces cannot disagree about which program a synthetic opp is in.
-    Real (production) program ids are not this module's -- nor the shared
-    policy's -- to check; see ``_shared_inheritance``.
+    The labs-only merge now happens inside the shared policy (which the web
+    surface got for free via ``get_org_data`` and the token surface did not),
+    so this is a straight delegation plus the one thing a set cannot carry:
+    ``ScopesUnavailable`` means Connect could not be REACHED. Returning an
+    empty set there would tell an authorised caller "you do not hold
+    opportunity N" because of a network blip -- the exact misdiagnosis
+    ``_raise_for_denial``'s UPSTREAM_ERROR branch exists to prevent. This is a
+    SECOND resolution (the organisation gate made the first), so the window
+    between them is real: a TTL expiry plus a blip lands exactly here.
     """
-    from connect_labs.labs.synthetic.models import SyntheticOpportunity
-    from connect_labs.labs.synthetic.org_tree import synthetic_program_id
-
     try:
-        candidates = SyntheticOpportunity.objects.filter(labs_only=True, enabled=True)
-        return {synthetic_program_id(opp) for opp in candidates if opp.is_visible_to(user)}
-    except Exception:  # noqa: BLE001 -- registry trouble must not break validation of real scopes
-        return set()
+        return scopes.opportunity_ids(caller)
+    except scopes.ScopesUnavailable:
+        _raise_upstream()
 
 
 def _require_organization_access(user, organization_id: str, what: str) -> tuple[str, Caller]:
@@ -220,7 +212,7 @@ def benchmarks_cohort_add_opportunities(
     # belonging to org B into A's cohort, which publishes B's figures into a
     # cohort B never joined. The caller's opportunity list came back on the
     # SAME fetch the org gate already made, so this costs no extra round trip.
-    held = _caller_opportunity_ids(user, caller)
+    held = _caller_opportunity_ids(caller)
     unheld = sorted({int(oid) for oid in opportunity_ids} - held)
     if unheld:
         raise MCPToolError(
@@ -482,7 +474,7 @@ def _shared_inheritance(
     if source_opportunity_id is not None:
         # The same held-opportunities check every sibling write in this module
         # makes, off the SAME fetch, so it costs no extra round trip.
-        if int(source_opportunity_id) not in _caller_opportunity_ids(user, caller):
+        if int(source_opportunity_id) not in _caller_opportunity_ids(caller):
             raise MCPToolError(
                 "PERMISSION_DENIED",
                 f"You do not hold opportunity {int(source_opportunity_id)}, so you cannot read a "
@@ -506,7 +498,7 @@ def _shared_inheritance(
         from connect_labs.labs.synthetic.local_records_backend import is_labs_only_program_id
 
         program_id = int(source_program_id)
-        if is_labs_only_program_id(program_id) and program_id not in _caller_labs_only_program_ids(user):
+        if is_labs_only_program_id(program_id) and program_id not in scopes.labs_only_program_ids(user):
             raise MCPToolError(
                 "PERMISSION_DENIED",
                 f"You cannot see labs-only program {program_id}, so you cannot read a workflow "
@@ -514,7 +506,8 @@ def _shared_inheritance(
                 details={"unheld_program_ids": [program_id]},
             )
 
-    # Lazy, for the same import-cycle reason _caller_opportunity_ids documents.
+    # Lazy: connect_labs.mcp.tools.__init__ imports this module (via its wrapper),
+    # so a module-level import of a sibling tool module would close an import cycle.
     from connect_labs.mcp.tools.workflows import _linked_sources
 
     source_scope = (
@@ -625,7 +618,7 @@ def benchmarks_create_opp_reports(
     # Creating a workflow inside an opportunity's scope is a write into that
     # opportunity, so holding it is required -- the same check, off the same
     # fetch, as benchmarks_cohort_add_opportunities.
-    unheld = sorted(set(opportunity_ids) - _caller_opportunity_ids(user, caller))
+    unheld = sorted(set(opportunity_ids) - _caller_opportunity_ids(caller))
     if unheld:
         raise MCPToolError(
             "PERMISSION_DENIED",

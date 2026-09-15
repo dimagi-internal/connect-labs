@@ -75,7 +75,7 @@ def test_a_scope_inherited_from_labs_context_is_authorised_too():
     assert SupplyDataAccess(request=request, caller=Caller(request=request)).program_id == 176
 
 
-def _mcp_call(monkeypatch, org_data, **scope):
+def _mcp_call(monkeypatch, org_data, user=None, **scope):
     """Drive the generated MCP handler -- the shared construction all ~70 tools use.
 
     A fake operation is registered so the call exercises the real handler and
@@ -104,7 +104,7 @@ def _mcp_call(monkeypatch, org_data, **scope):
     with patch.dict(operations_module._REGISTRY, {"scope_probe": operation}):
         handler = _make_handler(_Ref)
         with patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"):
-            return handler(user=MagicMock(username="someone"), **scope)
+            return handler(user=user or MagicMock(username="someone"), **scope)
 
 
 def test_the_mcp_surface_serves_a_programme_the_caller_holds(monkeypatch):
@@ -125,25 +125,68 @@ def test_the_mcp_surface_refuses_when_connect_cannot_be_reached(monkeypatch):
         _mcp_call(monkeypatch, None, program_id=176)
 
 
+@pytest.mark.django_db
+def test_the_mcp_surface_serves_a_labs_only_programme(monkeypatch):
+    """The demo surface this catalogue exists for.
+
+    Production Connect has never heard of programme 10501, so the org tree its
+    fetch returns cannot contain it. Resolving a token caller from that fetch
+    ALONE therefore refused every labs-only programme -- 10501, 10063, every OES
+    demo scope -- and all ~70 generated tools with it, while the web pages over
+    the same data worked because `get_org_data` merges the labs-only tree in.
+    The policy merges both now, so this asserts the surface, not the helper.
+    """
+    from django.contrib.auth import get_user_model
+
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10501,
+        program_id=10501,
+        labs_only=True,
+        enabled=True,
+        org_name="OES",
+        allowed_domains=[],
+        gdrive_folder_id="x",
+    )
+    entitled = get_user_model().objects.create(
+        username="entitled", email="entitled@example.org", view_synthetic_opps=True
+    )
+    assert _mcp_call(monkeypatch, ORG_DATA, user=entitled, program_id=10501) == {"program_id": 10501}
+
+    # The other side of the same fixture: the registry decides who sees it, so a
+    # caller who is not entitled to the synthetic opp is still refused.
+    not_entitled = get_user_model().objects.create(
+        username="stranger", email="stranger@example.org", view_synthetic_opps=False
+    )
+    with pytest.raises(PermissionDenied):
+        _mcp_call(monkeypatch, ORG_DATA, user=not_entitled, program_id=10501)
+
+
 def test_the_system_escape_hatch_is_greppable():
     """Widening the set of unauthenticated entry points must be a reviewed act."""
     import pathlib
 
     root = pathlib.Path(__file__).resolve().parents[2]
+    # Keyed by PATH, not by basename. `p.name` exempted any file called
+    # scopes.py anywhere in the tree -- including `supply_chain/scopes.py`,
+    # which is a different module about synthetic programmes and has nothing to
+    # do with the escape hatch. An allow-list that matches on a name this
+    # common is not an allow-list.
     allowed = {
-        "supply_dev_seed.py",
-        "supply_ingest_stock_reports.py",
-        "supply_load_bootstrap.py",
-        "scopes.py",
+        "supply_chain/management/commands/supply_dev_seed.py",
+        "supply_chain/management/commands/supply_ingest_stock_reports.py",
+        "supply_chain/management/commands/supply_load_bootstrap.py",
+        "labs/access/scopes.py",
     }
     offenders = sorted(
-        p.name
+        p.relative_to(root).as_posix()
         for p in root.rglob("*.py")
         # Match the IMPORT or USE, not the bare word: "SYSTEM" already appears
         # in audit_trail/service.py, audit_trail/models.py, audit/prior_audit_models.py
         # and pulse.css for unrelated reasons, and a bare-string grep fails on those.
         if "tests" not in p.parts
-        and p.name not in allowed
+        and p.relative_to(root).as_posix() not in allowed
         and ("caller=SYSTEM" in p.read_text() or "import SYSTEM" in p.read_text())
     )
     assert offenders == [], f"unexpected SYSTEM callers: {offenders}"

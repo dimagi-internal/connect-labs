@@ -689,13 +689,60 @@ def test_publish_lets_snapshot_shape_error_propagate_rather_than_publishing_noth
 
 
 def test_both_surfaces_authorise_through_the_one_policy():
-    """One policy, both surfaces -- the duplication is what drifted."""
+    """One policy, both surfaces -- the duplication is what drifted.
+
+    The binding check is structural: each module's `may_use` must BE the
+    policy's object, which a mention in a comment or a local reimplementation
+    of the same name cannot satisfy. The source-string assertions after it are
+    a supplement -- they pin that the two names the duplication went by have
+    not come back -- and a source string alone would pass on a comment, so they
+    are not the evidence here.
+    """
     import inspect
 
     from connect_labs.benchmarks import data_access, mcp_tools
+    from connect_labs.labs.access import scopes
 
     for module in (data_access, mcp_tools):
-        src = inspect.getsource(module)
-        assert "may_use" in src, f"{module.__name__} does not consult the shared policy"
+        assert (
+            getattr(module, "may_use", None) is scopes.may_use
+        ), f"{module.__name__} does not consult the shared policy"
     assert "_caller_organization_slugs" not in inspect.getsource(mcp_tools)
     assert "_accessible_opp_ids" not in inspect.getsource(data_access)
+
+
+def test_an_unreachable_connect_at_the_opportunity_check_is_upstream_not_denied(monkeypatch):
+    """The opportunity gate is a SECOND resolution, and the window is real.
+
+    `_require_organization_access` resolves the caller once; the held-opportunity
+    check resolves again. If Connect's TTL cache expires in between and the
+    refetch blips, the shared policy used to hand back an empty set and this
+    tool told an authorised caller "You do not hold opportunity 523" -- a
+    permission verdict for a network fault, which is exactly what
+    `_raise_for_denial`'s UPSTREAM_ERROR branch exists to avoid on the org gate.
+    """
+    from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_add_opportunities, benchmarks_cohort_create
+
+    _grant(monkeypatch, organizations=("dimagi-kmc",), opportunity_ids=(523,))
+    user = _user()
+    cohort = benchmarks_cohort_create(user=user, name="KMC", organization_id="dimagi-kmc")
+
+    calls = {"n": 0}
+
+    def _blip_after_the_org_gate(token, owner=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"organizations": [{"slug": "dimagi-kmc"}], "opportunities": [{"id": 523}]}
+        return None
+
+    monkeypatch.setattr(
+        "connect_labs.labs.access.scopes.fetch_user_organization_data",
+        _blip_after_the_org_gate,
+    )
+
+    with pytest.raises(MCPToolError) as exc_info:
+        benchmarks_cohort_add_opportunities(user=user, cohort_id=cohort["id"], opportunity_ids=[523])
+    assert exc_info.value.code == "UPSTREAM_ERROR"
+    assert calls["n"] >= 2, "the org gate never resolved, so this did not exercise the second fetch"
+    # Fails closed either way: nothing was written.
+    assert BenchmarkCohort.objects.get(pk=cohort["id"]).members.count() == 0
