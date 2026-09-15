@@ -12,6 +12,7 @@ from decimal import Decimal
 import jsonschema
 import pytest
 
+from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.models import Movement
 from connect_labs.supply_chain.operations import call_operation
@@ -25,7 +26,7 @@ TODAY = date(2026, 9, 12)
 
 @pytest.fixture
 def da():
-    return SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+    return SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
 
 
 def op(da, name, **payload):

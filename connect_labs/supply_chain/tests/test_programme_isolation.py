@@ -26,6 +26,7 @@ from decimal import Decimal
 
 import pytest
 
+from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 
 pytestmark = pytest.mark.django_db
@@ -35,7 +36,7 @@ THEIRS = 10502
 
 
 def access(program_id):
-    return SupplyDataAccess(access_token="unused", program_id=program_id)
+    return SupplyDataAccess(access_token="unused", program_id=program_id, caller=SYSTEM)
 
 
 def _commodity(da):
@@ -195,7 +196,7 @@ class TestTheScopeItselfRefuses:
     def test_no_programme_at_all_refuses_rather_than_reading_everything(self):
         """The dangerous failure is not an error -- it is a query with no
         programme filter that quietly returns every programme's rows."""
-        unscoped = SupplyDataAccess(access_token="unused")
+        unscoped = SupplyDataAccess(access_token="unused", caller=SYSTEM)
         with pytest.raises(ValueError) as caught:
             unscoped.list_rounds()
         assert "program" in str(caught.value).lower()

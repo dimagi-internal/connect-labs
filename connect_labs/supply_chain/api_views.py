@@ -12,6 +12,7 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
+from connect_labs.labs.access.scopes import Caller
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import all_operations, call_operation, get_operation
 
@@ -20,7 +21,12 @@ logger = logging.getLogger(__name__)
 
 def _access(request) -> SupplyDataAccess:
     token = (request.session.get("labs_oauth") or {}).get("access_token")
-    return SupplyDataAccess(access_token=token, request=request, user=request.user)
+    return SupplyDataAccess(
+        access_token=token,
+        request=request,
+        user=request.user,
+        caller=Caller(request=request, user=request.user),
+    )
 
 
 def has_program_context(request) -> bool:

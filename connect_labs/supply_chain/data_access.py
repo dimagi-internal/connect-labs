@@ -12,6 +12,11 @@ What it still owns, and what it deliberately does not:
     shared across a programme's rounds, and ideally across an organisation's
     programmes. Which of the two you get depends on the caller, so the choice
     is made here, once, via `scope_key`.
+  - **Authorising that scope.** Because the labs database is the system of
+    record, no downstream Connect call stands behind a caller-supplied
+    organisation or programme. The constructor consults
+    `labs/access/scopes.py` -- the same caller resolution it already uses for
+    attribution, finally used to decide as well as to record.
   - **Referential existence.** An orphan quote pointing at a round that does
     not exist would never appear in any comparison -- invisible rather than
     merely wrong -- so the checks raise with the name of the thing missing.
@@ -23,8 +28,10 @@ What it still owns, and what it deliberately does not:
 import logging
 from datetime import date
 
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 
+from connect_labs.labs.access.scopes import Caller, may_use
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import gs1, scopes
 from connect_labs.supply_chain.fulfilment.repository import FulfilmentRepositoryMixin
@@ -168,12 +175,32 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         opportunity_id=None,
         request=None,
         user=None,
+        caller: Caller | None = None,
     ):
         if request is not None and hasattr(request, "labs_context"):
             context = request.labs_context
             organization_id = organization_id or context.get("organization_id")
             program_id = program_id or context.get("program_id")
             opportunity_id = opportunity_id or context.get("opportunity_id")
+
+        # Authorise the scope AFTER the labs_context merge, so what gets checked
+        # is what this object will actually query with -- a scope inherited from
+        # the session is exactly as caller-supplied as one passed by argument.
+        #
+        # This is the only place that can do it. The labs database is this app's
+        # system of record, so unlike every other labs app there is no downstream
+        # LabsRecord call at which Connect would check membership: an unchecked
+        # organization_id here reaches Postgres and is answered. A caller that
+        # cannot be resolved is refused rather than trusted; `SYSTEM` is the
+        # explicit, greppable escape for entry points that have no user.
+        denied = may_use(
+            caller,
+            organization_id=organization_id,
+            program_id=program_id,
+            opportunity_id=opportunity_id,
+        )
+        if denied:
+            raise PermissionDenied(denied)
 
         # Kept on the signature because every caller passes it and because a
         # future sync back to Connect will need it again. Nothing in this

@@ -11,6 +11,7 @@ from datetime import date, timedelta
 
 import pytest
 
+from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.checks import CATEGORIES, KIND_CATEGORIES, KINDS
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
@@ -24,7 +25,7 @@ TODAY = date.today()
 
 @pytest.fixture
 def da():
-    return SupplyDataAccess(access_token="unused", program_id=PROGRAM)
+    return SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
 
 
 def op(da, name, **payload):

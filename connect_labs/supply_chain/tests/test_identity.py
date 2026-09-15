@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
+from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.identity import IdentityUnresolved, caller_org_ids, resolve_org, source_for
@@ -59,7 +60,7 @@ class _Request:
 
 def _session_access(org_ids):
     request = _Request(org_ids)
-    access = SupplyDataAccess(program_id=PROGRAM, request=request)
+    access = SupplyDataAccess(program_id=PROGRAM, request=request, caller=SYSTEM)
     return access, request
 
 
@@ -68,7 +69,7 @@ class TestWhoIsAsking:
         """None and the empty set must not be conflated: one means there is
         nobody to ask, the other means we asked and the answer was nothing.
         A command that cannot say who it acts for has to be told."""
-        access = SupplyDataAccess(access_token="local", program_id=PROGRAM)
+        access = SupplyDataAccess(access_token="local", program_id=PROGRAM, caller=SYSTEM)
         assert caller_org_ids(access) is None
 
     def test_the_session_route_needs_no_round_trip(self):
@@ -81,7 +82,7 @@ class TestWhoIsAsking:
         """No session on that route, so the same list comes from the token --
         cached with a TTL upstream, so a write is not a round trip."""
         user = object()
-        access = SupplyDataAccess(program_id=PROGRAM, user=user)
+        access = SupplyDataAccess(program_id=PROGRAM, user=user, caller=SYSTEM)
         with patch("connect_labs.labs.connect_tokens.get_valid_access_token", return_value="tok"), patch(
             "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data",
             return_value={"organizations": [{"id": 11}]},
@@ -121,7 +122,7 @@ class TestWhoIsAsking:
         """A network blip is not a revoked permission. The empty set would
         read as "belongs to nothing" and get reported as a permission error."""
         user = object()
-        access = SupplyDataAccess(program_id=PROGRAM, user=user)
+        access = SupplyDataAccess(program_id=PROGRAM, user=user, caller=SYSTEM)
         with patch("connect_labs.labs.connect_tokens.get_valid_access_token", return_value="tok"), patch(
             "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data", return_value=None
         ):
@@ -174,7 +175,7 @@ class TestWhichOrganisation:
         """
         _org("dimagi", "programme_org", None)
         _org("kano-llo", "partner_org", 8)
-        access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user())
+        access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user(), caller=SYSTEM)
         assert resolve_org(access).slug == "dimagi"
 
     def test_dimagi_staff_resolve_to_dimagi_even_before_a_row_exists(self):
@@ -182,7 +183,7 @@ class TestWhichOrganisation:
         -- the state programme 10063 was in, where no setup step had ever
         created a row for us."""
         _org("kano-llo", "partner_org", 8)
-        access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user())
+        access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user(), caller=SYSTEM)
         # Dimagi always resolves to Dimagi, creating the row on first use:
         # an organisation labs already acts as is not something to wait for.
         assert resolve_org(access).slug == "dimagi"
@@ -191,8 +192,8 @@ class TestWhichOrganisation:
         """The point of the rewrite. Dimagi is Dimagi in programme 10505 and
         in 10600 -- one row, not one per programme -- so attribution cannot
         depend on which programme a setup step happened to run in."""
-        here = resolve_org(SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user()))
-        there = resolve_org(SupplyDataAccess(program_id=10_600, user=_dimagi_user()))
+        here = resolve_org(SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user(), caller=SYSTEM))
+        there = resolve_org(SupplyDataAccess(program_id=10_600, user=_dimagi_user(), caller=SYSTEM))
         assert here.pk == there.pk == LabsOrg.objects.get(slug="dimagi").pk
 
 
@@ -251,7 +252,7 @@ class TestStamping:
         """The management-command route. Refusing here would turn a missing
         argument into a permission error, and the commands that write
         provenance already pass their organisation."""
-        access = SupplyDataAccess(access_token="local", program_id=PROGRAM)
+        access = SupplyDataAccess(access_token="local", program_id=PROGRAM, caller=SYSTEM)
         payload = self._contract(source="partner_reported", recorded_by_org_id=3)
         assert self._stamp(access, payload) == payload
 
@@ -347,7 +348,7 @@ class TestRefusalsReachTheCaller:
         org_data = {"organizations": [{"id": 7, "slug": "dimagi"}]}
         # Scoped directly: what is under test is the exception-to-status
         # mapping, not whether the middleware admits a labs-only programme.
-        scoped = SupplyDataAccess(program_id=PROGRAM, user=user)
+        scoped = SupplyDataAccess(program_id=PROGRAM, user=user, caller=SYSTEM)
         with patch("connect_labs.labs.context.get_org_data", return_value=org_data), patch(
             "connect_labs.supply_chain.api_views._access", return_value=scoped
         ):
@@ -420,7 +421,7 @@ class TestReviewFindings1791:
             username = "kano-ops"
             is_authenticated = True
 
-        access = SupplyDataAccess(program_id=PROGRAM, user=_Partner())
+        access = SupplyDataAccess(program_id=PROGRAM, user=_Partner(), caller=SYSTEM)
         payload = {"data": {"kind": "other", "source": "we_recorded", "recorded_by_org_id": 999}}
         with patch(
             "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data", return_value=None
@@ -433,7 +434,7 @@ class TestReviewFindings1791:
         from connect_labs.supply_chain.identity import stamp_provenance
         from connect_labs.supply_chain.operations import get_operation
 
-        access = SupplyDataAccess(access_token="local", program_id=PROGRAM)
+        access = SupplyDataAccess(access_token="local", program_id=PROGRAM, caller=SYSTEM)
         payload = {"data": {"kind": "other", "source": "partner_reported", "recorded_by_org_id": 3}}
         assert stamp_provenance(access, get_operation("document_attach"), payload) == payload
 
@@ -463,7 +464,7 @@ class TestReviewFindings1791:
         """Keyed only on the slug, a rename looked like a new organisation and
         the insert hit the unique Connect id -- a rename failing as a database
         error."""
-        access = SupplyDataAccess(program_id=PROGRAM)
+        access = SupplyDataAccess(program_id=PROGRAM, caller=SYSTEM)
         first = access.upsert_org({"slug": "acme", "name": "Acme", "connect_organization_id": 42})
         second = access.upsert_org({"slug": "acme-renamed", "name": "Acme Ltd", "connect_organization_id": 42})
         assert first.pk == second.pk

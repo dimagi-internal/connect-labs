@@ -28,6 +28,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
+from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.labs.integrations.connect.export_client import ExportAPIClient
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
@@ -66,6 +67,9 @@ class Command(BaseCommand):
             access_token=self._token(options),
             program_id=options["program"],
             opportunity_id=options["opportunity"],
+            # An operator-run command: the programme and opportunity come from
+            # argv, not from a signed-in caller there is anything to check.
+            caller=SYSTEM,
         )
 
         visits = self._visits(options)

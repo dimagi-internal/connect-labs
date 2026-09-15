@@ -2,6 +2,7 @@
 web pages have is a tool, and a new operation needs no work here.
 """
 
+from connect_labs.labs.access.scopes import Caller
 from connect_labs.mcp.connect_token import require_connect_token
 from connect_labs.mcp.tool_registry import register
 from connect_labs.supply_chain.data_access import SupplyDataAccess
@@ -31,6 +32,10 @@ def _make_handler(operation):
             # is not a round trip). Without this an MCP write could only
             # believe whatever organisation the payload claimed.
             user=user,
+            # ...and the same resolution decides whether the organisation and
+            # programme named above may be used at all. One construction
+            # authorises all ~70 generated tools.
+            caller=Caller(user=user, access_token=token),
         )
         # Route through call_operation, not operation.handler directly. FastMCP's
         # own schema validation lives in FunctionTool.run, which RegistryTool
