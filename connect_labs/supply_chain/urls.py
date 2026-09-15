@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.urls import path
 
-from connect_labs.supply_chain import api_views, reference_views, views
+from connect_labs.supply_chain import api_views, network_views, reference_views, views
 from connect_labs.supply_chain.procurement import views as procurement_views
 
 app_name = "supply_chain"
@@ -31,6 +31,14 @@ urlpatterns = [
     path("suppliers/new/", reference_views.SupplierCreateView.as_view(), name="supplier_create"),
     path("suppliers/<int:supplier_id>/", views.SupplierDetailView.as_view(), name="supplier_detail"),
     path("suppliers/<int:supplier_id>/edit/", reference_views.SupplierUpdateView.as_view(), name="supplier_edit"),
+    # Organisations are labs-wide rather than programme-scoped, and they sit
+    # under Suppliers in the nav because you visit them to bind a partner or
+    # fold a duplicate away, not daily. "merge" and "new" precede the int
+    # route so neither can be read as an id.
+    path("organisations/", network_views.OrganisationDirectoryView.as_view(), name="organisations"),
+    path("organisations/new/", network_views.OrgCreateView.as_view(), name="org_create"),
+    path("organisations/merge/", network_views.OrgMergeView.as_view(), name="org_merge"),
+    path("organisations/<int:org_id>/edit/", network_views.OrgUpdateView.as_view(), name="org_edit"),
     # shared API: one endpoint for the whole domain, because the registry is shared
     path("api/operations/", api_views.OperationListView.as_view(), name="api_operations"),
     path("api/<str:name>/", api_views.OperationDispatchView.as_view(), name="api_operation"),
@@ -106,6 +114,15 @@ urlpatterns = [
     ),
     path("orders/", views.OrdersView.as_view(), name="orders"),
     path("orders/<int:contract_id>/", views.OrderDetailView.as_view(), name="order_detail"),
+    # Before Stock, the way the work runs: stock has to have somewhere to rest
+    # before there is any to look at.
+    path("network/", network_views.NetworkView.as_view(), name="network"),
+    path("network/new/", network_views.SupplyPointCreateView.as_view(), name="supply_point_create"),
+    path(
+        "network/<int:supply_point_id>/edit/",
+        network_views.SupplyPointUpdateView.as_view(),
+        name="supply_point_edit",
+    ),
     path("stock/", views.StockView.as_view(), name="stock"),
     path("distribution/", views.DistributionView.as_view(), name="distribution"),
 ]

@@ -18,6 +18,7 @@ SUPPLY_TABS = (
     ("supply_chain:suppliers", "Suppliers"),
     ("supply_chain:procurement_round_board", "Sourcing"),
     ("supply_chain:orders", "Orders"),
+    ("supply_chain:network", "Network"),
     ("supply_chain:stock", "Stock"),
     ("supply_chain:distribution", "Distribution"),
 )
@@ -35,6 +36,9 @@ TAB_FOR_VIEW = {
     "supply_chain:item_detail": "supply_chain:catalogue",
     "supply_chain:supplier_detail": "supply_chain:suppliers",
     "supply_chain:order_detail": "supply_chain:orders",
+    # Organisations are infrastructure rather than a daily destination, so they
+    # read as part of Suppliers rather than taking a tab of their own.
+    "supply_chain:organisations": "supply_chain:suppliers",
 }
 
 

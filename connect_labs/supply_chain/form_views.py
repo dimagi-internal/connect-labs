@@ -22,6 +22,7 @@ from django.views.generic import View
 from django.views.generic.edit import FormView
 
 from connect_labs.supply_chain.api_views import _access, has_program_context
+from connect_labs.supply_chain.identity import IdentityUnresolved
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation, get_operation
 
@@ -125,6 +126,17 @@ class OperationFormView(SupplyWriteMixin, FormView):
 
         try:
             result = self.op(self.operation, **payload)
+        except IdentityUnresolved as exc:
+            # A ValueError, so the clause below would catch it -- but its
+            # message names `org_upsert`, which is the right instruction for an
+            # API or MCP caller and useless to somebody looking at a browser.
+            # Rewritten here, in the surface that knows a screen exists, rather
+            # than in the domain that serves all three.
+            form.add_error(
+                None,
+                f"{exc} There is a screen for that: Suppliers → Organisations.",
+            )
+            return self.form_invalid(form)
         except jsonschema.ValidationError as exc:
             # The schema is stricter than the model in places, and where it
             # refuses, the message names the field. Attaching it to that field
