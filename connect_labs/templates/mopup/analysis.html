@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}CHC Mop-up — Analysis{% endblock %}
+{% block title %}WA Revisit — Analysis{% endblock %}
 
 {% block css %}
 {{ block.super }}
@@ -55,7 +55,7 @@
     opacity: 1;
   }
   /* Ward summary's three column groups (Geography / Connect Data / New
-     Mop-up Data) — a subtle tint plus a left border at each group boundary
+     WA Revisit Data) — a subtle tint plus a left border at each group boundary
      so the grouping reads at a glance, not just from the labels. */
   .ward-col-connect { background: #f8fafc; }
   .ward-col-new { background: #ecfdf5; }
@@ -74,7 +74,7 @@
 <div class="max-w-6xl mx-auto p-6 space-y-6" x-data>
   <div class="flex items-start justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">CHC Mop-up — Candidate Analysis</h1>
+      <h1 class="text-2xl font-bold text-gray-900">WA Revisit — Candidate Analysis</h1>
       <p class="text-sm text-gray-500">Run #{{ run_id }} — program #{{ program_id }}. Tune thresholds below; the candidate count updates live against already-loaded data.</p>
     </div>
     <div class="text-sm text-gray-500">
@@ -122,7 +122,7 @@
         <tr class="text-left text-gray-500 border-b border-gray-100">
           <th class="pb-2 pr-2">On</th>
           <th class="pb-2 pr-2">Indicator</th>
-          <th class="pb-2 pr-2">Threshold (%) <span class="info-icon" tabindex="0" data-tip="The cutoff below which a work area is flagged as a mop-up candidate for this indicator — an unconditional floor, no neighbor/FLW corroboration required. NCF/inaccessible has no threshold: any NCF or Inaccessible visit floors it.">ⓘ</span></th>
+          <th class="pb-2 pr-2">Threshold (%) <span class="info-icon" tabindex="0" data-tip="The cutoff below which a work area is flagged as a WA Revisit candidate for this indicator — an unconditional floor, no neighbor/FLW corroboration required. NCF/inaccessible has no threshold: any NCF or Inaccessible visit floors it.">ⓘ</span></th>
           <th class="pb-2 pr-2">Neighbor distance (m) <span class="info-icon" tabindex="0" data-tip="How close two work areas' centroids need to be to count as 'neighbors' for the cluster-aware filter. Deworming/MUAC/vaccination share one value; EVC shortfall and NCF/inaccessible each have their own. Only used when the filter above is enabled.">ⓘ</span></th>
           <th class="pb-2 pr-2">Min neighbor count <span class="info-icon" tabindex="0" data-tip="The fewest spatially-nearby neighbors that must ALSO be flagged on the same indicator to corroborate it. Only used when the filter above is enabled.">ⓘ</span></th>
           <th class="pb-2 pr-2"># WAs triggered <span class="info-icon" tabindex="0" data-tip="How many work areas this specific indicator flagged (after the optional cluster-aware filter, if enabled), under the current thresholds. Updates automatically a moment after you change a setting, or immediately if you hit Recompute.">ⓘ</span></th>
@@ -140,7 +140,7 @@
         <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 bg-gray-50">
           <th class="p-2 pb-1" colspan="3">Geography</th>
           <th class="p-2 pb-1 ward-col-connect ward-group-start" colspan="5">Connect data</th>
-          <th class="p-2 pb-1 ward-col-new ward-group-start" colspan="4">New mop-up data</th>
+          <th class="p-2 pb-1 ward-col-new ward-group-start" colspan="4">New WA Revisit data</th>
         </tr>
         <tr class="text-left text-gray-500 bg-gray-50">
           <th class="p-2">Ward</th><th class="p-2">LGA</th><th class="p-2">State</th>
@@ -214,7 +214,7 @@
 
     <div id="gap-mode-upload-controls" class="space-y-2 text-sm">
       <label class="block space-y-1">
-        <span class="text-gray-600">Building data file (CSV) <span class="info-icon" tabindex="0" data-tip="Needs latitude, longitude, wardname, lganame, statename columns (area_in_meters/confidence optional, kept if present). Rows for wards outside this mop-up round are fine to include -- only the wards actually being reviewed here get gap cells computed from them.">ⓘ</span></span>
+        <span class="text-gray-600">Building data file (CSV) <span class="info-icon" tabindex="0" data-tip="Needs latitude, longitude, wardname, lganame, statename columns (area_in_meters/confidence optional, kept if present). Rows for wards outside this WA Revisit round are fine to include -- only the wards actually being reviewed here get gap cells computed from them.">ⓘ</span></span>
         <input type="file" id="gap-upload-file" accept=".csv" class="base-input">
       </label>
       <button type="button" id="gap-upload-button" class="button outline-style">Upload</button>
@@ -244,7 +244,7 @@
   </section>
 
   <section>
-    <button type="button" id="create-plan" class="button primary-dark" {% if run.status != "locked" %}disabled{% endif %}>Create mop-up plan</button>
+    <button type="button" id="create-plan" class="button primary-dark" {% if run.status != "locked" %}disabled{% endif %}>Create WA Revisit plan</button>
   </section>
 
   </div>

@@ -61,7 +61,7 @@ def _make_fake_run_da(monkeypatch, runs=None):
                     "program_id": self.program_id,
                     "data": {
                         "status": STATUS_SETUP,
-                        "name": name or "CHC Mop-up",
+                        "name": name or "WA Revisit",
                         "target_opportunity_id": target_opportunity_id,
                         "selected_wards": [],
                         "date_from": None,
@@ -155,6 +155,16 @@ def test_program_opportunities_returns_empty_for_unknown_program(monkeypatch):
 # Phase 1 for a new one.
 
 
+def test_legacy_mopup_url_redirects_to_wa_revisit(client):
+    # The app was mounted at /mopup/ before its user-facing rename to "WA
+    # Revisit" -- old bookmarked links must keep working, redirected to the
+    # new /wa-revisit/ prefix (config/urls.py's mopup_legacy_redirect, same
+    # pattern as the rooftop-surveys -> microplans redirect).
+    resp = client.get("/mopup/program/217/")
+    assert resp.status_code == 302
+    assert resp.url == "/wa-revisit/program/217/"
+
+
 def test_program_home_requires_login(client):
     resp = client.get(reverse("mopup:program_home", kwargs={"program_id": 217}))
     assert resp.status_code in (302, 401, 403)
@@ -217,7 +227,7 @@ def test_program_home_shows_empty_state_with_no_runs(client, django_user_model, 
     monkeypatch.setattr(views_module, "MopupRunDataAccess", FakeDA)
     resp = client.get(reverse("mopup:program_home", kwargs={"program_id": 217}))
     assert resp.status_code == 200
-    assert b"No mop-up runs yet" in resp.content
+    assert b"No WA Revisit runs yet" in resp.content
 
 
 # --- MopupDeleteRunsView -----------------------------------------------------

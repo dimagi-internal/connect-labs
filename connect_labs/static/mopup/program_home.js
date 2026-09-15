@@ -28,7 +28,7 @@ window.MopupProgramHome = (function () {
     const ids = selectedIds();
     if (!ids.length) return;
     const confirmed = confirm(
-      `Delete ${ids.length} mop-up run(s)? This permanently erases all data for ` +
+      `Delete ${ids.length} WA Revisit run(s)? This permanently erases all data for ` +
         `${
           ids.length === 1 ? 'it' : 'them'
         } (thresholds, locked candidates, uploaded ` +
