@@ -108,13 +108,11 @@ def _user_of(caller: Caller):
 def _visible_labs_only_opps(user) -> list:
     """The labs-only synthetic opps this user may see. Registry-backed, no prod call.
 
-    THE one walk of `SyntheticOpportunity` for authorisation purposes. It was
-    previously open-coded in `mcp/tools/workflows.py` and again in
-    `benchmarks/mcp_tools.py`, each projecting a different field off the same
-    query; both now come here. `labs/context._merge_labs_only_opps` performs
-    the same walk to build the UI's org tree, and the id derivations below are
-    imported from `org_tree` -- the module that exists so those derivations
-    cannot drift between surfaces.
+    `workflows.py` and `benchmarks/mcp_tools.py` now delegate here for the
+    SyntheticOpportunity registry walk. `labs/context._merge_labs_only_opps`
+    still independently runs the same base query (filter by labs_only=True and
+    enabled=True, plus is_visible_to check). Consolidating that duplicate is
+    outstanding work. The id derivations below are imported from `org_tree`.
     """
     from connect_labs.labs.synthetic.models import SyntheticOpportunity
 
