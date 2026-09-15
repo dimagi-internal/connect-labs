@@ -51,8 +51,13 @@ from connect_labs.supply_chain.models import Outreach, Round, Supplier
 # select into a searchable one -- the same picker the tasks and opportunity
 # screens use, so a supplier list that grows past a dozen stays usable.
 INPUT = {"class": "base-input"}
-SELECT = {"class": "base-dropdown"}
-SEARCHABLE = {"class": "base-dropdown", "data-tomselect": "1"}
+# No `class` on a select. crispy_tailwind's select template emits its own
+# `class` attribute BEFORE the widget's attrs, so passing one produces two
+# `class` attributes on the tag -- invalid HTML, and the browser honours the
+# first, which means the class here was silently dropped. An input is
+# different: crispy MERGES `class` there, which is why `base-input` works.
+SELECT: dict = {}
+SEARCHABLE = {"data-tomselect": "1"}
 TEXTAREA = {"class": "base-input !h-auto min-h-24 py-2 resize-y", "rows": 3}
 DATE = {"class": "base-input", "type": "date"}
 

@@ -29,10 +29,13 @@ sachets are in the carton, and neither does a balance.
       {% if item.manufacturer %}<span class="ml-1">made by {{ item.manufacturer }}</span>{% endif %}
     </p>
   </div>
-  <span class="px-2.5 py-1 rounded-full text-xs font-medium
-    {% if item.status == 'active' %}bg-message-success text-message-success-text{% else %}bg-gray-100 text-gray-600{% endif %}">
-    {{ item.status|humanise }}
-  </span>
+  <div class="flex items-center gap-3">
+    <span class="px-2.5 py-1 rounded-full text-xs font-medium
+      {% if item.status == 'active' %}bg-message-success text-message-success-text{% else %}bg-gray-100 text-gray-600{% endif %}">
+      {{ item.status|humanise }}
+    </span>
+    <a href="{% url 'supply_chain:item_edit' item.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit</a>
+  </div>
 </div>
 
 <div class="bg-white border border-brand-border-light rounded-lg mb-6">
