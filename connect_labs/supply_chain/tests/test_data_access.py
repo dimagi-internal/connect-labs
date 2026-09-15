@@ -12,6 +12,7 @@ from decimal import Decimal
 
 import pytest
 
+from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.models import Commodity, Movement, Quote, SupplyPoint
 from connect_labs.supply_chain.scopes import SYNTHETIC_FLOOR
@@ -23,7 +24,9 @@ REAL_PROGRAM = 176
 
 
 def access(program_id=SYNTHETIC_PROGRAM, organization_id=None):
-    return SupplyDataAccess(access_token="unused", program_id=program_id, organization_id=organization_id)
+    return SupplyDataAccess(
+        access_token="unused", program_id=program_id, organization_id=organization_id, caller=SYSTEM
+    )
 
 
 @pytest.fixture
@@ -87,7 +90,7 @@ class TestScoping:
     def test_reference_data_refuses_to_be_read_without_a_programme(self):
         """A stand-in scope would merge every programme's catalogue into one."""
         with pytest.raises(ValueError) as caught:
-            SupplyDataAccess(access_token="unused").scope_key
+            SupplyDataAccess(access_token="unused", caller=SYSTEM).scope_key
         assert "program_id" in str(caught.value)
 
     def test_procurement_records_refuse_to_be_read_without_a_programme(self):

@@ -124,7 +124,17 @@ def test_mcp_handler_does_not_forward_scope_into_the_operation_payload():
 
     with patch.dict(operations_module._REGISTRY, {"fake_probe": fake_operation}):
         handler = _make_handler(_FakeOperationRef)
-        with patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"):
+        with (
+            patch("connect_labs.supply_chain.mcp_tools.require_connect_token", return_value="tok"),
+            # The handler now authorises the scope it is handed, which resolves
+            # the caller's org tree from their Connect token. This test is about
+            # scope-STRIPPING, so grant the scope rather than assert on it --
+            # test_scope_authorisation.py owns the allow/refuse pair.
+            patch(
+                "connect_labs.labs.access.scopes.fetch_user_organization_data",
+                lambda token, owner=None: {"organizations": [{"slug": "7"}], "programs": [{"id": 9}]},
+            ),
+        ):
             handler(user=MagicMock(), organization_id=7, program_id=9, foo="bar")
 
     assert captured["payload"] == {"foo": "bar"}
