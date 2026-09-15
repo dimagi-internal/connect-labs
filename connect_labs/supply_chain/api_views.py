@@ -1,5 +1,19 @@
 """HTTP adapter. One view dispatches every operation, so there is no
 per-endpoint glue that can drift from the MCP surface.
+
+**Every operation a CALLER may reach — which is not every operation.** Both
+views here read `agent_operations()`, the same list the MCP server builds its
+tools from, so the two surfaces expose exactly the same set. They used to read
+`all_operations()`, which meant the three `internal=True` operations
+(`catalogue_seed`, `tracker_import`, `stock_report_ingest`) were off the MCP
+catalogue and still POST-able here by any signed-in user — the flag did half
+its job. Seeds, bulk imports and ingests are an engineer's deliberate act
+against one programme, run through a management command with a shell.
+
+They stay in the registry, because those commands go through `call_operation`
+directly and would otherwise lose the schema validation and provenance
+stamping every other write gets. What changes is only what a request can
+reach.
 """
 
 import json
@@ -14,7 +28,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from connect_labs.labs.access.scopes import Caller
 from connect_labs.supply_chain.data_access import SupplyDataAccess
-from connect_labs.supply_chain.operations import all_operations, call_operation, get_operation
+from connect_labs.supply_chain.operations import agent_operations, call_operation
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +74,7 @@ class OperationListView(View):
                         "input_schema": operation.input_schema,
                         "is_write": operation.is_write,
                     }
-                    for operation in all_operations().values()
+                    for operation in agent_operations().values()
                 ]
             }
         )
@@ -70,10 +84,12 @@ class OperationListView(View):
 @method_decorator(login_required, name="dispatch")
 class OperationDispatchView(View):
     def post(self, request, name):
-        try:
-            get_operation(name)
-        except KeyError as exc:
-            raise Http404(f"no procurement operation named {name!r}") from exc
+        # One membership test, not "does it exist" followed by "may you reach
+        # it". An internal operation and an unknown name get the SAME 404, so a
+        # caller probing for what exists learns nothing from the difference —
+        # and there is nothing here for them either way.
+        if name not in agent_operations():
+            raise Http404(f"no supply operation named {name!r}")
 
         try:
             payload = json.loads(request.body or b"{}")

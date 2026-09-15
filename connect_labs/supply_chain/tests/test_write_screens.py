@@ -373,6 +373,120 @@ class TestTheScreensAreReachable:
         assert void_url not in voided, "a voided quote cannot be voided again"
 
 
+class TestRecordingAQuote:
+    """The screen that moved off its hand-rolled template onto this layer.
+
+    Its old tests covered the three things the hand-rolled version could get
+    wrong (a 500 on a typo, losing what was typed, injecting a submitted value
+    into JS) and none of the things the new one can: scoped pickers, the
+    price-basis rule, and the payload's shape. Mutation testing found that gap
+    by removing each guard and watching nothing go red.
+    """
+
+    def _post(self, **overrides):
+        payload = {
+            "round": "",
+            "supplier": "",
+            "commodity": "",
+            "item": "",
+            "as_quoted_amount": "52.42",
+            "as_quoted_unit": "per_pack",
+            "as_quoted_currency": "usd",
+            "quantity_basis": "500",
+            "quantity_basis_unit": "carton",
+            "pack_spec_source": "stated_on_quote",
+            "base_per_pack_stated": "150",
+            "base_unit_grams_stated": "92",
+            "freight_basis": "not_specified",
+            "freight_amount": "",
+            "duties_basis": "not_specified",
+            "duties_amount": "",
+            "shelf_life_months_stated": "",
+            "lead_time_days": "",
+            "incoterm": "",
+            "received_on": "",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_a_quote_is_recorded_as_stated(self, scoped, a_round, supplier, rutf):
+        response = scoped.post(
+            reverse("supply_chain:procurement_quote_entry"),
+            self._post(round=a_round.pk, supplier=supplier.pk, commodity=rutf.pk),
+        )
+        assert response.status_code == 302
+
+        made = Quote.objects.get(round=a_round, supplier=supplier)
+        assert made.as_quoted_amount == Decimal("52.42")
+        assert made.as_quoted_unit == "per_pack", "recorded as stated, not normalised on entry"
+        assert made.as_quoted_currency == "USD"
+
+    def test_the_pickers_offer_only_this_programme(self, scoped, a_round, supplier, rutf):
+        Supplier.objects.create(scope_key="prog:99999", name="A supplier in another programme")
+        Commodity.objects.create(scope_key="prog:99999", slug="theirs", name="A product in another programme")
+        Round.objects.create(program_id=99999, label="A round in another programme", lines=[], delivery_point={})
+
+        body = scoped.get(reverse("supply_chain:procurement_quote_entry")).content.decode()
+        assert "Northwind Foods" in body
+        for foreign in (
+            "A supplier in another programme",
+            "A product in another programme",
+            "A round in another programme",
+        ):
+            assert foreign not in body, foreign
+
+    def test_a_price_with_no_basis_is_refused(self, scoped, a_round, supplier, rutf):
+        """Without it a price compares with nothing, and comparing is what the
+        whole round is for."""
+        response = scoped.post(
+            reverse("supply_chain:procurement_quote_entry"),
+            self._post(round=a_round.pk, supplier=supplier.pk, commodity=rutf.pk, as_quoted_unit=""),
+        )
+        assert response.status_code == 200
+        assert "as_quoted_unit" in response.context["form"].errors
+        assert not Quote.objects.filter(round=a_round).exists()
+
+    def test_a_trade_item_that_is_not_a_version_of_the_product_is_refused(self, scoped, a_round, supplier, rutf):
+        from connect_labs.supply_chain.models import Item
+
+        other = Commodity.objects.create(scope_key=SCOPE, slug="rusf", name="RUSF")
+        wrong = Item.objects.create(scope_key=SCOPE, sku="X", name="Some RUSF", commodity=other)
+
+        response = scoped.post(
+            reverse("supply_chain:procurement_quote_entry"),
+            self._post(round=a_round.pk, supplier=supplier.pk, commodity=rutf.pk, item=wrong.pk),
+        )
+        assert response.status_code == 200
+        assert "item" in response.context["form"].errors
+
+    def test_arriving_from_a_round_preselects_it(self, scoped, a_round):
+        body = scoped.get(f"{reverse('supply_chain:procurement_quote_entry')}?round={a_round.pk}").content.decode()
+        chosen = re.search(r'<option value="(\d+)"\s+selected', body)
+        assert chosen and chosen.group(1) == str(a_round.pk)
+
+    def test_a_nonsense_round_parameter_does_not_raise(self, scoped):
+        """A URL is somebody else's input, including a bookmarked one."""
+        assert scoped.get(f"{reverse('supply_chain:procurement_quote_entry')}?round=notanumber").status_code == 200
+
+    def test_the_price_crosses_as_an_exact_string_and_the_product_by_slug(self, scoped, a_round, supplier, rutf):
+        """Invisible to a round-trip: 52.42 rounds back through a float, and a
+        payload carrying `commodity_id` instead of `commodity_slug` reaches the
+        same column anyway."""
+        from connect_labs.labs.access.scopes import SYSTEM
+        from connect_labs.supply_chain.data_access import SupplyDataAccess
+        from connect_labs.supply_chain.forms import QuoteForm
+
+        access = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
+        form = QuoteForm(self._post(round=a_round.pk, supplier=supplier.pk, commodity=rutf.pk), access=access)
+        assert form.is_valid(), form.errors
+
+        payload = form.payload()
+        assert payload["as_quoted_amount"] == "52.42"
+        assert not isinstance(payload["as_quoted_amount"], float)
+        assert payload["commodity_slug"] == "rutf"
+        assert "commodity_id" not in payload
+
+
 class TestThePayloadBoundary:
     """`to_payload` and the fixed/field precedence, tested directly.
 
