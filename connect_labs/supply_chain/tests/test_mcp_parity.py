@@ -6,7 +6,7 @@ import pytest
 from connect_labs.mcp import tool_registry
 from connect_labs.mcp.tool_registry import get_tool
 from connect_labs.supply_chain import operations as operations_module
-from connect_labs.supply_chain.mcp_tools import _make_handler
+from connect_labs.supply_chain.mcp_tools import TOOL_PREFIX, _make_handler
 from connect_labs.supply_chain.operations import all_operations, get_operation
 
 
@@ -14,7 +14,7 @@ def test_every_operation_is_exposed_as_an_mcp_tool():
     import connect_labs.supply_chain.mcp_tools  # noqa: F401  -- triggers registration
 
     for operation_name in all_operations():
-        assert get_tool(f"procurement_{operation_name}") is not None, operation_name
+        assert get_tool(f"{TOOL_PREFIX}{operation_name}") is not None, operation_name
 
 
 def test_the_mcp_tool_count_matches_the_operation_registry():
@@ -29,18 +29,16 @@ def test_the_mcp_tool_count_matches_the_operation_registry():
     """
     import connect_labs.supply_chain.mcp_tools  # noqa: F401
 
-    registered_procurement_tools = {
-        t["name"] for t in tool_registry.list_tools() if t["name"].startswith("procurement_")
-    }
-    expected = {f"procurement_{name}" for name in all_operations()}
-    assert registered_procurement_tools == expected
+    registered_supply_tools = {t["name"] for t in tool_registry.list_tools() if t["name"].startswith(TOOL_PREFIX)}
+    expected = {f"{TOOL_PREFIX}{name}" for name in all_operations()}
+    assert registered_supply_tools == expected
 
 
 def test_mcp_write_flags_match_the_operation_registry():
     import connect_labs.supply_chain.mcp_tools  # noqa: F401
 
     for name, operation in all_operations().items():
-        tool = get_tool(f"procurement_{name}")
+        tool = get_tool(f"{TOOL_PREFIX}{name}")
         assert tool.is_write == operation.is_write, name
 
 
@@ -55,7 +53,7 @@ def test_mcp_schemas_add_only_the_two_scope_properties():
     import connect_labs.supply_chain.mcp_tools  # noqa: F401
 
     for name, operation in all_operations().items():
-        tool = get_tool(f"procurement_{name}")
+        tool = get_tool(f"{TOOL_PREFIX}{name}")
         op_schema = operation.input_schema
         tool_schema = tool.input_schema
 

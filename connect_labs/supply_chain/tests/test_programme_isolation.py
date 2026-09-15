@@ -17,8 +17,8 @@ and a sample of three would have a better than even chance of missing it.
 
 Reference data (commodities, items, suppliers) is NOT here, and is not a
 leak: it is scoped by `scope_key`, shared across a programme's rounds by
-design, and `reference_scope_report` is the operation that says where it
-actually lives.
+design -- one tier, the programme -- so a row invisible from here is a row
+belonging to another programme.
 """
 
 from datetime import date
@@ -236,40 +236,3 @@ class TestTheDatesAndAmountsSurvive:
         found = ours.get_quote(quote.pk)
         assert found.as_quoted_amount == Decimal("52.42")
         assert found.received_on == date(2026, 5, 18)
-
-
-class TestTheScopeReport:
-    """`reference_scope_report` exists because an empty Catalogue tab has two
-    very different causes -- no data, or data sitting under a scope_key the
-    caller is not reading -- and from the page they look identical."""
-
-    def test_it_names_the_scope_this_caller_reads(self, ours):
-        from connect_labs.supply_chain.operations import call_operation
-
-        _commodity(ours)
-        report = call_operation("reference_scope_report", ours)
-        assert report["this_caller"] == f"prog:{OURS}"
-        mine = [s for s in report["scopes"] if s["is_this_caller"]]
-        assert len(mine) == 1
-        assert mine[0]["counts"]["commodity"] == 1
-
-    def test_it_shows_data_stranded_under_another_scope(self, ours, theirs):
-        """The whole point: from `ours` you can SEE that a catalogue exists
-        elsewhere, rather than concluding there is none."""
-        from connect_labs.supply_chain.operations import call_operation
-
-        _commodity(theirs)
-        report = call_operation("reference_scope_report", ours)
-        keys = {s["scope_key"] for s in report["scopes"]}
-        assert f"prog:{THEIRS}" in keys
-        assert not any(s["is_this_caller"] for s in report["scopes"])
-
-    def test_it_reports_rather_than_raises_when_the_caller_has_no_scope(self):
-        """A diagnostic that cannot run on the machine you are diagnosing is
-        no use: `scope_key` raises without a programme, and this has to say so
-        instead of propagating it."""
-        from connect_labs.supply_chain.operations import call_operation
-
-        report = call_operation("reference_scope_report", SupplyDataAccess(access_token="unused"))
-        assert report["this_caller"] is None
-        assert "program_id" in report["this_caller_unresolved"]

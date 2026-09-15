@@ -52,11 +52,8 @@ _ORG_DATA = _data_with(
     name="org_merge",
     summary=(
         "Merge two organisation rows that turn out to be one organisation: every reference moves to "
-        "the one you keep, the merged-away slug is kept as an alias so a lookup by the old name still "
-        "finds the right body, and the empty row is deleted. Reconciliation REPORTS duplicates rather "
-        "than merging them, because folding two histories on a resemblance is not automatic — this is "
-        "the deliberate act after a person has decided. Refused when the two are linked to different "
-        "Connect organisations, which is positive evidence they are not one body."
+        "the one you keep, the merged-away slug is kept as an alias, and the empty row is deleted. "
+        "Refused when the two are linked to different Connect organisations."
     ),
     input_schema=obj({"keep_id": ID, "merge_id": ID}, required=("keep_id", "merge_id")),
     is_write=True,
@@ -84,10 +81,9 @@ def org_list(access):
 @register_operation(
     name="org_upsert",
     summary=(
-        "Create or update an organisation by slug. Set connect_organization_id to bind it "
-        "to a Connect organisation, which is what lets that partner's own staff sign in and "
-        "record their own shipments, receipts and stock counts. An organisation with no "
-        "binding still works — we record on their behalf, marked as reported."
+        "Create or update an organisation by slug. Set connect_organization_id to bind it to a "
+        "Connect organisation, which is what lets that partner's own staff sign in and record their "
+        "own shipments, receipts and stock counts. Unbound still works — we record on their behalf."
     ),
     input_schema=obj({"data": _ORG_DATA}, required=("data",)),
     is_write=True,
@@ -124,13 +120,9 @@ def contract_get(access, contract_id):
 @register_operation(
     name="contract_create",
     summary=(
-        "Record a contract or purchase order. buyer_of_record is required and has no "
-        "default: import duty and VAT depend on who imports, so the same quoted price "
-        "yields a different landed cost depending on whether we, a local partner or an "
-        "agency is the buyer. Set duty_relief_claimed only alongside a duty_exemption "
-        "document — a claimed relief with nothing behind it derives as Unconfirmed, not "
-        "as zero. source says who told you this; it is required for everything below "
-        "the contract because those are stages we do not witness."
+        "Record a contract or purchase order. buyer_of_record is required and has no default: import "
+        "duty and VAT depend on who imports. Set duty_relief_claimed only alongside a duty_exemption "
+        "document. source is required — it says who told you."
     ),
     input_schema=obj({"data": _CONTRACT_DATA_CREATE}, required=("data",)),
     is_write=True,
@@ -269,10 +261,8 @@ def shipment_list(access, contract_id=None, status=None):
 @register_operation(
     name="shipment_record",
     summary=(
-        "Record a dispatch. Lines carry batch and expiry, because that is where those facts "
-        "first become knowable and a receipt later matches against them. A shipment posts "
-        "nothing to stock: goods in transit are real but they are not cover, and counting "
-        "them as on hand is how a network reads months of stock it does not have."
+        "Record a dispatch. Lines carry batch and expiry, which a receipt later matches against. A "
+        "shipment posts nothing to stock: goods in transit are real, but they are not cover."
     ),
     input_schema=obj({"data": _SHIPMENT_DATA}, required=("data",)),
     is_write=True,
@@ -308,9 +298,8 @@ def receipt_list(access, contract_id=None, supply_point_id=None):
     name="receipt_record",
     summary=(
         "Record a goods received note — the event that brings stock into existence. Posts one "
-        "movement per accepted line. Rejected quantity is kept on the line as a record of what "
-        "was refused and never enters the ledger, because goods turned away at the door were "
-        "never stock. Give commodity_slug when there is no contract to take it from."
+        "movement per accepted line. Rejected quantity is kept on the line and never enters the "
+        "ledger. Give commodity_slug when there is no contract to take it from."
     ),
     input_schema=obj({"data": _RECEIPT_DATA}, required=("data",)),
     is_write=True,
@@ -388,11 +377,9 @@ def document_list(access, kind=None, **links):
 @register_operation(
     name="document_attach",
     summary=(
-        "Attach evidence: either upload the file as content_base64, or point at where it "
-        "already lives with external_url. Give one, not both — two locations for one document "
-        "is two documents that can disagree. Uploads are stored through the configured storage "
-        "and hashed, so a later copy can be checked against the one a derivation was based on. "
-        "Anything over 12 MB belongs somewhere durable with an external_url pointing at it."
+        "Attach evidence: either upload the file as content_base64 or point at it with external_url. "
+        "Give one, not both. Uploads are hashed, so a later copy can be checked against the one a "
+        "derivation used. Over 12 MB, store it elsewhere and use external_url."
     ),
     input_schema=obj({"data": _DOCUMENT_DATA}, required=("data",)),
     is_write=True,
@@ -407,12 +394,9 @@ def document_attach(access, data):
 @register_operation(
     name="contract_landed_cost",
     summary=(
-        "The all-in cost of a contract, and the buyer it assumed. Import duty and VAT fall on "
-        "the importer, so the same goods at the same price cost different amounts depending on "
-        "whether we, a local partner or an agency is the buyer of record — the buyer is an "
-        "input, never a default. A duty relief claimed with no exemption document attached "
-        "comes back unconfirmed, not zero. Set compare_buyers to cost the same contract under "
-        "each of the three, which is what the choice is actually worth."
+        "The all-in cost of a contract and the buyer it assumed. The buyer of record is an input, "
+        "never a default: duty and VAT fall on the importer. A duty relief with no exemption document "
+        "comes back unconfirmed, not zero. Set compare_buyers to cost it under all three."
     ),
     input_schema=obj({"contract_id": ID, "compare_buyers": {"type": "boolean"}}, required=("contract_id",)),
 )
@@ -437,10 +421,9 @@ def contract_landed_cost(access, contract_id, compare_buyers=False):
 @register_operation(
     name="contract_match",
     summary=(
-        "The three-way match for a contract: ordered against received against invoiced, plus "
-        "what is safe to pay now. Computed, never stored — record a receipt and it recomputes. "
-        "payable_now is the value of what actually ARRIVED, never what was billed, which is the "
-        "control that catches a supplier invoicing for a consignment still sitting at customs."
+        "The three-way match for a contract: ordered against received against invoiced, plus what is "
+        "safe to pay now. Computed, never stored. payable_now is the value of what actually ARRIVED, "
+        "never what was billed."
     ),
     input_schema=obj({"contract_id": ID}, required=("contract_id",)),
 )

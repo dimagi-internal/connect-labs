@@ -12,7 +12,7 @@ from connect_labs.supply_chain.data_access import SupplyDataAccess
 # connect_labs.supply_chain in INSTALLED_APPS, so MCPConfig.ready() (which imports
 # this module transitively via tools/__init__.py) runs first: without this explicit
 # import, all_operations() below would see only the 9 root-level operations and
-# silently register no procurement_* tools at all.
+# silently register no supply_* tools at all.
 from connect_labs.supply_chain.fulfilment import operations as _fulfilment_operations  # noqa: F401
 from connect_labs.supply_chain.operations import all_operations, call_operation
 from connect_labs.supply_chain.procurement import operations as _procurement_operations  # noqa: F401
@@ -43,8 +43,23 @@ def _make_handler(operation):
         # them and would reject them if they did.
         return call_operation(operation.name, access, payload)
 
-    handler.__name__ = f"procurement_{operation.name}"
+    handler.__name__ = f"{TOOL_PREFIX}{operation.name}"
     return handler
+
+
+# The domain is supply, and only a third of it is procurement. The tools were
+# prefixed `procurement_` when sourcing was all there was, and the name stuck
+# through fulfilment, stock and distribution -- so `procurement_stock_on_hand`
+# and `procurement_distribution_record` told a reader the opposite of what
+# they do. Renaming is a breaking change to 73 tool names, taken once, rather
+# than carrying a lie in every one of them.
+#
+# `supply_` alone would collide: the OES demo app already registers
+# `supply_demo_reseed`, and the parity test -- which asserts that every tool
+# under this prefix came from this registry -- caught it immediately. The app
+# label is `supply_chain`, so that is the prefix, and it is one character
+# longer than the wrong name it replaces.
+TOOL_PREFIX = "supply_chain_"
 
 
 def _schema_with_scope(schema: dict) -> dict:
@@ -78,7 +93,7 @@ def _schema_with_scope(schema: dict) -> dict:
 
 for _operation in all_operations().values():
     register(
-        name=f"procurement_{_operation.name}",
+        name=f"{TOOL_PREFIX}{_operation.name}",
         description=_operation.summary,
         input_schema=_schema_with_scope(_operation.input_schema),
         is_write=_operation.is_write,

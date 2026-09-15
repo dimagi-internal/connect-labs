@@ -120,10 +120,9 @@ _DISTRIBUTION_DATA = _data_with(
 @register_operation(
     name="supply_point_list",
     summary=(
-        "List the places stock can rest in this programme — central and regional "
-        "stores, facilities, and each field worker's own holding (kind=user_held). "
-        "Filter by opportunity to get one opportunity's network. A worker is a supply "
-        "point, which is why stock held by a worker needs no separate concept."
+        "The places stock can rest in this programme — central and regional stores, facilities, and "
+        "each field worker's own holding (kind=user_held). Filter by opportunity to get one "
+        "opportunity's network."
     ),
     input_schema=obj(
         {
@@ -152,9 +151,8 @@ def supply_point_get(access, supply_point_id):
 @register_operation(
     name="supply_point_upsert",
     summary=(
-        "Create or update a supply point by slug. A kind=user_held point must name the "
-        "Connect user whose stock it is (connect_username), because nothing could ever "
-        "post stock to it otherwise. Set min_months_of_stock and max_months_of_stock to "
+        "Create or update a supply point by slug. A kind=user_held point must name the Connect user "
+        "whose stock it is (connect_username). Set min_months_of_stock and max_months_of_stock to "
         "make the resupply band data rather than a rule in code."
     ),
     input_schema=obj({"data": _SUPPLY_POINT_DATA}, required=("data",)),
@@ -196,10 +194,9 @@ def movement_list(access, supply_point_id=None, item_id=None, kind=None, since=N
 @register_operation(
     name="movement_record",
     summary=(
-        "Post one movement to the ledger — a transfer between stores, a loss, an expiry "
-        "write-off. Use receipt_record or distribution_record for those events instead, so "
-        "the ledger keeps its link back to the paperwork. A movement must touch at least "
-        "one supply point. Only kind=adjustment may carry a negative quantity."
+        "Post one movement to the ledger — a transfer between stores, a loss, an expiry write-off. "
+        "Use receipt_record or distribution_record for those events instead. A movement must touch at "
+        "least one supply point, and only kind=adjustment may carry a negative quantity."
     ),
     input_schema=obj({"data": _MOVEMENT_DATA}, required=("data",)),
     is_write=True,
@@ -233,11 +230,10 @@ def stock_count_list(access, supply_point_id=None, item_id=None, kind=None, limi
 @register_operation(
     name="stock_count_record",
     summary=(
-        "Record what somebody says is actually on hand. kind=self_reported for a worker's "
-        "periodic form, physical_count for a stock take, override to assert a figure over "
-        "the ledger. An observation is simply kept, so the variance against the ledger "
-        "stays visible; an override additionally posts the difference as an adjustment and "
-        "requires a reason. A quantity of zero is a real observation — it is a stockout."
+        "Record what somebody says is actually on hand. An observation is simply kept, so the "
+        "variance against the ledger stays visible; an override additionally posts the difference as "
+        "an adjustment and requires a reason. A quantity of zero is a real observation — it is a "
+        "stockout."
     ),
     input_schema=obj({"data": _STOCK_COUNT_DATA}, required=("data",)),
     is_write=True,
@@ -279,11 +275,9 @@ def distribution_get(access, distribution_id):
 @register_operation(
     name="distribution_record",
     summary=(
-        "Record a resupply run out to field workers. One header, one line per worker; each "
-        "line posts a movement, so a worker's stock on hand is a ledger balance rather than "
-        "a separate figure. Name each worker by to_supply_point_id or by connect_username — "
-        "whichever you have. This is the operation a local partner uses to tell us what they "
-        "distributed."
+        "Record a resupply run out to field workers: one header, one line per worker, each line "
+        "posting a movement. Name each worker by to_supply_point_id or by connect_username. This is "
+        "what a local partner uses to tell us what they distributed."
     ),
     input_schema=obj({"data": _DISTRIBUTION_DATA}, required=("data",)),
     is_write=True,
@@ -298,11 +292,10 @@ def distribution_record(access, data):
 @register_operation(
     name="stock_on_hand",
     summary=(
-        "What is at one supply point: the ledger balance, the last reported count, and the "
-        "variance between them. Both are returned because they routinely disagree and the "
-        "disagreement is the finding. `basis` says which to plan on. A variance whose units "
-        "cannot be reconciled comes back unconfirmed rather than as a number — the store "
-        "counts packs, the field counts base units, and the bridge is the pack specification."
+        "What is at one supply point: the ledger balance, the last reported count, and the variance. "
+        "Both are returned because they routinely disagree and the disagreement is the finding; "
+        "`basis` says which to plan on. A variance whose units cannot be reconciled comes back "
+        "unconfirmed."
     ),
     input_schema=obj(
         {"supply_point_id": ID, "item_id": ID, "unit": {"type": "string"}}, required=("supply_point_id",)
@@ -327,11 +320,9 @@ def stock_on_hand(access, supply_point_id, item_id=None, unit=None):
 @register_operation(
     name="stock_position",
     summary=(
-        "The four figures that are not the same figure: on hand, in transit, committed and "
-        "available. In-transit stock is real but it is NOT cover — counted as on hand, a "
-        "network reads months of stock it does not have and nobody reorders while stores "
-        "run dry. Committed is allocated but not yet moved, so the same carton is not "
-        "promised twice."
+        "The four figures that are not the same figure: on hand, in transit, committed and available. "
+        "In-transit stock is real but it is NOT cover. Committed is allocated but not yet moved, so "
+        "the same carton is not promised twice."
     ),
     input_schema=obj({"supply_point_id": ID, "item_id": ID}, required=("supply_point_id",)),
 )
@@ -370,12 +361,10 @@ def stock_by_batch(access, supply_point_id, item_id=None):
 @register_operation(
     name="resupply_plan",
     summary=(
-        "Consumption rate and cover for one supply point: average monthly consumption over a "
-        "stated window, months of stock, days to stockout, reorder point, and how much to "
-        "send to reach the top of its band. An AMC over a window shorter than 30 days is "
-        "refused as unconfirmed — a fortnight extrapolated to a month is how a supply chain "
-        "talks itself into a stockout. `status` classifies against the point's own min/max "
-        "band and stops short of recommending anything."
+        "Consumption rate and cover for one supply point: average monthly consumption, months of "
+        "stock, days to stockout, reorder point, and how much to send. An AMC over a window shorter "
+        "than 30 days is refused as unconfirmed. `status` classifies against the point's own band and "
+        "recommends nothing."
     ),
     input_schema=obj(
         {
@@ -406,12 +395,9 @@ def resupply_plan(access, supply_point_id, item_id=None, window_days=resupply.DE
 @register_operation(
     name="network_stock",
     summary=(
-        "Stock on hand and cover across a whole network in one call — every field worker on "
-        "an opportunity, or every store in a programme. This is the network manager's view: "
-        "who is about to run out, who has never reported, and how much to send. A point whose "
-        "figure cannot be computed appears carrying its reason, never as a zero and never "
-        "omitted, because a view that quietly drops what it could not compute is how a "
-        "stockout goes unnoticed."
+        "Stock on hand and cover across a whole network — every field worker on an opportunity, or "
+        "every store in a programme. A point whose figure cannot be computed appears carrying its "
+        "reason, never as a zero and never omitted."
     ),
     input_schema=obj(
         {
@@ -491,13 +477,10 @@ def _plain(value):
 @register_operation(
     name="stock_report_ingest",
     summary=(
-        "Record a batch of worker-reported stock figures, as submitted on a CommCare deliver "
-        "form and read back through Connect. Idempotent on form_submission_id, so re-reading "
-        "the same export does not double-post. A username with no user_held supply point comes "
-        "back in `unmatched` rather than creating one, because a typo would become a phantom "
-        "worker holding phantom stock — pass create_missing_points only when the usernames are "
-        "known to be right. Every row lands as a self_reported count: it sits beside the ledger "
-        "so the variance is visible, and does not move it."
+        "Record worker-reported stock figures from a CommCare deliver form. Idempotent on "
+        "form_submission_id. A username with no user_held supply point comes back in `unmatched` "
+        "rather than creating one — pass create_missing_points only when the usernames are known "
+        "good. Every row lands as a self_reported count beside the ledger; it does not move it."
     ),
     input_schema=obj(
         {
