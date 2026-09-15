@@ -138,6 +138,22 @@ Two further improvements that you will notice on the Worker Review page:
 - **The page now loads in seconds rather than minutes.** It was previously recomputing data for all of the report's opportunities on every load and discarding the result. That wasted work has been removed.
 - **The red "Another pipeline run for this opportunity is already in progress" banner should no longer appear.** That banner was a side effect of the same unnecessary recompute colliding with the programme report. With the recompute removed, the banner no longer fires.
 
+#### Peer cohort benchmarking for individual workers
+
+When you drill into a worker from the programme report, each of that worker's indicators is now shown in context alongside comparable workers — not just as a raw number. A dropdown lets you choose what "comparable" means:
+
+- **In the same opportunity** — the colleagues they actually work alongside day to day
+- **Who started the same month** — everyone in the programme who joined during the same intake period, regardless of which opportunity they belong to
+- **Carrying a similar caseload** — workers anywhere in the programme who have a comparable number of active cases
+
+For each indicator, every peer appears as a dot on a chart, with this worker's own value marked and their rank shown. The three views are designed to give you different perspectives: a worker can look strong compared with their own team but below average compared with peers who started at the same time, and that disagreement is itself a meaningful finding.
+
+Where a comparison would not be meaningful, the report says so clearly rather than showing a potentially misleading figure:
+
+- A cohort with fewer than 8 workers shows **"too few to rank against"** instead of a ranking.
+- A worker with no dated case cannot be placed in a start-month cohort and is told so.
+- Reports that were saved before this feature was introduced carry no cohort information; those reports display an explanatory message rather than an empty panel that could be mistaken for "this worker has no peers".
+
 ### KMC Opportunity Report
 
 The **KMC Opportunity Report** gives a single delivery opportunity a three-part view of its own performance and how it compares with its peers.
@@ -182,24 +198,3 @@ A count of how many opportunities are currently selected is shown at all times s
 > 523, 524, 675, 874, 938, 1234, 1236, 1487, 1488, 1739, 1790, 2166
 
 The picker immediately switches to ID mode: it lists exactly those opportunities in the order you pasted them and ticks them all. If any ID in your list cannot be found — because it does not exist or you do not have access to it — those IDs are named in an amber notice at the top of the list rather than silently dropped, so you can check whether something is missing before saving.
-
-Typing a single number works as a plain name filter as before; the picker only switches to ID mode when it detects a comma-separated list.
-
-### Computing and saving a program-owned KMC Programme Metrics report
-
-A KMC Programme Metrics report created from the programme's Workflows page (a program-owned report) can now compute and save its weekly figures normally. Previously, every preview and Save on such a report failed with **"Indicators could not be computed"**, even though the same report created from an individual opportunity page worked without issue. This has been corrected — program-owned KMC reports compute and save in exactly the same way as opportunity-owned ones.
-
-If you previously avoided creating KMC Programme Metrics reports from the programme page because of this error, you can now do so without issue.
-
----
-
-## Scheduling a Workflow to Run Automatically
-
-Any workflow that supports a one-click default run can be put on a recurring schedule so it runs itself automatically — no one has to log in and click "run" each week.
-
-### Setting up a schedule
-
-On the workflow list screen, workflows that support scheduling show a **Schedule** button. Click it to configure:
-
-- **Cadence** — choose from **Daily**, **Weekdays (Mon–Fri)**, **Weekly** (pick a day of the week), or **Monthly** (pick a day from 1–28)
-- **Hour** — the time of day
