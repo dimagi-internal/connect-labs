@@ -30,7 +30,16 @@ from django.utils.translation import gettext_lazy as _
 
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import records
-from connect_labs.supply_chain.forms import DATE, INPUT, SEARCHABLE, SELECT, ScopedForm, to_payload
+from connect_labs.supply_chain.forms import (
+    DATE,
+    INPUT,
+    MONEY_INPUT,
+    SEARCHABLE,
+    SELECT,
+    ScopedForm,
+    set_choices,
+    to_payload,
+)
 from connect_labs.supply_chain.models import (
     Commodity,
     Contract,
@@ -44,13 +53,6 @@ from connect_labs.supply_chain.models import (
 from connect_labs.supply_chain.network_forms import SOURCE_CHOICES
 
 __all__ = ["ContractForm", "DocumentForm", "InvoiceForm", "PaymentForm"]
-
-# `step="any"`, not `step="0.01"`. Money here is stored to FOUR decimal places
-# (models.MONEY), because a per-sachet price is routinely something like
-# 0.3495 -- and a browser enforcing a two-decimal step refuses exactly that
-# figure, in the one domain built around not losing it. Precision is the
-# model's and the schema's job; the widget's job is not to get in the way.
-MONEY_INPUT = {**INPUT, "step": "any", "inputmode": "decimal"}
 
 
 class ProvenancedForm(ScopedForm):
@@ -199,26 +201,36 @@ class ContractForm(ProvenancedForm):
         # The operation requires both halves of the buyer, so the form does.
         self.fields["buyer_of_record"].required = True
         self.fields["buyer_org"].required = True
-        self.fields["buyer_of_record"].choices = [
-            ("", "—"),
-            ("programme_org", _("We are")),
-            ("partner_org", _("A partner is")),
-            ("agency", _("A procurement agency is")),
-        ]
+        set_choices(
+            self,
+            "buyer_of_record",
+            [
+                ("", "—"),
+                ("programme_org", _("We are")),
+                ("partner_org", _("A partner is")),
+                ("agency", _("A procurement agency is")),
+            ],
+        )
         self.fields["unit_price_unit"].required = False
-        self.fields["unit_price_unit"].choices = [
-            ("", "—"),
-            ("per_base_unit", _("Per unit (sachet, tablet)")),
-            ("per_pack", _("Per pack (carton)")),
-            ("per_lot_total", _("Total for the lot")),
-            ("per_metric_tonne", _("Per metric tonne")),
-        ]
+        set_choices(
+            self,
+            "unit_price_unit",
+            [
+                ("", "—"),
+                ("per_base_unit", _("Per unit (sachet, tablet)")),
+                ("per_pack", _("Per pack (carton)")),
+                ("per_lot_total", _("Total for the lot")),
+                ("per_metric_tonne", _("Per metric tonne")),
+            ],
+        )
         basis = [(value, str(value).replace("_", " ").capitalize()) for value in records.BASIS]
         for name in ("freight_basis", "duties_basis", "vat_basis"):
-            self.fields[name].choices = basis
-        self.fields["status"].choices = [
-            (value, str(value).replace("_", " ").capitalize()) for value in records.CONTRACT_STATUSES
-        ]
+            set_choices(self, name, basis)
+        set_choices(
+            self,
+            "status",
+            [(value, str(value).replace("_", " ").capitalize()) for value in records.CONTRACT_STATUSES],
+        )
 
         self.helper.layout = Layout(
             Row(Column("supplier"), Column("commodity"), Column("item"), css_class="grid md:grid-cols-3 gap-x-6"),
@@ -337,9 +349,11 @@ class InvoiceForm(ProvenancedForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["status"].choices = [
-            (value, str(value).replace("_", " ").capitalize()) for value in records.INVOICE_STATUSES
-        ]
+        set_choices(
+            self,
+            "status",
+            [(value, str(value).replace("_", " ").capitalize()) for value in records.INVOICE_STATUSES],
+        )
         self.helper.layout = Layout(
             Row(Column("reference"), Column("issued_on"), Column("status"), css_class="grid md:grid-cols-3 gap-x-6"),
             Row(Column("amount"), Column("currency"), css_class="grid md:grid-cols-2 gap-x-6"),
@@ -428,11 +442,13 @@ class DocumentForm(ProvenancedForm):
         # that claim is the plain truth rather than a boast. It is a witnessed
         # source, so `stamp_provenance` still refuses it from a partner acting
         # for somebody else -- the screen offers it, the domain decides.
-        self.fields["source"].choices = [("document", _("The document itself is the evidence"))] + SOURCE_CHOICES
+        set_choices(self, "source", [("document", _("The document itself is the evidence"))] + SOURCE_CHOICES)
         self.fields["source"].initial = "document"
-        self.fields["kind"].choices = [("", "—")] + [
-            (value, str(value).replace("_", " ").capitalize()) for value in records.DOCUMENT_KINDS
-        ]
+        set_choices(
+            self,
+            "kind",
+            [("", "—")] + [(value, str(value).replace("_", " ").capitalize()) for value in records.DOCUMENT_KINDS],
+        )
         self.helper.layout = Layout(
             Row(Column("kind"), Column("title"), css_class="grid md:grid-cols-2 gap-x-6"),
             Field("upload"),

@@ -31,7 +31,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.supply_chain.forms import INPUT, SEARCHABLE, SELECT, ScopedForm, to_payload
+from connect_labs.supply_chain.forms import INPUT, SEARCHABLE, SELECT, ScopedForm, set_choices, to_payload
 from connect_labs.supply_chain.models import SupplyPoint
 
 __all__ = ["OrgForm", "OrgMergeForm", "SupplyPointForm"]
@@ -265,16 +265,20 @@ class SupplyPointForm(ScopedForm):
         self.fields["managed_by_org"].queryset = LabsOrg.objects.order_by("name")
         self.fields["managed_by_org"].empty_label = _("Not recorded")
 
-        self.fields["kind"].choices = [
-            ("central_store", _("Central store")),
-            ("regional_store", _("Regional store")),
-            ("facility", _("Facility")),
-            ("user_held", _("A field worker's own holding")),
-            ("supplier_site", _("Supplier site")),
-            ("in_transit", _("In transit")),
-            ("customs", _("Customs")),
-        ]
-        self.fields["status"].choices = [("active", _("Active")), ("inactive", _("Inactive"))]
+        set_choices(
+            self,
+            "kind",
+            [
+                ("central_store", _("Central store")),
+                ("regional_store", _("Regional store")),
+                ("facility", _("Facility")),
+                ("user_held", _("A field worker's own holding")),
+                ("supplier_site", _("Supplier site")),
+                ("in_transit", _("In transit")),
+                ("customs", _("Customs")),
+            ],
+        )
+        set_choices(self, "status", [("active", _("Active")), ("inactive", _("Inactive"))])
 
         if self.instance and self.instance.pk:
             self.fields["slug"].disabled = True
