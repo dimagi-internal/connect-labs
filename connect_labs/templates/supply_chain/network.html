@@ -1,0 +1,111 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+Where stock can rest. Grouped by kind rather than sorted by name, because the
+groups are the network's shape: four central stores and two hundred field
+workers is a different programme from the reverse, and an alphabetical list
+hides which one you are looking at.
+
+A field worker's own holding is a supply point like any other -- that ruling is
+what lets a delivery to one reuse the movement ledger instead of needing its
+own arithmetic -- so it appears here as a group, not as a footnote.
+{% endcomment %}
+
+{% block supply_content %}
+
+<div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Network</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Every place stock can rest in this programme, including each field worker's own holding.
+    </p>
+  </div>
+  {% if has_program_context %}
+    <div class="flex items-center gap-4">
+      <p class="text-sm text-gray-500">{{ total }} point{{ total|pluralize }}</p>
+      <a href="{% url 'supply_chain:supply_point_create' %}"
+         class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+        <i class="fa-solid fa-plus mr-1"></i> New supply point
+      </a>
+    </div>
+  {% endif %}
+</div>
+
+{% if not has_program_context %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
+    <p class="text-sm text-message-warning-text/90">
+      Choose a programme above. A network belongs to one.
+    </p>
+  </div>
+{% elif not groups %}
+  <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
+    <p class="text-sm text-gray-600">Nothing here yet.</p>
+    <p class="text-sm text-gray-500 mt-1 max-w-lg mx-auto">
+      Stock has to arrive somewhere before there is any to look at, so a receipt needs at least
+      one supply point to name.
+    </p>
+    <a href="{% url 'supply_chain:supply_point_create' %}"
+       class="inline-block mt-4 px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+      Add the first one
+    </a>
+  </div>
+{% else %}
+  {% for group in groups %}
+    <section class="mb-6">
+      <h2 class="text-sm font-semibold text-gray-900 mb-2">
+        {{ group.label }}
+        <span class="ml-1 font-normal text-gray-500">{{ group.points|length }}</span>
+      </h2>
+      <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+        <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+          <table class="min-w-[44rem] w-full text-sm">
+            <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+              <tr>
+                <th class="text-left px-4 py-2">Name</th>
+                <th class="text-left px-4 py-2">Where</th>
+                <th class="text-left px-4 py-2">Resupplied from</th>
+                <th class="text-right px-4 py-2">Stock band</th>
+                <th class="text-left px-4 py-2">Known</th>
+                <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              {% for point in group.points %}
+                <tr class="{% if point.status != 'active' %}opacity-60{% endif %}">
+                  <td class="px-4 py-2">
+                    <span class="text-gray-900">{{ point.name }}</span>
+                    {% if point.status != 'active' %}
+                      <span class="ml-1.5 px-1.5 py-0.5 rounded text-[11px] bg-gray-100 text-gray-600">inactive</span>
+                    {% endif %}
+                    <div class="text-xs text-gray-500 mt-0.5">
+                      <code>{{ point.slug }}</code>
+                      {% if point.connect_username %}· {{ point.connect_username }}{% endif %}
+                    </div>
+                  </td>
+                  <td class="px-4 py-2 text-gray-700">{{ point.admin_area|default:"—" }}</td>
+                  <td class="px-4 py-2 text-gray-700">{{ point.parent_name|default:"—" }}</td>
+                  <td class="px-4 py-2 text-right tabular-nums text-gray-700">
+                    {% if point.min_months_of_stock or point.max_months_of_stock %}
+                      {{ point.min_months_of_stock|default:"—" }}–{{ point.max_months_of_stock|default:"—" }} mo
+                    {% else %}
+                      <span class="text-gray-400">not set</span>
+                    {% endif %}
+                  </td>
+                  <td class="px-4 py-2 text-gray-600 text-xs">{{ point.source|humanise }}</td>
+                  <td class="px-4 py-2 text-right whitespace-nowrap">
+                    <a href="{% url 'supply_chain:supply_point_edit' point.id %}"
+                       class="text-brand-indigo hover:underline">Edit</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  {% endfor %}
+{% endif %}
+
+{% endblock %}

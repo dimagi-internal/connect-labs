@@ -1,0 +1,103 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+One registry for the whole of labs, not one per programme. An organisation is
+the same body wherever it appears, and the three tables that each meant "an
+organisation in real life" are what this replaced.
+
+The "Known to Connect" column is the backlog, stated rather than left blank: an
+organisation with no Connect id is one whose own staff cannot sign in and
+record their own shipments, receipts and counts. We record on their behalf
+until it is set.
+{% endcomment %}
+
+{% block supply_content %}
+
+<nav class="text-sm text-gray-500 mb-3">
+  <a href="{% url 'supply_chain:suppliers' %}" class="text-brand-indigo hover:underline">Suppliers</a>
+  <span class="mx-1.5 text-gray-300">/</span>
+  <span class="text-gray-700">Organisations</span>
+</nav>
+
+<div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Organisations</h1>
+    <p class="text-sm text-gray-500 mt-1 max-w-2xl">
+      Everyone labs needs to name — manufacturers, implementing partners, procurement agencies, us.
+      Shared across every programme: a change here shows everywhere this organisation appears.
+    </p>
+  </div>
+  <div class="flex items-center gap-3">
+    <a href="{% url 'supply_chain:org_merge' %}"
+       class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Merge two</a>
+    <a href="{% url 'supply_chain:org_create' %}"
+       class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+      <i class="fa-solid fa-plus mr-1"></i> New organisation
+    </a>
+  </div>
+</div>
+
+{% if orgs %}
+  <p class="text-sm text-gray-500 mb-3">
+    {{ linked }} of {{ orgs|length }} {{ linked|pluralize:"is,are" }} bound to a Connect organisation.
+    The rest we record on behalf of.
+  </p>
+{% endif %}
+
+<div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+  <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+    <table class="min-w-[44rem] w-full text-sm">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <tr>
+          <th class="text-left px-4 py-2">Organisation</th>
+          <th class="text-left px-4 py-2">Country</th>
+          <th class="text-left px-4 py-2">Known to Connect</th>
+          <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for org in orgs %}
+          <tr>
+            <td class="px-4 py-2">
+              <span class="text-gray-900">{{ org.name }}</span>
+              <div class="text-xs text-gray-500 mt-0.5">
+                <code>{{ org.slug }}</code>
+                {% if org.aliases %}
+                  · also known as {{ org.aliases|join:", " }}
+                {% endif %}
+              </div>
+            </td>
+            <td class="px-4 py-2 text-gray-700">{{ org.country|default:"—" }}</td>
+            <td class="px-4 py-2">
+              {% if org.connect_organization_id %}
+                <span class="px-2 py-0.5 rounded-full text-xs bg-message-success text-message-success-text">
+                  #{{ org.connect_organization_id }}
+                </span>
+              {% elif org.connect_organization_slug %}
+                <span class="text-xs text-gray-600">by slug: <code>{{ org.connect_organization_slug }}</code></span>
+              {% else %}
+                <span class="text-xs text-gray-400">not yet</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2 text-right whitespace-nowrap">
+              <a href="{% url 'supply_chain:org_edit' org.id %}" class="text-brand-indigo hover:underline">Edit</a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="4" class="px-4 py-8 text-center">
+              <p class="text-sm text-gray-600">No organisations yet.</p>
+              <p class="text-sm text-gray-500 mt-1 max-w-lg mx-auto">
+                A contract needs a buyer of record, and it has to be one of these — so this is
+                the first thing to fill in before anything can be ordered.
+              </p>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
