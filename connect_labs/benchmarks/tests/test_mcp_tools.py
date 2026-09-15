@@ -316,6 +316,7 @@ def test_the_tools_are_registered_with_the_mcp_server():
         "benchmarks_cohort_add_opportunities",
         "benchmarks_cohort_list",
         "benchmarks_publish",
+        "benchmarks_create_opp_reports",
     )
 
     for name in tool_names:

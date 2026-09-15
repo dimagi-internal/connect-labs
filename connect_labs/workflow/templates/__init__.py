@@ -29,6 +29,7 @@ Usage:
 
 from __future__ import annotations
 
+import copy
 import importlib
 import logging
 import pkgutil
@@ -654,18 +655,17 @@ def _with_inherited_safety_flags(instance_inputs: dict, template_key: str | None
     return {**instance_inputs, **missing}
 
 
-# The same argument as _INHERITED_SAFETY_FLAGS, one level up: a definition's
-# `config` is also stamped at create-from-template time and never migrates, so a
-# template that gains a config flag later cannot reach the workflows already
-# created from it.
+# The same argument as _INHERITED_SAFETY_FLAGS, one level up, and generalised: a
+# definition's `config` is stamped at create-from-template time and never
+# migrates, so ANY config key a template gains later is inert on every workflow
+# already created from it. The template owns its config; an instance owns only
+# the keys it actually sets.
 #
-# `noPipelineStream` is not a preference an instance holds. It records that the
-# template's RENDER fetches the few rows it needs itself (the `pipeline-rows`
-# endpoint), so the framework must not also stream every pipeline for every
-# opportunity the workflow spans. That is a property of the template's code, and
-# no instance record can make it untrue -- an instance stamped before the flag
-# existed still has a render that fetches its own rows, and streaming for it is
-# pure waste.
+# `noPipelineStream` is the case that proved it. It is not a preference an
+# instance holds -- it records that the template's RENDER fetches the few rows it
+# needs itself (the `pipeline-rows` endpoint), so the framework must not also
+# stream every pipeline for every opportunity the workflow spans. That is a
+# property of the template's code, and no instance record can make it untrue.
 #
 # Measured on live workflow 19780 (JJ - KMC Worker Review, 12 opportunities):
 # stamped before the flag, so it streamed all twelve serially on every load --
@@ -673,28 +673,74 @@ def _with_inherited_safety_flags(instance_inputs: dict, template_key: str | None
 # programme report it shares pipelines 19776/19777 with, aborting the stream on
 # a ComputedEntityCache unique-constraint violation (opp 1487). The flag was
 # deployed and inert on the one workflow it was written for.
-_INHERITED_CONFIG_FLAGS = ("noPipelineStream",)
+#
+# Widened from a named allow-list (`_INHERITED_CONFIG_FLAGS = ("noPipelineStream",)`)
+# to every key, because the allow-list was a list of the flags someone had
+# already been bitten by: `renderWhileLoading` shipped two days after
+# `noPipelineStream`, to the same template, for the same reason, and was NOT on
+# it. The twelve-instance fan-out (`benchmarks_create_opp_reports`) makes the
+# same failure twelve times over, so the rule has to be the general one.
+#
+# What was checked before widening, since this now touches every template rather
+# than one (relaxing a gate makes previously-impossible states reachable):
+#
+#   * The only caller is the runner page's `workflow_data["definition"]` payload
+#     (workflow/views.py), so nothing SERVER-side changes shape -- this is what
+#     the browser reads, and only that.
+#   * Every config key declared by every registered template was compared
+#     against the commit that created its template file: all but nine were
+#     present from creation, so no instance can be missing them.
+#   * Of those nine, the render reads six through a fallback equal to the
+#     template's own value (`weight_image_path`, `weight_value_path`,
+#     `audit_count_per_flw`) or through `!== false` semantics where absent and
+#     `true` are the same thing (`showFilters`, `showSummaryCards`,
+#     `audit_enabled`) -- inheriting them is inert.
+#   * The remaining three are observable, and inheriting each restores the
+#     contract the template's own render was written against:
+#     `renderWhileLoading` / `noPipelineStream` (the flags this exists for),
+#     `scale_agent_by_llo` + `scale_unverified_llos` (read as `|| {}` / `|| []`,
+#     so a pre-2026-09-05 programme-report instance currently picks no audit
+#     agent per LLO at all), `image_types` (a picker that currently falls back to
+#     the weight photo alone), and `auth_requires` on mbw_auditing_v5 instances
+#     created before 2026-04-29, which gain the CommCare HQ leg of the runner's
+#     auth gate. That last one is the only NEW state a user can meet: it fails
+#     closed, is one click to satisfy, and is exactly what the template declares
+#     its render needs.
+#
+# If that MBW gate ever turns out to be unwanted, the narrower rule is a denylist
+# of keys that are gates rather than render settings -- `_NOT_INHERITED =
+# ("auth_requires",)` filtered out below -- not a return to the allow-list, which
+# is what let two flags ship inert in one week.
 
 
 def with_inherited_config_flags(definition_data: dict, template_key: str | None) -> dict:
-    """Definition data with any render-contract flag its template declares and it lacks.
+    """Definition data with every config key its template declares and it lacks.
 
     Read-time only: nothing is written back, so a stale instance is corrected on
-    every load without a migration. An instance that sets the flag explicitly --
-    to either value -- keeps its own, so a deliberate opt-out still works.
+    every load without a migration. An instance that sets a key explicitly --
+    to any value, `False` and `None` included -- keeps its own, so a deliberate
+    opt-out still works; presence is the test, never truthiness.
+
+    Returns the SAME object when there is nothing to add, which is the normal
+    case (an instance created from the current template already carries every
+    key). This runs on every run-page load for every template, so the common
+    path must not copy.
     """
     template = TEMPLATES.get(template_key) if template_key else None
     template_config = ((template or {}).get("definition") or {}).get("config") or {}
+    if not template_config:
+        return definition_data
     config = definition_data.get("config")
     config = config if isinstance(config, dict) else {}
-    missing = {
-        flag: template_config[flag]
-        for flag in _INHERITED_CONFIG_FLAGS
-        if flag in template_config and flag not in config
-    }
+    missing = {key: value for key, value in template_config.items() if key not in config}
     if not missing:
         return definition_data
-    return {**definition_data, "config": {**config, **missing}}
+    # Deep-copied: a template's DEFINITION is module state shared by every
+    # instance and every request, and the inherited values are no longer only
+    # scalars (`opp_meta`, `image_types`, `audit_batch` are nested structures).
+    # Handing the live object to a payload the caller may edit would let one
+    # page's edit reach every other workflow in the process.
+    return {**definition_data, "config": {**config, **copy.deepcopy(missing)}}
 
 
 def resolve_snapshot_contract(definition) -> dict:
@@ -872,6 +918,8 @@ def create_workflow_from_template(
     opportunity_ids: list[int] | None = None,
     program_id: int | None = None,
     registry_source: dict | None = None,
+    pipeline_sources_override: list[dict] | None = None,
+    render_source: dict | None = None,
 ) -> tuple:
     """
     Create a workflow from a template using the data access layer.
@@ -906,6 +954,14 @@ def create_workflow_from_template(
         opportunity_ids: Optional list of opp IDs this workflow should pull data from
             (multi-opp templates only; ignored for single-opp templates).
         program_id: When given, the workflow is program-owned (no owning opp).
+        pipeline_sources_override: Reference these pipeline records instead of
+            creating the template's own. Each entry is a ``pipeline_sources``
+            dict, normally carrying ``home_scope`` so the record is read where
+            it lives. This is how a fan-out creates twelve instances over ONE
+            pair of pipeline records rather than twelve copies that then drift.
+        render_source: ``{"template": "<key>"}`` makes the new workflow FOLLOW
+            the deployed template's render code rather than its own stored copy,
+            so one deploy updates every instance. See workflow/render_source.py.
 
     Returns:
         Tuple of (definition_record, render_code_record, pipeline_record or None)
@@ -949,6 +1005,8 @@ def create_workflow_from_template(
             request=request,
             opportunity_ids=opportunity_ids,
             registry_source=registry_source,
+            pipeline_sources_override=pipeline_sources_override,
+            render_source=render_source,
         )
     finally:
         if owns_data_access:
@@ -1020,6 +1078,7 @@ def _create_workflow_from_template_scoped(
     pipeline_sources_override: list[dict] | None = None,
     config_overrides: dict | None = None,
     registry_source: dict | None = None,
+    render_source: dict | None = None,
     _ancestry: tuple[str, ...] = (),
 ) -> tuple:
     """Inner body of ``create_workflow_from_template`` — runs against an
@@ -1159,6 +1218,8 @@ def _create_workflow_from_template_scoped(
         # editing the instance manifest. Hook templates stay registry-resolved
         # (their snapshot is computed Python, which can't live on the record).
         extra_definition_kwargs["snapshot_inputs"] = dict(template.get("snapshot_inputs") or {})
+    if render_source:
+        extra_definition_kwargs["render_source"] = dict(render_source)
     if registry_name:
         extra_definition_kwargs["registry_source"] = _bind_registry(
             data_access, registry_name, template_def["name"], registry_source

@@ -18,7 +18,7 @@ from connect_labs.labs.integrations.connect.oauth import fetch_user_organization
 from connect_labs.mcp.connect_token import require_connect_token
 from connect_labs.mcp.tool_registry import MCPToolError, register
 from connect_labs.workflow.data_access import WorkflowDataAccess
-from connect_labs.workflow.templates import resolve_snapshot_contract
+from connect_labs.workflow.templates import create_workflow_from_template, get_template, resolve_snapshot_contract
 
 
 def _caller_organization_data(user, access_token: str) -> dict[str, Any]:
@@ -384,4 +384,221 @@ def benchmarks_publish(
         "as_of": str(publication.as_of),
         "value_count": publication.values.count(),
         "withheld_indicator_ids": publication.withheld_indicator_ids,
+    }
+
+
+# =============================================================================
+# Fan-out -- one opportunity report per cohort member
+# =============================================================================
+#
+# A cohort is twelve opportunities, and each of them wants the SAME report over
+# its own scope. Twelve copies of a workflow is twelve things to keep in step,
+# and this repo has already paid for that: a render edited on one instance, a
+# config flag that reached none of them, a pipeline copied per scope and then
+# drifting. So the fan-out creates twelve instances that own as little as
+# possible:
+#
+#   render      `render_source: {"template": <key>}` -- the deployed template IS
+#               the render, so one deploy updates all twelve and editing an
+#               instance's stored copy is refused (workflow/render_source.py).
+#   config      resolved from the template on read
+#               (templates.with_inherited_config_flags), so a key added to the
+#               template tomorrow reaches instances created today.
+#   pipelines   the source report's records, REFERENCED via `home_scope` rather
+#               than copied -- one pipeline read where it lives, twelve readers.
+#   indicators  the source report's bound registry record, so every instance
+#               computes from the same indicator definitions.
+#
+# Everything in that list needs a SOURCE workflow to inherit from, which is why
+# the sharing arguments exist. Without one, each instance falls back to the
+# template's own creation path (its own pipeline records, its own seeded
+# registry) -- still correct, but twelve copies again, so the tool says which it
+# did.
+
+
+def _shared_inheritance(token: str, template_key: str, source_workflow_id, source_opportunity_id, source_program_id):
+    """The pipeline sources and registry binding a fan-out inherits from one report.
+
+    Returns ``(pipeline_sources, registry_source)``, both ``None`` when no source
+    workflow was named. The rules are ``workflow_clone(linked=True)``'s, reusing
+    its helper rather than a second copy of them: a source keeps whatever home
+    scope it already had, else gains ``{"public": True}`` when the pipeline
+    record really is shared, else the source workflow's own scope.
+    """
+    if source_workflow_id is None:
+        if source_opportunity_id is not None or source_program_id is not None:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                "source_opportunity_id / source_program_id only mean something alongside "
+                "source_workflow_id, which was not given.",
+            )
+        return None, None
+    if (source_opportunity_id is None) == (source_program_id is None):
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            "Naming source_workflow_id requires exactly one of source_opportunity_id / "
+            "source_program_id -- a workflow record is only readable from its own scope.",
+        )
+
+    # Lazy, for the same import-cycle reason _caller_opportunity_ids documents.
+    from connect_labs.mcp.tools.workflows import _linked_sources
+
+    source_scope = (
+        {"opportunity_id": int(source_opportunity_id)}
+        if source_opportunity_id is not None
+        else {"program_id": int(source_program_id)}
+    )
+    wda = WorkflowDataAccess(access_token=token, **source_scope)
+    try:
+        source = wda.get_definition(int(source_workflow_id))
+    finally:
+        wda.close()
+    if source is None:
+        raise MCPToolError(
+            "NOT_FOUND",
+            f"No workflow {source_workflow_id} readable in scope {source_scope} -- nothing was created.",
+        )
+
+    pipeline_sources = _linked_sources(source.data.get("pipeline_sources"), source_scope, token)
+
+    registry_source = None
+    binding = dict(source.data.get("registry_source") or {})
+    if binding.get("registry_id") is not None and (get_template(template_key) or {}).get("semantic_registry"):
+        if not binding.get("public") and not {k for k in binding if k != "registry_id"}:
+            # The record lives in the source's scope; say so, or an instance in
+            # another opportunity's scope cannot read it.
+            binding.update(source_scope)
+        registry_source = binding
+    return pipeline_sources, registry_source
+
+
+@register(
+    name="benchmarks_create_opp_reports",
+    description=(
+        "Create one opportunity-scoped report workflow per cohort member that does not "
+        "already have one. Idempotent: an opportunity that already holds an instance of "
+        "this template is skipped and reported, so a second run creates nothing and a run "
+        "that failed part-way is safe to repeat. Every instance FOLLOWS the deployed "
+        "template's render (render_source), so one deploy updates them all and editing an "
+        "instance's stored render is refused; its config resolves from the template on "
+        "read, so a key added to the template later still reaches it. Name a source "
+        "workflow (with its scope) to have every instance reference that report's pipeline "
+        "records via home_scope and bind to its registry record -- one pipeline read where "
+        "it lives and one set of indicator definitions, instead of a copy per opportunity. "
+        "Refuses a caller who does not belong to the cohort's organisation or does not hold "
+        "every opportunity in it: creating a workflow inside an opportunity's scope is a "
+        "write into that opportunity."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "cohort_id": {"type": "integer"},
+            "template_key": {
+                "type": "string",
+                "default": "kmc_opp_report",
+                "description": "Workflow template to instantiate once per cohort member.",
+            },
+            "source_workflow_id": {
+                "type": "integer",
+                "description": (
+                    "Optional. The report whose pipeline records and registry binding every "
+                    "instance should share. Omit and each instance creates its own."
+                ),
+            },
+            "source_opportunity_id": {
+                "type": "integer",
+                "description": "Scope the source workflow is readable in, if it is opportunity-owned.",
+            },
+            "source_program_id": {
+                "type": "integer",
+                "description": "Scope the source workflow is readable in, if it is program-owned.",
+            },
+        },
+        "required": ["cohort_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def benchmarks_create_opp_reports(
+    user,
+    *,
+    cohort_id: int,
+    template_key: str = "kmc_opp_report",
+    source_workflow_id: int | None = None,
+    source_opportunity_id: int | None = None,
+    source_program_id: int | None = None,
+) -> dict[str, Any]:
+    try:
+        cohort = BenchmarkCohort.objects.get(pk=cohort_id)
+    except BenchmarkCohort.DoesNotExist as exc:
+        raise MCPToolError("NOT_FOUND", f"No cohort with id {cohort_id}") from exc
+
+    if get_template(template_key) is None:
+        # Up front, so a typo cannot create eleven workflows and then fail.
+        raise MCPToolError("NOT_FOUND", f"Unknown workflow template {template_key!r}. Nothing was created.")
+
+    # The same gate every other write in this module passes through. It is not
+    # bookkeeping here either: a cohort's membership IS the read grant for its
+    # published peer figures, so a tool that creates the very workflows which
+    # read them, against someone else's cohort, is another way in.
+    token, org_data = _require_organization_access(user, cohort.organization_id, f"owns cohort {cohort_id}")
+
+    opportunity_ids = sorted(cohort.opportunity_ids)
+    if not opportunity_ids:
+        return {"created": [], "skipped": [], "shared": False}
+
+    # Creating a workflow inside an opportunity's scope is a write into that
+    # opportunity, so holding it is required -- the same check, off the same
+    # fetch, as benchmarks_cohort_add_opportunities.
+    unheld = sorted(set(opportunity_ids) - _caller_opportunity_ids(user, org_data))
+    if unheld:
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            f"You do not hold opportunities {unheld}, so reports cannot be created in them. " "Nothing was created.",
+            details={"unheld_opportunity_ids": unheld},
+        )
+
+    pipeline_sources, registry_source = _shared_inheritance(
+        token, template_key, source_workflow_id, source_opportunity_id, source_program_id
+    )
+
+    created: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for opportunity_id in opportunity_ids:
+        wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+        try:
+            existing = next(
+                (d for d in wda.list_definitions() if d.template_type == template_key),
+                None,
+            )
+            if existing is not None:
+                skipped.append(
+                    {
+                        "opportunity_id": opportunity_id,
+                        "workflow_id": existing.id,
+                        "reason": "already_has_one",
+                    }
+                )
+                continue
+            definition, _render, _pipeline = create_workflow_from_template(
+                data_access=wda,
+                template_key=template_key,
+                request=None,
+                registry_source=registry_source,
+                pipeline_sources_override=pipeline_sources,
+                # One deploy updates every instance, and an edit to any
+                # instance's stored render is refused rather than silently
+                # forking the twelve apart.
+                render_source={"template": template_key},
+            )
+            created.append({"opportunity_id": opportunity_id, "workflow_id": definition.id})
+        finally:
+            wda.close()
+
+    return {
+        "created": created,
+        "skipped": skipped,
+        # False means each created instance made its own pipeline records and
+        # seeded its own registry, because no source workflow was named.
+        "shared": pipeline_sources is not None,
     }
