@@ -148,6 +148,72 @@ def test_c3_peer_index_is_stable_across_periods_in_a_series():
     assert idx_jan == idx_feb, "peer_index must denote the same peer in every period"
 
 
+def test_c3_series_orders_by_true_mean_and_ignores_out_of_window_periods():
+    """The stability test above proves the index doesn't MOVE, but its means all
+    tie at 30.0 -- ANY deterministic tiebreak-only key is equally stable, so
+    that test has no power over the ordering KEY itself (e.g. `vals[0]`
+    instead of an actual mean would pass it too). This test uses five DISTINCT
+    means, chosen so that neither in-window period's own values sort the same
+    way as the true mean -- a broken "use one period's value" implementation
+    is wrong regardless of which period it happened to pick:
+
+      true means (2026-01, 2026-02 only): 1:10  2:20  3:30  4:40  5:50
+      2026-01 alone sorts:                1:5   2:15  3:55  4:25  5:35  -> order [1,2,4,5,3]
+      2026-02 alone sorts:                1:15  2:25  3:5   4:55  5:65  -> order [3,1,2,4,5]
+
+    Also includes 2025-12, a period with only two peers (1 and 5) -- too few
+    to clear R5, so it must be excluded from the window entirely. Its values
+    (200.0 for peer 1, 1.0 for peer 5) are extreme specifically so that if the
+    ordering computation wrongly folded it in anyway, peer 1's mean would jump
+    to ~73 and peer 5's would drop to ~34, inverting their position relative
+    to peers 2-4 -- the exact out-of-window contamination R5/R6 exist to keep
+    out of a published series.
+    """
+    by_period = {
+        "2025-12": [_obs(1, 200.0), _obs(5, 1.0)],  # too few peers -- excluded by R5
+        "2026-01": [_obs(1, 5.0), _obs(2, 15.0), _obs(3, 55.0), _obs(4, 25.0), _obs(5, 35.0)],
+        "2026-02": [_obs(1, 15.0), _obs(2, 25.0), _obs(3, 5.0), _obs(4, 55.0), _obs(5, 65.0)],
+    }
+    out = anonymise_series(by_period, tie_salt="series-c3-mean", **DEFAULTS)
+    assert "2025-12" not in out, "the out-of-window period must not be published either"
+    expected_order = [1, 2, 3, 4, 5]  # ascending by true mean, computed over 2026-01/02 only
+    for period in ("2026-01", "2026-02"):
+        order = [opp for _, _, opp in out[period]]
+        assert order == expected_order, (
+            f"{period}: not the true-mean order -- either a non-mean key was used, "
+            "or the out-of-window period contaminated it"
+        )
+
+
+def test_f2_empty_tie_salt_raises_for_point():
+    with pytest.raises(ValueError):
+        anonymise_point(_six(), tie_salt="", **DEFAULTS)
+
+
+def test_f2_whitespace_only_tie_salt_raises_for_point():
+    with pytest.raises(ValueError):
+        anonymise_point(_six(), tie_salt="   ", **DEFAULTS)
+
+
+def test_f2_empty_tie_salt_raises_for_series():
+    with pytest.raises(ValueError):
+        anonymise_series({"2026-01": _six()}, tie_salt="", **DEFAULTS)
+
+
+def test_f2_whitespace_only_tie_salt_raises_for_series():
+    with pytest.raises(ValueError):
+        anonymise_series({"2026-01": _six()}, tie_salt="   ", **DEFAULTS)
+
+
+def test_f3_eligible_accepts_a_generator_not_just_a_list():
+    """Pre-fix this was a single comprehension over the input, so a generator
+    worked; the duplicate-detection pass added a second iteration that would
+    silently drain a generator to [] without this fix."""
+    gen = (o for o in _six())
+    out = anonymise_point(gen, tie_salt="gen-test", **DEFAULTS)
+    assert len(out) == 6
+
+
 def test_i1_min_peers_below_two_raises_for_point():
     with pytest.raises(ValueError):
         anonymise_point(_six(), min_peers=1, min_denominator=25, tie_salt="floor")

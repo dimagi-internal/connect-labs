@@ -16,7 +16,11 @@ The rules, and what each defends against:
       a caller-supplied `tie_salt` (which must vary per indicator) and the
       opportunity id -- never on opportunity id alone, which at this cohort
       size ties constantly (rounded rates) and would otherwise reintroduce a
-      stable, joinable cross-indicator order via sort stability.
+      stable, joinable cross-indicator order via sort stability. Both public
+      functions reject an empty or whitespace-only `tie_salt` outright, since
+      that degenerates to the same constant order for every indicator; a pure
+      function cannot verify the salt actually varies across calls, so that
+      part of the contract belongs to (and is enforced by) the caller.
   R5  a series period is published only where >= min_peers peers qualify, which
       is what stops a launch date naming the partner who launched then.
   R6  a series with a hole inside the window is dropped whole; gaps fingerprint.
@@ -72,6 +76,7 @@ def _eligible(observations, *, min_denominator: int) -> list[PeerObservation]:
     for the same partner would misrepresent them. This is a data-safety
     boundary -- fail loudly. The publisher controls its input.
     """
+    observations = list(observations)  # a generator would otherwise be drained by the loop below and yield []
     seen: set[int] = set()
     for o in observations:
         if o.opportunity_id in seen:
@@ -94,6 +99,8 @@ def anonymise_point(
     """
     if min_peers < 2:
         raise ValueError("min_peers must be at least 2")
+    if not tie_salt or not tie_salt.strip():
+        raise ValueError("tie_salt must be a non-empty string that varies per indicator")
     eligible = _eligible(observations, min_denominator=min_denominator)
     if len({o.opportunity_id for o in eligible}) < min_peers:  # R1: distinct peers, not rows
         return []
@@ -122,6 +129,8 @@ def anonymise_series(
     """
     if min_peers < 2:
         raise ValueError("min_peers must be at least 2")
+    if not tie_salt or not tie_salt.strip():
+        raise ValueError("tie_salt must be a non-empty string that varies per indicator")
     eligible_by_period = {
         period: _eligible(obs, min_denominator=min_denominator) for period, obs in observations_by_period.items()
     }
