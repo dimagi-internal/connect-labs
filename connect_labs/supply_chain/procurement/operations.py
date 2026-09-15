@@ -155,11 +155,9 @@ def outreach_update(access, outreach_id, data):
 @register_operation(
     name="outreach_delete",
     summary=(
-        "Delete an invitation recorded in error, with a reason. An outreach row saying we "
-        "contacted somebody we never contacted is not history -- it is a mistake, and leaving "
-        "it readable would keep asserting the contact. Unlike quote_void this removes the row, "
-        "because a quote is a supplier's stated fact worth keeping once superseded and an "
-        "invitation we never sent is not. The reason is recorded in the write log."
+        "Delete an invitation recorded in error, with a reason. Unlike quote_void this removes the "
+        "row: a quote is a supplier's stated fact worth keeping once superseded, an invitation we "
+        "never sent is not. The reason is recorded in the write log."
     ),
     input_schema=obj(
         {"outreach_id": ID, "reason": {"type": "string", "minLength": 1}},
@@ -223,15 +221,10 @@ def quote_get(access, quote_id):
 @register_operation(
     name="quote_record",
     summary=(
-        "Record a quote exactly as the supplier stated it. Give as_quoted_unit "
-        "(per_base_unit | per_pack | per_lot_total | per_metric_tonne) and the "
-        "quantity_basis the price covers. Do NOT compute anything: leave "
-        "freight_basis and duties_basis as not_specified and pack_spec_source "
-        "not_stated when the supplier was silent. Name an item_id with "
-        "pack_spec_source=trade_item_confirmed when the supplier identifies a "
-        "known trade item — that IS a statement of pack spec. Comparable "
-        "figures are derived, "
-        "and a guessed input produces a confident wrong answer."
+        "Record a quote as the supplier stated it, with the quantity_basis the price covers. Do NOT "
+        "compute anything: leave freight_basis and duties_basis not_specified, and pack_spec_source "
+        "not_stated, where the supplier was silent. Name an item_id with "
+        "pack_spec_source=trade_item_confirmed when they identify a known trade item."
     ),
     input_schema=obj({"data": _QUOTE_DATA_CREATE}, required=("data",)),
     is_write=True,
@@ -272,28 +265,6 @@ def quote_correct(access, quote_id, data, reason):
 )
 def quote_void(access, quote_id, reason):
     return record(access.void_quote(quote_id, reason))
-
-
-@register_operation(
-    name="quote_questions",
-    summary=(
-        "The facts still missing before this quote could be compared "
-        "honestly — the questions to send back to the supplier."
-    ),
-    input_schema=obj({"quote_id": ID}, required=("quote_id",)),
-)
-def quote_questions(access, quote_id):
-    quote = access.get_quote(quote_id)
-    round_ = access.get_round(quote.round_id)
-    commodity = access.get_commodity(quote.commodity_slug)
-    item = access.get_item(quote.item_id) if quote.item_id else None
-    return [
-        {"key": f.key, "question": f.question, "audience": f.audience}
-        for f in missing_facts(quote, commodity, round_, item=item)
-    ]
-
-
-# ---- comparison and award ---------------------------------------------
 
 
 @register_operation(
@@ -411,12 +382,9 @@ def award_list(access, round_id=None):
 @register_operation(
     name="commodity_supply_base",
     summary=(
-        "Who we think can supply a commodity, and the record each belief rests on — "
-        "contracted, awarded, quoted, invited, or merely named as the manufacturer of a "
-        "trade item. There is no stored list of who supplies what, on purpose: every "
-        "entry here is derived and dated, so a supplier that went quiet in April does "
-        "not read the same as one under contract. Pass item_id to narrow to one "
-        "manufacturer's version of the commodity."
+        "Who we think can supply a commodity, and the record each belief rests on: contracted, "
+        "awarded, quoted, invited, or merely named as the manufacturer of a trade item. Derived and "
+        "dated, never stored. Pass item_id to narrow to one trade item."
     ),
     input_schema=obj(
         {"commodity_slug": {"type": "string"}, "item_id": ID},
@@ -448,19 +416,10 @@ def commodity_supply_base(access, commodity_slug, item_id=None):
 @register_operation(
     name="tracker_import",
     summary=(
-        "Import a procurement due-diligence tracker from a Google Sheet into this programme: "
-        "suppliers with their contacts, the rounds, who was invited, and the quotes.\n\n"
-        "It records what the sheet STATES and refuses what the sheet DERIVES. A cell reading "
-        '"$0.46/sachet (quoted). Carton price not given; ~$69/carton is derived @150/carton, '
-        'unconfirmed" imports the $0.46 -- a supplier said that -- and refuses the $69, because '
-        "importing a hand-derived figure that its own author flagged as unconfirmed would turn "
-        "the caveat into a stored number that looks authoritative and then gets re-derived on "
-        "top of. This system computes that figure itself and says so when it cannot.\n\n"
-        "`refused` in the response is as much the point as `imported`: it is the list of things "
-        "the sheet knows and this system will not guess at. Read it.\n\n"
-        "Idempotent on round labels and supplier names, so it can be re-run as the sheet is "
-        "edited. Requires the Drive service account to have read access to the sheet; the error "
-        "names the address to share it with. Use dry_run first."
+        "Import a procurement tracker from a Google Sheet: suppliers, rounds, invitations and quotes. "
+        "Records what the sheet STATES and refuses what it DERIVES — `refused` lists what it would "
+        "not guess at, and is as much the point as `imported`. Idempotent on round labels and "
+        "supplier names. The sheet must be shared with the Drive service account. Use dry_run first."
     ),
     input_schema=obj(
         {

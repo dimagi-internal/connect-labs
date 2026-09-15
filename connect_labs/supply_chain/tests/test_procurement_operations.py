@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from connect_labs.supply_chain.models import Award, Supplier
-from connect_labs.supply_chain.procurement.operations import award_create, quote_get, quote_questions
+from connect_labs.supply_chain.procurement.operations import award_create, quote_get
 from connect_labs.supply_chain.procurement.services.comparison import compare_round
 from connect_labs.supply_chain.tests.conftest import quote, wrap
 
@@ -26,7 +26,9 @@ def _access_for(round_, commodity, quotes, suppliers=(), quote_by_id=None):
     return access
 
 
-# --- Finding 2: quote_get and quote_questions must report audience --------
+# --- Finding 2: quote_get must report the audience on each missing fact ---
+# `quote_questions` used to return this same list and nothing else; it was
+# retired rather than kept as a second way to ask one question.
 
 
 def test_quote_get_reports_the_audience_on_each_missing_fact(rutf, round_2000_cartons):
@@ -43,26 +45,6 @@ def test_quote_get_reports_the_audience_on_each_missing_fact(rutf, round_2000_ca
     assert all("audience" in fact for fact in result["missing"])
     pack_spec_fact = next(f for f in result["missing"] if f["key"] == "pack_spec")
     assert pack_spec_fact["audience"] == "supplier"
-
-
-def test_quote_questions_reports_the_audience_on_each_missing_fact(rutf_without_course, round_2000_cartons):
-    q = quote()
-    access = MagicMock()
-    access.get_quote.return_value = q
-    access.get_round.return_value = round_2000_cartons
-    access.get_commodity.return_value = rutf_without_course
-    access.get_item.return_value = None
-
-    result = quote_questions(access, quote_id=q.id)
-
-    assert result
-    assert all("audience" in fact for fact in result)
-    course_fact = next(f for f in result if f["key"] == "course_definition")
-    assert course_fact["audience"] == "internal"
-
-
-# --- Finding 5: award_create must validate at least as hard as every other
-# write, and a later quote must never change an already-frozen snapshot ----
 
 
 def test_award_create_rejects_a_nonexistent_quote():
