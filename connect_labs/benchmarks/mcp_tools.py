@@ -13,7 +13,12 @@ from __future__ import annotations
 from typing import Any
 
 from connect_labs.benchmarks.models import MIN_PEERS_FLOOR, BenchmarkCohort, BenchmarkCohortMember
+from connect_labs.benchmarks.publish import publish_benchmark
+from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data
+from connect_labs.mcp.connect_token import require_connect_token
 from connect_labs.mcp.tool_registry import MCPToolError, register
+from connect_labs.workflow.data_access import WorkflowDataAccess
+from connect_labs.workflow.templates import resolve_snapshot_contract
 
 
 def _serialize_cohort(cohort: BenchmarkCohort) -> dict[str, Any]:
@@ -156,4 +161,131 @@ def benchmarks_cohort_list(user, *, organization_id: str) -> dict[str, Any]:
             }
             for cohort in cohorts
         ]
+    }
+
+
+def _caller_organization_slugs(user, access_token: str) -> set[str]:
+    """Connect organisation slugs the caller belongs to, per production Connect.
+
+    Mirrors ``workflows.py``'s ``_collect_user_opportunity_ids`` -- same fetch,
+    same cache, read for organisation slugs instead of opportunity ids.
+    """
+    data = fetch_user_organization_data(access_token, owner=getattr(user, "username", None))
+    if not data:
+        return set()
+    return {str(org.get("slug")) for org in (data.get("organizations") or []) if org.get("slug")}
+
+
+@register(
+    name="benchmarks_publish",
+    description=(
+        "Publish a completed workflow run's graded figures to a benchmark cohort. Refuses "
+        "a run that is not completed -- its figures are still moving -- and refuses a caller "
+        "who lacks access to the cohort's organisation. Everything the publisher's own "
+        "disclosure rules withhold (non-rate indicators, cohorts below min_peers/min_denominator "
+        "after the rules run) is withheld and reported back, never silently dropped. If the "
+        "run's snapshot is not the shape this publisher reads -- or yields no benchmarkable "
+        "observations at all -- the call fails loudly rather than writing an empty publication, "
+        "so a caller must not treat a raised error as 'nothing to publish'."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "cohort_id": {"type": "integer"},
+            "workflow_id": {
+                "type": "integer",
+                "description": "The workflow definition id the run belongs to.",
+            },
+            "run_id": {"type": "integer"},
+            "opportunity_id": {
+                "type": "integer",
+                "description": "Scope for loading the run, if it is opportunity-owned.",
+            },
+            "program_id": {
+                "type": "integer",
+                "description": "Scope for loading the run, if it is program-owned (multi-opp report).",
+            },
+        },
+        "required": ["cohort_id", "workflow_id", "run_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def benchmarks_publish(
+    user,
+    *,
+    cohort_id: int,
+    workflow_id: int,
+    run_id: int,
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
+) -> dict[str, Any]:
+    try:
+        cohort = BenchmarkCohort.objects.get(pk=cohort_id)
+    except BenchmarkCohort.DoesNotExist as exc:
+        raise MCPToolError("NOT_FOUND", f"Benchmark cohort {cohort_id} not found.") from exc
+
+    token = require_connect_token(user)
+    if cohort.organization_id not in _caller_organization_slugs(user, token):
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            f"You do not have access to organisation {cohort.organization_id!r}, which owns cohort {cohort_id}.",
+        )
+
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
+    try:
+        run = wda.get_run(run_id)
+        if run is None:
+            raise MCPToolError("NOT_FOUND", f"Run {run_id} not found.")
+        if not run.is_completed:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                f"Run {run_id} is not completed -- its figures are still moving and cannot be published.",
+            )
+
+        # The graded payload a saved run stores is one level down from
+        # `run.snapshot`, under `["state"][<state_key>]` --
+        # `workflow/snapshot_builders.wrap_for_runner` wraps it there so the
+        # runner's `view.state.<key>` contract resolves, and `state_key`
+        # defaults to "snapshot" but is spec-driven per workflow (see
+        # `workflow/history_rebuild.py`'s identical resolution). Verified
+        # against `connect_labs/semantic/snapshot.py::build` and
+        # `connect_labs/benchmarks/publish.py`'s own docstring, both of which
+        # name this exact path.
+        definition = wda.get_definition(workflow_id)
+        state_key = "snapshot"
+        if definition is not None:
+            contract = resolve_snapshot_contract(definition)
+            if contract.get("ok"):
+                state_key = (contract.get("snapshot_inputs") or {}).get("state_key") or "snapshot"
+
+        state = (run.snapshot or {}).get("state") or {}
+        graded_payload = state.get(state_key) or {}
+
+        meta = graded_payload.get("meta") or {}
+        registry_id = (meta.get("registry") or {}).get("registry_id")
+        as_of = (
+            meta.get("as_of")
+            or (str(run.period_end)[:10] if run.period_end else None)
+            or (str(run.completed_at)[:10] if run.completed_at else None)
+        )
+
+        publication = publish_benchmark(
+            cohort,
+            snapshot=graded_payload,
+            source_workflow_id=workflow_id,
+            source_run_id=run_id,
+            registry_id=registry_id,
+            as_of=as_of,
+            published_by=getattr(user, "username", "") or "",
+        )
+    finally:
+        wda.close()
+
+    return {
+        "publication_id": publication.pk,
+        "cohort_id": cohort.pk,
+        "as_of": str(publication.as_of),
+        "value_count": publication.values.count(),
+        "withheld_indicator_ids": publication.withheld_indicator_ids,
     }
