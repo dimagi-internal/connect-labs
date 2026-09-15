@@ -21,6 +21,8 @@ heard 12 Jun" is the record.
   </div>
   <div class="flex items-center gap-4">
     <p class="text-sm text-gray-500">{{ suppliers|length }} on file</p>
+    <a href="{% url 'supply_chain:organisations' %}"
+       class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Organisations</a>
     <a href="{% url 'supply_chain:supplier_create' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
       <i class="fa-solid fa-plus mr-1"></i> New supplier
     </a>
