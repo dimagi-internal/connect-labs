@@ -8,7 +8,7 @@ should not ripple into 30-odd call sites.
 
 What it still owns, and what it deliberately does not:
 
-  - **Scoping.** Reference data (commodities, items, suppliers, parties) is
+  - **Scoping.** Reference data (commodities, items, suppliers) is
     shared across a programme's rounds, and ideally across an organisation's
     programmes. Which of the two you get depends on the caller, so the choice
     is made here, once, via `scope_key`.
@@ -385,13 +385,13 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         supplier.save()
         return _fresh(supplier)
 
-    def list_parties(self):
+    def list_orgs(self):
         return list(LabsOrg.objects.all())
 
-    def get_party(self, party_id: int):
-        return LabsOrg.objects.filter(pk=party_id).first()
+    def get_org(self, org_id: int):
+        return LabsOrg.objects.filter(pk=org_id).first()
 
-    def upsert_party(self, data: dict):
+    def upsert_org(self, data: dict):
         """Record an organisation.
 
         Not programme-scoped, unlike the reference tier around it. An
@@ -704,8 +704,8 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         and a contract whose buyer is a dangling id cannot answer the one
         question it was added to answer.
         """
-        party = self.get_party(data["buyer_org_id"])
-        if party is None:
+        buyer = self.get_org(data["buyer_org_id"])
+        if buyer is None:
             raise ValueError(f"organisation {data['buyer_org_id']} does not exist")
         return _fresh(
             Contract.objects.create(
@@ -714,7 +714,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
                 commodity=self._require_commodity(data["commodity_slug"]),
                 supplier=self._resolve_supplier(data.get("supplier_id")),
                 item=self._resolve_item(data.get("item_id")),
-                buyer_org=party,
+                buyer_org=buyer,
                 **_columns(Contract, data),
             )
         )

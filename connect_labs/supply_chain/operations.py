@@ -21,7 +21,7 @@ from connect_labs.supply_chain.values import to_wire
 # The published wire shape, per model. See serializers.py for why these are
 # a contract and not an implementation detail.
 _SERIALIZERS = {
-    LabsOrg: serializers.party,
+    LabsOrg: serializers.org,
     models.Commodity: serializers.commodity,
     models.Item: serializers.item,
     models.Supplier: serializers.supplier,
@@ -500,6 +500,49 @@ def item_get(access, item_id):
 )
 def item_upsert(access, data):
     return record(access.upsert_item(data))
+
+
+@register_operation(
+    name="reference_scope_report",
+    summary=(
+        "Where this programme's reference data actually lives, and what else is out there. "
+        "Commodities, trade items and suppliers are stored under a scope_key, which is "
+        "`org:<id>` when the caller had a numeric organisation selected and `prog:<id>` "
+        "otherwise — so selecting an organisation alongside a programme can silently change "
+        "which catalogue you see, and an empty Catalogue tab is usually this rather than "
+        "missing data. Counts only: no names, no rows."
+    ),
+    input_schema=obj({}),
+)
+def reference_scope_report(access):
+    from django.db.models import Count
+
+    scopes: dict[str, dict] = {}
+    for model in (models.Commodity, models.Item, models.Supplier):
+        name = model._meta.model_name
+        for row in model.objects.values("scope_key").annotate(n=Count("pk")).order_by("scope_key"):
+            scopes.setdefault(row["scope_key"], {})[name] = row["n"]
+
+    # `scope_key` raises without a scope, and a diagnostic that cannot run on
+    # the machine you are diagnosing is no use -- so the caller's own scope is
+    # reported as unresolvable rather than raising.
+    try:
+        mine = access.scope_key
+    except ValueError as exc:
+        mine = None
+        reason = str(exc)
+    else:
+        reason = None
+
+    return {
+        "this_caller": mine,
+        "this_caller_unresolved": reason,
+        "reference_scope": access.reference_scope if mine else None,
+        "scopes": [
+            {"scope_key": key, "counts": counts, "total": sum(counts.values()), "is_this_caller": key == mine}
+            for key, counts in sorted(scopes.items())
+        ],
+    }
 
 
 @register_operation(

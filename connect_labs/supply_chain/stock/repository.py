@@ -62,17 +62,17 @@ class StockRepositoryMixin:
         parent = None
         if data.get("parent_supply_point_id") is not None:
             parent = self._require_supply_point(data["parent_supply_point_id"], "parent supply point")
-        party = None
+        manager = None
         if data.get("managed_by_org_id") is not None:
-            party = self.get_party(data["managed_by_org_id"])
-            if party is None:
-                raise ValueError(f"party {data['managed_by_org_id']} does not exist")
+            manager = self.get_org(data["managed_by_org_id"])
+            if manager is None:
+                raise ValueError(f"organisation {data['managed_by_org_id']} does not exist")
 
         from connect_labs.supply_chain.data_access import _columns, _fresh
 
         defaults = _columns(SupplyPoint, {k: v for k, v in data.items() if k != "slug"})
         defaults["parent"] = parent
-        defaults["managed_by_org"] = party
+        defaults["managed_by_org"] = manager
         point, _ = SupplyPoint.objects.update_or_create(
             program_id=self._require_program(), slug=data["slug"], defaults=defaults
         )

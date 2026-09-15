@@ -53,7 +53,7 @@ def setup(da):
         },
     )
     supplier = op(da, "supplier_create", data={"name": "DABS", "type": "manufacturer"})
-    partner = op(da, "party_upsert", data={"slug": "llo-kano", "name": "Kano partner", "kind": "partner_org"})
+    partner = op(da, "org_upsert", data={"slug": "llo-kano", "name": "Kano partner", "kind": "partner_org"})
     store = op(
         da,
         "supply_point_upsert",

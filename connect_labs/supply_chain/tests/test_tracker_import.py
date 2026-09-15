@@ -506,7 +506,7 @@ class TestNoInventedOrganisation:
     def test_a_dimagi_user_is_attributed_without_one(self, monkeypatch):
         """The end of the chain, and the reason the invention was never
         needed: who Dimagi is does not depend on a programme's setup."""
-        from connect_labs.supply_chain.identity import resolve_party
+        from connect_labs.supply_chain.identity import resolve_org
 
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
         da = SupplyDataAccess(access_token="unused", program_id=PROGRAM)
@@ -516,4 +516,4 @@ class TestNoInventedOrganisation:
             email = "sophie@dimagi.com"
             is_authenticated = True
 
-        assert resolve_party(SupplyDataAccess(program_id=PROGRAM, user=_User())).slug == "dimagi"
+        assert resolve_org(SupplyDataAccess(program_id=PROGRAM, user=_User())).slug == "dimagi"

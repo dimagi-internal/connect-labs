@@ -1,4 +1,4 @@
-"""Fulfilment operations: parties, and the contract that names who is buying.
+"""Fulfilment operations: organisations, and the contract that names who is buying.
 
 Registered into the one registry in operations.py, so the HTTP API and the
 MCP server both get them without a second list to keep in step.
@@ -24,18 +24,28 @@ from connect_labs.supply_chain.operations import (
     register_operation,
 )
 
-_PARTY_DATA = _data_with(
-    ("slug", "name", "kind"),
+# The schema describes LabsOrg's own fields and nothing else. It used to
+# REQUIRE a `kind` (programme_org | partner_org | supplier | agency) and accept
+# a `roles` list, neither of which LabsOrg has: the schema enum-checked the
+# value and `_columns()` then dropped it, so a caller got a 200 and their value
+# went nowhere. `kind` was the per-programme role crammed onto the
+# organisation, and it now lives on the purchase that has it
+# (`Contract.buyer_of_record`) -- an organisation is not a partner in general,
+# it is the partner on a particular contract.
+_ORG_DATA = _data_with(
+    ("slug", "name"),
     slug={"type": "string", "minLength": 1},
     name={"type": "string", "minLength": 1},
-    kind={"enum": list(records.PARTY_KINDS)},
-    connect_organization_id=ID,
-    roles={"type": "array", "items": {"type": "string"}},
+    short_name={"type": "string"},
     country={"type": "string", "maxLength": 2},
+    connect_organization_id=ID,
+    connect_organization_slug={"type": "string"},
+    aliases={"type": "array", "items": {"type": "string"}},
+    notes={"type": "string"},
 )
 
 
-# ---- parties -----------------------------------------------------------
+# ---- organisations -----------------------------------------------------
 
 
 @register_operation(
@@ -58,31 +68,32 @@ def org_merge(access, keep_id, merge_id):
 
 
 @register_operation(
-    name="party_list",
+    name="org_list",
     summary=(
-        "List the organisations that can act in this programme's supply chain — us, "
-        "local implementing partners, procurement agencies. Read this before creating "
-        "a contract: the buyer of record must be one of them."
+        "List the organisations on file — us, local implementing partners, procurement "
+        "agencies. Read this before creating a contract: the buyer of record must be "
+        "one of them. Organisations are labs-wide, not per programme: an organisation "
+        "is the same body wherever it appears."
     ),
     input_schema=obj({}),
 )
-def party_list(access):
-    return [record(p) for p in access.list_parties()]
+def org_list(access):
+    return [record(o) for o in access.list_orgs()]
 
 
 @register_operation(
-    name="party_upsert",
+    name="org_upsert",
     summary=(
-        "Create or update a party by slug. Set connect_organization_id to bind it to a "
-        "Connect organisation, which is what lets that partner's own staff sign in and "
-        "record their own shipments, receipts and stock counts. A party with no binding "
-        "still works — we record on their behalf, marked as reported."
+        "Create or update an organisation by slug. Set connect_organization_id to bind it "
+        "to a Connect organisation, which is what lets that partner's own staff sign in and "
+        "record their own shipments, receipts and stock counts. An organisation with no "
+        "binding still works — we record on their behalf, marked as reported."
     ),
-    input_schema=obj({"data": _PARTY_DATA}, required=("data",)),
+    input_schema=obj({"data": _ORG_DATA}, required=("data",)),
     is_write=True,
 )
-def party_upsert(access, data):
-    return record(access.upsert_party(data))
+def org_upsert(access, data):
+    return record(access.upsert_org(data))
 
 
 # ---- contracts ---------------------------------------------------------
@@ -93,7 +104,7 @@ def party_upsert(access, data):
     summary=(
         "List contracts for this programme, optionally filtered by round or status. "
         "A contract is a commitment; an award is only a decision, and the two are "
-        "separate because the party that decides is often not the party that buys."
+        "separate because the organisation that decides is often not the one that buys."
     ),
     input_schema=obj({"round_id": ID, "status": {"enum": list(records.CONTRACT_STATUSES)}}),
 )

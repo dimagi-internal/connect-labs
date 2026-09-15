@@ -56,7 +56,7 @@ def _choices(values):
 def scope_key(organization_id=None, program_id=None) -> str:
     """The reference tier's scope, as one indexable string.
 
-    Reference data (commodities, items, suppliers, parties) is shared across a
+    Reference data (commodities, items, suppliers) is shared across a
     programme's rounds and ideally across an organisation's programmes. Which
     of the two we get depends on the caller: `labs_context` hands a numeric
     organisation id for a real org and a slug for a labs-only synthetic one.

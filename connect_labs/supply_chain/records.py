@@ -2,7 +2,7 @@
 
 Tiers, and how each is scoped (see the design doc, sections 4, 17 and 18):
 
-  reference    -> organization_id   commodities, items, suppliers, parties
+  reference    -> organization_id   commodities, items, suppliers
   procurement  -> program_id        rounds, outreach, quotes, awards, purchases
   fulfilment   -> program_id        contracts, shipments, receipts, invoices, documents
   network      -> program_id        supply points (carrying opportunity_id in data)
@@ -20,10 +20,12 @@ procurement tier already hit (see data_access._routing_opportunity_id).
 EXPERIMENT_PREFIX = "supply"
 
 # ---- reference: reused across a programme's rounds ---------------------
+# Organisations are NOT here: they are `labs.LabsOrg`, one labs-wide table,
+# not a per-scope LabsRecord. The `supply_party` type constant that used to
+# sit in this list was read by nothing at all once the model moved.
 COMMODITY_TYPE = "supply_commodity"
 ITEM_TYPE = "supply_item"
 SUPPLIER_TYPE = "supply_supplier"
-PARTY_TYPE = "supply_party"
 
 # ---- procurement: source to award -------------------------------------
 ROUND_TYPE = "supply_round"
@@ -47,7 +49,7 @@ MOVEMENT_TYPE = "supply_movement"
 STOCK_COUNT_TYPE = "supply_stock_count"
 DISTRIBUTION_TYPE = "supply_distribution"
 
-REFERENCE_TYPES = (COMMODITY_TYPE, ITEM_TYPE, SUPPLIER_TYPE, PARTY_TYPE)
+REFERENCE_TYPES = (COMMODITY_TYPE, ITEM_TYPE, SUPPLIER_TYPE)
 PROCUREMENT_TYPES = (ROUND_TYPE, OUTREACH_TYPE, QUOTE_TYPE, AWARD_TYPE, PURCHASE_TYPE)
 FULFILMENT_TYPES = (CONTRACT_TYPE, SHIPMENT_TYPE, RECEIPT_TYPE, INVOICE_TYPE, DOCUMENT_TYPE)
 NETWORK_TYPES = (SUPPLY_POINT_TYPE,)
@@ -61,8 +63,13 @@ STOCK_TYPES = (MOVEMENT_TYPE, STOCK_COUNT_TYPE, DISTRIBUTION_TYPE)
 # value no service handles, or a service branching on a value no schema
 # permits.
 
+# Who imports, which is a fact about THE PURCHASE and not about the
+# organisation: the same body is the buyer of record on one contract and not
+# on the next, and import duty and VAT follow the contract. `PARTY_KINDS`
+# used to sit beside this saying the opposite -- that an organisation IS a
+# partner_org or an agency, everywhere, for ever -- and it was read by one
+# schema that then threw the value away. Gone.
 BUYER_OF_RECORD = ("programme_org", "partner_org", "agency")
-PARTY_KINDS = ("programme_org", "partner_org", "supplier", "agency")
 
 # Who told us. Required on every fulfilment, network and stock record
 # (design doc section 17.3) -- a fact we did not witness is a claim.
@@ -179,7 +186,7 @@ DOCUMENT_LINKS = (
     "distribution",
     "stock_count",
     "supply_point",
-    # the parties and things themselves: a certification, a spec sheet, a
+    # the organisations and things themselves: a certification, a spec sheet, a
     # photograph of the product
     "supplier",
     "item",

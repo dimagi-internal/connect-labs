@@ -42,7 +42,7 @@ def _reference_scope(scope_key: str) -> str:
     return "organization" if (scope_key or "").startswith("org:") else "program"
 
 
-def party(obj) -> dict:
+def org(obj) -> dict:
     return {
         "id": obj.pk,
         "slug": obj.slug,
@@ -117,7 +117,7 @@ def supplier(obj) -> dict:
         "contacts": obj.contacts,
         "qualifications": obj.qualifications,
         "connect_organization_id": obj.connect_organization_id,
-        "party_id": obj.org_id,
+        "org_id": obj.org_id,
         "notes": obj.notes,
         "reference_scope": _reference_scope(obj.scope_key),
     }

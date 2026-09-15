@@ -249,7 +249,7 @@ class TestContracts:
             )
 
     def test_a_contract_records_who_is_buying_and_that_it_was_reported(self, da, open_round):
-        partner = da.upsert_party({"slug": "llo-kano", "name": "Kano partner", "kind": "partner_org"})
+        partner = da.upsert_org({"slug": "llo-kano", "name": "Kano partner", "kind": "partner_org"})
         supplier = da.create_supplier({"name": "Harmattan Foods"})
         contract = da.create_contract(
             {
@@ -270,7 +270,7 @@ class TestContracts:
         assert contract.unit_price == Decimal("52.4200")
 
     def test_a_claimed_duty_relief_with_no_document_is_not_evidenced(self, da, open_round):
-        partner = da.upsert_party({"slug": "llo", "name": "Partner", "kind": "partner_org"})
+        partner = da.upsert_org({"slug": "llo", "name": "Partner", "kind": "partner_org"})
         supplier = da.create_supplier({"name": "Harmattan Foods"})
         contract = da.create_contract(
             {
@@ -384,7 +384,7 @@ class TestSyntheticScopes:
         passed.
         """
         supplier = da.create_supplier({"name": "Harmattan Foods"})
-        partner = da.upsert_party({"slug": "llo", "name": "Partner", "kind": "partner_org"})
+        partner = da.upsert_org({"slug": "llo", "name": "Partner", "kind": "partner_org"})
         item = da.upsert_item({"sku": "hf", "name": "HF RUTF", "commodity_slug": "rutf", "base_per_pack": 144})
         store = da.upsert_supply_point(
             {"slug": "store", "name": "Store", "kind": "central_store", "source": "we_recorded"}

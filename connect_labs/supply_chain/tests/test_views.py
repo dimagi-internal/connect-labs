@@ -1076,7 +1076,7 @@ def test_an_order_links_out_to_the_supplier_it_is_with(client, sophie, monkeypat
         "receipt_list": [],
         "invoice_list": [],
         "document_list": [],
-        "party_list": [{"id": 2, "name": "Dimagi", "slug": "dimagi"}],
+        "org_list": [{"id": 2, "name": "Dimagi", "slug": "dimagi"}],
         "supplier_list": [SUPPLIER],
     }
     with patch(

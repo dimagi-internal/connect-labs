@@ -5,7 +5,7 @@ provenance-bearing row carries `recorded_by_org` and a `source`, both of
 which used to arrive in the payload -- so a partner could record a receipt as
 though we had witnessed it and nothing would know. What is tested here is
 mostly the refusals: an unknowable caller, a caller belonging to nothing, and
-a caller whose organisations match two acting parties at once.
+a caller whose organisations match two rows at once.
 """
 
 from unittest.mock import patch
@@ -14,7 +14,7 @@ import pytest
 
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.data_access import SupplyDataAccess
-from connect_labs.supply_chain.identity import IdentityUnresolved, caller_org_ids, resolve_party, source_for
+from connect_labs.supply_chain.identity import IdentityUnresolved, caller_org_ids, resolve_org, source_for
 
 pytestmark = pytest.mark.django_db
 
@@ -32,7 +32,7 @@ def _dimagi_user():
     return _User()
 
 
-def _party(slug, kind, connect_organization_id, connect_organization_slug=""):
+def _org(slug, kind, connect_organization_id, connect_organization_slug=""):
     """An organisation. `kind` is accepted and ignored: it was a
     per-programme role crammed onto the org, and now lives on the purchase
     (`Contract.buyer_of_record`)."""
@@ -95,8 +95,8 @@ class TestWhoIsAsking:
         raises, so every provenance write by a user entitled to see synthetic
         opps would have been a 500 rather than a stamped row.
 
-        Only integer ids can match a party, because
-        `Party.connect_organization_id` is an IntegerField. So a slug is
+        Only integer ids can match a row, because
+        `LabsOrg.connect_organization_id` is an IntegerField. So a slug is
         skipped, not coerced and not crashed on.
         """
         access, request = _session_access([])
@@ -111,7 +111,7 @@ class TestWhoIsAsking:
 
     def test_a_user_with_only_synthetic_orgs_belongs_to_nothing_matchable(self):
         """Not a crash, and not silently permissive: an honest empty set,
-        which the stamping layer turns into a refusal naming party_upsert."""
+        which the stamping layer turns into a refusal naming org_upsert."""
         access, request = _session_access([])
         org_data = {"organizations": [{"id": "labs-synthetic-x", "slug": "labs-synthetic-x"}]}
         with patch("connect_labs.labs.context.get_org_data", return_value=org_data):
@@ -128,71 +128,71 @@ class TestWhoIsAsking:
             assert caller_org_ids(access) is None
 
 
-class TestWhichParty:
-    def test_a_caller_resolves_to_the_party_its_organisation_acts_as(self):
-        _party("dimagi", "programme_org", 7)
+class TestWhichOrganisation:
+    def test_a_caller_resolves_to_the_organisation_it_acts_as(self):
+        _org("dimagi", "programme_org", 7)
         access, request = _session_access([7])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
-            assert resolve_party(access).slug == "dimagi"
+            assert resolve_org(access).slug == "dimagi"
 
     def test_a_partner_resolves_to_its_own_party_not_ours(self):
-        _party("dimagi", "programme_org", 7)
-        _party("kano-llo", "partner_org", 42)
+        _org("dimagi", "programme_org", 7)
+        _org("kano-llo", "partner_org", 42)
         access, request = _session_access([42])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
-            party = resolve_party(access)
-        assert party.slug == "kano-llo"
+            org = resolve_org(access)
+        assert org.slug == "kano-llo"
 
-    def test_an_organisation_with_no_party_here_resolves_to_nothing(self):
+    def test_an_organisation_not_on_file_resolves_to_nothing(self):
         """Belonging to some Connect org is not the same as acting in THIS
-        programme. Returning our own party would attribute their record to us."""
-        _party("dimagi", "programme_org", 7)
+        programme. Returning our own organisation would attribute their record to us."""
+        _org("dimagi", "programme_org", 7)
         access, request = _session_access([999])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
-            assert resolve_party(access) is None
+            assert resolve_org(access) is None
 
-    def test_two_matching_parties_refuse_rather_than_pick(self):
+    def test_two_matching_organisations_refuse_rather_than_pick(self):
         """Choosing one would attribute the row to an organisation the user
         never named. The message says what would settle it."""
-        _party("llo-a", "partner_org", 7)
-        _party("llo-b", "partner_org", 8)
+        _org("llo-a", "partner_org", 7)
+        _org("llo-b", "partner_org", 8)
         access, request = _session_access([7, 8])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
             with pytest.raises(IdentityUnresolved) as caught:
-                resolve_party(access)
+                resolve_org(access)
         assert "recorded_by_org_id" in str(caught.value)
         assert "llo-a" in str(caught.value) and "llo-b" in str(caught.value)
 
     def test_dimagi_staff_act_for_the_programme_without_an_org_match(self):
         """The rule that replaced org-matching for us.
 
-        Matching `Party.connect_organization_id` could never work in a
+        Matching on the Connect id could never work in a
         labs-only programme: a synthetic organisation is identified by slug
         while that column is an integer. Rather than special-case demo data,
-        Dimagi staff resolve to the programme's own party by ACL -- the same
+        Dimagi staff resolve to Dimagi by ACL -- the same
         one `SyntheticOpportunity.is_accessible_to` already grants them.
         """
-        _party("dimagi", "programme_org", None)
-        _party("kano-llo", "partner_org", 8)
+        _org("dimagi", "programme_org", None)
+        _org("kano-llo", "partner_org", 8)
         access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user())
-        assert resolve_party(access).slug == "dimagi"
+        assert resolve_org(access).slug == "dimagi"
 
-    def test_dimagi_staff_in_a_programme_with_no_party_of_ours_resolve_to_nothing(self):
-        """Which the stamping layer turns into a refusal naming party_upsert
+    def test_dimagi_staff_resolve_to_dimagi_even_before_a_row_exists(self):
+        """Which the stamping layer turns into a refusal naming org_upsert
         -- the state programme 10063 was in, where no setup step had ever
-        created the programme's own party."""
-        _party("kano-llo", "partner_org", 8)
+        created a row for us."""
+        _org("kano-llo", "partner_org", 8)
         access = SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user())
         # Dimagi always resolves to Dimagi, creating the row on first use:
         # an organisation labs already acts as is not something to wait for.
-        assert resolve_party(access).slug == "dimagi"
+        assert resolve_org(access).slug == "dimagi"
 
     def test_the_same_organisation_answers_in_every_programme(self):
         """The point of the rewrite. Dimagi is Dimagi in programme 10505 and
         in 10600 -- one row, not one per programme -- so attribution cannot
         depend on which programme a setup step happened to run in."""
-        here = resolve_party(SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user()))
-        there = resolve_party(SupplyDataAccess(program_id=10_600, user=_dimagi_user()))
+        here = resolve_org(SupplyDataAccess(program_id=PROGRAM, user=_dimagi_user()))
+        there = resolve_org(SupplyDataAccess(program_id=10_600, user=_dimagi_user()))
         assert here.pk == there.pk == LabsOrg.objects.get(slug="dimagi").pk
 
 
@@ -206,7 +206,7 @@ class TestSource:
 
 
 class TestStamping:
-    """What `call_operation` does with the resolved party.
+    """What `call_operation` does with the resolved organisation.
 
     The asymmetry tested here is deliberate and is not a privilege: we record
     a partner's receipt on their behalf routinely -- that is what
@@ -242,7 +242,7 @@ class TestStamping:
     def test_a_procurement_write_is_untouched_because_it_records_no_provenance(self):
         """Provenance is compulsory BELOW the contract (section 17.3), so
         suppliers, rounds, quotes and outreach carry none and must not start
-        being refused for lacking a party."""
+        being refused for lacking an organisation."""
         access, request = _session_access([7])
         payload = {"data": {"name": "Northwind"}}
         assert self._stamp(access, payload, "supplier_create") == payload
@@ -250,58 +250,58 @@ class TestStamping:
     def test_an_unknowable_caller_is_left_alone_to_declare_its_own(self):
         """The management-command route. Refusing here would turn a missing
         argument into a permission error, and the commands that write
-        provenance already pass their party."""
+        provenance already pass their organisation."""
         access = SupplyDataAccess(access_token="local", program_id=PROGRAM)
         payload = self._contract(source="partner_reported", recorded_by_org_id=3)
         assert self._stamp(access, payload) == payload
 
-    def test_a_knowable_caller_with_no_party_here_is_refused(self):
+    def test_a_knowable_caller_with_no_organisation_on_file_is_refused(self):
         access, request = _session_access([999])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
             with pytest.raises(IdentityUnresolved) as caught:
                 self._stamp(access, self._contract())
-        assert "party_upsert" in str(caught.value)
+        assert "org_upsert" in str(caught.value)
 
-    def test_the_party_and_source_are_stamped_from_the_session(self):
-        party = _party("dimagi", "programme_org", 7)
+    def test_the_organisation_and_source_are_stamped_from_the_session(self):
+        org = _org("dimagi", "programme_org", 7)
         access, request = _session_access([7])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
             stamped = self._stamp(access, self._contract())
-        assert stamped["data"]["recorded_by_org_id"] == party.pk
+        assert stamped["data"]["recorded_by_org_id"] == org.pk
         assert stamped["data"]["source"] == "we_recorded"
 
     def test_a_partner_is_stamped_as_reporting_not_as_witnessing(self):
-        party = _party("kano-llo", "partner_org", 42)
+        org = _org("kano-llo", "partner_org", 42)
         access, request = _session_access([42])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
             stamped = self._stamp(access, self._contract())
-        assert stamped["data"]["recorded_by_org_id"] == party.pk
+        assert stamped["data"]["recorded_by_org_id"] == org.pk
         assert stamped["data"]["source"] == "partner_reported"
 
     def test_a_partner_cannot_claim_we_recorded_it(self):
         """The defect this whole change exists to close: `we_recorded` asserts
         that WE saw it, and it was previously accepted from the payload."""
-        _party("kano-llo", "partner_org", 42)
+        _org("kano-llo", "partner_org", 42)
         access, request = _session_access([42])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
             with pytest.raises(IdentityUnresolved) as caught:
                 self._stamp(access, self._contract(source="we_recorded"))
         assert "first-hand" in str(caught.value)
 
-    def test_a_partner_cannot_attribute_a_record_to_another_party(self):
-        _party("kano-llo", "partner_org", 42)
-        other = _party("someone-else", "partner_org", 43)
+    def test_a_partner_cannot_attribute_a_record_to_another_organisation(self):
+        _org("kano-llo", "partner_org", 42)
+        other = _org("someone-else", "partner_org", 43)
         access, request = _session_access([42])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
             with pytest.raises(IdentityUnresolved) as caught:
                 self._stamp(access, self._contract(recorded_by_org_id=other.pk))
-        assert "another party" in str(caught.value)
+        assert "another organisation" in str(caught.value)
 
     def test_we_may_record_on_a_partners_behalf(self):
         """Not a privilege -- it is the normal case. Sophie enters what the
         LLO told her, and the row has to say the LLO reported it."""
-        _party("dimagi", "programme_org", 7)
-        llo = _party("kano-llo", "partner_org", 42)
+        _org("dimagi", "programme_org", 7)
+        llo = _org("kano-llo", "partner_org", 42)
         access, request = _session_access([7])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
             stamped = self._stamp(access, self._contract(recorded_by_org_id=llo.pk, source="partner_reported"))
@@ -311,7 +311,7 @@ class TestStamping:
     def test_a_caller_supplied_source_is_not_overwritten(self):
         """A document is stronger evidence than the caller's own word, and a
         derived source must not downgrade it."""
-        _party("dimagi", "programme_org", 7)
+        _org("dimagi", "programme_org", 7)
         access, request = _session_access([7])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data):
             stamped = self._stamp(access, self._contract(source="document"))
@@ -323,11 +323,11 @@ class TestRefusalsReachTheCaller:
 
     Found on labs, not in tests: attaching a document to a quote in programme
     10063 returned 500. The refusal was CORRECT -- that programme has no
-    parties, so the write cannot be attributed to anyone -- but
+    organisations, so the write cannot be attributed to anyone -- but
     `IdentityUnresolved` subclassed `Exception`, and the API dispatch maps
     only `jsonschema.ValidationError` and `ValueError` to 400. So every
     refusal built in #1777 was a server error, and the message naming the fix
-    ("add the party with party_upsert") never reached anybody.
+    ("add the organisation with org_upsert") never reached anybody.
 
     The tests written for that work all called `stamp_provenance` directly
     and asserted the raise, which is why they passed while the thing was
@@ -342,7 +342,7 @@ class TestRefusalsReachTheCaller:
         user = django_user_model.objects.create_user(username="sophie", password="x")
         client.force_login(user)
 
-        # A knowable caller belonging to an organisation with no party here:
+        # A knowable caller whose organisation is not on file:
         # exactly programme 10063's state.
         org_data = {"organizations": [{"id": 7, "slug": "dimagi"}]}
         # Scoped directly: what is under test is the exception-to-status
@@ -364,13 +364,13 @@ class TestRefusalsReachTheCaller:
             )
 
         assert response.status_code == 400, response.status_code
-        assert "party_upsert" in response.json()["error"]
+        assert "org_upsert" in response.json()["error"]
 
 
 class TestSyntheticOrgsMatchToo:
     """A labs-only organisation is identified by slug, and now matches on it.
 
-    This replaces a class of tests about which SCOPE a party lived under.
+    This replaces a class of tests about which SCOPE an organisation lived under.
     Parties were scope-keyed, so the same organisation existed as different
     rows in different programmes and a lookup could miss the one the writer
     created. `LabsOrg` is one registry for all of labs, so the question no
@@ -384,14 +384,14 @@ class TestSyntheticOrgsMatchToo:
         access, request = _session_access([])
         org_data = {"organizations": [{"id": "labs-synthetic-kano", "slug": "labs-synthetic-kano"}]}
         with patch("connect_labs.labs.context.get_org_data", return_value=org_data):
-            assert resolve_party(access).slug == "kano-llo"
+            assert resolve_org(access).slug == "kano-llo"
 
     def test_an_unknown_organisation_still_resolves_to_nothing(self):
         LabsOrg.objects.create(slug="kano-llo", name="Kano partner", connect_organization_slug="labs-synthetic-kano")
         access, request = _session_access([])
         org_data = {"organizations": [{"id": "labs-synthetic-other", "slug": "labs-synthetic-other"}]}
         with patch("connect_labs.labs.context.get_org_data", return_value=org_data):
-            assert resolve_party(access) is None
+            assert resolve_org(access) is None
 
 
 class TestReviewFindings1791:
@@ -447,7 +447,7 @@ class TestReviewFindings1791:
         access, request = _session_access([])
         org_data = {"organizations": [{"id": 999, "slug": "old-acme"}]}
         with patch("connect_labs.labs.context.get_org_data", return_value=org_data):
-            assert resolve_party(access) is None
+            assert resolve_org(access) is None
 
     def test_a_linked_organisation_answers_on_its_id_alone(self):
         """`matches()` fell through to the slug when the caller had no id,
@@ -464,8 +464,8 @@ class TestReviewFindings1791:
         the insert hit the unique Connect id -- a rename failing as a database
         error."""
         access = SupplyDataAccess(program_id=PROGRAM)
-        first = access.upsert_party({"slug": "acme", "name": "Acme", "connect_organization_id": 42})
-        second = access.upsert_party({"slug": "acme-renamed", "name": "Acme Ltd", "connect_organization_id": 42})
+        first = access.upsert_org({"slug": "acme", "name": "Acme", "connect_organization_id": 42})
+        second = access.upsert_org({"slug": "acme-renamed", "name": "Acme Ltd", "connect_organization_id": 42})
         assert first.pk == second.pk
         assert second.slug == "acme-renamed" and second.name == "Acme Ltd"
         assert LabsOrg.objects.count() == 1
