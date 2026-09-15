@@ -1,0 +1,69 @@
+{% extends "supply_chain/operation_form.html" %}
+{% load crispy_forms_tags %}
+
+{% comment %}
+A receipt's or a dispatch's batches. Batch and expiry belong on the LINE and
+not the header, because one consignment routinely carries two lots with
+different expiries -- and a first-expiry-first issue policy cannot be run
+against a header that averaged them.
+
+Same Alpine clone idiom as round_form.html: Django already renders the
+formset's `empty_form` for exactly this, so the button swaps __prefix__ for the
+next index and bumps TOTAL_FORMS.
+{% endcomment %}
+
+{% block extra_fields %}
+<div class="pt-4 border-t border-gray-100" x-data="{ count: {{ lines.total_form_count }} }">
+  <h2 class="text-sm font-semibold text-gray-900">{% block lines_heading %}What was in it{% endblock %}</h2>
+  <p class="text-xs text-gray-500 mt-0.5 mb-3 max-w-2xl">
+    One row per batch. Two lots of the same product with different expiry dates are two rows,
+    because that is the level a first-expiry-first policy reads.
+  </p>
+
+  {{ lines.management_form }}
+  {% if lines.non_form_errors %}
+    <p class="text-xs text-red-700 mb-2">{{ lines.non_form_errors|join:" " }}</p>
+  {% endif %}
+
+  <div id="line-rows" class="space-y-3">
+    {% for line in lines %}
+      <div class="rounded-md border border-gray-200 bg-gray-50/40 px-3 py-3">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-2 items-start">
+          {% for field in line.visible_fields %}
+            {% if field.name != "DELETE" %}
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1"
+                       for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.errors %}<p class="mt-1 text-xs text-red-700">{{ field.errors|join:" " }}</p>{% endif %}
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+        <label class="mt-2 inline-flex items-center gap-1.5 text-xs text-gray-500">
+          {{ line.DELETE }} Remove this row
+        </label>
+      </div>
+    {% endfor %}
+  </div>
+
+  <template id="empty-line">
+    <div class="rounded-md border border-gray-200 bg-gray-50/40 px-3 py-3">
+      {{ lines.empty_form.as_div }}
+    </div>
+  </template>
+
+  <button type="button"
+          @click="
+            const tpl = document.getElementById('empty-line');
+            const host = document.createElement('div');
+            host.appendChild(tpl.content.cloneNode(true));
+            host.innerHTML = host.innerHTML.replaceAll('__prefix__', count);
+            document.getElementById('line-rows').appendChild(host.firstElementChild);
+            document.querySelector('[name=lines-TOTAL_FORMS]').value = ++count;
+          "
+          class="mt-3 text-sm text-brand-indigo hover:underline">
+    + Add another batch
+  </button>
+</div>
+{% endblock %}

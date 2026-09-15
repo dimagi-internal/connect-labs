@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.urls import path
 
-from connect_labs.supply_chain import api_views, fulfilment_views, network_views, reference_views, views
+from connect_labs.supply_chain import api_views, fulfilment_views, network_views, reference_views, stock_views, views
 from connect_labs.supply_chain.procurement import views as procurement_views
 
 app_name = "supply_chain"
@@ -129,6 +129,17 @@ urlpatterns = [
         fulfilment_views.DocumentAttachView.as_view(),
         name="document_attach",
     ),
+    path(
+        "orders/<int:contract_id>/shipments/new/",
+        stock_views.ShipmentRecordView.as_view(),
+        name="shipment_record",
+    ),
+    path(
+        "orders/<int:contract_id>/receipts/new/",
+        stock_views.ReceiptRecordView.as_view(),
+        name="receipt_record",
+    ),
+    path("shipments/<int:shipment_id>/status/", stock_views.ShipmentStatusView.as_view(), name="shipment_status"),
     path("invoices/<int:invoice_id>/edit/", fulfilment_views.InvoiceUpdateView.as_view(), name="invoice_edit"),
     path(
         "invoices/<int:invoice_id>/payments/new/",
@@ -145,6 +156,10 @@ urlpatterns = [
         name="supply_point_edit",
     ),
     path("stock/", views.StockView.as_view(), name="stock"),
+    # No edit screen for a movement, deliberately: the ledger is append-only,
+    # and a correction is another movement naming its cause.
+    path("stock/movements/new/", stock_views.MovementRecordView.as_view(), name="movement_record"),
+    path("stock/counts/new/", stock_views.StockCountRecordView.as_view(), name="stock_count_record"),
     path("distribution/", views.DistributionView.as_view(), name="distribution"),
 ]
 

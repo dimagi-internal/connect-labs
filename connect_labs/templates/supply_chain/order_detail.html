@@ -35,6 +35,8 @@ figure here can go stale.
   <div class="flex flex-wrap gap-2 mt-3">
     <a href="{% url 'supply_chain:contract_edit' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit order</a>
     <a href="{% url 'supply_chain:invoice_record' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record an invoice</a>
+    <a href="{% url 'supply_chain:shipment_record' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record a dispatch</a>
+    <a href="{% url 'supply_chain:receipt_record' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record a receipt</a>
     <a href="{% url 'supply_chain:document_attach' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Attach a document</a>
   </div>
 </div>
@@ -159,6 +161,7 @@ figure here can go stale.
         <th class="text-left px-4 py-2">Quantity</th>
         <th class="text-left px-4 py-2">Certificate</th>
         <th class="text-left px-4 py-2">Told by</th>
+        <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-100">
@@ -183,10 +186,21 @@ figure here can go stale.
               {% endif %}
             </td>
             <td class="px-4 py-2 text-xs text-gray-500">{{ shipment.source }}</td>
+            <td class="px-4 py-2 text-right whitespace-nowrap">
+              {% if forloop.first %}
+                {% comment %}
+                Once per shipment, not once per line: the status belongs to the
+                consignment, and a link on every batch row would offer to set
+                it several times over.
+                {% endcomment %}
+                <a href="{% url 'supply_chain:shipment_status' shipment.id %}"
+                   class="text-brand-indigo hover:underline">Update</a>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       {% empty %}
-        <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">Nothing dispatched yet.</td></tr>
+        <tr><td colspan="8" class="px-4 py-6 text-center text-gray-500">Nothing dispatched yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
