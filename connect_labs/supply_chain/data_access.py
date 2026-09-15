@@ -85,16 +85,6 @@ _RESOLVED = {
 _NOT_SETTABLE = {"id", "pk", "created_at", "updated_at", "scope_key", "program_id"}
 
 
-def _as_int(value):
-    """int, or None for anything that is not one. Never raises."""
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _columns(model, data: dict) -> dict:
     """The keys of `data` that this model can actually be given.
 
@@ -274,24 +264,29 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         drop("outreach", Outreach.objects.filter(round__program_id=program_id))
         drop("rounds", Round.objects.filter(program_id=program_id))
         drop("supply points", SupplyPoint.objects.filter(program_id=program_id))
-        # Reference data is shared across programmes when the scope is an
-        # organisation, so it is only purged when this programme owns it.
-        if self.reference_scope == "program":
-            key = self.scope_key
-            drop("items", Item.objects.filter(scope_key=key))
-            drop("suppliers", Supplier.objects.filter(scope_key=key))
-            drop("commodities", Commodity.objects.filter(scope_key=key))
+        # Reference data is scoped to the programme, so purging the programme
+        # purges it. This used to be guarded on the scope being a programme
+        # rather than an organisation, because an organisation's registry
+        # could be shared with a programme that is not being purged. There is
+        # no organisation tier any more (see models.scope_key), so the guard
+        # was always true and the branch it protected unreachable.
+        key = self.scope_key
+        drop("items", Item.objects.filter(scope_key=key))
+        drop("suppliers", Supplier.objects.filter(scope_key=key))
+        drop("commodities", Commodity.objects.filter(scope_key=key))
         return counts
 
     # ---- scoping --------------------------------------------------------
 
     @property
-    def reference_scope(self) -> str:
-        return "organization" if _as_int(self.organization_id) is not None else "program"
-
-    @property
     def scope_key(self) -> str:
-        return scope_key(organization_id=_as_int(self.organization_id), program_id=self.program_id)
+        """Which reference registry this caller reads and writes.
+
+        The programme, always. `organization_id` is carried on this object as
+        Connect context for a future sync, and is deliberately NOT part of
+        this: see `models.scope_key` for what having both did.
+        """
+        return scope_key(program_id=self.program_id)
 
     def _require_program(self) -> int:
         """A round, quote, award or contract has no meaning outside a programme.

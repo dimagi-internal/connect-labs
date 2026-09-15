@@ -53,24 +53,36 @@ def _choices(values):
     return [(v, v.replace("_", " ")) for v in values]
 
 
-def scope_key(organization_id=None, program_id=None) -> str:
+def scope_key(program_id=None) -> str:
     """The reference tier's scope, as one indexable string.
 
-    Reference data (commodities, items, suppliers) is shared across a
-    programme's rounds and ideally across an organisation's programmes. Which
-    of the two we get depends on the caller: `labs_context` hands a numeric
-    organisation id for a real org and a slug for a labs-only synthetic one.
+    Reference data -- commodities, trade items, suppliers -- is shared across
+    a programme's rounds. One tier, not two.
 
-    Encoding both cases in a single column rather than two nullable ones is
-    deliberate: Postgres treats NULLs as distinct, so `unique_together` over
-    nullable scope columns does not actually prevent duplicate slugs. A
-    non-null scope_key makes the uniqueness constraint real.
+    **There used to be an organisation tier above this one**, and it was worse
+    than not having it. Whether you got `org:<id>` or `prog:<id>` depended on
+    whether the caller happened to have an organisation selected, so ONE
+    programme had two catalogues and which one you saw was a property of your
+    session rather than of the data. Selecting an organisation alongside a
+    programme silently emptied the Catalogue and Suppliers tabs while Sourcing
+    carried on working, and the MCP tool description told agents to pass the
+    organisation id precisely when it would do that. It never worked for a
+    labs-only organisation either: those carry a slug, `int()` on it returned
+    None, and the scope quietly fell back.
+
+    Sharing a catalogue across an organisation's programmes is a real feature,
+    but it needs to know which organisation owns a programme -- a fact this
+    database does not hold -- so half of it was worse than none. Measured
+    before removing it: across the whole labs database every reference row was
+    `prog:`-scoped. The organisation tier had never once been used.
+
+    A single non-null string rather than nullable columns is still deliberate:
+    Postgres treats NULLs as distinct, so `unique_together` over nullable
+    scope columns does not actually prevent duplicate slugs.
     """
-    if organization_id not in (None, ""):
-        return f"org:{organization_id}"
     if program_id not in (None, ""):
         return f"prog:{program_id}"
-    raise ValueError("reference data needs an organization_id or a program_id to be scoped by")
+    raise ValueError("reference data needs a program_id to be scoped by")
 
 
 class TimestampedModel(models.Model):
