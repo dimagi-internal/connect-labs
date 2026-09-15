@@ -1,0 +1,450 @@
+"""Write screens for the money chain: contracts, invoices, payments, documents.
+
+Group 3a of the supply UI. Where the sourcing screens record what suppliers
+*said*, these record what was actually committed, billed and settled — three
+facts with three dates, which is why they are three tables rather than the one
+`purchase_record` row they replaced.
+
+**Everything here carries provenance**, so every form inherits
+`ProvenancedForm` and asks "How do you know?". That is not ceremony: between
+raising a purchase order and receiving the goods there are five consecutive
+stages the programme may not witness, because the buyer of record may not be
+the programme. A row that does not say how it was known would read as
+first-hand.
+
+**`buyer_of_record` has no default and the form does not invent one.** Import
+duty and VAT depend on who imports, so a landed total computed without knowing
+the buyer carries an invisible assumption — the exact failure this domain
+exists to refuse. The field is required, and the picker for the organisation
+beside it is required with it.
+
+**A claimed duty relief is not a relief.** `duty_relief_claimed` without a
+document attached makes the duty line derive as *Unconfirmed*, not as zero.
+The screen says so where the tickbox is, rather than letting somebody tick it
+and believe the number moved.
+"""
+
+from crispy_forms.layout import Column, Field, Fieldset, Layout, Row
+from django import forms
+from django.utils.translation import gettext_lazy as _
+
+from connect_labs.labs.models import LabsOrg
+from connect_labs.supply_chain import records
+from connect_labs.supply_chain.forms import DATE, INPUT, SEARCHABLE, SELECT, ScopedForm, to_payload
+from connect_labs.supply_chain.models import (
+    Commodity,
+    Contract,
+    Document,
+    Invoice,
+    Item,
+    Payment,
+    Supplier,
+    SupplyPoint,
+)
+from connect_labs.supply_chain.network_forms import SOURCE_CHOICES
+
+__all__ = ["ContractForm", "DocumentForm", "InvoiceForm", "PaymentForm"]
+
+MONEY_INPUT = {**INPUT, "step": "0.01", "inputmode": "decimal"}
+
+
+class ProvenancedForm(ScopedForm):
+    """A ModelForm for a record that says who put it here and how they knew.
+
+    `source` is declared as a form field rather than left to
+    `stamp_provenance`, because `call_operation` validates the payload BEFORE
+    stamping it — so an operation whose schema requires `source` refuses a
+    payload that omits it, however reliably the stamper would have filled it
+    in. Asking is also the honest thing: for most of these records the answer
+    genuinely is "a partner told us".
+    """
+
+    source = forms.ChoiceField(
+        label=_("How do you know?"),
+        choices=SOURCE_CHOICES,
+        initial="we_recorded",
+        widget=forms.Select(attrs=SELECT),
+        help_text=_("Kept with the row. A record that does not say how it was known is weaker, not stronger."),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk and getattr(self.instance, "source", ""):
+            self.fields["source"].initial = self.instance.source
+
+    def scoped(self, model):
+        """This programme's rows of `model`, or none at all without one."""
+        scope = getattr(self.access, "scope_key", None) if self.access else None
+        return model.objects.filter(scope_key=scope) if scope else model.objects.none()
+
+    def in_program(self, model):
+        """The programme-scoped tiers key on `program_id`, not `scope_key`."""
+        program_id = getattr(self.access, "program_id", None) if self.access else None
+        return model.objects.filter(program_id=program_id) if program_id else model.objects.none()
+
+
+class ContractForm(ProvenancedForm):
+    """The commitment. Who is buying, from whom, how much, and on what terms."""
+
+    class Meta:
+        model = Contract
+        fields = [
+            "supplier",
+            "commodity",
+            "item",
+            "buyer_of_record",
+            "buyer_org",
+            "reference",
+            "signed_on",
+            "status",
+            "currency",
+            "quantity",
+            "quantity_unit",
+            "unit_price",
+            "unit_price_unit",
+            "freight_basis",
+            "freight_amount",
+            "duties_basis",
+            "duties_amount",
+            "vat_basis",
+            "vat_amount",
+            "duty_relief_claimed",
+            "incoterm",
+            "delivery_supply_point",
+            "promised_lead_time_days",
+        ]
+        widgets = {
+            "supplier": forms.Select(attrs=SEARCHABLE),
+            "commodity": forms.Select(attrs=SEARCHABLE),
+            "item": forms.Select(attrs=SEARCHABLE),
+            "buyer_of_record": forms.Select(attrs=SELECT),
+            "buyer_org": forms.Select(attrs=SEARCHABLE),
+            "reference": forms.TextInput(attrs={**INPUT, "placeholder": _("their PO number, or ours")}),
+            "signed_on": forms.DateInput(attrs=DATE),
+            "status": forms.Select(attrs=SELECT),
+            "currency": forms.TextInput(attrs={**INPUT, "placeholder": "USD", "maxlength": 3}),
+            "quantity": forms.NumberInput(attrs={**INPUT, "step": "any", "placeholder": "500"}),
+            "quantity_unit": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. carton")}),
+            "unit_price": forms.NumberInput(attrs={**MONEY_INPUT, "placeholder": "52.42"}),
+            "unit_price_unit": forms.Select(attrs=SELECT),
+            "freight_basis": forms.Select(attrs=SELECT),
+            "freight_amount": forms.NumberInput(attrs=MONEY_INPUT),
+            "duties_basis": forms.Select(attrs=SELECT),
+            "duties_amount": forms.NumberInput(attrs=MONEY_INPUT),
+            "vat_basis": forms.Select(attrs=SELECT),
+            "vat_amount": forms.NumberInput(attrs=MONEY_INPUT),
+            "duty_relief_claimed": forms.CheckboxInput(attrs={"class": "simple-toggle"}),
+            "incoterm": forms.TextInput(attrs={**INPUT, "placeholder": "CIF"}),
+            "delivery_supply_point": forms.Select(attrs=SEARCHABLE),
+            "promised_lead_time_days": forms.NumberInput(attrs={**INPUT, "min": 0}),
+        }
+        labels = {
+            "supplier": _("Buying from"),
+            "commodity": _("What"),
+            "item": _("Which trade item"),
+            "buyer_of_record": _("Who is buying"),
+            "buyer_org": _("Which organisation"),
+            "reference": _("Reference"),
+            "signed_on": _("Signed on"),
+            "status": _("Status"),
+            "currency": _("Currency"),
+            "quantity": _("Quantity"),
+            "quantity_unit": _("Unit"),
+            "unit_price": _("Unit price"),
+            "unit_price_unit": _("Priced per"),
+            "freight_basis": _("Freight"),
+            "freight_amount": _("Freight amount"),
+            "duties_basis": _("Duties"),
+            "duties_amount": _("Duties amount"),
+            "vat_basis": _("VAT"),
+            "vat_amount": _("VAT amount"),
+            "duty_relief_claimed": _("Duty relief claimed"),
+            "incoterm": _("Incoterm"),
+            "delivery_supply_point": _("Delivered to"),
+            "promised_lead_time_days": _("Promised lead time (days)"),
+        }
+        help_texts = {
+            "buyer_of_record": _(
+                "No default, deliberately. Import duty and VAT depend on who imports, so a landed "
+                "total worked out without this would have an invisible assumption inside it."
+            ),
+            "item": _("Optional. Set it once you know whose product it is — that is what fixes the pack size."),
+            "duty_relief_claimed": _(
+                "A claimed relief is not a relief. With no exemption document attached, the duty "
+                "line derives as Unconfirmed rather than as zero."
+            ),
+            "currency": _("Three letters, ISO 4217."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["supplier"].queryset = self.scoped(Supplier).order_by("name")
+        self.fields["commodity"].queryset = self.scoped(Commodity).order_by("name")
+        self.fields["item"].queryset = self.scoped(Item).order_by("name")
+        self.fields["delivery_supply_point"].queryset = self.in_program(SupplyPoint).order_by("name")
+        # Organisations are labs-wide, so this one is deliberately unscoped.
+        self.fields["buyer_org"].queryset = LabsOrg.objects.order_by("name")
+
+        self.fields["supplier"].empty_label = _("Select a supplier…")
+        self.fields["commodity"].empty_label = _("Select a product…")
+        self.fields["item"].empty_label = _("Not decided yet")
+        self.fields["buyer_org"].empty_label = _("Select an organisation…")
+        self.fields["delivery_supply_point"].empty_label = _("Not recorded")
+
+        # The operation requires both halves of the buyer, so the form does.
+        self.fields["buyer_of_record"].required = True
+        self.fields["buyer_org"].required = True
+        self.fields["buyer_of_record"].choices = [
+            ("", "—"),
+            ("programme_org", _("We are")),
+            ("partner_org", _("A partner is")),
+            ("agency", _("A procurement agency is")),
+        ]
+        self.fields["unit_price_unit"].required = False
+        self.fields["unit_price_unit"].choices = [
+            ("", "—"),
+            ("per_base_unit", _("Per unit (sachet, tablet)")),
+            ("per_pack", _("Per pack (carton)")),
+            ("per_lot_total", _("Total for the lot")),
+            ("per_metric_tonne", _("Per metric tonne")),
+        ]
+        basis = [(value, str(value).replace("_", " ").capitalize()) for value in records.BASIS]
+        for name in ("freight_basis", "duties_basis", "vat_basis"):
+            self.fields[name].choices = basis
+        self.fields["status"].choices = [
+            (value, str(value).replace("_", " ").capitalize()) for value in records.CONTRACT_STATUSES
+        ]
+
+        self.helper.layout = Layout(
+            Row(Column("supplier"), Column("commodity"), Column("item"), css_class="grid md:grid-cols-3 gap-x-6"),
+            Fieldset(
+                str(_("Who is buying")),
+                Row(Column("buyer_of_record"), Column("buyer_org"), css_class="grid md:grid-cols-2 gap-x-6"),
+                css_class="pt-2",
+            ),
+            Fieldset(
+                str(_("The commitment")),
+                Row(
+                    Column("reference"),
+                    Column("signed_on"),
+                    Column("status"),
+                    css_class="grid md:grid-cols-3 gap-x-6",
+                ),
+                Row(
+                    Column("quantity"),
+                    Column("quantity_unit"),
+                    Column("unit_price"),
+                    Column("unit_price_unit"),
+                    css_class="grid md:grid-cols-4 gap-x-6",
+                ),
+                Field("currency"),
+                css_class="pt-2",
+            ),
+            Fieldset(
+                str(_("What else it costs to land")),
+                Row(
+                    Column("freight_basis"),
+                    Column("freight_amount"),
+                    css_class="grid md:grid-cols-2 gap-x-6",
+                ),
+                Row(Column("duties_basis"), Column("duties_amount"), css_class="grid md:grid-cols-2 gap-x-6"),
+                Row(Column("vat_basis"), Column("vat_amount"), css_class="grid md:grid-cols-2 gap-x-6"),
+                Field("duty_relief_claimed"),
+                css_class="pt-2",
+            ),
+            Fieldset(
+                str(_("Delivery")),
+                Row(
+                    Column("incoterm"),
+                    Column("delivery_supply_point"),
+                    Column("promised_lead_time_days"),
+                    css_class="grid md:grid-cols-3 gap-x-6",
+                ),
+                css_class="pt-2",
+            ),
+            Field("source"),
+        )
+
+    def clean_currency(self):
+        return (self.cleaned_data.get("currency") or "").strip().upper()
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("unit_price") is not None and not cleaned.get("unit_price_unit"):
+            # A price with no basis cannot be compared with anything, and the
+            # comparison is what the whole tier exists for.
+            self.add_error("unit_price_unit", _("A price has to say what it is per."))
+        item = cleaned.get("item")
+        commodity = cleaned.get("commodity")
+        if item is not None and commodity is not None and item.commodity_id != commodity.pk:
+            self.add_error("item", _("That trade item is not a version of “%(name)s”.") % {"name": commodity.name})
+        return cleaned
+
+    def payload(self) -> dict:
+        data = to_payload(self.cleaned_data)
+        # The schema names the product by slug, and the two relations by their
+        # own keys rather than Django's.
+        commodity = self.cleaned_data.get("commodity")
+        if commodity is not None:
+            data["commodity_slug"] = commodity.slug
+        data.pop("commodity_id", None)
+        if "delivery_supply_point_id" not in data and self.cleaned_data.get("delivery_supply_point"):
+            data["delivery_supply_point_id"] = self.cleaned_data["delivery_supply_point"].pk
+        # Nothing here for `duty_relief_claimed`. A cleared checkbox cleans to
+        # False, and `to_payload` drops only None and "" -- so False survives
+        # and un-claiming a relief reaches the operation as False rather than
+        # as an omission `update_contract` would skip. That is load bearing and
+        # invisible, so TestThePayloadBoundary asserts it directly; a
+        # `to_payload` "simplified" to `if not value` would break it silently.
+        return data
+
+
+class InvoiceForm(ProvenancedForm):
+    """What the supplier billed. Not what was committed, and not what was paid."""
+
+    class Meta:
+        model = Invoice
+        fields = ["reference", "issued_on", "status", "currency", "amount", "quantity_billed", "quantity_unit"]
+        widgets = {
+            "reference": forms.TextInput(attrs={**INPUT, "placeholder": _("their invoice number")}),
+            "issued_on": forms.DateInput(attrs=DATE),
+            "status": forms.Select(attrs=SELECT),
+            "currency": forms.TextInput(attrs={**INPUT, "placeholder": "USD", "maxlength": 3}),
+            "amount": forms.NumberInput(attrs={**MONEY_INPUT, "placeholder": "26210.00"}),
+            "quantity_billed": forms.NumberInput(attrs={**INPUT, "step": "any"}),
+            "quantity_unit": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. carton")}),
+        }
+        labels = {
+            "reference": _("Invoice number"),
+            "issued_on": _("Issued on"),
+            "status": _("Status"),
+            "currency": _("Currency"),
+            "amount": _("Amount"),
+            "quantity_billed": _("Quantity billed"),
+            "quantity_unit": _("Unit"),
+        }
+        help_texts = {
+            "quantity_billed": _(
+                "Give this and the three-way match can run: what was ordered, what arrived, "
+                "what was billed. Without it the match cannot be done at all."
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["status"].choices = [
+            (value, str(value).replace("_", " ").capitalize()) for value in records.INVOICE_STATUSES
+        ]
+        self.helper.layout = Layout(
+            Row(Column("reference"), Column("issued_on"), Column("status"), css_class="grid md:grid-cols-3 gap-x-6"),
+            Row(Column("amount"), Column("currency"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(Column("quantity_billed"), Column("quantity_unit"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Field("source"),
+        )
+
+    def clean_currency(self):
+        return (self.cleaned_data.get("currency") or "").strip().upper()
+
+
+class PaymentForm(ProvenancedForm):
+    """A settlement against an invoice. The invoice's status follows from it."""
+
+    class Meta:
+        model = Payment
+        fields = ["paid_on", "amount", "currency", "method", "reference"]
+        widgets = {
+            "paid_on": forms.DateInput(attrs=DATE),
+            "amount": forms.NumberInput(attrs={**MONEY_INPUT, "placeholder": "26210.00"}),
+            "currency": forms.TextInput(attrs={**INPUT, "placeholder": "USD", "maxlength": 3}),
+            "method": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. bank transfer")}),
+            "reference": forms.TextInput(attrs=INPUT),
+        }
+        labels = {
+            "paid_on": _("Paid on"),
+            "amount": _("Amount"),
+            "currency": _("Currency"),
+            "method": _("How"),
+            "reference": _("Reference"),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper.layout = Layout(
+            Row(Column("paid_on"), Column("amount"), Column("currency"), css_class="grid md:grid-cols-3 gap-x-6"),
+            Row(Column("method"), Column("reference"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Field("source"),
+        )
+
+    def clean_currency(self):
+        return (self.cleaned_data.get("currency") or "").strip().upper()
+
+
+class DocumentForm(ProvenancedForm):
+    """Evidence: a file, or a link to where it legitimately lives.
+
+    Exactly one of the two. A document that is neither is a row claiming to be
+    evidence of something nobody can look at, and a document that is both is
+    two documents that can later disagree.
+
+    That rule is `attach_document`'s, not this form's. There was a copy here;
+    mutation testing removed it and nothing went red, because the repository
+    refuses both cases with a better-worded message than the copy had. One
+    rule, in the one write path every surface goes through.
+    """
+
+    upload = forms.FileField(
+        label=_("The file"),
+        required=False,
+        widget=forms.ClearableFileInput(attrs={"class": "text-sm"}),
+        help_text=_("Stored here. Use this for anything that has no other home."),
+    )
+
+    class Meta:
+        model = Document
+        fields = ["kind", "title", "external_url"]
+        widgets = {
+            "kind": forms.Select(attrs=SEARCHABLE),
+            "title": forms.TextInput(attrs=INPUT),
+            "external_url": forms.TextInput(attrs={**INPUT, "placeholder": "https://…"}),
+        }
+        labels = {
+            "kind": _("What it is"),
+            "title": _("Title"),
+            "external_url": _("…or a link to it"),
+        }
+        help_texts = {
+            "external_url": _("Use this when the document already lives somewhere it should stay."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # `document` is offered here and nowhere else, and is the default:
+        # attaching a document IS documentary evidence, which is the one place
+        # that claim is the plain truth rather than a boast. It is a witnessed
+        # source, so `stamp_provenance` still refuses it from a partner acting
+        # for somebody else -- the screen offers it, the domain decides.
+        self.fields["source"].choices = [("document", _("The document itself is the evidence"))] + SOURCE_CHOICES
+        self.fields["source"].initial = "document"
+        self.fields["kind"].choices = [("", "—")] + [
+            (value, str(value).replace("_", " ").capitalize()) for value in records.DOCUMENT_KINDS
+        ]
+        self.helper.layout = Layout(
+            Row(Column("kind"), Column("title"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Field("upload"),
+            Field("external_url"),
+            Field("source"),
+        )
+
+    def payload(self) -> dict:
+        import base64
+
+        data = to_payload({k: v for k, v in self.cleaned_data.items() if k != "upload"})
+        upload = self.cleaned_data.get("upload")
+        if upload is not None:
+            # The operation takes the bytes, not a Django file: it is the same
+            # operation whether the file arrived from a browser, a script or an
+            # agent, and only one of those has an `UploadedFile`.
+            data["filename"] = upload.name
+            data["content_type"] = upload.content_type or "application/octet-stream"
+            data["content_base64"] = base64.b64encode(upload.read()).decode()
+        return data
