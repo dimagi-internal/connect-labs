@@ -1,0 +1,78 @@
+{% extends "supply_chain/operation_form.html" %}
+
+{% comment %}
+A resupply run's lines: one row per worker. Each posts a movement, which is
+why a worker being a supply point rather than a special kind of thing is the
+ruling the whole stock model rests on.
+{% endcomment %}
+
+{% block extra_fields %}
+<div class="pt-4 border-t border-gray-100" x-data="{ count: {{ lines.total_form_count }} }">
+  <h2 class="text-sm font-semibold text-gray-900">Who it went to</h2>
+  <p class="text-xs text-gray-500 mt-0.5 mb-3 max-w-2xl">
+    One row per worker. Each row posts a movement out of the store and into that worker's
+    own holding, so both balances move together and neither needs its own arithmetic.
+  </p>
+
+  {% if no_workers %}
+    {% comment %}
+    Said here rather than left to an empty picker: the fix is on another
+    screen, and a dropdown with nothing in it does not say which.
+    {% endcomment %}
+    <div class="rounded-md border border-message-warning-border/50 bg-message-warning px-4 py-3 mb-3">
+      <p class="text-sm text-message-warning-text">
+        This programme has no field workers on file yet, so there is nobody to distribute to.
+        Add them on the
+        <a href="{% url 'supply_chain:network' %}" class="underline">Network</a>
+        page as supply points of kind “a field worker's own holding”.
+      </p>
+    </div>
+  {% endif %}
+
+  {{ lines.management_form }}
+  {% if lines.non_form_errors %}
+    <p class="text-xs text-red-700 mb-2">{{ lines.non_form_errors|join:" " }}</p>
+  {% endif %}
+
+  <div id="line-rows" class="space-y-3">
+    {% for line in lines %}
+      <div class="rounded-md border border-gray-200 bg-gray-50/40 px-3 py-3">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-x-4 gap-y-2 items-start">
+          {% for field in line.visible_fields %}
+            {% if field.name != "DELETE" %}
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1"
+                       for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.errors %}<p class="mt-1 text-xs text-red-700">{{ field.errors|join:" " }}</p>{% endif %}
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+        <label class="mt-2 inline-flex items-center gap-1.5 text-xs text-gray-500">
+          {{ line.DELETE }} Remove this row
+        </label>
+      </div>
+    {% endfor %}
+  </div>
+
+  <template id="empty-line">
+    <div class="rounded-md border border-gray-200 bg-gray-50/40 px-3 py-3">
+      {{ lines.empty_form.as_div }}
+    </div>
+  </template>
+
+  <button type="button"
+          @click="
+            const tpl = document.getElementById('empty-line');
+            const host = document.createElement('div');
+            host.appendChild(tpl.content.cloneNode(true));
+            host.innerHTML = host.innerHTML.replaceAll('__prefix__', count);
+            document.getElementById('line-rows').appendChild(host.firstElementChild);
+            document.querySelector('[name=lines-TOTAL_FORMS]').value = ++count;
+          "
+          class="mt-3 text-sm text-brand-indigo hover:underline">
+    + Add another worker
+  </button>
+</div>
+{% endblock %}

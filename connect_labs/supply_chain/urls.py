@@ -1,7 +1,15 @@
 from django.conf import settings
 from django.urls import path
 
-from connect_labs.supply_chain import api_views, fulfilment_views, network_views, reference_views, stock_views, views
+from connect_labs.supply_chain import (
+    api_views,
+    distribution_views,
+    fulfilment_views,
+    network_views,
+    reference_views,
+    stock_views,
+    views,
+)
 from connect_labs.supply_chain.procurement import views as procurement_views
 
 app_name = "supply_chain"
@@ -102,6 +110,11 @@ urlpatterns = [
         name="procurement_quote_void",
     ),
     path(
+        "procurement/quotes/<int:quote_id>/correct/",
+        distribution_views.QuoteCorrectView.as_view(),
+        name="procurement_quote_correct",
+    ),
+    path(
         "procurement/quotes/new/",
         procurement_views.QuoteEntryView.as_view(),
         name="procurement_quote_entry",
@@ -161,6 +174,7 @@ urlpatterns = [
     path("stock/movements/new/", stock_views.MovementRecordView.as_view(), name="movement_record"),
     path("stock/counts/new/", stock_views.StockCountRecordView.as_view(), name="stock_count_record"),
     path("distribution/", views.DistributionView.as_view(), name="distribution"),
+    path("distribution/new/", distribution_views.DistributionRecordView.as_view(), name="distribution_record"),
 ]
 
 if settings.DEBUG:
