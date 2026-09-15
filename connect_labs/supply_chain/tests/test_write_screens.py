@@ -10,6 +10,7 @@ Mocking the operation would assert that the form posts, which was never in
 doubt.
 """
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -90,6 +91,19 @@ class TestCreatingARound:
         assert "What this round is asking for" in body
         assert "lines-TOTAL_FORMS" in body, "the formset management form must be on the page"
         assert "rutf" in body, "the commodity picker must offer this programme's catalogue"
+
+    def test_a_new_round_opens_on_exactly_one_blank_commodity_row(self, scoped, rutf):
+        """A formset renders `max(initial, min_num) + extra` rows.
+
+        With min_num=1 and extra=1 that is two blank rows, one of them
+        required and one not, with nothing on screen to say which -- which is
+        what shipped and what the browser showed. This asserts the count
+        rather than the factory arguments, so it stays true however the
+        arithmetic is spelled.
+        """
+        body = scoped.get(reverse("supply_chain:procurement_round_create")).content.decode()
+        rows = set(re.findall(r'name="lines-(\d+)-commodity_slug"', body))
+        assert rows == {"0"}, f"one blank row, got {sorted(rows)}"
 
     def test_a_round_is_created_with_its_lines_and_delivery_point(self, scoped, rutf):
         response = scoped.post(
@@ -297,6 +311,20 @@ class TestTheScreensAreReachable:
     """A screen nothing links to is a screen nobody finds. These also catch a
     malformed `{% url %}` in the pages that link to them, which is a 500
     rather than a missing link."""
+
+    def test_a_searchable_picker_actually_loads_the_library(self, scoped, a_round, supplier):
+        """`data-tomselect` alone does nothing.
+
+        The bundle is not global -- seven templates each pull it in
+        themselves -- so the attribute without the script is a plain <select>
+        that merely claims to be searchable. This failed on the deployed site
+        while every other test here passed, because nothing tied the marker to
+        the code that reads it.
+        """
+        body = scoped.get(reverse("supply_chain:procurement_outreach_log", args=[a_round.pk])).content.decode()
+        assert "data-tomselect" in body, "the supplier picker asks to be searchable"
+        assert "tomselect-bundle.js" in body, "...and the page must load what reads that"
+        assert "tomselect.css" in body
 
     def test_the_board_offers_a_new_round(self, scoped):
         body = scoped.get(reverse("supply_chain:procurement_round_board")).content.decode()
