@@ -84,7 +84,12 @@ def publish_benchmark(
 
     rows: list[BenchmarkValue] = []
     for series_name, block in (snapshot.get("series") or {}).items():
-        for indicator_id in block.get(POINT_SCOPE) or {}:
+        # Union, not just POINT_SCOPE: an indicator can exist only in the
+        # opportunity_month scope (a series-only indicator has no point-in-time
+        # equivalent), and skipping it there would silently drop it -- no
+        # exception, no row, no log. Sorted so publication order is deterministic.
+        indicator_ids = sorted(set(block.get(POINT_SCOPE) or {}) | set(block.get(SERIES_SCOPE) or {}))
+        for indicator_id in indicator_ids:
             points, by_period = observations_from_snapshot(snapshot, series_name, indicator_id, members)
             for peer_index, value, opportunity_id in anonymise_point(
                 points, **thresholds, tie_salt=f"{publication.pk}:{series_name}:{indicator_id}"
