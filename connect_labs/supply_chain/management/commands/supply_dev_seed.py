@@ -361,7 +361,7 @@ class Command(BaseCommand):
         )
 
         llo = op(
-            "party_upsert",
+            "org_upsert",
             data={
                 "slug": "llo-kano",
                 "name": "Connect-RUTF local partner (Kano)",
