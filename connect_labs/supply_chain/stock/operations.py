@@ -506,6 +506,7 @@ def _plain(value):
         required=("rows", "commodity_slug", "quantity_unit", "opportunity_id"),
     ),
     is_write=True,
+    internal=True,
 )
 def stock_report_ingest(
     access,
