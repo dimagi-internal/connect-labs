@@ -477,13 +477,13 @@ class TestBuildMapFeatures:
         assert len(fc["features"]) == 2
         for f, p in zip(fc["features"], points):
             assert f["geometry"] == {"type": "Point", "coordinates": [p["lon"], p["lat"]]}
-            assert f["properties"]["source"] == "uploaded_building"
+            assert f["properties"]["source"] == "building_point"
             assert f["properties"]["included"] is True
 
     def test_no_building_points_adds_nothing(self):
         all_rows = [{"wa_id": "wa-1", "ward": "Sabon Gari", "boundary": self._BOUNDARY}]
         fc = build_map_features(all_rows, [])
-        assert not any(f["properties"]["source"] == "uploaded_building" for f in fc["features"])
+        assert not any(f["properties"]["source"] == "building_point" for f in fc["features"])
 
 
 class TestGapFeatureToCandidateRow:

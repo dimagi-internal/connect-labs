@@ -227,11 +227,12 @@ def build_map_features(
     `properties.source = "planning_gap"` added — their own distinct map
     color, separate from the execution-gap candidates above.
 
-    `building_points`, if given (Step 2's "upload your own" mode —
-    `run.planning_gap_building_points`, individual `{"lon", "lat"}` dicts),
-    are appended as Point features tagged `properties.source =
-    "uploaded_building"` — the real building positions behind the gap-fill
-    cells above, not just the gridded cells themselves.
+    `building_points`, if given (Step 2's `run.planning_gap_building_points`,
+    individual `{"lon", "lat"}` dicts — every building within the ward
+    boundary, from whichever building source Step 2 used), are appended as
+    Point features tagged `properties.source = "building_point"` — the real
+    building positions behind the gap-fill cells above, not just the
+    gridded cells themselves.
 
     Every `existing_wa`/`planning_gap` feature also carries the raw counts
     the map's hover tooltip needs (`analysis.js`'s `mapHoverContent`) —
@@ -299,7 +300,7 @@ def build_map_features(
                     "ward": "",
                     "included": True,
                     "first_indicator": None,
-                    "source": "uploaded_building",
+                    "source": "building_point",
                 },
             }
         )
