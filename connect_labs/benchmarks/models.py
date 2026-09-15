@@ -18,9 +18,16 @@ precedent.
 
 from __future__ import annotations
 
+from django.core.validators import MinValueValidator
 from django.db import models
 
 from connect_labs.audit_trail.service import record as audit_record
+
+# The floor disclosure.py enforces at publish time (R1). Repeated here because a
+# cohort configured below it is a misconfiguration to refuse at write time, not a
+# publication to fail later: at two contributors the reader is one of them, so the
+# single remaining bar is a named peer's exact value.
+MIN_PEERS_FLOOR = 3
 
 
 class BenchmarkCohort(models.Model):
@@ -42,7 +49,7 @@ class BenchmarkCohort(models.Model):
 
     # Disclosure thresholds live on the cohort so they are tunable without a
     # deploy. See disclosure.py for what each one defends against.
-    min_peers = models.PositiveIntegerField(default=5)
+    min_peers = models.PositiveIntegerField(default=5, validators=[MinValueValidator(MIN_PEERS_FLOOR)])
     min_denominator = models.PositiveIntegerField(default=25)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -51,6 +58,14 @@ class BenchmarkCohort(models.Model):
     class Meta:
         app_label = "benchmarks"
         db_table = "labs_benchmark_cohort"
+        constraints = [
+            # The validator alone would not hold: it runs on `full_clean()`, and
+            # nothing in this codebase calls that before `objects.create()`. The
+            # database is where "no cohort below the floor" is actually true.
+            models.CheckConstraint(
+                condition=models.Q(min_peers__gte=MIN_PEERS_FLOOR), name="benchmark_cohort_min_peers_floor"
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.name} ({self.organization_id})"
@@ -172,7 +187,8 @@ class BenchmarkValue(models.Model):
         indexes = [models.Index(fields=["publication", "series", "indicator_id", "period"])]
 
     def to_public(self) -> dict:
-        """The ONLY projection a view, serializer or API may call."""
+        """The only projection that may leave this model; callers may narrow
+        further, never widen."""
         return {
             "series": self.series,
             "indicator_id": self.indicator_id,

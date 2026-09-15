@@ -214,14 +214,23 @@ def test_f3_eligible_accepts_a_generator_not_just_a_list():
     assert len(out) == 6
 
 
-def test_i1_min_peers_below_two_raises_for_point():
+@pytest.mark.parametrize("below_the_floor", [0, 1, 2])
+def test_i1_min_peers_below_three_raises_for_point(below_the_floor):
+    """Three, not two. At two the reader is one of the two contributors, so the
+    one bar left is a named peer's exact value."""
     with pytest.raises(ValueError):
-        anonymise_point(_six(), min_peers=1, min_denominator=25, tie_salt="floor")
+        anonymise_point(_six(), min_peers=below_the_floor, min_denominator=25, tie_salt="floor")
 
 
-def test_i1_min_peers_below_two_raises_for_series():
+@pytest.mark.parametrize("below_the_floor", [0, 1, 2])
+def test_i1_min_peers_below_three_raises_for_series(below_the_floor):
     with pytest.raises(ValueError):
-        anonymise_series({"2026-01": _six()}, min_peers=0, min_denominator=25, tie_salt="floor")
+        anonymise_series({"2026-01": _six()}, min_peers=below_the_floor, min_denominator=25, tie_salt="floor")
+
+
+def test_i1_min_peers_of_exactly_three_is_accepted():
+    """The floor is a floor, not a ban: a cohort may legitimately sit on it."""
+    assert len(anonymise_point(_six()[:3], min_peers=3, min_denominator=25, tie_salt="floor")) == 3
 
 
 def test_r1_boundary_exactly_min_peers_publishes():

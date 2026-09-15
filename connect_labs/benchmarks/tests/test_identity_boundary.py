@@ -65,3 +65,21 @@ def test_with_source_emits_an_audit_event(monkeypatch):
     action, kw = events[0]
     assert action == "read"
     assert kw["resource_type"] == "benchmark_value_identified"
+
+
+def test_the_default_manager_never_fires_an_audit_event(monkeypatch):
+    """The audit is what makes `with_source()` a boundary rather than a name, so
+    the ORDINARY read has to be silent. Without this, a change that made
+    `objects.all()` proxy to `with_source()` -- widening identified reads to
+    every caller while burying the real ones in noise -- passes every other test
+    in this file."""
+    events = []
+    monkeypatch.setattr(
+        "connect_labs.benchmarks.models.audit_record",
+        lambda action, **kw: events.append((action, kw)),
+    )
+    _value()
+    assert list(BenchmarkValue.objects.all())
+    assert list(BenchmarkValue.objects.filter(series="N"))
+    assert [v.to_public() for v in BenchmarkValue.objects.all()]
+    assert events == [], "an ordinary read left an identified-read audit trail"
