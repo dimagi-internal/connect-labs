@@ -14,7 +14,7 @@ from connect_labs.supply_chain.data_access import SupplyDataAccess
 # import, all_operations() below would see only the 9 root-level operations and
 # silently register no supply_* tools at all.
 from connect_labs.supply_chain.fulfilment import operations as _fulfilment_operations  # noqa: F401
-from connect_labs.supply_chain.operations import all_operations, call_operation
+from connect_labs.supply_chain.operations import agent_operations, call_operation
 from connect_labs.supply_chain.procurement import operations as _procurement_operations  # noqa: F401
 from connect_labs.supply_chain.stock import operations as _stock_operations  # noqa: F401
 
@@ -91,7 +91,10 @@ def _schema_with_scope(schema: dict) -> dict:
     return scoped
 
 
-for _operation in all_operations().values():
+# `agent_operations`, not `all_operations`: seeds, bulk imports and ingests are
+# run by an engineer through a management command, and advertising them to every
+# MCP client puts a bulk data load one mistaken tool call away.
+for _operation in agent_operations().values():
     register(
         name=f"{TOOL_PREFIX}{_operation.name}",
         description=_operation.summary,

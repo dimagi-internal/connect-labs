@@ -430,6 +430,7 @@ def commodity_supply_base(access, commodity_slug, item_id=None):
         }
     ),
     is_write=True,
+    internal=True,
 )
 def tracker_import(access, spreadsheet_id=None, commodity_slug="rutf", ensure_commodity=False, dry_run=False):
     from connect_labs.supply_chain.procurement.services import tracker_import as service

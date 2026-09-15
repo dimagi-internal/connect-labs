@@ -2,10 +2,16 @@
 
 Thin on purpose. Every line of logic lives in
 `procurement/services/tracker_import.py` and is reached through the
-`tracker_import` OPERATION, so the same import runs from a laptop, from the
-HTTP API, and from MCP against the deployed environment. It used to be a
-command only, which made it the one capability in this domain the API could
-not reach -- and left no way at all to run it where there is no shell.
+`tracker_import` OPERATION, so the command keeps the schema validation and
+provenance stamping every other write gets.
+
+This is the ONLY front door now. The operation was exposed over MCP for a
+while on the reasoning that there was "no way to run it where there is no
+shell" -- which is not true: `aws ecs execute-command` against the labs task
+runs a management command against the deployed environment, and that is how
+every other bootstrap in this codebase is run. A bulk import of somebody
+else's spreadsheet into a programme is an engineer's deliberate act, not
+something to leave one tool call away from every MCP client.
 
     make manage CMD="supply_load_bootstrap --program 10501 --dry-run"
     make manage CMD="supply_load_bootstrap --program 10501 --ensure-commodity"

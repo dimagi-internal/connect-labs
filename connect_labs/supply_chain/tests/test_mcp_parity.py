@@ -7,14 +7,38 @@ from connect_labs.mcp import tool_registry
 from connect_labs.mcp.tool_registry import get_tool
 from connect_labs.supply_chain import operations as operations_module
 from connect_labs.supply_chain.mcp_tools import TOOL_PREFIX, _make_handler
-from connect_labs.supply_chain.operations import all_operations, get_operation
+from connect_labs.supply_chain.operations import agent_operations, all_operations, get_operation
 
 
-def test_every_operation_is_exposed_as_an_mcp_tool():
+def test_every_agent_operation_is_exposed_as_an_mcp_tool():
     import connect_labs.supply_chain.mcp_tools  # noqa: F401  -- triggers registration
 
-    for operation_name in all_operations():
+    for operation_name in agent_operations():
         assert get_tool(f"{TOOL_PREFIX}{operation_name}") is not None, operation_name
+
+
+def test_internal_operations_are_not_exposed_as_mcp_tools():
+    """Seeds, bulk imports and ingests are run by an engineer through a
+    management command. They stay in the registry so their commands keep the
+    schema validation and provenance stamping, but advertising them to every
+    MCP client puts a bulk data load one mistaken tool call away.
+
+    Asserted by NAME as well as by count: a flag that silently stopped being
+    read would leave the count right and the tool back on the catalogue.
+    """
+    import connect_labs.supply_chain.mcp_tools  # noqa: F401
+
+    internal = {name for name, op in all_operations().items() if op.internal}
+    assert internal, "no operation is marked internal; this test would pass vacuously"
+    assert internal >= {"catalogue_seed", "tracker_import", "stock_report_ingest"}
+    for name in internal:
+        assert get_tool(f"{TOOL_PREFIX}{name}") is None, f"{name} is internal but on the MCP catalogue"
+
+
+def test_an_internal_operation_is_still_callable_in_process():
+    """Its management command goes through call_operation, so hiding it from
+    MCP must not take it out of the registry."""
+    assert get_operation("catalogue_seed").internal is True
 
 
 def test_the_mcp_tool_count_matches_the_operation_registry():
@@ -30,14 +54,14 @@ def test_the_mcp_tool_count_matches_the_operation_registry():
     import connect_labs.supply_chain.mcp_tools  # noqa: F401
 
     registered_supply_tools = {t["name"] for t in tool_registry.list_tools() if t["name"].startswith(TOOL_PREFIX)}
-    expected = {f"{TOOL_PREFIX}{name}" for name in all_operations()}
+    expected = {f"{TOOL_PREFIX}{name}" for name in agent_operations()}
     assert registered_supply_tools == expected
 
 
 def test_mcp_write_flags_match_the_operation_registry():
     import connect_labs.supply_chain.mcp_tools  # noqa: F401
 
-    for name, operation in all_operations().items():
+    for name, operation in agent_operations().items():
         tool = get_tool(f"{TOOL_PREFIX}{name}")
         assert tool.is_write == operation.is_write, name
 
@@ -52,7 +76,7 @@ def test_mcp_schemas_add_only_the_two_scope_properties():
     """
     import connect_labs.supply_chain.mcp_tools  # noqa: F401
 
-    for name, operation in all_operations().items():
+    for name, operation in agent_operations().items():
         tool = get_tool(f"{TOOL_PREFIX}{name}")
         op_schema = operation.input_schema
         tool_schema = tool.input_schema
