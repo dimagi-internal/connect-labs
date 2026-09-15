@@ -847,6 +847,38 @@ function WorkflowUI({
   var cohortView = s15[0],
     setCohortView = s15[1];
 
+  // The peer panel lives INSIDE the workers table, so it inherits the table's
+  // width -- 1216px against a 1070px scroller, which put the rank column in the
+  // scrolled-away region and made it invisible until you dragged sideways.
+  // Pin the panel to the left edge of the scroller and size it to what is
+  // actually on screen, so the whole row is readable wherever the table is
+  // scrolled to. Measured, not `100vw`: the scroller is inset by the sidebar
+  // and the card, and every guess at that inset is wrong on some layout.
+  //
+  // State lives HERE, not in PeerCohorts: the inner components are redefined on
+  // every render of this one, so React remounts them and any state they held
+  // would be thrown away each time (which is why cohortDim sits up here too).
+  var s16 = React.useState(0);
+  var cohortPanelW = s16[0],
+    setCohortPanelW = s16[1];
+  function measureCohortPanel(node) {
+    if (!node) return;
+    var sc = node.closest('.overflow-x-auto');
+    var w = sc ? sc.clientWidth : 0;
+    if (w && w !== cohortPanelW) setCohortPanelW(w);
+  }
+  React.useEffect(function () {
+    function onResize() {
+      // Zero forces the ref callback to re-measure on the next render rather
+      // than keeping a width that belonged to the old viewport.
+      setCohortPanelW(0);
+    }
+    window.addEventListener('resize', onResize);
+    return function () {
+      window.removeEventListener('resize', onResize);
+    };
+  }, []);
+
   // ── Weekly trend ───────────────────────────────────────────────────────────
   // Two halves. ACTIVITY (visits, registrations) by week comes off this payload,
   // per drill scope, cut at the run's as-of date. INDICATORS over time are the
@@ -2457,6 +2489,11 @@ function WorkflowUI({
 
   function PeerCohorts(props) {
     var f = props.f;
+    var stick = {
+      position: 'sticky',
+      left: 0,
+    };
+    if (cohortPanelW) stick.width = cohortPanelW + 'px';
     // A cohort key is absent on runs saved before these keys existed. Say so,
     // rather than rendering an empty panel that reads as "no peers".
     var hasKeys = (P.byFLW || []).some(function (x) {
@@ -2547,7 +2584,11 @@ function WorkflowUI({
     }
 
     return (
-      <div className="border-t border-gray-100 px-4 py-3">
+      <div
+        ref={measureCohortPanel}
+        style={stick}
+        className="border-t border-gray-100 px-4 py-3"
+      >
         <div className="flex items-baseline justify-between gap-3 flex-wrap mb-3">
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
             Against comparable workers
