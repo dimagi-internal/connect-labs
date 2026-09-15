@@ -1,5 +1,24 @@
 {% extends 'supply_chain/base.html' %}
-{% load crispy_forms_tags %}
+{% load crispy_forms_tags static %}
+
+{% comment %}
+TomSelect is bundled but not loaded globally -- every page that wants it pulls
+it in itself (tasks/new_task_modal.html, opportunity/opportunities_list.html
+and five others all do). So a `data-tomselect` attribute on a page that does
+not include the bundle is inert, which is what shipped: the supplier picker
+rendered as a bare <select>. Including it here covers every write screen at
+once, since they all extend this shell.
+{% endcomment %}
+
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+{% endblock %}
 
 {% comment %}
 The page around a write form. Crispy renders the fields from the form's own

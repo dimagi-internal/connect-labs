@@ -214,7 +214,11 @@ class RoundLineForm(forms.Form):
         self.fields["commodity_slug"].choices = [("", "—")] + list(commodities)
 
 
-RoundLineFormSet = forms.formset_factory(RoundLineForm, extra=1, min_num=1, validate_min=True, can_delete=True)
+# `extra=0`, not `extra=1`. A formset renders `max(initial, min_num) + extra`
+# rows, so min_num=1 with extra=1 opened a new round on TWO blank commodity
+# rows -- one required, one not, and no way to tell which from looking. One
+# row and an "add another" button is the same capability, said once.
+RoundLineFormSet = forms.formset_factory(RoundLineForm, extra=0, min_num=1, validate_min=True, can_delete=True)
 
 
 class OutreachForm(ScopedForm):
