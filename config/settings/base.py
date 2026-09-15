@@ -152,6 +152,7 @@ LOCAL_APPS = [
     "connect_labs.tasks",
     "connect_labs.audit",
     "connect_labs.audit_trail",
+    "connect_labs.benchmarks",
     "connect_labs.workflow",
     "connect_labs.coverage",
     "connect_labs.flags",
