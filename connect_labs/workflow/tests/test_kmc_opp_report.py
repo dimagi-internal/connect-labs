@@ -67,13 +67,33 @@ def test_it_reads_the_benchmark_from_the_benchmarks_api():
     assert "/labs/benchmarks/api/" in src
 
 
+def _flw_rows_body():
+    """Just the `flwRows` memo, so an assertion about where the worker table's
+    data comes from cannot be satisfied by some unrelated part of the file."""
+    src = RENDER.read_text()
+    start = src.index("var flwRows = React.useMemo(")
+    end = src.index("\n  // ══ 3", start)
+    return src[start:end]
+
+
 def test_the_flw_table_never_goes_through_the_benchmark_store():
     """An opportunity owns its workers' data, so the FLW table shows real
     usernames read directly. FLW identity must never cross an opportunity
-    boundary, which is what the benchmark store is for."""
+    boundary, which is what the benchmark store is for.
+
+    This asserts about the TABLE, not about a URL. The previous version split on
+    the benchmark fetch URL and checked the next 200 characters for 'flw' -- a
+    window that never reached the memo sixty lines above it, so routing a
+    username through the benchmark payload (`props.bench && props.bench.
+    flw_username`) left all fifteen tests green. Verified by re-running that
+    exact mutation against this version: it goes red.
+    """
+    body = _flw_rows_body()
+    assert "sem.rows" in body, "the worker table no longer sources from the semantic response"
+    assert "bench" not in body, "the worker table reads the benchmark payload"
+    # And the benchmark fetch itself still asks for no worker-level data.
     src = RENDER.read_text()
-    benchmark_chunks = src.split("/labs/benchmarks/api/")[1:]
-    for chunk in benchmark_chunks:
+    for chunk in src.split("/labs/benchmarks/api/")[1:]:
         assert "flw" not in chunk[:200].lower(), "the benchmark fetch mentions flw"
 
 

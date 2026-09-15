@@ -707,10 +707,19 @@ def _with_inherited_safety_flags(instance_inputs: dict, template_key: str | None
 #     closed, is one click to satisfy, and is exactly what the template declares
 #     its render needs.
 #
-# If that MBW gate ever turns out to be unwanted, the narrower rule is a denylist
-# of keys that are gates rather than render settings -- `_NOT_INHERITED =
-# ("auth_requires",)` filtered out below -- not a return to the allow-list, which
-# is what let two flags ship inert in one week.
+# `auth_requires` IS inherited. There is no denylist anywhere in this file or in
+# this package -- nothing filters it out -- and that is deliberate, not an
+# oversight. The observable effect is already live: `mbw_auditing_v5` instances
+# created between 2026-02-24 and 2026-04-29 now show the CommCare HQ leg of the
+# runner's auth gate, which costs one extra authorise click. It fails closed, and
+# it is exactly what the template declares its render needs, so those instances
+# were arguably missing an auth requirement rather than being burdened with a new
+# one.
+#
+# If it ever turns out to be unwanted, the escape hatch is a DENYLIST of keys that
+# are gates rather than render settings -- a `_NOT_INHERITED = ("auth_requires",)`
+# filtered out of `missing` below -- not a return to the allow-list, which is what
+# let two flags ship inert in one week. Write it then; it does not exist now.
 
 
 def with_inherited_config_flags(definition_data: dict, template_key: str | None) -> dict:

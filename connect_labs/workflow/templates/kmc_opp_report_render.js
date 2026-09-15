@@ -105,12 +105,14 @@ function WorkflowUI({
   // every response in `measures` (the registry's own `meta`), which is what
   // stops this page from becoming a third hand-kept copy of the registry.
   //
-  // ONE branch of `grade()` is deliberately not ported: credibility. The server
-  // does not serve the settings tables to a browser (see
-  // `_deployment_facts_for_render`), so this page cannot decide it and does not
-  // pretend to — a cell here is banded on its value where a saved programme
-  // report would show `notcredible`. The programme report is the place that
-  // judgement is published.
+  // Credibility IS ported, and it is the one branch that does not arrive as a
+  // threshold: the server does not serve the settings tables to a browser (see
+  // `_deployment_facts_for_render`), so this page cannot RECOMPUTE the rule. It
+  // reads the registry's own verdict instead — the `<measure>_suppressed` column
+  // the compiler puts on every row — and withholds the cell (`notcredible`), or
+  // `unverifiable` where a gated indicator arrives with no flag at all. See the
+  // CREDIBILITY block inside `gradeCell` below; do not delete it on the strength
+  // of a comment that says this page "cannot decide" credibility.
   function bandOf(direction, bands, value) {
     if (value === null || value === undefined) return 'nodata';
     var x = Number(value);
