@@ -48,6 +48,18 @@ def test_a_web_caller_is_refused_another_organisation():
     assert denied and "someone-else" in denied
 
 
+def test_an_organisation_authorises_by_either_of_its_names():
+    """Labs carries both, and the codebase names orgs by both: `registry_source`
+    identifies one as `{"organization_id": 179}` while `benchmarks` uses the
+    slug. Taking only one convention refuses a caller using the other -- a
+    permission failure with no permission problem behind it."""
+    caller = Caller(request=_request({"organizations": [{"id": 179, "slug": "dimagi-kmc"}]}))
+    assert may_use(caller, organization_id=179) is None
+    assert may_use(caller, organization_id="dimagi-kmc") is None
+    # The other side, so accepting both names is not accepting anything.
+    assert may_use(caller, organization_id=999) is not None
+
+
 def test_a_web_caller_is_refused_an_opportunity_they_do_not_hold():
     caller = Caller(request=_request())
     assert may_use(caller, opportunity_id=999999) is not None

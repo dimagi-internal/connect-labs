@@ -34,15 +34,21 @@ def test_a_caller_may_not_use_a_programme_they_do_not_hold():
         SupplyDataAccess(program_id=999999, caller=Caller(request=_request()))
 
 
-def test_a_caller_may_use_an_organisation_they_hold():
-    access = SupplyDataAccess(organization_id="dimagi", caller=Caller(request=_request()))
-    assert access.organization_id == "dimagi"
+def test_an_organisation_the_caller_does_not_hold_is_not_authorised_here():
+    """Deliberate, not forgotten: `organization_id` selects nothing.
 
-
-def test_a_caller_may_not_use_an_organisation_they_do_not_hold():
-    """The organisation is the scope the MCP surface lets a caller name freely."""
-    with pytest.raises(PermissionDenied):
-        SupplyDataAccess(organization_id="someone-else", caller=Caller(request=_request()))
+    mcp_tools.py's schema says it outright -- "carried as context. It does NOT
+    select a registry: commodities, trade items and suppliers are scoped to the
+    programme". Authorising a value that reaches no query would protect nothing
+    and only add a way to refuse a legitimate caller. This pins the decision so
+    a later tidy-up cannot quietly start checking it.
+    """
+    access = SupplyDataAccess(
+        program_id=176,
+        organization_id="someone-else",
+        caller=Caller(request=_request()),
+    )
+    assert access.organization_id == "someone-else"
 
 
 def test_no_caller_is_refused():
