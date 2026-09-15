@@ -41,6 +41,49 @@ urlpatterns = [
         procurement_views.ComparisonView.as_view(),
         name="procurement_comparison",
     ),
+    # write screens: the sourcing lifecycle a person could not previously
+    # complete in a browser — create a round, open it, invite, record a reply,
+    # correct a mistake.
+    path(
+        "procurement/rounds/new/",
+        procurement_views.RoundCreateView.as_view(),
+        name="procurement_round_create",
+    ),
+    path(
+        "procurement/rounds/<int:round_id>/edit/",
+        procurement_views.RoundUpdateView.as_view(),
+        name="procurement_round_edit",
+    ),
+    path(
+        "procurement/rounds/<int:round_id>/open/",
+        procurement_views.RoundOpenView.as_view(),
+        name="procurement_round_open",
+    ),
+    path(
+        "procurement/rounds/<int:round_id>/close/",
+        procurement_views.RoundCloseView.as_view(),
+        name="procurement_round_close",
+    ),
+    path(
+        "procurement/rounds/<int:round_id>/invite/",
+        procurement_views.OutreachLogView.as_view(),
+        name="procurement_outreach_log",
+    ),
+    path(
+        "procurement/outreach/<int:outreach_id>/reply/",
+        procurement_views.OutreachReplyView.as_view(),
+        name="procurement_outreach_reply",
+    ),
+    path(
+        "procurement/outreach/<int:outreach_id>/delete/",
+        procurement_views.OutreachDeleteView.as_view(),
+        name="procurement_outreach_delete",
+    ),
+    path(
+        "procurement/quotes/<int:quote_id>/void/",
+        procurement_views.QuoteVoidView.as_view(),
+        name="procurement_quote_void",
+    ),
     path(
         "procurement/quotes/new/",
         procurement_views.QuoteEntryView.as_view(),

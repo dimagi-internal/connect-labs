@@ -69,6 +69,12 @@ unconfirmed figures on the right.
        class="px-3 py-1.5 text-sm rounded-md border border-brand-indigo text-brand-indigo hover:bg-message-info">
       Compare this round
     </a>
+    {% if not quote.voided %}
+      <a href="{% url 'supply_chain:procurement_quote_void' quote.id %}"
+         class="px-3 py-1.5 text-sm rounded-md border border-red-300 text-red-700 hover:bg-red-50">
+        Void
+      </a>
+    {% endif %}
   </div>
 </div>
 
