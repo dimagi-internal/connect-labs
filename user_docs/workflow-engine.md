@@ -151,7 +151,7 @@ A dropdown lets you choose what "comparable" means:
 A second dropdown controls how each indicator's peer distribution is displayed:
 
 - **One dot per worker** — shows every individual peer as a dot, with this worker's own value marked. Use this when you want to see exactly where specific individuals sit relative to each other.
-- **How many workers sit in each band** — groups peers into bands and shows a count for each band. Use this when you want a sense of how many people are performing at roughly the same level.
+- **How many workers sit in each band** — groups peers into bands and shows a count for each band, with taller bars for bands that contain more workers. Use this when you want a sense of how many people are performing at roughly the same level. Each bar is given enough height to show real differences in size, so the shape of the distribution is readable at a glance rather than every band appearing the same height.
 
 Neither view substitutes for the other. With a large peer group, individual dots can overlap into an unreadable cluster, making the banded count more useful; with a small peer group, the counts can obscure who the individuals are, making the dots more useful.
 
@@ -190,6 +190,4 @@ Where the programme's own records indicate that a particular indicator is not cr
 
 #### Cohort administration
 
-Benchmarking cohorts — the groups of opportunities whose figures are compared — are managed by programme administrators. Administrators can create a cohort, add opportunities to it, and publish a completed run's figures so they appear in the peer section of each member's report. Once figures are published, every opportunity in the cohort automatically receives an updated report instance.
-
-If you believe
+Benchmarking cohorts — the groups of opportunities whose figures are compared — are managed by programme administrators. Administrators can create a cohort, add opportunities
