@@ -594,6 +594,14 @@ def supplier_get(access, supplier_id):
     return record(supplier) if supplier else None
 
 
+# `supplier_create` / `supplier_update`, not `supplier_upsert` -- and that is
+# the rule, not an oversight anyone should tidy. Every reference model with a
+# natural key gets an upsert (commodity on slug, item on sku, supply point on
+# slug, organisation on slug). A supplier has NO unique constraint, because
+# two suppliers can share a name: "Nutriset" and "Nutriset Nigeria" are
+# different companies, and keying an upsert on a name would silently rewrite
+# one with the other. With nothing to upsert ON, create and update are two
+# operations. test_operations.py pins this.
 @register_operation(
     name="supplier_create",
     summary="Create a supplier. Call supplier_list first if there is any chance this supplier is already on file.",
