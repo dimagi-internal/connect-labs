@@ -2583,7 +2583,9 @@ function WorkflowUI({
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-gray-400 align-middle" />{' '}
               a peer
             </div>
-            <div className="space-y-1.5">
+            <div
+              className={cohortView === 'dots' ? 'space-y-1.5' : 'space-y-3'}
+            >
               {indicators.map(function (c) {
                 var vals = peers
                   .map(function (x) {
@@ -2655,7 +2657,7 @@ function WorkflowUI({
                           }),
                         );
                         return (
-                          <div className="flex-1 min-w-[80px] flex items-end gap-px h-9 border-b border-gray-200">
+                          <div className="flex-1 min-w-[80px] flex items-end gap-px h-14 border-b border-gray-200">
                             {bins.map(function (b, i) {
                               var mine = mineV >= b.lo && mineV <= b.hi;
                               return (
@@ -2694,7 +2696,7 @@ function WorkflowUI({
                                         Math.max(
                                           b.count ? 2 : 0,
                                           Math.round(
-                                            (22 * b.count) / (tall || 1),
+                                            (40 * b.count) / (tall || 1),
                                           ),
                                         ) + 'px',
                                     }}
