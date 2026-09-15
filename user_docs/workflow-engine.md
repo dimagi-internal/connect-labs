@@ -138,6 +138,34 @@ Two further improvements that you will notice on the Worker Review page:
 - **The page now loads in seconds rather than minutes.** It was previously recomputing data for all of the report's opportunities on every load and discarding the result. That wasted work has been removed.
 - **The red "Another pipeline run for this opportunity is already in progress" banner should no longer appear.** That banner was a side effect of the same unnecessary recompute colliding with the programme report. With the recompute removed, the banner no longer fires.
 
+### KMC Opportunity Report
+
+The **KMC Opportunity Report** gives a single delivery opportunity a three-part view of its own performance and how it compares with its peers.
+
+#### What the report shows
+
+**1. Opportunity scorecard**
+The same indicator columns as the KMC Programme Metrics report, calculated for this opportunity alone. This is a quick summary of where the opportunity stands overall.
+
+**2. Field worker breakdown**
+One row per field worker, one column per indicator, colour-banded so you can see at a glance which workers are on track and which need attention. Because an opportunity owns its own workers' data, real field worker names appear here — not anonymous identifiers.
+
+**3. Peer benchmarking**
+Anonymous bars showing each indicator's distribution across other opportunities in the same benchmarking cohort, with this opportunity's own value marked. No partner's name is ever shown against another partner's figure.
+
+!!! note "Nothing changes until a cohort exists"
+    The peer benchmarking section only populates once a cohort has been created and figures have been published to it. Until then, the peer section displays an explanatory message and the rest of the report works normally. If you see that message, it means your opportunity has not yet been added to a cohort — contact your programme administrator.
+
+#### Withheld indicators
+
+Where the programme's own records indicate that a particular indicator is not credibly collected for this opportunity, the report withholds that indicator's band rather than showing a potentially misleading figure. Withheld indicators are named in a footnote at the bottom of the page, so a blank column reads as *deliberately withheld* rather than *data missing*. This matches the behaviour of the KMC Programme Metrics report.
+
+#### Cohort administration
+
+Benchmarking cohorts — the groups of opportunities whose figures are compared — are managed by programme administrators. Administrators can create a cohort, add opportunities to it, and publish a completed run's figures so they appear in the peer section of each member's report. Once figures are published, every opportunity in the cohort automatically receives an updated report instance.
+
+If you believe your opportunity should be part of a cohort but the peer section is empty, ask your programme administrator to confirm that your opportunity has been added and that a run has been published.
+
 ### Selecting opportunities with the multi-opportunity picker
 
 When a template asks you to choose which opportunities to include, the picker offers several ways to build your selection quickly.
@@ -174,38 +202,4 @@ Any workflow that supports a one-click default run can be put on a recurring sch
 On the workflow list screen, workflows that support scheduling show a **Schedule** button. Click it to configure:
 
 - **Cadence** — choose from **Daily**, **Weekdays (Mon–Fri)**, **Weekly** (pick a day of the week), or **Monthly** (pick a day from 1–28)
-- **Hour** — the time of day the workflow should run
-
-Once saved, the workflow card shows a badge such as **⏱ Weekly** so you can see at a glance that it is scheduled. You can edit or remove the schedule from the same **Schedule** button at any time.
-
-Scheduled runs use the same default run the workflow already supports, so nothing new needs to be configured on the workflow itself.
-
-### How the data window is chosen for each cadence
-
-For **Weekly Dual-Track Audits**, the cadence you choose affects which visits the scheduled run covers:
-
-| Cadence | Data window used |
-|---|---|
-| **Daily** | Yesterday only — each run audits the previous day's visits, so no day is audited twice |
-| **Weekdays (Mon–Fri)** | Yesterday only — same rolling-window behaviour as Daily |
-| **Weekly** | The standard week window the workflow is configured for — unchanged |
-| **Monthly** | The standard month window the workflow is configured for — unchanged |
-
-!!! note "Why Daily and Weekdays use a rolling yesterday window"
-    Before this change, scheduling a Weekly Dual-Track Audit to run daily caused the same fixed week to be re-audited on every fire, creating duplicate work. Daily and Weekdays cadences now automatically shift the window forward each day so each scheduled run covers only new visits.
-
-### Visit-clustering settings are honoured by scheduled runs
-
-If your Weekly Dual-Track Audit workflow has pinned visit-clustering settings — time-gap window, GPS distance threshold, or duplicate detection — those settings are now applied automatically whenever a scheduled run fires. Previously, scheduled runs ignored these settings entirely and only picked up whatever state was left over from the last manual run.
-
-No action is needed to enable this: if the settings are pinned on the workflow, they will be used. If you have not pinned any clustering settings, the workflow's defaults continue to apply as before.
-
-### Managing all schedules (Connect Labs Admin)
-
-A dedicated **Scheduled Workflows** page in **Connect Labs Admin** lists every schedule across all users. For each entry you can see:
-
-| Column | What it shows |
-|---|---|
-| Workflow | The workflow being scheduled |
-| Owner | Who set the schedule up |
-| Cadence | How often it runs |
+- **Hour** — the time of day
