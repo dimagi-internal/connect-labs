@@ -29,9 +29,15 @@ numbers of sachets and adding them needs the pack spec.
       · a specification, not something you can order
     </p>
   </div>
-  <span class="text-sm text-gray-500">
-    {{ product.items|length }} trade item{{ product.items|length|pluralize }}
-  </span>
+  <div class="flex flex-wrap items-center gap-3">
+    <span class="text-sm text-gray-500">
+      {{ product.items|length }} trade item{{ product.items|length|pluralize }}
+    </span>
+    <a href="{% url 'supply_chain:item_create' %}?product={{ product.slug }}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">
+      <i class="fa-solid fa-plus mr-1"></i> Trade item
+    </a>
+    <a href="{% url 'supply_chain:product_edit' product.slug %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit</a>
+  </div>
 </div>
 
 {% comment %} ---- the specification ---- {% endcomment %}

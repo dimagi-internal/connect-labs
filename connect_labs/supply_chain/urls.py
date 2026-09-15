@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.urls import path
 
-from connect_labs.supply_chain import api_views, views
+from connect_labs.supply_chain import api_views, reference_views, views
 from connect_labs.supply_chain.procurement import views as procurement_views
 
 app_name = "supply_chain"
@@ -12,16 +12,25 @@ urlpatterns = [
     # the master item list is domain-level reference data, not procurement's:
     # tracking and distribution will both read it
     path("catalogue/", views.CatalogueView.as_view(), name="catalogue"),
+    # Write screens for the catalogue. Both literals sit above the slug route
+    # for the reason the comment below gives: "new" and "items" are valid
+    # slugs and would otherwise be looked up as products.
+    path("catalogue/new/", reference_views.ProductCreateView.as_view(), name="product_create"),
+    path("catalogue/items/new/", reference_views.ItemCreateView.as_view(), name="item_create"),
+    path("catalogue/items/<int:item_id>/edit/", reference_views.ItemUpdateView.as_view(), name="item_edit"),
     # Before the slug route: "items" is itself a valid slug, so the literal
     # would otherwise lose to the converter and every trade item would 404
     # looking for a product called "items".
     path("catalogue/items/<int:item_id>/", views.ItemDetailView.as_view(), name="item_detail"),
     path("catalogue/<slug:slug>/", views.ProductDetailView.as_view(), name="product_detail"),
+    path("catalogue/<slug:slug>/edit/", reference_views.ProductUpdateView.as_view(), name="product_edit"),
     # Suppliers are reference data reused across rounds, so they sit at the
     # domain level rather than under procurement -- orders and receipts name
     # them too.
     path("suppliers/", views.SupplierDirectoryView.as_view(), name="suppliers"),
+    path("suppliers/new/", reference_views.SupplierCreateView.as_view(), name="supplier_create"),
     path("suppliers/<int:supplier_id>/", views.SupplierDetailView.as_view(), name="supplier_detail"),
+    path("suppliers/<int:supplier_id>/edit/", reference_views.SupplierUpdateView.as_view(), name="supplier_edit"),
     # shared API: one endpoint for the whole domain, because the registry is shared
     path("api/operations/", api_views.OperationListView.as_view(), name="api_operations"),
     path("api/<str:name>/", api_views.OperationDispatchView.as_view(), name="api_operation"),

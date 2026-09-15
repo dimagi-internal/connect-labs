@@ -26,9 +26,12 @@ four screens and an id held in your head.
       {% if supplier.city %}· {{ supplier.city }}{% elif supplier.country %}· {{ supplier.country }}{% endif %}
     </p>
   </div>
-  <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-    {{ supplier.status|humanise|default:"identified" }}
-  </span>
+  <div class="flex items-center gap-3">
+    <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+      {{ supplier.status|humanise|default:"identified" }}
+    </span>
+    <a href="{% url 'supply_chain:supplier_edit' supplier.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit</a>
+  </div>
 </div>
 
 <div class="grid gap-6 lg:grid-cols-3 mb-6">
