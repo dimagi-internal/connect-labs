@@ -58,22 +58,37 @@ def open_round(da, rutf_row):
 
 
 class TestScoping:
-    def test_a_numeric_organisation_scopes_reference_data_to_the_organisation(self):
-        da = access(organization_id=42)
-        assert da.reference_scope == "organization"
-        assert da.scope_key == "org:42"
+    """Reference data is scoped to the PROGRAMME, and to nothing else.
 
-    def test_a_non_numeric_organisation_falls_back_to_the_programme(self):
-        """Labs-only synthetic organisations carry a slug, not an id. Falling
-        back keeps the app usable there instead of raising on int()."""
-        da = access(organization_id="labs-only-org")
-        assert da.reference_scope == "program"
-        assert da.scope_key == f"prog:{SYNTHETIC_PROGRAM}"
+    These replace three tests that pinned an organisation tier above this
+    one. It was removed because it made one programme's catalogue depend on
+    what the caller had selected rather than on the data -- see
+    `models.scope_key`. Keeping those tests would have pinned the bug.
+    """
 
-    def test_reference_data_written_under_one_organisation_is_invisible_under_another(self):
-        access(organization_id=1).upsert_commodity({"slug": "rutf", "name": "RUTF"})
-        assert access(organization_id=2).get_commodity("rutf") is None
-        assert access(organization_id=1).get_commodity("rutf") is not None
+    def test_the_organisation_no_longer_changes_which_registry_is_read(self):
+        """The whole defect in one assertion: selecting an organisation used
+        to silently switch the catalogue, so the Catalogue and Suppliers tabs
+        emptied while Sourcing carried on working."""
+        assert access(organization_id=42).scope_key == f"prog:{SYNTHETIC_PROGRAM}"
+        assert access(organization_id=None).scope_key == f"prog:{SYNTHETIC_PROGRAM}"
+        assert access(organization_id="labs-only-org").scope_key == f"prog:{SYNTHETIC_PROGRAM}"
+
+    def test_a_commodity_written_with_an_organisation_selected_is_still_found_without_one(self):
+        access(organization_id=42).upsert_commodity({"slug": "rutf", "name": "RUTF"})
+        assert access(organization_id=None).get_commodity("rutf") is not None
+        assert access(organization_id=99).get_commodity("rutf") is not None
+
+    def test_reference_data_written_under_one_programme_is_invisible_under_another(self):
+        access(program_id=10501).upsert_commodity({"slug": "rutf", "name": "RUTF"})
+        assert access(program_id=10502).get_commodity("rutf") is None
+        assert access(program_id=10501).get_commodity("rutf") is not None
+
+    def test_reference_data_refuses_to_be_read_without_a_programme(self):
+        """A stand-in scope would merge every programme's catalogue into one."""
+        with pytest.raises(ValueError) as caught:
+            SupplyDataAccess(access_token="unused").scope_key
+        assert "program_id" in str(caught.value)
 
     def test_procurement_records_refuse_to_be_read_without_a_programme(self):
         """A stand-in scope would make records written by different callers

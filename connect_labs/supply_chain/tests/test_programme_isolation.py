@@ -272,4 +272,4 @@ class TestTheScopeReport:
 
         report = call_operation("reference_scope_report", SupplyDataAccess(access_token="unused"))
         assert report["this_caller"] is None
-        assert "organization_id" in report["this_caller_unresolved"]
+        assert "program_id" in report["this_caller_unresolved"]

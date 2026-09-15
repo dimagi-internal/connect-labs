@@ -507,10 +507,9 @@ def item_upsert(access, data):
     summary=(
         "Where this programme's reference data actually lives, and what else is out there. "
         "Commodities, trade items and suppliers are stored under a scope_key, which is "
-        "`org:<id>` when the caller had a numeric organisation selected and `prog:<id>` "
-        "otherwise — so selecting an organisation alongside a programme can silently change "
-        "which catalogue you see, and an empty Catalogue tab is usually this rather than "
-        "missing data. Counts only: no names, no rows."
+        "the programme they belong to. A row under a scope nobody reads is invisible "
+        "without being missing, and from the Catalogue tab that looks identical to having "
+        "no data — this tells the two apart. Counts only: no names, no rows."
     ),
     input_schema=obj({}),
 )
@@ -523,9 +522,9 @@ def reference_scope_report(access):
         for row in model.objects.values("scope_key").annotate(n=Count("pk")).order_by("scope_key"):
             scopes.setdefault(row["scope_key"], {})[name] = row["n"]
 
-    # `scope_key` raises without a scope, and a diagnostic that cannot run on
-    # the machine you are diagnosing is no use -- so the caller's own scope is
-    # reported as unresolvable rather than raising.
+    # `scope_key` raises without a programme, and a diagnostic that cannot run
+    # on the machine you are diagnosing is no use -- so the caller's own scope
+    # is reported as unresolvable rather than raising.
     try:
         mine = access.scope_key
     except ValueError as exc:
@@ -537,7 +536,6 @@ def reference_scope_report(access):
     return {
         "this_caller": mine,
         "this_caller_unresolved": reason,
-        "reference_scope": access.reference_scope if mine else None,
         "scopes": [
             {"scope_key": key, "counts": counts, "total": sum(counts.values()), "is_this_caller": key == mine}
             for key, counts in sorted(scopes.items())

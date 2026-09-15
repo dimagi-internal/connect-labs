@@ -2,7 +2,7 @@
 
 Tiers, and how each is scoped (see the design doc, sections 4, 17 and 18):
 
-  reference    -> organization_id   commodities, items, suppliers
+  reference    -> program_id        commodities, items, suppliers
   procurement  -> program_id        rounds, outreach, quotes, awards, purchases
   fulfilment   -> program_id        contracts, shipments, receipts, invoices, documents
   network      -> program_id        supply points (carrying opportunity_id in data)
