@@ -1,0 +1,69 @@
+{% extends "supply_chain/operation_form.html" %}
+{% load crispy_forms_tags %}
+
+{% comment %}
+A round's commodity lines, as a formset. Everything else on this page comes
+from the shared write-screen shell.
+
+The add button clones the empty form Django already renders for exactly this
+purpose (`formset.empty_form`), swapping __prefix__ for the next index and
+bumping TOTAL_FORMS — the standard dynamic-formset idiom, in Alpine because
+Alpine is what this project bundles.
+{% endcomment %}
+
+{% block extra_fields %}
+<div class="pt-4 border-t border-gray-100" x-data="{ count: {{ lines.total_form_count }} }">
+  <h2 class="text-sm font-semibold text-gray-900">What this round is asking for</h2>
+  <p class="text-xs text-gray-500 mt-0.5 mb-3 max-w-2xl">
+    One row per commodity. The quantity is what suppliers are quoting against, so
+    it is also what a landed total for this round is computed from.
+  </p>
+
+  {{ lines.management_form }}
+  {% if lines.non_form_errors %}
+    <p class="text-xs text-red-700 mb-2">{{ lines.non_form_errors|join:" " }}</p>
+  {% endif %}
+
+  <div id="line-rows" class="space-y-3">
+    {% for line in lines %}
+      <div class="grid grid-cols-1 md:grid-cols-[2fr,1fr,1fr,auto] gap-x-4 gap-y-2 items-start
+                  rounded-md border border-gray-200 bg-gray-50/40 px-3 py-3">
+        {{ line.id }}
+        {% for field in line.visible_fields %}
+          {% if field.name != "DELETE" %}
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.errors %}<p class="mt-1 text-xs text-red-700">{{ field.errors|join:" " }}</p>{% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+        <label class="flex items-center gap-1.5 text-xs text-gray-500 md:pt-6 whitespace-nowrap">
+          {{ line.DELETE }} Remove
+        </label>
+      </div>
+    {% endfor %}
+  </div>
+
+  <template id="empty-line">
+    <div class="grid grid-cols-1 md:grid-cols-[2fr,1fr,1fr,auto] gap-x-4 gap-y-2 items-start
+                rounded-md border border-gray-200 bg-gray-50/40 px-3 py-3">
+      {{ lines.empty_form.as_div }}
+    </div>
+  </template>
+
+  <button type="button"
+          @click="
+            const tpl = document.getElementById('empty-line');
+            const row = tpl.content.cloneNode(true);
+            const host = document.createElement('div');
+            host.appendChild(row);
+            host.innerHTML = host.innerHTML.replaceAll('__prefix__', count);
+            document.getElementById('line-rows').appendChild(host.firstElementChild);
+            document.querySelector('[name=lines-TOTAL_FORMS]').value = ++count;
+          "
+          class="mt-3 text-sm text-brand-indigo hover:underline">
+    + Add another commodity
+  </button>
+</div>
+{% endblock %}

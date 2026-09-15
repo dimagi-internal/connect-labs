@@ -14,10 +14,16 @@
 {% else %}
 <div class="flex items-center justify-between mb-4">
   <h1 class="text-xl font-semibold text-gray-900">Quote rounds</h1>
-  <a href="{% url 'supply_chain:procurement_quote_entry' %}"
-     class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-    <i class="fa-solid fa-plus mr-1"></i> Record a quote
-  </a>
+  <div class="flex items-center gap-2">
+    <a href="{% url 'supply_chain:procurement_quote_entry' %}"
+       class="px-3 py-2 text-sm border border-brand-indigo text-brand-indigo hover:bg-message-info rounded-md">
+      Record a quote
+    </a>
+    <a href="{% url 'supply_chain:procurement_round_create' %}"
+       class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+      <i class="fa-solid fa-plus mr-1"></i> New round
+    </a>
+  </div>
 </div>
 <div class="bg-white rounded-lg shadow-sm overflow-hidden">
   {% comment %}

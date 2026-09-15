@@ -32,6 +32,8 @@ from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 
 from connect_labs.supply_chain.api_views import _access, has_program_context
+from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
+from connect_labs.supply_chain.forms import OutreachForm, OutreachReplyForm, ReasonForm, RoundForm, RoundLineFormSet
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 
@@ -312,3 +314,246 @@ class QuoteEntryView(_Base):
 
         url = reverse("supply_chain:procurement_comparison", args=[created["round_id"]])
         return redirect(f"{url}?commodity={created['commodity_slug']}")
+
+
+# ---- write screens -------------------------------------------------------
+#
+# Each is a declaration: which operation, what to call it, and where to go
+# afterwards. The form comes from the model (connect_labs/supply_chain/forms.py)
+# and the page from one shared template, so a screen carries no markup and no
+# validation of its own.
+
+
+class _RoundScreen(OperationFormView):
+    """Create or update a round, header plus its commodity lines.
+
+    A round asks for one or more commodities, each with its own quantity and
+    unit, so the lines are a formset rather than a JSON textarea -- which is
+    what a ModelForm would render `Round.lines` as.
+    """
+
+    form_class = RoundForm
+    template_name = "supply_chain/procurement/round_form.html"
+
+    def commodities(self):
+        return [(c["slug"], c["name"]) for c in self.op("commodity_list")]
+
+    def line_formset(self, data=None, initial=None):
+        return RoundLineFormSet(
+            data,
+            initial=initial,
+            prefix="lines",
+            form_kwargs={"commodities": self.commodities()},
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if context.get("has_program_context") and "lines" not in context:
+            context["lines"] = (
+                self.line_formset(self.request.POST)
+                if self.request.method == "POST"
+                else self.line_formset(initial=self.initial_lines())
+            )
+        return context
+
+    def initial_lines(self):
+        return []
+
+    def form_valid(self, form):
+        lines = self.line_formset(self.request.POST)
+        if not lines.is_valid():
+            return self.render_to_response(self.get_context_data(form=form, lines=lines))
+
+        kept = [
+            {
+                "commodity_slug": row["commodity_slug"],
+                "quantity": str(row["quantity"]),
+                "quantity_unit": row["quantity_unit"],
+            }
+            for row in lines.cleaned_data
+            if row and not row.get("DELETE") and row.get("commodity_slug")
+        ]
+        if not kept:
+            form.add_error(None, "A round has to ask for at least one commodity.")
+            return self.render_to_response(self.get_context_data(form=form, lines=lines))
+
+        self._lines = kept
+        return super().form_valid(form)
+
+    def fixed(self, **kwargs):
+        return {"data": {"lines": getattr(self, "_lines", [])}}
+
+    def breadcrumb(self, **kwargs):
+        return [
+            {"label": "Sourcing", "href": reverse("supply_chain:procurement_round_board")},
+            {"label": self.title},
+        ]
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:procurement_round_board")
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:procurement_round_detail", args=[result["id"]])
+
+
+class RoundCreateView(_RoundScreen):
+    operation = "round_create"
+    title = "New quote round"
+    intro = (
+        "A round is one ask, to several suppliers, for the same thing. It opens in draft: "
+        "nothing goes out until you open it."
+    )
+    submit_label = "Create round"
+
+
+class RoundUpdateView(_RoundScreen):
+    operation = "round_update"
+    title = "Edit round"
+    submit_label = "Save changes"
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["instance"] = self._round_instance()
+        return kwargs
+
+    def _round_instance(self):
+        from connect_labs.supply_chain.models import Round
+
+        found = Round.objects.filter(pk=self.kwargs["round_id"], program_id=_access(self.request).program_id).first()
+        if found is None:
+            raise Http404(f"no round {self.kwargs['round_id']} in this programme")
+        return found
+
+    def initial_lines(self):
+        return [
+            {
+                "commodity_slug": line.get("commodity_slug"),
+                "quantity": line.get("quantity"),
+                "quantity_unit": line.get("quantity_unit"),
+            }
+            for line in (self._round_instance().lines or [])
+        ]
+
+    def fixed(self, **kwargs):
+        return {"round_id": int(kwargs["round_id"]), "data": {"lines": getattr(self, "_lines", [])}}
+
+
+class RoundOpenView(OperationActionView):
+    operation = "round_open"
+    success_message = "Round opened — it can take quotes now."
+
+    def fixed(self, **kwargs):
+        return {"round_id": int(kwargs["round_id"])}
+
+    def redirect_to(self, **kwargs):
+        return reverse("supply_chain:procurement_round_detail", args=[kwargs["round_id"]])
+
+
+class RoundCloseView(OperationActionView):
+    operation = "round_close"
+    success_message = "Round closed to further quotes."
+
+    def fixed(self, **kwargs):
+        return {"round_id": int(kwargs["round_id"])}
+
+    def redirect_to(self, **kwargs):
+        return reverse("supply_chain:procurement_round_detail", args=[kwargs["round_id"]])
+
+
+class OutreachLogView(OperationFormView):
+    operation = "outreach_log"
+    form_class = OutreachForm
+    title = "Record an invitation"
+    intro = (
+        "That we asked this supplier to quote on this round. A log, not a state machine — "
+        "re-inviting is a real event worth keeping."
+    )
+    submit_label = "Record invitation"
+
+    def fixed(self, **kwargs):
+        return {"data": {"round_id": int(kwargs["round_id"])}}
+
+    def breadcrumb(self, **kwargs):
+        return [
+            {"label": "Sourcing", "href": reverse("supply_chain:procurement_round_board")},
+            {"label": "Round", "href": reverse("supply_chain:procurement_round_detail", args=[kwargs["round_id"]])},
+            {"label": "Record an invitation"},
+        ]
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:procurement_round_detail", args=[kwargs["round_id"]])
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:procurement_round_detail", args=[result["round_id"]])
+
+
+class OutreachReplyView(OperationFormView):
+    operation = "outreach_update"
+    form_class = OutreachReplyForm
+    title = "Record a reply"
+    intro = "What came back, and when they were last chased."
+    submit_label = "Save"
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["instance"] = self._outreach()
+        return kwargs
+
+    def _outreach(self):
+        from connect_labs.supply_chain.models import Outreach
+
+        found = Outreach.objects.filter(
+            pk=self.kwargs["outreach_id"], round__program_id=_access(self.request).program_id
+        ).first()
+        if found is None:
+            raise Http404(f"no invitation {self.kwargs['outreach_id']} in this programme")
+        return found
+
+    def fixed(self, **kwargs):
+        return {"outreach_id": int(kwargs["outreach_id"])}
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:procurement_round_detail", args=[self._outreach().round_id])
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:procurement_round_detail", args=[result["round_id"]])
+
+
+class OutreachDeleteView(OperationFormView):
+    operation = "outreach_delete"
+    form_class = ReasonForm
+    title = "Delete this invitation"
+    danger = True
+    submit_label = "Delete invitation"
+    intro = (
+        "For an invitation recorded in error. Unlike voiding a quote this removes the row: "
+        "a quote is a supplier's stated fact worth keeping once superseded, and an invitation "
+        "we never sent is not history — it is a mistake that would keep asserting the contact."
+    )
+
+    def fixed(self, **kwargs):
+        return {"outreach_id": int(kwargs["outreach_id"])}
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:procurement_round_detail", args=[result["round_id"]])
+
+
+class QuoteVoidView(OperationFormView):
+    operation = "quote_void"
+    form_class = ReasonForm
+    title = "Void this quote"
+    danger = True
+    submit_label = "Void quote"
+    intro = (
+        "The quote stays readable and stops counting. A supplier said this, and that they said it "
+        "remains true — voiding records that it should not be compared, it does not erase it."
+    )
+
+    def fixed(self, **kwargs):
+        return {"quote_id": int(kwargs["quote_id"])}
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:procurement_quote_detail", args=[kwargs["quote_id"]])
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:procurement_quote_detail", args=[result["id"]])
