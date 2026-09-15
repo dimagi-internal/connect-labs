@@ -60,3 +60,21 @@ def test_an_opportunity_cannot_join_the_same_cohort_twice():
     BenchmarkCohortMember.objects.create(cohort=cohort, opportunity_id=874)
     with pytest.raises(IntegrityError):
         BenchmarkCohortMember.objects.create(cohort=cohort, opportunity_id=874)
+
+
+def test_a_cohort_cannot_be_configured_below_the_min_peers_floor():
+    """Nothing stopped a cohort being set to 0 or 2, and at two contributors the
+    reader is one of them -- the one bar left is a named peer's exact value. The
+    DATABASE has to hold this: no code path here calls `full_clean()`."""
+    from django.db import IntegrityError
+
+    with pytest.raises(IntegrityError):
+        _cohort(min_peers=2)
+
+
+def test_the_floor_is_also_a_validator_so_a_form_says_so():
+    from django.core.exceptions import ValidationError
+
+    cohort = BenchmarkCohort(name="KMC", organization_id="dimagi-kmc", min_peers=2)
+    with pytest.raises(ValidationError):
+        cohort.full_clean()

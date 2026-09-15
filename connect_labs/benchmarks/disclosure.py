@@ -7,7 +7,10 @@ The rules, and what each defends against:
 
   R1  >= min_peers contributing OPPORTUNITIES (distinct ids, never rows), or
       the indicator is withheld. Both public functions also refuse
-      min_peers < 2 -- a single named peer is not anonymous.
+      min_peers < 3. Two is not a floor: the reader of a benchmark is one of
+      the two contributors, so the one remaining bar is a named peer's exact
+      value -- anonymous only to someone outside the cohort, and nobody
+      outside the cohort can read it.
   R2  a peer contributes only with denominator >= min_denominator; a rate over
       three babies is both noise and a fingerprint.
   R3  denominators are never returned. Opportunity sizes (100 .. 2,189 cases)
@@ -97,8 +100,8 @@ def anonymise_point(
     that peers tied on value -- common at this cohort size -- are not ordered
     the same way in every indicator. See R4.
     """
-    if min_peers < 2:
-        raise ValueError("min_peers must be at least 2")
+    if min_peers < 3:
+        raise ValueError("min_peers must be at least 3")
     if not tie_salt or not tie_salt.strip():
         raise ValueError("tie_salt must be a non-empty string that varies per indicator")
     eligible = _eligible(observations, min_denominator=min_denominator)
@@ -127,8 +130,8 @@ def anonymise_series(
     which is the whole point of a series. `tie_salt` must be unique per
     indicator, same contract as `anonymise_point`.
     """
-    if min_peers < 2:
-        raise ValueError("min_peers must be at least 2")
+    if min_peers < 3:
+        raise ValueError("min_peers must be at least 3")
     if not tie_salt or not tie_salt.strip():
         raise ValueError("tie_salt must be a non-empty string that varies per indicator")
     eligible_by_period = {
