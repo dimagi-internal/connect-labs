@@ -4,6 +4,7 @@ from pathlib import Path
 
 from connect_labs.workflow.templates import TEMPLATE_GROUP_OF, TEMPLATES
 from connect_labs.workflow.templates.kmc_opp_report import DEFINITION, TEMPLATE
+from connect_labs.workflow.templates.kmc_programme_metrics import SNAPSHOT_INPUTS as PROGRAMME_SNAPSHOT_INPUTS
 from connect_labs.workflow.templates.kmc_programme_metrics import TEMPLATE as PROGRAMME
 
 RENDER = Path(__file__).resolve().parents[1] / "templates" / "kmc_opp_report_render.js"
@@ -112,3 +113,55 @@ def test_an_empty_benchmark_is_explained_rather_than_errored():
     empty_branch = src.split("if (!ids.length)")[1][:200]
     assert "benchmarkEmptyMessage" in empty_branch
     assert "status: 'error'" not in empty_branch
+
+
+def _grade_cell_body():
+    """Just `gradeCell`, so a branch-order assertion cannot be satisfied by some
+    unrelated part of an 900-line file."""
+    src = RENDER.read_text()
+    start = src.index("function gradeCell(")
+    return src[start : src.index("\n  function ", start)]
+
+
+def test_a_not_credible_indicator_is_withheld_rather_than_banded():
+    """`<measure>_suppressed` is the registry's own suppression rule, compiled
+    against the bound settings tables and returned on every row of the live
+    semantic endpoint. This page grades live rows, so that flag is the only form
+    the decision can reach it in — and banding a suppressed figure publishes a
+    number the system itself says is not trustworthy, to a delivery partner."""
+    body = _grade_cell_body()
+    assert "_suppressed" in body, "the compiled credibility flag is never read"
+    assert "'notcredible'" in body, "a suppressed cell is not withheld"
+    assert body.index("_suppressed") < body.index(
+        "out.band = bandOf("
+    ), "the bands are reached before the credibility flag is consulted"
+
+
+def test_a_gated_indicator_with_no_flag_is_withheld_rather_than_banded():
+    """Only the C family carries the registry's suppression rule — filter_to_series
+    drops the C measures, and with them the rule's target, when the N scorecard is
+    asked for. So N13 (mortality: C14 under another name) arrives with no flag at
+    all, and a page that cannot establish credibility must not band the figure."""
+    assert DEFINITION["config"]["credibility_gated_indicators"] == sorted(
+        PROGRAMME_SNAPSHOT_INPUTS["credibility"]
+    ), "the gated list must be the programme report's own map, not a second copy"
+    assert "N13" in DEFINITION["config"]["credibility_gated_indicators"]
+    body = _grade_cell_body()
+    assert "'unverifiable'" in body
+    assert body.index("isGated(") < body.index(
+        "out.band = bandOf("
+    ), "a gated indicator can reach the bands without its credibility established"
+
+
+def test_a_withheld_figure_is_never_marked_on_the_peer_bars():
+    """Marking our own value on a peer chart is publishing it as a comparison.
+    The publisher's own PUBLISHABLE_BANDS is the rule; this mirrors it, so a
+    notcredible or unverifiable cell contributes no marker."""
+    src = RENDER.read_text()
+    assert "function publishableValue(" in src
+    assert "own={publishableValue(mine)}" in src, "the marker bypasses the band filter"
+    body = src[src.index("function publishableValue(") :]
+    body = body[: body.index("\n  function ")]
+    for band in ("notcredible", "unverifiable", "insufficient", "notinapp"):
+        assert band not in body, f"{band} must not be publishable"
+    assert "'green'" in body and "'yellow'" in body and "'red'" in body

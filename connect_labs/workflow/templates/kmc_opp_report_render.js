@@ -35,6 +35,15 @@ function WorkflowUI({
   // The render's own fallback for a measure declaring no `min_denominator`,
   // matching the programme report's `var MIN_DEN = 25`.
   var MIN_DEN = Number(cfg.min_denominator_default) || 25;
+  // Which indicators the workbook gates on CREDIBILITY — "the figure exists but
+  // must not be published" (semantic/gates.py). Declared on the definition and
+  // sourced from the programme report's own credibility map, so there is one
+  // copy of the fact in the repo and it is patchable through
+  // `workflow_update_definition` without a deploy.
+  var CREDIBILITY_GATED = cfg.credibility_gated_indicators || [];
+  function isGated(indicator) {
+    return CREDIBILITY_GATED.indexOf(indicator) !== -1;
+  }
 
   var search = String(window.location.search || '');
   function qp(name) {
@@ -171,6 +180,43 @@ function WorkflowUI({
       out.band = 'insufficient';
       return out;
     }
+    // ── CREDIBILITY ────────────────────────────────────────────────────────
+    // `<measure>_suppressed` is the registry's OWN suppression rule, compiled
+    // against the bound settings tables by semantic/compiler.py and returned on
+    // every row. Reading it here is not a second copy of the gate: the
+    // programme report reads a server-BUILT snapshot whose cells arrive already
+    // graded, and this page grades LIVE endpoint rows, so the flag is the only
+    // form that decision can reach it in. Ignoring it is this page's failure
+    // mode, and it would put a figure the system calls untrustworthy in front
+    // of a delivery partner.
+    //
+    // The column is `BOOL_OR(llo IS NULL OR llo NOT IN (credible))` over the
+    // scope's own rows, which at `opportunity` and `flw` scope is EXACTLY the
+    // per-LLO predicate — every case in an opportunity has one LLO. An
+    // opportunity outside the llo_map reads as suppressed, so an unknown
+    // deployment fails closed.
+    //
+    // Greyed with the value showing, never blank: the rule's own note says a
+    // blank cell reads as "no data", which is a different and wrong fact.
+    var suppressed = row[measure.id + '_suppressed'];
+    if (suppressed === true) {
+      out.band = 'notcredible';
+      out.value = measure.unit === '%' ? rawf / 100 : rawf;
+      return out;
+    }
+    // A gated indicator whose row carries NO flag at all. Only the C family
+    // carries the registry's suppression rule, and `filter_to_series` drops it
+    // with the rest of C — so in the N scorecard N13 (mortality, which is C14
+    // under another name) arrives ungated. The page cannot establish
+    // credibility, so it must not publish a banded number: withheld, and named
+    // on the page rather than silently dropped.
+    if (
+      (suppressed === undefined || suppressed === null) &&
+      isGated(measure.indicator)
+    ) {
+      out.band = 'unverifiable';
+      return out;
+    }
     out.band = bandOf(measure.direction, measure.bands, rawf);
     out.value = measure.unit === '%' ? rawf / 100 : rawf;
     // A rate computed over a self-selected minority of its scope: the
@@ -190,6 +236,10 @@ function WorkflowUI({
     if (cell.band === 'red') return 'bg-red-50 text-red-800';
     if (cell.band === 'insufficient') return 'text-gray-400';
     if (cell.band === 'notinapp' || cell.band === 'unrecorded')
+      return 'text-slate-400 italic';
+    // A withheld figure is never a colour. Same styling as the programme
+    // report's `notcredible`, so the two surfaces read alike.
+    if (cell.band === 'notcredible' || cell.band === 'unverifiable')
       return 'text-slate-400 italic';
     return '';
   }
@@ -214,9 +264,72 @@ function WorkflowUI({
     if (!cell) return '—';
     if (cell.band === 'notinapp') return 'n/a';
     if (cell.band === 'unrecorded') return 'not recorded';
+    if (cell.band === 'unverifiable') return 'n/a';
     if (cell.band === 'insufficient')
       return 'n<' + (measure.min_denominator || MIN_DEN);
     return fmtValue(measure, cell.value);
+  }
+  function cellTitle(measure, cell) {
+    if (!cell) return '';
+    if (cell.band === 'notcredible')
+      return (
+        'Recording for this indicator is not credible for this organisation ' +
+        "(the workbook's Targets & settings). Shown greyed and never banded."
+      );
+    if (cell.band === 'unverifiable')
+      return (
+        'This indicator is gated on recording credibility and this series ' +
+        'carries no credibility rule, so the figure is withheld rather than ' +
+        'shown unverified.'
+      );
+    if (cell.thin) return 'thin denominator';
+    return measure.title || '';
+  }
+  // What may leave this page as a COMPARISON. Mirrors the publisher's own
+  // `PUBLISHABLE_BANDS` (benchmarks/publish.py): everything else is the
+  // registry or its gates saying the figure must not stand on its own, and
+  // marking it on a peer chart is exactly making it stand on its own.
+  function publishableValue(cell) {
+    if (!cell) return null;
+    if (
+      cell.band !== 'green' &&
+      cell.band !== 'yellow' &&
+      cell.band !== 'red' &&
+      cell.band !== 'unbanded'
+    )
+      return null;
+    return cell.value;
+  }
+  // Which indicators on screen are being withheld, so the gap is visible on the
+  // page instead of looking like missing data.
+  function withheldNote(cells) {
+    var greyed = [];
+    var withheld = [];
+    MEASURES.forEach(function (m) {
+      var cell = cells[m.indicator];
+      if (!cell) return;
+      if (cell.band === 'notcredible') greyed.push(m.indicator);
+      if (cell.band === 'unverifiable') withheld.push(m.indicator);
+    });
+    if (!greyed.length && !withheld.length) return null;
+    return (
+      <div className="mt-2 text-xs text-slate-500">
+        {greyed.length ? (
+          <div>
+            Greyed, never banded: {greyed.join(', ')} — recording for these is
+            not credible for this organisation, so the figure is shown but must
+            not be read as a score.
+          </div>
+        ) : null}
+        {withheld.length ? (
+          <div>
+            Withheld: {withheld.join(', ')} — gated on recording credibility,
+            which this series carries no rule for. Shown on the programme
+            report, which grades it from the workbook's settings.
+          </div>
+        ) : null}
+      </div>
+    );
   }
 
   // ══ 1 + 2  The semantic read ═══════════════════════════════════════════════
@@ -602,7 +715,7 @@ function WorkflowUI({
                     <PeerBars
                       peers={entry.peers}
                       measure={m}
-                      own={mine ? mine.value : null}
+                      own={publishableValue(mine)}
                     />
                   </div>
                 );
@@ -803,7 +916,7 @@ function WorkflowUI({
                         className={
                           'px-1.5 py-2 text-right tabular-nums ' + tintFor(cell)
                         }
-                        title={cell && cell.thin ? 'thin denominator' : ''}
+                        title={cellTitle(m, cell)}
                       >
                         {cellText(m, cell)}
                       </td>
@@ -814,6 +927,7 @@ function WorkflowUI({
             </table>
           </div>
         )}
+        {sem.status === 'ready' ? withheldNote(oppCells) : null}
       </section>
 
       {/* ── 2. Workers ──────────────────────────────────────────────────── */}
@@ -873,6 +987,7 @@ function WorkflowUI({
                               (m.indicator === sortInd ? 'bg-indigo-50 ' : '') +
                               tintFor(cell)
                             }
+                            title={cellTitle(m, cell)}
                           >
                             {cellText(m, cell)}
                           </td>
@@ -885,6 +1000,7 @@ function WorkflowUI({
             </table>
           </div>
         )}
+        {sem.status === 'ready' ? withheldNote(oppCells) : null}
       </section>
 
       {/* ── 3. Benchmark ────────────────────────────────────────────────── */}
