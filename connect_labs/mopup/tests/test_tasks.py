@@ -5,6 +5,9 @@ this session against program 217's real data)."""
 
 from __future__ import annotations
 
+import json
+from types import SimpleNamespace
+
 import pytest
 
 from connect_labs.labs.connect_tokens import ConnectReLoginRequired
@@ -13,6 +16,13 @@ from connect_labs.mopup import tasks
 from connect_labs.mopup.core.models import MopupRunRecord
 
 pytestmark = pytest.mark.django_db
+
+_FALLBACK_BOUNDARY = SimpleNamespace(
+    source="geopode",
+    geometry=SimpleNamespace(
+        geojson=json.dumps({"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]})
+    ),
+)
 
 
 def _run(target_opportunity_id=2154, selected_wards=None):
@@ -257,12 +267,14 @@ class TestPreviewPlanningGaps:
         monkeypatch.setattr(
             "connect_labs.mopup.core.gaps.work_area_boundaries_for_ward", lambda *a, **k: [_CANDIDATE_BOUNDARY]
         )
+        # No Connect-native Implementation Areas -- resolve_ward_boundaries
+        # falls back to find_ward_boundary for every ward.
         monkeypatch.setattr(
-            "connect_labs.microplans.core.admin_boundaries.find_ward_boundary_geometry",
-            lambda state, lga, ward: {
-                "type": "Polygon",
-                "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
-            },
+            "connect_labs.mopup.core.work_areas.fetch_connect_implementation_areas", lambda *a, **k: []
+        )
+        monkeypatch.setattr(
+            "connect_labs.microplans.core.admin_boundaries.find_ward_boundary",
+            lambda state, lga, ward, **kw: _FALLBACK_BOUNDARY,
         )
         monkeypatch.setattr(
             "connect_labs.mopup.core.gaps.planning_gap_features",
@@ -331,8 +343,8 @@ class TestPreviewPlanningGaps:
         run = _locked_run_with_geometry()
         self._mock_common(monkeypatch, run)
         monkeypatch.setattr(
-            "connect_labs.microplans.core.admin_boundaries.find_ward_boundary_geometry",
-            lambda state, lga, ward: None,
+            "connect_labs.microplans.core.admin_boundaries.find_ward_boundary",
+            lambda state, lga, ward, **kw: None,
         )
 
         result = tasks.preview_planning_gaps.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
