@@ -252,7 +252,7 @@ class OrdersView(OperationBase):
         if not context["has_program_context"]:
             return context
         context["contracts"] = self.op("contract_list")
-        context["parties"] = {p["id"]: p for p in self.op("party_list")}
+        context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
         return context
 
@@ -288,7 +288,7 @@ class OrderDetailView(OperationBase):
         context["receipts"] = self.op("receipt_list", contract_id=contract_id)
         context["invoices"] = self.op("invoice_list", contract_id=contract_id)
         context["documents"] = self.op("document_list", contract_id=contract_id)
-        context["parties"] = {p["id"]: p for p in self.op("party_list")}
+        context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
         return context
 

@@ -32,9 +32,34 @@ def references_to_org():
     found = []
     for model in apps.get_models():
         for field in model._meta.get_fields():
-            if getattr(field, "many_to_one", False) and getattr(field, "related_model", None) is LabsOrg:
+            if points_at_org(field):
                 found.append((model, field.name))
     return found
+
+
+def points_at_org(field) -> bool:
+    """Whether this field is a forward relation whose target is a LabsOrg.
+
+    Its own function so it can be tested against a field directly. Asserting
+    on the SOURCE of the sweep -- "does it mention one_to_one" -- passes
+    whether or not the condition actually uses it, which is how the first
+    version of this test survived deleting the very clause it was guarding.
+    """
+    # `concrete` keeps this to FORWARD fields: a reverse relation's
+    # related_model is the other end, so it would never match anyway, but
+    # saying so means the filter reads as what it means.
+    #
+    # `one_to_one` is here because leaving it out re-creates the bug the
+    # docstring above is about, one field type over: a OneToOneField to
+    # LabsOrg has many_to_one False, so an FK-only sweep skips it and
+    # merge_orgs then tries to delete a row something still points at. There
+    # are none today; the cost of covering it is a word, and the cost of not
+    # covering it is silent.
+    if not getattr(field, "concrete", False):
+        return False
+    if getattr(field, "related_model", None) is not LabsOrg:
+        return False
+    return bool(getattr(field, "many_to_one", False) or getattr(field, "one_to_one", False))
 
 
 def merge_orgs(*, keep_id: int, merge_id: int) -> dict:
@@ -93,13 +118,20 @@ def merge_orgs(*, keep_id: int, merge_id: int) -> dict:
         if not keep.connect_organization_slug and inherited_slug:
             keep.connect_organization_slug = inherited_slug
             changed.append("connect_organization_slug")
-        inherited = [a for a in inherited_aliases if a not in (keep.aliases or [])]
-        extra = [merged_slug] if merged_slug not in (keep.aliases or []) else []
-        if inherited or extra:
-            # The merged-away slug becomes an alias. Somebody referred to the
-            # organisation by it, and a lookup by that name should still find
-            # the body it meant rather than nothing.
-            keep.aliases = [*(keep.aliases or []), *inherited, *extra]
+        # The merged-away slug becomes an alias. Somebody referred to the
+        # organisation by it, and a lookup by that name should still find the
+        # body it meant rather than nothing.
+        #
+        # Deduplicated against what is already there AND against itself: a
+        # merged-away row can carry its own slug in its aliases (this function
+        # puts it there), so a chain of merges appended the same name twice.
+        existing = list(keep.aliases or [])
+        added = []
+        for alias in [*inherited_aliases, merged_slug]:
+            if alias and alias not in existing and alias not in added and alias != keep.slug:
+                added.append(alias)
+        if added:
+            keep.aliases = [*existing, *added]
             changed.append("aliases")
         if changed:
             keep.save(update_fields=changed)

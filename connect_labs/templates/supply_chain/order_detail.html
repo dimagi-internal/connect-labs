@@ -27,7 +27,7 @@ figure here can go stale.
   </h2>
   <p class="text-sm text-gray-600">
     Bought by
-    <b>{{ parties|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record }}</b>
+    <b>{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record }}</b>
     as <span class="text-gray-500">{{ contract.buyer_of_record|humanise }}</span>
     {% if contract.incoterm %} · {{ contract.incoterm }}{% endif %}
     {% if contract.status %} · {{ contract.status|humanise }}{% endif %}
