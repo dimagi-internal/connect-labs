@@ -56,17 +56,20 @@ def _schema_with_scope(schema: dict) -> dict:
             "organization_id": {
                 "type": "integer",
                 "description": (
-                    "Organisation that owns the commodity and supplier registries. "
-                    "Omitting this on a supplier/commodity/item call does not fall back to "
-                    "some org-wide default -- it reads a DIFFERENT, program-scoped registry "
-                    "instead, which is empty until something has been written to it. Pass the "
-                    "organisation_id whenever one is known, or supplier_list/commodity_list can "
-                    "come back empty when the supplier genuinely exists."
+                    "Connect organisation, carried as context. It does NOT select a registry: "
+                    "commodities, trade items and suppliers are scoped to the programme. This "
+                    "description used to say the opposite and tell you to pass it whenever one "
+                    "was known -- which was the advice that made commodity_list and "
+                    "supplier_list come back empty against a programme whose data was there."
                 ),
             },
             "program_id": {
                 "type": "integer",
-                "description": "Programme the rounds, quotes and awards belong to.",
+                "description": (
+                    "Programme everything belongs to: the rounds, quotes and awards, and also "
+                    "the commodity, trade item and supplier registries. Required in practice — "
+                    "without it a read refuses rather than guessing a scope."
+                ),
             },
         },
     }
