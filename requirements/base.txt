@@ -233,7 +233,7 @@ geopandas==1.1.4
     # via -r base.in
 geopy==2.5.0
     # via -r base.in
-gevent==25.9.1
+gevent==26.8.0
     # via
     #   -r base.in
     #   gunicorn
