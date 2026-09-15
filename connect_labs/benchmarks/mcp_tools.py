@@ -60,6 +60,23 @@ def _caller_opportunity_ids(user, data: dict[str, Any]) -> set[int]:
     return held | _collect_labs_only_opp_ids(user)
 
 
+def _caller_labs_only_program_ids(user) -> set[int]:
+    """Labs-only synthetic program ids the caller can see (registry-backed, no prod call).
+
+    The program-scope mirror of ``_collect_labs_only_opp_ids``, using the same
+    derivation ``labs/context._merge_labs_only_opps`` uses for the org tree, so
+    the two surfaces cannot disagree about which program a synthetic opp is in.
+    """
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+    from connect_labs.labs.synthetic.org_tree import synthetic_program_id
+
+    try:
+        candidates = SyntheticOpportunity.objects.filter(labs_only=True, enabled=True)
+        return {synthetic_program_id(opp) for opp in candidates if opp.is_visible_to(user)}
+    except Exception:  # noqa: BLE001 -- registry trouble must not break validation of real scopes
+        return set()
+
+
 def _require_organization_access(user, organization_id: str, what: str) -> tuple[str, dict[str, Any]]:
     """The single organisation gate for every write in this module.
 
@@ -416,7 +433,15 @@ def benchmarks_publish(
 # did.
 
 
-def _shared_inheritance(token: str, template_key: str, source_workflow_id, source_opportunity_id, source_program_id):
+def _shared_inheritance(
+    user,
+    token: str,
+    org_data: dict[str, Any],
+    template_key: str,
+    source_workflow_id,
+    source_opportunity_id,
+    source_program_id,
+):
     """The pipeline sources and registry binding a fan-out inherits from one report.
 
     Returns ``(pipeline_sources, registry_source)``, both ``None`` when no source
@@ -424,6 +449,15 @@ def _shared_inheritance(token: str, template_key: str, source_workflow_id, sourc
     its helper rather than a second copy of them: a source keeps whatever home
     scope it already had, else gains ``{"public": True}`` when the pipeline
     record really is shared, else the source workflow's own scope.
+
+    The source scope is CALLER-SUPPLIED, so it is gated like every other scope
+    this module accepts. Filtering a query is not authorising the requester: for
+    a labs-only opportunity (``id >= 10_000``) ``LabsRecordAPIClient``
+    short-circuits to the local backend, which performs no permission checks at
+    all, so an unchecked ``source_opportunity_id`` would let a caller who
+    legitimately owns one cohort read any labs-only workflow's
+    ``pipeline_sources`` / ``registry_source`` and stamp those pointers into
+    twelve instances of their own.
     """
     if source_workflow_id is None:
         if source_opportunity_id is not None or source_program_id is not None:
@@ -439,6 +473,41 @@ def _shared_inheritance(token: str, template_key: str, source_workflow_id, sourc
             "Naming source_workflow_id requires exactly one of source_opportunity_id / "
             "source_program_id -- a workflow record is only readable from its own scope.",
         )
+
+    if source_opportunity_id is not None:
+        # The same held-opportunities check every sibling write in this module
+        # makes, off the SAME fetch, so it costs no extra round trip.
+        if int(source_opportunity_id) not in _caller_opportunity_ids(user, org_data):
+            raise MCPToolError(
+                "PERMISSION_DENIED",
+                f"You do not hold opportunity {int(source_opportunity_id)}, so you cannot read a "
+                "workflow from its scope. Nothing was created.",
+                details={"unheld_opportunity_ids": [int(source_opportunity_id)]},
+            )
+    else:
+        # Program scope splits in two, because only one half is unguarded.
+        #
+        # A LABS-ONLY program (>= 10_000) takes the same local-backend
+        # short-circuit a labs-only opportunity does -- no HTTP, no permission
+        # check -- so this is the only gate there will be, and it is made here
+        # against the synthetic programs the caller can actually see.
+        #
+        # A REAL program id goes to production Connect, which checks the token's
+        # user has membership of the owning entity and 404s otherwise. That is a
+        # deliberate residual: `org_data["programs"]` is on the same fetch and
+        # would be cheap to test, but its exact semantics (owning org vs.
+        # delivery partner) are production's to define, and mirroring them here
+        # would refuse legitimate callers for a check production already makes.
+        from connect_labs.labs.synthetic.local_records_backend import is_labs_only_program_id
+
+        program_id = int(source_program_id)
+        if is_labs_only_program_id(program_id) and program_id not in _caller_labs_only_program_ids(user):
+            raise MCPToolError(
+                "PERMISSION_DENIED",
+                f"You cannot see labs-only program {program_id}, so you cannot read a workflow "
+                "from its scope. Nothing was created.",
+                details={"unheld_program_ids": [program_id]},
+            )
 
     # Lazy, for the same import-cycle reason _caller_opportunity_ids documents.
     from connect_labs.mcp.tools.workflows import _linked_sources
@@ -485,9 +554,10 @@ def _shared_inheritance(token: str, template_key: str, source_workflow_id, sourc
         "workflow (with its scope) to have every instance reference that report's pipeline "
         "records via home_scope and bind to its registry record -- one pipeline read where "
         "it lives and one set of indicator definitions, instead of a copy per opportunity. "
-        "Refuses a caller who does not belong to the cohort's organisation or does not hold "
-        "every opportunity in it: creating a workflow inside an opportunity's scope is a "
-        "write into that opportunity."
+        "Refuses a caller who does not belong to the cohort's organisation, does not hold "
+        "every opportunity in it (creating a workflow inside an opportunity's scope is a "
+        "write into that opportunity), or does not hold the scope the source workflow is "
+        "read from."
     ),
     input_schema={
         "type": "object",
@@ -559,7 +629,7 @@ def benchmarks_create_opp_reports(
         )
 
     pipeline_sources, registry_source = _shared_inheritance(
-        token, template_key, source_workflow_id, source_opportunity_id, source_program_id
+        user, token, org_data, template_key, source_workflow_id, source_opportunity_id, source_program_id
     )
 
     created: list[dict[str, Any]] = []

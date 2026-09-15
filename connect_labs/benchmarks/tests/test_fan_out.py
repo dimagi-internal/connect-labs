@@ -288,6 +288,110 @@ def test_it_refuses_when_the_caller_does_not_hold_every_member_opportunity(monke
     assert sorted(row["opportunity_id"] for row in out["created"]) == [523, 874]
 
 
+def _source_definition():
+    return _StubDefinition(
+        19780,
+        "kmc_programme_metrics",
+        data={
+            "pipeline_sources": [{"pipeline_id": 19776, "alias": "children"}],
+            "registry_source": {"registry_id": 55},
+        },
+    )
+
+
+def test_it_refuses_a_source_opportunity_the_caller_does_not_hold(monkeypatch):
+    """The source scope is caller-supplied, and filtering a query is not
+    authorising the requester. For a labs-only opportunity (>= 10_000) the API
+    client short-circuits to the local backend, which checks NOTHING -- so a
+    caller who legitimately owns a cohort could otherwise read any labs-only
+    workflow's pipeline/registry pointers and stamp them into their own twelve.
+
+    Both sides, so an always-deny gate fails the second half: the SAME call is
+    allowed the moment the caller holds 10007.
+    """
+    from connect_labs.benchmarks import mcp_tools
+    from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
+
+    user = _user()
+    _grant(monkeypatch, organizations=("dimagi-kmc",), opportunity_ids=(523,))
+    cohort = _cohort(user, monkeypatch, opportunity_ids=(523,))
+    store = _FakeWorkflowStore(monkeypatch)
+
+    reads = []
+
+    def _get_definition(dao, definition_id):
+        reads.append((dao.opportunity_id, definition_id))
+        return _source_definition()
+
+    monkeypatch.setattr(WorkflowDataAccess, "get_definition", _get_definition)
+    monkeypatch.setattr(PipelineDataAccess, "get_definition", lambda dao, definition_id: None)
+
+    with pytest.raises(MCPToolError) as exc:
+        mcp_tools.benchmarks_create_opp_reports(
+            user=user, cohort_id=cohort["id"], source_workflow_id=19780, source_opportunity_id=10007
+        )
+    assert exc.value.code == "PERMISSION_DENIED"
+    assert "10007" in str(exc.value)
+    assert reads == [], "the source workflow was READ before the caller was checked"
+    assert store.create_calls == []
+
+    _grant(monkeypatch, organizations=("dimagi-kmc",), opportunity_ids=(523, 10007))
+    out = mcp_tools.benchmarks_create_opp_reports(
+        user=user, cohort_id=cohort["id"], source_workflow_id=19780, source_opportunity_id=10007
+    )
+    assert [row["opportunity_id"] for row in out["created"]] == [523]
+    assert reads == [(10007, 19780)]
+    assert store.create_calls[0]["pipeline_sources_override"] == [
+        {"pipeline_id": 19776, "alias": "children", "home_scope": {"opportunity_id": 10007}}
+    ]
+
+
+def test_it_refuses_a_labs_only_source_program_the_caller_cannot_see(monkeypatch):
+    """A labs-only PROGRAM (>= 10_000) takes the same local-backend
+    short-circuit, with the same absence of permission checks, so it is gated
+    the same way -- against the synthetic programs the caller can actually see.
+
+    A real program id is NOT gated here (production Connect checks membership
+    on the read); the second half pins that, so this cannot pass as always-deny.
+    """
+    from connect_labs.benchmarks import mcp_tools
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+    from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
+
+    user = _user()
+    _grant(monkeypatch, organizations=("dimagi-kmc",), opportunity_ids=(523,))
+    cohort = _cohort(user, monkeypatch, opportunity_ids=(523,))
+    store = _FakeWorkflowStore(monkeypatch)
+    monkeypatch.setattr(WorkflowDataAccess, "get_definition", lambda dao, definition_id: _source_definition())
+    monkeypatch.setattr(PipelineDataAccess, "get_definition", lambda dao, definition_id: None)
+
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10500,
+        program_id=10500,
+        labs_only=True,
+        enabled=True,
+        gdrive_folder_id="none",
+    )
+
+    with pytest.raises(MCPToolError) as exc:
+        mcp_tools.benchmarks_create_opp_reports(
+            user=user, cohort_id=cohort["id"], source_workflow_id=19780, source_program_id=10500
+        )
+    assert exc.value.code == "PERMISSION_DENIED"
+    assert store.create_calls == []
+
+    # Opted in, so the same synthetic program is now visible -- and allowed.
+    user.view_synthetic_opps = True
+    user.save()
+    out = mcp_tools.benchmarks_create_opp_reports(
+        user=user, cohort_id=cohort["id"], source_workflow_id=19780, source_program_id=10500
+    )
+    assert [row["opportunity_id"] for row in out["created"]] == [523]
+    assert store.create_calls[0]["pipeline_sources_override"] == [
+        {"pipeline_id": 19776, "alias": "children", "home_scope": {"program_id": 10500}}
+    ]
+
+
 def test_it_refuses_an_unknown_cohort_and_an_unknown_template(monkeypatch):
     """Both up front: a typo must not create eleven workflows and then fail."""
     from connect_labs.benchmarks import mcp_tools
