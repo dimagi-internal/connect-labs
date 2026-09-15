@@ -140,13 +140,22 @@ Two further improvements that you will notice on the Worker Review page:
 
 #### Peer cohort benchmarking for individual workers
 
-When you drill into a worker from the programme report, each of that worker's indicators is now shown in context alongside comparable workers — not just as a raw number. A dropdown lets you choose what "comparable" means:
+When you drill into a worker from the programme report, each of that worker's indicators is now shown in context alongside comparable workers — not just as a raw number. The comparison panel expands directly under the worker's row in the table, so you can read how they compare without losing sight of their own figures.
+
+A dropdown lets you choose what "comparable" means:
 
 - **In the same opportunity** — the colleagues they actually work alongside day to day
 - **Who started the same month** — everyone in the programme who joined during the same intake period, regardless of which opportunity they belong to
 - **Carrying a similar caseload** — workers anywhere in the programme who have a comparable number of active cases
 
-For each indicator, every peer appears as a dot on a chart, with this worker's own value marked and their position shown as **"above X% of N"** — where X is the percentage of peers this worker scored above, and N is the number of peers who actually scored that indicator. The count shown may be lower than the total cohort size because it reflects only those peers who met that indicator's minimum denominator; a footnote on the page explains this. The three views are designed to give you different perspectives: a worker can look strong compared with their own team but below average compared with peers who started at the same time, and that disagreement is itself a meaningful finding.
+A second dropdown controls how each indicator's peer distribution is displayed:
+
+- **One dot per worker** — shows every individual peer as a dot, with this worker's own value marked. Use this when you want to see exactly where specific individuals sit relative to each other.
+- **How many workers sit in each band** — groups peers into bands and shows a count for each band. Use this when you want a sense of how many people are performing at roughly the same level.
+
+Neither view substitutes for the other. With a large peer group, individual dots can overlap into an unreadable cluster, making the banded count more useful; with a small peer group, the counts can obscure who the individuals are, making the dots more useful.
+
+For each indicator, this worker's own value is marked and their position is shown as **"above X% of N"** — where X is the percentage of peers this worker scored above, and N is the number of peers who actually scored that indicator. The count shown may be lower than the total cohort size because it reflects only those peers who met that indicator's minimum denominator; a footnote on the page explains this. The three cohort views are designed to give you different perspectives: a worker can look strong compared with their own team but below average compared with peers who started at the same time, and that disagreement is itself a meaningful finding.
 
 !!! note "Reading the peer position figure"
     "Above 96% of 24" means this worker scored higher than 96% of the 24 peers who recorded a result for that indicator. Note that for indicators where a **lower** value is better — such as implausible weights — being above most peers is the less favourable end, not the strong end.
@@ -183,17 +192,4 @@ Where the programme's own records indicate that a particular indicator is not cr
 
 Benchmarking cohorts — the groups of opportunities whose figures are compared — are managed by programme administrators. Administrators can create a cohort, add opportunities to it, and publish a completed run's figures so they appear in the peer section of each member's report. Once figures are published, every opportunity in the cohort automatically receives an updated report instance.
 
-If you believe your opportunity should be part of a cohort but the peer section is empty, ask your programme administrator to confirm that your opportunity has been added and that a run has been published.
-
-### Selecting opportunities with the multi-opportunity picker
-
-When a template asks you to choose which opportunities to include, the picker offers several ways to build your selection quickly.
-
-**Typing a name** filters the list to matching opportunities. When a name filter is active, two extra controls appear:
-
-- **Select all shown** — ticks every opportunity currently visible in the filtered list
-- **Clear shown** — unticks every opportunity currently visible in the filtered list
-
-A count of how many opportunities are currently selected is shown at all times so you can confirm your selection before proceeding.
-
-**Pasting a list of IDs** is the fastest way to select a specific set of opportunities
+If you believe
