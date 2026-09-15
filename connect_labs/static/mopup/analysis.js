@@ -523,16 +523,17 @@ window.MopupAnalysis = (function () {
   }
 
   const GAP_FILL_COLOR = '#10b981';
-  const UPLOADED_BUILDING_COLOR = '#a855f7';
+  const BUILDING_POINT_COLOR = '#a855f7';
 
-  // PlanLayers.workAreas draws polygon fill/line layers — uploaded-building
-  // Points (Step 2's "upload your own" mode) render as a separate circle
-  // layer instead (see renderBuildingPoints), so they're filtered out here.
+  // PlanLayers.workAreas draws polygon fill/line layers — building-point
+  // Points (the real detected buildings behind Step 2's gap-fill cells,
+  // whichever source produced them) render as a separate circle layer
+  // instead (see renderBuildingPoints), so they're filtered out here.
   function styleMapFeatures(fc) {
     return {
       type: 'FeatureCollection',
       features: (fc?.features || [])
-        .filter((f) => f.properties.source !== 'uploaded_building')
+        .filter((f) => f.properties.source !== 'building_point')
         .map((f) => {
           const color =
             f.properties.source === 'planning_gap'
@@ -561,7 +562,7 @@ window.MopupAnalysis = (function () {
     return {
       type: 'FeatureCollection',
       features: (fc?.features || []).filter(
-        (f) => f.properties.source === 'uploaded_building',
+        (f) => f.properties.source === 'building_point',
       ),
     };
   }
@@ -591,25 +592,26 @@ window.MopupAnalysis = (function () {
     if (features.some((f) => f.properties.source === 'planning_gap')) {
       swatches.push(swatch(GAP_FILL_COLOR, 'Planning gap (new)'));
     }
-    if (features.some((f) => f.properties.source === 'uploaded_building')) {
-      swatches.push(swatch(UPLOADED_BUILDING_COLOR, 'Uploaded buildings'));
+    if (features.some((f) => f.properties.source === 'building_point')) {
+      swatches.push(swatch(BUILDING_POINT_COLOR, 'Buildings'));
     }
     $('map-legend').innerHTML = swatches.join('');
   }
 
   // A separate circle layer, not PlanLayers.workAreas (which only draws
-  // polygons) — the real building positions behind Step 2's "upload your
-  // own" gap-fill cells, not just the gridded cells themselves.
+  // polygons) — the real building positions behind Step 2's gap-fill
+  // cells, not just the gridded cells themselves. Same layer for every
+  // building source (Overture/OSM/Microsoft or an uploaded CSV).
   function renderBuildingPoints(fc) {
-    window.PlanLayers.setSource(map, 'mopup-uploaded-buildings', fc);
-    if (!map.getLayer('mopup-uploaded-buildings-circles')) {
+    window.PlanLayers.setSource(map, 'mopup-building-points', fc);
+    if (!map.getLayer('mopup-building-points-circles')) {
       map.addLayer({
-        id: 'mopup-uploaded-buildings-circles',
+        id: 'mopup-building-points-circles',
         type: 'circle',
-        source: 'mopup-uploaded-buildings',
+        source: 'mopup-building-points',
         paint: {
           'circle-radius': 3,
-          'circle-color': UPLOADED_BUILDING_COLOR,
+          'circle-color': BUILDING_POINT_COLOR,
           'circle-stroke-width': 1,
           'circle-stroke-color': '#ffffff',
         },

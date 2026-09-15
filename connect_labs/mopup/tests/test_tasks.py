@@ -248,7 +248,7 @@ class TestPreviewPlanningGaps:
     that a real hand-off-time equivalent took well over a minute
     synchronously."""
 
-    def _mock_common(self, monkeypatch, run, *, gap_features=None):
+    def _mock_common(self, monkeypatch, run, *, gap_features=None, building_points=None):
         monkeypatch.setattr(tasks, "set_task_progress", lambda *a, **k: None)
         monkeypatch.setattr(tasks, "get_valid_access_token", lambda u: "connect-token")
         monkeypatch.setattr(tasks, "get_valid_cchq_access_token", lambda u: "cchq-token")
@@ -265,7 +265,8 @@ class TestPreviewPlanningGaps:
             },
         )
         monkeypatch.setattr(
-            "connect_labs.mopup.core.gaps.planning_gap_features", lambda *a, **k: (list(gap_features or []), [])
+            "connect_labs.mopup.core.gaps.planning_gap_features",
+            lambda *a, **k: (list(gap_features or []), list(building_points or [])),
         )
 
     def test_success_returns_features_and_config(self, django_user_model, monkeypatch):
@@ -296,6 +297,19 @@ class TestPreviewPlanningGaps:
             "min_buildings_per_cell": 2,
             "cell_size_m": 50.0,
         }
+
+    def test_overture_mode_keeps_building_points_for_the_map(self, django_user_model, monkeypatch):
+        # An earlier version discarded building_points for every mode except
+        # "upload" (storage-size worry over a whole-ward Overture pull) --
+        # the map lost the "here's every detected building" layer for the
+        # two default modes as a result. Default mode is "overture".
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        run = _locked_run_with_geometry()
+        points = [{"lon": 3.0, "lat": 6.0}, {"lon": 3.1, "lat": 6.1}]
+        self._mock_common(monkeypatch, run, building_points=points)
+
+        result = tasks.preview_planning_gaps.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
+        assert result["building_points"] == points
 
     def test_ward_failure_is_best_effort_not_fatal(self, django_user_model, monkeypatch):
         user = django_user_model.objects.create(username="tester", email="t@example.com")

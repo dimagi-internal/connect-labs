@@ -282,15 +282,39 @@ def planning_gap_features(
     Returns `(features, building_points)` — `building_points` is EVERY
     building within the ward boundary (`{"lon": float, "lat": float}`),
     regardless of whether an existing work area already covers it — the
-    map's "uploaded buildings" layer is meant to show the reviewer
-    everything that landed inside the ward they're reviewing, not just the
-    subset that became new gap-fill cells. Always computed (it's a
-    byproduct of `buildings_within_ward`, already in hand) — callers decide
-    whether to keep it (Step 2 only keeps this for "upload your own" mode,
-    since an Overture-fetched ward can be far larger; see
-    `tasks.preview_planning_gaps`).
+    map's building-points layer is meant to show the reviewer everything
+    that landed inside the ward they're reviewing, not just the subset that
+    became new gap-fill cells. Always computed and always returned (a
+    byproduct of `buildings_within_ward`, already in hand) — every mode's
+    map gets the same layer now; an earlier version only kept this for
+    "upload your own" mode over storage-size worries for a whole-ward
+    Overture pull, but that made the map strictly worse for the two default
+    modes, so parity won.
+
+    Each feature's `properties` also carries `roof_area_m2` (summed building
+    footprint area in that cell) and `dist_to_multi_m` (metres from the
+    cell's centroid to the nearest cell holding >=2 buildings) —
+    `microplans.core.filters.annotate_cell_metrics`'s own two fields,
+    computed here from `grid_clusters`' output (`ClusterOutput.buildings` —
+    the per-building rows with a `cluster` assignment already on them —
+    paired with `.psu_frame`; only the latter was read before).
+    `microplans.core.plan._coverage_properties` already passes these two
+    keys through untouched if present on a hulls feature — Phase 3's "min
+    rooftop area"/"drop lone buildings far from any cluster" filters read
+    them straight off each work area's own properties, so without this a
+    gap-fill cell's `roof_area_m2`/`dist_to_multi_m` came back `None` and
+    those filters silently matched nothing for mop-up-created plans (traced
+    live this session: grouping worked since it doesn't need either field,
+    but isolation/roof-area filtering never excluded anything). This only
+    applies to freshly-gridded gap-fill cells, not carry-forward candidates
+    (`core.areas.carry_forward_features`) — those are real, already-
+    established work areas, not raw-building-detection artifacts, so the
+    "isolated single detection is noise" heuristic doesn't apply to them;
+    they correctly keep no `roof_area_m2`/`dist_to_multi_m` and stay outside
+    both filters' reach.
     """
     from connect_labs.microplans.core import clustering
+    from connect_labs.microplans.core.filters import annotate_cell_metrics
 
     within_ward = buildings_within_ward(ward_boundary, buildings, min_confidence=min_confidence, sources=sources)
     building_points = [
@@ -299,8 +323,9 @@ def planning_gap_features(
 
     remainder = _exclude_covered(within_ward, existing_wa_boundaries)
     out = clustering.grid_clusters(remainder, cell_size_m=cell_size_m)
+    annotated = annotate_cell_metrics(out.buildings, out.psu_frame)
     features = []
-    for _, row in out.psu_frame.iterrows():
+    for _, row in annotated.iterrows():
         n_b = int(row["n_buildings"])
         if n_b < min_buildings_per_cell:
             continue
@@ -321,6 +346,8 @@ def planning_gap_features(
                     "building_count": n_b,
                     "expected_visit_count": expected_visit_count,
                     "cell_size_m": float(cell_size_m),
+                    "roof_area_m2": round(float(row["roof_area_m2"]), 1),
+                    "dist_to_multi_m": round(float(row["dist_to_multi_m"]), 1),
                 },
             }
         )
