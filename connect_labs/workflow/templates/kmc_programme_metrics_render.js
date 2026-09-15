@@ -2585,8 +2585,8 @@ function WorkflowUI({
                         }}
                       />
                     </div>
-                    <div className="w-32 shrink-0 text-right text-gray-400 tabular-nums">
-                      {rank}th of {vals.length}
+                    <div className="w-36 shrink-0 text-right text-gray-400 tabular-nums">
+                      {'above ' + rank + '% of ' + vals.length}
                     </div>
                   </div>
                 );
@@ -2595,8 +2595,13 @@ function WorkflowUI({
             <div className="text-[11px] text-gray-400 mt-2">
               Each row is scaled to its own cohort's range, so position compares
               workers on that indicator only — never one indicator against
-              another. Indicators where fewer than {MIN_COHORT} peers have a
-              value are omitted rather than drawn thin.
+              another. The count is the peers who actually SCORED that
+              indicator, which is why it differs per row and is below the{' '}
+              {peers.length} in the cohort: a peer under the indicator's minimum
+              denominator has no value to rank against. "Above 40%" is
+              positional, not a judgement — on an indicator where low is good it
+              is the worse end. Rows with fewer than {MIN_COHORT} scoring peers
+              are omitted rather than drawn thin.
             </div>
           </div>
         )}
