@@ -24,9 +24,34 @@ def _user(username="tester"):
     return get_user_model().objects.create(username=username)
 
 
-def test_create_returns_the_cohort_and_persists_it():
+def _grant(monkeypatch, *, organizations=("dimagi-kmc",), opportunity_ids=()):
+    """Stub the caller's Connect org tree -- which organisations they belong to
+    and which opportunities they hold.
+
+    Every write in ``mcp_tools`` is gated on this (membership of a cohort IS
+    the read grant, so ``benchmarks_cohort_add_opportunities`` is a
+    self-service grant unless it is gated), so a test that creates or
+    populates a cohort has to say who the caller is. The access tests below
+    call ``_grant`` with a DIFFERENT org and then assert the refusal, so this
+    helper cannot quietly make them pass.
+    """
+    from connect_labs.benchmarks import mcp_tools
+
+    monkeypatch.setattr(mcp_tools, "require_connect_token", lambda u: "dummy-token")
+    monkeypatch.setattr(
+        mcp_tools,
+        "fetch_user_organization_data",
+        lambda token, owner=None: {
+            "organizations": [{"slug": slug} for slug in organizations],
+            "opportunities": [{"id": oid} for oid in opportunity_ids],
+        },
+    )
+
+
+def test_create_returns_the_cohort_and_persists_it(monkeypatch):
     from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_create
 
+    _grant(monkeypatch, organizations=("dimagi-kmc",))
     out = benchmarks_cohort_create(user=_user(), name="KMC", organization_id="dimagi-kmc")
     assert out["name"] == "KMC"
     assert BenchmarkCohort.objects.filter(pk=out["id"]).exists()
@@ -51,9 +76,10 @@ def test_create_refuses_a_min_peers_below_the_floor():
     assert "3" in message
 
 
-def test_add_opportunities_is_idempotent():
+def test_add_opportunities_is_idempotent(monkeypatch):
     from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_add_opportunities, benchmarks_cohort_create
 
+    _grant(monkeypatch, organizations=("dimagi-kmc",), opportunity_ids=(523, 874, 1487))
     user = _user()
     cohort = benchmarks_cohort_create(user=user, name="KMC", organization_id="dimagi-kmc")
     benchmarks_cohort_add_opportunities(user=user, cohort_id=cohort["id"], opportunity_ids=[523, 874])
@@ -62,7 +88,7 @@ def test_add_opportunities_is_idempotent():
     assert BenchmarkCohort.objects.get(pk=cohort["id"]).members.count() == 3
 
 
-def test_list_reports_membership_counts():
+def test_list_reports_membership_counts(monkeypatch):
     """Also proves the ``organization_id`` filter itself: a second cohort under
     a DIFFERENT org (with its own members, so a count-based assertion can't
     accidentally pass) must not appear in the first org's listing. With only
@@ -76,6 +102,11 @@ def test_list_reports_membership_counts():
         benchmarks_cohort_list,
     )
 
+    _grant(
+        monkeypatch,
+        organizations=("dimagi-kmc", "other-org"),
+        opportunity_ids=(523, 874, 111, 222, 333),
+    )
     user = _user()
     c = benchmarks_cohort_create(user=user, name="KMC", organization_id="dimagi-kmc")
     benchmarks_cohort_add_opportunities(user=user, cohort_id=c["id"], opportunity_ids=[523, 874])
@@ -85,6 +116,116 @@ def test_list_reports_membership_counts():
 
     rows = benchmarks_cohort_list(user=user, organization_id="dimagi-kmc")
     assert [(r["name"], r["opportunity_count"]) for r in rows["cohorts"]] == [("KMC", 2)]
+
+
+# --- cohort administration is org-gated ---------------------------------
+#
+# Membership of a cohort IS the read permission (models.py:34): an opportunity
+# in a cohort may read that cohort's anonymous peer figures. So an ungated
+# `benchmarks_cohort_add_opportunities` is a self-service grant -- enumerate
+# cohort ids, add an opportunity you already hold to someone else's cohort, and
+# `benchmarks_for_opportunity` then legitimately serves you twelve delivery
+# partners' figures, with no publish call and no gate ever tripped. Both writes
+# are therefore gated on the caller's organisation, exactly as
+# `benchmarks_publish` is.
+
+
+def test_cohort_create_refuses_an_organisation_the_caller_does_not_belong_to(monkeypatch):
+    """Discriminating by construction: the SAME caller is refused for the org
+    they are outside and allowed for the org they are inside, in one test. A
+    create that ignored the check would succeed in both halves; an "always
+    deny" one would fail the second half."""
+    from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_create
+
+    _grant(monkeypatch, organizations=("my-org",))
+    user = _user()
+
+    with pytest.raises(MCPToolError) as exc:
+        benchmarks_cohort_create(user=user, name="Theirs", organization_id="someone-elses-org")
+    assert exc.value.code == "PERMISSION_DENIED"
+    assert not BenchmarkCohort.objects.filter(organization_id="someone-elses-org").exists()
+
+    out = benchmarks_cohort_create(user=user, name="Mine", organization_id="my-org")
+    assert BenchmarkCohort.objects.get(pk=out["id"]).organization_id == "my-org"
+
+
+def test_cohort_add_opportunities_refuses_a_cohort_in_another_organisation(monkeypatch):
+    """The escalation path itself. Two cohorts exist -- one owned by the
+    caller's org, one by a foreign org -- so a tool that skipped the check
+    would visibly add to BOTH. The caller holds opp 523 either way, which is
+    the whole point: holding the opportunity is what read enforcement checks,
+    so it cannot also be what authorises the add."""
+    from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_add_opportunities, benchmarks_cohort_create
+
+    # Set the foreign cohort up as its own owner would have.
+    owner = _user("owner")
+    _grant(monkeypatch, organizations=("dimagi-kmc",), opportunity_ids=(900,))
+    theirs = benchmarks_cohort_create(user=owner, name="Theirs", organization_id="dimagi-kmc")
+    benchmarks_cohort_add_opportunities(user=owner, cohort_id=theirs["id"], opportunity_ids=[900])
+
+    attacker = _user("attacker")
+    _grant(monkeypatch, organizations=("my-org",), opportunity_ids=(523,))
+    mine = benchmarks_cohort_create(user=attacker, name="Mine", organization_id="my-org")
+
+    with pytest.raises(MCPToolError) as exc:
+        benchmarks_cohort_add_opportunities(user=attacker, cohort_id=theirs["id"], opportunity_ids=[523])
+    assert exc.value.code == "PERMISSION_DENIED"
+    assert BenchmarkCohort.objects.get(pk=theirs["id"]).opportunity_ids == {900}
+
+    # ...and the same caller, same opportunity, into their OWN org's cohort, works.
+    out = benchmarks_cohort_add_opportunities(user=attacker, cohort_id=mine["id"], opportunity_ids=[523])
+    assert set(out["opportunity_ids"]) == {523}
+
+
+def test_cohort_add_opportunities_refuses_an_opportunity_the_caller_does_not_hold(monkeypatch):
+    """The org gate alone still lets a member of org A pull org B's
+    opportunity into A's cohort. The caller's opportunity list rides on the
+    same fetch the org gate already made, so this check is free. Two
+    opportunities are passed in one call -- one held, one not -- so a tool
+    that checked nothing would add both."""
+    from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_add_opportunities, benchmarks_cohort_create
+
+    _grant(monkeypatch, organizations=("my-org",), opportunity_ids=(523,))
+    user = _user()
+    cohort = benchmarks_cohort_create(user=user, name="Mine", organization_id="my-org")
+
+    with pytest.raises(MCPToolError) as exc:
+        benchmarks_cohort_add_opportunities(user=user, cohort_id=cohort["id"], opportunity_ids=[523, 874])
+    assert exc.value.code == "PERMISSION_DENIED"
+    assert "874" in str(exc.value)
+    # Refused as a whole -- the held one must not have been written either.
+    assert BenchmarkCohort.objects.get(pk=cohort["id"]).opportunity_ids == set()
+
+    out = benchmarks_cohort_add_opportunities(user=user, cohort_id=cohort["id"], opportunity_ids=[523])
+    assert set(out["opportunity_ids"]) == {523}
+
+
+def test_an_unreachable_connect_is_an_upstream_error_not_a_permission_denial(monkeypatch):
+    """`fetch_user_organization_data` returns None when it cannot REACH
+    Connect, which is not the same fact as "you belong to no organisations".
+    Still fails closed -- nothing is written -- but an authorised publisher
+    hitting a blip must not be told they lack permission (the line
+    workflows.py:915-920 already draws)."""
+    from connect_labs.benchmarks import mcp_tools
+
+    _grant(monkeypatch, organizations=("my-org",))
+    user = _user()
+    cohort = mcp_tools.benchmarks_cohort_create(user=user, name="Mine", organization_id="my-org")
+
+    monkeypatch.setattr(mcp_tools, "fetch_user_organization_data", lambda token, owner=None: None)
+
+    for call in (
+        lambda: mcp_tools.benchmarks_cohort_create(user=user, name="Another", organization_id="my-org"),
+        lambda: mcp_tools.benchmarks_cohort_add_opportunities(
+            user=user, cohort_id=cohort["id"], opportunity_ids=[523]
+        ),
+    ):
+        with pytest.raises(MCPToolError) as exc:
+            call()
+        assert exc.value.code == "UPSTREAM_ERROR"
+
+    assert BenchmarkCohort.objects.count() == 1
+    assert BenchmarkCohort.objects.get(pk=cohort["id"]).opportunity_ids == set()
 
 
 def test_the_tools_are_registered_with_the_mcp_server():
@@ -168,15 +309,41 @@ def test_the_tools_are_registered_with_the_mcp_server():
 
 # --- benchmarks_publish -------------------------------------------------
 
+# The workflow every publish test below publishes under. Named because
+# `_StubRun.definition_id` defaults to it: a run and the workflow_id it is
+# published under must agree (see
+# test_publish_refuses_a_run_that_belongs_to_a_different_workflow), so the
+# happy-path tests exercise the matching branch of that guard rather than
+# skipping it with a None.
+WORKFLOW_ID = 19778
+
 
 class _StubRun:
     """A minimal stand-in for WorkflowRunRecord -- only what the publisher reads."""
 
-    def __init__(self, *, is_completed, snapshot=None, period_end=None, completed_at=None):
+    def __init__(
+        self,
+        *,
+        is_completed,
+        snapshot=None,
+        period_end=None,
+        completed_at=None,
+        definition_id=WORKFLOW_ID,
+    ):
         self.is_completed = is_completed
         self.snapshot = snapshot
         self.period_end = period_end
         self.completed_at = completed_at
+        self.definition_id = definition_id
+
+
+class _StubDefinition:
+    """A workflow definition carrying an instance-owned snapshot manifest --
+    the shape `resolve_snapshot_contract` reads (templates/__init__.py:720)."""
+
+    def __init__(self, data, template_type=None):
+        self.data = data
+        self.template_type = template_type
 
 
 def _wrapped_snapshot(graded_payload, state_key="snapshot"):
@@ -187,6 +354,18 @@ def _wrapped_snapshot(graded_payload, state_key="snapshot"):
     ``connect_labs/workflow/history_rebuild.py``'s identical read of it.
     """
     return {"state": {state_key: graded_payload}, "pipelines": {}, "workers": []}
+
+
+def _publishable_cohort(monkeypatch, user, *, name="KMC", organization_id="dimagi-kmc"):
+    """A cohort under `organization_id`, populated with the SNAPSHOT's opps, by
+    a caller who belongs to that org and holds those opportunities."""
+    from connect_labs.benchmarks import mcp_tools
+    from connect_labs.benchmarks.tests.test_publish import OPPS
+
+    _grant(monkeypatch, organizations=(organization_id,), opportunity_ids=tuple(OPPS))
+    cohort = mcp_tools.benchmarks_cohort_create(user=user, name=name, organization_id=organization_id)
+    mcp_tools.benchmarks_cohort_add_opportunities(user=user, cohort_id=cohort["id"], opportunity_ids=list(OPPS))
+    return cohort
 
 
 def test_publish_reads_the_wrapped_snapshot_shape():
@@ -205,13 +384,28 @@ def test_publish_reads_the_wrapped_snapshot_shape():
     }
 
 
-def test_publish_refuses_a_run_that_is_not_completed():
-    """Publishing an in-progress run would push figures that are still moving."""
-    from connect_labs.benchmarks.mcp_tools import benchmarks_publish
+def test_publish_refuses_a_run_that_is_not_completed(monkeypatch):
+    """Publishing an in-progress run would push figures that are still moving.
 
-    with pytest.raises(Exception) as exc:
-        benchmarks_publish(user=_user(), cohort_id=1, workflow_id=19778, run_id=1, opportunity_id=523)
-    assert "complete" in str(exc.value).lower() or "not found" in str(exc.value).lower()
+    The cohort is created first ON PURPOSE: with a bare `cohort_id=1` this
+    raised NOT_FOUND before ever reaching the completeness guard, so it was
+    green whether or not that guard existed. Asserting the message names
+    completion (not "not found either") is the other half of that.
+    """
+    from connect_labs.benchmarks import mcp_tools
+    from connect_labs.benchmarks.tests.test_publish import OPPS
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+
+    user = _user()
+    cohort = _publishable_cohort(monkeypatch, user)
+    monkeypatch.setattr(WorkflowDataAccess, "get_run", lambda self, run_id, **kw: _StubRun(is_completed=False))
+    monkeypatch.setattr(WorkflowDataAccess, "get_definition", lambda self, definition_id: None)
+
+    with pytest.raises(MCPToolError) as exc:
+        mcp_tools.benchmarks_publish(
+            user=user, cohort_id=cohort["id"], workflow_id=WORKFLOW_ID, run_id=1, opportunity_id=OPPS[0]
+        )
+    assert "not completed" in str(exc.value).lower()
 
 
 def test_publish_refuses_an_in_progress_run_even_though_a_completed_one_exists(monkeypatch):
@@ -223,15 +417,7 @@ def test_publish_refuses_an_in_progress_run_even_though_a_completed_one_exists(m
     from connect_labs.workflow.data_access import WorkflowDataAccess
 
     user = _user()
-    cohort = mcp_tools.benchmarks_cohort_create(user=user, name="KMC", organization_id="dimagi-kmc")
-    mcp_tools.benchmarks_cohort_add_opportunities(user=user, cohort_id=cohort["id"], opportunity_ids=list(OPPS))
-
-    monkeypatch.setattr(mcp_tools, "require_connect_token", lambda u: "dummy-token")
-    monkeypatch.setattr(
-        mcp_tools,
-        "fetch_user_organization_data",
-        lambda token, owner=None: {"organizations": [{"slug": "dimagi-kmc"}]},
-    )
+    cohort = _publishable_cohort(monkeypatch, user)
     monkeypatch.setattr(WorkflowDataAccess, "get_definition", lambda self, definition_id: None)
 
     runs = {
@@ -242,14 +428,115 @@ def test_publish_refuses_an_in_progress_run_even_though_a_completed_one_exists(m
 
     with pytest.raises(Exception) as exc:
         mcp_tools.benchmarks_publish(
-            user=user, cohort_id=cohort["id"], workflow_id=19778, run_id=1, opportunity_id=OPPS[0]
+            user=user, cohort_id=cohort["id"], workflow_id=WORKFLOW_ID, run_id=1, opportunity_id=OPPS[0]
         )
     assert "complete" in str(exc.value).lower()
 
     out = mcp_tools.benchmarks_publish(
-        user=user, cohort_id=cohort["id"], workflow_id=19778, run_id=2, opportunity_id=OPPS[0]
+        user=user, cohort_id=cohort["id"], workflow_id=WORKFLOW_ID, run_id=2, opportunity_id=OPPS[0]
     )
     assert out["value_count"] > 0
+
+
+def test_publish_refuses_a_run_that_belongs_to_a_different_workflow(monkeypatch):
+    """A run loads fine under a foreign workflow_id, and everything downstream
+    reads as normal: the state_key comes from the WRONG definition's contract
+    and `source_workflow_id` -- the provenance an anonymised figure's
+    defensibility rests on -- is written false. Discriminating: the same run,
+    published under its OWN workflow id, succeeds immediately after, so a
+    guard that simply always raised would fail the second half."""
+    from connect_labs.benchmarks import mcp_tools
+    from connect_labs.benchmarks.models import BenchmarkPublication
+    from connect_labs.benchmarks.tests.test_publish import OPPS, SNAPSHOT
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+
+    user = _user()
+    cohort = _publishable_cohort(monkeypatch, user)
+    run = _StubRun(
+        is_completed=True,
+        snapshot=_wrapped_snapshot(SNAPSHOT),
+        period_end="2026-09-11",
+        definition_id=6621,
+    )
+    monkeypatch.setattr(WorkflowDataAccess, "get_run", lambda self, run_id, **kw: run)
+    monkeypatch.setattr(WorkflowDataAccess, "get_definition", lambda self, definition_id: None)
+
+    with pytest.raises(MCPToolError) as exc:
+        mcp_tools.benchmarks_publish(
+            user=user, cohort_id=cohort["id"], workflow_id=19778, run_id=6888, opportunity_id=OPPS[0]
+        )
+    assert exc.value.code == "INVALID_SCHEMA"
+    assert "6621" in str(exc.value)
+    assert BenchmarkPublication.objects.count() == 0
+
+    out = mcp_tools.benchmarks_publish(
+        user=user, cohort_id=cohort["id"], workflow_id=6621, run_id=6888, opportunity_id=OPPS[0]
+    )
+    assert BenchmarkPublication.objects.get(pk=out["publication_id"]).source_workflow_id == 6621
+
+
+def test_publish_reads_the_state_key_the_definitions_contract_names(monkeypatch):
+    """`state_key` is spec-driven: a workflow whose `snapshot_inputs` names a
+    different key stores its graded payload under THAT key, and the publisher
+    must follow the contract rather than assume "snapshot".
+
+    Every other publish test stubs `get_definition -> None`, so the default
+    branch is all they reach -- hardcoding `state_key = "snapshot"` left all
+    of them green. Here the payload lives ONLY under the contract's key, so
+    the hardcode finds an empty dict and the publish fails.
+    """
+    from connect_labs.benchmarks import mcp_tools
+    from connect_labs.benchmarks.tests.test_publish import OPPS, SNAPSHOT
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+
+    user = _user()
+    cohort = _publishable_cohort(monkeypatch, user)
+    run = _StubRun(
+        is_completed=True,
+        snapshot=_wrapped_snapshot(SNAPSHOT, state_key="kmc_metrics"),
+        period_end="2026-09-11",
+    )
+    definition = _StubDefinition({"snapshot_inputs": {"state_key": "kmc_metrics", "builder": "semantic_snapshot"}})
+    monkeypatch.setattr(WorkflowDataAccess, "get_run", lambda self, run_id, **kw: run)
+    monkeypatch.setattr(WorkflowDataAccess, "get_definition", lambda self, definition_id: definition)
+
+    out = mcp_tools.benchmarks_publish(
+        user=user, cohort_id=cohort["id"], workflow_id=WORKFLOW_ID, run_id=1, opportunity_id=OPPS[0]
+    )
+    assert out["value_count"] > 0
+
+
+def test_publish_refuses_a_run_it_cannot_date(monkeypatch):
+    """`as_of` is NOT NULL on BenchmarkPublication. With no meta.as_of, no
+    period_end and no completed_at there is nothing to date the publication
+    with, and without an explicit refusal the caller gets a raw psycopg
+    IntegrityError naming a column. Discriminating: the same run with a
+    period_end publishes, so this cannot be "always refuse"."""
+    from connect_labs.benchmarks import mcp_tools
+    from connect_labs.benchmarks.models import BenchmarkPublication
+    from connect_labs.benchmarks.tests.test_publish import OPPS, SNAPSHOT
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+
+    user = _user()
+    cohort = _publishable_cohort(monkeypatch, user)
+    undated = _StubRun(is_completed=True, snapshot=_wrapped_snapshot(SNAPSHOT))
+    monkeypatch.setattr(WorkflowDataAccess, "get_run", lambda self, run_id, **kw: undated)
+    monkeypatch.setattr(WorkflowDataAccess, "get_definition", lambda self, definition_id: None)
+
+    with pytest.raises(MCPToolError) as exc:
+        mcp_tools.benchmarks_publish(
+            user=user, cohort_id=cohort["id"], workflow_id=WORKFLOW_ID, run_id=1, opportunity_id=OPPS[0]
+        )
+    assert exc.value.code == "INVALID_SCHEMA"
+    assert "as-of" in str(exc.value).lower()
+    assert BenchmarkPublication.objects.count() == 0
+
+    dated = _StubRun(is_completed=True, snapshot=_wrapped_snapshot(SNAPSHOT), completed_at="2026-09-11T00:00:00Z")
+    monkeypatch.setattr(WorkflowDataAccess, "get_run", lambda self, run_id, **kw: dated)
+    out = mcp_tools.benchmarks_publish(
+        user=user, cohort_id=cohort["id"], workflow_id=WORKFLOW_ID, run_id=1, opportunity_id=OPPS[0]
+    )
+    assert out["as_of"] == "2026-09-11"
 
 
 def test_publish_refuses_a_caller_without_access_to_the_cohorts_organisation(monkeypatch):
@@ -261,34 +548,24 @@ def test_publish_refuses_a_caller_without_access_to_the_cohorts_organisation(mon
     from connect_labs.workflow.data_access import WorkflowDataAccess
 
     owner = _user("owner")
-    cohort = mcp_tools.benchmarks_cohort_create(user=owner, name="KMC", organization_id="dimagi-kmc")
-    mcp_tools.benchmarks_cohort_add_opportunities(user=owner, cohort_id=cohort["id"], opportunity_ids=list(OPPS))
+    cohort = _publishable_cohort(monkeypatch, owner)
 
     run = _StubRun(is_completed=True, snapshot=_wrapped_snapshot(SNAPSHOT), period_end="2026-09-11")
-    monkeypatch.setattr(mcp_tools, "require_connect_token", lambda u: "dummy-token")
     monkeypatch.setattr(WorkflowDataAccess, "get_run", lambda self, run_id, **kw: run)
     monkeypatch.setattr(WorkflowDataAccess, "get_definition", lambda self, definition_id: None)
 
     outsider = _user("outsider")
-    monkeypatch.setattr(
-        mcp_tools,
-        "fetch_user_organization_data",
-        lambda token, owner=None: {"organizations": [{"slug": "some-other-org"}]},
-    )
+    _grant(monkeypatch, organizations=("some-other-org",), opportunity_ids=tuple(OPPS))
     with pytest.raises(MCPToolError) as exc:
         mcp_tools.benchmarks_publish(
-            user=outsider, cohort_id=cohort["id"], workflow_id=19778, run_id=1, opportunity_id=OPPS[0]
+            user=outsider, cohort_id=cohort["id"], workflow_id=WORKFLOW_ID, run_id=1, opportunity_id=OPPS[0]
         )
     assert exc.value.code == "PERMISSION_DENIED"
 
     member = _user("member")
-    monkeypatch.setattr(
-        mcp_tools,
-        "fetch_user_organization_data",
-        lambda token, owner=None: {"organizations": [{"slug": "dimagi-kmc"}]},
-    )
+    _grant(monkeypatch, organizations=("dimagi-kmc",), opportunity_ids=tuple(OPPS))
     out = mcp_tools.benchmarks_publish(
-        user=member, cohort_id=cohort["id"], workflow_id=19778, run_id=1, opportunity_id=OPPS[0]
+        user=member, cohort_id=cohort["id"], workflow_id=WORKFLOW_ID, run_id=1, opportunity_id=OPPS[0]
     )
     assert out["value_count"] > 0
 
@@ -303,23 +580,15 @@ def test_publish_writes_a_publication_only_for_the_named_cohort(monkeypatch):
     from connect_labs.workflow.data_access import WorkflowDataAccess
 
     user = _user()
-    target = mcp_tools.benchmarks_cohort_create(user=user, name="Target", organization_id="dimagi-kmc")
-    mcp_tools.benchmarks_cohort_add_opportunities(user=user, cohort_id=target["id"], opportunity_ids=list(OPPS))
-    other = mcp_tools.benchmarks_cohort_create(user=user, name="Other", organization_id="dimagi-kmc")
-    mcp_tools.benchmarks_cohort_add_opportunities(user=user, cohort_id=other["id"], opportunity_ids=list(OPPS))
+    target = _publishable_cohort(monkeypatch, user, name="Target")
+    other = _publishable_cohort(monkeypatch, user, name="Other")
 
     run = _StubRun(is_completed=True, snapshot=_wrapped_snapshot(SNAPSHOT), period_end="2026-09-11")
-    monkeypatch.setattr(mcp_tools, "require_connect_token", lambda u: "dummy-token")
-    monkeypatch.setattr(
-        mcp_tools,
-        "fetch_user_organization_data",
-        lambda token, owner=None: {"organizations": [{"slug": "dimagi-kmc"}]},
-    )
     monkeypatch.setattr(WorkflowDataAccess, "get_run", lambda self, run_id, **kw: run)
     monkeypatch.setattr(WorkflowDataAccess, "get_definition", lambda self, definition_id: None)
 
     out = mcp_tools.benchmarks_publish(
-        user=user, cohort_id=target["id"], workflow_id=19778, run_id=1, opportunity_id=OPPS[0]
+        user=user, cohort_id=target["id"], workflow_id=WORKFLOW_ID, run_id=1, opportunity_id=OPPS[0]
     )
 
     assert out["cohort_id"] == target["id"]
@@ -336,21 +605,14 @@ def test_publish_returns_the_documented_shape_and_withholds_non_rate_indicators(
     from connect_labs.workflow.data_access import WorkflowDataAccess
 
     user = _user()
-    cohort = mcp_tools.benchmarks_cohort_create(user=user, name="KMC", organization_id="dimagi-kmc")
-    mcp_tools.benchmarks_cohort_add_opportunities(user=user, cohort_id=cohort["id"], opportunity_ids=list(OPPS))
+    cohort = _publishable_cohort(monkeypatch, user)
 
     run = _StubRun(is_completed=True, snapshot=_wrapped_snapshot(SNAPSHOT), period_end="2026-09-11")
-    monkeypatch.setattr(mcp_tools, "require_connect_token", lambda u: "dummy-token")
-    monkeypatch.setattr(
-        mcp_tools,
-        "fetch_user_organization_data",
-        lambda token, owner=None: {"organizations": [{"slug": "dimagi-kmc"}]},
-    )
     monkeypatch.setattr(WorkflowDataAccess, "get_run", lambda self, run_id, **kw: run)
     monkeypatch.setattr(WorkflowDataAccess, "get_definition", lambda self, definition_id: None)
 
     out = mcp_tools.benchmarks_publish(
-        user=user, cohort_id=cohort["id"], workflow_id=19778, run_id=1, opportunity_id=OPPS[0]
+        user=user, cohort_id=cohort["id"], workflow_id=WORKFLOW_ID, run_id=1, opportunity_id=OPPS[0]
     )
 
     assert set(out) == {"publication_id", "cohort_id", "as_of", "value_count", "withheld_indicator_ids"}
@@ -370,25 +632,18 @@ def test_publish_lets_snapshot_shape_error_propagate_rather_than_publishing_noth
     from connect_labs.workflow.data_access import WorkflowDataAccess
 
     user = _user()
-    cohort = mcp_tools.benchmarks_cohort_create(user=user, name="KMC", organization_id="dimagi-kmc")
-    mcp_tools.benchmarks_cohort_add_opportunities(user=user, cohort_id=cohort["id"], opportunity_ids=list(OPPS))
+    cohort = _publishable_cohort(monkeypatch, user)
 
     # snapshot wrapped under the WRONG state_key -- the tool looks for
     # "snapshot" by default and finds nothing.
     run = _StubRun(
         is_completed=True, snapshot=_wrapped_snapshot({}, state_key="not_snapshot"), period_end="2026-09-11"
     )
-    monkeypatch.setattr(mcp_tools, "require_connect_token", lambda u: "dummy-token")
-    monkeypatch.setattr(
-        mcp_tools,
-        "fetch_user_organization_data",
-        lambda token, owner=None: {"organizations": [{"slug": "dimagi-kmc"}]},
-    )
     monkeypatch.setattr(WorkflowDataAccess, "get_run", lambda self, run_id, **kw: run)
     monkeypatch.setattr(WorkflowDataAccess, "get_definition", lambda self, definition_id: None)
 
     with pytest.raises(SnapshotShapeError):
         mcp_tools.benchmarks_publish(
-            user=user, cohort_id=cohort["id"], workflow_id=19778, run_id=1, opportunity_id=OPPS[0]
+            user=user, cohort_id=cohort["id"], workflow_id=WORKFLOW_ID, run_id=1, opportunity_id=OPPS[0]
         )
     assert BenchmarkPublication.objects.count() == 0
