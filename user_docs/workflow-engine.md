@@ -146,11 +146,14 @@ When you drill into a worker from the programme report, each of that worker's in
 - **Who started the same month** — everyone in the programme who joined during the same intake period, regardless of which opportunity they belong to
 - **Carrying a similar caseload** — workers anywhere in the programme who have a comparable number of active cases
 
-For each indicator, every peer appears as a dot on a chart, with this worker's own value marked and their rank shown. The three views are designed to give you different perspectives: a worker can look strong compared with their own team but below average compared with peers who started at the same time, and that disagreement is itself a meaningful finding.
+For each indicator, every peer appears as a dot on a chart, with this worker's own value marked and their position shown as **"above X% of N"** — where X is the percentage of peers this worker scored above, and N is the number of peers who actually scored that indicator. The count shown may be lower than the total cohort size because it reflects only those peers who met that indicator's minimum denominator; a footnote on the page explains this. The three views are designed to give you different perspectives: a worker can look strong compared with their own team but below average compared with peers who started at the same time, and that disagreement is itself a meaningful finding.
+
+!!! note "Reading the peer position figure"
+    "Above 96% of 24" means this worker scored higher than 96% of the 24 peers who recorded a result for that indicator. Note that for indicators where a **lower** value is better — such as implausible weights — being above most peers is the less favourable end, not the strong end.
 
 Where a comparison would not be meaningful, the report says so clearly rather than showing a potentially misleading figure:
 
-- A cohort with fewer than 8 workers shows **"too few to rank against"** instead of a ranking.
+- A cohort with fewer than 8 workers shows **"too few to rank against"** instead of a position.
 - A worker with no dated case cannot be placed in a start-month cohort and is told so.
 - Reports that were saved before this feature was introduced carry no cohort information; those reports display an explanatory message rather than an empty panel that could be mistaken for "this worker has no peers".
 
@@ -193,8 +196,4 @@ When a template asks you to choose which opportunities to include, the picker of
 
 A count of how many opportunities are currently selected is shown at all times so you can confirm your selection before proceeding.
 
-**Pasting a list of IDs** is the fastest way to select a specific set of opportunities across programmes. Click into the picker's search box and paste a comma-separated list of opportunity IDs — for example:
-
-> 523, 524, 675, 874, 938, 1234, 1236, 1487, 1488, 1739, 1790, 2166
-
-The picker immediately switches to ID mode: it lists exactly those opportunities in the order you pasted them and ticks them all. If any ID in your list cannot be found — because it does not exist or you do not have access to it — those IDs are named in an amber notice at the top of the list rather than silently dropped, so you can check whether something is missing before saving.
+**Pasting a list of IDs** is the fastest way to select a specific set of opportunities
