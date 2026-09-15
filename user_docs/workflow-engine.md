@@ -157,6 +157,8 @@ Neither view substitutes for the other. With a large peer group, individual dots
 
 For each indicator, this worker's own value is marked and their position in the peer group is shown as an **exact rank** — for example, **"2nd of 24"**. Workers who share the same figure share the same place, and the next worker takes the place after the tie (so two joint-seconds are followed by a fourth, not a third). Where an indicator has a clearly better end, first place is the better end: for indicators where a higher value is better, the largest value ranks first; for indicators where a lower value is better, the smallest value ranks first. Indicators whose target is a middle value — where being at either extreme is worse — have no single better end, so they are described as **"4th highest of 24"**, indicating the ordering without implying it is a league table. The count shown may be lower than the total cohort size because it reflects only those peers who actually scored that indicator; a footnote on the page explains this.
 
+The rank column is always visible on screen — it stays pinned to the left of the peer panel as you scroll the workers table sideways, so the full row of indicator, value, distribution, and rank is always readable without needing to scroll back.
+
 The three cohort views are designed to give you different perspectives: a worker can look strong compared with their own team but below average compared with peers who started at the same time, and that disagreement is itself a meaningful finding.
 
 !!! note "Reading the rank figure"
@@ -183,5 +185,4 @@ One row per field worker, one column per indicator, colour-banded so you can see
 **3. Peer benchmarking**
 Anonymous bars showing each indicator's distribution across other opportunities in the same benchmarking cohort, with this opportunity's own value marked. No partner's name is ever shown against another partner's figure.
 
-!!! note "Nothing changes until a cohort exists"
-    The peer benchmarking section only populates once a cohort has been created and figures have been published to it. Until then, the peer section displays an explanatory message and the rest of the report works normally.
+!!! note "Nothing
