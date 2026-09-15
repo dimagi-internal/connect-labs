@@ -467,10 +467,9 @@ def commodity_upsert(access, data):
 @register_operation(
     name="item_list",
     summary=(
-        "List the master item list — every trade item we can buy or track, with its "
-        "commodity, pack configuration, GS1 keys and specification. An item is a "
-        "specific branded product; a commodity is the type. Two suppliers' RUTF can "
-        "be 144 and 150 to the carton, and only the item knows which."
+        "The master item list — every trade item we can buy or track, with its commodity, pack "
+        "configuration, GS1 keys and specification. An item is a specific branded product; a "
+        "commodity is the type."
     ),
     input_schema=obj({}),
 )
@@ -503,56 +502,12 @@ def item_upsert(access, data):
 
 
 @register_operation(
-    name="reference_scope_report",
-    summary=(
-        "Where this programme's reference data actually lives, and what else is out there. "
-        "Commodities, trade items and suppliers are stored under a scope_key, which is "
-        "the programme they belong to. A row under a scope nobody reads is invisible "
-        "without being missing, and from the Catalogue tab that looks identical to having "
-        "no data — this tells the two apart. Counts only: no names, no rows."
-    ),
-    input_schema=obj({}),
-)
-def reference_scope_report(access):
-    from django.db.models import Count
-
-    scopes: dict[str, dict] = {}
-    for model in (models.Commodity, models.Item, models.Supplier):
-        name = model._meta.model_name
-        for row in model.objects.values("scope_key").annotate(n=Count("pk")).order_by("scope_key"):
-            scopes.setdefault(row["scope_key"], {})[name] = row["n"]
-
-    # `scope_key` raises without a programme, and a diagnostic that cannot run
-    # on the machine you are diagnosing is no use -- so the caller's own scope
-    # is reported as unresolvable rather than raising.
-    try:
-        mine = access.scope_key
-    except ValueError as exc:
-        mine = None
-        reason = str(exc)
-    else:
-        reason = None
-
-    return {
-        "this_caller": mine,
-        "this_caller_unresolved": reason,
-        "scopes": [
-            {"scope_key": key, "counts": counts, "total": sum(counts.values()), "is_this_caller": key == mine}
-            for key, counts in sorted(scopes.items())
-        ],
-    }
-
-
-@register_operation(
     name="catalogue_seed",
     summary=(
-        "Add a starting catalogue for a malnutrition programme — supplementary food, the "
-        "two therapeutic milks, rehydration salts, MUAC tapes, amoxicillin and the "
-        "anthropometry equipment — plus a few manufacturers' trade items. Existing rows "
-        "are LEFT ALONE, never overwritten: a product already in this catalogue may carry "
-        "a ration table or a specification somebody set, and a seed that clobbered it "
-        "would destroy the programme's own work. Safe to re-run; use dry_run to see what "
-        "it would add."
+        "Add a starting catalogue for a malnutrition programme: supplementary food, the two "
+        "therapeutic milks, rehydration salts, MUAC tapes, amoxicillin, anthropometry equipment, and "
+        "a few trade items. Existing rows are left alone, never overwritten. Safe to re-run; dry_run "
+        "shows what it would add."
     ),
     input_schema=obj({"dry_run": {"type": "boolean"}}),
     is_write=True,
@@ -644,25 +599,11 @@ def supplier_update(access, supplier_id, data):
 @register_operation(
     name="checks_list",
     summary=(
-        "Run the domain's checks and report what they found. A fan-out of the derivations, so "
-        "you do not have to recompute them. Every finding falls into exactly one category:\n\n"
-        "  missing    a fact nobody supplied — a null reference, an absent certificate, a "
-        "derivation that came back unconfirmed.\n"
-        "  conflict   two records that disagree — an invoice billed for more than arrived, a "
-        "ledger and a stock count that differ.\n"
-        "  threshold  a derived figure past a bound stored in YOUR data — a supply point's own "
-        "min/max band, a commodity's own specification.\n\n"
-        "Each finding carries its subject, the facts behind it, how long it has been true, and "
-        "the AUDIENCE that can answer it: supplier, partner or internal. A missing pack spec can "
-        "only be answered by the supplier; an unset ration table only by us.\n\n"
-        "Deliberately UNRANKED and unworded — sorted by kind then subject id, with no priority, "
-        "severity or drafted message. Also deliberately NARROW: a state you can read off one "
-        "table (who has not replied, what is at customs) is not a check, because outreach_list "
-        "and shipment_list already say so. Every check here needs a derivation or a join.\n\n"
-        "These detect gaps in a row. Patterns across rows and over time — this supplier is "
-        "always late, this store's reported stock is always half what we issued — are not here "
-        "and cannot be enumerated in advance; the history operations expose the data to find "
-        "them."
+        "Run the domain's checks. Every finding is `missing` (a fact nobody supplied), `conflict` "
+        "(two records disagree) or `threshold` (a derived figure past a bound in your own data), and "
+        "carries its subject, the facts behind it, its age, and the `audience` that can answer it: "
+        "supplier, partner or internal. Deliberately unranked and unworded — no priority, no "
+        "severity, no drafted message."
     ),
     input_schema=obj(
         {
@@ -689,16 +630,9 @@ def checks_list(access, opportunity_id=None, kinds=None, categories=None):
 @register_operation(
     name="chain_summary",
     summary=(
-        "Stage counts across the whole chain: source (rounds, RFQs issued, quotations, "
-        "comparable of total, awards), order (contracts by buyer of record, shipments in "
-        "transit, receipts, invoices unpaid), and deliver (supply points, on hand, in transit, "
-        "distribution runs, consumption, and cover against each point's OWN min/max band).\n\n"
-        "These are STATES -- counts of rows -- which is a different kind of thing from "
-        "checks_list, which reports gaps and contradictions. '6 of 7 awaiting a reply' is a "
-        "fact; whether that is a problem depends on when they were sent, which is your call.\n\n"
-        "Quantities appear only when you name a commodity_slug, because a unit is not knowable "
-        "before then: three rounds for three commodities have no meaningful total, and adding "
-        "cartons to vials is the failure this domain exists to refuse."
+        "Stage counts across the chain: source, order and deliver. These are STATES — counts of rows "
+        "— which is a different thing from checks_list, which reports gaps. Quantities appear only "
+        "when you name a commodity_slug: cartons and vials have no meaningful total."
     ),
     input_schema=obj({"commodity_slug": {"type": "string"}, "opportunity_id": ID}),
 )

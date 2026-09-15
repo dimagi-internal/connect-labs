@@ -344,10 +344,15 @@ Connect OAuth token (`~/.commcare-connect/token.json`).
 A remote MCP server hosted inside the labs Django app (`connect_labs/mcp/`)
 at `https://labs.connect.dimagi.com/mcp/`. The protocol endpoint is a
 FastMCP 3.x Streamable-HTTP ASGI app mounted in `config/asgi.py`; the catalog
-registers **189 tools** (write tools are rate-limited and fully argument-logged
-to `MCPAuditLog`) — 73 of them generated from the supply-chain
+registers **187 tools** (write tools are rate-limited and fully argument-logged
+to `MCPAuditLog`) — 71 of them generated from the supply-chain
 operation registry (`connect_labs/supply_chain/operations.py`), one tool per
-operation, so the count moves whenever that registry does.
+operation, so the count moves whenever that registry does. Those carry the
+prefix **`supply_chain_`** (`connect_labs/supply_chain/mcp_tools.py`,
+`TOOL_PREFIX`). They were `procurement_*` until 2026-09-15, which was wrong
+for two-thirds of them — only sourcing is procurement, and the name stuck
+through fulfilment, stock and distribution. Plain `supply_` was not available:
+the OES demo app already registers `supply_demo_reseed`.
 
 **Auth:** two ways in, both resolving to the same labs user (tools run as that
 user, audit rows attribute to them):
