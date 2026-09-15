@@ -3,11 +3,17 @@ picker source) — mocked AnalysisPipeline, no network/DB."""
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
 
-from connect_labs.mopup.core.work_areas import fetch_connect_implementation_areas, list_work_areas, summarize_wards
+from connect_labs.mopup.core.work_areas import (
+    fetch_connect_implementation_areas,
+    list_work_areas,
+    resolve_ward_boundaries,
+    summarize_wards,
+)
 
 
 class _FakeRow:
@@ -236,3 +242,78 @@ class TestFetchConnectImplementationAreas:
 
         monkeypatch.setattr("connect_labs.labs.integrations.connect.factory.get_export_client", _raise)
         assert fetch_connect_implementation_areas(2154, "tok") == []
+
+
+class TestResolveWardBoundaries:
+    """The fix for a real bug this session: Step 2's building fetch/gridding
+    used to always take the third-party fallback boundary
+    (find_ward_boundary_geometry), even for a ward with a more accurate
+    Connect-native Implementation Area on record -- confirmed live as
+    gap-fill work areas/buildings landing outside the ward outline the map
+    itself draws (which DOES prefer Connect-native). Shared by
+    MopupAnalysisView._ward_boundaries_geojson and
+    tasks.preview_planning_gaps so both always agree."""
+
+    _FALLBACK_GEOMETRY = {"type": "Polygon", "coordinates": [[[9, 9], [9, 10], [10, 10], [10, 9], [9, 9]]]}
+
+    def _fallback_boundary(self, source="geopode"):
+        return SimpleNamespace(source=source, geometry=SimpleNamespace(geojson=json.dumps(self._FALLBACK_GEOMETRY)))
+
+    def test_prefers_connect_native_boundary_over_third_party(self, monkeypatch):
+        def boom(*a, **k):
+            raise AssertionError("find_ward_boundary should not be called when a Connect area already matched")
+
+        monkeypatch.setattr("connect_labs.microplans.core.admin_boundaries.find_ward_boundary", boom)
+        connect_areas = [{"name": "Sabon Gari", "boundary": {"type": "Polygon", "coordinates": [[[0, 0]]]}}]
+        wards = [{"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"}]
+
+        result = resolve_ward_boundaries(wards, connect_areas)
+        assert result == {"Sabon Gari": {"geometry": connect_areas[0]["boundary"], "source": "connect"}}
+
+    def test_connect_name_matching_is_normalized(self, monkeypatch):
+        monkeypatch.setattr(
+            "connect_labs.microplans.core.admin_boundaries.find_ward_boundary",
+            lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not fall back")),
+        )
+        connect_areas = [{"name": "  sabon GARI  ", "boundary": {"type": "Point", "coordinates": [0, 0]}}]
+        wards = [{"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"}]
+
+        result = resolve_ward_boundaries(wards, connect_areas)
+        assert result["Sabon Gari"]["source"] == "connect"
+
+    def test_falls_back_to_third_party_when_no_connect_match(self, monkeypatch):
+        monkeypatch.setattr(
+            "connect_labs.microplans.core.admin_boundaries.find_ward_boundary",
+            lambda state, lga, ward, **kw: self._fallback_boundary(),
+        )
+        wards = [{"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"}]
+
+        result = resolve_ward_boundaries(wards, [])
+        assert result == {"Sabon Gari": {"geometry": self._FALLBACK_GEOMETRY, "source": "geopode"}}
+
+    def test_ward_with_no_match_from_either_source_is_absent(self, monkeypatch):
+        monkeypatch.setattr("connect_labs.microplans.core.admin_boundaries.find_ward_boundary", lambda *a, **k: None)
+        wards = [{"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"}]
+
+        assert resolve_ward_boundaries(wards, []) == {}
+
+    def test_ward_with_no_name_is_skipped(self):
+        wards = [{"ward": "", "lga": "Rano", "state": "Kano"}]
+        assert resolve_ward_boundaries(wards, []) == {}
+
+    def test_mixed_wards_resolve_independently(self, monkeypatch):
+        monkeypatch.setattr(
+            "connect_labs.microplans.core.admin_boundaries.find_ward_boundary",
+            lambda state, lga, ward, **kw: self._fallback_boundary() if ward == "Unguwar Arewa" else None,
+        )
+        connect_areas = [{"name": "Sabon Gari", "boundary": {"type": "Point", "coordinates": [1, 1]}}]
+        wards = [
+            {"ward": "Sabon Gari", "lga": "Rano", "state": "Kano"},
+            {"ward": "Unguwar Arewa", "lga": "Rano", "state": "Kano"},
+            {"ward": "No Match", "lga": "Rano", "state": "Kano"},
+        ]
+
+        result = resolve_ward_boundaries(wards, connect_areas)
+        assert result["Sabon Gari"]["source"] == "connect"
+        assert result["Unguwar Arewa"]["source"] == "geopode"
+        assert "No Match" not in result

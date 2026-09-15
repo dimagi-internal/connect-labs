@@ -292,12 +292,23 @@ def preview_planning_gaps(
         ward_visits_per_building,
         work_area_boundaries_for_ward,
     )
+    from connect_labs.mopup.core.work_areas import fetch_connect_implementation_areas, resolve_ward_boundaries
 
     candidates = run.candidate_work_areas
     with_geometry = [c for c in candidates if c.get("boundary")]
     if not with_geometry:
         raise RuntimeError("None of the locked candidates have boundary geometry.")
     wards = distinct_wards(carry_forward_features(with_geometry))
+
+    # Same Connect-native-preferred resolution the map's own ward outline
+    # uses (MopupAnalysisView._ward_boundaries_geojson) -- fetched once up
+    # front rather than per-ward, unlike the old per-ward
+    # find_ward_boundary_geometry call this replaces. See
+    # resolve_ward_boundaries' docstring for why staying in agreement with
+    # the map matters (confirmed live: gap-fill cells landing outside the
+    # ward outline actually drawn on the map, e.g. Doka Dawa ward).
+    connect_areas = fetch_connect_implementation_areas(run.target_opportunity_id, access_token)
+    resolved_boundaries = resolve_ward_boundaries(wards, connect_areas)
 
     pipeline = AnalysisPipeline(access_token=access_token, cchq_access_token=cchq_access_token)
 
@@ -323,15 +334,14 @@ def preview_planning_gaps(
     for i, w in enumerate(wards, start=1):
         set_task_progress(self, f"Checking planning gaps for {w['ward']} ({i}/{len(wards)})…")
         try:
-            from connect_labs.microplans.core.admin_boundaries import find_ward_boundary_geometry
-
             existing_boundaries = work_area_boundaries_for_ward(
                 pipeline, run.target_opportunity_id, w["ward"], w["lga"], w["state"]
             )
-            ward_boundary = find_ward_boundary_geometry(w["state"], w["lga"], w["ward"])
-            if ward_boundary is None:
+            match = resolved_boundaries.get(w["ward"])
+            if match is None:
                 warnings[w["ward"]] = "no ward boundary match — skipped"
                 continue
+            ward_boundary = match["geometry"]
             rate = ward_visits_per_building(all_rows, w["ward"])
             ward_buildings = (
                 buildings_from_upload(uploaded_df, w["ward"], w["lga"], w["state"]) if mode == "upload" else None
