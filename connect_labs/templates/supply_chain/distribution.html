@@ -9,7 +9,13 @@
   </div>
 {% else %}
 
-<h2 class="text-lg font-semibold text-brand-indigo mb-1">Distribution</h2>
+<div class="flex flex-wrap items-start justify-between gap-4">
+  <h2 class="text-lg font-semibold text-brand-indigo mb-1">Distribution</h2>
+  <a href="{% url 'supply_chain:distribution_record' %}"
+     class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+    <i class="fa-solid fa-plus mr-1"></i> Record a run
+  </a>
+</div>
 <p class="text-xs text-gray-500 mb-4">
   Each run posts one movement per line, so a worker's stock on hand is a ledger
   balance rather than a separate figure. A worker is a supply point, which is
