@@ -36,7 +36,7 @@ class MopupRunDataAccess(BaseDataAccess):
     def create_run(self, *, target_opportunity_id: int, name: str = "") -> MopupRunRecord:
         data = {
             "status": STATUS_SETUP,
-            "name": name or "CHC Mop-up",
+            "name": name or "WA Revisit",
             "target_opportunity_id": target_opportunity_id,
             "selected_wards": [],
             "date_from": None,

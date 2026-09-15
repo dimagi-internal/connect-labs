@@ -143,7 +143,7 @@ def create_plan_from_locked_run(
         w["populations"] = {"hsd_children_per_building": rate}
 
     states = {w["state"] for w in wards if w.get("state")}
-    region = run.name or "CHC Mop-up"
+    region = run.name or "WA Revisit"
     lga = ", ".join(sorted({w["lga"] for w in wards if w.get("lga")})) or region
     state = next(iter(states)) if len(states) == 1 else ""
 
