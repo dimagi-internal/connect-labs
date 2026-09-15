@@ -27,13 +27,17 @@ def _user(username="tester"):
 
 
 def _grant(monkeypatch, *, organizations=("dimagi-kmc",), opportunity_ids=()):
-    """Stub the caller's Connect org tree -- see test_mcp_tools._grant."""
+    """Stub the caller's Connect org tree -- see test_mcp_tools._grant.
+
+    The network fetch lives in the shared policy module
+    (connect_labs.labs.access.scopes) now, not in mcp_tools -- patched at its
+    new home, same as labs/access/tests/test_scopes.py patches it.
+    """
     from connect_labs.benchmarks import mcp_tools
 
     monkeypatch.setattr(mcp_tools, "require_connect_token", lambda u: "dummy-token")
     monkeypatch.setattr(
-        mcp_tools,
-        "fetch_user_organization_data",
+        "connect_labs.labs.access.scopes.fetch_user_organization_data",
         lambda token, owner=None: {
             "organizations": [{"slug": slug} for slug in organizations],
             "opportunities": [{"id": oid} for oid in opportunity_ids],
