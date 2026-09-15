@@ -50,6 +50,10 @@ def _caller_opportunity_ids(user, data: dict[str, Any]) -> set[int]:
     """Opportunity ids the caller holds: production's, plus the labs-only
     synthetic opps that never appear in production's list (same merge
     ``workflows.py`` does before validating multi-opp writes)."""
+    # Lazy: connect_labs.mcp.tools.__init__ imports this module (via its
+    # wrapper), so a module-level import would close an import cycle. Promoting
+    # _collect_labs_only_opp_ids out of workflows.py into a shared module is the
+    # real fix and is a pending follow-up -- until then, import it here.
     from connect_labs.mcp.tools.workflows import _collect_labs_only_opp_ids
 
     held = {int(opp["id"]) for opp in (data.get("opportunities") or []) if opp.get("id") is not None}
@@ -211,7 +215,12 @@ def benchmarks_cohort_add_opportunities(
 
 @register(
     name="benchmarks_cohort_list",
-    description="List benchmark cohorts owned by an organization, with membership counts.",
+    description=(
+        "List benchmark cohorts owned by an organization, with membership counts. Refuses "
+        "a caller who does not belong to that organisation: a cohort id is what an "
+        "add-opportunities call needs to target, so listing is the enumeration step of "
+        "the grant, not a neutral read."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -222,6 +231,12 @@ def benchmarks_cohort_add_opportunities(
     },
 )
 def benchmarks_cohort_list(user, *, organization_id: str) -> dict[str, Any]:
+    # Filtering is not authorisation. `.filter(organization_id=...)` scopes the
+    # query to what was ASKED FOR and says nothing about whether the asker may
+    # have it -- so without this gate the tool hands any authenticated caller
+    # every cohort id in any organisation, which is precisely the target list
+    # `benchmarks_cohort_add_opportunities` is now gated against.
+    _require_organization_access(user, organization_id, "you are listing cohorts for")
     cohorts = BenchmarkCohort.objects.filter(organization_id=organization_id).order_by("name")
     return {
         "cohorts": [

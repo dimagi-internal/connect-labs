@@ -118,6 +118,41 @@ def test_list_reports_membership_counts(monkeypatch):
     assert [(r["name"], r["opportunity_count"]) for r in rows["cohorts"]] == [("KMC", 2)]
 
 
+def test_list_refuses_an_organisation_the_caller_does_not_belong_to(monkeypatch):
+    """Filtering is not authorisation: `.filter(organization_id=...)` scopes the
+    query to what was asked for, not to what the asker may have. An ungated
+    list is the ENUMERATION step of the escalation F1 closed -- you need a
+    cohort id to target, and this hands you every one with its owning org slug.
+
+    Discriminating by construction: the foreign org's cohort really exists and
+    really has members, so a tool that skipped the gate would visibly return it
+    (the assertion below would see one row instead of a refusal), and the same
+    caller listing their OWN org still gets their cohort, so it cannot be
+    "always deny" either.
+    """
+    from connect_labs.benchmarks.mcp_tools import (
+        benchmarks_cohort_add_opportunities,
+        benchmarks_cohort_create,
+        benchmarks_cohort_list,
+    )
+
+    owner = _user("owner")
+    _grant(monkeypatch, organizations=("other-org",), opportunity_ids=(900, 901))
+    theirs = benchmarks_cohort_create(user=owner, name="Theirs", organization_id="other-org")
+    benchmarks_cohort_add_opportunities(user=owner, cohort_id=theirs["id"], opportunity_ids=[900, 901])
+
+    stranger = _user("stranger")
+    _grant(monkeypatch, organizations=("my-org",), opportunity_ids=(523,))
+    mine = benchmarks_cohort_create(user=stranger, name="Mine", organization_id="my-org")
+
+    with pytest.raises(MCPToolError) as exc:
+        benchmarks_cohort_list(user=stranger, organization_id="other-org")
+    assert exc.value.code == "PERMISSION_DENIED"
+
+    rows = benchmarks_cohort_list(user=stranger, organization_id="my-org")["cohorts"]
+    assert [r["id"] for r in rows] == [mine["id"]]
+
+
 # --- cohort administration is org-gated ---------------------------------
 #
 # Membership of a cohort IS the read permission (models.py:34): an opportunity
