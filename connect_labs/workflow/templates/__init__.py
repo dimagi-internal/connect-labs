@@ -314,6 +314,10 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     "flw_audit_trend_dashboard": "reports",
     "flw_daily_indicator_table": "reports",
     "kmc_project_metrics": "reports",
+    # One opportunity's own report — its figures, its workers, its anonymous
+    # peers. A report rather than a review: it is read by whoever runs the
+    # opportunity, not by someone reviewing one worker.
+    "kmc_opp_report": "reports",
     "verified_monitoring": "reports",
     # Automatic reports: run themselves on a schedule, no statuses.
     "flw_weekly_audit_report": "automatic",
