@@ -1030,8 +1030,16 @@ window.MopupAnalysis = (function () {
         showLoadingError(data.message || data.detail || 'Failed to load data.');
         return; // deliberate stop — no auto-retry loop on a persistent error
       }
+      if (data.status !== 'ok') {
+        // Any Celery state build_task_progress doesn't map to pending/
+        // running/failed/error previously fell through here and was
+        // silently treated as a real, ready dataset -- fail loudly instead
+        // of rendering whatever partial/undefined fields happened to be
+        // present.
+        showLoadingError('Unexpected response — try again.');
+        return;
+      }
 
-      // status === 'ok'
       dataReady = true;
       showReady();
       lastCandidates = data.candidates || [];
@@ -1119,8 +1127,17 @@ window.MopupAnalysis = (function () {
         $('create-plan').disabled = false;
         return;
       }
+      if (data.status !== 'ok') {
+        // Any Celery state build_task_progress doesn't map to pending/
+        // running/failed/error (e.g. a transient/retry state) previously
+        // fell through here and was silently treated as success --
+        // confirmed live as "Plan created" with no work-area count. Fail
+        // loudly instead of guessing.
+        $('status').textContent = 'Unexpected response — try again.';
+        $('create-plan').disabled = false;
+        return;
+      }
 
-      // status === 'ok'
       const warnings = data.planning_gap_warnings || {};
       const warnedWards = Object.keys(warnings);
       let msg = data.planning_gap_cells_added
@@ -1238,8 +1255,18 @@ window.MopupAnalysis = (function () {
           'Failed to check planning gaps.';
         return;
       }
+      if (data.status !== 'ok') {
+        // Any Celery state build_task_progress doesn't map to pending/
+        // running/failed/error (e.g. a transient/retry state, more likely
+        // to surface on a genuinely multi-minute first fetch like Google
+        // Open Buildings mode's cold-cache path) previously fell through
+        // here and rendered "undefined planning-gap work area(s) added." --
+        // confirmed live. Fail loudly instead of guessing.
+        $('planning-gaps-status').textContent =
+          'Unexpected response — try again.';
+        return;
+      }
 
-      // status === 'ok'
       const warnings = data.warnings || {};
       const warnedWards = Object.keys(warnings);
       let msg = `${data.cells_added} planning-gap work area(s) added.`;
