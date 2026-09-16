@@ -37,6 +37,7 @@ from connect_labs.workflow.templates import create_workflow_from_template as cre
 from connect_labs.workflow.templates import (
     schedule_options_for_definition,
     template_groups,
+    definition_supports_default_run,
     template_supports_default_run,
     with_inherited_config_flags,
 )
@@ -393,7 +394,7 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             "pipelines": pipelines,
             "template_type": definition.template_type,
             "latest_run_id": runs[0].id if runs else 0,
-            "schedulable": template_supports_default_run(definition.template_type),
+            "schedulable": definition_supports_default_run(definition),
             "schedule": schedule_dict,
             # Settings the schedule dialog offers, each already carrying its choices and
             # the value currently saved on this definition. Empty for every template that
@@ -4721,7 +4722,7 @@ def schedule_upsert_api(request, definition_id):
         definition = da.get_definition(definition_id)
         if definition is None:
             return JsonResponse({"error": "Workflow definition not found"}, status=404)
-        if not template_supports_default_run(definition.template_type):
+        if not definition_supports_default_run(definition):
             return JsonResponse({"error": "This workflow does not support scheduling."}, status=400)
 
         # Settings first, schedule second. A schedule created before its config lands
