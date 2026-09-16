@@ -122,6 +122,54 @@ def _blocks(snapshot: dict) -> list[tuple[str, list, list, dict]]:
     return blocks
 
 
+# A COUNT is never publishable, whatever anyone declares. Opportunity sizes are
+# visible on the programme report (100 .. 2,189 cases), so an "anonymous" bar
+# reading 1,692 IS that opportunity to anybody who has seen that page. This is
+# the one rule a registry edit must not be able to switch off, which is why it
+# is a guard here rather than a default there.
+UNPUBLISHABLE_KINDS = frozenset({"count"})
+
+
+def resolve_benchmarkable_ids(measures) -> set[str]:
+    """Which indicators in one frozen catalog may be benchmarked.
+
+    The unit rule is the FLOOR, and the registry adjusts it either way:
+
+    * `benchmarkable: true` adds an indicator the unit rule would have missed.
+      A mean early growth rate of 14.0 g/kg/day says nothing about how big an
+      opportunity is -- a 50-case and a 2,000-case one can both report 14.0 --
+      but its unit is `g/kg/d`, so the unit rule withheld it. Publishability is
+      a property of the INDICATOR, and the registry is where that is decided.
+    * `benchmarkable: false` removes one the unit rule would have allowed.
+    * Silence leaves the unit rule's answer alone, so declaring one indicator
+      does not silently withhold every other.
+
+    Then `kind: count` is removed, whatever was declared -- see
+    UNPUBLISHABLE_KINDS. An indicator that declares itself benchmarkable and is
+    a count is refused, not trusted: the registry is editable with no deploy,
+    and a mistake there must not be able to publish case counts.
+
+    Deliberately NOT named `benchmarkable_indicator_ids`: `publish_benchmark`
+    takes a parameter by that name, which would shadow this inside it -- the
+    fallback then calls None and every publication raises. That was caught only
+    by a test exercising the whole publisher; tests calling this directly
+    cannot see the shadow.
+    """
+    allowed = set(rate_shaped_indicator_ids(measures))
+    for m in measures or []:
+        ind = str(m.get("indicator") or "")
+        if not ind:
+            continue
+        declared = m.get("benchmarkable")
+        if declared is True:
+            allowed.add(ind)
+        elif declared is False:
+            allowed.discard(ind)
+        if str(m.get("kind")) in UNPUBLISHABLE_KINDS:
+            allowed.discard(ind)
+    return allowed
+
+
 def rate_shaped_indicator_ids(measures) -> set[str]:
     """The indicators in one frozen catalog whose value is a rate. See RATE_UNITS."""
     return {
@@ -324,7 +372,7 @@ def publish_benchmark(
         allowed = (
             {str(i) for i in benchmarkable_indicator_ids}
             if benchmarkable_indicator_ids is not None
-            else rate_shaped_indicator_ids(measures)
+            else resolve_benchmarkable_ids(measures)
         )
         # Sorted so publication order is deterministic. The union of both scopes,
         # because an indicator can exist in only one of them.

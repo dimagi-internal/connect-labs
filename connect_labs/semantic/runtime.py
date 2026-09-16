@@ -314,6 +314,15 @@ def measure_catalog(registry: dict[str, Any]) -> list[dict[str, Any]]:
                 "unit": meta.get("unit"),
                 "kind": kinds.get(str(numerator.get("type"))),
                 "direction": meta.get("direction"),
+                # Whether this indicator may be BENCHMARKED -- published as an
+                # anonymised peer figure for other opportunities to compare
+                # against. A property of the indicator, decided once in the
+                # registry, not something a publisher should infer from the
+                # unit: `unit: n` covers both a count (which re-identifies) and
+                # a mean (which does not), and `g/kg/d` is no more dangerous
+                # than `%`. Absent means undeclared, and the publisher's own
+                # fallback decides.
+                "benchmarkable": meta.get("benchmarkable"),
                 "bands": meta.get("bands"),
                 "bands_source": meta.get("bands_source"),
                 "min_denominator": meta.get("min_denominator"),
