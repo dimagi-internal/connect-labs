@@ -138,6 +138,9 @@ Two further improvements that you will notice on the Worker Review page:
 - **The page now loads in seconds rather than minutes.** It was previously recomputing data for all of the report's opportunities on every load and discarding the result. That wasted work has been removed.
 - **The red "Another pipeline run for this opportunity is already in progress" banner should no longer appear.** That banner was a side effect of the same unnecessary recompute colliding with the programme report. With the recompute removed, the banner no longer fires.
 
+!!! note "Cases table and growth chart briefly unavailable after a recent update"
+    A short-lived issue caused the Worker Review page to show **"Could not load this worker's cases"** in place of the cases table and growth chart — even for workers who had data. This affected both the table and the progress indicator that streams case rows as they load. Both have been corrected and the page displays case data as expected again.
+
 #### Peer cohort benchmarking for individual workers
 
 When you drill into a worker from the programme report, each of that worker's indicators is now shown in context alongside comparable workers — not just as a raw number. The comparison panel expands directly under the worker's row in the table, so you can read how they compare without losing sight of their own figures.
@@ -180,7 +183,4 @@ The **KMC Opportunity Report** gives a single delivery opportunity a three-part 
 The same indicator columns as the KMC Programme Metrics report, calculated for this opportunity alone. This is a quick summary of where the opportunity stands overall.
 
 **2. Field worker breakdown**
-One row per field worker, one column per indicator, colour-banded so you can see at a glance which workers are on track and which need attention. Because an opportunity owns its own workers' data, real field worker names appear here — not anonymous identifiers.
-
-**3. Peer benchmarking**
-Each indicator's distribution across other opportunities in the same benchmarking cohort is shown as anonymous grey bars, with this opportunity's own value shown as a **blue bar** placed by rank alongside them — so you read your position
+One row per field worker, one column per indicator, colour-banded so you can see at
