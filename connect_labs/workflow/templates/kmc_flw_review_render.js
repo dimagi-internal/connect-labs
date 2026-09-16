@@ -56,6 +56,92 @@ function WorkflowUI({
     );
   }
 
+  // ══ Rows, with the fetch's own progress ══════════════════════════════════════
+  // The server answers the same query two ways: `pipeline-rows` in one shot, or
+  // `pipeline-rows/stream/` as SSE with the paginated Connect read's progress
+  // ahead of the identical payload. A cold read is 40-60s -- measured live on
+  // 2026-09-16, three back to back for one worker -- and in one shot that is a
+  // minute of a page that looks broken rather than busy. So: prefer the stream.
+  //
+  // It falls back to the one-shot endpoint whenever the stream cannot deliver
+  // (no EventSource, a buffering proxy, a dropped connection). Progress is a
+  // courtesy; the rows are not, and must never depend on the nicer transport.
+  //
+  // Returns {promise, cancel}. `onProgress(message)` fires per progress event;
+  // the promise resolves with the final {rows, metadata}.
+  function fetchRowsWithProgress(url, onProgress) {
+    var cancelled = false;
+    var es = null;
+    function plain() {
+      return fetch(url, { credentials: 'same-origin' }).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      });
+    }
+    var promise = new Promise(function (resolve, reject) {
+      if (typeof window.EventSource !== 'function') {
+        plain().then(resolve, reject);
+        return;
+      }
+      var settled = false;
+      var streamUrl = url.replace('/pipeline-rows/', '/pipeline-rows/stream/');
+      try {
+        es = new EventSource(streamUrl, { withCredentials: true });
+      } catch (e) {
+        plain().then(resolve, reject);
+        return;
+      }
+      function finish(fn, arg) {
+        if (settled || cancelled) return;
+        settled = true;
+        try {
+          es.close();
+        } catch (e) {}
+        fn(arg);
+      }
+      es.onmessage = function (ev) {
+        if (cancelled) return;
+        var d;
+        try {
+          d = JSON.parse(ev.data);
+        } catch (e) {
+          return;
+        }
+        if (d.error) {
+          finish(reject, new Error(d.error));
+          return;
+        }
+        if (d.data && d.data.rows) {
+          finish(resolve, d.data);
+          return;
+        }
+        if (d.message && onProgress) onProgress(d.message);
+      };
+      es.onerror = function () {
+        if (settled || cancelled) return;
+        // The stream died before it delivered anything usable. Retry once on the
+        // plain endpoint rather than failing the page: a transport that never
+        // worked here must not read as "this worker has no cases".
+        settled = true;
+        try {
+          es.close();
+        } catch (e) {}
+        plain().then(resolve, reject);
+      };
+    });
+    return {
+      promise: promise,
+      cancel: function () {
+        cancelled = true;
+        if (es) {
+          try {
+            es.close();
+          } catch (e) {}
+        }
+      },
+    };
+  }
+
   var sourceRun = qp('source_run');
   var sKey = React.useState(qp('flw'));
   var selKey = sKey[0],
@@ -294,9 +380,9 @@ function WorkflowUI({
     function () {
       if (!flw) return;
       var cancelled = false;
-      setChildState({ status: 'loading', rows: [] });
+      setChildState({ status: 'loading', rows: [], message: '' });
       var sp = scopeParams();
-      fetch(
+      var req = fetchRowsWithProgress(
         '/labs/workflow/api/' +
           definitionId() +
           '/pipeline-rows/' +
@@ -310,12 +396,12 @@ function WorkflowUI({
           encodeURIComponent(flw.opp) +
           '&username=' +
           encodeURIComponent(flw.flw),
-        { credentials: 'same-origin' },
-      )
-        .then(function (r) {
-          if (!r.ok) throw new Error('cases: HTTP ' + r.status);
-          return r.json();
-        })
+        function (message) {
+          if (!cancelled)
+            setChildState({ status: 'loading', rows: [], message: message });
+        },
+      );
+      req.promise
         .then(function (j) {
           if (!cancelled)
             setChildState({ status: 'ready', rows: j.rows || [] });
@@ -332,6 +418,7 @@ function WorkflowUI({
         });
       return function () {
         cancelled = true;
+        req.cancel();
       };
     },
     [
@@ -409,9 +496,9 @@ function WorkflowUI({
       if (!selCase) return;
       var cancelled = false;
       var key = selCase.opportunity_id + '|' + selCase.entity_id;
-      setVisitState({ status: 'loading', key: key, rows: [] });
+      setVisitState({ status: 'loading', key: key, rows: [], message: '' });
       var sp = scopeParams();
-      fetch(
+      var req = fetchRowsWithProgress(
         '/labs/workflow/api/' +
           definitionId() +
           '/pipeline-rows/' +
@@ -422,12 +509,17 @@ function WorkflowUI({
           encodeURIComponent(selCase.opportunity_id) +
           '&case_ids=' +
           encodeURIComponent(selCase.entity_id),
-        { credentials: 'same-origin' },
-      )
-        .then(function (r) {
-          if (!r.ok) throw new Error('weighings: HTTP ' + r.status);
-          return r.json();
-        })
+        function (message) {
+          if (!cancelled)
+            setVisitState({
+              status: 'loading',
+              key: key,
+              rows: [],
+              message: message,
+            });
+        },
+      );
+      req.promise
         .then(function (j) {
           if (!cancelled)
             setVisitState({ status: 'ready', key: key, rows: j.rows || [] });
@@ -445,6 +537,7 @@ function WorkflowUI({
         });
       return function () {
         cancelled = true;
+        req.cancel();
       };
     },
     [definition && definition.id, instance && instance.definition_id, caseKey],
@@ -1539,8 +1632,11 @@ function WorkflowUI({
                   is a failed request, not an empty case — reload the page.
                 </div>
               ) : (
-                <div className="text-xs text-gray-400 py-10 text-center">
-                  Loading the weight series…
+                <div className="text-xs text-gray-400 py-10 text-center flex items-center justify-center gap-2">
+                  <i className="fa-solid fa-spinner fa-spin" />
+                  <span>
+                    {visitState.message || 'Loading the weight series…'}
+                  </span>
                 </div>
               )}
             </div>
@@ -1960,15 +2056,23 @@ function WorkflowUI({
                     colSpan={3 + SCORECARD.length}
                     className="px-3 py-6 text-center text-xs text-gray-400"
                   >
-                    {childState.status === 'error'
-                      ? 'Could not load this worker’s cases' +
-                        (childState.error
-                          ? ' (' + childState.error + ')'
-                          : '') +
-                        '. This is a failed request, not an empty cohort — reload the page.'
-                      : pipelinesLoaded
-                      ? 'No cases for this worker in the report.'
-                      : 'Loading cases…'}
+                    {childState.status === 'error' ? (
+                      'Could not load this worker’s cases' +
+                      (childState.error ? ' (' + childState.error + ')' : '') +
+                      '. This is a failed request, not an empty cohort — reload the page.'
+                    ) : pipelinesLoaded ? (
+                      'No cases for this worker in the report.'
+                    ) : (
+                      // Not just "Loading": a cold visit cache is a 40-60s read
+                      // from Connect, and a static label for a minute is what
+                      // made this page look broken rather than busy. The
+                      // message is the server's own fetch progress when the
+                      // stream is carrying it.
+                      <span className="inline-flex items-center gap-2">
+                        <i className="fa-solid fa-spinner fa-spin" />
+                        <span>{childState.message || 'Loading cases…'}</span>
+                      </span>
+                    )}
                   </td>
                 </tr>
               )}
