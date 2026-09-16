@@ -11,6 +11,17 @@
     width: 100%;
     border-radius: 0.375rem;
   }
+  .map-style-btn {
+    color: #374151;
+    background: #ffffff;
+  }
+  .map-style-btn:hover {
+    background: #f9fafb;
+  }
+  .map-style-btn.active {
+    background: #111827;
+    color: #ffffff;
+  }
   /* Custom info tooltip — a native `title` attribute needs a ~1s hover dwell
      and is easy to trigger with no visible feedback, which real user
      testing this session found effectively invisible. This shows instantly
@@ -93,7 +104,13 @@
   <div id="analysis-body" class="hidden space-y-6">
 
   <section class="border border-gray-200 rounded p-4 space-y-2">
-    <div id="analysis-map"></div>
+    <div class="relative">
+      <div id="analysis-map"></div>
+      <div id="map-style-toggle" class="absolute top-2 right-2 z-10 flex rounded-md shadow-sm border border-gray-300 overflow-hidden bg-white text-xs">
+        <button type="button" class="map-style-btn px-2 py-1" data-style="streets">Streets</button>
+        <button type="button" class="map-style-btn px-2 py-1" data-style="satellite">Satellite</button>
+      </div>
+    </div>
     <div id="map-legend" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600"></div>
     {% if boundary_source_caption %}
     <p class="text-xs text-gray-400">{{ boundary_source_caption }} <span class="info-icon" tabindex="0" data-tip="Connect's own API doesn't yet expose ward-level boundary data — only individual work-area shapes. This ward outline instead comes from a public/curated boundary matched by ward name, which can disagree with what's actually uploaded in Connect for this ward.">ⓘ</span></p>
