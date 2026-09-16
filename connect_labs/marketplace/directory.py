@@ -16,6 +16,7 @@ parsing or matching bug cannot reshape the sheet people maintain by hand.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from urllib.parse import quote
@@ -86,7 +87,9 @@ def read_tab(spreadsheet_id: str, tab: str) -> list[list[str]]:
     creds = _load_credentials()
     if not creds.valid:
         creds.refresh(Request())
-    url = f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{quote(tab)}"
+    # safe="" matters: the EOI/RFP tab has a slash in its name, and an
+    # unescaped one is read as a URL path separator, giving a 400.
+    url = f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{quote(tab, safe='')}"
     got = httpx.get(url, headers={"Authorization": f"Bearer {creds.token}"}, timeout=60)
     got.raise_for_status()
     return got.json().get("values", [])
@@ -220,3 +223,97 @@ def parse_mapping(rows: list[list[str]], known_names: set[str]) -> tuple[dict[st
             continue
         mapped[slug] = (target, why)
     return mapped, skipped
+
+
+# ======================================================================
+# The EOI/RFP tab — one row per FORM, every component an explicit link.
+# ======================================================================
+
+ROUNDS_TAB = "EOI/RFP"
+
+_SHEET_ID = re.compile(r"/spreadsheets/d/([A-Za-z0-9_-]{20,})")
+
+
+@dataclass
+class DirectoryRound:
+    slug: str
+    title: str
+    solicitation_type: str = "eoi"
+    status: str = "closed"
+    published_on: str = ""
+    application_deadline: str = ""
+    decision_on: str = ""
+    expected_start_date: str = ""
+    expected_end_date: str = ""
+    target_countries: str = ""
+    announcement_url: str = ""
+    form_url: str = ""
+    response_spreadsheet_id: str = ""
+    response_tab: str = ""
+    column_map: dict = field(default_factory=dict)
+    notes: str = ""
+    source_row: int | None = None
+
+
+def parse_rounds(rows: list[list[str]]) -> tuple[list[DirectoryRound], list[str]]:
+    """The EOI/RFP tab as rounds, plus the rows that could not be used.
+
+    One row is one *form*. A single announcement can run several — the Malaria
+    RFI ran four and the 2026 Readers round ran an English and a French one —
+    and modelling the announcement as the round made those invisible, because a
+    round with no responses of its own is not a round.
+    """
+    out: list[DirectoryRound] = []
+    skipped: list[str] = []
+    seen: set[str] = set()
+
+    for index, row in enumerate(rows[1:], start=2):
+        slug = cell(row, 0)
+        title = cell(row, 1)
+        if not slug and not title:
+            continue
+        if not slug:
+            skipped.append(f"row {index} ({title!r}) has no slug — it cannot be referred to, so it is not imported")
+            continue
+        if slug in seen:
+            skipped.append(f"row {index}: slug {slug!r} is already used above — slugs must be unique")
+            continue
+        seen.add(slug)
+
+        raw_map = cell(row, 14)
+        column_map: dict = {}
+        if raw_map:
+            try:
+                column_map = json.loads(raw_map)
+            except ValueError:
+                skipped.append(f"row {index} ({slug}): Column Map is not valid JSON — falling back to auto-detect")
+
+        kind = cell(row, 2).strip().lower()
+        status = cell(row, 3).strip().lower()
+        sheet_link = cell(row, 12)
+        found = _SHEET_ID.search(sheet_link)
+
+        out.append(
+            DirectoryRound(
+                slug=slug,
+                title=title or slug,
+                solicitation_type="rfp" if kind.startswith("rfp") else "eoi",
+                # "Published" means the call is live; anything else we treat as
+                # closed rather than guessing at a third state.
+                status="active" if status.startswith("publish") else "closed",
+                published_on=cell(row, 4),
+                application_deadline=cell(row, 5),
+                decision_on=cell(row, 6),
+                expected_start_date=cell(row, 7),
+                expected_end_date=cell(row, 8),
+                target_countries=cell(row, 9),
+                announcement_url=cell(row, 10),
+                form_url=cell(row, 11),
+                response_spreadsheet_id=found.group(1) if found else "",
+                response_tab=cell(row, 13),
+                column_map=column_map,
+                notes=cell(row, 17),
+                source_row=index,
+            )
+        )
+    return out, skipped

@@ -27,7 +27,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.marketplace import directory
+from connect_labs.marketplace import directory, eoi
 from connect_labs.marketplace.identity import ensure_org
 from connect_labs.marketplace.models import OrgConnectSlug, OrgContact, OrgProfile
 from connect_labs.marketplace.quality import audit
@@ -180,6 +180,16 @@ class Command(BaseCommand):
         parser.add_argument("--spreadsheet-id", default=directory.DIRECTORY_ID)
         parser.add_argument("--dry-run", action="store_true", help="Report what would change, write nothing")
         parser.add_argument(
+            "--check-access",
+            action="store_true",
+            help="Verify a real read of every round's response sheet and record the result",
+        )
+        parser.add_argument(
+            "--eoi",
+            action="store_true",
+            help="Also import EOI/RFP rounds and their submissions",
+        )
+        parser.add_argument(
             "--prune",
             action="store_true",
             help="Treat the sheet as authoritative: delete organisations, contacts and attributions it does not carry",
@@ -233,3 +243,43 @@ class Command(BaseCommand):
         from connect_labs.pulse.partner_names import invalidate
 
         invalidate()
+
+        if opts["eoi"] or opts["check_access"]:
+            self._rounds(sid, opts)
+
+    def _rounds(self, sid, opts):
+        """Import the EOI/RFP tab, then each round's submissions."""
+        round_rows = directory.read_tab(sid, directory.ROUNDS_TAB)
+        rounds, skipped = directory.parse_rounds(round_rows)
+        for line in skipped:
+            self.stdout.write(self.style.WARNING(f"  round skipped: {line}"))
+        stats = eoi.upsert_rounds(rounds)
+        self.stdout.write(self.style.SUCCESS(f"{stats['rounds']} rounds"))
+
+        results = eoi.check_access(directory.read_tab)
+        readable = [r for r in results if r["state"] == "ok"]
+        for result in results:
+            if result["state"] != "ok":
+                self.stdout.write(self.style.WARNING(f"  {result['slug']}: {result['state']} — {result['detail']}"))
+        self.stdout.write(f"{len(readable)} of {len(results)} rounds readable")
+
+        if not opts["eoi"]:
+            return
+
+        totals = {"submissions": 0, "matched": 0, "unmatched": 0}
+        for result in readable:
+            round_ = eoi.Solicitation.objects.get(slug=result["slug"])
+            rows = directory.read_tab(round_.response_spreadsheet_id, round_.response_tab or "Form Responses 1")
+            got = eoi.ingest_round(round_, rows)
+            for key in totals:
+                totals[key] += got[key]
+            self.stdout.write(
+                f"  {round_.slug}: {got['submissions']} submissions, "
+                f"{got['matched']} matched, {got['unmatched']} unmatched"
+            )
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"{totals['submissions']} submissions — {totals['matched']} matched to an organisation, "
+                f"{totals['unmatched']} awaiting a human verdict"
+            )
+        )

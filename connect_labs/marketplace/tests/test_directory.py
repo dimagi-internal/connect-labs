@@ -154,3 +154,15 @@ class TestParseMapping:
         mapped, skipped = parse_mapping(rows, {"Fenwick Trust"})
         assert mapped == {}
         assert "not on the Organizations tab" in skipped[0]
+
+
+class TestTabNameEscaping:
+    def test_a_tab_name_containing_a_slash_is_escaped(self):
+        """The EOI/RFP tab has a slash in its name. Unescaped it reads as a URL
+        path separator and the Sheets API answers 400."""
+        import inspect
+
+        from connect_labs.marketplace import directory
+
+        source = inspect.getsource(directory.read_tab)
+        assert "safe=" in source, "read_tab must escape the tab name fully, including '/'"

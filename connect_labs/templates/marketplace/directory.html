@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Organisation directory{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+
+  <div class="d-flex justify-content-between align-items-center mb-1">
+    <h2 class="mb-0">Organisation directory</h2>
+    {% if unmatched_count %}
+      <a href="{% url 'marketplace:unmatched' %}" class="btn btn-sm btn-outline-warning">
+        {{ unmatched_count }} submission{{ unmatched_count|pluralize }} awaiting a verdict
+      </a>
+    {% endif %}
+  </div>
+  <p class="text-muted small mb-3">
+    Every organisation labs knows of — not only those Connect has a row for. An
+    organisation that answered an EOI and was not selected never reaches Connect
+    at all, so this list is larger than Connect's.
+  </p>
+
+  <div class="row g-2 mb-3">
+    <div class="col-auto"><span class="badge bg-secondary">{{ total }} organisations</span></div>
+    <div class="col-auto"><span class="badge bg-success">{{ delivering_count }} shown are delivering</span></div>
+    <div class="col-auto"><span class="badge bg-info text-dark">{{ contactable_count }} shown have a contact</span></div>
+  </div>
+
+  <form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-md-3">
+      <label class="form-label small mb-0">Search</label>
+      <input type="search" name="q" value="{{ selected.q }}" class="form-control form-control-sm" placeholder="Name">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-0">Country</label>
+      <select name="country" class="form-select form-select-sm">
+        <option value="">Any</option>
+        {% for c in countries %}<option value="{{ c }}" {% if c == selected.country %}selected{% endif %}>{{ c }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-0">Sector</label>
+      <select name="sector" class="form-select form-select-sm">
+        <option value="">Any</option>
+        {% for s in sectors %}<option value="{{ s }}" {% if s == selected.sector %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-0">Status</label>
+      <select name="status" class="form-select form-select-sm">
+        <option value="">Any</option>
+        <option value="delivering" {% if selected.status == 'delivering' %}selected{% endif %}>Delivering on Connect</option>
+        <option value="bench" {% if selected.status == 'bench' %}selected{% endif %}>On the bench (never delivered)</option>
+        <option value="contactable" {% if selected.status == 'contactable' %}selected{% endif %}>Has a contact</option>
+        <option value="no_contact" {% if selected.status == 'no_contact' %}selected{% endif %}>No contact on file</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-0">Applied to</label>
+      <select name="applied" class="form-select form-select-sm">
+        <option value="">Any round</option>
+        {% for r in rounds %}<option value="{{ r.slug }}" {% if r.slug == selected.applied %}selected{% endif %}>{{ r.title }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-1">
+      <button class="btn btn-sm btn-primary w-100">Filter</button>
+    </div>
+  </form>
+
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Organisation</th><th>Country</th><th>Sectors</th>
+          <th class="text-end">FLWs</th><th class="text-end">Contacts</th>
+          <th class="text-end">Applications</th><th>On Connect</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>
+              <a href="{% url 'marketplace:organisation' row.org.slug %}">{{ row.org.name }}</a>
+              {% if row.org.short_name %}<span class="text-muted small">({{ row.org.short_name }})</span>{% endif %}
+            </td>
+            <td class="small">{% if row.profile %}{{ row.profile.countries|join:", " }}{% endif %}</td>
+            <td class="small">{% if row.profile %}{{ row.profile.sectors|join:", " }}{% endif %}</td>
+            <td class="text-end small">{% if row.profile.flws_managed %}{{ row.profile.flws_managed }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="text-end small">
+              {% if row.org.contact_count %}{{ row.org.contact_count }}
+              {% else %}<span class="text-danger" title="Nobody to write to">none</span>{% endif %}
+            </td>
+            <td class="text-end small">{{ row.org.application_count }}</td>
+            <td>
+              {% if row.delivering %}<span class="badge bg-success">delivering</span>
+              {% elif row.org.is_linked %}<span class="badge bg-secondary">linked</span>
+              {% else %}<span class="badge bg-light text-muted">bench</span>{% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-4">No organisations match those filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
