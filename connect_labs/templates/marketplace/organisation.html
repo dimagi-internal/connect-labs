@@ -56,8 +56,11 @@ refuses to open. <details> needs no JavaScript at all.
                 <div><dt class="text-gray-500">Joined the network</dt>
                   <dd class="text-gray-900">{{ profile.joined_at }}</dd>
                   {% if profile.joined_basis %}
-                    {# The basis travels with the date: some are an exact submission
-                       timestamp, some a cohort's shared publication date. #}
+                    {% comment %}
+                      The basis travels with the date: some are an exact submission
+                      timestamp, some a cohort's shared publication date. A
+                      multi-line {# #} would render verbatim onto the page.
+                    {% endcomment %}
                     <dd class="text-xs text-gray-400 mt-0.5">{{ profile.joined_basis }}</dd>
                   {% endif %}
                 </div>
