@@ -86,7 +86,7 @@ function WorkflowUI({
       var settled = false;
       var streamUrl = url.replace('/pipeline-rows/', '/pipeline-rows/stream/');
       try {
-        es = new EventSource(streamUrl, { withCredentials: true });
+        es = new window.EventSource(streamUrl, { withCredentials: true });
       } catch (e) {
         plain().then(resolve, reject);
         return;
