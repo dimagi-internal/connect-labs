@@ -251,12 +251,14 @@ class WorkflowSchedule(models.Model):
     """
 
     CADENCE_DAILY = "daily"
+    CADENCE_INTERVAL = "interval"
     CADENCE_WEEKDAYS = "weekdays"
     CADENCE_WEEKLY = "weekly"
     CADENCE_BIWEEKLY = "biweekly"
     CADENCE_MONTHLY = "monthly"
     CADENCE_CHOICES = [
         (CADENCE_DAILY, "Daily"),
+        (CADENCE_INTERVAL, "Every N hours"),
         (CADENCE_WEEKDAYS, "Weekdays (Mon–Fri)"),
         (CADENCE_WEEKLY, "Weekly"),
         (CADENCE_BIWEEKLY, "Every 2 weeks"),
@@ -288,6 +290,13 @@ class WorkflowSchedule(models.Model):
     hour = models.PositiveSmallIntegerField(default=6)  # 0-23 UTC
     day_of_week = models.PositiveSmallIntegerField(null=True, blank=True)  # 0=Mon..6=Sun, weekly only
     day_of_month = models.PositiveSmallIntegerField(null=True, blank=True)  # 1-28, monthly only
+    # INTERVAL cadence only: hours between fires. Restricted to divisors of 24
+    # (see schedules.INTERVAL_HOURS_CHOICES) so every fire time stays derivable
+    # from the clock alone -- compute_next_run keeps no schedule history, so a
+    # non-divisor would leave a short gap at each day boundary with nowhere to
+    # carry the offset. `hour` is the anchor within the grid: hour=0 with
+    # interval_hours=6 fires at 00/06/12/18 UTC.
+    interval_hours = models.PositiveSmallIntegerField(null=True, blank=True)
 
     enabled = models.BooleanField(default=True)
     next_run_at = models.DateTimeField(null=True, blank=True)
@@ -317,7 +326,14 @@ class WorkflowSchedule(models.Model):
         """Set ``next_run_at`` to the next fire time after ``from_dt`` and save it."""
         from connect_labs.workflow.schedules import compute_next_run
 
-        self.next_run_at = compute_next_run(self.cadence, self.hour, self.day_of_week, self.day_of_month, from_dt)
+        self.next_run_at = compute_next_run(
+            self.cadence,
+            self.hour,
+            self.day_of_week,
+            self.day_of_month,
+            from_dt,
+            interval_hours=self.interval_hours,
+        )
         if self.pk:
             self.save(update_fields=["next_run_at"])
 

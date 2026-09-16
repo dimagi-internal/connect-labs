@@ -304,3 +304,32 @@ def test_a_long_error_list_is_truncated_to_the_column_width():
 
     assert sched.last_status == WorkflowSchedule.STATUS_FAILED
     assert len(sched.last_error) <= 2000
+
+
+@pytest.mark.django_db
+def test_ticker_skips_an_unschedulable_row_and_still_dispatches_the_rest():
+    """One malformed schedule must not take the whole tick down.
+
+    interval_hours is nullable, so a row can reach the ticker with
+    cadence='interval' and no interval, from any write that bypasses the API's
+    validation. Unhandled, compute_next_run's ValueError aborts the loop and
+    every other due schedule silently stops firing every 15 minutes.
+    """
+    now = datetime.now(tz=timezone.utc)
+    broken = _make_schedule(username="broken", cadence="interval")  # interval_hours left NULL
+    WorkflowSchedule.objects.filter(pk=broken.pk).update(next_run_at=now - timedelta(minutes=5))
+    healthy = _make_schedule(username="healthy")
+    WorkflowSchedule.objects.filter(pk=healthy.pk).update(next_run_at=now - timedelta(minutes=5))
+
+    with mock.patch("connect_labs.workflow.tasks.run_scheduled_workflow.delay") as delay:
+        from connect_labs.workflow.tasks import run_due_workflow_schedules
+
+        run_due_workflow_schedules()
+
+    dispatched_ids = {c.args[0] for c in delay.call_args_list}
+    assert dispatched_ids == {healthy.pk}
+
+    # The broken row is skipped, not claimed: its next_run_at is left alone so
+    # it stays visible as overdue rather than quietly advancing forever.
+    broken.refresh_from_db()
+    assert broken.next_run_at < now
