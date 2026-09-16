@@ -789,27 +789,30 @@ def test_run_history_projects_each_completed_run_to_its_per_opportunity_cells():
     assert out[0]["byOpp"]["N"][500]["N08"]["value"] == 1, "the scorecard family was not projected"
 
 
-def test_run_history_counts_each_saved_run_once():
-    """`list_runs` fans a multi-opp workflow out across its member
-    opportunities, so the same run comes back once per member. Undeduped, every
-    run contributed a dozen identical points and the trend became two values
-    alternating — an oscillating indicator, not the duplication it was."""
+def test_run_history_keeps_one_point_per_period_and_the_latest_wins():
+    """A period can hold several completed runs — a hand-saved one and the one
+    `workflow_rebuild_history` generated for the same week — and they do not
+    agree. Taking all of them made consecutive points alternate between two
+    unrelated figures for the whole series, which renders as a wildly
+    oscillating indicator rather than as the duplication it is."""
     from connect_labs.benchmarks.mcp_tools import _run_history
 
-    def _run(run_id, value):
-        r = _StubRun(
+    def _run(period, completed_at, value):
+        return _StubRun(
             is_completed=True,
-            period_end="2026-01-31",
+            period_end=period,
+            completed_at=completed_at,
             snapshot={"state": {"snapshot": {"byOpp": [{"opp": 500, "ind": {"C15": {"id": "C15", "value": value}}}]}}},
         )
-        r.id = run_id
-        return r
 
-    class _FannedOut:
+    class _WDA:
         def list_runs(self, definition_id):
-            # one logical run, returned once per member opportunity
-            return [_run(9, 1), _run(9, 1), _run(9, 1), _run(10, 2), _run(10, 2)]
+            return [
+                _run("2026-01-31", "2026-09-09T19:00:00Z", 41.8),  # hand-saved
+                _run("2026-01-31", "2026-09-11T13:00:00Z", 69.2),  # rebuilt later
+                _run("2026-02-28", "2026-09-11T14:00:00Z", 70.0),
+            ]
 
-    out = _run_history(_FannedOut(), 1, "snapshot")
-    assert len(out) == 2, f"each saved run must be one point, got {len(out)}"
-    assert [r["byOpp"]["C"][500]["C15"]["value"] for r in out] == [1, 2]
+    out = _run_history(_WDA(), 1, "snapshot")
+    assert [r["date"] for r in out] == ["2026-01-31", "2026-02-28"], "a period contributed more than one point"
+    assert out[0]["byOpp"]["C"][500]["C15"]["value"] == 69.2, "the superseded run won"

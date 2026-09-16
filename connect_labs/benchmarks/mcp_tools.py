@@ -105,25 +105,22 @@ def _run_history(wda, workflow_id: int, state_key: str) -> list[dict]:
     hand. A publication with no series is a visible, recoverable state; a
     refused publication because a history read timed out is not.
     """
-    out: list[dict] = []
-    seen: set = set()
+    # ONE POINT PER PERIOD, not per run. A period can hold several completed
+    # runs -- a hand-saved one and the one `workflow_rebuild_history` generated
+    # for the same week, or seven re-runs of the same week while something was
+    # being fixed -- and they do not agree, because each was computed from what
+    # was cached when it ran. Taking all of them made consecutive points
+    # alternate between two unrelated figures for the whole length of the
+    # series, which renders as a violently oscillating indicator rather than as
+    # the duplication it is. The LATEST completion of a period wins: a
+    # recomputation supersedes what it recomputed.
+    latest: dict[str, tuple] = {}
     try:
         # The iteration is inside the guard, not just the call: `list_runs`
         # resolves lazily, so the upstream failure surfaces on the first `for`.
         for run in wda.list_runs(definition_id=workflow_id):
             if not getattr(run, "is_completed", False):
                 continue
-            # ONE SAVED RUN IS ONE POINT. `list_runs` fans a multi-opp workflow
-            # out across its member opportunities, so the same run comes back
-            # once per member -- twelve times, for the KMC cohort. Undeduped,
-            # every run contributed a dozen identical points and the published
-            # "trend" was two values alternating, which reads as a violently
-            # oscillating indicator rather than as the duplication it is.
-            run_id = getattr(run, "id", None)
-            if run_id is not None:
-                if run_id in seen:
-                    continue
-                seen.add(run_id)
             payload = ((run.snapshot or {}).get("state") or {}).get(state_key) or {}
             by_opp = {}
             for name, block in [("C", payload)] + sorted((payload.get("series") or {}).items()):
@@ -133,13 +130,16 @@ def _run_history(wda, workflow_id: int, state_key: str) -> list[dict]:
                         cells[int(entry["opp"])] = entry.get("ind") or {}
                 if cells:
                     by_opp[name] = cells
-            if by_opp:
-                out.append({"date": str(run.period_end or run.completed_at or "")[:10], "byOpp": by_opp})
+            if not by_opp:
+                continue
+            period = str(run.period_end or run.completed_at or "")[:10]
+            stamp = str(run.completed_at or "")
+            if period not in latest or stamp >= latest[period][0]:
+                latest[period] = (stamp, {"date": period, "byOpp": by_opp})
     except Exception:
         logger.warning("benchmark publication could not read run history for workflow %s", workflow_id, exc_info=True)
         return []
-    out.sort(key=lambda r: r["date"])
-    return out
+    return [entry for _, entry in sorted((p, e) for p, (_, e) in latest.items())]
 
 
 def _serialize_cohort(cohort: BenchmarkCohort) -> dict[str, Any]:
