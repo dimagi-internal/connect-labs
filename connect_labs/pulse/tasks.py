@@ -485,7 +485,7 @@ def warm_summary_cache() -> int:
 
 @celery_app.task(name="connect_labs.pulse.tasks.import_partner_directory")
 def import_partner_directory():
-    """Pull partner identity from the LLO Directory into the database.
+    """Pull the organisation registry from the LLO Directory into the database.
 
     On beat rather than left to a human because the directory is edited by the
     team that owns partner relationships, not by whoever last deployed. A daily
@@ -498,4 +498,4 @@ def import_partner_directory():
     """
     from django.core.management import call_command
 
-    call_command("pulse_partner_import")
+    call_command("marketplace_import")

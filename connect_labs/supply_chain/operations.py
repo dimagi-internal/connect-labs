@@ -57,7 +57,7 @@ class Operation:
     # imports are run deliberately by someone with a shell (ECS Exec against
     # the labs task, see docs/OUTBOUND_EMAIL.md for the recipe), the way every
     # other labs app does it -- `bootstrap_targeting`, `load_indicators`,
-    # `pulse_partner_import`, `seed_semantic_registry` are all management
+    # `marketplace_import`, `seed_semantic_registry` are all management
     # commands and none of them is an MCP tool.
     #
     # They stay in THIS registry rather than being deleted from it, because
