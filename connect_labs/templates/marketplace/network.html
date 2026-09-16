@@ -2,9 +2,14 @@
 {% comment %}
 Tailwind, not Bootstrap. Brand values from tailwind/tailwind.css.
 
+The filter rail shows every value's COUNT before you click it, and facets
+combine rather than replace — that is what a rail buys over a dropdown, and why
+the counts are computed over the rows currently in scope rather than over the
+whole registry.
+
 The globe is the same stack as the Pulse wall display -- Mapbox GL through the
-shared ConnectMap helper -- so the marketplace reads as part of the product
-rather than a different thing that happens to plot dots.
+shared ConnectMap helper -- so this reads as part of the product rather than a
+different thing that happens to plot dots.
 {% endcomment %}
 {% load static %}
 {% block title %}The network{% endblock %}
@@ -30,134 +35,148 @@ rather than a different thing that happens to plot dots.
     </a>
   </div>
 
-  {# Segments: the jobs people actually come here to do, each with its size. #}
-  <form method="get" id="mk-filters">
-    <input type="hidden" name="segment" value="{{ selected.segment }}" id="mk-segment">
-    <div class="flex flex-wrap gap-2 mb-3">
+  {# Segments are the jobs people come to do; the rail refines within one. #}
+  <form method="get" id="mk-segments">
+    {% for value in selected.countries %}<input type="hidden" name="country" value="{{ value }}">{% endfor %}
+    {% for value in selected.sectors %}<input type="hidden" name="sector" value="{{ value }}">{% endfor %}
+    {% for value in selected.applied %}<input type="hidden" name="applied" value="{{ value }}">{% endfor %}
+    <input type="hidden" name="q" value="{{ selected.q }}">
+    <div class="flex flex-wrap gap-2 mb-4">
       {% for s in segments %}
         <button type="submit" name="segment" value="{{ s.key }}"
                 class="flex items-center gap-2 h-9 px-3.5 rounded-full text-[13px] border transition
-                       {% if s.selected %}bg-brand-deep-purple text-white border-brand-deep-purple{% else %}bg-white text-gray-700 border-brand-border-light hover:border-brand-border-light{% endif %}">
+                       {% if s.selected %}bg-brand-deep-purple text-white border-brand-deep-purple{% else %}bg-white text-gray-700 border-brand-border-light hover:border-gray-300{% endif %}">
           <span class="font-semibold">{{ s.label }}</span>
           <span class="text-[11.5px] font-semibold px-1.5 py-px rounded-full tabular-nums
                        {% if s.selected %}bg-white/20 text-white{% else %}bg-gray-100 text-gray-500{% endif %}">{{ s.count }}</span>
         </button>
       {% endfor %}
     </div>
-
-    <div class="flex flex-wrap gap-2.5 items-center mb-2">
-      <div class="flex items-center gap-2 bg-white border border-brand-border-light rounded-lg px-3 h-9 w-72">
-        <i class="fa-solid fa-magnifying-glass text-gray-400 text-xs"></i>
-        <input type="search" name="q" value="{{ selected.q }}" placeholder="Search organisations"
-               class="w-full border-0 p-0 text-[13px] focus:ring-0 placeholder:text-gray-400">
-      </div>
-
-      <select name="country" onchange="this.form.submit()"
-              class="rounded-lg border-brand-border-light text-[13px] h-9 py-0 focus:border-brand-indigo focus:ring-brand-indigo">
-        <option value="">Any country</option>
-        {% for f in facets.countries %}
-          <option value="{{ f.value }}" {% if f.value == selected.country %}selected{% endif %}>{{ f.value }} ({{ f.count }})</option>
-        {% endfor %}
-      </select>
-
-      <select name="sector" onchange="this.form.submit()"
-              class="rounded-lg border-brand-border-light text-[13px] h-9 py-0 focus:border-brand-indigo focus:ring-brand-indigo">
-        <option value="">Any sector</option>
-        {% for f in facets.sectors %}
-          <option value="{{ f.value }}" {% if f.value == selected.sector %}selected{% endif %}>{{ f.value }} ({{ f.count }})</option>
-        {% endfor %}
-      </select>
-
-      <select name="applied" onchange="this.form.submit()"
-              class="rounded-lg border-brand-border-light text-[13px] h-9 py-0 focus:border-brand-indigo focus:ring-brand-indigo">
-        <option value="">Any round</option>
-        {% for f in facets.rounds %}
-          <option value="{{ f.value }}" {% if f.value == selected.applied %}selected{% endif %}>{{ f.label }} ({{ f.count }})</option>
-        {% endfor %}
-      </select>
-
-      <button type="submit" class="inline-flex items-center px-3.5 h-9 bg-brand-indigo text-white text-[13px] font-medium rounded-lg hover:bg-brand-deep-purple transition">
-        Filter
-      </button>
-      <a href="{% url 'marketplace:network' %}" class="text-[13px] text-gray-500 hover:text-gray-700">Clear</a>
-
-      <span class="ml-auto text-[13px] text-gray-500"><span class="font-semibold text-gray-900">{{ shown }}</span> shown</span>
-    </div>
   </form>
 
-  {% if why %}<div class="text-[12.5px] text-gray-500 mb-4">{{ why }}</div>{% endif %}
+  <div class="grid grid-cols-1 lg:grid-cols-[252px_1fr] gap-5 items-start">
 
-  {% if unreadable %}
-    <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-900 mb-5">
-      <strong>{{ unreadable|length }} round{{ unreadable|length|pluralize }} could not be read.</strong>
-      Their applications are missing from every organisation below — this is not the
-      same as those rounds having had no applicants.
-      <div class="mt-1 text-amber-800">
-        {% for r in unreadable %}{{ r.title }} ({{ r.get_sa_access_state_display }}){% if not forloop.last %} · {% endif %}{% endfor %}
+    <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden lg:sticky lg:top-4">
+      <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <span class="text-xs font-semibold text-brand-deep-purple tracking-wide">FILTERS</span>
+        {% if any_facet or selected.q %}
+          <a href="{% url 'marketplace:network' %}?segment={{ selected.segment }}"
+             class="text-xs text-gray-400 hover:text-gray-600">Reset</a>
+        {% endif %}
       </div>
-    </div>
-  {% endif %}
 
-  {# The globe. Every point is an organisation currently in scope. #}
-  <div class="rounded-lg overflow-hidden border border-brand-border-light mb-5 relative bg-brand-deep-purple"
-       style="height: 340px;">
-    <div id="mk-globe" class="w-full h-full"
-         data-points-url="{% url 'marketplace:network_points' %}?{{ request.GET.urlencode }}"></div>
-    <div class="absolute left-4 bottom-4 flex items-center gap-4 text-[11.5px] text-white/80 bg-black/25 rounded-lg px-3 py-2 backdrop-blur-sm">
-      <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-brand-marigold inline-block"></span>delivering</span>
-      <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full inline-block" style="background:#a9b3e8"></span>on the bench</span>
-      <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full border inline-block" style="border-color:#a9b3e8"></span>country only</span>
-    </div>
-  </div>
+      <form method="get" class="px-4 py-3 border-b border-gray-100">
+        <input type="hidden" name="segment" value="{{ selected.segment }}">
+        {% for value in selected.countries %}<input type="hidden" name="country" value="{{ value }}">{% endfor %}
+        {% for value in selected.sectors %}<input type="hidden" name="sector" value="{{ value }}">{% endfor %}
+        {% for value in selected.applied %}<input type="hidden" name="applied" value="{{ value }}">{% endfor %}
+        <div class="flex items-center gap-2 bg-white border border-brand-border-light rounded-lg px-2.5 h-9">
+          <i class="fa-solid fa-magnifying-glass text-gray-400 text-xs"></i>
+          <input type="search" name="q" value="{{ selected.q }}" placeholder="Search"
+                 class="w-full border-0 p-0 text-[13px] focus:ring-0 placeholder:text-gray-400">
+        </div>
+      </form>
 
-  <div class="flex flex-col gap-2.5">
-    {% for row in listed %}
-      <div class="bg-white border border-brand-border-light rounded-lg px-[18px] py-4 grid grid-cols-1 lg:grid-cols-[2.5fr_1.5fr_0.7fr_1.9fr] gap-4 items-center hover:shadow-sm transition">
-
-        <div class="flex items-center gap-3">
-          <span class="w-9 h-9 rounded-lg inline-flex items-center justify-center text-xs font-semibold shrink-0
-                       {% if row.delivering %}bg-green-100 text-green-800{% else %}bg-indigo-50 text-brand-indigo{% endif %}">
-            {{ row.org.name|slice:":2"|upper }}
-          </span>
-          <div class="flex flex-col gap-0.5 min-w-0">
-            <a href="{% url 'marketplace:organisation' row.org.slug %}" class="text-sm font-medium text-brand-deep-purple hover:text-brand-indigo truncate">{{ row.org.name }}</a>
-            <span class="text-[11.5px] text-gray-400 truncate">{% if row.profile %}{{ row.profile.sectors|join:", "|default:"—" }}{% endif %}</span>
+      {% for section in rail %}
+        <div class="px-4 py-3.5 {% if not forloop.last %}border-b border-gray-100{% endif %}">
+          <div class="text-[11px] font-semibold text-gray-500 tracking-wider mb-2.5">{{ section.title|upper }}</div>
+          <div class="flex flex-col gap-0.5 {% if section.rows|length > 8 %}max-h-64 overflow-y-auto pr-1{% endif %}">
+            {% for row in section.rows %}
+              <a href="{{ row.url }}"
+                 class="flex items-center gap-2.5 text-[13px] px-1.5 -mx-1.5 py-1 rounded-md transition
+                        {% if row.selected %}bg-indigo-50 text-brand-deep-purple font-medium{% else %}text-gray-700 hover:bg-gray-50{% endif %}">
+                <span class="w-[15px] h-[15px] rounded border inline-flex items-center justify-center text-[9px] shrink-0
+                             {% if row.selected %}bg-brand-indigo border-brand-indigo text-white{% else %}bg-white border-brand-border-light text-transparent{% endif %}">
+                  {% if row.selected %}<i class="fa-solid fa-check"></i>{% endif %}
+                </span>
+                <span class="flex-grow truncate" title="{{ row.label }}">{{ row.label }}</span>
+                <span class="text-xs text-gray-400 tabular-nums shrink-0">{{ row.count }}</span>
+              </a>
+            {% empty %}
+              <div class="text-xs text-gray-400">Nothing to filter on here.</div>
+            {% endfor %}
           </div>
         </div>
+      {% endfor %}
+    </div>
 
-        <div class="flex flex-col gap-0.5 min-w-0">
-          <span class="text-[12.5px] text-gray-600 truncate">{% if row.profile %}{{ row.profile.countries|join:", "|default:"—" }}{% endif %}</span>
-          {% if row.org.contact_count %}
-            <span class="text-[11.5px] text-gray-400">{{ row.org.contact_count }} contact{{ row.org.contact_count|pluralize }}</span>
-          {% else %}
-            <span class="text-[11.5px] text-brand-sunset font-medium">no contact on file</span>
-          {% endif %}
+    <div>
+      <div class="flex items-center gap-3 mb-3 flex-wrap">
+        <span class="text-[13px] text-gray-500"><span class="font-semibold text-gray-900">{{ shown }}</span> shown</span>
+        {% if why %}<span class="text-[12.5px] text-gray-500">· {{ why }}</span>{% endif %}
+      </div>
+
+      {% if unreadable %}
+        <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-900 mb-4">
+          <strong>{{ unreadable|length }} round{{ unreadable|length|pluralize }} could not be read.</strong>
+          Their applications are missing from every organisation below — this is not the
+          same as those rounds having had no applicants.
+          <div class="mt-1 text-amber-800">
+            {% for r in unreadable %}{{ r.title }} ({{ r.get_sa_access_state_display }}){% if not forloop.last %} · {% endif %}{% endfor %}
+          </div>
         </div>
+      {% endif %}
 
-        <div class="text-right">
-          <div class="text-[15px] font-semibold text-gray-900 tabular-nums">{% if row.profile.flws_managed %}{{ row.profile.flws_managed }}{% else %}<span class="text-gray-300">—</span>{% endif %}</div>
-          <div class="text-[10.5px] text-gray-400 tracking-wide">FLWS</div>
-        </div>
-
-        <div class="flex items-center gap-1.5 justify-start lg:justify-end flex-wrap">
-          {% for r in row.rounds %}
-            <a href="{% url 'marketplace:round' r.slug %}"
-               class="text-[11px] font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-indigo-50 hover:text-brand-indigo whitespace-nowrap">{{ r.title }}</a>
-          {% endfor %}
-          {% if row.delivering %}
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-green-100 text-green-800 whitespace-nowrap">
-              <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>delivering
-            </span>
-          {% else %}
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-amber-50 text-amber-800 whitespace-nowrap">bench</span>
-          {% endif %}
+      <div class="rounded-lg overflow-hidden border border-brand-border-light mb-4 relative bg-brand-deep-purple" style="height: 320px;">
+        <div id="mk-globe" class="w-full h-full"
+             data-points-url="{% url 'marketplace:network_points' %}?{{ request.GET.urlencode }}"></div>
+        <div class="absolute left-4 bottom-4 flex items-center gap-4 text-[11.5px] text-white/80 bg-black/25 rounded-lg px-3 py-2 backdrop-blur-sm">
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-brand-marigold inline-block"></span>delivering</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full inline-block" style="background:#a9b3e8"></span>on the bench</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full border inline-block" style="border-color:#a9b3e8"></span>country only</span>
         </div>
       </div>
-    {% empty %}
-      <div class="bg-white border border-brand-border-light rounded-lg px-6 py-14 text-center text-sm text-gray-500">
-        No organisations match those filters.
+
+      <div class="flex flex-col gap-2.5">
+        {% for row in listed %}
+          <div class="bg-white border border-brand-border-light rounded-lg px-[18px] py-4 grid grid-cols-1 lg:grid-cols-[2.5fr_1.5fr_0.7fr_1.9fr] gap-4 items-center hover:shadow-sm transition">
+
+            <div class="flex items-center gap-3 min-w-0">
+              <span class="w-9 h-9 rounded-lg inline-flex items-center justify-center text-xs font-semibold shrink-0
+                           {% if row.delivering %}bg-green-100 text-green-800{% else %}bg-indigo-50 text-brand-indigo{% endif %}">
+                {{ row.org.name|slice:":2"|upper }}
+              </span>
+              <div class="flex flex-col gap-0.5 min-w-0">
+                <a href="{% url 'marketplace:organisation' row.org.slug %}" class="text-sm font-medium text-brand-deep-purple hover:text-brand-indigo truncate">{{ row.org.name }}</a>
+                <span class="text-[11.5px] text-gray-400 truncate">{% if row.profile %}{{ row.profile.sectors|join:", "|default:"—" }}{% endif %}</span>
+              </div>
+            </div>
+
+            <div class="flex flex-col gap-0.5 min-w-0">
+              <span class="text-[12.5px] text-gray-600 truncate">{% if row.profile %}{{ row.profile.countries|join:", "|default:"—" }}{% endif %}</span>
+              {% if row.org.contact_count %}
+                <span class="text-[11.5px] text-gray-400">{{ row.org.contact_count }} contact{{ row.org.contact_count|pluralize }}</span>
+              {% else %}
+                <span class="text-[11.5px] text-brand-sunset font-medium">no contact on file</span>
+              {% endif %}
+            </div>
+
+            <div class="text-right">
+              <div class="text-[15px] font-semibold text-gray-900 tabular-nums">{% if row.profile.flws_managed %}{{ row.profile.flws_managed }}{% else %}<span class="text-gray-300">—</span>{% endif %}</div>
+              <div class="text-[10.5px] text-gray-400 tracking-wide">FLWS</div>
+            </div>
+
+            <div class="flex items-center gap-1.5 justify-start lg:justify-end flex-wrap">
+              {% for r in row.rounds %}
+                <a href="{% url 'marketplace:round' r.slug %}"
+                   class="text-[11px] font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-indigo-50 hover:text-brand-indigo whitespace-nowrap">{{ r.title }}</a>
+              {% endfor %}
+              {% if row.delivering %}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-green-100 text-green-800 whitespace-nowrap">
+                  <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>delivering
+                </span>
+              {% else %}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-amber-50 text-amber-800 whitespace-nowrap">bench</span>
+              {% endif %}
+            </div>
+          </div>
+        {% empty %}
+          <div class="bg-white border border-brand-border-light rounded-lg px-6 py-14 text-center text-sm text-gray-500">
+            No organisations match those filters.
+          </div>
+        {% endfor %}
       </div>
-    {% endfor %}
+    </div>
   </div>
 </div>
 {% endblock %}
