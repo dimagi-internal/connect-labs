@@ -816,3 +816,25 @@ def test_run_history_keeps_one_point_per_period_and_the_latest_wins():
     out = _run_history(_WDA(), 1, "snapshot")
     assert [r["date"] for r in out] == ["2026-01-31", "2026-02-28"], "a period contributed more than one point"
     assert out[0]["byOpp"]["C"][500]["C15"]["value"] == 69.2, "the superseded run won"
+
+
+def test_cohort_create_can_switch_off_the_complete_series_rule(monkeypatch):
+    """R6 is the difference between a trend and no trend for a cohort whose
+    members joined at different times — it kept 5 of 12 on the live KMC
+    cohort — so it has to be settable at creation. There is no update tool, so
+    a cohort created without it is stuck with it."""
+    from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_create
+
+    _grant(monkeypatch, organizations=("my-org",))
+    user = _user()
+
+    relaxed = benchmarks_cohort_create(
+        user=user, name="relaxed", organization_id="my-org", require_complete_series=False
+    )
+    assert relaxed["require_complete_series"] is False
+    assert BenchmarkCohort.objects.get(pk=relaxed["id"]).require_complete_series is False
+
+    # The same caller, same call, without the argument: the safe rule stays on.
+    default = benchmarks_cohort_create(user=user, name="default", organization_id="my-org")
+    assert default["require_complete_series"] is True
+    assert BenchmarkCohort.objects.get(pk=default["id"]).require_complete_series is True
