@@ -39,16 +39,20 @@ def normalise(name: str) -> str:
 def match_submission(submission, *, by_email: dict, by_name: dict, human: dict | None = None):
     """(org, state, basis) for one submission. `org` is None when unmatched.
 
-    `human` maps "<round slug>:<row>" to an org, carrying a verdict a person
-    already reached; it outranks every inference, exactly as the curated slug
-    mapping outranks the name matcher in pulse.
+    `human` maps "<round slug>:<row>" to (org | None, verdict, why), carrying a
+    decision a person already reached. It outranks every inference, exactly as
+    the curated slug mapping outranks the name matcher in pulse — including the
+    verdict that a submission is not an organisation at all.
     """
     from connect_labs.solicitations.local_models import SolicitationResponse
 
     key = f"{getattr(submission, 'round_slug', '')}:{submission.source_row}"
     if human and key in human:
-        org, why = human[key]
-        return org, SolicitationResponse.MATCH_HUMAN, why
+        from connect_labs.marketplace.directory import VERDICT_NOT_LLO
+
+        org, verdict, why = human[key]
+        state = SolicitationResponse.MATCH_NOT_LLO if verdict == VERDICT_NOT_LLO else SolicitationResponse.MATCH_HUMAN
+        return org, state, why
 
     for email in submission.emails:
         org = by_email.get(email.lower())

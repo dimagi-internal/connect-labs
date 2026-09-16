@@ -142,11 +142,16 @@ class SolicitationResponse(models.Model):
     MATCH_EMAIL = "email"
     MATCH_NAME = "name"
     MATCH_HUMAN = "human"
+    # Not an absence but a decision: some submissions are not organisations at
+    # all, and without a way to say so they sit in the review queue for ever,
+    # indistinguishable from work nobody has got to yet.
+    MATCH_NOT_LLO = "not_an_llo"
     MATCH_STATES = [
         (MATCH_UNMATCHED, "not matched"),
         (MATCH_EMAIL, "matched on a contact email"),
         (MATCH_NAME, "matched on organisation name"),
         (MATCH_HUMAN, "attributed by a person"),
+        (MATCH_NOT_LLO, "not an organisation — dismissed by a person"),
     ]
     match_state = models.CharField(max_length=12, choices=MATCH_STATES, default=MATCH_UNMATCHED)
     match_basis = models.TextField(blank=True, default="")
