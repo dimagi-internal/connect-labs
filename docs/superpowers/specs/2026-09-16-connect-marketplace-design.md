@@ -287,6 +287,46 @@ another organisation's record.
 `match_basis` is required on every non-exact link. An attribution without a
 stated reason is a guess that someone will later trust.
 
+## Data quality is a deliverable, not a side effect
+
+The directory is maintained by hand, over years, by several people, and nobody
+is fully confident in it. That is a stated condition of the project rather than
+a defect to be discovered later, and it has a consequence: **an importer that
+silently coerces bad input is actively harmful here.** `"50+"` quietly becoming
+`None`, a contact row with no email quietly vanishing, two rows for one
+organisation differing only in whitespace — each is a fact about the sheet that
+the sheet itself should learn, and each is invisible if the importer's only
+output is a success count.
+
+So every import produces a **data-quality report**: not a log line, but an
+enumerated list of what could not be read cleanly, addressed to the people who
+maintain the sheet.
+
+At minimum it names:
+
+- a number column that did not parse (`"50+"`, `"approx 200"`, `"circa 2010"`)
+- a contact row with no email address, or with an address that is not one
+- a contact pointing at an organisation with no row on the Organizations tab
+- an organisation whose country cell does not resolve to a country
+- two organisation rows whose names differ only by case, whitespace or accent
+- an organisation with no contact at all, and one with no country
+- a slug attribution refused for want of a stated reason
+
+Each finding carries its **row number**, so it is actionable rather than merely
+true.
+
+The report is printed by the import and — because the sheet is where the people
+who can fix these actually work — is also written back to a dedicated
+`Labs Findings` tab, which labs owns entirely and rewrites each run. That tab is
+the one exception to labs' otherwise narrow write surface, and it is safe
+precisely because labs owns every row in it: it never edits a cell a person
+wrote.
+
+Clarity improvements to the directory's own structure (clearer headers, split
+columns, explicit links) are in scope and welcome. The constraint is unchanged:
+labs writes only what labs owns, and a person's cell is never overwritten by an
+import.
+
 ## Pulse becomes a view
 
 `PulsePartner` and `PulsePartnerAlias` are removed; their data moves to
@@ -313,7 +353,9 @@ that day) and the preference for server-assigned `sync_ts` over handset
 `field_ts`. They are load-bearing and tested; they stay exactly as they are.
 
 This is the riskiest step in the project and it ships on its own, with the
-existing pulse tests green, before anything is built on top of it.
+existing pulse tests green, before anything is built on top of it. Those tests
+change only in how they seed a partner, never in what they assert — see
+Testing.
 
 ## Directory UI
 
@@ -367,8 +409,15 @@ that a non-exact match without a mapping row stays unmatched.
   one that matters — a near-miss that stays **unmatched**.
 - Access: an unreadable sheet fails the run and names itself; `--check-access`
   writes the verdict back.
-- Pulse: existing tests stay green through the collapse, unmodified. If a pulse
-  test needs editing to pass, the collapse is wrong.
+- Pulse: three test modules construct `PulsePartner` rows directly
+  (`test_partner_names`, `test_network_view`, `test_org_drilldown`), so their
+  **seeding lines must change** — they are replaced by one shared helper that
+  builds a `LabsOrg` + `OrgProfile` from the same arguments.
+
+  **No pulse test assertion may change.** That is the real safety property: the
+  collapse moves where partner identity is stored and must not alter a single
+  thing pulse concludes from it. If an assertion has to be edited to go green,
+  the collapse is wrong and the rewrite is hiding a behaviour change.
 - Fixtures are synthetic. No real organisation names, contacts, emails or
   submissions in test data.
 
