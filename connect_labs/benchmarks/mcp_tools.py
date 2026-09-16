@@ -150,6 +150,7 @@ def _serialize_cohort(cohort: BenchmarkCohort) -> dict[str, Any]:
         "description": cohort.description,
         "auto_publish_on_completion": cohort.auto_publish_on_completion,
         "min_peers": cohort.min_peers,
+        "require_complete_series": cohort.require_complete_series,
         "min_denominator": cohort.min_denominator,
         "opportunity_ids": sorted(cohort.opportunity_ids),
     }
@@ -188,6 +189,19 @@ def _serialize_cohort(cohort: BenchmarkCohort) -> dict[str, Any]:
                 "default": 25,
                 "description": "Disclosure floor: minimum denominator required to publish a rate.",
             },
+            "require_complete_series": {
+                "type": "boolean",
+                "default": True,
+                "description": (
+                    "R6. True (default) publishes a trend only for peers present in EVERY period of "
+                    "the window, so no line starts late, ends early or has a hole. That is the safer "
+                    "rule and it is also what leaves a cohort whose members joined at different times "
+                    "with almost no trend at all -- on the 12-opportunity KMC cohort it kept 5. Set "
+                    "False to let a peer with fewer reports contribute the reports it has. Safe only "
+                    "because a period is an opportunity's own Nth report, so an incomplete line says "
+                    "'fewer reports', never a date. R1 and R5 still apply."
+                ),
+            },
         },
         "required": ["name", "organization_id"],
         "additionalProperties": False,
@@ -202,6 +216,7 @@ def benchmarks_cohort_create(
     description: str = "",
     min_peers: int = 5,
     min_denominator: int = 25,
+    require_complete_series: bool = True,
 ) -> dict[str, Any]:
     if min_peers < MIN_PEERS_FLOOR:
         raise MCPToolError(
@@ -212,6 +227,7 @@ def benchmarks_cohort_create(
     _require_organization_access(user, organization_id, "you are creating this cohort under")
     cohort = BenchmarkCohort.objects.create(
         name=name,
+        require_complete_series=require_complete_series,
         organization_id=organization_id,
         description=description,
         min_peers=min_peers,
