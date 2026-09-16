@@ -25,7 +25,7 @@ from django.views.generic import TemplateView
 from connect_labs.audit.data_access import AuditDataAccess
 from connect_labs.flags.data_access import FlagsDataAccess
 from connect_labs.labs import s3_export
-from connect_labs.labs.analysis.sse_streaming import BaseSSEStreamView
+from connect_labs.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, BaseSSEStreamView
 from connect_labs.labs.context import get_org_data
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 from connect_labs.labs.presentation import is_present_mode
@@ -2208,6 +2208,134 @@ def preview_snapshot_api(request, run_id):
             data_access.close()
 
 
+class PipelineRowsError(Exception):
+    """A pipeline-rows request that cannot be served, with the status the caller owes.
+
+    Both transports (`pipeline_rows_api`, `PipelineRowsStreamView`) resolve a request
+    through the same helpers below, so a validation rule cannot hold on one and not
+    the other. Raising rather than returning is what lets the streaming view report
+    the same failure as an SSE `error` event instead of a JSON body it cannot send
+    once the stream has opened.
+    """
+
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.message = message
+        self.status = status
+
+
+def _parse_pipeline_rows_params(request) -> dict:
+    """The query contract for both pipeline-rows transports.
+
+    Split out of `pipeline_rows_api` when the streaming variant arrived: two copies
+    of "at most 200 case_ids" is how the stream comes to accept what the JSON
+    endpoint rejects.
+    """
+    alias = (request.GET.get("alias") or "").strip()
+    opportunity_id = _coerce_int(request.GET.get("rows_opportunity_id")) or _coerce_int(
+        request.GET.get("opportunity_id")
+    )
+    # The scope the RECORDS (workflow, pipeline) are read in, as distinct from the
+    # opportunity whose rows are wanted. They coincide for a single-opp caller and
+    # diverge on a multi-opp drill.
+    scope_opportunity_id = _coerce_int(request.GET.get("opportunity_id")) or opportunity_id
+    if not alias or not opportunity_id:
+        raise PipelineRowsError("alias and opportunity_id are required")
+    case_ids = {c.strip() for c in (request.GET.get("case_ids") or "").split(",") if c.strip()}
+    if len(case_ids) > MAX_ROWS_CASE_IDS:
+        raise PipelineRowsError(f"at most {MAX_ROWS_CASE_IDS} case_ids")
+    try:
+        limit = min(int(request.GET.get("limit") or MAX_ROWS_DEFAULT_LIMIT), MAX_ROWS_HARD_LIMIT)
+    except ValueError:
+        raise PipelineRowsError("limit must be a number") from None
+    return {
+        "alias": alias,
+        "opportunity_id": opportunity_id,
+        "scope_opportunity_id": scope_opportunity_id,
+        "username": (request.GET.get("username") or "").strip(),
+        "case_ids": case_ids,
+        "limit": limit,
+    }
+
+
+def _resolve_pipeline_rows_pipeline(request, definition_id: int, params: dict, wf_access, pipeline_access_box: list):
+    """Resolve (definition → alias → pipeline record → config) for a pipeline-rows read.
+
+    Returns `(pipeline_id, config)` and appends the opened `PipelineDataAccess` to
+    `pipeline_access_box` so the caller can close it in its own `finally` — the
+    streaming view cannot use a `with` here because the access has to outlive this
+    call and stay open for the whole stream.
+    """
+    alias = params["alias"]
+    opportunity_id = params["opportunity_id"]
+    definition = wf_access.get_definition(definition_id)
+    if not definition:
+        raise PipelineRowsError("Workflow not found", status=404)
+    spanned = [int(o) for o in (definition.opportunity_ids or [])] or [opportunity_id]
+    if opportunity_id not in spanned:
+        # The workflow's own opportunities are the only ones it may read.
+        raise PipelineRowsError(f"workflow {definition_id} does not span opportunity {opportunity_id}", status=403)
+    source = next((s for s in (definition.pipeline_sources or []) if s.get("alias") == alias), None)
+    if not source or not source.get("pipeline_id"):
+        raise PipelineRowsError(f"no pipeline source with alias {alias!r}", status=404)
+
+    pipeline_id = int(source["pipeline_id"])
+    # Scoped to the WORKFLOW, not to the rows. A pipeline record lives with the
+    # workflow that references it (unless its source names a `home_scope`), and
+    # `PipelineDataAccess` already splits the two: the client's own scope governs
+    # the record read in `get_definition`, while `execute_pipeline` and
+    # `get_cached_pipeline_result` take the data opportunity as an explicit
+    # argument below. Building the client from the rows opp sent the record read
+    # into an opportunity that does not own it -- "pipeline 19776 not found",
+    # from a request that had already found the workflow.
+    pipeline_access = PipelineDataAccess(
+        request=request,
+        access_token=(request.session.get("labs_oauth", {}) or {}).get("access_token"),
+        opportunity_id=params["scope_opportunity_id"],
+    )
+    pipeline_access_box.append(pipeline_access)
+    # A referenced pipeline is read where it lives (its source's home_scope).
+    pipeline_access.use_sources(definition.pipeline_sources)
+    pdef = pipeline_access.get_definition(pipeline_id)
+    if not pdef or not pdef.schema:
+        raise PipelineRowsError(f"pipeline {pipeline_id} not found", status=404)
+    return pipeline_id, pipeline_access._schema_to_config(pdef.schema, pipeline_id)
+
+
+def _filter_pipeline_rows(rows, params: dict) -> list:
+    """Apply the request's worker/case/limit filters, tagging each row with its opp.
+
+    Shared so the streaming transport cannot return a different set of rows from the
+    JSON one for the same query — the whole point of the stream is that it is the
+    same answer with progress in front of it.
+    """
+    username = params["username"]
+    case_ids = params["case_ids"]
+    limit = params["limit"]
+    opportunity_id = params["opportunity_id"]
+    out = []
+    for row in rows or []:
+        if username and (row.get("username") or "") != username:
+            continue
+        if case_ids and str(row.get("baby_case_id") or row.get("entity_id") or "") not in case_ids:
+            continue
+        out.append({**row, "opportunity_id": opportunity_id})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _pipeline_rows_metadata(params: dict, pipeline_id: int, rows: list, from_cache: bool) -> dict:
+    return {
+        "alias": params["alias"],
+        "pipeline_id": pipeline_id,
+        "opportunity_id": params["opportunity_id"],
+        "row_count": len(rows),
+        "from_cache": from_cache,
+        "truncated": len(rows) >= params["limit"],
+    }
+
+
 @login_required
 @require_GET
 def pipeline_rows_api(request, definition_id):
@@ -2236,63 +2364,24 @@ def pipeline_rows_api(request, definition_id):
     the endpoint answered "Workflow not found" from a correct-looking URL.
     `rows_opportunity_id` falls back to `opportunity_id`, so a single-opp caller
     (where the two genuinely coincide) is unchanged.
+
+    This transport answers in ONE shot and says nothing until it is done. When the
+    visit cache is cold that silence is the whole user experience: measured live on
+    2026-09-16, three of these ran 38.7s, 61.3s and 50.7s for one KMC worker while
+    the page showed a static "Loading cases..." and the demo was abandoned as
+    broken. `PipelineRowsStreamView` below is the same answer with the fetch's own
+    progress in front of it; prefer it for anything a person watches.
     """
-    alias = (request.GET.get("alias") or "").strip()
-    opportunity_id = _coerce_int(request.GET.get("rows_opportunity_id")) or _coerce_int(
-        request.GET.get("opportunity_id")
-    )
-    # The scope the RECORDS (workflow, pipeline) are read in, as distinct from the
-    # opportunity whose rows are wanted. They coincide for a single-opp caller and
-    # diverge on a multi-opp drill.
-    scope_opportunity_id = _coerce_int(request.GET.get("opportunity_id")) or opportunity_id
-    if not alias or not opportunity_id:
-        return JsonResponse({"error": "alias and opportunity_id are required"}, status=400)
-    username = (request.GET.get("username") or "").strip()
-    case_ids = {c.strip() for c in (request.GET.get("case_ids") or "").split(",") if c.strip()}
-    if len(case_ids) > MAX_ROWS_CASE_IDS:
-        return JsonResponse({"error": f"at most {MAX_ROWS_CASE_IDS} case_ids"}, status=400)
-    try:
-        limit = min(int(request.GET.get("limit") or MAX_ROWS_DEFAULT_LIMIT), MAX_ROWS_HARD_LIMIT)
-    except ValueError:
-        return JsonResponse({"error": "limit must be a number"}, status=400)
-
     wf_access = None
-    pipeline_access = None
+    pipeline_access_box: list = []
     try:
+        params = _parse_pipeline_rows_params(request)
         wf_access = WorkflowDataAccess(request=request)
-        definition = wf_access.get_definition(definition_id)
-        if not definition:
-            return JsonResponse({"error": "Workflow not found"}, status=404)
-        spanned = [int(o) for o in (definition.opportunity_ids or [])] or [opportunity_id]
-        if opportunity_id not in spanned:
-            # The workflow's own opportunities are the only ones it may read.
-            return JsonResponse(
-                {"error": f"workflow {definition_id} does not span opportunity {opportunity_id}"}, status=403
-            )
-        source = next((s for s in (definition.pipeline_sources or []) if s.get("alias") == alias), None)
-        if not source or not source.get("pipeline_id"):
-            return JsonResponse({"error": f"no pipeline source with alias {alias!r}"}, status=404)
-
-        pipeline_id = int(source["pipeline_id"])
-        # Scoped to the WORKFLOW, not to the rows. A pipeline record lives with the
-        # workflow that references it (unless its source names a `home_scope`), and
-        # `PipelineDataAccess` already splits the two: the client's own scope governs
-        # the record read in `get_definition`, while `execute_pipeline` and
-        # `get_cached_pipeline_result` take the data opportunity as an explicit
-        # argument below. Building the client from the rows opp sent the record read
-        # into an opportunity that does not own it -- "pipeline 19776 not found",
-        # from a request that had already found the workflow.
-        pipeline_access = PipelineDataAccess(
-            request=request,
-            access_token=(request.session.get("labs_oauth", {}) or {}).get("access_token"),
-            opportunity_id=scope_opportunity_id,
+        pipeline_id, config = _resolve_pipeline_rows_pipeline(
+            request, definition_id, params, wf_access, pipeline_access_box
         )
-        # A referenced pipeline is read where it lives (its source's home_scope).
-        pipeline_access.use_sources(definition.pipeline_sources)
-        pdef = pipeline_access.get_definition(pipeline_id)
-        if not pdef or not pdef.schema:
-            return JsonResponse({"error": f"pipeline {pipeline_id} not found"}, status=404)
-        config = pipeline_access._schema_to_config(pdef.schema, pipeline_id)
+        pipeline_access = pipeline_access_box[0]
+        opportunity_id = params["opportunity_id"]
 
         cached = pipeline_access.get_cached_pipeline_result(pipeline_id, opportunity_id, config=config)
         from_cache = cached is not None
@@ -2301,36 +2390,97 @@ def pipeline_rows_api(request, definition_id):
             if (cached.get("metadata") or {}).get("error"):
                 return JsonResponse({"error": cached["metadata"]["error"]}, status=502)
 
-        rows = []
-        for row in cached.get("rows", []):
-            if username and (row.get("username") or "") != username:
-                continue
-            if case_ids and str(row.get("baby_case_id") or row.get("entity_id") or "") not in case_ids:
-                continue
-            rows.append({**row, "opportunity_id": opportunity_id})
-            if len(rows) >= limit:
-                break
-        return JsonResponse(
-            {
-                "rows": rows,
-                "metadata": {
-                    "alias": alias,
-                    "pipeline_id": pipeline_id,
-                    "opportunity_id": opportunity_id,
-                    "row_count": len(rows),
-                    "from_cache": from_cache,
-                    "truncated": len(rows) >= limit,
-                },
-            }
-        )
+        rows = _filter_pipeline_rows(cached.get("rows", []), params)
+        return JsonResponse({"rows": rows, "metadata": _pipeline_rows_metadata(params, pipeline_id, rows, from_cache)})
+    except PipelineRowsError as exc:
+        return JsonResponse({"error": exc.message}, status=exc.status)
     except Exception:
-        logger.exception("Failed to read pipeline rows for definition %s alias %s", definition_id, alias)
+        logger.exception("Failed to read pipeline rows for definition %s", definition_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
     finally:
-        if pipeline_access:
-            pipeline_access.close()
+        for access in pipeline_access_box:
+            access.close()
         if wf_access:
             wf_access.close()
+
+
+class PipelineRowsStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
+    """`pipeline_rows_api`'s answer, with the fetch's own progress in front of it.
+
+    WHY THIS EXISTS
+
+    The framework already knew how to report a cold fetch: `AnalysisPipelineSSEMixin`
+    turns every page of the paginated Connect read into `Fetching visits: 3,200 /
+    8,900 rows (36%)`, and the runner paints it. But that progress rode the SAME SSE
+    stream as the rows, so a page that opted out of the payload
+    (`config.noPipelineStream`, added because streaming twelve opportunities' rows
+    was ~30 MB) silently opted out of the progress too. What replaced it --
+    `pipeline_rows_api` -- is a plain JSON view: one fetch, pending or resolved,
+    nothing to subscribe to.
+
+    So progress was coupled to bulk data delivery by accident of transport, and the
+    cost was paid by a person watching a blank table. This decouples them: the
+    events are the mixin's, unchanged; only the final payload is different, carrying
+    the SERVER-FILTERED rows (one worker's cases, one case's weighings) rather than
+    the cohort. Progress without the 30 MB.
+
+    The contract is `pipeline_rows_api`'s, resolved through the same helpers, so the
+    two transports cannot answer the same query differently. The last event is
+    either `{"data": {"rows": [...], "metadata": {...}}}` or `{"error": "..."}`.
+    Clients that cannot use EventSource can keep calling the JSON view; it is
+    unchanged, and `kmc_flw_review_render.js` falls back to it.
+    """
+
+    def stream_data(self, request):
+        from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+        from connect_labs.labs.analysis.sse_streaming import send_sse_event
+
+        definition_id = self.kwargs.get("definition_id")
+        wf_access = None
+        pipeline_access_box: list = []
+        try:
+            params = _parse_pipeline_rows_params(request)
+            yield send_sse_event(f"Loading the {params['alias']} pipeline...")
+            wf_access = WorkflowDataAccess(request=request)
+            pipeline_id, config = _resolve_pipeline_rows_pipeline(
+                request, definition_id, params, wf_access, pipeline_access_box
+            )
+            opportunity_id = params["opportunity_id"]
+
+            # `stream_analysis` checks the processed cache first and yields its
+            # result immediately on a hit, so a warm read still returns in one
+            # round trip -- the progress events only appear when there is
+            # genuinely something to wait for.
+            pipeline = AnalysisPipeline(request)
+            pipeline_stream = pipeline.stream_analysis(config, opportunity_id=opportunity_id)
+            yield from self.stream_pipeline_events(pipeline_stream, raise_on_error=True)
+
+            result = self._pipeline_result
+            if result is None:
+                yield send_sse_event("Error", error="the pipeline produced no result")
+                return
+            rows = _filter_pipeline_rows(getattr(result, "rows", None), params)
+            yield send_sse_event(
+                "Complete",
+                data={
+                    "rows": rows,
+                    "metadata": _pipeline_rows_metadata(params, pipeline_id, rows, self._pipeline_from_cache),
+                },
+            )
+        except PipelineRowsError as exc:
+            # The stream is already open, so the status code has nowhere to go --
+            # it travels in the event instead, and the client maps it back.
+            yield send_sse_event("Error", error=exc.message, data={"status": exc.status})
+        except Exception as exc:
+            logger.exception("Failed to stream pipeline rows for definition %s", definition_id)
+            # The class name is diagnostic and leaks nothing about the data; a bare
+            # "an internal error occurred" on a five-stage chain names no stage.
+            yield send_sse_event("Error", error=f"{type(exc).__name__}: {exc}")
+        finally:
+            for access in pipeline_access_box:
+                access.close()
+            if wf_access:
+                wf_access.close()
 
 
 @login_required
