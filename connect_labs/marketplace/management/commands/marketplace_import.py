@@ -30,7 +30,7 @@ from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import directory, eoi
 from connect_labs.marketplace.identity import ensure_org
 from connect_labs.marketplace.models import OrgConnectSlug, OrgContact, OrgProfile
-from connect_labs.marketplace.quality import audit
+from connect_labs.marketplace.quality import audit, findings_tab_rows
 from connect_labs.pulse.hq_location import resolve as resolve_hq
 
 PROFILE_FIELDS = (
@@ -165,14 +165,15 @@ class Command(BaseCommand):
         findings = audit(org_rows, contact_rows, orgs, contacts, skipped)
         if not findings:
             self.stdout.write(self.style.SUCCESS("no data-quality findings"))
-            return findings
+            return findings, ""
         self.stdout.write(self.style.WARNING(f"\n{len(findings)} data-quality findings:"))
         by_kind: dict[str, int] = {}
         for finding in findings:
             by_kind[finding.kind] = by_kind.get(finding.kind, 0) + 1
             self.stdout.write(f"  {finding}")
-        self.stdout.write("  " + ", ".join(f"{n} {kind}" for kind, n in sorted(by_kind.items())))
-        return findings
+        counts = ", ".join(f"{n} {kind}" for kind, n in sorted(by_kind.items()))
+        self.stdout.write("  " + counts)
+        return findings, counts
 
     help = "Import the organisation registry from the LLO Directory"
 
@@ -225,13 +226,25 @@ class Command(BaseCommand):
         except ValueError as exc:
             raise CommandError(str(exc)) from exc
 
-        self._report_findings(
+        findings, counts = self._report_findings(
             org_rows,
             contact_rows,
             directory.parse_organizations(org_rows),
             directory.parse_contacts(contact_rows),
             stats["skipped"],
         )
+        # To the sheet as well as to the log: the people who can fix these work
+        # in the spreadsheet, and a findings list that only reaches CloudWatch
+        # is one nobody who maintains the directory will ever read.
+        try:
+            directory.write_tab(
+                sid,
+                directory.FINDINGS_TAB,
+                findings_tab_rows(findings, when=timezone.now().strftime("%Y-%m-%d %H:%M UTC"), counts_line=counts),
+            )
+            self.stdout.write(f"  findings published to the '{directory.FINDINGS_TAB}' tab")
+        except Exception as exc:  # noqa: BLE001 — never fail an import over its own report
+            self.stdout.write(self.style.WARNING(f"  could not publish findings: {exc}"))
         located = ", ".join(f"{n} {tier}" for tier, n in stats["located"].items())
         self.stdout.write(
             self.style.SUCCESS(
@@ -256,7 +269,7 @@ class Command(BaseCommand):
         stats = eoi.upsert_rounds(rounds)
         self.stdout.write(self.style.SUCCESS(f"{stats['rounds']} rounds"))
 
-        results = eoi.check_access(directory.read_tab)
+        results = eoi.check_access(directory.read_tab, write_back_to=rounds, spreadsheet_id=sid)
         readable = [r for r in results if r["state"] == "ok"]
         for result in results:
             if result["state"] != "ok":
@@ -266,11 +279,24 @@ class Command(BaseCommand):
         if not opts["eoi"]:
             return
 
+        # Verdicts a person already reached, which outrank every inference.
+        known = {o.name for o in directory.parse_organizations(directory.read_tab(sid, directory.ORGANIZATIONS_TAB))}
+        try:
+            verdict_rows = directory.read_tab(sid, directory.RESPONSE_MAPPING_TAB)
+        except Exception:  # noqa: BLE001 — the tab is optional until someone needs it
+            verdict_rows = []
+            self.stdout.write(f"  (no {directory.RESPONSE_MAPPING_TAB} tab yet — nothing to apply)")
+        verdicts, verdict_skips = directory.parse_response_mapping(verdict_rows, known)
+        for line in verdict_skips:
+            self.stdout.write(self.style.WARNING(f"  verdict refused: {line}"))
+        if verdicts:
+            self.stdout.write(f"  {len(verdicts)} human verdicts to apply")
+
         totals = {"submissions": 0, "matched": 0, "unmatched": 0}
         for result in readable:
             round_ = eoi.Solicitation.objects.get(slug=result["slug"])
             rows = directory.read_tab(round_.response_spreadsheet_id, round_.response_tab or "Form Responses 1")
-            got = eoi.ingest_round(round_, rows)
+            got = eoi.ingest_round(round_, rows, human_verdicts=verdicts)
             for key in totals:
                 totals[key] += got[key]
             self.stdout.write(

@@ -5,7 +5,13 @@ from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace.directory import parse_rounds
 from connect_labs.marketplace.eoi import check_access, ingest_round, upsert_rounds
 from connect_labs.marketplace.models import OrgContact
-from connect_labs.solicitations.local_models import ACCESS_DENIED, ACCESS_MISSING, ACCESS_OK, Solicitation
+from connect_labs.solicitations.local_models import (
+    ACCESS_DENIED,
+    ACCESS_MISSING,
+    ACCESS_OK,
+    Solicitation,
+    SolicitationResponse,
+)
 
 HEADER = [
     "Slug",
@@ -180,3 +186,88 @@ class TestIngestRound:
         LabsOrg.objects.create(slug="fenwick-b", name="Fenwick (Trust)")
         ingest_round(round_, RESPONSES)
         assert round_.responses.get(source_row=2).llo_entity is None
+
+
+@pytest.mark.django_db
+class TestHumanVerdictsCloseTheLoop:
+    """Without a way to record a verdict the review queue is decorative: the
+    same submissions sit in it after every future import."""
+
+    def test_a_verdict_attributes_a_submission_labs_refused_to_guess(self, round_):
+        org = LabsOrg.objects.create(slug="unknown-body", name="Unknown Body")
+        ingest_round(round_, RESPONSES, human_verdicts={"demo-2026:3": (org.name, "link", "trading name")})
+        resolved = round_.responses.get(source_row=3)
+        assert resolved.llo_entity == org
+        assert resolved.match_state == SolicitationResponse.MATCH_HUMAN
+        assert resolved.match_basis == "trading name"
+
+    def test_a_dismissal_removes_it_from_the_queue_without_attributing_it(self, round_):
+        ingest_round(round_, RESPONSES, human_verdicts={"demo-2026:3": (None, "not_an_llo", "an individual")})
+        dismissed = round_.responses.get(source_row=3)
+        assert dismissed.llo_entity is None
+        assert dismissed.match_state == SolicitationResponse.MATCH_NOT_LLO
+        assert not SolicitationResponse.objects.filter(
+            match_state=SolicitationResponse.MATCH_UNMATCHED, source_row=3
+        ).exists()
+
+    def test_a_verdict_survives_re_import(self, round_):
+        """The importer runs daily. A verdict that had to be re-entered every
+        morning would not be a verdict."""
+        org = LabsOrg.objects.create(slug="unknown-body", name="Unknown Body")
+        verdicts = {"demo-2026:3": (org.name, "link", "trading name")}
+        ingest_round(round_, RESPONSES, human_verdicts=verdicts)
+        ingest_round(round_, RESPONSES, human_verdicts=verdicts)
+        assert round_.responses.get(source_row=3).llo_entity == org
+
+    def test_dismissals_are_counted_apart_from_outstanding_work(self, round_):
+        """Row 2 has nothing to match against in this fixture and is genuinely
+        outstanding; row 3 is decided. The counts must tell them apart, or a
+        queue that is being worked through looks like one that is not."""
+        stats = ingest_round(round_, RESPONSES, human_verdicts={"demo-2026:3": (None, "not_an_llo", "an individual")})
+        assert stats["dismissed"] == 1
+        assert stats["unmatched"] == 1
+        assert stats["submissions"] == 2
+
+
+@pytest.mark.django_db
+class TestAccessWriteBack:
+    """Labs writes the access columns because a hand-maintained one goes stale
+    the moment a sheet is moved — and it writes ONLY those two cells."""
+
+    def test_writes_the_verified_state_against_the_round_s_own_row(self, round_):
+        from connect_labs.marketplace import directory
+
+        written = []
+        directory.update_cells = lambda sid, updates: written.extend(updates)  # noqa: E731
+
+        rounds, _ = parse_rounds(ROUND_ROWS)
+        check_access(lambda sid, tab: [["Timestamp"]], write_back_to=rounds, spreadsheet_id="sheet-id")
+
+        assert len(written) == 1
+        rng, values = written[0]
+        assert rng.endswith("!P2:Q2"), rng
+        assert "OK" in values[0][0]
+        assert values[0][1]
+
+    def test_touches_no_other_column(self, round_):
+        from connect_labs.marketplace import directory
+
+        written = []
+        directory.update_cells = lambda sid, updates: written.extend(updates)  # noqa: E731
+        rounds, _ = parse_rounds(ROUND_ROWS)
+        check_access(lambda sid, tab: [["Timestamp"]], write_back_to=rounds, spreadsheet_id="sheet-id")
+
+        for rng, values in written:
+            assert ":Q" in rng and "!P" in rng, f"labs wrote outside its two columns: {rng}"
+            assert len(values[0]) == 2
+
+    def test_a_round_whose_row_is_unknown_is_skipped_not_guessed(self, round_):
+        from connect_labs.marketplace import directory
+
+        written = []
+        directory.update_cells = lambda sid, updates: written.extend(updates)  # noqa: E731
+        rounds, _ = parse_rounds(ROUND_ROWS)
+        for r in rounds:
+            r.source_row = None
+        check_access(lambda sid, tab: [["Timestamp"]], write_back_to=rounds, spreadsheet_id="sheet-id")
+        assert written == []
