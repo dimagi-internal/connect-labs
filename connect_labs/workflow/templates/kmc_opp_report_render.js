@@ -942,16 +942,16 @@ function WorkflowUI({
     ids.forEach(function (cid) {
       var meta = cohorts[cid] || {};
       var byIndicator = ((payload.indicators || {})[cid] || {})[series] || {};
+      // ONE CARD PER INDICATOR, carrying both readings side by side: where this
+      // opportunity sits today, and how it got there. They were two separate
+      // grids, so answering "am I low, and have I always been?" meant scrolling
+      // between two sections and matching titles by eye.
       var shown = MEASURES.filter(function (m) {
         var e = byIndicator[m.indicator];
-        return e && (e.peers || []).length;
-      });
-      // A published series is thinner than a published point: R5 keeps a period
-      // only if enough peers reached it and R6 then keeps only peers present in
-      // every period, so an indicator can have bars and no line.
-      var trended = MEASURES.filter(function (m) {
-        var e = byIndicator[m.indicator];
-        return e && Object.keys(e.series || {}).length > 1;
+        return (
+          e &&
+          ((e.peers || []).length || Object.keys(e.series || {}).length > 1)
+        );
       });
       blocks.push(
         <div key={cid} className="mb-6">
@@ -964,10 +964,15 @@ function WorkflowUI({
             </div>
           </div>
           {shown.length ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
               {shown.map(function (m) {
                 var entry = byIndicator[m.indicator];
                 var mine = oppCells[m.indicator];
+                // A published series is thinner than a published point: R5
+                // keeps a period only if enough peers reached it and R6 then
+                // keeps only peers present in every period, so an indicator can
+                // have bars and no line. Say which, rather than leaving a gap.
+                var hasTrend = Object.keys(entry.series || {}).length > 1;
                 return (
                   <div
                     key={m.indicator}
@@ -979,11 +984,37 @@ function WorkflowUI({
                     <div className="font-mono text-[10px] text-gray-300 mb-2">
                       {m.indicator}
                     </div>
-                    <PeerBars
-                      peers={entry.peers}
-                      measure={m}
-                      own={publishableValue(mine)}
-                    />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+                          Where it sits
+                        </div>
+                        {(entry.peers || []).length ? (
+                          <PeerBars
+                            peers={entry.peers}
+                            measure={m}
+                            own={publishableValue(mine)}
+                          />
+                        ) : (
+                          <div className="text-[11px] text-gray-400">
+                            No point value cleared the disclosure floors.
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+                          Over time
+                        </div>
+                        {hasTrend ? (
+                          <PeerTrend entry={entry} measure={m} />
+                        ) : (
+                          <div className="text-[11px] text-gray-400">
+                            Too few peers span enough reports to publish a trend
+                            for this indicator.
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 );
               })}
@@ -994,48 +1025,18 @@ function WorkflowUI({
               {benchmarkEmptyMessage}
             </div>
           )}
-          {trended.length ? (
-            <div className="mt-5">
-              <div className="text-xs font-semibold text-gray-700 mb-1">
-                Over time
-              </div>
-              <div className="text-[11px] text-gray-500 mb-2">
-                One line per opportunity, across its own first reports — so a
-                cohort whose members joined at different times still lines up.
-                Each point is one saved programme report, the same series the
-                programme page charts. Only indicators whose series cleared the
-                disclosure window appear here; the others are point-in-time
-                above.
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                {trended.map(function (m) {
-                  return (
-                    <div
-                      key={m.indicator}
-                      className="border border-gray-200 rounded p-3"
-                    >
-                      <div className="text-xs font-semibold text-gray-700">
-                        {m.title || m.indicator}
-                      </div>
-                      <div className="font-mono text-[10px] text-gray-300 mb-2">
-                        {m.indicator}
-                      </div>
-                      <PeerTrend entry={byIndicator[m.indicator]} measure={m} />
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
         </div>,
       );
     });
     return (
       <div>
         <div className="text-xs text-gray-500 mb-3">
-          Peers are anonymous and re-sorted per indicator, so a bar cannot be
-          followed from one chart to the next. This opportunity is the blue bar,
-          placed by rank among them.
+          Each indicator carries both readings: where this opportunity sits
+          against its peers today, and how it got there. Peers are anonymous and
+          re-sorted per indicator, so a bar cannot be followed from one chart to
+          the next. This opportunity is the blue bar and the blue line; a trend
+          runs across each opportunity's own first reports, so a cohort whose
+          members joined at different times still lines up.
         </div>
         {blocks}
       </div>
