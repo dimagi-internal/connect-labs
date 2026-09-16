@@ -229,3 +229,43 @@ class TestUnreadableRoundsAreVisible:
         client.force_login(user)
         body = client.get(reverse("marketplace:directory")).content.decode()
         assert "could not be read" not in body
+
+
+@pytest.mark.django_db
+class TestTheBadgeAndThePanelAgree:
+    """An organisation badged "delivering" beside "no Connect workspace
+    attributed to it" is two true statements that together read as a bug. It
+    happened because the badge matched on NAME through pulse's resolver while
+    the panel looked only at hand-curated slug attributions.
+    """
+
+    @pytest.fixture
+    def delivering_org(self, db):
+        from connect_labs.marketplace.testing import make_partner
+        from connect_labs.pulse.models import PulseOpportunity
+
+        org = make_partner("Foreland Rural Health Trust", "FRHT")
+        PulseOpportunity.objects.create(
+            opportunity_id=91,
+            name="Foreland delivery",
+            org_slug="foreland-rural-health-trust",
+            country="UG",
+            lifetime_visit_count=1234,
+        )
+        return org
+
+    def test_delivery_is_found_without_a_curated_slug_attribution(self, client, user, delivering_org):
+        """No OrgConnectSlug row exists — pulse resolves the workspace by name,
+        and the panel must use the same resolution."""
+        assert not delivering_org.connect_slugs.exists()
+        client.force_login(user)
+        body = client.get(reverse("marketplace:organisation", args=[delivering_org.slug])).content.decode()
+        assert "Foreland delivery" in body
+        assert "1234" in body
+        assert "nothing to join on" not in body
+
+    def test_an_organisation_with_no_workspace_still_says_so(self, client, user, registry):
+        """The honest empty state must survive the fix."""
+        client.force_login(user)
+        body = client.get(reverse("marketplace:organisation", args=["harbourside"])).content.decode()
+        assert "nothing to join on" in body

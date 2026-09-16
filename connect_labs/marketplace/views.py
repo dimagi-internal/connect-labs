@@ -115,6 +115,31 @@ def directory(request):
     )
 
 
+def _connect_slugs_for(org) -> set[str]:
+    """Every Connect workspace slug that resolves to this organisation.
+
+    Resolved the same way pulse decides an organisation is delivering, so the
+    badge and the delivery panel cannot contradict each other. They did: an
+    organisation could read "delivering" beside "no Connect workspace
+    attributed to it", because the badge matched on NAME through pulse's
+    resolver while the panel looked only at hand-curated slug attributions.
+    Two true statements that together read as a bug.
+
+    A curated attribution still counts — it is how a workspace the matcher
+    cannot reach gets here at all.
+    """
+    from connect_labs.pulse.models import PulseOpportunity
+    from connect_labs.pulse.partner_names import resolve as resolve_partner
+
+    slugs = {s.slug for s in org.connect_slugs.all()}
+    if org.connect_organization_slug:
+        slugs.add(org.connect_organization_slug)
+    for org_slug in PulseOpportunity.objects.exclude(org_slug="").values_list("org_slug", flat=True).distinct():
+        if resolve_partner(org_slug)["parent"] == org.name:
+            slugs.add(org_slug)
+    return slugs
+
+
 @login_required
 def organisation(request, slug):
     org = get_object_or_404(LabsOrg.objects.select_related("marketplace_profile"), slug=slug)
@@ -133,9 +158,7 @@ def organisation(request, slug):
 
     from connect_labs.pulse.models import PulseOpportunity
 
-    slugs = [s.slug for s in org.connect_slugs.all()]
-    if org.connect_organization_slug:
-        slugs.append(org.connect_organization_slug)
+    slugs = _connect_slugs_for(org)
     opportunities = (
         PulseOpportunity.objects.filter(org_slug__in=slugs).order_by("-lifetime_visit_count")
         if slugs
