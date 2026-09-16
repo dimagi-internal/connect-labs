@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import pytest
 
-from connect_labs.pulse.models import PulsePartner, PulsePartnerAlias
+from connect_labs.labs.models import LabsOrg
+from connect_labs.marketplace.models import OrgConnectSlug
+from connect_labs.marketplace.testing import make_partner
 from connect_labs.pulse.partner_names import HIGH_CONFIDENCE, invalidate, resolve
 
 pytestmark = pytest.mark.django_db
@@ -37,7 +39,7 @@ PARTNERS = [
 def directory():
     """The directory as this module sees it: a table, loaded from the sheet."""
     for name, short in PARTNERS:
-        PulsePartner.objects.create(name=name, short=short)
+        make_partner(name=name, short=short)
     invalidate()
     yield
     invalidate()
@@ -141,21 +143,21 @@ class TestRefusesToGuess:
         """The safe failure. If the import has never run, every partner renders
         as its slug — which is what an unmatched slug has always done — instead
         of the page inventing names."""
-        PulsePartner.objects.all().delete()
+        LabsOrg.objects.all().delete()
         invalidate()
         assert resolve("frht")["parent"] == ""
 
 
 class TestCuratedAliases:
     """Slugs no string rule reaches, pointed at a partner by a human on the
-    directory's mapping tab and carried in ``PulsePartnerAlias``."""
+    directory's mapping tab and carried in ``marketplace.OrgConnectSlug``."""
 
     @pytest.fixture
     def alias(self):
-        partner = PulsePartner.objects.get(name="Silverbrook Health Partners")
-        PulsePartnerAlias.objects.create(
+        partner = LabsOrg.objects.get(name="Silverbrook Health Partners")
+        OrgConnectSlug.objects.create(
             slug="brookside-collective",
-            partner=partner,
+            org=partner,
             why="Second workspace under the founding name; shares no stem with the current one.",
         )
         invalidate()

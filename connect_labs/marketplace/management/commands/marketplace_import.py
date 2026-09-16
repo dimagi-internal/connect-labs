@@ -24,6 +24,7 @@ import collections
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
 
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import directory
@@ -128,6 +129,14 @@ def import_directory(org_rows, contact_rows, date_rows, map_rows, *, prune: bool
             )
             seen_emails.append(contact.email)
             stats["contacts"] += 1
+
+        # An organisation the directory never dated still belongs on the network
+        # growth curve. Stamp the first date we saw it and then leave it alone:
+        # writing it down once, here, is what stops the whole undated cohort
+        # sliding forward every day the beat runs. Carried over from
+        # pulse_partner_import, where the curve first needed it.
+        stamped = OrgProfile.objects.filter(joined_at__isnull=True).update(joined_at=timezone.localdate())
+        stats["stamped_with_today"] = stamped
 
         for slug, (target, why) in mapped.items():
             OrgConnectSlug.objects.update_or_create(slug=slug, defaults={"org": by_name[target], "why": why})

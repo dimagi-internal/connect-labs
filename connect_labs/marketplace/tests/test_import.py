@@ -137,3 +137,37 @@ class TestImportDirectory:
         import_directory(ORGS, moved, DATES, MAPPING, prune=True)
         assert OrgContact.objects.get(email="a@example.invalid").org.name == "Fenwick Trust"
         assert OrgContact.objects.count() == 2
+
+
+@pytest.mark.django_db
+class TestJoinDateStamping:
+    """An organisation the directory never dated still belongs on the network
+    growth curve — a behaviour carried over from pulse_partner_import."""
+
+    def test_an_undated_organisation_is_stamped_with_today(self):
+        from django.utils import timezone
+
+        import_directory(ORGS, CONTACTS, DATES, MAPPING)
+        fenwick = LabsOrg.objects.get(name="Fenwick Trust")
+        assert fenwick.marketplace_profile.joined_at == timezone.localdate()
+
+    def test_a_stamped_date_never_moves_on_a_later_run(self):
+        """Recomputing it each run would slide the whole undated cohort forward
+        every day the beat fires."""
+        import datetime as dt
+
+        from django.utils import timezone
+
+        import_directory(ORGS, CONTACTS, DATES, MAPPING)
+        profile = LabsOrg.objects.get(name="Fenwick Trust").marketplace_profile
+        backdated = timezone.localdate() - dt.timedelta(days=30)
+        OrgProfile.objects.filter(pk=profile.pk).update(joined_at=backdated)
+
+        import_directory(ORGS, CONTACTS, DATES, MAPPING)
+        profile.refresh_from_db()
+        assert profile.joined_at == backdated
+
+    def test_a_dated_organisation_keeps_the_directory_date(self):
+        import_directory(ORGS, CONTACTS, DATES, MAPPING)
+        harbourside = LabsOrg.objects.get(name="Harbourside Health Initiative")
+        assert harbourside.marketplace_profile.joined_at.isoformat() == "2025-03-04"
