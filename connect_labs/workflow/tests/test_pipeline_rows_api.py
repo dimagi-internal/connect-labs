@@ -182,8 +182,13 @@ def test_the_review_sends_the_scope_and_the_rows_opp_under_different_names():
     src = (Path(__file__).resolve().parents[1] / "templates" / "kmc_flw_review_render.js").read_text()
     assert "rows_opportunity_id=" in src, "the rows opp still rides on opportunity_id"
     # Neither pipeline-rows URL may append a second opportunity_id of its own.
-    for chunk in src.split("'/pipeline-rows/'")[1:]:
-        head = chunk[:400]
+    # Split on the CONCATENATION, which is what a URL build looks like: the
+    # progress helper also names the path, to rewrite an already-built URL onto
+    # the streaming transport, and that site builds nothing and must not be
+    # scanned as though it did.
+    builds = src.split("'/pipeline-rows/' +")[1:]
+    assert len(builds) == 2, "expected exactly two pipeline-rows URL builds (cases, weighings)"
+    for head in (chunk[:400] for chunk in builds):
         assert "'alias=" in head
         assert "&opportunity_id=" not in head, "a second opportunity_id re-scopes the whole request"
 
@@ -235,3 +240,166 @@ class TestRecordsAreReadWhereTheyLiveNotWhereTheRowsAre:
         assert status == 200
         assert pda_cls.call_args.kwargs["opportunity_id"] == 523
         assert pda.get_cached_pipeline_result.call_args.args[1] == 523
+
+
+class TestTheStreamCarriesProgressWithoutTheCohort:
+    """`PipelineRowsStreamView`: the same answer, with the fetch's progress first.
+
+    The framework could always report a cold fetch -- `AnalysisPipelineSSEMixin`
+    turns each page of the paginated Connect read into `Fetching visits: 3,200 /
+    8,900 rows (36%)`. But it rode the same SSE stream as the ROWS, so this page,
+    which opted out of that stream's ~30 MB payload (`config.noPipelineStream`),
+    lost the progress with it and showed a static label for the 38.7s, 61.3s and
+    50.7s reads measured live on 2026-09-16.
+
+    So what is under test is the decoupling: progress events must arrive, and the
+    final payload must still be the server-FILTERED rows, identical to what the
+    one-shot transport returns for the same query.
+    """
+
+    def _events(self, pipeline_events, definition=None, **params):
+        """Drive `stream_data` and return the parsed SSE payloads in order."""
+        from connect_labs.workflow import views
+
+        pda = MagicMock()
+        pda.get_definition.return_value = MagicMock(schema={"fields": []})
+        pda._schema_to_config.return_value = object()
+        wda = MagicMock()
+        wda.get_definition.return_value = definition if definition is not None else _definition()
+
+        pipeline = MagicMock()
+        pipeline.stream_analysis.return_value = iter(pipeline_events)
+        view = views.PipelineRowsStreamView()
+        view.kwargs = {"definition_id": DEF_ID}
+        with (
+            patch.object(views, "WorkflowDataAccess", return_value=wda),
+            patch.object(views, "PipelineDataAccess", return_value=pda),
+            patch("connect_labs.labs.analysis.pipeline.AnalysisPipeline", return_value=pipeline),
+        ):
+            raw = list(view.stream_data(_request(**params)))
+        return [json.loads(chunk[len("data: ") :]) for chunk in raw], pipeline
+
+    @staticmethod
+    def _result(rows):
+        return MagicMock(rows=rows, metadata={})
+
+    def _pipeline_events(self, rows, with_download=True):
+        from connect_labs.labs.analysis.pipeline import EVENT_DOWNLOAD, EVENT_RESULT, EVENT_STATUS
+
+        events = [(EVENT_STATUS, {"message": "Checking entity-level cache..."})]
+        if with_download:
+            events += [
+                (EVENT_DOWNLOAD, {"rows": 3200, "total": 8900}),
+                (EVENT_DOWNLOAD, {"rows": 8900, "total": 8900}),
+            ]
+        events.append((EVENT_RESULT, self._result(rows)))
+        return events
+
+    def test_a_cold_read_reports_the_fetch_as_a_percentage(self):
+        events, _ = self._events(self._pipeline_events(ROWS), alias="children", opportunity_id=523, username="flw_1")
+        messages = [e["message"] for e in events]
+        assert "Fetching visits: 3,200 / 8,900 rows (35%)" in messages
+        assert "Fetching visits: 8,900 / 8,900 rows (100%)" in messages
+
+    def test_progress_arrives_before_the_rows(self):
+        """A percentage that only lands with the payload is not progress."""
+        events, _ = self._events(self._pipeline_events(ROWS), alias="children", opportunity_id=523)
+        fetching = [i for i, e in enumerate(events) if e["message"].startswith("Fetching visits")]
+        complete = [i for i, e in enumerate(events) if e.get("data")]
+        assert fetching and complete
+        assert max(fetching) < min(complete)
+
+    def test_the_last_event_carries_the_filtered_rows(self):
+        events, _ = self._events(self._pipeline_events(ROWS), alias="children", opportunity_id=523, username="flw_1")
+        final = events[-1]["data"]
+        assert [r.get("entity_id") or r.get("baby_case_id") for r in final["rows"]] == ["babyA", "babyC"]
+        assert final["metadata"]["alias"] == "children"
+        assert final["metadata"]["row_count"] == 2
+
+    def test_it_streams_one_opportunity_not_the_cohort(self):
+        """The reason the payload stays small: one opp, filtered server-side."""
+        _events, pipeline = self._events(
+            self._pipeline_events(ROWS), alias="children", opportunity_id=523, rows_opportunity_id=524
+        )
+        assert pipeline.stream_analysis.call_args.kwargs["opportunity_id"] == 524
+
+    def test_a_warm_read_reports_no_fetch_progress(self):
+        """Nothing was fetched, so nothing may claim to have been."""
+        events, _ = self._events(
+            self._pipeline_events(ROWS, with_download=False), alias="children", opportunity_id=523
+        )
+        assert not [e for e in events if e["message"].startswith("Fetching visits")]
+        assert events[-1]["data"]["metadata"]["row_count"] == 3
+
+    def test_the_two_transports_answer_the_same_query_identically(self):
+        """The stream is the JSON view with progress in front, or it is a fork."""
+        json_body, _status, _pda = _call(
+            cached={"rows": ROWS, "metadata": {}}, alias="children", opportunity_id=523, username="flw_1"
+        )
+        events, _ = self._events(
+            self._pipeline_events(ROWS, with_download=False),
+            alias="children",
+            opportunity_id=523,
+            username="flw_1",
+        )
+        streamed = events[-1]["data"]
+        assert streamed["rows"] == json_body["rows"]
+        # `from_cache` is the one field that legitimately differs: the JSON view
+        # reads the processed cache itself, while the stream lets the pipeline
+        # decide and report it.
+        assert {k: v for k, v in streamed["metadata"].items() if k != "from_cache"} == {
+            k: v for k, v in json_body["metadata"].items() if k != "from_cache"
+        }
+
+    def test_the_stream_applies_the_case_filter_too(self):
+        events, _ = self._events(
+            self._pipeline_events(ROWS, with_download=False),
+            alias="visits",
+            opportunity_id=523,
+            case_ids="babyC",
+        )
+        assert [r["baby_case_id"] for r in events[-1]["data"]["rows"]] == ["babyC"]
+
+    def test_a_rejected_query_is_an_error_event_not_a_crash(self):
+        """The stream is already open, so the status travels in the event."""
+        events, _ = self._events(self._pipeline_events(ROWS), alias="", opportunity_id=523)
+        assert events[-1]["error"] == "alias and opportunity_id are required"
+        assert events[-1]["data"]["status"] == 400
+
+    def test_an_opportunity_the_workflow_does_not_span_is_refused(self):
+        events, _ = self._events(self._pipeline_events(ROWS), alias="children", opportunity_id=999)
+        assert events[-1]["data"]["status"] == 403
+        assert not any(e.get("data", {}).get("rows") for e in events)
+
+    def test_a_failing_pipeline_names_itself_and_yields_no_rows(self):
+        from connect_labs.labs.analysis.pipeline import EVENT_ERROR
+
+        events, _ = self._events(
+            [(EVENT_ERROR, {"message": "boom", "exception": ValueError("boom")})],
+            alias="children",
+            opportunity_id=523,
+        )
+        assert events[-1]["error"] == "ValueError: boom"
+        assert not any(e.get("data", {}).get("rows") for e in events)
+
+
+def test_the_review_prefers_the_stream_and_can_fall_back():
+    """The render half: progress is a courtesy, the rows are not.
+
+    A transport that cannot deliver here -- no EventSource, a buffering proxy, a
+    dropped connection -- must not read as "this worker has no cases", which is
+    exactly the shape the empty-state guards elsewhere in this file exist to
+    prevent.
+    """
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[1] / "templates" / "kmc_flw_review_render.js").read_text()
+    assert "/pipeline-rows/stream/" in src, "the render no longer asks for progress"
+    # Both row reads go through the helper, so neither can lose progress quietly.
+    assert src.count("fetchRowsWithProgress(") == 3, "expected the definition plus both call sites"
+    helper = src.split("function fetchRowsWithProgress(")[1].split("\n  }\n")[0]
+    assert "EventSource" in helper
+    assert helper.count("plain().then(resolve, reject)") == 3, "no EventSource, no stream, dropped stream"
+    # Progress must reach the empty states that used to be static labels.
+    assert "childState.message" in src
+    assert "visitState.message" in src
