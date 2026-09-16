@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% comment %}
+Tailwind, not Bootstrap — labs loads no Bootstrap CSS or JS, so those class
+names render unstyled and data-bs-* behaviour silently does nothing.
+Brand values come from tailwind/tailwind.css, not Tailwind's stock palette:
+brand-deep-purple #16006d, brand-indigo #3843d0, brand-sky #8ea1ff.
+{% endcomment %}
+{% load humanize %}
+{% block title %}Connect Marketplace{% endblock %}
+
+{% block content %}
+
+<div class="bg-brand-deep-purple px-10 pt-9 pb-8 relative overflow-hidden">
+  <div class="absolute -right-20 -top-32 w-[420px] h-[420px] rounded-full"
+       style="background: radial-gradient(circle, rgba(142,161,255,0.20) 0%, rgba(22,0,109,0) 68%);"></div>
+
+  <div class="relative">
+    <div class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky">CONNECT MARKETPLACE</div>
+    <div class="text-3xl font-semibold text-white mt-2 max-w-3xl leading-tight">
+      The organisations that deliver Connect, and every round they have answered.
+    </div>
+
+    <div class="flex flex-wrap gap-x-12 gap-y-5 mt-7">
+      <div>
+        <div class="text-[29px] font-semibold text-white tabular-nums">{{ totals.organisations|intcomma }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">ORGANISATIONS</div>
+      </div>
+      <div>
+        <div class="text-[29px] font-semibold text-white tabular-nums">{{ totals.countries }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">COUNTRIES</div>
+      </div>
+      <div>
+        <div class="text-[29px] font-semibold text-white tabular-nums">{{ totals.services|intcomma }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">SERVICES DELIVERED</div>
+      </div>
+      <div>
+        <div class="text-[29px] font-semibold text-brand-marigold tabular-nums">{{ totals.rounds }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">ROUNDS RUN</div>
+      </div>
+      <div>
+        <div class="text-[29px] font-semibold text-white tabular-nums">{{ totals.applications|intcomma }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">APPLICATIONS RECEIVED</div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap gap-3 mt-7">
+      <a href="{% url 'marketplace:network' %}"
+         class="inline-flex items-center gap-2 px-4 py-2 bg-white text-brand-deep-purple text-sm font-semibold rounded-lg hover:bg-brand-sky/20 transition">
+        Browse the network
+        <i class="fa-solid fa-arrow-right text-xs"></i>
+      </a>
+      {% if unmatched_count %}
+        <a href="{% url 'marketplace:unmatched' %}"
+           class="inline-flex items-center gap-2 px-4 py-2 border border-brand-sky/40 text-brand-sky text-sm font-medium rounded-lg hover:bg-white/5 transition">
+          {{ unmatched_count }} awaiting a verdict
+        </a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="max-w-screen-2xl mx-auto px-10 py-7">
+
+  {% if unreadable %}
+    <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-900 mb-7">
+      <strong>{{ unreadable|length }} round{{ unreadable|length|pluralize }} could not be read.</strong>
+      Their applications are missing from every figure above — this is not the same as
+      those rounds having had no applicants.
+      <div class="mt-1 text-amber-800">
+        {% for r in unreadable %}{{ r.title }} ({{ r.get_sa_access_state_display }}){% if not forloop.last %} · {% endif %}{% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% if open_rounds %}
+    <div class="flex items-baseline justify-between mb-4">
+      <div class="flex items-baseline gap-2.5">
+        <span class="text-lg font-semibold text-brand-deep-purple">Open now</span>
+        <span class="text-sm text-gray-500">accepting applications</span>
+      </div>
+      <a href="{% url 'marketplace:rounds' %}" class="text-sm text-brand-indigo font-medium hover:text-brand-deep-purple">All {{ totals.rounds }} rounds →</a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-9">
+      {% for r in open_rounds %}
+        <a href="{% url 'marketplace:round' r.slug %}"
+           class="bg-white border border-brand-border-light rounded-lg p-[18px] flex flex-col gap-3 border-t-[3px] border-t-brand-indigo hover:shadow-md transition">
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold tracking-wider bg-green-100 text-green-800">OPEN</span>
+            <span class="text-[11.5px] text-gray-500">{{ r.type_label }}</span>
+          </div>
+          <div class="text-base font-semibold text-brand-deep-purple leading-snug">{{ r.title }}</div>
+          <div class="text-[12.5px] text-gray-600 leading-relaxed">{{ r.target_countries|default:"All countries"|truncatechars:70 }}</div>
+          <div class="flex items-end justify-between mt-1 pt-3 border-t border-gray-100">
+            <div>
+              <div class="text-xl font-semibold text-gray-900 tabular-nums">{{ r.applications }}</div>
+              <div class="text-[11px] text-gray-400 tracking-wide">APPLICANTS</div>
+            </div>
+            <div class="text-right">
+              <div class="text-[12.5px] font-medium text-gray-900">{% if r.application_deadline %}{{ r.application_deadline|date:"j M Y" }}{% else %}Open ended{% endif %}</div>
+              <div class="text-[11px] text-gray-400 tracking-wide">DEADLINE</div>
+            </div>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="flex items-baseline gap-2.5 mb-4">
+    <span class="text-lg font-semibold text-brand-deep-purple">Closed rounds</span>
+    <span class="text-sm text-gray-500">what the network has answered before</span>
+  </div>
+
+  <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Round</th>
+          <th class="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Closed</th>
+          <th class="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Where</th>
+          <th class="px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Applicants</th>
+          <th class="px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organisations</th>
+          <th class="px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Read</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for r in closed_rounds %}
+          <tr class="hover:bg-gray-50 transition">
+            <td class="px-5 py-3">
+              <a href="{% url 'marketplace:round' r.slug %}" class="flex items-center gap-2.5">
+                <span class="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded {% if r.solicitation_type == 'rfp' %}bg-red-50 text-red-800{% else %}bg-indigo-50 text-brand-indigo{% endif %}">{{ r.solicitation_type|upper }}</span>
+                <span class="text-[13.5px] font-medium text-brand-deep-purple">{{ r.title }}</span>
+              </a>
+            </td>
+            <td class="px-5 py-3 text-[12.5px] text-gray-600 whitespace-nowrap">{% if r.application_deadline %}{{ r.application_deadline|date:"M Y" }}{% else %}Rolling{% endif %}</td>
+            <td class="px-5 py-3 text-[12.5px] text-gray-600">{{ r.target_countries|default:"—"|truncatechars:52 }}</td>
+            <td class="px-5 py-3 text-[13px] text-gray-900 text-right tabular-nums font-medium">{{ r.applications }}</td>
+            <td class="px-5 py-3 text-[13px] text-gray-600 text-right tabular-nums">{{ r.organisations }}</td>
+            <td class="px-5 py-3 text-right">
+              {% if r.sa_access_state == 'ok' %}
+                <span class="text-[11.5px] text-gray-400">yes</span>
+              {% else %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800">not ingested</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="px-5 py-12 text-center text-sm text-gray-500">No rounds recorded yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

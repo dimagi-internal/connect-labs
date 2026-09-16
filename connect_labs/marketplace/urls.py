@@ -5,7 +5,11 @@ from connect_labs.marketplace import views
 app_name = "marketplace"
 
 urlpatterns = [
-    path("", views.directory, name="directory"),
+    path("", views.home, name="home"),
+    path("network/", views.network, name="network"),
+    path("network/points/", views.network_points, name="network_points"),
+    path("rounds/", views.rounds, name="rounds"),
+    path("rounds/<slug:slug>/", views.round_detail, name="round"),
     path("unmatched/", views.unmatched, name="unmatched"),
-    path("<slug:slug>/", views.organisation, name="organisation"),
+    path("org/<slug:slug>/", views.organisation, name="organisation"),
 ]
