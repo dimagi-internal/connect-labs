@@ -69,12 +69,20 @@ def test_overlapping_cohorts_do_not_collide_on_peer_index():
     assert set(out["indicators"]) == {str(a.pk), str(b.pk)}
     peers_a = out["indicators"][str(a.pk)]["C"]["C15"]["peers"]
     peers_b = out["indicators"][str(b.pk)]["C"]["C15"]["peers"]
-    assert len(peers_a) == len(OPPS)
-    assert len(peers_b) == 5, "the second cohort's own membership was not respected"
-    # Each cohort's own indices, each complete and each starting at 0 -- which is
-    # only expressible because the two are no longer in one list.
-    assert [p["peer_index"] for p in peers_a] == list(range(len(OPPS)))
-    assert [p["peer_index"] for p in peers_b] == list(range(5))
+    # One short of each cohort's membership: the reader's own row is excluded
+    # from both (see test_a_reader_never_gets_its_own_row_back).
+    assert len(peers_a) == len(OPPS) - 1
+    assert len(peers_b) == 4, "the second cohort's own membership was not respected"
+    # Each cohort's indices are its OWN -- drawn from its own publication's
+    # range, ordered, with exactly the reader's index missing. That is only
+    # expressible because the two are no longer merged into one list; merged,
+    # cohort B's peer 0 overwrote cohort A's.
+    idx_a = [p["peer_index"] for p in peers_a]
+    idx_b = [p["peer_index"] for p in peers_b]
+    assert idx_a == sorted(idx_a) and set(idx_a) < set(range(len(OPPS)))
+    assert idx_b == sorted(idx_b) and set(idx_b) < set(range(5))
+    assert len(set(range(len(OPPS))) - set(idx_a)) == 1, "exactly one row (the reader's) is absent"
+    assert len(set(range(5)) - set(idx_b)) == 1
     assert out["cohorts"][str(a.pk)]["name"] == "All KMC"
     assert out["cohorts"][str(b.pk)]["name"] == "Uganda only"
 
@@ -109,3 +117,34 @@ def test_only_the_sanctioned_modules_can_see_identity():
         if "tests" not in path.parts and path.name not in allowed and "with_source" in path.read_text()
     ]
     assert offenders == [], f"with_source() reached from unsanctioned modules: {offenders}"
+
+
+def test_a_reader_never_gets_its_own_row_back():
+    """The report draws this opportunity from its own LIVE figures, so the
+    published copy in the peer set would draw it twice — once at the published
+    value, once at the current one — and a reader who can difference "the set
+    including me" against "me" learns something about the remainder."""
+    cohort = _published()
+    peers = benchmarks_for_opportunity(_request(OPPS[0]), OPPS[0])["indicators"][str(cohort.pk)]["C"]["C15"]["peers"]
+    assert len(peers) == len(OPPS) - 1, "the reader's own row is still in its peer set"
+
+
+def test_the_excluded_row_is_the_readers_own_and_not_just_any_row():
+    """A blanket `[:-1]` would also pass the count check above. Read the SAME
+    cohort as two different members and confirm each is missing a DIFFERENT
+    value — the one that member published."""
+    cohort = _published()
+
+    def peer_values(opp):
+        out = benchmarks_for_opportunity(_request(opp), opp)
+        return sorted(p["value"] for p in out["indicators"][str(cohort.pk)]["C"]["C15"]["peers"])
+
+    first, second = peer_values(OPPS[0]), peer_values(OPPS[1])
+    assert first != second, "both members saw the same peer set, so self was not what got dropped"
+    assert len(first) == len(second) == len(OPPS) - 1
+
+
+def test_a_non_member_with_access_still_reads_nothing():
+    """Excluding self must not accidentally widen the read to outsiders."""
+    _published()
+    assert benchmarks_for_opportunity(_request(999), 999)["indicators"] == {}

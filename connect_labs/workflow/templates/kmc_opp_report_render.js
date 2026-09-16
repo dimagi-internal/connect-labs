@@ -618,33 +618,44 @@ function WorkflowUI({
     function pct(v) {
       return Math.max(2, Math.round(((v - base) / span) * 100));
     }
-    var sorted = values.slice().sort(function (a, b) {
-      return a - b;
+    // This opportunity's own bar is INSERTED by rank, never matched against a
+    // peer. Its figure is the LIVE one; the peers are the published ones, so
+    // the two agree only until this opportunity's data moves after
+    // publication -- and a value-match would then quietly colour some OTHER
+    // opportunity's bar and call it this one. The store drops the reader's own
+    // published row (benchmarks/data_access.py), so inserting here draws it
+    // once, not twice.
+    var bars = values.map(function (v) {
+      return { v: v, mine: false };
+    });
+    if (ownNum !== null) bars.push({ v: ownNum, mine: true });
+    bars.sort(function (a, b) {
+      return a.v - b.v;
     });
     return (
       <div>
-        <div className="relative h-24 flex items-end gap-1 border-b border-gray-200">
-          {sorted.map(function (v, i) {
+        <div className="h-24 flex items-end gap-1 border-b border-gray-200">
+          {bars.map(function (b, i) {
             return (
               <div
                 key={i}
-                className="flex-1 bg-slate-300 rounded-t"
-                style={{ height: pct(v) + '%' }}
-                title={fmtValue(measure, v)}
+                className={
+                  'flex-1 rounded-t ' +
+                  (b.mine ? 'bg-indigo-600' : 'bg-slate-300')
+                }
+                style={{ height: pct(b.v) + '%' }}
+                title={
+                  fmtValue(measure, b.v) +
+                  (b.mine ? ' — this opportunity' : ' — an anonymous peer')
+                }
               ></div>
             );
           })}
-          {ownNum === null ? null : (
-            <div
-              className="absolute left-0 right-0 border-t-2 border-dashed border-indigo-600"
-              style={{ bottom: pct(ownNum) + '%' }}
-            ></div>
-          )}
         </div>
         <div className="mt-1 flex justify-between text-[11px] text-gray-500">
           <span>
-            {sorted.length} anonymous peer{sorted.length === 1 ? '' : 's'}, low
-            to high
+            {values.length} anonymous peer{values.length === 1 ? '' : 's'}
+            {ownNum === null ? '' : ' + this opportunity'}, low to high
           </span>
           {ownNum === null ? (
             <span className="text-gray-400">this opportunity: no value</span>
@@ -736,8 +747,8 @@ function WorkflowUI({
       <div>
         <div className="text-xs text-gray-500 mb-3">
           Peers are anonymous and re-sorted per indicator, so a bar cannot be
-          followed from one chart to the next. This opportunity is one of the
-          bars; the dashed line is where it sits.
+          followed from one chart to the next. This opportunity is the blue bar,
+          placed by rank among them.
         </div>
         {blocks}
       </div>
