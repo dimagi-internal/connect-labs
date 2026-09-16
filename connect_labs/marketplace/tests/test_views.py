@@ -181,3 +181,51 @@ class TestTemplatesUseTheFrameworkLabsActuallyLoads:
         organisation = next(p for p in self._templates() if p.name == "organisation.html")
         body = organisation.read_text()
         assert "<details" in body and "<summary" in body
+
+
+@pytest.mark.django_db
+class TestTheQueueIsActionable:
+    """A review queue with no way to record a verdict is decorative: the same
+    submissions sit in it after every future import."""
+
+    def test_says_how_to_resolve_one_and_links_to_the_directory(self, client, user, registry):
+        client.force_login(user)
+        body = client.get(reverse("marketplace:unmatched")).content.decode()
+        assert "EOI Response Mapping" in body
+        assert "docs.google.com/spreadsheets" in body
+        assert "not an LLO" in body
+
+    def test_shows_the_exact_keys_the_mapping_tab_needs(self, client, user, registry):
+        """Round slug and response row are the mapping tab's first two columns;
+        showing them is what makes resolving one a copy rather than a hunt."""
+        client.force_login(user)
+        body = client.get(reverse("marketplace:unmatched")).content.decode()
+        assert "demo-2026" in body
+        assert ">3<" in body
+
+    def test_a_dismissed_submission_leaves_the_queue(self, client, user, registry):
+        client.force_login(user)
+        response = SolicitationResponse.objects.get(source_row=3)
+        response.match_state = SolicitationResponse.MATCH_NOT_LLO
+        response.match_basis = "an individual, not an organisation"
+        response.save()
+        body = client.get(reverse("marketplace:unmatched")).content.decode()
+        assert "Someone Else" not in body
+
+
+@pytest.mark.django_db
+class TestUnreadableRoundsAreVisible:
+    def test_the_directory_says_when_a_round_could_not_be_read(self, client, user, registry):
+        """ "No applicants" and "we could not open the sheet" look identical
+        unless the page says so."""
+        Solicitation.objects.filter(slug="demo-2026").update(sa_access_state="denied")
+        client.force_login(user)
+        body = client.get(reverse("marketplace:directory")).content.decode()
+        assert "could not be read" in body
+        assert "having had no applicants" in body
+
+    def test_says_nothing_when_every_round_is_readable(self, client, user, registry):
+        Solicitation.objects.filter(slug="demo-2026").update(sa_access_state="ok")
+        client.force_login(user)
+        body = client.get(reverse("marketplace:directory")).content.decode()
+        assert "could not be read" not in body

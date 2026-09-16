@@ -140,3 +140,20 @@ def audit(org_rows, contact_rows, orgs, contacts, skipped) -> list[Finding]:
     findings.extend(Finding("refused", None, ORGANIZATIONS_TAB, line) for line in skipped)
 
     return findings
+
+
+def findings_tab_rows(findings, *, when, counts_line: str) -> list[list[str]]:
+    """The findings as a sheet tab labs owns outright and rewrites each run.
+
+    They go to the sheet because that is where the people who can fix them
+    actually work. A findings list that only reaches CloudWatch is a list
+    nobody who maintains the directory will ever read.
+    """
+    header = [
+        [f"WHAT THE LABS IMPORT COULD NOT READ — rewritten every run. Last run {when}."],
+        ["This tab is written by labs. Edits here are overwritten; fix the source row instead."],
+        [counts_line],
+        [],
+        ["Tab", "Row", "Kind", "What is wrong"],
+    ]
+    return header + [[f.tab, str(f.row) if f.row else "", f.kind, f.detail] for f in findings]

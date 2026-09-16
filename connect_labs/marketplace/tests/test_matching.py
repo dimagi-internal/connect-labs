@@ -59,7 +59,7 @@ class TestMatchSubmission:
             Sub(org_name="Fenwick Trust", emails=["a@example.invalid"], source_row=7),
             by_email={"a@example.invalid": org},
             by_name={normalise("Fenwick Trust"): org},
-            human={"demo:7": (other, "confirmed by hand: trading name")},
+            human={"demo:7": (other, "link", "confirmed by hand: trading name")},
         )
         assert got == other
         assert state == SolicitationResponse.MATCH_HUMAN
@@ -69,3 +69,19 @@ class TestMatchSubmission:
         got, state, _ = match_submission(Sub(), by_email={}, by_name={normalise("Fenwick Trust"): org})
         assert got is None
         assert state == SolicitationResponse.MATCH_UNMATCHED
+
+
+@pytest.mark.django_db
+class TestNotAnLloVerdict:
+    def test_a_dismissal_takes_the_submission_out_of_the_queue(self):
+        """A submission that is not an organisation must be closable, or it sits
+        in the review queue for ever looking like outstanding work."""
+        got, state, basis = match_submission(
+            Sub(org_name="Someone's personal note", source_row=9),
+            by_email={},
+            by_name={},
+            human={"demo:9": (None, "not_an_llo", "an individual, not an organisation")},
+        )
+        assert got is None
+        assert state == SolicitationResponse.MATCH_NOT_LLO
+        assert "individual" in basis

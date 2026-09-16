@@ -72,12 +72,23 @@ def upsert_rounds(rounds) -> dict:
     return stats
 
 
-def check_access(read_tab) -> list[dict]:
-    """Attempt a real read of every round's response sheet.
+ACCESS_LABELS = {
+    ACCESS_OK: "OK — readable",
+    ACCESS_DENIED: "NO ACCESS — share the response sheet with the labs service account",
+    ACCESS_MISSING: "NO SHEET — add a Response Sheet Link",
+}
 
-    Verification, not a claim: the column this writes back to the sheet is only
+
+def check_access(read_tab, *, write_back_to=None, spreadsheet_id=None) -> list[dict]:
+    """Attempt a real read of every round's response sheet, and record the result.
+
+    Verification, not a claim. The column this writes back to the sheet is only
     worth having if it reports what was actually true at the moment it was
-    checked.
+    checked, which means the thing that checks it has to be the thing that
+    writes it — a hand-maintained "yes, access granted" box goes stale the
+    moment a sheet is moved or re-owned, and fails in the worst direction.
+
+    Labs writes exactly two cells per round and nothing else in the workbook.
     """
     results = []
     for round_ in Solicitation.objects.all():
@@ -92,8 +103,33 @@ def check_access(read_tab) -> list[dict]:
         round_.sa_access_state = state
         round_.sa_access_checked_at = timezone.now()
         round_.save(update_fields=["sa_access_state", "sa_access_checked_at"])
-        results.append({"slug": round_.slug, "state": state, "detail": detail})
+        results.append({"slug": round_.slug, "state": state, "detail": detail, "source_row": None})
+
+    if write_back_to and spreadsheet_id:
+        _write_access_columns(results, write_back_to, spreadsheet_id)
     return results
+
+
+def _write_access_columns(results, rounds, spreadsheet_id) -> None:
+    """Put the verified state in the two columns labs owns on the rounds tab.
+
+    Keyed on the row each round was parsed from, so a reordered sheet cannot
+    write a verdict against the wrong round. A round whose row is unknown is
+    skipped rather than guessed at.
+    """
+    from connect_labs.marketplace import directory
+
+    by_slug = {r.slug: r.source_row for r in rounds if r.source_row}
+    stamp = timezone.now().strftime("%Y-%m-%d %H:%M UTC")
+    updates = []
+    for result in results:
+        row = by_slug.get(result["slug"])
+        if not row:
+            continue
+        label = ACCESS_LABELS.get(result["state"], result["state"])
+        # Columns P and Q: "Labs Access" and "Labs Access Checked".
+        updates.append((f"'{directory.ROUNDS_TAB}'!P{row}:Q{row}", [[label, stamp]]))
+    directory.update_cells(spreadsheet_id, updates)
 
 
 def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
@@ -111,14 +147,25 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
         # to either of them, so drop both rather than pick one.
         by_name[key] = None if key in by_name else org
 
-    stats = {"submissions": 0, "matched": 0, "unmatched": 0}
+    # The mapping tab names an organisation; the relation needs the row. Resolve
+    # once here so the matcher only ever deals in objects, as it does for the
+    # email and name indexes. A name that resolves to nothing is dropped rather
+    # than guessed at -- the same rule the rest of the matcher follows.
+    resolved_verdicts = {}
+    for key, (name, verdict, why) in (human_verdicts or {}).items():
+        org = LabsOrg.objects.filter(name=name).first() if name else None
+        if name and org is None:
+            continue
+        resolved_verdicts[key] = (org, verdict, why)
+
+    stats = {"submissions": 0, "matched": 0, "unmatched": 0, "dismissed": 0}
     with transaction.atomic():
         round_.questions = [{"id": q.id, "text": q.text, "column": q.column} for q in questions]
 
         for sub in submissions:
             sub.round_slug = round_.slug
             org, state, basis = match_submission(
-                sub, by_email=by_email, by_name={k: v for k, v in by_name.items() if v}, human=human_verdicts
+                sub, by_email=by_email, by_name={k: v for k, v in by_name.items() if v}, human=resolved_verdicts
             )
             SolicitationResponse.objects.update_or_create(
                 solicitation=round_,
@@ -144,7 +191,13 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
                 },
             )
             stats["submissions"] += 1
-            stats["matched" if org is not None else "unmatched"] += 1
+            if state == SolicitationResponse.MATCH_NOT_LLO:
+                # Decided, not outstanding: it leaves the review queue.
+                stats["dismissed"] += 1
+            elif org is not None:
+                stats["matched"] += 1
+            else:
+                stats["unmatched"] += 1
 
         round_.last_ingested_at = timezone.now()
         round_.save(update_fields=["questions", "last_ingested_at"])
