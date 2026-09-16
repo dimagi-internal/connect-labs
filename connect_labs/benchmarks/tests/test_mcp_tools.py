@@ -787,3 +787,29 @@ def test_run_history_projects_each_completed_run_to_its_per_opportunity_cells():
     assert [r["date"] for r in out] == ["2026-01-31", "2026-02-28"], "not oldest-first, or kept an in-progress run"
     assert out[0]["byOpp"]["C"][500]["C15"]["value"] == 1
     assert out[0]["byOpp"]["N"][500]["N08"]["value"] == 1, "the scorecard family was not projected"
+
+
+def test_run_history_counts_each_saved_run_once():
+    """`list_runs` fans a multi-opp workflow out across its member
+    opportunities, so the same run comes back once per member. Undeduped, every
+    run contributed a dozen identical points and the trend became two values
+    alternating — an oscillating indicator, not the duplication it was."""
+    from connect_labs.benchmarks.mcp_tools import _run_history
+
+    def _run(run_id, value):
+        r = _StubRun(
+            is_completed=True,
+            period_end="2026-01-31",
+            snapshot={"state": {"snapshot": {"byOpp": [{"opp": 500, "ind": {"C15": {"id": "C15", "value": value}}}]}}},
+        )
+        r.id = run_id
+        return r
+
+    class _FannedOut:
+        def list_runs(self, definition_id):
+            # one logical run, returned once per member opportunity
+            return [_run(9, 1), _run(9, 1), _run(9, 1), _run(10, 2), _run(10, 2)]
+
+    out = _run_history(_FannedOut(), 1, "snapshot")
+    assert len(out) == 2, f"each saved run must be one point, got {len(out)}"
+    assert [r["byOpp"]["C"][500]["C15"]["value"] for r in out] == [1, 2]

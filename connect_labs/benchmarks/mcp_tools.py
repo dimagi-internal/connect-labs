@@ -106,12 +106,24 @@ def _run_history(wda, workflow_id: int, state_key: str) -> list[dict]:
     refused publication because a history read timed out is not.
     """
     out: list[dict] = []
+    seen: set = set()
     try:
         # The iteration is inside the guard, not just the call: `list_runs`
         # resolves lazily, so the upstream failure surfaces on the first `for`.
         for run in wda.list_runs(definition_id=workflow_id):
             if not getattr(run, "is_completed", False):
                 continue
+            # ONE SAVED RUN IS ONE POINT. `list_runs` fans a multi-opp workflow
+            # out across its member opportunities, so the same run comes back
+            # once per member -- twelve times, for the KMC cohort. Undeduped,
+            # every run contributed a dozen identical points and the published
+            # "trend" was two values alternating, which reads as a violently
+            # oscillating indicator rather than as the duplication it is.
+            run_id = getattr(run, "id", None)
+            if run_id is not None:
+                if run_id in seen:
+                    continue
+                seen.add(run_id)
             payload = ((run.snapshot or {}).get("state") or {}).get(state_key) or {}
             by_opp = {}
             for name, block in [("C", payload)] + sorted((payload.get("series") or {}).items()):
