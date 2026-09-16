@@ -111,6 +111,7 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 | `pulse/`           | Funder-facing service-delivery telemetry at `/labs/pulse/` — wall display, donor reports, and the partner network at `/labs/pulse/network/`. Polls Connect's export API on a beat. See [Connect Pulse](#connect-pulse)                        | `ingest.py`, `api.py`, `network_api.py`, `partner_names.py`, `hq_location.py`       |
 | `labs/synthetic/`  | Registry of "synthetic" opportunities that serve fixture JSON from GDrive instead of prod exports. CRUD UI at `/labs/synthetic/`, SSE-streamed dump flow, strict access scoping by `user_opportunities`. See `docs/SYNTHETIC_OPPS.md`. | `models.py`, `registry.py`, `fixture_store.py`, `gdrive.py`, `dump.py`, `client.py` |
 | `mopup/`           | **User-facing name: "WA Revisit"** (at `/wa-revisit/` — old `/mopup/` URLs redirect there; the app/module/URL-namespace/JS-namespace internals still say "mopup", only displayed text and the path prefix changed) — program-scoped runs that pick an opportunity/wards/dates, pull visits once, then re-evaluate cluster-aware coverage candidates against tunable thresholds. Hands off by calling microplans' own `create_plan()` and redirecting into its unmodified review page. Run state is a `LocalLabsRecord`, not a Django model.                                     | `core/` (`candidates.py`, `indicators.py`, `geometry.py`, `gaps.py`, `handoff.py`), `tasks.py`, `views.py` |
+| `marketplace/`     | The organisation registry — `LabsOrg` satellites (`OrgProfile`, `OrgContact`, `OrgConnectSlug`) fed from the LLO Directory by `marketplace_import`. The directory is the **master** org list: an org that answered an EOI and lost never reaches Connect at all, so this is strictly larger than Connect's org set. Pulse partner identity reads from here. Every import prints a data-quality report naming, with row numbers, what it could not read. | `models.py`, `directory.py`, `identity.py`, `quality.py`, `management/commands/marketplace_import.py` |
 | `semantic/`        | SQL semantic layer — the indicator engine behind the KMC programme dashboard. YAML registry compiled to SQL and run in-process over the visit cache; the browser's JS indicator engine was **deleted**, so this is now the only source for the C/N series. Served at `workflow/api/<id>/semantic/`. See `connect_labs/semantic/PARITY.md`.                                          | `registry/kmc/*.yml`, `compiler.py`, `runtime.py`, `snapshot.py`, `gates.py`, `workflow_binding.py`, `validation.py` |
 | `labs/indicators/` | Targeting at `/labs/targeting/` — population/burden primitives for deciding where to deploy: thresholded selection across Africa, reach + cost sizing, and the methodology behind every figure. **Counts sum up the hierarchy; rates must never be summed** — see its README before touching aggregation.                                                                            | `measures.py`, `resolve.py`, `boundaries.py`, `methods.py`, `defence.py`, `export.py`, `README.md` |
 
@@ -158,12 +159,13 @@ things about it are expensive to rediscover.
 **Partner identity lives in the LLO Directory, not this repo.** Connect publishes
 partner *names* only for the orgs the polling account belongs to — a minority of
 those that deliver. The rest arrive as a slug and are matched against the team's
-directory sheet, loaded into `PulsePartner` by `pulse_partner_import` (daily on
-beat, and runnable by hand). No partner name is written down in source; if the
+directory sheet, loaded into the organisation registry (`labs.LabsOrg` +
+`marketplace.OrgProfile`) by `marketplace_import` (daily on beat, and runnable by
+hand). No partner name is written down in source; if the
 board shows slugs instead of names, that import has not run.
 
 Slugs no string rule can reach are resolved by a human on the directory's
-"Connect Org Mapping" tab and carried as `PulsePartnerAlias`. `partner_names.py`
+"Connect Org Mapping" tab and carried as `marketplace.OrgConnectSlug`. `partner_names.py`
 deliberately refuses to guess — a wrong parent name is worse than a visible slug.
 
 **Two traps when dating anything from the spine.** `completed_works` cannot date
@@ -352,7 +354,7 @@ operation, so the count moves whenever that registry does. The registry holds
 `stock_report_ingest`) and are deliberately kept OFF the MCP catalogue —
 seeds, bulk imports and ingests are run by an engineer through a management
 command, the way every other bootstrap in this repo is (`bootstrap_targeting`,
-`load_indicators`, `pulse_partner_import`, `seed_semantic_registry`). They stay
+`load_indicators`, `marketplace_import`, `seed_semantic_registry`). They stay
 in the registry so their commands keep its schema validation and provenance
 stamping. Those carry the
 prefix **`supply_chain_`** (`connect_labs/supply_chain/mcp_tools.py`,

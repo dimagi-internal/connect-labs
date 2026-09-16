@@ -1,7 +1,9 @@
 # Connect Marketplace — org registry, EOI history, and directory
 
-**Status:** design approved 2026-09-16. Phase 1 of 2; outreach is explicitly out
-of scope and specified separately.
+**Status:** steps ① and ② implemented 2026-09-16 (see
+`docs/superpowers/plans/2026-09-16-marketplace-org-registry.md`). Steps ③–⑤
+pending — they are Plan B, written against the landed code. Outreach (phase 2)
+not started.
 
 ## The problem
 
