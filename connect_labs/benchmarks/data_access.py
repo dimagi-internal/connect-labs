@@ -25,6 +25,9 @@ from connect_labs.labs.access.scopes import Caller, may_use
 def benchmarks_for_opportunity(request, opportunity_id: int) -> dict:
     """The latest publication of every cohort this opportunity belongs to.
 
+    The reading opportunity's own published row is excluded, so `peers` is
+    always the OTHER members -- see the comment on the query below.
+
     Shape: {"as_of": ..., "cohorts": {cohort_id: {"name", "as_of"}},
             "indicators": {cohort_id: {series: {indicator_id: {
         "peers": [{peer_index, value}, ...],
@@ -54,7 +57,19 @@ def benchmarks_for_opportunity(request, opportunity_id: int) -> dict:
             continue
         as_of = max(as_of, publication.as_of) if as_of else publication.as_of
         indicators: dict[str, dict] = {}
-        for row in BenchmarkValue.objects.filter(publication=publication):
+        # A reader never receives its OWN row back. Two reasons, and the second
+        # is the one that bites: the report draws this opportunity as its own
+        # bar from its own LIVE figures, so leaving the published copy in the
+        # peer set draws it twice -- once at the published value, once at the
+        # current one -- and a 12-member cohort renders 13 bars. And a reader
+        # who can difference "the set including me" against "me" learns
+        # something about the remainder that the floors never budgeted for.
+        #
+        # `min_peers` was already reasoning this way: its own rule says that
+        # below 3 "the reader is one of the contributors, so the one remaining
+        # bar is a named peer's exact value". Excluding self makes that
+        # arithmetic explicit rather than implied.
+        for row in BenchmarkValue.objects.filter(publication=publication).exclude(opportunity_id=opportunity_id):
             public = row.to_public()
             entry = indicators.setdefault(public["series"], {}).setdefault(
                 public["indicator_id"],
