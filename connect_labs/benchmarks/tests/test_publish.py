@@ -417,3 +417,62 @@ class TestSeriesRunOnTenureNotCalendar:
         first = by_period["M0"]
         for period, mapping in by_period.items():
             assert mapping == first, f"peer_index changed meaning between M0 and {period}"
+
+
+class TestAFurtherFamilyCanBeTrendedToo:
+    """The producer emitting a monthly per family is only half of it — the
+    publisher passed `{}` for every non-primary family, so the scorecard
+    indicators still published points and no series."""
+
+    @staticmethod
+    def _snapshot(with_monthly=True):
+        c, n = _catalog("C", ("C15",)), _catalog("N", ("N08",))
+        rows = []
+        for i, opp in enumerate(OPPS):
+            rows.append({"scope": "opportunity", "opportunity_id": opp, "n_cases": 100, **_columns(c + n, i)})
+            for j in range(3):
+                rows.append(
+                    {
+                        "scope": "opportunity_month",
+                        "opportunity_id": opp,
+                        "cohort_month": f"2026-0{j + 1}-01",
+                        "n_cases": 100,
+                        **_columns(c + n, i + j),
+                    }
+                )
+        snap = semantic_snapshot.build(
+            spec={},
+            rows=rows,
+            measures=c,
+            deployment={"llo_map": {o: "LLO One" for o in OPPS}, "app_asks": {}, "asks_as": {}, "settings": {}},
+            extra_series={"N": n},
+            as_of="2026-09-11",
+        )
+        if not with_monthly:  # a snapshot saved before the producer was fixed
+            snap["series"]["N"].pop("monthlyByScope", None)
+        return snap
+
+    def _publish(self, snapshot):
+        cohort = BenchmarkCohort.objects.create(name="Trends", organization_id="dimagi-kmc")
+        for opp in OPPS:
+            cohort.members.create(opportunity_id=opp)
+        publish_benchmark(
+            cohort, snapshot=snapshot, source_workflow_id=1, source_run_id=2, registry_id=3, as_of="2026-09-11"
+        )
+        return cohort
+
+    def test_a_scorecard_indicator_now_publishes_a_series(self):
+        cohort = self._publish(self._snapshot())
+        series = BenchmarkValue.objects.filter(publication=cohort.publications.first(), series="N").exclude(
+            period=None
+        )
+        assert series.exists(), "the further family published points but no series"
+        assert set(series.values_list("period", flat=True)) == {"M0", "M1", "M2"}
+
+    def test_an_older_snapshot_without_it_still_publishes_its_points(self):
+        """Degrade, never fail: a run saved before the producer change has no
+        per-family monthly and must still publish everything it does have."""
+        cohort = self._publish(self._snapshot(with_monthly=False))
+        vals = BenchmarkValue.objects.filter(publication=cohort.publications.first(), series="N")
+        assert vals.filter(period=None).exists(), "the older snapshot lost its point values too"
+        assert not vals.exclude(period=None).exists()

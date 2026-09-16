@@ -93,10 +93,14 @@ def _blocks(snapshot: dict) -> list[tuple[str, list, list, dict]]:
 
     Two shapes, because `snapshot.py` emits two. The PRIMARY family is the
     top-level `cMeasures` / `byOpp` / `monthlyByScope`; every FURTHER family is
-    `series[<name>]` with its own `measures` and `byOpp` -- and no monthly data
-    at all, since `monthlyByScope` is graded with the primary catalog only. A
-    further family therefore publishes points and no series, which is a real
-    limitation of the snapshot rather than of this module.
+    `series[<name>]` carrying the same four things under its own key.
+
+    A further family used to have no monthly at all -- `monthlyByScope` was
+    graded with the primary catalog only -- so it could be benchmarked
+    point-in-time and never over time. That is fixed in `snapshot.py`, and this
+    reads what it now emits. A snapshot saved BEFORE that carries no
+    `series[<name>].monthlyByScope`, and falls back to the old behaviour of
+    publishing points and no series rather than failing.
     """
     blocks: list[tuple[str, list, list, dict]] = []
     primary_measures = snapshot.get("cMeasures") or []
@@ -107,7 +111,14 @@ def _blocks(snapshot: dict) -> list[tuple[str, list, list, dict]]:
         logger.warning("benchmark publication skipped the primary family: cMeasures name no single series")
     for name, block in sorted((snapshot.get("series") or {}).items()):
         block = block or {}
-        blocks.append((str(name), block.get("measures") or [], block.get("byOpp") or [], {}))
+        blocks.append(
+            (
+                str(name),
+                block.get("measures") or [],
+                block.get("byOpp") or [],
+                block.get("monthlyByScope") or {},
+            )
+        )
     return blocks
 
 
