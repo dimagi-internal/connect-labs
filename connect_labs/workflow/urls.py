@@ -70,6 +70,14 @@ urlpatterns = [
     # API endpoints - Pipeline data
     path("api/<int:definition_id>/pipeline-data/", views.get_pipeline_data_api, name="api_pipeline_data"),
     path("api/<int:definition_id>/pipeline-rows/", views.pipeline_rows_api, name="api_pipeline_rows"),
+    # The same answer with the fetch's own progress in front of it. Progress used
+    # to ride the bulk pipeline-data stream, so a page that opted out of the ~30 MB
+    # payload lost the percentage too; this carries one without the other.
+    path(
+        "api/<int:definition_id>/pipeline-rows/stream/",
+        views.PipelineRowsStreamView.as_view(),
+        name="api_pipeline_rows_stream",
+    ),
     path(
         "api/<int:definition_id>/semantic/",
         views.semantic_indicators_api,
