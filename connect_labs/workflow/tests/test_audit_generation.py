@@ -110,6 +110,62 @@ def test_creator_run_default_creates_and_fires_job(monkeypatch):
     assert kw["job_config"]["other_sample_percentage"] == 10
 
 
+def test_creator_run_default_accepts_datetime_window_with_exclusive_end(monkeypatch):
+    """Regression: the MCP `workflow_run_default` tool's window_start/window_end
+    parsing hands `run_default` a (datetime, datetime) pair with `end` as an
+    EXCLUSIVE upper bound (e.g. window_end="2026-09-15" parses to
+    datetime(2026, 9, 16) at midnight UTC, per _parse_window_bound's own
+    end-of-day bump) -- not the (str, str) INCLUSIVE pair every other caller
+    (including every other test in this file) passes. Previously this raw
+    datetime pair was fed straight through to job_config/wda.create_run,
+    which crashed with "Object of type datetime is not JSON serializable"
+    the moment Connect's API client tried to encode the payload, and even
+    ignoring that, "2026-09-16" would have been the wrong window_end (one
+    day past what was actually asked for)."""
+    from datetime import datetime, timezone
+
+    from connect_labs.workflow import audit_generation as g
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    created_wda = {}
+
+    def make_wda(access_token=None, opportunity_id=None, **_):
+        wda = mock.Mock()
+        wda.list_runs.return_value = []
+        wda.create_run.return_value = _run(1234, None)
+        created_wda["wda"] = wda
+        return wda
+
+    monkeypatch.setattr(g, "WorkflowDataAccess", make_wda)
+    fake_job = mock.Mock()
+    fake_job.apply.return_value.result = {"sessions_created": 3}
+    fake_job.apply.return_value.successful.return_value = True
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
+
+    window = (
+        datetime(2026, 9, 15, tzinfo=timezone.utc),
+        datetime(2026, 9, 16, tzinfo=timezone.utc),  # exclusive end -- "just Sept 15"
+    )
+    result = run_default_for_definition(_creator_def(), access_token="t", window=window)
+
+    assert result == {"run_id": 1234, "sessions_created": 3, "status": "ready"}
+
+    # job_config must carry plain ISO date strings, not datetimes -- these
+    # would have crashed json.dumps() for real once serialized to Connect's API.
+    kw = fake_job.apply.call_args.kwargs["kwargs"]
+    assert kw["job_config"]["window_start"] == "2026-09-15"
+    assert kw["job_config"]["window_end"] == "2026-09-15"  # NOT "2026-09-16"
+
+    # Same for create_run's own period_start/period_end -- this is the exact
+    # call whose real (non-mocked) counterpart serializes to a Connect API
+    # JSON payload and previously crashed on a raw datetime here.
+    create_run_kwargs = created_wda["wda"].create_run.call_args.kwargs
+    assert create_run_kwargs["period_start"] == "2026-09-15"
+    assert create_run_kwargs["period_end"] == "2026-09-15"
+    assert isinstance(create_run_kwargs["period_start"], str)
+    assert isinstance(create_run_kwargs["period_end"], str)
+
+
 def test_creator_run_default_always_creates_no_reuse(monkeypatch):
     """Firing is an execution: it always creates a fresh run and fires the batch,
     even when a run for that window already exists. There is no reuse/dedup."""

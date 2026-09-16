@@ -1330,12 +1330,31 @@ def run_default(*, definition, access_token, request=None, window=None, cadence=
     and this opt-in must not change what "daily" resolves to for any
     definition that hasn't explicitly pinned same-day mode.
 
+    An explicitly passed ``window`` has TWO different shapes depending on the
+    caller, both supported here:
+      - A plain ``(start_iso, end_iso)`` STRING pair, INCLUSIVE of both ends
+        -- the same convention `resolve_window()` itself returns, and what
+        this function's own test suite and any other direct caller passes.
+      - A ``(start_datetime, end_datetime)`` pair with `end` as an EXCLUSIVE
+        upper bound -- what the MCP `workflow_run_default` tool's own
+        window_start/window_end parsing always produces, matching the
+        `start <= dt < end` convention every OTHER template's `window`
+        uses. `run_this_week_batch`/`create_batch_run`, however, feed
+        window_start/window_end straight into a Connect API JSON payload
+        (`wda.create_run(period_start=..., period_end=...)`) and into
+        `job_config`, neither of which can serialize a raw `datetime` --
+        and a same-day window would look like it spanned into the next day
+        if the exclusive bound were kept as-is. So a datetime pair is
+        converted back to the inclusive-string convention: the date part of
+        `start`, and the date part of `end` minus one day (undoing
+        `_parse_window_bound`'s own end-of-day bump).
+
     The per-track sampling rates and visit-clustering / duplicate-detection
     settings come from the definition's ``config.audit_batch`` defaults (the
     same values the UI pre-fills). Always creates a fresh run and fires it
     (no reuse). Returns ``{"run_id", "sessions_created", "status"}``.
     """
-    from datetime import date
+    from datetime import date, timedelta
 
     from connect_labs.workflow.audit_generation import (
         clustering_overrides_for,
@@ -1350,7 +1369,12 @@ def run_default(*, definition, access_token, request=None, window=None, cadence=
         preset = "today" if batch.get("window_mode") == "same_day" else window_preset_for_cadence(cadence)
         window_start, window_end = resolve_window(preset, date.today())
     else:
-        window_start, window_end = window
+        window_start_raw, window_end_raw = window
+        if isinstance(window_start_raw, str) and isinstance(window_end_raw, str):
+            window_start, window_end = window_start_raw, window_end_raw
+        else:
+            window_start = window_start_raw.date().isoformat()
+            window_end = (window_end_raw.date() - timedelta(days=1)).isoformat()
 
     return run_this_week_batch(
         definition,
