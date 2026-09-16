@@ -669,6 +669,192 @@ function WorkflowUI({
     );
   }
 
+  // ── This opportunity against its peers, over time ─────────────────────────
+  // The x axis is TENURE, not the calendar: M0 is each opportunity's own first
+  // month. Published that way because a cohort whose opportunities started
+  // across seven months was otherwise comparing somebody's first month against
+  // somebody else's sixth -- and because a line that starts late on a calendar
+  // axis says when that opportunity began, which identifies it.
+  function periodNumber(p) {
+    var m = /^M(\d+)$/.exec(String(p || ''));
+    return m ? Number(m[1]) : -1;
+  }
+
+  function PeerTrend(props) {
+    var entry = props.entry,
+      measure = props.measure;
+    var byPeriod = (entry && entry.series) || {};
+    var ownByPeriod = (entry && entry.ownSeries) || {};
+    // Numeric, because "M10" sorts before "M2" as a string.
+    var periods = Object.keys(byPeriod).sort(function (a, b) {
+      return periodNumber(a) - periodNumber(b);
+    });
+    if (periods.length < 2) return null;
+
+    // One line per peer index. A peer_index denotes the SAME peer in every
+    // period of a series -- that is what makes the points joinable at all --
+    // but only within THIS indicator, so a line cannot be followed to the
+    // chart beside it.
+    var lines = {};
+    periods.forEach(function (p, i) {
+      (byPeriod[p] || []).forEach(function (pt) {
+        (lines[pt.peer_index] = lines[pt.peer_index] || [])[i] = Number(
+          pt.value,
+        );
+      });
+    });
+    var ownPts = periods.map(function (p) {
+      var v = ownByPeriod[p];
+      return v === null || v === undefined ? null : Number(v);
+    });
+
+    var all = [];
+    Object.keys(lines).forEach(function (k) {
+      lines[k].forEach(function (v) {
+        if (v === v && v !== null) all.push(v);
+      });
+    });
+    ownPts.forEach(function (v) {
+      if (v !== null) all.push(v);
+    });
+    if (!all.length) return null;
+    var lo = Math.min.apply(null, all),
+      hi = Math.max.apply(null, all);
+    if (hi === lo) hi = lo + 1;
+    var W = 260,
+      H = 120,
+      L = 34,
+      R = 8,
+      T = 10,
+      B = 20;
+    var iw = W - L - R,
+      ih = H - T - B;
+    function x(i) {
+      return (
+        L + (periods.length > 1 ? (i * iw) / (periods.length - 1) : iw / 2)
+      );
+    }
+    function y(v) {
+      return T + ih - ((v - lo) / (hi - lo)) * ih;
+    }
+    function path(vals) {
+      var d = '',
+        pen = false;
+      vals.forEach(function (v, i) {
+        if (v === null || v === undefined || v !== v) {
+          pen = false;
+          return;
+        }
+        d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1) + ' ';
+        pen = true;
+      });
+      return d;
+    }
+    var hasOwn = ownPts.some(function (v) {
+      return v !== null;
+    });
+    var peerCount = Object.keys(lines).length;
+    return (
+      <div>
+        <svg
+          viewBox={'0 0 ' + W + ' ' + H}
+          className="w-full h-auto block"
+          role="img"
+          aria-label={(measure.title || measure.indicator) + ' over tenure'}
+        >
+          {[lo, (lo + hi) / 2, hi].map(function (t, i) {
+            return (
+              <g key={i}>
+                <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#eeeef4" />
+                <text
+                  x={L - 4}
+                  y={y(t) + 3}
+                  textAnchor="end"
+                  fontSize="7"
+                  fill="#9ca3af"
+                >
+                  {fmtValue(measure, t)}
+                </text>
+              </g>
+            );
+          })}
+          {periods.map(function (p, i) {
+            if (
+              i &&
+              i !== periods.length - 1 &&
+              i !== Math.floor((periods.length - 1) / 2)
+            )
+              return null;
+            return (
+              <text
+                key={p}
+                x={x(i)}
+                y={H - 6}
+                textAnchor="middle"
+                fontSize="7"
+                fill="#9ca3af"
+              >
+                {p}
+              </text>
+            );
+          })}
+          {Object.keys(lines).map(function (k) {
+            return (
+              <path
+                key={k}
+                d={path(lines[k])}
+                fill="none"
+                stroke="#cbd5e1"
+                strokeWidth="1.5"
+              />
+            );
+          })}
+          {hasOwn ? (
+            <path
+              d={path(ownPts)}
+              fill="none"
+              stroke="#4f46e5"
+              strokeWidth="2"
+            />
+          ) : null}
+          {hasOwn
+            ? ownPts.map(function (v, i) {
+                if (v === null) return null;
+                return (
+                  <circle
+                    key={i}
+                    cx={x(i)}
+                    cy={y(v)}
+                    r="2.5"
+                    fill="#4f46e5"
+                    stroke="#fff"
+                    strokeWidth="1"
+                  >
+                    <title>{periods[i] + ': ' + fmtValue(measure, v)}</title>
+                  </circle>
+                );
+              })
+            : null}
+        </svg>
+        <div className="mt-1 text-[11px] text-gray-500 flex justify-between gap-2">
+          <span>
+            {peerCount} anonymous peer{peerCount === 1 ? '' : 's'} · months
+            since each one started
+          </span>
+          {hasOwn ? (
+            <span className="text-indigo-700 font-semibold">
+              this opportunity
+            </span>
+          ) : (
+            <span className="text-gray-400">
+              this opportunity: not in the window
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   function Benchmark() {
     if (bench.status === 'loading')
       return (
@@ -698,6 +884,13 @@ function WorkflowUI({
       var shown = MEASURES.filter(function (m) {
         var e = byIndicator[m.indicator];
         return e && (e.peers || []).length;
+      });
+      // A published series is thinner than a published point: R5 keeps a period
+      // only if enough peers reached it and R6 then keeps only peers present in
+      // every period, so an indicator can have bars and no line.
+      var trended = MEASURES.filter(function (m) {
+        var e = byIndicator[m.indicator];
+        return e && Object.keys(e.series || {}).length > 1;
       });
       blocks.push(
         <div key={cid} className="mb-6">
@@ -740,6 +933,37 @@ function WorkflowUI({
               {benchmarkEmptyMessage}
             </div>
           )}
+          {trended.length ? (
+            <div className="mt-5">
+              <div className="text-xs font-semibold text-gray-700 mb-1">
+                Over time
+              </div>
+              <div className="text-[11px] text-gray-500 mb-2">
+                Each line is one opportunity across its own first months, so a
+                cohort that started at different times is still comparable. Only
+                indicators whose series cleared the disclosure window appear
+                here — the others are point-in-time above.
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                {trended.map(function (m) {
+                  return (
+                    <div
+                      key={m.indicator}
+                      className="border border-gray-200 rounded p-3"
+                    >
+                      <div className="text-xs font-semibold text-gray-700">
+                        {m.title || m.indicator}
+                      </div>
+                      <div className="font-mono text-[10px] text-gray-300 mb-2">
+                        {m.indicator}
+                      </div>
+                      <PeerTrend entry={byIndicator[m.indicator]} measure={m} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>,
       );
     });
