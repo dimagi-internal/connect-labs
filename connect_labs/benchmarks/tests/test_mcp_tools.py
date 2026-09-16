@@ -838,3 +838,25 @@ def test_cohort_create_can_switch_off_the_complete_series_rule(monkeypatch):
     default = benchmarks_cohort_create(user=user, name="default", organization_id="my-org")
     assert default["require_complete_series"] is True
     assert BenchmarkCohort.objects.get(pk=default["id"]).require_complete_series is True
+
+
+def test_cohort_create_accepts_a_stringified_boolean_and_refuses_a_bogus_one(monkeypatch):
+    """MCP clients differ on whether they coerce against the declared schema, so
+    the flag can arrive as the string "false". Coerced here rather than left to
+    Django, whose ValidationError names a column and not the argument — and
+    treated as an error when unrecognisable, because "false" is truthy in Python
+    and a silent bool() would switch a disclosure rule ON when asked for OFF."""
+    from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_create
+
+    _grant(monkeypatch, organizations=("my-org",))
+    user = _user()
+
+    out = benchmarks_cohort_create(
+        user=user, name="stringy", organization_id="my-org", require_complete_series="false"
+    )
+    assert BenchmarkCohort.objects.get(pk=out["id"]).require_complete_series is False
+
+    with pytest.raises(MCPToolError) as exc:
+        benchmarks_cohort_create(user=user, name="bogus", organization_id="my-org", require_complete_series="maybe")
+    assert exc.value.code == "INVALID_SCHEMA"
+    assert not BenchmarkCohort.objects.filter(name="bogus").exists()
