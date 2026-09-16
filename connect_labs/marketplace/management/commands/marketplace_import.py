@@ -29,6 +29,7 @@ from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import directory
 from connect_labs.marketplace.identity import ensure_org
 from connect_labs.marketplace.models import OrgConnectSlug, OrgContact, OrgProfile
+from connect_labs.marketplace.quality import audit
 from connect_labs.pulse.hq_location import resolve as resolve_hq
 
 PROFILE_FIELDS = (
@@ -145,6 +146,25 @@ def import_directory(org_rows, contact_rows, date_rows, map_rows, *, prune: bool
 
 
 class Command(BaseCommand):
+    def _report_findings(self, org_rows, contact_rows, orgs, contacts, skipped):
+        """Print what could not be read cleanly, with a row number each.
+
+        The directory is hand-maintained and confidence in it is patchy, so a
+        run whose only output is a success count hides the rows that need a
+        person.
+        """
+        findings = audit(org_rows, contact_rows, orgs, contacts, skipped)
+        if not findings:
+            self.stdout.write(self.style.SUCCESS("no data-quality findings"))
+            return findings
+        self.stdout.write(self.style.WARNING(f"\n{len(findings)} data-quality findings:"))
+        by_kind: dict[str, int] = {}
+        for finding in findings:
+            by_kind[finding.kind] = by_kind.get(finding.kind, 0) + 1
+            self.stdout.write(f"  {finding}")
+        self.stdout.write("  " + ", ".join(f"{n} {kind}" for kind, n in sorted(by_kind.items())))
+        return findings
+
     help = "Import the organisation registry from the LLO Directory"
 
     def add_arguments(self, parser):
@@ -178,8 +198,7 @@ class Command(BaseCommand):
                 f"would import {len(orgs)} organisations, {len(contacts)} contacts, "
                 f"{len(mapped)} slug attributions"
             )
-            for line in skipped:
-                self.stdout.write(self.style.WARNING(f"  skipped {line}"))
+            self._report_findings(org_rows, contact_rows, orgs, contacts, skipped)
             return
 
         try:
@@ -187,8 +206,13 @@ class Command(BaseCommand):
         except ValueError as exc:
             raise CommandError(str(exc)) from exc
 
-        for line in stats["skipped"]:
-            self.stdout.write(self.style.WARNING(f"  skipped {line}"))
+        self._report_findings(
+            org_rows,
+            contact_rows,
+            directory.parse_organizations(org_rows),
+            directory.parse_contacts(contact_rows),
+            stats["skipped"],
+        )
         located = ", ".join(f"{n} {tier}" for tier, n in stats["located"].items())
         self.stdout.write(
             self.style.SUCCESS(
