@@ -9,23 +9,41 @@ single "visits" connect_csv pipeline (any status -- approved-only subsets are
 derived in Python, mirroring Program 217's hsd_visits/approved_visits split
 from one fetch instead of two):
 
-    1. total_households_registered  ("Register a New Family" form)
-    2. total_children_registered    ("Screening " form, every submission)
-    3. total_sam_children_registered ("Screening " form, rutf_enrollment=yes)
-    4. total_children_muac_measured ("Screening " form, MUAC photo captured)
-    5. total_visits                 ("Visit Form" submissions, any status)
-    6. total_sam_followup_visits    ("Visit Form" submissions, approved only)
+    1. total_households_registered   ("Register a New Family" form, distinct households)
+    2. total_children_registered     ("Register a New Family" form, summed under_five_children_count)
+    3. total_children_screened       ("Screening " form, every submission)
+    4. total_sam_children_registered ("Screening " form, rutf_enrollment=yes)
+    5. total_children_muac_measured  ("Screening " form, MUAC photo captured)
+    6. total_visits                  ("Visit Form" submissions, any status)
+    7. total_sam_followup_visits     ("Visit Form" submissions, approved only)
 
 See connect_labs/workflow/flw_daily_summary_compute_rutf.py for the pure
 computation, and that module's docstring for exactly how these fields were
-verified against real submitted RUTF data (not guessed from the blank app
-schema) -- via an existing pipeline built for the RUTF Internal Test
-opportunity (id 2092), "RUTF FLW Service Delivery Indicators" (pipeline id
-19854), and by reading the RUTF app's own question list. In particular:
-"Register a New Family" registers a HOUSEHOLD and, via an internal repeat
-group, can register several children in one submission -- so a distinct count
-of THAT form is households, not children; "Screening " registers exactly one
-child per submission and is the real per-child signal.
+derived from the RUTF app's own question list (Household Management ->
+Register a New Family, Initial Screening -> Screening). #1/#2 are currently
+verified-correct-but-silent-zero: as of 2026-09-16, no "Register a New Family"
+submission has ever appeared in Connect's own visit data for the live
+opportunity (2230), even after a full, forced, non-stale cache refresh that
+DID surface 113 real "Screening " visits Labs had been missing (a separate,
+now-fixed staleness bug -- see the cache note below). So #1/#2 reading 0 is
+not (as of this writing) a sign either calculation is wrong; it is Connect
+not creating a "visit" for that specific form at all, for a reason outside
+this pipeline. #3-7 are unaffected and read real numbers.
+
+CACHE STALENESS, separate from the above: this template's numbers can only
+ever be as fresh as WorkflowDataAccess.get_pipeline_data's underlying raw
+visit cache. That cache's own validity check normally compares its cached row
+count against Connect's live "expected" count for the opportunity -- but a
+Celery-run scheduled fire (this template's normal trigger, see run_default
+below) does not have the request context that check needs, so it falls back
+to trusting whatever is cached, however stale, as long as it has not hit its
+own TTL. Observed live 2026-09-16: a cache last populated when the opportunity
+had ~9 visits was still being served as "valid" over a day later, once the
+opportunity actually had 112+ -- silently undercounting every indicator in
+this file, not just #1/#2, until someone forced a refresh (workflow_ensure_
+visit_cache, or opening the workflow's page live). Nothing in THIS template
+can fix that on its own; flagging it here so a future reader chasing
+"numbers look low" checks cache freshness before re-auditing the arithmetic.
 
 Runs on a schedule (WorkflowSchedule, daily) via run_default below, exactly
 like flw_daily_summary_report.py: no interactive review step, the run is
@@ -94,6 +112,16 @@ PIPELINE_SCHEMAS = [
                     "description": "MUAC photo attachment filename captured at Screening (the child's "
                     "initial visit). Non-empty means a photo was taken. The follow-up Visit Form captures "
                     "MUAC again at a different nested path -- not read here; scoped to Screening-time MUAC.",
+                },
+                {
+                    "name": "household_children_count",
+                    "path": "form.household_form.under_five_children_count",
+                    "aggregation": "first",
+                    "description": "Set on the Register a New Family form only -- the FLW's own answer to "
+                    "'How many children in this family are between 6 months and 5 years of age?', saved to "
+                    "the household case. Summed (not deduped) across a day's household registrations to get "
+                    "total_children_registered, since a single submission's repeat group can register "
+                    "several children that this pipeline's one-row-per-form model can't otherwise count.",
                 },
             ],
         },
@@ -164,6 +192,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
                             <th className="px-3 py-2 text-left font-semibold">FLW</th>
                             <th className="px-3 py-2 text-right font-semibold">Households Registered</th>
                             <th className="px-3 py-2 text-right font-semibold">Children Registered</th>
+                            <th className="px-3 py-2 text-right font-semibold">Children Screened</th>
                             <th className="px-3 py-2 text-right font-semibold">SAM Children Registered</th>
                             <th className="px-3 py-2 text-right font-semibold">MUAC Measured</th>
                             <th className="px-3 py-2 text-right font-semibold">Total Visits</th>
@@ -184,6 +213,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
                                     </td>
                                     <td className="px-3 py-2 text-right">{f.total_households_registered}</td>
                                     <td className="px-3 py-2 text-right">{f.total_children_registered}</td>
+                                    <td className="px-3 py-2 text-right">{f.total_children_screened}</td>
                                     <td className="px-3 py-2 text-right">{f.total_sam_children_registered}</td>
                                     <td className="px-3 py-2 text-right">{f.total_children_muac_measured}</td>
                                     <td className="px-3 py-2 text-right">{f.total_visits}</td>
