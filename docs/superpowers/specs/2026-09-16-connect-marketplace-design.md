@@ -229,37 +229,33 @@ becomes four rows. A round with no responses of its own is not a round.
 The apparent duplicate copy of the ITN SBC response sheet is treated as a
 duplicate and not ingested, pending confirmation from the directory's owner.
 
-### The `Labs Access` column is a claim; labs verifies it and never trusts it
+### The `Labs Access` column is written by labs, never by hand
 
-A hand-maintained "yes, access granted" box is a claim that goes stale the
-moment a sheet is moved, re-owned, or recreated, and it fails in the worst
-direction: it asserts everything is fine while the importer reads nothing. The
-obvious fix is to have labs write the column itself.
+`marketplace_import --check-access` attempts a real read of each configured
+response sheet as the labs service account, and writes the verdict and a
+timestamp back into the row.
 
-**Labs cannot.** The service account holds read-only access to the directory
-sheet (`canEdit: false`, verified 2026-09-16), and granting it write access
-would mean giving it editor rights on the master organisation registry — a
-meaningful privilege escalation for the sake of two status columns.
+It is machine-written on purpose. A hand-maintained "yes, access granted" box is
+a claim that goes stale the moment a sheet is moved, re-owned, or recreated, and
+it fails in the worst direction: it asserts that everything is fine while the
+importer reads nothing. The column is only worth having if it reports what is
+actually true at the moment it was checked, which means the thing that checks it
+has to be the thing that writes it.
 
-So the column is maintained by whoever grants the access, and
-`marketplace_import --check-access` **verifies it against reality**:
+The service account holds read-write access to the directory sheet (`canEdit:
+true`, granted 2026-09-16). That privilege is deliberately narrow in use:
 
-- it attempts a real read of each configured response sheet as the service
-  account, and
-- reports any row where the sheet's claim and the actual result disagree.
+> **Labs writes exactly two cells per round — `Labs Access` and `Labs Access
+> Checked` — and nothing else in the workbook, ever.**
 
-A row claiming access that does not exist is therefore a reported defect, not a
-silent one. The DB field `sa_access_state` holds the *verified* result and is
-what the importer and the UI act on; the sheet column exists so that a human
-granting access can see and record what they did. The sheet is never the
-authority.
+The ingest path itself stays strictly read-only. A bug in matching or parsing
+must not be able to reach the master registry, and confining every write to one
+function with one purpose is what keeps that true. `--prune` semantics do not
+apply to the sheet at all: labs never deletes a row it did not write.
 
-**Open decision (see Dependencies):** the alternative is a single explicit
-editor grant on the directory sheet alone, which would let labs write the column
-and remove the possibility of disagreement entirely. That is a per-file grant
-and so consistent with the access policy, but it is write access to the master
-registry. Recommendation is the verify-don't-trust design above; the decision is
-the sheet owner's.
+`sa_access_state` on the model holds the same verdict in the database, and is
+what the importer and the UI act on. The sheet column exists so a person
+granting access can see the result of what they did without reading a log.
 
 ### Response mapping tab
 
@@ -427,24 +423,15 @@ ingested" rather than as empty.
 into four rounds, and treating the second ITN SBC response sheet as a duplicate.
 Both are proceeding unless they object.
 
-**Open decision — write access to the directory sheet.** The service account can
-read the directory but not write it (`canEdit: false`). The spec therefore has
-the `Labs Access` column maintained by a human and *verified* by labs, with
-disagreement reported as a defect. The alternative is one explicit editor grant
-on the directory sheet alone, letting labs maintain the column itself. Both are
-per-file grants and consistent with the access policy; the second trades a
-narrow write privilege on the master registry for the removal of a whole class
-of stale-claim bug. Needs the sheet owner's decision before step 3.
+**Write access to the directory sheet is granted** (`canEdit: true`, verified
+2026-09-16), so `--check-access` maintains the two access columns itself. The
+privilege is confined to those two cells per round; see "The `Labs Access`
+column is written by labs".
 
-**The importer never writes the directory sheet.** Restructuring the EOI/RFP tab
-(step 3) is a one-off edit performed by an operator under an identity that holds
-edit rights on the sheet — not by the labs service account, which is read-only
-there by design. Keeping the import path read-only means a buggy import can
-never damage the master registry.
-
-Neither open item is blocked on access: an identity with `canShare` on the
-directory sheet is available, so the optional editor grant can be made if that
-is the decision.
+**Restructuring the EOI/RFP tab** (step 3) is a one-off operator edit, not
+something the importer does. It is a structural change to the master registry
+and wants a person's eye on it, and keeping it out of the import path preserves
+the property that a buggy ingest cannot reshape the sheet.
 
 ## Phase 2, noted only so phase 1 does not foreclose it
 
