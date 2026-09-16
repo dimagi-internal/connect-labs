@@ -183,6 +183,4 @@ The same indicator columns as the KMC Programme Metrics report, calculated for t
 One row per field worker, one column per indicator, colour-banded so you can see at a glance which workers are on track and which need attention. Because an opportunity owns its own workers' data, real field worker names appear here — not anonymous identifiers.
 
 **3. Peer benchmarking**
-Anonymous bars showing each indicator's distribution across other opportunities in the same benchmarking cohort, with this opportunity's own value marked. No partner's name is ever shown against another partner's figure.
-
-!!! note "Nothing
+Each indicator's distribution across other opportunities in the same benchmarking cohort is shown as anonymous grey bars, with this opportunity's own value shown as a **blue bar** placed by rank alongside them — so you read your position
