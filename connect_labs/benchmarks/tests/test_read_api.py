@@ -148,3 +148,23 @@ def test_a_non_member_with_access_still_reads_nothing():
     """Excluding self must not accidentally widen the read to outsiders."""
     _published()
     assert benchmarks_for_opportunity(_request(999), 999)["indicators"] == {}
+
+
+def test_the_reader_gets_its_own_published_figures_back_separately():
+    """Out of `peers`, but not thrown away — a trend chart draws its own line
+    from the same publication as the peers', because the report's live figure is
+    a different vintage and would not be comparable to the lines beside it."""
+    cohort = _published()
+    entry = benchmarks_for_opportunity(_request(OPPS[0]), OPPS[0])["indicators"][str(cohort.pk)]["C"]["C15"]
+    assert entry["own"] is not None, "the reader's own published point value is missing"
+    assert entry["ownSeries"], "the reader's own published series is missing"
+    assert entry["own"] not in [p["value"] for p in entry["peers"]], "own value is ALSO in the peer set"
+
+
+def test_each_member_gets_its_own_figures_not_a_shared_one():
+    cohort = _published()
+
+    def own(opp):
+        return benchmarks_for_opportunity(_request(opp), opp)["indicators"][str(cohort.pk)]["C"]["C15"]["own"]
+
+    assert own(OPPS[0]) != own(OPPS[1]), "two members were handed the same 'own' value"
