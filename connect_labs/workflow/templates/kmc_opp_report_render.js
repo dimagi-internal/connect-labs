@@ -675,8 +675,10 @@ function WorkflowUI({
   // across seven months was otherwise comparing somebody's first month against
   // somebody else's sixth -- and because a line that starts late on a calendar
   // axis says when that opportunity began, which identifies it.
+  // `R3` is the opportunity's own fourth report. (`M3` was an earlier,
+  // cohort-month axis; still parsed so an older publication still charts.)
   function periodNumber(p) {
-    var m = /^M(\d+)$/.exec(String(p || ''));
+    var m = /^[RM](\d+)$/.exec(String(p || ''));
     return m ? Number(m[1]) : -1;
   }
 
@@ -838,8 +840,8 @@ function WorkflowUI({
         </svg>
         <div className="mt-1 text-[11px] text-gray-500 flex justify-between gap-2">
           <span>
-            {peerCount} anonymous peer{peerCount === 1 ? '' : 's'} · months
-            since each one started
+            {peerCount} anonymous peer{peerCount === 1 ? '' : 's'} · reports
+            since each one joined
           </span>
           {hasOwn ? (
             <span className="text-indigo-700 font-semibold">
@@ -939,10 +941,12 @@ function WorkflowUI({
                 Over time
               </div>
               <div className="text-[11px] text-gray-500 mb-2">
-                Each line is one opportunity across its own first months, so a
-                cohort that started at different times is still comparable. Only
-                indicators whose series cleared the disclosure window appear
-                here — the others are point-in-time above.
+                One line per opportunity, across its own first reports — so a
+                cohort whose members joined at different times still lines up.
+                Each point is one saved programme report, the same series the
+                programme page charts. Only indicators whose series cleared the
+                disclosure window appear here; the others are point-in-time
+                above.
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                 {trended.map(function (m) {

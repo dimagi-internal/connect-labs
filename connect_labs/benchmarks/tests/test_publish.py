@@ -108,7 +108,24 @@ def _cohort(members=OPPS):
     return cohort
 
 
+def _history(indicator_ids=("C15",), series="C", opps=OPPS, reports=2, first_report=None):
+    """The source workflow's completed runs, oldest first — where a SERIES now
+    comes from. `first_report` maps an opportunity to the index of its first
+    report, so a test can stagger when opportunities joined."""
+    first_report = first_report or {}
+    out = []
+    for r in range(reports):
+        by_opp = {}
+        for i, opp in enumerate(opps):
+            if r < first_report.get(opp, 0):
+                continue  # this opportunity had not joined yet
+            by_opp[opp] = {ind: {"id": ind, "value": 40.0 + i + r, "n": 100, "band": "green"} for ind in indicator_ids}
+        out.append({"date": f"2026-0{r + 1}-28", "byOpp": {series: by_opp}})
+    return out
+
+
 def _publish(cohort, snapshot=None, **kwargs):
+    kwargs.setdefault("history", _history())
     return publish_benchmark(
         cohort,
         snapshot=SNAPSHOT if snapshot is None else snapshot,
@@ -200,16 +217,13 @@ def test_it_writes_point_and_series_values():
     pub = _publish(_cohort())
     points = BenchmarkValue.objects.filter(publication=pub, period__isnull=True)
     series = BenchmarkValue.objects.filter(publication=pub, period__isnull=False)
-    # C15 and N08 have a point each per opportunity; only the PRIMARY family has
-    # monthly data (`monthlyByScope` is graded with the primary catalog alone).
+    # C15 and N08 have a point each per opportunity. The SERIES comes from the
+    # saved runs, so only the indicator the history carries has one.
     assert points.count() == 2 * len(OPPS)
-    assert series.count() == len(OPPS) * len(MONTHS)
+    assert series.count() == len(OPPS) * 2
     assert set(series.values_list("indicator_id", flat=True)) == {"C15"}
-    # Tenure offsets, not the calendar months the snapshot carried: every
-    # opportunity in this fixture starts in the same month, so its M0 is
-    # MONTHS[0] and its M1 is MONTHS[1]. See TestSeriesRunOnTenureNotCalendar
-    # for why the axis is re-based off the calendar.
-    assert set(series.values_list("period", flat=True)) == {f"M{i}" for i in range(len(MONTHS))}
+    # Each opportunity's OWN Nth report, not the report date.
+    assert set(series.values_list("period", flat=True)) == {"R0", "R1"}
 
 
 def test_the_published_values_are_the_graded_cells_own_values():
@@ -264,15 +278,15 @@ def test_republishing_leaves_the_first_publications_values_untouched():
 
 
 def test_an_indicator_present_only_in_the_series_scope_is_still_published():
-    """An indicator can be absent from the point scope and present in the monthly
-    one. Iterating just the point scope's keys would silently skip it -- zero
-    rows, no exception, no log."""
+    """An indicator can be absent from the run being published and present in the
+    earlier ones the series is drawn from. Iterating just the snapshot's keys
+    would silently skip it -- zero rows, no exception, no log."""
     snapshot = build_snapshot()
     for entry in snapshot["byOpp"]:
         entry["ind"].pop("C15")
     pub = _publish(_cohort(), snapshot=snapshot)
     series = BenchmarkValue.objects.filter(publication=pub, indicator_id="C15", period__isnull=False)
-    assert series.count() == len(OPPS) * len(MONTHS)
+    assert series.count() == len(OPPS) * 2
     assert BenchmarkValue.objects.filter(publication=pub, indicator_id="C15", period__isnull=True).count() == 0
 
 
@@ -302,7 +316,7 @@ def test_tie_salt_varies_per_indicator(monkeypatch):
             observations, min_peers=min_peers, min_denominator=min_denominator, tie_salt=tie_salt
         )
 
-    def _series_spy(observations_by_period, *, min_peers, min_denominator, tie_salt):
+    def _series_spy(observations_by_period, *, min_peers, min_denominator, tie_salt, **kw):
         series_salts.append(tie_salt)
         return real_anonymise_series(
             observations_by_period, min_peers=min_peers, min_denominator=min_denominator, tie_salt=tie_salt
@@ -334,145 +348,88 @@ def test_a_failure_mid_publication_leaves_nothing_committed():
     assert BenchmarkValue.objects.count() == 0
 
 
-class TestSeriesRunOnTenureNotCalendar:
-    """A series period is months since THAT opportunity's own first month."""
+class TestSeriesRunOnTheOpportunitysOwnReports:
+    """A series period is that opportunity's own Nth report, not the report date."""
 
-    @staticmethod
-    def _staggered_snapshot():
-        """Six opportunities, each starting a month after the last, three months
-        of data each. On a calendar axis they overlap barely; on a tenure axis
-        every one of them has an M0, M1 and M2."""
-        c = _catalog("C", ("C15",))
-        rows = []
-        for i, opp in enumerate(OPPS):
-            rows.append({"scope": "opportunity", "opportunity_id": opp, "n_cases": 100, **_columns(c, i)})
-            for j in range(3):
-                rows.append(
-                    {
-                        "scope": "opportunity_month",
-                        "opportunity_id": opp,
-                        # opp 0 starts 2026-01, opp 1 starts 2026-02, ...
-                        "cohort_month": f"2026-{i + j + 1:02d}-01",
-                        "n_cases": 100,
-                        **_columns(c, i + j),
-                    }
-                )
-        return semantic_snapshot.build(
-            spec={},
-            rows=rows,
-            measures=c,
-            deployment={"llo_map": {o: "LLO One" for o in OPPS}, "app_asks": {}, "asks_as": {}, "settings": {}},
-            as_of="2026-09-11",
-        )
+    def _publish_staggered(self):
+        """Six opportunities joining at different points across six reports."""
+        cohort = _cohort()
+        first = {opp: i for i, opp in enumerate(OPPS)}
+        return _publish(cohort, history=_history(reports=6, first_report=first)), first
 
-    def _publish(self):
-        cohort = BenchmarkCohort.objects.create(name="Staggered", organization_id="dimagi-kmc")
-        for opp in OPPS:
-            cohort.members.create(opportunity_id=opp)
-        publish_benchmark(
-            cohort,
-            snapshot=self._staggered_snapshot(),
-            source_workflow_id=1,
-            source_run_id=2,
-            registry_id=3,
-            as_of="2026-09-11",
-        )
-        return cohort
-
-    def test_periods_are_tenure_offsets_not_calendar_months(self):
-        cohort = self._publish()
-        periods = {
-            v.period for v in BenchmarkValue.objects.filter(publication=cohort.publications.first()) if v.period
-        }
+    def test_periods_are_report_offsets_not_dates(self):
+        pub, _ = self._publish_staggered()
+        periods = {v.period for v in BenchmarkValue.objects.filter(publication=pub) if v.period}
         assert periods, "no series was published at all"
-        assert all(p.startswith("M") for p in periods), f"a calendar month leaked into the periods: {periods}"
+        assert all(p.startswith("R") for p in periods), f"a report date leaked into the periods: {periods}"
 
-    def test_no_calendar_month_is_recoverable_from_a_published_period(self):
-        """A period that named a real month would say when an opportunity began,
-        and a start date identifies it."""
-        cohort = self._publish()
-        periods = {
-            v.period for v in BenchmarkValue.objects.filter(publication=cohort.publications.first()) if v.period
-        }
+    def test_no_date_is_recoverable_from_a_published_period(self):
+        """A period naming a real date would say when an opportunity joined, and
+        that identifies it."""
+        pub, _ = self._publish_staggered()
+        periods = {v.period for v in BenchmarkValue.objects.filter(publication=pub) if v.period}
         assert not any("2026" in p for p in periods)
-
-    def test_staggered_starts_still_share_a_window(self):
-        """The point of re-basing. Every opportunity has three months of data, so
-        all three tenure periods clear R6 — where on a calendar axis the six
-        start months would have thinned the common window to nothing."""
-        cohort = self._publish()
-        periods = {
-            v.period for v in BenchmarkValue.objects.filter(publication=cohort.publications.first()) if v.period
-        }
-        assert periods == {"M0", "M1", "M2"}, periods
 
     def test_a_peer_index_denotes_the_same_peer_in_every_period(self):
         """What makes the points joinable into a line at all."""
-        cohort = self._publish()
-        vals = BenchmarkValue.objects.filter(publication=cohort.publications.first()).exclude(period=None)
+        pub, _ = self._publish_staggered()
         by_period = {}
-        for v in vals:
+        for v in BenchmarkValue.objects.filter(publication=pub).exclude(period=None):
             by_period.setdefault(v.period, {})[v.peer_index] = v.opportunity_id
         assert len(by_period) > 1
-        first = by_period["M0"]
+        first_map = by_period["R0"]
         for period, mapping in by_period.items():
-            assert mapping == first, f"peer_index changed meaning between M0 and {period}"
+            for idx, opp in mapping.items():
+                assert first_map.get(idx) == opp, f"peer_index {idx} changed meaning between R0 and {period}"
 
 
-class TestAFurtherFamilyCanBeTrendedToo:
-    """The producer emitting a monthly per family is only half of it — the
-    publisher passed `{}` for every non-primary family, so the scorecard
-    indicators still published points and no series."""
+class TestAScorecardFamilyCanBeTrendedToo:
+    """The series is drawn per FAMILY from the history, so a scorecard indicator
+    trends exactly as a headline one does."""
 
-    @staticmethod
-    def _snapshot(with_monthly=True):
-        c, n = _catalog("C", ("C15",)), _catalog("N", ("N08",))
-        rows = []
-        for i, opp in enumerate(OPPS):
-            rows.append({"scope": "opportunity", "opportunity_id": opp, "n_cases": 100, **_columns(c + n, i)})
-            for j in range(3):
-                rows.append(
-                    {
-                        "scope": "opportunity_month",
-                        "opportunity_id": opp,
-                        "cohort_month": f"2026-0{j + 1}-01",
-                        "n_cases": 100,
-                        **_columns(c + n, i + j),
-                    }
-                )
-        snap = semantic_snapshot.build(
-            spec={},
-            rows=rows,
-            measures=c,
-            deployment={"llo_map": {o: "LLO One" for o in OPPS}, "app_asks": {}, "asks_as": {}, "settings": {}},
-            extra_series={"N": n},
-            as_of="2026-09-11",
+    def test_a_scorecard_indicator_publishes_a_series(self):
+        pub = _publish(_cohort(), history=_history(indicator_ids=("N08",), series="N", reports=3))
+        series = BenchmarkValue.objects.filter(publication=pub, series="N").exclude(period=None)
+        assert series.exists(), "the scorecard family published points but no series"
+        assert set(series.values_list("period", flat=True)) == {"R0", "R1", "R2"}
+
+    def test_no_history_means_points_and_no_series(self):
+        """Degrade, never fail."""
+        pub = _publish(_cohort(), history=None)
+        vals = BenchmarkValue.objects.filter(publication=pub)
+        assert vals.filter(period=None).exists(), "the points went missing too"
+        assert not vals.exclude(period=None).exists()
+
+
+class TestRelaxingR6:
+    """R6 keeps only peers present in every period. That is the safer default and
+    it is also what leaves a real cohort with no series at all, because members
+    join at different times."""
+
+    def _publish(self, require_complete):
+        cohort = BenchmarkCohort.objects.create(
+            name="R6", organization_id="dimagi-kmc", require_complete_series=require_complete
         )
-        if not with_monthly:  # a snapshot saved before the producer was fixed
-            snap["series"]["N"].pop("monthlyByScope", None)
-        return snap
-
-    def _publish(self, snapshot):
-        cohort = BenchmarkCohort.objects.create(name="Trends", organization_id="dimagi-kmc")
         for opp in OPPS:
             cohort.members.create(opportunity_id=opp)
-        publish_benchmark(
-            cohort, snapshot=snapshot, source_workflow_id=1, source_run_id=2, registry_id=3, as_of="2026-09-11"
-        )
-        return cohort
+        return _publish(cohort, history=_history(reports=6, first_report={opp: i for i, opp in enumerate(OPPS)}))
 
-    def test_a_scorecard_indicator_now_publishes_a_series(self):
-        cohort = self._publish(self._snapshot())
-        series = BenchmarkValue.objects.filter(publication=cohort.publications.first(), series="N").exclude(
-            period=None
-        )
-        assert series.exists(), "the further family published points but no series"
-        assert set(series.values_list("period", flat=True)) == {"M0", "M1", "M2"}
+    def test_on_by_default_a_late_joiner_is_dropped(self):
+        assert BenchmarkCohort().require_complete_series is True
+        pub = self._publish(True)
+        latest = OPPS[-1]  # joined at the last report, so it has one point
+        assert not BenchmarkValue.objects.filter(publication=pub, opportunity_id=latest).exclude(period=None).exists()
 
-    def test_an_older_snapshot_without_it_still_publishes_its_points(self):
-        """Degrade, never fail: a run saved before the producer change has no
-        per-family monthly and must still publish everything it does have."""
-        cohort = self._publish(self._snapshot(with_monthly=False))
-        vals = BenchmarkValue.objects.filter(publication=cohort.publications.first(), series="N")
-        assert vals.filter(period=None).exists(), "the older snapshot lost its point values too"
-        assert not vals.exclude(period=None).exists()
+    def test_off_a_late_joiner_contributes_from_its_own_R0(self):
+        pub = self._publish(False)
+        rows = BenchmarkValue.objects.filter(publication=pub, opportunity_id=OPPS[-1]).exclude(period=None)
+        assert {r.period for r in rows} == {"R0"}, "the late joiner still did not contribute"
+
+    def test_off_does_not_publish_a_period_too_few_peers_reached(self):
+        """R5 still holds — relaxing R6 must not smuggle a thin period through."""
+        pub = self._publish(False)
+        by_period = {}
+        for v in BenchmarkValue.objects.filter(publication=pub).exclude(period=None):
+            by_period.setdefault(v.period, set()).add(v.opportunity_id)
+        assert by_period, "nothing published at all"
+        assert all(len(o) >= 3 for o in by_period.values()), by_period

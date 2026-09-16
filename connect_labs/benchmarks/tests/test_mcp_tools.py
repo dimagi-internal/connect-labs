@@ -746,3 +746,44 @@ def test_an_unreachable_connect_at_the_opportunity_check_is_upstream_not_denied(
     assert calls["n"] >= 2, "the org gate never resolved, so this did not exercise the second fetch"
     # Fails closed either way: nothing was written.
     assert BenchmarkCohort.objects.get(pk=cohort["id"]).members.count() == 0
+
+
+def test_publish_survives_a_history_read_that_fails():
+    """A failed history read costs the SERIES and nothing else. The point values
+    are the publication's substance and come from the snapshot already in hand,
+    so a refused publication would be the worse outcome."""
+    from connect_labs.benchmarks.mcp_tools import _run_history
+
+    class _Boom:
+        def list_runs(self, definition_id):
+            raise RuntimeError("upstream is down")
+
+    assert _run_history(_Boom(), 1, "snapshot") == []
+
+
+def test_run_history_projects_each_completed_run_to_its_per_opportunity_cells():
+    from connect_labs.benchmarks.mcp_tools import _run_history
+
+    def _run(date, value, completed=True):
+        return _StubRun(
+            is_completed=completed,
+            period_end=date,
+            snapshot={
+                "state": {
+                    "snapshot": {
+                        "byOpp": [{"opp": 500, "ind": {"C15": {"id": "C15", "value": value, "n": 100}}}],
+                        "series": {"N": {"byOpp": [{"opp": 500, "ind": {"N08": {"id": "N08", "value": value}}}]}},
+                    }
+                }
+            },
+        )
+
+    class _WDA:
+        def list_runs(self, definition_id):
+            # out of order, and one still running
+            return [_run("2026-02-28", 2), _run("2026-01-31", 1), _run("2026-03-31", 3, completed=False)]
+
+    out = _run_history(_WDA(), 1, "snapshot")
+    assert [r["date"] for r in out] == ["2026-01-31", "2026-02-28"], "not oldest-first, or kept an in-progress run"
+    assert out[0]["byOpp"]["C"][500]["C15"]["value"] == 1
+    assert out[0]["byOpp"]["N"][500]["N08"]["value"] == 1, "the scorecard family was not projected"
