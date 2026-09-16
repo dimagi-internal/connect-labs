@@ -2459,7 +2459,22 @@ class PipelineRowsStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
             if result is None:
                 yield send_sse_event("Error", error="the pipeline produced no result")
                 return
-            rows = _filter_pipeline_rows(getattr(result, "rows", None), params)
+            # The two transports reach their rows differently and this is the seam.
+            # `execute_pipeline` / `get_cached_pipeline_result` hand the JSON view
+            # dicts; `stream_analysis` hands this one pipeline row OBJECTS, whose
+            # `.get` is None -- so filtering them directly raised "'NoneType' object
+            # is not callable" on the first warm read in production. `serialize_
+            # pipeline_row` is the single producer of row dicts for exactly this
+            # reason (see its docstring): every payload path goes through it so their
+            # key sets cannot drift. `extra` is merged last, so the framework's
+            # opportunity tag wins over a pipeline field of the same name (#1306).
+            rows = _filter_pipeline_rows(
+                [
+                    serialize_pipeline_row(row, extra={"opportunity_id": opportunity_id})
+                    for row in (getattr(result, "rows", None) or [])
+                ],
+                params,
+            )
             yield send_sse_event(
                 "Complete",
                 data={
