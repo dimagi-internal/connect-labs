@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Submissions awaiting a verdict{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+  <a href="{% url 'marketplace:directory' %}" class="small text-muted">&larr; Directory</a>
+  <h2 class="mt-1">Submissions awaiting a verdict</h2>
+  <p class="text-muted small">
+    These applications could not be attributed to an organisation by an exact
+    contact email or an exact name. They are listed rather than guessed at: a
+    misattributed submission puts one organisation's words on another
+    organisation's record, where they will be read as that organisation's own.
+  </p>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead class="table-light">
+        <tr><th>Round</th><th>Organisation as submitted</th><th>Email(s)</th><th>Country</th><th>Submitted</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td class="small">{{ r.solicitation.title }}</td>
+            <td class="small">{{ r.org_name|default:"(none given)" }}</td>
+            <td class="small">{{ r.submitted_by_email|default:"—" }}</td>
+            <td class="small">{{ r.country_as_submitted|truncatechars:30 }}</td>
+            <td class="small">{% if r.submission_date %}{{ r.submission_date|date:"j M Y" }}{% else %}—{% endif %}</td>
+            <td class="small">
+              {% if r.source_url %}<a href="{{ r.source_url }}" target="_blank" rel="noopener noreferrer">row {{ r.source_row }}</a>{% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="text-center text-muted py-4">Nothing awaiting a verdict.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

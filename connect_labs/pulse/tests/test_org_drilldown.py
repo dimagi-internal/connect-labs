@@ -25,6 +25,7 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
+from connect_labs.marketplace.testing import make_partner
 from connect_labs.pulse.models import (
     PulseEvent,
     PulseGridCell,
@@ -247,10 +248,9 @@ class TestPartnersConnectWillNotName:
         # the name Connect withholds comes from there. Partner invented — the
         # behaviour is what matters, and real names belong in the directory
         # rather than in a fixture.
-        from connect_labs.pulse.models import PulsePartner
         from connect_labs.pulse.partner_names import invalidate
 
-        PulsePartner.objects.create(name="Foreland Rural Health Trust", short="FRHT")
+        make_partner(name="Foreland Rural Health Trust", short="FRHT")
         invalidate()
         PulseOpportunity.objects.create(
             opportunity_id=50,
