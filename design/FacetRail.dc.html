@@ -1,0 +1,526 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap"
+        />
+        <style>
+          body {
+            margin: 0;
+            font-family: 'Work Sans', system-ui, sans-serif;
+            background: #f1f1f5;
+            color: #111827;
+          }
+          a {
+            color: #3843d0;
+            text-decoration: none;
+          }
+          a:hover {
+            color: #16006d;
+          }
+          * {
+            box-sizing: border-box;
+          }
+        </style>
+      </helmet>
+
+      <div style="padding: 28px 32px; min-height: 1000px">
+        <div style="margin-bottom: 20px">
+          <div
+            style="
+              font-size: 26px;
+              font-weight: 600;
+              color: #16006d;
+              letter-spacing: -0.01em;
+            "
+          >
+            Organisation directory
+          </div>
+          <div style="font-size: 13px; color: #6b7280; margin-top: 4px">
+            Every organisation labs knows of — not only those Connect has a row
+            for.
+          </div>
+        </div>
+
+        <div
+          style="
+            display: grid;
+            grid-template-columns: 252px 1fr;
+            gap: 20px;
+            align-items: start;
+          "
+        >
+          <!-- FACET RAIL: counts before you click -->
+          <div
+            style="
+              background: #fff;
+              border: 1px solid #e2e8f0;
+              border-radius: 10px;
+              overflow: hidden;
+            "
+          >
+            <div
+              style="
+                padding: 13px 16px;
+                border-bottom: 1px solid #f1f1f5;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+              "
+            >
+              <span
+                style="
+                  font-size: 12px;
+                  font-weight: 600;
+                  color: #16006d;
+                  letter-spacing: 0.04em;
+                "
+                >FILTERS</span
+              >
+              <span style="font-size: 12px; color: #9ca3af">Reset</span>
+            </div>
+
+            <div style="padding: 14px 16px; border-bottom: 1px solid #f1f1f5">
+              <div
+                style="
+                  font-size: 11px;
+                  font-weight: 600;
+                  color: #6b7280;
+                  letter-spacing: 0.05em;
+                  margin-bottom: 9px;
+                "
+              >
+                STATUS
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 3px">
+                <sc-for list="{{status}}" as="f" hint-placeholder-count="4">
+                  <div onClick="{{f.pick}}" style="{{f.style}}">
+                    <span style="{{f.boxStyle}}">{{f.tick}}</span>
+                    <span style="flex-grow: 1">{{f.label}}</span>
+                    <span
+                      style="
+                        font-size: 12px;
+                        color: #9ca3af;
+                        font-variant-numeric: tabular-nums;
+                      "
+                      >{{f.count}}</span
+                    >
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="padding: 14px 16px; border-bottom: 1px solid #f1f1f5">
+              <div
+                style="
+                  font-size: 11px;
+                  font-weight: 600;
+                  color: #6b7280;
+                  letter-spacing: 0.05em;
+                  margin-bottom: 9px;
+                "
+              >
+                COUNTRY
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 3px">
+                <sc-for list="{{countries}}" as="f" hint-placeholder-count="6">
+                  <div onClick="{{f.pick}}" style="{{f.style}}">
+                    <span style="{{f.boxStyle}}">{{f.tick}}</span>
+                    <span style="flex-grow: 1">{{f.label}}</span>
+                    <span
+                      style="
+                        font-size: 12px;
+                        color: #9ca3af;
+                        font-variant-numeric: tabular-nums;
+                      "
+                      >{{f.count}}</span
+                    >
+                  </div>
+                </sc-for>
+              </div>
+              <div
+                style="
+                  font-size: 12px;
+                  color: #3843d0;
+                  margin-top: 8px;
+                  cursor: pointer;
+                "
+              >
+                Show 16 more
+              </div>
+            </div>
+
+            <div style="padding: 14px 16px">
+              <div
+                style="
+                  font-size: 11px;
+                  font-weight: 600;
+                  color: #6b7280;
+                  letter-spacing: 0.05em;
+                  margin-bottom: 9px;
+                "
+              >
+                APPLIED TO
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 3px">
+                <sc-for list="{{rounds}}" as="f" hint-placeholder-count="4">
+                  <div onClick="{{f.pick}}" style="{{f.style}}">
+                    <span style="{{f.boxStyle}}">{{f.tick}}</span>
+                    <span style="flex-grow: 1">{{f.label}}</span>
+                    <span
+                      style="
+                        font-size: 12px;
+                        color: #9ca3af;
+                        font-variant-numeric: tabular-nums;
+                      "
+                      >{{f.count}}</span
+                    >
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <!-- results -->
+          <div>
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 14px;
+              "
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 8px;
+                  background: #fff;
+                  border: 1px solid #e2e8f0;
+                  border-radius: 10px;
+                  padding: 0 12px;
+                  height: 38px;
+                  flex-grow: 1;
+                "
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#9ca3af"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M20 20l-3.5-3.5" />
+                </svg>
+                <span style="font-size: 13px; color: #9ca3af"
+                  >Search organisations</span
+                >
+              </div>
+              <div style="font-size: 13px; color: #6b7280">
+                <span style="font-weight: 600; color: #111827">{{shown}}</span>
+                of 240
+              </div>
+            </div>
+
+            <div
+              style="
+                background: #fff;
+                border-radius: 10px;
+                border: 1px solid #e2e8f0;
+                overflow: hidden;
+              "
+            >
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: 2.6fr 1.2fr 0.7fr 0.8fr 0.9fr;
+                  padding: 11px 20px;
+                  background: #fafafb;
+                  border-bottom: 1px solid #e2e8f0;
+                "
+              >
+                <div
+                  style="
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: #6b7280;
+                    letter-spacing: 0.05em;
+                  "
+                >
+                  ORGANISATION
+                </div>
+                <div
+                  style="
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: #6b7280;
+                    letter-spacing: 0.05em;
+                  "
+                >
+                  COUNTRY
+                </div>
+                <div
+                  style="
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: #6b7280;
+                    letter-spacing: 0.05em;
+                    text-align: right;
+                  "
+                >
+                  FLWS
+                </div>
+                <div
+                  style="
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: #6b7280;
+                    letter-spacing: 0.05em;
+                    text-align: right;
+                  "
+                >
+                  CONTACTS
+                </div>
+                <div
+                  style="
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: #6b7280;
+                    letter-spacing: 0.05em;
+                    text-align: right;
+                  "
+                >
+                  ON CONNECT
+                </div>
+              </div>
+              <sc-for list="{{rows}}" as="row" hint-placeholder-count="9">
+                <div
+                  style="
+                    display: grid;
+                    grid-template-columns: 2.6fr 1.2fr 0.7fr 0.8fr 0.9fr;
+                    padding: 13px 20px;
+                    border-bottom: 1px solid #f1f1f5;
+                    align-items: center;
+                  "
+                >
+                  <div
+                    style="
+                      display: flex;
+                      flex-direction: column;
+                      gap: 2px;
+                      padding-right: 16px;
+                    "
+                  >
+                    <span
+                      style="
+                        font-size: 13.5px;
+                        font-weight: 500;
+                        color: #16006d;
+                      "
+                      >{{row.name}}</span
+                    >
+                    <span style="font-size: 11.5px; color: #9ca3af"
+                      >{{row.sectors}}</span
+                    >
+                  </div>
+                  <div
+                    style="
+                      font-size: 12.5px;
+                      color: #4b5563;
+                      padding-right: 12px;
+                    "
+                  >
+                    {{row.country}}
+                  </div>
+                  <div
+                    style="font-size: 12.5px; color: #4b5563; text-align: right"
+                  >
+                    {{row.flws}}
+                  </div>
+                  <div style="text-align: right">
+                    <span style="{{row.contactStyle}}">{{row.contacts}}</span>
+                  </div>
+                  <div style="display: flex; justify-content: flex-end">
+                    <span style="{{row.pillStyle}}">{{row.pill}}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+    </x-dc>
+
+    <script
+      data-dc-script
+      data-props='{"$preview":{"width":1440,"height":1000}}'
+    >
+      class Component extends DCLogic {
+        constructor(props) {
+          super(props);
+          this.state = { on: { 'no-contact': true } };
+        }
+
+        facet(id, label, count) {
+          const on = !!this.state.on[id];
+          return {
+            label,
+            count,
+            tick: on ? '✓' : '',
+            pick: () => {
+              const next = Object.assign({}, this.state.on);
+              if (next[id]) {
+                delete next[id];
+              } else {
+                next[id] = true;
+              }
+              this.setState({ on: next });
+            },
+            style:
+              'display: flex; align-items: center; gap: 9px; font-size: 13px; padding: 5px 7px; margin: 0 -7px; border-radius: 7px; cursor: pointer; ' +
+              (on
+                ? 'background: #f4f5ff; color: #16006d; font-weight: 500;'
+                : 'color: #374151;'),
+            boxStyle:
+              'width: 15px; height: 15px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; flex-shrink: 0; ' +
+              (on
+                ? 'background: #3843d0; color: #fff; border: 1px solid #3843d0;'
+                : 'background: #fff; border: 1px solid #cbd5e1; color: transparent;'),
+          };
+        }
+
+        renderVals() {
+          const status = [
+            this.facet('delivering', 'Delivering', '50'),
+            this.facet('bench', 'On the bench', '190'),
+            this.facet('no-contact', 'No contact on file', '144'),
+            this.facet('has-msa', 'Has an MSA', '18'),
+          ];
+          const countries = [
+            this.facet('ng', 'Nigeria', '113'),
+            this.facet('cd', 'Congo (DRC)', '12'),
+            this.facet('ke', 'Kenya', '23'),
+            this.facet('ug', 'Uganda', '19'),
+            this.facet('tz', 'Tanzania', '11'),
+            this.facet('sl', 'Sierra Leone', '9'),
+          ];
+          const rounds = [
+            this.facet('chc-2025', 'CHC 2025', '90'),
+            this.facet('matching-grant', 'Matching grant', '51'),
+            this.facet('rutf-eoi', 'RUTF', '35'),
+            this.facet('readers-2026', 'Readers 2026', '30'),
+          ];
+
+          const bench =
+            'background: #fff7e8; color: #8a5a00; border: 1px solid #fde3b0;';
+          const live =
+            'background: #eaf6ee; color: #1a6b39; border: 1px solid #bfe3cc;';
+          const pillBase =
+            'font-size: 11.5px; font-weight: 500; padding: 3px 10px; border-radius: 999px; ';
+
+          const data = [
+            [
+              'Harbourside Health Initiative',
+              'Health',
+              'Nigeria',
+              '250',
+              'none',
+              'bench',
+            ],
+            [
+              'Alliance des Familles pour le Développement Intégral',
+              'Health',
+              'Congo, the Democratic Republic of the',
+              '—',
+              'none',
+              'bench',
+            ],
+            [
+              'Morogoro Rural Outreach Organization',
+              'Nutrition',
+              'Tanzania',
+              '42',
+              'none',
+              'bench',
+            ],
+            [
+              'Comité d’Entraide Familiale',
+              'Health',
+              'Congo, the Democratic Republic of the',
+              '35',
+              'none',
+              'bench',
+            ],
+            [
+              'Serrano Child Nutrition Foundation',
+              'Nutrition, WASH',
+              'Malawi',
+              '15',
+              'none',
+              'bench',
+            ],
+            [
+              'Valeworth Community Health Trust',
+              'Health',
+              'Kenya',
+              '60',
+              'none',
+              'bench',
+            ],
+            [
+              'Ashgrove Maternal Care Society',
+              'Health',
+              'Uganda',
+              '28',
+              'none',
+              'bench',
+            ],
+            [
+              'Redhollow Rural Health Alliance',
+              'Health, WASH',
+              'Sierra Leone',
+              '75',
+              'none',
+              'bench',
+            ],
+            [
+              'Pinebrook Nutrition Collective',
+              'Nutrition',
+              'Nigeria',
+              '110',
+              'none',
+              'bench',
+            ],
+          ];
+
+          const rows = data.map((r) => ({
+            name: r[0],
+            sectors: r[1],
+            country: r[2],
+            flws: r[3],
+            contacts: r[4],
+            pill: r[5] === 'delivering' ? 'delivering' : 'bench',
+            pillStyle: pillBase + (r[5] === 'delivering' ? live : bench),
+            contactStyle:
+              r[4] === 'none'
+                ? 'font-size: 12.5px; color: #e44434; font-weight: 500;'
+                : 'font-size: 12.5px; color: #4b5563;',
+          }));
+
+          return { status, countries, rounds, rows, shown: '144' };
+        }
+      }
+    </script>
+  </body>
+</html>

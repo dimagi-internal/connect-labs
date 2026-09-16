@@ -1,0 +1,60 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1120,
+      "title": "Marketplace home — open + past rounds"
+    },
+    {
+      "file": "Round.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 980,
+      "title": "A round — who applied, and what became of them"
+    },
+    {
+      "file": "Directory.dc.html",
+      "x": 0,
+      "y": 1300,
+      "w": 1440,
+      "h": 1000,
+      "title": "The network — segment-first filtering"
+    },
+    {
+      "file": "FacetRail.dc.html",
+      "x": 1560,
+      "y": 1300,
+      "w": 1440,
+      "h": 1000,
+      "title": "Filtering, alternative — facet rail with counts"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": 0,
+      "y": -190,
+      "w": 620,
+      "text": "Connect Marketplace — design directions\n\nTwo sides, not one: the ORGANISATIONS (supply) and the ROUNDS they answer (demand). The shipped page only had the first, which is why it read as an internal filter.\n\nBrand values lifted from tailwind/tailwind.css: #16006d deep purple, #3843d0 indigo, #8ea1ff sky, #feaf31 marigold, #e44434 sunset, 10px radii, Work Sans.\n\nAll aggregate figures are the real ones now on prod. Organisation names are invented; the round names, counts and dates are real."
+    },
+    {
+      "id": "filters-note",
+      "x": 0,
+      "y": 1180,
+      "w": 620,
+      "text": "Two filtering directions, same data.\n\nLEFT — segments as the primary control. One click gets the segment you actually work ('on the bench', 'no contact on file'), each carrying its count and a sentence saying why it matters. Refiners stay secondary.\n\nRIGHT — a facet rail. Every value shows its count BEFORE you click, and filters combine. Better for exploring; heavier chrome, and a second column of screen."
+    },
+    {
+      "id": "rounds-note",
+      "x": 1560,
+      "y": -190,
+      "w": 620,
+      "text": "The round page is what makes this a marketplace rather than a list.\n\nIt answers: who applied, what became of them, and what was asked. The 'since this round' column is the payoff of joining EOI history to pulse delivery — you can see which applicants from a 2025 round actually went on to deliver.\n\nAn open round shows the same page with a live applicant count and a deadline."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

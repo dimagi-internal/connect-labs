@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% comment %}
+Tailwind, not Bootstrap. Brand values from tailwind/tailwind.css.
+
+The globe is the same stack as the Pulse wall display -- Mapbox GL through the
+shared ConnectMap helper -- so the marketplace reads as part of the product
+rather than a different thing that happens to plot dots.
+{% endcomment %}
+{% load static %}
+{% block title %}The network{% endblock %}
+
+{% block css %}
+  {{ block.super }}
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<div class="max-w-screen-2xl mx-auto px-8 py-6">
+
+  <div class="flex items-start justify-between gap-6 mb-5">
+    <div>
+      <div class="text-2xl font-semibold text-brand-deep-purple">The network</div>
+      <div class="text-sm text-gray-600 mt-1 max-w-2xl">
+        {{ total }} organisations. Every one has answered at least one round —
+        including those Connect has no row for.
+      </div>
+    </div>
+    <a href="{% url 'marketplace:home' %}" class="text-sm text-gray-500 hover:text-gray-700 whitespace-nowrap">
+      <i class="fa-solid fa-arrow-left mr-1"></i> Marketplace
+    </a>
+  </div>
+
+  {# Segments: the jobs people actually come here to do, each with its size. #}
+  <form method="get" id="mk-filters">
+    <input type="hidden" name="segment" value="{{ selected.segment }}" id="mk-segment">
+    <div class="flex flex-wrap gap-2 mb-3">
+      {% for s in segments %}
+        <button type="submit" name="segment" value="{{ s.key }}"
+                class="flex items-center gap-2 h-9 px-3.5 rounded-full text-[13px] border transition
+                       {% if s.selected %}bg-brand-deep-purple text-white border-brand-deep-purple{% else %}bg-white text-gray-700 border-brand-border-light hover:border-brand-border-light{% endif %}">
+          <span class="font-semibold">{{ s.label }}</span>
+          <span class="text-[11.5px] font-semibold px-1.5 py-px rounded-full tabular-nums
+                       {% if s.selected %}bg-white/20 text-white{% else %}bg-gray-100 text-gray-500{% endif %}">{{ s.count }}</span>
+        </button>
+      {% endfor %}
+    </div>
+
+    <div class="flex flex-wrap gap-2.5 items-center mb-2">
+      <div class="flex items-center gap-2 bg-white border border-brand-border-light rounded-lg px-3 h-9 w-72">
+        <i class="fa-solid fa-magnifying-glass text-gray-400 text-xs"></i>
+        <input type="search" name="q" value="{{ selected.q }}" placeholder="Search organisations"
+               class="w-full border-0 p-0 text-[13px] focus:ring-0 placeholder:text-gray-400">
+      </div>
+
+      <select name="country" onchange="this.form.submit()"
+              class="rounded-lg border-brand-border-light text-[13px] h-9 py-0 focus:border-brand-indigo focus:ring-brand-indigo">
+        <option value="">Any country</option>
+        {% for f in facets.countries %}
+          <option value="{{ f.value }}" {% if f.value == selected.country %}selected{% endif %}>{{ f.value }} ({{ f.count }})</option>
+        {% endfor %}
+      </select>
+
+      <select name="sector" onchange="this.form.submit()"
+              class="rounded-lg border-brand-border-light text-[13px] h-9 py-0 focus:border-brand-indigo focus:ring-brand-indigo">
+        <option value="">Any sector</option>
+        {% for f in facets.sectors %}
+          <option value="{{ f.value }}" {% if f.value == selected.sector %}selected{% endif %}>{{ f.value }} ({{ f.count }})</option>
+        {% endfor %}
+      </select>
+
+      <select name="applied" onchange="this.form.submit()"
+              class="rounded-lg border-brand-border-light text-[13px] h-9 py-0 focus:border-brand-indigo focus:ring-brand-indigo">
+        <option value="">Any round</option>
+        {% for f in facets.rounds %}
+          <option value="{{ f.value }}" {% if f.value == selected.applied %}selected{% endif %}>{{ f.label }} ({{ f.count }})</option>
+        {% endfor %}
+      </select>
+
+      <button type="submit" class="inline-flex items-center px-3.5 h-9 bg-brand-indigo text-white text-[13px] font-medium rounded-lg hover:bg-brand-deep-purple transition">
+        Filter
+      </button>
+      <a href="{% url 'marketplace:network' %}" class="text-[13px] text-gray-500 hover:text-gray-700">Clear</a>
+
+      <span class="ml-auto text-[13px] text-gray-500"><span class="font-semibold text-gray-900">{{ shown }}</span> shown</span>
+    </div>
+  </form>
+
+  {% if why %}<div class="text-[12.5px] text-gray-500 mb-4">{{ why }}</div>{% endif %}
+
+  {% if unreadable %}
+    <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-900 mb-5">
+      <strong>{{ unreadable|length }} round{{ unreadable|length|pluralize }} could not be read.</strong>
+      Their applications are missing from every organisation below — this is not the
+      same as those rounds having had no applicants.
+      <div class="mt-1 text-amber-800">
+        {% for r in unreadable %}{{ r.title }} ({{ r.get_sa_access_state_display }}){% if not forloop.last %} · {% endif %}{% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  {# The globe. Every point is an organisation currently in scope. #}
+  <div class="rounded-lg overflow-hidden border border-brand-border-light mb-5 relative bg-brand-deep-purple"
+       style="height: 340px;">
+    <div id="mk-globe" class="w-full h-full"
+         data-points-url="{% url 'marketplace:network_points' %}?{{ request.GET.urlencode }}"></div>
+    <div class="absolute left-4 bottom-4 flex items-center gap-4 text-[11.5px] text-white/80 bg-black/25 rounded-lg px-3 py-2 backdrop-blur-sm">
+      <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-brand-marigold inline-block"></span>delivering</span>
+      <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full inline-block" style="background:#a9b3e8"></span>on the bench</span>
+      <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full border inline-block" style="border-color:#a9b3e8"></span>country only</span>
+    </div>
+  </div>
+
+  <div class="flex flex-col gap-2.5">
+    {% for row in listed %}
+      <div class="bg-white border border-brand-border-light rounded-lg px-[18px] py-4 grid grid-cols-1 lg:grid-cols-[2.5fr_1.5fr_0.7fr_1.9fr] gap-4 items-center hover:shadow-sm transition">
+
+        <div class="flex items-center gap-3">
+          <span class="w-9 h-9 rounded-lg inline-flex items-center justify-center text-xs font-semibold shrink-0
+                       {% if row.delivering %}bg-green-100 text-green-800{% else %}bg-indigo-50 text-brand-indigo{% endif %}">
+            {{ row.org.name|slice:":2"|upper }}
+          </span>
+          <div class="flex flex-col gap-0.5 min-w-0">
+            <a href="{% url 'marketplace:organisation' row.org.slug %}" class="text-sm font-medium text-brand-deep-purple hover:text-brand-indigo truncate">{{ row.org.name }}</a>
+            <span class="text-[11.5px] text-gray-400 truncate">{% if row.profile %}{{ row.profile.sectors|join:", "|default:"—" }}{% endif %}</span>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-0.5 min-w-0">
+          <span class="text-[12.5px] text-gray-600 truncate">{% if row.profile %}{{ row.profile.countries|join:", "|default:"—" }}{% endif %}</span>
+          {% if row.org.contact_count %}
+            <span class="text-[11.5px] text-gray-400">{{ row.org.contact_count }} contact{{ row.org.contact_count|pluralize }}</span>
+          {% else %}
+            <span class="text-[11.5px] text-brand-sunset font-medium">no contact on file</span>
+          {% endif %}
+        </div>
+
+        <div class="text-right">
+          <div class="text-[15px] font-semibold text-gray-900 tabular-nums">{% if row.profile.flws_managed %}{{ row.profile.flws_managed }}{% else %}<span class="text-gray-300">—</span>{% endif %}</div>
+          <div class="text-[10.5px] text-gray-400 tracking-wide">FLWS</div>
+        </div>
+
+        <div class="flex items-center gap-1.5 justify-start lg:justify-end flex-wrap">
+          {% for r in row.rounds %}
+            <a href="{% url 'marketplace:round' r.slug %}"
+               class="text-[11px] font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-indigo-50 hover:text-brand-indigo whitespace-nowrap">{{ r.title }}</a>
+          {% endfor %}
+          {% if row.delivering %}
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-green-100 text-green-800 whitespace-nowrap">
+              <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>delivering
+            </span>
+          {% else %}
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-amber-50 text-amber-800 whitespace-nowrap">bench</span>
+          {% endif %}
+        </div>
+      </div>
+    {% empty %}
+      <div class="bg-white border border-brand-border-light rounded-lg px-6 py-14 text-center text-sm text-gray-500">
+        No organisations match those filters.
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script>window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";</script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+  <script src="{% static 'maps/connect_map.js' %}"></script>
+  <script src="{% static 'marketplace/globe.js' %}"></script>
+{% endblock %}

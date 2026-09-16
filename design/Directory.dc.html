@@ -1,0 +1,458 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap"
+        />
+        <style>
+          body {
+            margin: 0;
+            font-family: 'Work Sans', system-ui, sans-serif;
+            background: #f1f1f5;
+            color: #111827;
+          }
+          a {
+            color: #3843d0;
+            text-decoration: none;
+          }
+          a:hover {
+            color: #16006d;
+          }
+          * {
+            box-sizing: border-box;
+          }
+        </style>
+      </helmet>
+
+      <div style="padding: 26px 40px 40px; min-height: 1000px">
+        <div
+          style="
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 24px;
+            margin-bottom: 20px;
+          "
+        >
+          <div>
+            <div
+              style="
+                font-size: 24px;
+                font-weight: 600;
+                color: #16006d;
+                letter-spacing: -0.01em;
+              "
+            >
+              The network
+            </div>
+            <div
+              style="
+                font-size: 13px;
+                color: #6b7280;
+                margin-top: 4px;
+                max-width: 640px;
+              "
+            >
+              240 organisations across 22 countries. Every one has answered at
+              least one round.
+            </div>
+          </div>
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              background: #16006d;
+              border-radius: 10px;
+              padding: 9px 14px;
+            "
+          >
+            <span style="font-size: 13px; color: #fff; font-weight: 600"
+              >36 awaiting a verdict</span
+            >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#8ea1ff"
+              stroke-width="2.2"
+              stroke-linecap="round"
+            >
+              <path d="M9 6l6 6-6 6" />
+            </svg>
+          </div>
+        </div>
+
+        <!-- SEGMENTS -->
+        <div
+          style="display: flex; gap: 8px; margin-bottom: 13px; flex-wrap: wrap"
+        >
+          <sc-for list="{{segments}}" as="seg" hint-placeholder-count="5">
+            <div onClick="{{seg.pick}}" style="{{seg.style}}">
+              <span style="font-weight: 600">{{seg.label}}</span>
+              <span style="{{seg.countStyle}}">{{seg.count}}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- refine -->
+        <div
+          style="
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+          "
+        >
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              background: #fff;
+              border: 1px solid #e2e8f0;
+              border-radius: 10px;
+              padding: 0 12px;
+              height: 38px;
+              width: 280px;
+            "
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#9ca3af"
+              stroke-width="2"
+              stroke-linecap="round"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3.5-3.5" />
+            </svg>
+            <span style="font-size: 13px; color: #9ca3af"
+              >Search organisations</span
+            >
+          </div>
+          <sc-for list="{{dropdowns}}" as="d" hint-placeholder-count="3">
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 7px;
+                background: #fff;
+                border: 1px solid #e2e8f0;
+                border-radius: 10px;
+                padding: 0 12px;
+                height: 38px;
+              "
+            >
+              <span style="font-size: 13px; color: #6b7280">{{d.label}}</span>
+              <span style="font-size: 13px; color: #111827; font-weight: 500"
+                >{{d.value}}</span
+              >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#9ca3af"
+                stroke-width="2.4"
+                stroke-linecap="round"
+              >
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </div>
+          </sc-for>
+          <div style="flex-grow: 1"></div>
+          <div style="font-size: 13px; color: #6b7280">
+            <span style="font-weight: 600; color: #111827">{{shown}}</span>
+            shown
+          </div>
+        </div>
+
+        <div
+          style="
+            font-size: 12.5px;
+            color: #6b7280;
+            margin-bottom: 16px;
+            min-height: 18px;
+          "
+        >
+          {{caption}}
+        </div>
+
+        <!-- rows: the round trail is part of the row -->
+        <div style="display: flex; flex-direction: column; gap: 9px">
+          <sc-for list="{{rows}}" as="row" hint-placeholder-count="6">
+            <div
+              style="
+                background: #fff;
+                border: 1px solid #e2e8f0;
+                border-radius: 10px;
+                padding: 15px 18px;
+                display: grid;
+                grid-template-columns: 2.5fr 1.5fr 0.7fr 1.9fr;
+                gap: 18px;
+                align-items: center;
+              "
+            >
+              <div style="display: flex; align-items: center; gap: 11px">
+                <span style="{{row.avatarStyle}}">{{row.initials}}</span>
+                <div style="display: flex; flex-direction: column; gap: 2px">
+                  <span
+                    style="font-size: 14px; font-weight: 500; color: #16006d"
+                    >{{row.name}}</span
+                  >
+                  <span style="font-size: 11.5px; color: #9ca3af"
+                    >{{row.sectors}}</span
+                  >
+                </div>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 3px">
+                <span style="font-size: 12.5px; color: #4b5563"
+                  >{{row.country}}</span
+                >
+                <span style="{{row.contactStyle}}">{{row.contact}}</span>
+              </div>
+
+              <div style="text-align: right">
+                <div
+                  style="
+                    font-size: 15px;
+                    font-weight: 600;
+                    color: #111827;
+                    font-variant-numeric: tabular-nums;
+                  "
+                >
+                  {{row.flws}}
+                </div>
+                <div
+                  style="
+                    font-size: 10.5px;
+                    color: #9ca3af;
+                    letter-spacing: 0.04em;
+                  "
+                >
+                  FLWS
+                </div>
+              </div>
+
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 7px;
+                  justify-content: flex-end;
+                  flex-wrap: wrap;
+                "
+              >
+                <sc-for list="{{row.rounds}}" as="r" hint-placeholder-count="3">
+                  <span style="{{r.style}}">{{r.label}}</span>
+                </sc-for>
+                <span style="{{row.pillStyle}}">{{row.pill}}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </x-dc>
+
+    <script
+      data-dc-script
+      data-props='{"$preview":{"width":1440,"height":1000}}'
+    >
+      class Component extends DCLogic {
+        constructor(props) {
+          super(props);
+          this.state = { picked: 'bench' };
+        }
+
+        renderVals() {
+          const picked = this.state.picked;
+          const defs = [
+            {
+              id: 'all',
+              label: 'All',
+              count: '240',
+              caption:
+                'Every organisation labs knows of — including those Connect has no row for.',
+            },
+            {
+              id: 'bench',
+              label: 'On the bench',
+              count: '190',
+              caption:
+                'Answered a round, never activated. The largest untapped part of the network.',
+            },
+            {
+              id: 'delivering',
+              label: 'Delivering',
+              count: '50',
+              caption: 'Currently running at least one Connect opportunity.',
+            },
+            {
+              id: 'nocontact',
+              label: 'No contact on file',
+              count: '144',
+              caption:
+                'Nobody to write to — the ceiling on any outreach until it is fixed.',
+            },
+            {
+              id: 'repeat',
+              label: 'Applied more than once',
+              count: '61',
+              caption:
+                'Came back for a second round. Interest is already demonstrated.',
+            },
+          ];
+
+          const segments = defs.map((d) => {
+            const on = d.id === picked;
+            return {
+              label: d.label,
+              count: d.count,
+              pick: () => this.setState({ picked: d.id }),
+              style:
+                'display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 999px; cursor: pointer; font-size: 13px; ' +
+                (on
+                  ? 'background: #16006d; color: #fff; border: 1px solid #16006d;'
+                  : 'background: #fff; color: #374151; border: 1px solid #e2e8f0;'),
+              countStyle:
+                'font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; ' +
+                (on
+                  ? 'background: rgba(255,255,255,0.18); color: #fff;'
+                  : 'background: #f1f1f5; color: #6b7280;'),
+            };
+          });
+
+          const current = defs.find((d) => d.id === picked);
+
+          const chip =
+            'font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 6px; background: #eef0ff; color: #3843d0; white-space: nowrap;';
+          const chipMuted =
+            'font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 6px; background: #f1f1f5; color: #6b7280; white-space: nowrap;';
+
+          const av =
+            'width: 34px; height: 34px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex-shrink: 0; ';
+          const pillBase =
+            'font-size: 11.5px; font-weight: 500; padding: 3px 10px; border-radius: 999px; white-space: nowrap; ';
+          const bench =
+            pillBase +
+            'background: #fff7e8; color: #8a5a00; border: 1px solid #fde3b0;';
+          const live =
+            pillBase +
+            'background: #eaf6ee; color: #1a6b39; border: 1px solid #bfe3cc;';
+
+          const data = [
+            [
+              'Harbourside Health Initiative',
+              'HH',
+              'Health',
+              'Nigeria',
+              'none',
+              '250',
+              ['CHC 2025', 'RUTF', 'Readers'],
+              'bench',
+            ],
+            [
+              'Alliance des Familles pour le Développement',
+              'AF',
+              'Health',
+              'Congo (DRC)',
+              'none',
+              '—',
+              ['CHC 2025'],
+              'bench',
+            ],
+            [
+              'Morogoro Rural Outreach Organization',
+              'MR',
+              'Nutrition',
+              'Tanzania',
+              'none',
+              '42',
+              ['CHC 2025', 'Chlorine'],
+              'bench',
+            ],
+            [
+              'Comité d’Entraide Familiale',
+              'CE',
+              'Health',
+              'Congo (DRC)',
+              'none',
+              '35',
+              ['CHC 2025', 'KMC'],
+              'bench',
+            ],
+            [
+              'Serrano Child Nutrition Foundation',
+              'SC',
+              'Nutrition, WASH',
+              'Malawi',
+              '1 contact',
+              '15',
+              ['CHC 2025'],
+              'bench',
+            ],
+            [
+              'Valeworth Community Health Trust',
+              'VC',
+              'Health',
+              'Kenya',
+              'none',
+              '60',
+              ['CHC 2025', 'Readers 2026'],
+              'bench',
+            ],
+          ];
+
+          const rows = data.map((r) => ({
+            name: r[0],
+            initials: r[1],
+            sectors: r[2],
+            country: r[3],
+            contact: r[4] === 'none' ? 'no contact on file' : r[4],
+            contactStyle:
+              r[4] === 'none'
+                ? 'font-size: 11.5px; color: #e44434; font-weight: 500;'
+                : 'font-size: 11.5px; color: #9ca3af;',
+            flws: r[5],
+            avatarStyle:
+              av +
+              (r[7] === 'delivering'
+                ? 'background: #eaf6ee; color: #1a6b39;'
+                : 'background: #f4f5ff; color: #3843d0;'),
+            rounds: r[6].map((label, i) => ({
+              label,
+              style: i === 0 ? chip : chipMuted,
+            })),
+            pill: r[7] === 'delivering' ? 'delivering' : 'bench',
+            pillStyle: r[7] === 'delivering' ? live : bench,
+          }));
+
+          return {
+            segments,
+            rows,
+            shown: current.count,
+            caption: current.caption,
+            dropdowns: [
+              { label: 'Country', value: 'Any' },
+              { label: 'Sector', value: 'Any' },
+              { label: 'Applied to', value: 'Any round' },
+            ],
+          };
+        }
+      }
+    </script>
+  </body>
+</html>
