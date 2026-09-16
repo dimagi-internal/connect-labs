@@ -1677,6 +1677,35 @@ def test_planning_gaps_upload_mode_dispatches_when_a_csv_is_stored(client, djang
     assert runs[1].planning_gap_task_id == "fresh-gap-task-id"
 
 
+def test_planning_gaps_open_buildings_mode_dispatches_with_no_precondition(client, django_user_model, monkeypatch):
+    # Unlike "upload" mode (which needs a CSV already stored on the run
+    # first), "open_buildings" mode has nothing to validate upfront -- it's
+    # a server-side fetch keyed by ward boundary, same shape as "overture".
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_locked_run(runs)
+
+    fake_async_result = mock.Mock(id="fresh-gap-task-id")
+    with mock.patch("connect_labs.mopup.tasks.preview_planning_gaps.delay", return_value=fake_async_result) as delay:
+        resp = client.post(
+            reverse("mopup:planning_gaps", kwargs={"program_id": 217, "run_id": 1}),
+            data=json.dumps({"mode": "open_buildings", "min_confidence": 0.6}),
+            content_type="application/json",
+        )
+    assert resp.status_code == 200, resp.content
+    delay.assert_called_once_with(
+        217,
+        1,
+        mock.ANY,
+        mode="open_buildings",
+        building_sources=None,
+        min_confidence=0.6,
+        min_buildings_per_cell=1,
+        cell_size_m=100.0,
+    )
+    assert runs[1].planning_gap_task_id == "fresh-gap-task-id"
+
+
 def test_planning_gaps_polls_a_running_task(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
