@@ -1147,8 +1147,9 @@ window.MopupAnalysis = (function () {
     return checked ? checked.value : 'overture';
   }
 
-  // Step 2's three modes show different controls: Overture's source/
-  // confidence pickers, the upload form, or (for "skip") none of the
+  // Step 2's four modes show different controls: Overture's source/
+  // confidence pickers, the upload form, the Google Open Buildings
+  // direct-fetch confidence field, or (for "skip") none of the
   // building-source config at all — there's nothing to configure when no
   // new work areas will be added.
   function updateGapModeVisibility() {
@@ -1158,6 +1159,10 @@ window.MopupAnalysis = (function () {
       mode !== 'overture',
     );
     $('gap-mode-upload-controls').classList.toggle('hidden', mode !== 'upload');
+    $('gap-mode-open-buildings-controls').classList.toggle(
+      'hidden',
+      mode !== 'open_buildings',
+    );
     $('gap-mode-shared-controls').classList.toggle('hidden', mode === 'skip');
     // Lives inside gap-mode-shared-controls (next to Min buildings per work
     // area / Work-area size), but only means anything in upload mode -- no
@@ -1174,11 +1179,13 @@ window.MopupAnalysis = (function () {
     const mode = selectedGapMode();
     // Upload mode's confidence field is a separate, optional input (blank
     // by default -- no filtering unless the reviewer's file has a
-    // confidence column AND they choose to use it) from Overture mode's
-    // always-populated Google-confidence slider.
+    // confidence column AND they choose to use it) from Overture mode's and
+    // Open Buildings direct-fetch mode's always-populated confidence sliders.
     const confidenceInput =
       mode === 'upload'
         ? $('gap-cfg-upload-min-confidence')
+        : mode === 'open_buildings'
+        ? $('gap-cfg-open-buildings-min-confidence')
         : $('gap-cfg-min-confidence');
     const confidenceValue = parseFloat(confidenceInput.value);
     return {
