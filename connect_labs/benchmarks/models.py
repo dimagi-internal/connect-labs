@@ -51,6 +51,13 @@ class BenchmarkCohort(models.Model):
     # deploy. See disclosure.py for what each one defends against.
     min_peers = models.PositiveIntegerField(default=5, validators=[MinValueValidator(MIN_PEERS_FLOOR)])
     min_denominator = models.PositiveIntegerField(default=25)
+    # R6. On by default: a line with a hole, or one that stops early, says
+    # something about that peer's own history. Switched off, members with
+    # fewer reports than the longest-running peer still contribute -- which for
+    # a real cohort is the difference between a series and no series at all.
+    # Safe to switch off only because a period is an opportunity's own Nth
+    # report, so an incomplete line carries no date. R1 and R5 still apply.
+    require_complete_series = models.BooleanField(default=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
