@@ -65,9 +65,17 @@ def _fake_fetch(data_by_key):
 
 
 def _collect_events(resp):
-    """Parse SSE body into a list of JSON event dicts."""
+    """Parse SSE body into a list of JSON event dicts.
+
+    Iterate the RESPONSE, not `resp.streaming_content`. SSE bodies are async
+    iterators -- `BaseSSEStreamView` serves one deliberately, because Django's
+    ASGI handler drains a synchronous iterator in full before sending any of it
+    and so turns a stream into a single late response. `streaming_content` hands
+    back that raw async iterator (`TypeError: 'async_generator' object is not
+    iterable`); `iter(resp)` is the supported bridge and works for either shape.
+    """
     events = []
-    for chunk in resp.streaming_content:
+    for chunk in resp:
         for line in chunk.decode().splitlines():
             line = line.strip()
             if line.startswith("data: "):
