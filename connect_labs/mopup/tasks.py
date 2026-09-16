@@ -213,6 +213,13 @@ def preview_planning_gaps(
         reviewer sets it via a separate upload-mode field, since it's
         opt-in here rather than the always-on Google-confidence slider
         Overture mode has.
+      * `"open_buildings"` — Google Open Buildings fetched directly from
+        Google's own public dataset (`core.open_buildings`), NOT via
+        Overture's conflation — see that module's docstring for why the two
+        differ. `building_sources` is ignored (single source); each ward's
+        result is cached in Postgres (`OpenBuildingsArea`/
+        `OpenBuildingsBuilding`) so a repeat Recompute on the same run
+        doesn't re-hit Google's bucket.
 
     Every mode's individual building positions (`result["building_points"]`)
     are kept for Step 2's map to plot, same layer regardless of source.
@@ -292,6 +299,7 @@ def preview_planning_gaps(
         ward_visits_per_building,
         work_area_boundaries_for_ward,
     )
+    from connect_labs.mopup.core.open_buildings import fetch_open_buildings_for_ward
     from connect_labs.mopup.core.work_areas import fetch_connect_implementation_areas, resolve_ward_boundaries
 
     candidates = run.candidate_work_areas
@@ -342,16 +350,21 @@ def preview_planning_gaps(
                 warnings[w["ward"]] = "no ward boundary match — skipped"
                 continue
             ward_boundary = match["geometry"]
+            ward_geom = shape(ward_boundary)
             rate = ward_visits_per_building(all_rows, w["ward"])
             ward_buildings = (
-                buildings_from_upload(uploaded_df, w["ward"], w["lga"], w["state"]) if mode == "upload" else None
+                buildings_from_upload(uploaded_df, w["ward"], w["lga"], w["state"])
+                if mode == "upload"
+                else fetch_open_buildings_for_ward(ward_geom)
+                if mode == "open_buildings"
+                else None
             )
             features, points = planning_gap_features(
                 w["ward"],
                 w["lga"],
                 w["state"],
                 w["area_id"],
-                shape(ward_boundary),
+                ward_geom,
                 existing_boundaries,
                 cell_size_m=cell_size_m,
                 min_confidence=min_confidence,

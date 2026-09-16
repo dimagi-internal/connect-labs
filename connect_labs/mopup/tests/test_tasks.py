@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 
 from connect_labs.labs.connect_tokens import ConnectReLoginRequired
@@ -322,6 +323,49 @@ class TestPreviewPlanningGaps:
 
         result = tasks.preview_planning_gaps.apply(kwargs={"program_id": 217, "run_id": 1, "user_id": user.id}).get()
         assert result["building_points"] == points
+
+    def test_open_buildings_mode_fetches_directly_and_forwards_buildings(self, django_user_model, monkeypatch):
+        # mode="open_buildings" should call core.open_buildings.fetch_open_buildings_for_ward
+        # once per ward (same per-ward loop every other mode uses) and pass
+        # its result into planning_gap_features(buildings=...) -- the same
+        # seam "upload" mode uses, per this session's own design decision.
+        user = django_user_model.objects.create(username="tester", email="t@example.com")
+        run = _locked_run_with_geometry()
+        self._mock_common(monkeypatch, run)
+
+        sentinel_df = pd.DataFrame(
+            {
+                "lon": [3.05],
+                "lat": [6.05],
+                "area_m2": [10.0],
+                "confidence": [0.9],
+                "dataset": ["Google Open Buildings (direct)"],
+            }
+        )
+        fetch_calls = []
+
+        def fake_fetch(ward_geom):
+            fetch_calls.append(ward_geom)
+            return sentinel_df
+
+        monkeypatch.setattr("connect_labs.mopup.core.open_buildings.fetch_open_buildings_for_ward", fake_fetch)
+
+        captured = {}
+
+        def fake_planning_gap_features(*a, **k):
+            captured.update(k)
+            return [], []
+
+        monkeypatch.setattr("connect_labs.mopup.core.gaps.planning_gap_features", fake_planning_gap_features)
+
+        result = tasks.preview_planning_gaps.apply(
+            kwargs={"program_id": 217, "run_id": 1, "user_id": user.id, "mode": "open_buildings"}
+        ).get()
+
+        assert result["status"] == "ok"
+        assert result["warnings"] == {}
+        assert len(fetch_calls) == 1  # one ward in _locked_run_with_geometry
+        assert captured["buildings"] is sentinel_df
 
     def test_ward_failure_is_best_effort_not_fatal(self, django_user_model, monkeypatch):
         user = django_user_model.objects.create(username="tester", email="t@example.com")
