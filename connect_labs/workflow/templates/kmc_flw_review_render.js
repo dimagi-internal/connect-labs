@@ -108,7 +108,19 @@ function WorkflowUI({
           return;
         }
         if (d.error) {
-          finish(reject, new Error(d.error));
+          // A server-side fault in the STREAM must not cost the page its rows.
+          // The one-shot endpoint answers the same query by a different code
+          // path, so retry there: on the first warm read in production the
+          // stream raised a TypeError and this rejected, turning a working
+          // case table into "Could not load this worker's cases" -- strictly
+          // worse than the static label it replaced. Progress is the courtesy;
+          // the rows are not. The server logs the real fault either way.
+          settled = true;
+          try {
+            es.close();
+          } catch (e) {}
+          console.warn('[pipeline-rows] stream failed, falling back:', d.error);
+          plain().then(resolve, reject);
           return;
         }
         if (d.data && d.data.rows) {

@@ -43,6 +43,22 @@ ROWS = [
 ]
 
 
+class _PipelineRowObject:
+    """An `AnalysisResult.rows` element: attributes, no mapping interface.
+
+    `serialize_pipeline_row` reads it by `getattr`, and pipeline-declared fields
+    arrive under `custom_fields`. Anything that filters it as though it were a
+    dict fails on `.get`.
+    """
+
+    __slots__ = ("username", "entity_id", "custom_fields")
+
+    def __init__(self, row: dict):
+        self.username = row.get("username")
+        self.entity_id = row.get("entity_id")
+        self.custom_fields = {k: v for k, v in row.items() if k not in ("username", "entity_id")}
+
+
 def _call(cached=None, executed=None, definition=None, **params):
     from connect_labs.workflow import views
 
@@ -281,7 +297,15 @@ class TestTheStreamCarriesProgressWithoutTheCohort:
 
     @staticmethod
     def _result(rows):
-        return MagicMock(rows=rows, metadata={})
+        """A pipeline result as `stream_analysis` really yields one.
+
+        Its `.rows` are row OBJECTS, not dicts -- the JSON transport gets dicts
+        from `execute_pipeline`, this one does not. Handing this helper dicts is
+        what hid the bug that reached production: `row.get` on an object is None,
+        so filtering raised "'NoneType' object is not callable" on the first warm
+        read. The fake has to have the real shape or it proves nothing.
+        """
+        return MagicMock(rows=[_PipelineRowObject(r) for r in rows], metadata={})
 
     def _pipeline_events(self, rows, with_download=True):
         from connect_labs.labs.analysis.pipeline import EVENT_DOWNLOAD, EVENT_RESULT, EVENT_STATUS
@@ -331,8 +355,16 @@ class TestTheStreamCarriesProgressWithoutTheCohort:
         assert not [e for e in events if e["message"].startswith("Fetching visits")]
         assert events[-1]["data"]["metadata"]["row_count"] == 3
 
-    def test_the_two_transports_answer_the_same_query_identically(self):
-        """The stream is the JSON view with progress in front, or it is a fork."""
+    def test_the_two_transports_select_the_same_rows(self):
+        """The stream is the JSON view with progress in front, or it is a fork.
+
+        Parity is over WHICH rows are selected and what the metadata says -- not
+        over the literal dicts. In production both paths emit
+        `serialize_pipeline_row` output, but this file's JSON fixture stuffs raw
+        dicts straight into the cache and so bypasses the serializer; comparing
+        the two dicts whole would be comparing the fixture, not the code. The
+        canonical shape is asserted on its own below.
+        """
         json_body, _status, _pda = _call(
             cached={"rows": ROWS, "metadata": {}}, alias="children", opportunity_id=523, username="flw_1"
         )
@@ -343,13 +375,41 @@ class TestTheStreamCarriesProgressWithoutTheCohort:
             username="flw_1",
         )
         streamed = events[-1]["data"]
-        assert streamed["rows"] == json_body["rows"]
+
+        def identify(rows):
+            return [(r.get("entity_id"), r.get("username"), r.get("weight_g")) for r in rows]
+
+        assert identify(streamed["rows"]) == identify(json_body["rows"])
         # `from_cache` is the one field that legitimately differs: the JSON view
         # reads the processed cache itself, while the stream lets the pipeline
         # decide and report it.
         assert {k: v for k, v in streamed["metadata"].items() if k != "from_cache"} == {
             k: v for k, v in json_body["metadata"].items() if k != "from_cache"
         }
+
+    def test_the_streamed_rows_are_serialized_not_raw_pipeline_objects(self):
+        """The bug that reached production, pinned.
+
+        `stream_analysis` yields row OBJECTS. Filtering them as dicts raised
+        "'NoneType' object is not callable" (`row.get` is None on an object) on
+        the very first warm read on labs. Every payload path must go through
+        `serialize_pipeline_row`, which is why that function documents itself as
+        the single producer of row dicts.
+        """
+        events, _ = self._events(
+            self._pipeline_events(ROWS, with_download=False), alias="children", opportunity_id=523
+        )
+        rows = events[-1]["data"]["rows"]
+        assert rows, "the stream returned nothing to check"
+        for row in rows:
+            assert isinstance(row, dict)
+            # The canonical key set, including the two fields ace#1657 lost.
+            for key in ("id", "username", "entity_id", "visit_date", "status", "flagged", "total_visits"):
+                assert key in row, f"{key} missing: rows did not go through serialize_pipeline_row"
+        # The pipeline's own declared field still survives the serialization,
+        # and the framework's opportunity tag is stamped on every row.
+        assert [r["weight_g"] for r in rows] == [900, 950, 1000]
+        assert {r["opportunity_id"] for r in rows} == {523}
 
     def test_the_stream_applies_the_case_filter_too(self):
         events, _ = self._events(
@@ -399,7 +459,10 @@ def test_the_review_prefers_the_stream_and_can_fall_back():
     assert src.count("fetchRowsWithProgress(") == 3, "expected the definition plus both call sites"
     helper = src.split("function fetchRowsWithProgress(")[1].split("\n  }\n")[0]
     assert "EventSource" in helper
-    assert helper.count("plain().then(resolve, reject)") == 3, "no EventSource, no stream, dropped stream"
+    assert helper.count("plain().then(resolve, reject)") == 4, (
+        "four ways the stream can fail to deliver, all of which must still yield rows: "
+        "no EventSource, construction throws, the stream errors, the connection drops"
+    )
     # Progress must reach the empty states that used to be static labels.
     assert "childState.message" in src
     assert "visitState.message" in src
