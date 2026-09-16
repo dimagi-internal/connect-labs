@@ -466,7 +466,7 @@ def build(
                 out[k] = out.get(k, 0) + 1
         return out
 
-    def _series(scope_rows, visits_pred, drilled_llo=None, drilled=False):
+    def _series(scope_rows, visits_pred, drilled_llo=None, drilled=False, catalog=None):
         """One trend point per month for one drill scope.
 
         Each point carries the graded indicators, the cohort size, the visit
@@ -477,6 +477,7 @@ def build(
         registry does not suppress it there. Months present only in the visit
         rows still appear, as the live path's union does.
         """
+        ms = catalog if catalog is not None else measures
         by_month: dict[str, dict] = {}
         for r in scope_rows:
             by_month.setdefault(_month(r), r)
@@ -485,7 +486,7 @@ def build(
         for k in sorted(k for k in set(by_month) | set(vcounts) if k):
             r = by_month.get(k)
             pooled: dict[str, dict | None] = {}
-            for m in measures:
+            for m in ms:
                 table = credibility.get(m["indicator"])
                 if table is None:
                     continue
@@ -502,7 +503,7 @@ def build(
             out.append(
                 {
                     "month": k,
-                    "ind": grade_all(r, measures, **grade_kw),
+                    "ind": grade_all(r, ms, **grade_kw),
                     "n": int(float((r or {}).get("n_cases") or 0)),
                     "visits": vcounts.get(k, 0),
                     "pooled": pooled,
@@ -510,26 +511,54 @@ def build(
             )
         return out
 
-    monthly = _series(by_scope.get("month") or [], lambda v: True)
-    # Monthly per drill scope, so a saved run still supports the LLO and opportunity
-    # drill with no live pipeline behind it. Which scopes exist is spec-driven; the
-    # `<prefix>:<ident>` keying is the render's contract.
-    monthly_by_scope: dict[str, list[dict]] = {"all": monthly}
-    for prefix, scope_name, field in (("llo:", "llo_month", "llo"), ("opp:", "opportunity_month", "opportunity_id")):
-        grouped: dict = {}
-        for r in by_scope.get(scope_name) or []:
-            ident = r.get(field)
-            if ident is None:
-                continue
-            grouped.setdefault(ident, []).append(r)
-        for ident, rows in grouped.items():
-            if field == "llo":
-                pred = lambda v, i=ident: llo_map.get(_int(v.get("opportunity_id"))) == i  # noqa: E731
-                drilled_llo = ident
-            else:
-                pred = lambda v, i=_int(ident): _int(v.get("opportunity_id")) == i  # noqa: E731
-                drilled_llo = llo_map.get(_int(ident))
-            monthly_by_scope[f"{prefix}{ident}"] = _series(rows, pred, drilled_llo=drilled_llo, drilled=True)
+    def _monthly_by_scope(catalog=None) -> tuple[list[dict], dict[str, list[dict]]]:
+        """`(monthly, monthlyByScope)` for one indicator catalogue.
+
+        Monthly per drill scope, so a saved run still supports the LLO and
+        opportunity drill with no live pipeline behind it. Which scopes exist is
+        spec-driven; the `<prefix>:<ident>` keying is the render's contract.
+
+        Parameterised by CATALOGUE because a non-primary family used to get none
+        of this. It was not a definitional dependency -- no N measure references
+        a C one, and `filter_to_series` walks transitively so an N-only registry
+        compiles standalone -- it was only that this was computed once, for the
+        primary series. The consequence reached the benchmark store, which
+        publishes per-period peer figures from `monthlyByScope`: a scorecard
+        family could be benchmarked point-in-time and never over time.
+        The rows already carry every family's columns (a multi-series evaluate
+        runs with `series=None` and returns them all in one GROUPING SETS pass),
+        so grading them again costs no query.
+        """
+        m_all = _series(by_scope.get("month") or [], lambda v: True, catalog=catalog)
+        out: dict[str, list[dict]] = {"all": m_all}
+        for prefix, scope_name, field in (
+            ("llo:", "llo_month", "llo"),
+            ("opp:", "opportunity_month", "opportunity_id"),
+        ):
+            grouped: dict = {}
+            for r in by_scope.get(scope_name) or []:
+                ident = r.get(field)
+                if ident is None:
+                    continue
+                grouped.setdefault(ident, []).append(r)
+            for ident, rows in grouped.items():
+                if field == "llo":
+                    pred = lambda v, i=ident: llo_map.get(_int(v.get("opportunity_id"))) == i  # noqa: E731
+                    drilled_llo = ident
+                else:
+                    pred = lambda v, i=_int(ident): _int(v.get("opportunity_id")) == i  # noqa: E731
+                    drilled_llo = llo_map.get(_int(ident))
+                out[f"{prefix}{ident}"] = _series(rows, pred, drilled_llo=drilled_llo, drilled=True, catalog=catalog)
+        return m_all, out
+
+    monthly, monthly_by_scope = _monthly_by_scope()
+
+    # Each further family gets its own monthly from the SAME rows. Attached here
+    # rather than where `series_out` is built, because that runs above this and
+    # the helper does not exist yet -- the cells a family carries and the trend
+    # it carries are computed at two different points in this function.
+    for name, entry in series_out.items():
+        entry["monthly"], entry["monthlyByScope"] = _monthly_by_scope(catalog=entry["measures"])
 
     # Activity by ISO week (Monday-start), per drill scope: visits that happened
     # and babies registered in the week, cut at `as_of` so a run for a past week
