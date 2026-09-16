@@ -489,6 +489,28 @@ window.MopupAnalysis = (function () {
     vaccination: '#06b6d4',
   };
   const NOT_INCLUDED_LABEL = 'Not included';
+  const NOT_INCLUDED_KEY = 'not_included';
+  const PLANNING_GAP_KEY = 'planning_gap';
+  const BUILDING_POINT_KEY = 'building_point';
+
+  // Show/hide toggles in the map legend -- purely a display filter (which
+  // categories of feature get drawn on the map), never touches what's
+  // included/excluded/flagged in the tables below, which keep reading
+  // lastCandidates/lastGapCandidates independently of this. Persists across
+  // Recompute and the Streets/Satellite toggle (both just re-call renderMap
+  // with the same lastMapFeatures) since this is a plain module-level
+  // object, not reset on every render -- only a full page reload clears it.
+  let mapCategoryVisibility = {};
+
+  function featureCategory(props) {
+    if (props.source === 'planning_gap') return PLANNING_GAP_KEY;
+    if (props.source === 'building_point') return BUILDING_POINT_KEY;
+    return props.included ? props.first_indicator : NOT_INCLUDED_KEY;
+  }
+
+  function isCategoryVisible(key) {
+    return mapCategoryVisibility[key] !== false;
+  }
 
   let map = null;
   let mapReady = false;
@@ -529,11 +551,16 @@ window.MopupAnalysis = (function () {
   // Points (the real detected buildings behind Step 2's gap-fill cells,
   // whichever source produced them) render as a separate circle layer
   // instead (see renderBuildingPoints), so they're filtered out here.
+  // Also drops whatever category the legend toggles have hidden.
   function styleMapFeatures(fc) {
     return {
       type: 'FeatureCollection',
       features: (fc?.features || [])
-        .filter((f) => f.properties.source !== 'building_point')
+        .filter(
+          (f) =>
+            f.properties.source !== 'building_point' &&
+            isCategoryVisible(featureCategory(f.properties)),
+        )
         .map((f) => {
           const color =
             f.properties.source === 'planning_gap'
@@ -562,15 +589,31 @@ window.MopupAnalysis = (function () {
     return {
       type: 'FeatureCollection',
       features: (fc?.features || []).filter(
-        (f) => f.properties.source === 'building_point',
+        (f) =>
+          f.properties.source === 'building_point' &&
+          isCategoryVisible(BUILDING_POINT_KEY),
       ),
     };
   }
 
-  function swatch(color, label) {
-    return `<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${color};margin-right:4px;"></span>${esc(
-      label,
-    )}</span>`;
+  // A checkbox-backed legend entry, not a plain swatch — lets a user hide a
+  // category from the map without touching what's included/excluded/
+  // flagged anywhere else (see mapCategoryVisibility above). Checked state
+  // reads from mapCategoryVisibility so a re-render (Recompute, a
+  // Streets/Satellite swap) reflects whatever the user last chose instead
+  // of resetting to all-visible.
+  function legendToggleHtml(key, color, label) {
+    const checked = isCategoryVisible(key);
+    return `<label class="inline-flex items-center gap-1 cursor-pointer select-none" style="opacity:${
+      checked ? '1' : '0.45'
+    }">
+      <input type="checkbox" class="map-legend-toggle" data-category="${esc(
+        key,
+      )}" ${checked ? 'checked' : ''}>
+      <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${color};"></span>${esc(
+        label,
+      )}
+    </label>`;
   }
 
   function renderMapLegend(fc) {
@@ -583,19 +626,47 @@ window.MopupAnalysis = (function () {
         )
         .map((f) => f.properties.first_indicator),
     );
-    const swatches = Object.keys(INDICATOR_COLORS)
+    const entries = Object.keys(INDICATOR_COLORS)
       .filter((key) => present.has(key))
       .map((key) =>
-        swatch(INDICATOR_COLORS[key], INDICATOR_LABELS[key] || key),
+        legendToggleHtml(
+          key,
+          INDICATOR_COLORS[key],
+          INDICATOR_LABELS[key] || key,
+        ),
       );
-    swatches.push(swatch('#9ca3af', NOT_INCLUDED_LABEL));
+    entries.push(
+      legendToggleHtml(NOT_INCLUDED_KEY, '#9ca3af', NOT_INCLUDED_LABEL),
+    );
     if (features.some((f) => f.properties.source === 'planning_gap')) {
-      swatches.push(swatch(GAP_FILL_COLOR, 'Planning gap (new)'));
+      entries.push(
+        legendToggleHtml(
+          PLANNING_GAP_KEY,
+          GAP_FILL_COLOR,
+          'Planning gap (new)',
+        ),
+      );
     }
     if (features.some((f) => f.properties.source === 'building_point')) {
-      swatches.push(swatch(BUILDING_POINT_COLOR, 'Buildings'));
+      entries.push(
+        legendToggleHtml(BUILDING_POINT_KEY, BUILDING_POINT_COLOR, 'Buildings'),
+      );
     }
-    $('map-legend').innerHTML = swatches.join('');
+    $('map-legend').innerHTML = entries.join('');
+  }
+
+  // Delegated on the container (called once, from init) rather than
+  // attached per-render -- renderMapLegend replaces #map-legend's innerHTML
+  // on every Recompute/style-swap, which would otherwise leak a duplicate
+  // listener each time.
+  function initMapLegendToggles() {
+    $('map-legend').addEventListener('change', (e) => {
+      const input = e.target.closest('.map-legend-toggle');
+      if (!input) return;
+      mapCategoryVisibility[input.dataset.category] = input.checked;
+      input.closest('label').style.opacity = input.checked ? '1' : '0.45';
+      if (lastMapFeatures) renderMap(lastMapFeatures);
+    });
   }
 
   // A separate circle layer, not PlanLayers.workAreas (which only draws
@@ -1227,6 +1298,7 @@ window.MopupAnalysis = (function () {
     );
     initMap(cfg.mapboxToken);
     initMapStyleToggle();
+    initMapLegendToggles();
     renderIndicatorRows();
     renderGlobalConfig();
     applyIndicatorRowStates(); // re-apply now that the real filter state is loaded
