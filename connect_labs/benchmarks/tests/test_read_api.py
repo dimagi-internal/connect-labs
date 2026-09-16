@@ -11,7 +11,7 @@ from connect_labs.benchmarks.api_views import benchmarks_api
 from connect_labs.benchmarks.data_access import benchmarks_for_opportunity
 from connect_labs.benchmarks.models import BenchmarkCohort
 from connect_labs.benchmarks.publish import publish_benchmark
-from connect_labs.benchmarks.tests.test_publish import OPPS, SNAPSHOT
+from connect_labs.benchmarks.tests.test_publish import OPPS, SNAPSHOT, _history
 
 pytestmark = pytest.mark.django_db
 
@@ -30,6 +30,7 @@ def _published(name="KMC", members=OPPS):
     publish_benchmark(
         cohort,
         snapshot=SNAPSHOT,
+        history=_history(),
         source_workflow_id=19778,
         source_run_id=19783,
         registry_id=19784,

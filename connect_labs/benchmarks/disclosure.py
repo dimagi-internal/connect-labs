@@ -116,12 +116,20 @@ def anonymise_point(
 
 
 def anonymise_series(
-    observations_by_period, *, min_peers: int, min_denominator: int, tie_salt: str
+    observations_by_period,
+    *,
+    min_peers: int,
+    min_denominator: int,
+    tie_salt: str,
+    require_complete: bool = True,
 ) -> dict[str, list[tuple[int, float, int]]]:
     """`{period: [(peer_index, value, opportunity_id), ...]}` for a whole series.
 
     R5 establishes the common window, then R6 requires a peer to be present in
     EVERY period of it -- so no series starts late, ends early or has a hole.
+    `require_complete=False` drops R6 alone (R1 and R5 still hold), which a
+    cohort may choose when complete lines would leave it with no series at all;
+    see the comment at R6 for why the tenure axis makes that defensible.
 
     A single ordering is computed ONCE for the whole series (by each surviving
     peer's mean value across the in-window periods, tie-broken the same way as
@@ -141,9 +149,22 @@ def anonymise_series(
     window = {p for p, obs in eligible_by_period.items() if len({o.opportunity_id for o in obs}) >= min_peers}
     if not window:
         return {}
-    # R6: only peers present in every in-window period survive.
+    # R6: only peers present in every in-window period survive -- unless the
+    # cohort has switched that off.
+    #
+    # Complete lines are the safer default and were the original rule: a line
+    # with a hole, or one that stops early, says something about that peer's
+    # own history. But it is also what makes a series unpublishable for a real
+    # cohort -- members join at different times, so the intersection of "in
+    # every period" collapses to whoever has been running longest.
+    #
+    # What makes relaxing it defensible is the AXIS. Periods are that
+    # opportunity's own Nth report, so an incomplete line says "this one has
+    # fewer reports than the longest-running peer", not when it joined or on
+    # what date anything happened. R5 still holds per period, so no period is
+    # published that too few peers reached.
     per_period_ids = [{o.opportunity_id for o in eligible_by_period[p]} for p in window]
-    complete = set.intersection(*per_period_ids)
+    complete = set.intersection(*per_period_ids) if require_complete else set.union(*per_period_ids)
     if len(complete) < min_peers:  # R1, re-checked after R6 thins the set
         return {}
     # One ordering for the whole series: each surviving peer's mean value
