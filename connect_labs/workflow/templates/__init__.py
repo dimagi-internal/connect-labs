@@ -134,6 +134,30 @@ def template_supports_default_run(template_key: str | None) -> bool:
     return bool(template and template.get("supports_default_run") and callable(template.get("run_default")))
 
 
+def definition_supports_default_run(definition) -> bool:
+    """True iff THIS workflow can actually be default-run, not merely its template.
+
+    A generic template with many live instances can offer a default run that only
+    some of them should get -- `performance_review`'s cache warm is the first.
+    Such a template names a config key in ``default_run_config_gate``; a
+    definition is schedulable only when its own config sets that key truthy.
+
+    Without this, every instance of a gated template shows a Schedule button and
+    an enabled schedule, then fails with ValueError the first time it fires --
+    a broken schedule that looks healthy until its first run.
+    """
+    key = getattr(definition, "template_type", None) or ((getattr(definition, "data", None) or {}).get("config") or {}).get(
+        "templateType"
+    )
+    if not template_supports_default_run(key):
+        return False
+    gate = (TEMPLATES.get(key) or {}).get("default_run_config_gate")
+    if not gate:
+        return True
+    config = (getattr(definition, "data", None) or {}).get("config") or {}
+    return bool(config.get(gate))
+
+
 # The multi-select option types, mapped to the coercion their stored values get. Both
 # behave identically -- a set chosen from choices_from_config -- and differ ONLY in the
 # type of the value, so every place that handles one handles the other through this map
