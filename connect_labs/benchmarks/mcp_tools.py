@@ -218,6 +218,22 @@ def benchmarks_cohort_create(
     min_denominator: int = 25,
     require_complete_series: bool = True,
 ) -> dict[str, Any]:
+    # A boolean can arrive as the STRING "false" -- MCP clients differ on
+    # whether they coerce against the declared schema, and Django then refuses
+    # the create with a ValidationError naming the column, which tells the
+    # caller nothing about which argument it came from. Coerce here, and treat
+    # anything unrecognisable as an error rather than as truthy: "false" is
+    # truthy in Python, so a silent bool() would switch a disclosure rule ON
+    # when the caller asked for it OFF.
+    if isinstance(require_complete_series, str):
+        lowered = require_complete_series.strip().lower()
+        if lowered not in {"true", "false"}:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                f"require_complete_series must be a boolean, got {require_complete_series!r}.",
+            )
+        require_complete_series = lowered == "true"
+
     if min_peers < MIN_PEERS_FLOOR:
         raise MCPToolError(
             "INVALID_SCHEMA",
