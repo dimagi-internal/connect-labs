@@ -15,6 +15,7 @@ from __future__ import annotations
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace.identity import ensure_org
 from connect_labs.marketplace.models import OrgProfile
+from connect_labs.pulse.partner_names import invalidate as invalidate_partner_cache
 
 
 def make_partner(name: str, short: str = "", **profile_fields) -> LabsOrg:
@@ -27,4 +28,9 @@ def make_partner(name: str, short: str = "", **profile_fields) -> LabsOrg:
     """
     org = ensure_org(name, short_name=short)
     OrgProfile.objects.update_or_create(org=org, defaults=profile_fields)
+    # `partner_names` caches the registry for a minute, so an organisation
+    # created after another test warmed that cache would be invisible to
+    # `resolve()` — and a test that passes alone but fails in a suite is worse
+    # than one that fails. `marketplace_import` does exactly this after a run.
+    invalidate_partner_cache()
     return org

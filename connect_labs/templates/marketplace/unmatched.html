@@ -5,7 +5,7 @@
 {% block content %}
 <div class="max-w-screen-2xl mx-auto px-4 py-6">
 
-  <a href="{% url 'marketplace:directory' %}" class="text-sm text-gray-500 hover:text-gray-700">
+  <a href="{% url 'marketplace:network' %}" class="text-sm text-gray-500 hover:text-gray-700">
     <i class="fa-solid fa-arrow-left mr-1"></i> Directory
   </a>
 
@@ -28,7 +28,7 @@
         The next import applies it.
       </p>
       <a href="{{ directory_url }}" target="_blank" rel="noopener noreferrer"
-         class="inline-flex items-center px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
+         class="inline-flex items-center px-3 py-1.5 bg-brand-indigo text-white text-sm font-medium rounded-lg hover:bg-brand-deep-purple transition">
         <i class="fa-solid fa-up-right-from-square mr-2"></i> Open the {{ mapping_tab }} tab
       </a>
       {% if decided_count %}
@@ -67,7 +67,7 @@
             <td class="px-6 py-4 text-sm whitespace-nowrap">
               {% if r.source_url %}
                 <a href="{{ r.source_url }}" target="_blank" rel="noopener noreferrer"
-                   class="text-indigo-700 hover:text-indigo-900">row {{ r.source_row }}</a>
+                   class="text-brand-indigo hover:text-brand-deep-purple">row {{ r.source_row }}</a>
               {% endif %}
             </td>
           </tr>

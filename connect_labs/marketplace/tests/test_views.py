@@ -45,7 +45,7 @@ class TestAccess:
         """Submission text is what an organisation wrote about itself while
         applying for work. There is no anonymous view of it."""
         for name, args in [
-            ("marketplace:directory", []),
+            ("marketplace:network", []),
             ("marketplace:unmatched", []),
             ("marketplace:organisation", ["fenwick"]),
         ]:
@@ -58,32 +58,33 @@ class TestAccess:
 class TestDirectory:
     def test_lists_every_organisation_not_only_those_on_connect(self, client, user, registry):
         client.force_login(user)
-        body = client.get(reverse("marketplace:directory")).content.decode()
+        body = client.get(reverse("marketplace:network")).content.decode()
         assert "Fenwick Trust" in body
         assert "Harbourside Health Initiative" in body
 
     def test_search_narrows_the_list(self, client, user, registry):
         client.force_login(user)
-        body = client.get(reverse("marketplace:directory"), {"q": "Harbour"}).content.decode()
+        body = client.get(reverse("marketplace:network"), {"q": "Harbour"}).content.decode()
         assert "Harbourside" in body
         assert "Fenwick Trust</a>" not in body
 
     def test_filters_to_organisations_with_no_contact(self, client, user, registry):
         """The segment that matters for outreach: nobody to write to."""
         client.force_login(user)
-        body = client.get(reverse("marketplace:directory"), {"status": "no_contact"}).content.decode()
+        body = client.get(reverse("marketplace:network"), {"segment": "nocontact"}).content.decode()
         assert "Harbourside" in body
         assert "Fenwick Trust</a>" not in body
 
     def test_filters_by_the_round_an_organisation_applied_to(self, client, user, registry):
         client.force_login(user)
-        body = client.get(reverse("marketplace:directory"), {"applied": "demo-2026"}).content.decode()
+        body = client.get(reverse("marketplace:network"), {"applied": "demo-2026"}).content.decode()
         assert "Fenwick Trust" in body
         assert "Harbourside" not in body
 
-    def test_surfaces_the_unmatched_queue(self, client, user, registry):
+    def test_the_marketplace_home_surfaces_the_queue(self, client, user, registry):
+        """The queue is a marketplace-level obligation, not a directory filter."""
         client.force_login(user)
-        body = client.get(reverse("marketplace:directory")).content.decode()
+        body = client.get(reverse("marketplace:home")).content.decode()
         assert "awaiting a verdict" in body
 
 
@@ -220,14 +221,14 @@ class TestUnreadableRoundsAreVisible:
         unless the page says so."""
         Solicitation.objects.filter(slug="demo-2026").update(sa_access_state="denied")
         client.force_login(user)
-        body = client.get(reverse("marketplace:directory")).content.decode()
+        body = client.get(reverse("marketplace:network")).content.decode()
         assert "could not be read" in body
         assert "having had no applicants" in body
 
     def test_says_nothing_when_every_round_is_readable(self, client, user, registry):
         Solicitation.objects.filter(slug="demo-2026").update(sa_access_state="ok")
         client.force_login(user)
-        body = client.get(reverse("marketplace:directory")).content.decode()
+        body = client.get(reverse("marketplace:network")).content.decode()
         assert "could not be read" not in body
 
 
