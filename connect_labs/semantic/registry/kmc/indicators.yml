@@ -264,9 +264,14 @@ measures:
     title: Mean early growth rate
     type: number
     sql: '{c13_numerator}'
-    meta:
-      {
+    meta: {
         indicator: C13,
+        # A mean growth rate says nothing about how big an opportunity is -- a
+        # 50-case and a 2,000-case opportunity can both report 14.0 g/kg/day --
+        # so it is publishable as an anonymised peer figure. Declared here
+        # rather than inferred from the unit, which cannot tell a mean from a
+        # count.
+        benchmarkable: true,
         plain: 'Mean early growth rate in g per kg per day over babies with sufficient weight data: first weighing to the last weighing 21 to 35 days after the first visit, per kg of the first weight.',
         inputs: [weights],
         category: Program quality,

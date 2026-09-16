@@ -14,7 +14,7 @@ import pytest
 
 from connect_labs.benchmarks import publish as publish_module
 from connect_labs.benchmarks.models import BenchmarkCohort, BenchmarkPublication, BenchmarkValue
-from connect_labs.benchmarks.publish import SnapshotShapeError, publish_benchmark
+from connect_labs.benchmarks.publish import SnapshotShapeError, publish_benchmark, resolve_benchmarkable_ids
 from connect_labs.semantic import snapshot as semantic_snapshot
 from connect_labs.semantic.runtime import filter_to_series, load_registry, measure_catalog
 
@@ -433,3 +433,73 @@ class TestRelaxingR6:
             by_period.setdefault(v.period, set()).add(v.opportunity_id)
         assert by_period, "nothing published at all"
         assert all(len(o) >= 3 for o in by_period.values()), by_period
+
+
+class TestBenchmarkableIsAPropertyOfTheIndicator:
+    """Which indicators may be benchmarked is decided in the REGISTRY, per
+    indicator, not inferred from the unit — `unit: n` covers both a count (which
+    re-identifies an opportunity instantly) and a mean (which does not), and
+    `g/kg/d` is no more dangerous than `%`."""
+
+    @staticmethod
+    def _cat(*specs):
+        return [
+            {"indicator": ind, "unit": unit, "kind": kind, "benchmarkable": flag} for ind, unit, kind, flag in specs
+        ]
+
+    def test_a_declared_mean_is_publishable_even_though_it_is_not_a_rate(self):
+        cat = self._cat(("C13", "g/kg/d", "mean", True), ("C15", "%", None, None))
+        assert "C13" in resolve_benchmarkable_ids(cat)
+
+    def test_declaring_one_indicator_does_not_withhold_every_other(self):
+        """The unit rule is the floor and a declaration adjusts it. Treated as a
+        pure allow-list, adding `benchmarkable: true` to a single indicator
+        would silently stop publishing every rate in the registry."""
+        cat = self._cat(("C13", "g/kg/d", "mean", True), ("C15", "%", None, None))
+        assert resolve_benchmarkable_ids(cat) == {"C13", "C15"}
+
+    def test_a_rate_can_be_withheld_by_declaring_it_false(self):
+        cat = self._cat(("C15", "%", None, False), ("C16", "%", None, None))
+        assert resolve_benchmarkable_ids(cat) == {"C16"}
+
+    def test_a_registry_that_declares_nothing_is_exactly_the_old_unit_rule(self):
+        cat = self._cat(("C13", "g/kg/d", "mean", None), ("C15", "%", None, None))
+        assert resolve_benchmarkable_ids(cat) == {"C15"}
+
+    def test_a_count_is_refused_even_when_it_declares_itself_benchmarkable(self):
+        """The one rule a registry edit must not be able to switch off. The
+        registry is editable with no deploy; opportunity sizes are visible on
+        the programme report, so a published count names the opportunity."""
+        cat = self._cat(("C01", "n", "count", True), ("C13", "g/kg/d", "mean", True))
+        out = resolve_benchmarkable_ids(cat)
+        assert "C01" not in out
+        assert "C13" in out
+
+    def test_a_count_is_refused_under_the_fallback_too(self):
+        cat = self._cat(("N01", "%", "count", None), ("C15", "%", None, None))
+        assert resolve_benchmarkable_ids(cat) == {"C15"}
+
+
+def test_the_real_kmc_registry_now_benchmarks_the_growth_rate():
+    """End to end over the REAL catalog, not a fixture: C13 is declared and
+    reaches the allow-list, and the counts stay out."""
+    cat = _catalog("C", ("C13", "C01", "C15"))
+    out = resolve_benchmarkable_ids(cat)
+    assert "C13" in out, "the registry declaration did not reach the publisher"
+    assert "C01" not in out, "a case count became benchmarkable"
+
+
+def test_a_declared_indicator_reaches_the_PUBLISHER_not_just_the_helper():
+    """Through `publish_benchmark`, not the resolver alone. The resolver was
+    first named `benchmarkable_indicator_ids`, which is also the name of a
+    `publish_benchmark` PARAMETER — so inside the publisher the parameter
+    shadowed it, the fallback called None, and every publication raised. The
+    unit tests above call the resolver directly and cannot see that."""
+    pub = _publish(
+        _cohort(),
+        snapshot=build_snapshot(c_ids=("C13", "C01", "C15")),
+        history=_history(indicator_ids=("C13",)),
+    )
+    published = set(BenchmarkValue.objects.filter(publication=pub).values_list("indicator_id", flat=True))
+    assert "C13" in published, "the registry's declaration did not survive the publisher"
+    assert "C01" not in published, "a case count was published"
