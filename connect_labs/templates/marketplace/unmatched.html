@@ -1,34 +1,55 @@
 {% extends "base.html" %}
+{% comment %}Tailwind, not Bootstrap — see directory.html.{% endcomment %}
 {% block title %}Submissions awaiting a verdict{% endblock %}
+
 {% block content %}
-<div class="container-fluid px-4 py-3">
-  <a href="{% url 'marketplace:directory' %}" class="small text-muted">&larr; Directory</a>
-  <h2 class="mt-1">Submissions awaiting a verdict</h2>
-  <p class="text-muted small">
-    These applications could not be attributed to an organisation by an exact
-    contact email or an exact name. They are listed rather than guessed at: a
-    misattributed submission puts one organisation's words on another
-    organisation's record, where they will be read as that organisation's own.
-  </p>
-  <div class="table-responsive">
-    <table class="table table-sm align-middle">
-      <thead class="table-light">
-        <tr><th>Round</th><th>Organisation as submitted</th><th>Email(s)</th><th>Country</th><th>Submitted</th><th></th></tr>
+<div class="max-w-screen-2xl mx-auto px-4 py-6">
+
+  <a href="{% url 'marketplace:directory' %}" class="text-sm text-gray-500 hover:text-gray-700">
+    <i class="fa-solid fa-arrow-left mr-1"></i> Directory
+  </a>
+
+  <div class="bg-white rounded-lg shadow-sm p-6 mt-2 mb-6">
+    <h1 class="text-2xl font-semibold text-brand-deep-purple mb-2">Submissions awaiting a verdict</h1>
+    <p class="text-sm text-gray-600 max-w-3xl">
+      These applications could not be attributed to an organisation by an exact
+      contact email or an exact name. They are listed rather than guessed at: a
+      misattributed submission puts one organisation's words on another
+      organisation's record, where they will be read as that organisation's own.
+    </p>
+  </div>
+
+  <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Round</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organisation as submitted</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email(s)</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Country</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+        </tr>
       </thead>
-      <tbody>
+      <tbody class="bg-white divide-y divide-gray-200">
         {% for r in rows %}
-          <tr>
-            <td class="small">{{ r.solicitation.title }}</td>
-            <td class="small">{{ r.org_name|default:"(none given)" }}</td>
-            <td class="small">{{ r.submitted_by_email|default:"—" }}</td>
-            <td class="small">{{ r.country_as_submitted|truncatechars:30 }}</td>
-            <td class="small">{% if r.submission_date %}{{ r.submission_date|date:"j M Y" }}{% else %}—{% endif %}</td>
-            <td class="small">
-              {% if r.source_url %}<a href="{{ r.source_url }}" target="_blank" rel="noopener noreferrer">row {{ r.source_row }}</a>{% endif %}
+          <tr class="hover:bg-gray-50 transition">
+            <td class="px-6 py-4 text-sm text-gray-600">{{ r.solicitation.title }}</td>
+            <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ r.org_name|default:"(none given)" }}</td>
+            <td class="px-6 py-4 text-sm text-gray-600 break-all">{{ r.submitted_by_email|default:"—" }}</td>
+            <td class="px-6 py-4 text-sm text-gray-600">{{ r.country_as_submitted|truncatechars:34 }}</td>
+            <td class="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
+              {% if r.submission_date %}{{ r.submission_date|date:"j M Y" }}{% else %}—{% endif %}
+            </td>
+            <td class="px-6 py-4 text-sm whitespace-nowrap">
+              {% if r.source_url %}
+                <a href="{{ r.source_url }}" target="_blank" rel="noopener noreferrer"
+                   class="text-indigo-700 hover:text-indigo-900">row {{ r.source_row }}</a>
+              {% endif %}
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="text-center text-muted py-4">Nothing awaiting a verdict.</td></tr>
+          <tr><td colspan="6" class="px-6 py-12 text-center text-sm text-gray-500">Nothing awaiting a verdict.</td></tr>
         {% endfor %}
       </tbody>
     </table>

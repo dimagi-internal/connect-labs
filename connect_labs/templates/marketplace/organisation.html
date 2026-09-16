@@ -1,57 +1,97 @@
 {% extends "base.html" %}
+{% comment %}
+Tailwind, not Bootstrap — see directory.html. The application history uses
+<details>/<summary> rather than an accordion widget: labs loads no Bootstrap
+JS, so a data-bs-toggle button would have rendered a list that silently
+refuses to open. <details> needs no JavaScript at all.
+{% endcomment %}
 {% block title %}{{ org.name }}{% endblock %}
-{% block content %}
-<div class="container-fluid px-4 py-3">
 
-  <a href="{% url 'marketplace:directory' %}" class="small text-muted">&larr; Directory</a>
-  <div class="d-flex align-items-center gap-2 mt-1 mb-3">
-    <h2 class="mb-0">{{ org.name }}</h2>
-    {% if delivering %}<span class="badge bg-success">delivering</span>
-    {% elif org.is_linked %}<span class="badge bg-secondary">linked to Connect</span>
-    {% else %}<span class="badge bg-light text-muted">not on Connect</span>{% endif %}
+{% block content %}
+<div class="max-w-screen-2xl mx-auto px-4 py-6">
+
+  <a href="{% url 'marketplace:directory' %}" class="text-sm text-gray-500 hover:text-gray-700">
+    <i class="fa-solid fa-arrow-left mr-1"></i> Directory
+  </a>
+
+  <div class="bg-white rounded-lg shadow-sm p-6 mt-2 mb-6">
+    <div class="flex items-center gap-3 flex-wrap">
+      <h1 class="text-2xl font-semibold text-brand-deep-purple">{{ org.name }}</h1>
+      {% if delivering %}
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+          <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>delivering
+        </span>
+      {% elif org.is_linked %}
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">linked to Connect</span>
+      {% else %}
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-800">not on Connect</span>
+      {% endif %}
+      {% if org.short_name %}<span class="text-sm text-gray-400">{{ org.short_name }}</span>{% endif %}
+    </div>
   </div>
 
-  <div class="row g-3">
-    <div class="col-lg-4">
-      <div class="card mb-3">
-        <div class="card-header py-2"><strong>Profile</strong></div>
-        <div class="card-body small">
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <div class="lg:col-span-1 space-y-6">
+      <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div class="px-6 py-3 bg-gray-50 border-b border-gray-200">
+          <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Profile</h2>
+        </div>
+        <div class="px-6 py-4">
           {% if profile %}
-            <dl class="row mb-0">
-              {% if profile.countries %}<dt class="col-5">Countries</dt><dd class="col-7">{{ profile.countries|join:", " }}</dd>{% endif %}
-              {% if profile.regions %}<dt class="col-5">Regions</dt><dd class="col-7">{{ profile.regions|join:", " }}</dd>{% endif %}
-              {% if profile.sectors %}<dt class="col-5">Sectors</dt><dd class="col-7">{{ profile.sectors|join:", " }}</dd>{% endif %}
-              {% if profile.year_established %}<dt class="col-5">Established</dt><dd class="col-7">{{ profile.year_established }}</dd>{% endif %}
-              {% if profile.team_size %}<dt class="col-5">Team size</dt><dd class="col-7">{{ profile.team_size }}</dd>{% endif %}
-              {% if profile.flws_managed %}<dt class="col-5">FLWs managed</dt><dd class="col-7">{{ profile.flws_managed }}</dd>{% endif %}
-              {% if profile.website %}<dt class="col-5">Website</dt><dd class="col-7"><a href="{{ profile.website }}" rel="noopener noreferrer" target="_blank">{{ profile.website|truncatechars:34 }}</a></dd>{% endif %}
-              {% if profile.joined_at %}
-                <dt class="col-5">Joined</dt>
-                <dd class="col-7">{{ profile.joined_at }}
-                  {% if profile.joined_basis %}<div class="text-muted" style="font-size:.8em">{{ profile.joined_basis }}</div>{% endif %}
-                </dd>
+            <dl class="space-y-3 text-sm">
+              {% if profile.countries %}<div><dt class="text-gray-500">Countries</dt><dd class="text-gray-900">{{ profile.countries|join:", " }}</dd></div>{% endif %}
+              {% if profile.regions %}<div><dt class="text-gray-500">Regions</dt><dd class="text-gray-900">{{ profile.regions|join:", " }}</dd></div>{% endif %}
+              {% if profile.sectors %}<div><dt class="text-gray-500">Sectors</dt><dd class="text-gray-900">{{ profile.sectors|join:", " }}</dd></div>{% endif %}
+              {% if profile.year_established %}<div><dt class="text-gray-500">Established</dt><dd class="text-gray-900">{{ profile.year_established }}</dd></div>{% endif %}
+              {% if profile.team_size %}<div><dt class="text-gray-500">Team size</dt><dd class="text-gray-900">{{ profile.team_size }}</dd></div>{% endif %}
+              {% if profile.flws_managed %}<div><dt class="text-gray-500">FLWs managed</dt><dd class="text-gray-900">{{ profile.flws_managed }}</dd></div>{% endif %}
+              {% if profile.website %}
+                <div><dt class="text-gray-500">Website</dt>
+                  <dd><a href="{{ profile.website }}" target="_blank" rel="noopener noreferrer"
+                         class="text-indigo-700 hover:text-indigo-900 break-all">{{ profile.website|truncatechars:40 }}</a></dd>
+                </div>
               {% endif %}
-              {% if profile.office_address %}<dt class="col-5">Address</dt><dd class="col-7">{{ profile.office_address }}</dd>{% endif %}
+              {% if profile.joined_at %}
+                <div><dt class="text-gray-500">Joined the network</dt>
+                  <dd class="text-gray-900">{{ profile.joined_at }}</dd>
+                  {% if profile.joined_basis %}
+                    {# The basis travels with the date: some are an exact submission
+                       timestamp, some a cohort's shared publication date. #}
+                    <dd class="text-xs text-gray-400 mt-0.5">{{ profile.joined_basis }}</dd>
+                  {% endif %}
+                </div>
+              {% endif %}
+              {% if profile.office_address %}<div><dt class="text-gray-500">Address</dt><dd class="text-gray-900">{{ profile.office_address }}</dd></div>{% endif %}
             </dl>
-            {% if profile.notes %}<hr><div class="text-muted">{{ profile.notes }}</div>{% endif %}
+            {% if profile.notes %}
+              <div class="mt-4 pt-4 border-t border-gray-100 text-sm text-gray-600">{{ profile.notes }}</div>
+            {% endif %}
           {% else %}
-            <span class="text-muted">No directory profile.</span>
+            <p class="text-sm text-gray-500">No directory profile.</p>
           {% endif %}
         </div>
       </div>
 
-      <div class="card mb-3">
-        <div class="card-header py-2"><strong>Contacts</strong></div>
-        <ul class="list-group list-group-flush small">
+      <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div class="px-6 py-3 bg-gray-50 border-b border-gray-200">
+          <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Contacts</h2>
+        </div>
+        <ul class="divide-y divide-gray-100">
           {% for c in contacts %}
-            <li class="list-group-item">
-              <div>{{ c.full_name|default:"(unnamed)" }}{% if c.is_main_poc %} <span class="badge bg-primary">main</span>{% endif %}</div>
-              {% if c.role_title %}<div class="text-muted">{{ c.role_title }}</div>{% endif %}
-              <div><a href="mailto:{{ c.email }}">{{ c.email }}</a></div>
-              {% if c.phone %}<div class="text-muted">{{ c.phone }}</div>{% endif %}
+            <li class="px-6 py-3 text-sm">
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-gray-900">{{ c.full_name|default:"(unnamed)" }}</span>
+                {% if c.is_main_poc %}
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">main</span>
+                {% endif %}
+              </div>
+              {% if c.role_title %}<div class="text-gray-500">{{ c.role_title }}</div>{% endif %}
+              <a href="mailto:{{ c.email }}" class="text-indigo-700 hover:text-indigo-900 break-all">{{ c.email }}</a>
+              {% if c.phone %}<div class="text-gray-500">{{ c.phone }}</div>{% endif %}
             </li>
           {% empty %}
-            <li class="list-group-item text-danger">
+            <li class="px-6 py-4 text-sm text-red-600">
               No contact on file — there is nobody here to write to.
             </li>
           {% endfor %}
@@ -59,79 +99,84 @@
       </div>
     </div>
 
-    <div class="col-lg-8">
-      <div class="card mb-3">
-        <div class="card-header py-2 d-flex justify-content-between">
-          <strong>Service delivery on Connect</strong>
-          {% if visits %}<span class="text-muted small">{{ visits }} lifetime visits</span>{% endif %}
+    <div class="lg:col-span-2 space-y-6">
+      <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div class="px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Service delivery on Connect</h2>
+          {% if visits %}<span class="text-sm text-gray-500">{{ visits }} lifetime visits</span>{% endif %}
         </div>
-        <div class="card-body p-0">
-          {% if opportunities %}
-            <table class="table table-sm mb-0 small">
-              <thead class="table-light"><tr><th>Opportunity</th><th>Country</th><th>Service</th><th class="text-end">Visits</th></tr></thead>
-              <tbody>
-                {% for o in opportunities %}
-                  <tr>
-                    <td>{{ o.name }}</td><td>{{ o.country }}</td><td>{{ o.service_slug }}</td>
-                    <td class="text-end">{{ o.lifetime_visit_count }}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          {% else %}
-            <div class="p-3 small text-muted">
-              No Connect delivery recorded.
-              {% if not connect_slugs %}
-                This organisation has no Connect workspace attributed to it, so there is
-                nothing to join on — not necessarily that they have never delivered.
-              {% endif %}
-            </div>
-          {% endif %}
-        </div>
+        {% if opportunities %}
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-white">
+              <tr>
+                <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Opportunity</th>
+                <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Country</th>
+                <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Service</th>
+                <th class="px-6 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Visits</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              {% for o in opportunities %}
+                <tr>
+                  <td class="px-6 py-3 text-sm text-gray-900">{{ o.name }}</td>
+                  <td class="px-6 py-3 text-sm text-gray-600">{{ o.country }}</td>
+                  <td class="px-6 py-3 text-sm text-gray-600">{{ o.service_slug }}</td>
+                  <td class="px-6 py-3 text-sm text-gray-900 text-right">{{ o.lifetime_visit_count }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="px-6 py-4 text-sm text-gray-500">
+            No Connect delivery recorded.
+            {% if not connect_slugs %}
+              This organisation has no Connect workspace attributed to it, so there is
+              nothing to join on — not necessarily that they have never delivered.
+            {% endif %}
+          </div>
+        {% endif %}
       </div>
 
-      <div class="card">
-        <div class="card-header py-2"><strong>Application history</strong></div>
-        <div class="card-body p-0">
-          {% if responses %}
-            <div class="accordion accordion-flush" id="apps">
-              {% for r in responses %}
-                <div class="accordion-item">
-                  <h2 class="accordion-header">
-                    <button class="accordion-button collapsed py-2 small" type="button"
-                            data-bs-toggle="collapse" data-bs-target="#app{{ r.pk }}">
-                      <span class="me-2"><strong>{{ r.solicitation.title }}</strong></span>
-                      <span class="badge bg-light text-dark me-2">{{ r.solicitation.type_label }}</span>
-                      {% if r.submission_date %}<span class="text-muted">{{ r.submission_date|date:"j M Y" }}</span>{% endif %}
-                      {% if r.match_state != 'human' and r.match_state != 'unmatched' %}
-                        <span class="ms-2 text-muted" style="font-size:.85em">matched: {{ r.match_basis }}</span>
-                      {% endif %}
-                    </button>
-                  </h2>
-                  <div id="app{{ r.pk }}" class="accordion-collapse collapse" data-bs-parent="#apps">
-                    <div class="accordion-body small">
-                      {% if r.source_url %}
-                        <a class="d-inline-block mb-2" href="{{ r.source_url }}" target="_blank" rel="noopener noreferrer">
-                          Open the original response (row {{ r.source_row }})
-                        </a>
-                      {% endif %}
-                      <dl class="row mb-0">
-                        {% for question, answer in r.answer_pairs %}
-                          <dt class="col-sm-5 text-muted fw-normal">{{ question|truncatechars:90 }}</dt>
-                          <dd class="col-sm-7">{{ answer|linebreaksbr }}</dd>
-                        {% empty %}
-                          <dd class="col-12 text-muted">This submission recorded no answers.</dd>
-                        {% endfor %}
-                      </dl>
-                    </div>
-                  </div>
-                </div>
-              {% endfor %}
-            </div>
-          {% else %}
-            <div class="p-3 small text-muted">No applications recorded.</div>
-          {% endif %}
+      <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div class="px-6 py-3 bg-gray-50 border-b border-gray-200">
+          <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Application history</h2>
         </div>
+        {% if responses %}
+          <div class="divide-y divide-gray-100">
+            {% for r in responses %}
+              <details class="group">
+                <summary class="px-6 py-3 cursor-pointer hover:bg-gray-50 transition list-none flex items-center gap-2 flex-wrap">
+                  <i class="fa-solid fa-chevron-right text-xs text-gray-400 transition-transform group-open:rotate-90"></i>
+                  <span class="text-sm font-medium text-gray-900">{{ r.solicitation.title }}</span>
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{{ r.solicitation.type_label }}</span>
+                  {% if r.submission_date %}<span class="text-sm text-gray-500">{{ r.submission_date|date:"j M Y" }}</span>{% endif %}
+                  {% if r.match_basis %}<span class="text-xs text-gray-400 ml-auto">matched: {{ r.match_basis }}</span>{% endif %}
+                </summary>
+                <div class="px-6 pb-4 pt-1 bg-gray-50">
+                  {% if r.source_url %}
+                    <a href="{{ r.source_url }}" target="_blank" rel="noopener noreferrer"
+                       class="inline-block mb-3 text-sm text-indigo-700 hover:text-indigo-900">
+                      <i class="fa-solid fa-up-right-from-square mr-1"></i>
+                      Open the original response (row {{ r.source_row }})
+                    </a>
+                  {% endif %}
+                  <dl class="space-y-2">
+                    {% for question, answer in r.answer_pairs %}
+                      <div class="grid grid-cols-1 sm:grid-cols-3 gap-1">
+                        <dt class="text-xs text-gray-500 sm:col-span-1">{{ question|truncatechars:110 }}</dt>
+                        <dd class="text-sm text-gray-900 sm:col-span-2">{{ answer|linebreaksbr }}</dd>
+                      </div>
+                    {% empty %}
+                      <div class="text-sm text-gray-500">This submission recorded no answers.</div>
+                    {% endfor %}
+                  </dl>
+                </div>
+              </details>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="px-6 py-4 text-sm text-gray-500">No applications recorded.</div>
+        {% endif %}
       </div>
     </div>
   </div>
