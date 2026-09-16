@@ -10,13 +10,24 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 DAILY = "daily"
+INTERVAL = "interval"
 WEEKDAYS = "weekdays"
 WEEKLY = "weekly"
 BIWEEKLY = "biweekly"
 MONTHLY = "monthly"
 
+# Hours-per-day divisors only. An interval that does not divide 24 cannot be
+# anchored to a daily grid without leaving a short gap at the day boundary, and
+# compute_next_run is a pure function of its arguments -- it is handed no
+# schedule history, so there is nowhere to carry the running offset that would
+# smooth that seam over. Restricting to divisors keeps every fire time
+# derivable from the clock alone, which is the same property the biweekly
+# epoch below exists to preserve.
+INTERVAL_HOURS_CHOICES = (1, 2, 3, 4, 6, 8, 12)
+
 CADENCE_CHOICES = [
     (DAILY, "Daily"),
+    (INTERVAL, "Every N hours"),
     (WEEKDAYS, "Weekdays (Mon–Fri)"),
     (WEEKLY, "Weekly"),
     (BIWEEKLY, "Every 2 weeks"),
@@ -56,14 +67,33 @@ def compute_next_run(
     day_of_week: int | None,
     day_of_month: int | None,
     from_dt: datetime,
+    interval_hours: int | None = None,
 ) -> datetime:
-    """Return the next fire time strictly after ``from_dt`` (timezone-aware UTC)."""
+    """Return the next fire time strictly after ``from_dt`` (timezone-aware UTC).
+
+    ``interval_hours`` is read only for the INTERVAL cadence, where it is the
+    gap between fires and must divide 24 (see INTERVAL_HOURS_CHOICES). It is
+    keyword-optional so the existing call sites for the calendar cadences are
+    unaffected.
+    """
     base = from_dt.replace(hour=hour, minute=0, second=0, microsecond=0)
 
     if cadence == DAILY:
         candidate = base
         if candidate <= from_dt:
             candidate += timedelta(days=1)
+        return candidate
+
+    if cadence == INTERVAL:
+        # Fire on a fixed daily grid anchored at ``hour``: with hour=0 and
+        # interval_hours=6 that is 00:00, 06:00, 12:00, 18:00 UTC, every day.
+        # Derived from from_dt alone, so a missed tick never shifts the grid.
+        if interval_hours not in INTERVAL_HOURS_CHOICES:
+            raise ValueError(f"interval_hours must be one of {INTERVAL_HOURS_CHOICES}, got {interval_hours!r}")
+        day_start = from_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        candidate = day_start + timedelta(hours=hour % interval_hours)
+        while candidate <= from_dt:
+            candidate += timedelta(hours=interval_hours)
         return candidate
 
     if cadence == WEEKDAYS:

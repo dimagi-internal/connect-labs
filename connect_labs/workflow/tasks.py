@@ -962,7 +962,30 @@ def run_due_workflow_schedules() -> dict:
     due = WorkflowSchedule.objects.filter(enabled=True, next_run_at__lte=now)
     dispatched = 0
     for sched in due:
-        next_at = compute_next_run(sched.cadence, sched.hour, sched.day_of_week, sched.day_of_month, now)
+        # A single unschedulable row must not take the tick down with it. The
+        # interval cadence reaches compute_next_run's ValueError through a
+        # NULLABLE column (interval_hours), so a row written outside the API's
+        # validation -- shell, admin, a data migration -- is enough. Unhandled,
+        # that aborts the loop and every OTHER due schedule silently stops
+        # firing, every 15 minutes, with only a traceback as the signal.
+        try:
+            next_at = compute_next_run(
+                sched.cadence,
+                sched.hour,
+                sched.day_of_week,
+                sched.day_of_month,
+                now,
+                interval_hours=sched.interval_hours,
+            )
+        except ValueError:
+            logger.exception(
+                "Skipping unschedulable WorkflowSchedule %s (definition %s, cadence %r, interval_hours %r)",
+                sched.pk,
+                sched.definition_id,
+                sched.cadence,
+                sched.interval_hours,
+            )
+            continue
         # Optimistic claim: advance next_run_at BEFORE dispatch, conditional on it being unchanged.
         # Makes dispatch at-most-once per window even if a prior tick crashed after enqueueing,
         # or two ticks overlap — the loser's UPDATE matches 0 rows and skips. Missing a run on a
