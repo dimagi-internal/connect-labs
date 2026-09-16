@@ -318,6 +318,7 @@ def test_the_tools_are_registered_with_the_mcp_server():
         "benchmarks_cohort_create",
         "benchmarks_cohort_add_opportunities",
         "benchmarks_cohort_list",
+        "benchmarks_cohort_delete",
         "benchmarks_publish",
         "benchmarks_create_opp_reports",
     )
@@ -860,3 +861,37 @@ def test_cohort_create_accepts_a_stringified_boolean_and_refuses_a_bogus_one(mon
         benchmarks_cohort_create(user=user, name="bogus", organization_id="my-org", require_complete_series="maybe")
     assert exc.value.code == "INVALID_SCHEMA"
     assert not BenchmarkCohort.objects.filter(name="bogus").exists()
+
+
+def test_cohort_delete_removes_the_grant_and_its_publications(monkeypatch):
+    """A cohort IS a read grant, so revoking one has to be possible — and it has
+    to take the published values with it, or the grant is gone and the figures
+    it authorised are still sitting there."""
+    from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_create, benchmarks_cohort_delete
+    from connect_labs.benchmarks.models import BenchmarkPublication
+
+    _grant(monkeypatch, organizations=("my-org",))
+    user = _user()
+    created = benchmarks_cohort_create(user=user, name="doomed", organization_id="my-org")
+    cohort = BenchmarkCohort.objects.get(pk=created["id"])
+    cohort.members.create(opportunity_id=501)
+    BenchmarkPublication.objects.create(cohort=cohort, source_workflow_id=1, source_run_id=2, as_of="2026-09-11")
+
+    out = benchmarks_cohort_delete(user=user, cohort_id=cohort.pk)
+    assert out["publications_deleted"] == 1 and out["members_removed"] == 1
+    assert not BenchmarkCohort.objects.filter(pk=cohort.pk).exists()
+    assert not BenchmarkPublication.objects.filter(cohort_id=cohort.pk).exists()
+
+
+def test_cohort_delete_refuses_a_cohort_in_another_organisation(monkeypatch):
+    """Same check that gates creating one — otherwise anyone could revoke
+    anyone's benchmark."""
+    from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_delete
+
+    theirs = BenchmarkCohort.objects.create(name="theirs", organization_id="someone-elses-org")
+    _grant(monkeypatch, organizations=("my-org",))
+
+    with pytest.raises(MCPToolError) as exc:
+        benchmarks_cohort_delete(user=_user(), cohort_id=theirs.pk)
+    assert exc.value.code == "PERMISSION_DENIED"
+    assert BenchmarkCohort.objects.filter(pk=theirs.pk).exists()

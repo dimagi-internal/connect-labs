@@ -349,6 +349,43 @@ def benchmarks_cohort_list(user, *, organization_id: str) -> dict[str, Any]:
 
 
 @register(
+    name="benchmarks_cohort_delete",
+    description=(
+        "Delete a benchmark cohort, its membership and every publication made to it. A cohort "
+        "IS a read grant -- membership is what lets one opportunity see another's anonymised "
+        "figures -- so being able to create one and never remove it is a gap, not a safety "
+        "feature: revoking is the operation you need in a hurry. Refuses a caller who does not "
+        "belong to the cohort's organisation, the same check that gates creating one. "
+        "Irreversible: the published values are deleted, not archived, and rebuilding them means "
+        "republishing from a completed run."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"cohort_id": {"type": "integer"}},
+        "required": ["cohort_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def benchmarks_cohort_delete(user, *, cohort_id: int) -> dict[str, Any]:
+    try:
+        cohort = BenchmarkCohort.objects.get(pk=cohort_id)
+    except BenchmarkCohort.DoesNotExist as exc:
+        raise MCPToolError("NOT_FOUND", f"Benchmark cohort {cohort_id} not found.") from exc
+    _require_organization_access(user, cohort.organization_id, f"owns cohort {cohort_id}")
+    name = cohort.name
+    publications = cohort.publications.count()
+    members = cohort.members.count()
+    cohort.delete()
+    return {
+        "deleted_cohort_id": cohort_id,
+        "name": name,
+        "publications_deleted": publications,
+        "members_removed": members,
+    }
+
+
+@register(
     name="benchmarks_publish",
     description=(
         "Publish a completed workflow run's graded figures to a benchmark cohort. Refuses "
