@@ -27,29 +27,42 @@ from connect_labs.marketplace import queries
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
 
 
-def _filtered(request):
+def _filtered(request, exclude=None):
     """The organisations in scope, plus the controls that put them there.
 
     One place, because the list, the counts, the facets and the globe must all
     be looking at the same set — a count that disagrees with the list is worse
     than no count at all.
+
+    `exclude` drops ONE facet's own filter while keeping every other. That is
+    how a faceted rail has to count: if choosing Uganda also removed Malawi
+    from the country list, a second country could never be added, and the
+    multi-select the rail exists for would be unreachable through the UI.
     """
     rows = queries.org_rows()
 
     query = request.GET.get("q", "").strip()
-    country = request.GET.get("country", "").strip()
-    sector = request.GET.get("sector", "").strip()
-    applied = request.GET.get("applied", "").strip()
+    # Facets are multi-select. Picking two countries should widen the answer,
+    # not replace it — that is the whole reason a rail beats a dropdown.
+    countries = [v for v in request.GET.getlist("country") if v.strip()]
+    sectors = [v for v in request.GET.getlist("sector") if v.strip()]
+    applied = [v for v in request.GET.getlist("applied") if v.strip()]
     segment = request.GET.get("segment", "all").strip() or "all"
 
     if query:
         rows = rows.filter(Q(name__icontains=query) | Q(short_name__icontains=query))
-    if country:
-        rows = rows.filter(marketplace_profile__countries__icontains=country)
-    if sector:
-        rows = rows.filter(marketplace_profile__sectors__icontains=sector)
-    if applied:
-        rows = rows.filter(solicitation_responses__solicitation__slug=applied)
+    if countries and exclude != "country":
+        match = Q()
+        for value in countries:
+            match |= Q(marketplace_profile__countries__icontains=value)
+        rows = rows.filter(match)
+    if sectors and exclude != "sector":
+        match = Q()
+        for value in sectors:
+            match |= Q(marketplace_profile__sectors__icontains=value)
+        rows = rows.filter(match)
+    if applied and exclude != "applied":
+        rows = rows.filter(solicitation_responses__solicitation__slug__in=applied)
 
     scope = list(rows.distinct())
     delivering = queries.delivering_names()
@@ -61,8 +74,8 @@ def _filtered(request):
         "delivering": delivering,
         "selected": {
             "q": query,
-            "country": country,
-            "sector": sector,
+            "countries": countries,
+            "sectors": sectors,
             "applied": applied,
             "segment": segment,
         },
@@ -126,11 +139,28 @@ def network(request):
         {
             "listed": listed,
             "segments": segments,
-            "facets": queries.facet_counts(state["scope"], delivering),
+            "rail": queries.facet_rail(
+                {
+                    "countries": queries.facet_counts(_filtered(request, exclude="country")["scope"], delivering)[
+                        "countries"
+                    ],
+                    "sectors": queries.facet_counts(_filtered(request, exclude="sector")["scope"], delivering)[
+                        "sectors"
+                    ],
+                    "rounds": queries.facet_counts(_filtered(request, exclude="applied")["scope"], delivering)[
+                        "rounds"
+                    ],
+                },
+                state["selected"],
+                request.GET,
+            ),
             "selected": state["selected"],
             "shown": len(rows),
             "total": LabsOrg.objects.count(),
             "why": next((s["why"] for s in segments if s["selected"]), ""),
+            "any_facet": bool(
+                state["selected"]["countries"] or state["selected"]["sectors"] or state["selected"]["applied"]
+            ),
             "mapbox_token": getattr(settings, "MAPBOX_TOKEN", "") or "",
             "unreadable": queries.unreadable_rounds(),
         },

@@ -215,9 +215,11 @@ class TestNetworkFiltering:
         """A facet count is worth having because you see the size of a filter
         before spending a click on it."""
         client.force_login(user)
-        body = client.get(reverse("marketplace:network")).content.decode()
-        assert "Uganda (1)" in body
-        assert "Community Health Campaign (2)" in body
+        rail = {s["param"]: s for s in client.get(reverse("marketplace:network")).context["rail"]}
+        countries = {r["label"]: r["count"] for r in rail["country"]["rows"]}
+        rounds = {r["label"]: r["count"] for r in rail["applied"]["rows"]}
+        assert countries["Uganda"] == 1
+        assert rounds["Community Health Campaign"] == 2
 
     def test_filtering_by_round_narrows_the_list(self, client, user, marketplace):
         client.force_login(user)

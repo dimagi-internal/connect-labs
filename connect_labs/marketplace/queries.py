@@ -243,3 +243,40 @@ def map_points(rows, delivering: set[str]) -> list[dict]:
             }
         )
     return points
+
+
+def facet_rail(facets: dict, selected: dict, querydict) -> list[dict]:
+    """The facet rail: every value, its size, and the URL that toggles it.
+
+    The toggle URL is built here rather than in the template because it has to
+    PRESERVE the rest of the query — a facet that silently dropped the search
+    box or the segment when clicked would be worse than no facet at all — and
+    because a checked value's link must REMOVE it, which is not something a
+    template can express.
+    """
+    sections = [
+        ("country", "Country", facets["countries"], selected["countries"], None),
+        ("sector", "Sector", facets["sectors"], selected["sectors"], None),
+        ("applied", "Applied to", facets["rounds"], selected["applied"], "label"),
+    ]
+
+    out = []
+    for param, title, values, chosen, label_key in sections:
+        rows = []
+        for entry in values:
+            value = entry["value"]
+            on = value in chosen
+            params = querydict.copy()
+            current = [v for v in params.getlist(param) if v]
+            params.setlist(param, [v for v in current if v != value] if on else current + [value])
+            rows.append(
+                {
+                    "value": value,
+                    "label": entry.get(label_key) if label_key else value,
+                    "count": entry["count"],
+                    "selected": on,
+                    "url": "?" + params.urlencode(),
+                }
+            )
+        out.append({"param": param, "title": title, "rows": rows, "chosen": len(chosen)})
+    return out
