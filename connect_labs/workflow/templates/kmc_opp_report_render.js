@@ -463,6 +463,64 @@ function WorkflowUI({
     [sem],
   );
 
+  // Replicated from the programme report's scorecard rather than shared: a
+  // workflow render is a standalone JSX string, so templates cannot import
+  // each other, and the shareable-components mechanism that would fix that
+  // properly is a bigger design than this table justifies. Moving it to
+  // `static/` was considered and rejected -- render code is live-editable via
+  // MCP, and a static module would put every scorecard tweak behind a deploy.
+  // So: a second copy, deliberately, and the two will drift until that
+  // mechanism exists.
+  function attentionCell(ind) {
+    var reds = 0,
+      yellows = 0;
+    Object.keys(ind || {}).forEach(function (k) {
+      var b = (ind[k] || {}).band;
+      if (b === 'red') reds += 1;
+      else if (b === 'yellow') yellows += 1;
+    });
+    return (
+      <td className="px-1.5 py-2 text-right">
+        {reds ? (
+          <span
+            className="inline-block px-1.5 py-0.5 rounded-md text-xs font-semibold bg-red-100 text-red-800"
+            title={reds + ' off target \u00b7 ' + yellows + ' to watch'}
+          >
+            {reds}
+          </span>
+        ) : yellows ? (
+          <span
+            className="inline-block px-1.5 py-0.5 rounded-md text-xs font-semibold bg-amber-100 text-amber-800"
+            title={yellows + ' to watch'}
+          >
+            {yellows}
+          </span>
+        ) : null}
+      </td>
+    );
+  }
+
+  function ScorecardLegend(props) {
+    return (
+      <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100 flex items-center gap-4 flex-wrap">
+        <span>
+          <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-400 mr-1 align-middle" />
+          Off target
+        </span>
+        <span>
+          <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-400 mr-1 align-middle" />
+          Watch
+        </span>
+        <span>n&lt;{MIN_DEN} = below the minimum denominator</span>
+        <span className="ml-auto">{props.right}</span>
+      </div>
+    );
+  }
+
+  // The lead column stays put while the 20-odd indicator columns scroll under
+  // it -- without this you lose which row you are reading two columns in.
+  var STICK = 'sticky left-0 z-10 bg-white';
+
   function GroupHead(props) {
     var lead = props.lead || [];
     return (
@@ -477,6 +535,7 @@ function WorkflowUI({
             </th>
           );
         })}
+        <th className="px-1.5 py-1" />
       </tr>
     );
   }
@@ -1050,8 +1109,8 @@ function WorkflowUI({
               <th
                 key={'h' + i}
                 className={
-                  (i === 0 ? 'px-3' : 'px-1.5') +
-                  ' py-2 text-left font-semibold text-gray-600'
+                  (i === 0 ? 'px-3 ' + STICK + ' ' : 'px-1.5 ') +
+                  'py-2 text-left font-semibold text-gray-600'
                 }
               >
                 {l}
@@ -1089,6 +1148,9 @@ function WorkflowUI({
               </th>
             );
           })}
+          <th className="px-1.5 py-2 text-right whitespace-nowrap font-semibold text-gray-600">
+            Attention
+          </th>
         </tr>
       </thead>
     );
@@ -1143,7 +1205,10 @@ function WorkflowUI({
               <IndicatorHead lead={['Scope', 'Cases']} />
               <tbody>
                 <tr className="border-t border-gray-100 bg-indigo-50 font-semibold">
-                  <td className="px-3 py-2 text-left whitespace-nowrap">
+                  <td
+                    className={'px-3 py-2 text-left whitespace-nowrap ' + STICK}
+                    style={{ background: 'rgb(238 242 255)' }}
+                  >
                     {oppLabel}
                   </td>
                   <td className="px-1.5 py-2 text-right tabular-nums">
@@ -1163,9 +1228,11 @@ function WorkflowUI({
                       </td>
                     );
                   })}
+                  {attentionCell(oppCells)}
                 </tr>
               </tbody>
             </table>
+            <ScorecardLegend right="Attention counts this row's off-target and watch indicators" />
           </div>
         )}
         {sem.status === 'ready' ? withheldNote(oppCells) : null}
@@ -1212,7 +1279,12 @@ function WorkflowUI({
                       key={w.opportunity_id + '::' + w.username}
                       className="border-t border-gray-100 hover:bg-gray-50"
                     >
-                      <td className="px-3 py-2 text-left whitespace-nowrap text-gray-900">
+                      <td
+                        className={
+                          'px-3 py-2 text-left whitespace-nowrap text-gray-900 ' +
+                          STICK
+                        }
+                      >
                         {w.username}
                       </td>
                       <td className="px-1.5 py-2 text-right tabular-nums text-gray-600">
@@ -1234,11 +1306,13 @@ function WorkflowUI({
                           </td>
                         );
                       })}
+                      {attentionCell(w.cells)}
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            <ScorecardLegend right="Click an indicator column to sort the workers by it" />
           </div>
         )}
         {sem.status === 'ready' ? withheldNote(oppCells) : null}
