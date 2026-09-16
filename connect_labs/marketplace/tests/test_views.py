@@ -120,3 +120,64 @@ class TestUnmatchedQueue:
         body = client.get(reverse("marketplace:unmatched")).content.decode()
         assert "Someone Else" in body
         assert "Fenwick Trust" not in body
+
+
+class TestTemplatesUseTheFrameworkLabsActuallyLoads:
+    """Labs loads Tailwind v4 and no Bootstrap — `base.html` pulls
+    `bundles/css/tailwind.css`, and `package.json` has no bootstrap dependency.
+
+    This is worth a test because the failure is SILENT: a Bootstrap class name
+    is valid HTML, renders without error, passes every text assertion in this
+    file, and simply has no styling attached. All three templates in this app
+    shipped to production that way.
+    """
+
+    BOOTSTRAP_ONLY = [
+        "card-body",
+        "card-header",
+        "form-select",
+        "form-control",
+        "btn-primary",
+        "btn-outline",
+        "table-sm",
+        "table-hover",
+        "list-group",
+        "accordion",
+        "data-bs-toggle",
+        "data-bs-target",
+        "col-md-",
+        "row g-",
+        "badge bg-",
+        "text-muted",
+        "table-responsive",
+        "form-label",
+        "container-fluid",
+    ]
+
+    def _templates(self):
+        from pathlib import Path
+
+        import connect_labs
+
+        return sorted((Path(connect_labs.__file__).parent / "templates" / "marketplace").glob("*.html"))
+
+    def test_no_marketplace_template_uses_a_bootstrap_only_class(self):
+        import re
+
+        offences = []
+        for path in self._templates():
+            # Strip {% comment %} blocks: they deliberately NAME the Bootstrap
+            # tokens to explain why they are not used, and matching that prose
+            # would make this guard cry wolf at the very note preventing the bug.
+            body = re.sub(r"{%\s*comment\s*%}.*?{%\s*endcomment\s*%}", "", path.read_text(), flags=re.S)
+            for token in self.BOOTSTRAP_ONLY:
+                if token in body:
+                    offences.append(f"{path.name}: {token!r}")
+        assert not offences, "Bootstrap classes render unstyled in labs:\n  " + "\n  ".join(offences)
+
+    def test_application_history_opens_without_javascript(self):
+        """The accordion was Bootstrap-JS driven, which labs never loads, so the
+        answers could not be expanded at all. <details> needs no JS."""
+        organisation = next(p for p in self._templates() if p.name == "organisation.html")
+        body = organisation.read_text()
+        assert "<details" in body and "<summary" in body
