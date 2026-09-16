@@ -359,6 +359,11 @@ def parse_response_mapping(rows, known_names: set[str]) -> tuple[dict, list[str]
         target, raw_verdict, why = cell(row, 2), cell(row, 3), cell(row, 4)
         if not slug and not raw_row:
             continue
+        # A tab people work in carries guidance for them. A '#' row is a note to
+        # the reader, not a verdict, and warning about one every single run
+        # would train people to ignore the warnings that matter.
+        if slug.startswith("#"):
+            continue
         try:
             source_row = int(raw_row)
         except (TypeError, ValueError):

@@ -54,3 +54,14 @@ class TestParseResponseMapping:
     def test_ignores_wholly_blank_rows(self):
         mapped, skipped = parse_response_mapping(_rows(["", "", "", "", "", ""]), KNOWN)
         assert mapped == {} and skipped == []
+
+
+class TestGuidanceRows:
+    def test_a_hash_comment_row_is_not_a_refused_verdict(self):
+        """The tab carries instructions for the people using it. Warning about
+        those every run would train them to ignore the real warnings."""
+        mapped, skipped = parse_response_mapping(
+            _rows(["# Find the slug and row on the unmatched queue.", "", "", "", "", ""]), KNOWN
+        )
+        assert mapped == {}
+        assert skipped == []
