@@ -14,8 +14,10 @@ import datetime as dt
 import pytest
 from django.contrib.auth import get_user_model
 
+from connect_labs.marketplace.models import OrgProfile
+from connect_labs.marketplace.testing import make_partner
 from connect_labs.pulse import hq_location
-from connect_labs.pulse.models import PulseEvent, PulseOpportunity, PulsePartner, PulseWork
+from connect_labs.pulse.models import PulseEvent, PulseOpportunity, PulseWork
 from connect_labs.pulse.network_api import WORKS_FLOOR, build_payload, first_service_by_partner
 from connect_labs.pulse.partner_names import invalidate
 
@@ -83,13 +85,13 @@ class TestFirstService:
         """Connect bulk-created its completed_works rows at one instant on
         2025-01-14, so reading that date as a first delivery collapses every
         partner already active onto one day."""
-        PulsePartner.objects.create(name="Foreland Rural Health Trust", short="FRHT")
+        make_partner(name="Foreland Rural Health Trust", short="FRHT")
         invalidate()
         self._work("frht", WORKS_FLOOR - dt.timedelta(days=1), "a" * 64)
         assert first_service_by_partner() == {}
 
     def test_a_real_later_work_does_date_a_partner(self):
-        PulsePartner.objects.create(name="Foreland Rural Health Trust", short="FRHT")
+        make_partner(name="Foreland Rural Health Trust", short="FRHT")
         invalidate()
         when = WORKS_FLOOR + dt.timedelta(days=30)
         self._work("frht", when, "b" * 64)
@@ -98,7 +100,7 @@ class TestFirstService:
     def test_a_device_clock_from_before_connect_existed_is_ignored(self):
         """One partner's earliest visit claims 2010. The server-assigned sync
         timestamp is what is trusted, and a sanity floor sits under it."""
-        PulsePartner.objects.create(name="Foreland Rural Health Trust", short="FRHT")
+        make_partner(name="Foreland Rural Health Trust", short="FRHT")
         invalidate()
         PulseEvent.objects.create(
             connect_visit_id=1,
@@ -113,8 +115,8 @@ class TestFirstService:
 
 class TestPayload:
     def test_the_series_is_cumulative_and_never_falls(self):
-        PulsePartner.objects.create(name="A", joined_at=dt.date(2024, 7, 2), lat=9.0, lon=8.0, country_iso3="NGA")
-        PulsePartner.objects.create(name="B", joined_at=dt.date(2025, 2, 1), lat=1.0, lon=32.0, country_iso3="UGA")
+        make_partner(name="A", joined_at=dt.date(2024, 7, 2), lat=9.0, lon=8.0, country_iso3="NGA")
+        make_partner(name="B", joined_at=dt.date(2025, 2, 1), lat=1.0, lon=32.0, country_iso3="UGA")
         series = build_payload()["series"]
         assert [s["network"] for s in series] == sorted(s["network"] for s in series)
         assert series[-1]["network"] == 2
@@ -122,7 +124,7 @@ class TestPayload:
     def test_precision_travels_with_every_point(self):
         """The map draws a town differently from a country, so a point that
         arrives without its precision would be drawn as more than it is."""
-        PulsePartner.objects.create(
+        make_partner(
             name="A", lat=9.0, lon=8.0, country_iso3="NGA", location_precision="country", location_label="Nigeria"
         )
         point = build_payload()["points"][0]
@@ -132,7 +134,7 @@ class TestPayload:
     def test_a_partner_with_no_location_is_omitted_rather_than_placed_at_zero(self):
         """(0, 0) is in the Gulf of Guinea, which is where an unplaced partner
         lands if the view is careless."""
-        PulsePartner.objects.create(name="Nowhere", joined_at=dt.date(2025, 1, 1))
+        make_partner(name="Nowhere", joined_at=dt.date(2025, 1, 1))
         payload = build_payload()
         assert payload["points"] == []
         assert payload["totals"]["partners"] == 1
@@ -154,17 +156,17 @@ class TestEntitlement:
     def test_an_unimported_directory_says_so_rather_than_drawing_a_dead_network(self, client):
         user = get_user_model().objects.create_user(username="analyst2", password="x")  # noqa: S106
         client.force_login(user)
-        assert "No partners imported yet" in client.get("/labs/pulse/api/network/").json()["empty_reason"]
+        assert "No organisations imported yet" in client.get("/labs/pulse/api/network/").json()["empty_reason"]
 
     def test_partners_without_locations_get_their_own_message(self, client):
         """The state you actually hit after a migration adds location columns:
         the partners are there, they just have nowhere to be drawn. Telling
         someone to import partners they already have sends them the wrong way."""
-        PulsePartner.objects.create(name="A", joined_at=dt.date(2025, 1, 1))
+        make_partner(name="A", joined_at=dt.date(2025, 1, 1))
         user = get_user_model().objects.create_user(username="analyst3", password="x")  # noqa: S106
         client.force_login(user)
         reason = client.get("/labs/pulse/api/network/").json()["empty_reason"]
-        assert "1 partners imported" in reason
+        assert "1 organisations imported" in reason
         assert "none carry a location" in reason
 
 
@@ -197,17 +199,16 @@ class TestImportSideEffects:
 
         from django.utils import timezone
 
-        from connect_labs.pulse.models import PulsePartner
-
-        old = PulsePartner.objects.create(name="Undated", joined_at=None)
-        stamped = PulsePartner.objects.filter(joined_at__isnull=True).update(
+        old = make_partner(name="Undated", joined_at=None)
+        stamped = OrgProfile.objects.filter(joined_at__isnull=True).update(
             joined_at=timezone.localdate() - dt.timedelta(days=30)
         )
         assert stamped == 1
         # A later pass finds nothing left to stamp, so the date cannot move.
-        assert PulsePartner.objects.filter(joined_at__isnull=True).update(joined_at=timezone.localdate()) == 0
-        old.refresh_from_db()
-        assert old.joined_at == timezone.localdate() - dt.timedelta(days=30)
+        assert OrgProfile.objects.filter(joined_at__isnull=True).update(joined_at=timezone.localdate()) == 0
+        profile = old.marketplace_profile
+        profile.refresh_from_db()
+        assert profile.joined_at == timezone.localdate() - dt.timedelta(days=30)
 
 
 class TestCountryFallback:
@@ -231,7 +232,7 @@ class TestCountriesTable:
     def test_a_country_with_partners_but_no_delivery_still_appears(self):
         """Most of the network is in this state. Listing only countries with
         delivery would report the network as a third of its real reach."""
-        PulsePartner.objects.create(name="A", country_iso3="MWI", lat=-13.3, lon=34.3)
+        make_partner(name="A", country_iso3="MWI", lat=-13.3, lon=34.3)
         rows = {r["iso3"]: r for r in build_payload()["countries"]}
         assert rows["MWI"]["partners"] == 1
         assert rows["MWI"]["services"] == 0
@@ -247,7 +248,7 @@ class TestCountriesTable:
         assert rows["NER"]["partners"] == 0
 
     def test_the_two_country_counts_measure_different_things(self):
-        PulsePartner.objects.create(name="A", country_iso3="MWI", lat=-13.3, lon=34.3)
+        make_partner(name="A", country_iso3="MWI", lat=-13.3, lon=34.3)
         PulseOpportunity.objects.create(
             opportunity_id=91, name="Work", org_slug="x", country="NG", lifetime_visit_count=10
         )

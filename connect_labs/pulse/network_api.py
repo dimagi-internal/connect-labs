@@ -30,8 +30,9 @@ from django.db.models import Count, Min, Sum
 from django.http import JsonResponse
 from django.views import View
 
+from connect_labs.marketplace.models import OrgProfile
 from connect_labs.microplans.core import iso as iso_codes
-from connect_labs.pulse.models import PulseEvent, PulseOpportunity, PulsePartner, PulseWork
+from connect_labs.pulse.models import PulseEvent, PulseOpportunity, PulseWork
 from connect_labs.pulse.normalize import COUNTRY_NAMES, FLAG_LABELS, SERVICE_LABELS
 from connect_labs.pulse.partner_names import resolve as resolve_partner
 
@@ -99,10 +100,10 @@ def countries_table(delivering: set[str]) -> list[dict]:
             },
         )
 
-    for partner in PulsePartner.objects.exclude(country_iso3=""):
+    for partner in OrgProfile.objects.exclude(country_iso3="").select_related("org"):
         entry = row(partner.country_iso3)
         entry["partners"] += 1
-        if partner.name in delivering:
+        if partner.org.name in delivering:
             entry["delivering"] += 1
 
     # Opportunities carry alpha-2 and the lifetime visit count, which is the
@@ -144,7 +145,7 @@ def workspaces_by_partner() -> dict[str, str]:
 
 
 def build_payload() -> dict:
-    partners = list(PulsePartner.objects.all())
+    partners = list(OrgProfile.objects.select_related("org"))
     delivering = first_service_by_partner()
     workspaces = workspaces_by_partner()
 
@@ -164,8 +165,8 @@ def build_payload() -> dict:
             continue
         points.append(
             {
-                "name": p.name,
-                "short": p.short,
+                "name": p.org.name,
+                "short": p.org.short_name,
                 "lat": round(p.lat, 4),
                 "lon": round(p.lon, 4),
                 "precision": p.location_precision,
@@ -173,11 +174,11 @@ def build_payload() -> dict:
                 "iso3": p.country_iso3,
                 "country": iso_codes.country_name(p.country_iso3) or "",
                 "joined": p.joined_at.isoformat() if p.joined_at else "",
-                "delivering": p.name in delivering,
-                "since": delivering[p.name].isoformat() if p.name in delivering else "",
+                "delivering": p.org.name in delivering,
+                "since": delivering[p.org.name].isoformat() if p.org.name in delivering else "",
                 # Present only for partners Connect has a workspace for, which
                 # is what makes a Pulse link possible at all.
-                "slug": workspaces.get(p.name, ""),
+                "slug": workspaces.get(p.org.name, ""),
             }
         )
     points.sort(key=lambda r: (r["joined"] or "9999", r["name"]))
@@ -228,8 +229,8 @@ class NetworkView(View):
             # location columns the second is the one you actually hit.
             total = payload["totals"]["partners"]
             payload["empty_reason"] = (
-                "No partners imported yet — run pulse_partner_import."
+                "No organisations imported yet — run marketplace_import."
                 if not total
-                else f"{total} partners imported, but none carry a location yet — re-run pulse_partner_import."
+                else f"{total} organisations imported, but none carry a location yet — re-run marketplace_import."
             )
         return JsonResponse(payload)

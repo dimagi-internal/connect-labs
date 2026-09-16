@@ -5,8 +5,9 @@ member of — a small minority of those that actually deliver. The rest arrive a
 a slug and carry most of the delivery, and no export endpoint will give up their
 names (``OpportunitySerializer`` also emits ``organization`` as a slug).
 
-So the names come from the team's LLO Directory, loaded into ``PulsePartner`` by
-``pulse_partner_import`` and matched to slugs here. The sheet is the source of
+So the names come from the team's LLO Directory, loaded into the organisation registry
+(``labs.LabsOrg`` + ``marketplace.OrgProfile``) by
+``marketplace_import`` and matched to slugs here. The sheet is the source of
 truth; this is a cache of it. Nothing about partner identity is written down in
 this repository, because the people who own that identity do not review pull
 requests — and a name that lives in code drifts from the directory with nothing
@@ -34,7 +35,7 @@ real partners are unreachable by any string comparison — a second workspace
 sharing no stem with the first, an abbreviation the slug never spells out, a
 typo in the directory itself. Loosening the matcher would buy those few at the
 cost of guessing everywhere else, so they are confirmed by a human on the
-directory's mapping tab and carried in ``PulsePartnerAlias``.
+directory's mapping tab and carried in ``marketplace.OrgConnectSlug``.
 
 An empty table is safe rather than wrong: every partner renders as its slug,
 exactly as an unmatched slug always has, and no name is ever guessed.
@@ -136,11 +137,12 @@ def _build(name: str, short: str, index: int) -> dict:
 def _load() -> None:
     if _cache["loaded_at"] and (time.monotonic() - _cache["loaded_at"]) < _CACHE_TTL_SECONDS:
         return
-    from connect_labs.pulse.models import PulsePartner, PulsePartnerAlias
+    from connect_labs.labs.models import LabsOrg
+    from connect_labs.marketplace.models import OrgConnectSlug
 
-    rows = list(PulsePartner.objects.values_list("name", "short"))
+    rows = list(LabsOrg.objects.values_list("name", "short_name"))
     _cache["candidates"] = [_build(name, short or "", i) for i, (name, short) in enumerate(rows) if name]
-    _cache["aliases"] = tuple(PulsePartnerAlias.objects.select_related("partner").values_list("slug", "partner__name"))
+    _cache["aliases"] = tuple(OrgConnectSlug.objects.select_related("org").values_list("slug", "org__name"))
     _cache["loaded_at"] = time.monotonic()
 
 

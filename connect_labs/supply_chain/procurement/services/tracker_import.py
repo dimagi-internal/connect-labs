@@ -1,6 +1,6 @@
 """Import a procurement due-diligence tracker from Drive into a programme.
 
-**Why the sheet and not a fixture.** The same reason `pulse_partner_import`
+**Why the sheet and not a fixture.** The same reason `marketplace_import`
 reads the LLO directory from Drive: no supplier name, contact or price is
 written into this repository, where the people who own that identity cannot
 review it and where it drifts silently from the sheet. The repository is

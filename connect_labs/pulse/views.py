@@ -19,7 +19,7 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views import View
 
-from connect_labs.pulse.management.commands.pulse_partner_import import DIRECTORY_ID
+from connect_labs.marketplace.directory import DIRECTORY_ID
 from connect_labs.pulse.models import PulseOpportunity, PulsePublicToken, PulseReport, PulseScalar
 
 # The LLO Directory, which the partner import reads. Linked from the index so

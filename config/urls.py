@@ -61,6 +61,7 @@ urlpatterns = [
     path("mcp/", include("connect_labs.mcp.urls", namespace="mcp")),
     path("labs/audit-trail/", include("connect_labs.audit_trail.urls", namespace="audit_trail")),
     path("labs/pulse/", include("connect_labs.pulse.urls", namespace="pulse")),
+    path("labs/marketplace/", include("connect_labs.marketplace.urls", namespace="marketplace")),
     path("labs/admin/", include("connect_labs.labs.admin.urls", namespace="labs_admin")),
     path("labs/targeting/", include("connect_labs.labs.indicators.urls", namespace="targeting")),
     path("labs/benchmarks/", include("connect_labs.benchmarks.urls", namespace="benchmarks")),

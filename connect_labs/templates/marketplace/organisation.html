@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}{{ org.name }}{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+
+  <a href="{% url 'marketplace:directory' %}" class="small text-muted">&larr; Directory</a>
+  <div class="d-flex align-items-center gap-2 mt-1 mb-3">
+    <h2 class="mb-0">{{ org.name }}</h2>
+    {% if delivering %}<span class="badge bg-success">delivering</span>
+    {% elif org.is_linked %}<span class="badge bg-secondary">linked to Connect</span>
+    {% else %}<span class="badge bg-light text-muted">not on Connect</span>{% endif %}
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-4">
+      <div class="card mb-3">
+        <div class="card-header py-2"><strong>Profile</strong></div>
+        <div class="card-body small">
+          {% if profile %}
+            <dl class="row mb-0">
+              {% if profile.countries %}<dt class="col-5">Countries</dt><dd class="col-7">{{ profile.countries|join:", " }}</dd>{% endif %}
+              {% if profile.regions %}<dt class="col-5">Regions</dt><dd class="col-7">{{ profile.regions|join:", " }}</dd>{% endif %}
+              {% if profile.sectors %}<dt class="col-5">Sectors</dt><dd class="col-7">{{ profile.sectors|join:", " }}</dd>{% endif %}
+              {% if profile.year_established %}<dt class="col-5">Established</dt><dd class="col-7">{{ profile.year_established }}</dd>{% endif %}
+              {% if profile.team_size %}<dt class="col-5">Team size</dt><dd class="col-7">{{ profile.team_size }}</dd>{% endif %}
+              {% if profile.flws_managed %}<dt class="col-5">FLWs managed</dt><dd class="col-7">{{ profile.flws_managed }}</dd>{% endif %}
+              {% if profile.website %}<dt class="col-5">Website</dt><dd class="col-7"><a href="{{ profile.website }}" rel="noopener noreferrer" target="_blank">{{ profile.website|truncatechars:34 }}</a></dd>{% endif %}
+              {% if profile.joined_at %}
+                <dt class="col-5">Joined</dt>
+                <dd class="col-7">{{ profile.joined_at }}
+                  {% if profile.joined_basis %}<div class="text-muted" style="font-size:.8em">{{ profile.joined_basis }}</div>{% endif %}
+                </dd>
+              {% endif %}
+              {% if profile.office_address %}<dt class="col-5">Address</dt><dd class="col-7">{{ profile.office_address }}</dd>{% endif %}
+            </dl>
+            {% if profile.notes %}<hr><div class="text-muted">{{ profile.notes }}</div>{% endif %}
+          {% else %}
+            <span class="text-muted">No directory profile.</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-header py-2"><strong>Contacts</strong></div>
+        <ul class="list-group list-group-flush small">
+          {% for c in contacts %}
+            <li class="list-group-item">
+              <div>{{ c.full_name|default:"(unnamed)" }}{% if c.is_main_poc %} <span class="badge bg-primary">main</span>{% endif %}</div>
+              {% if c.role_title %}<div class="text-muted">{{ c.role_title }}</div>{% endif %}
+              <div><a href="mailto:{{ c.email }}">{{ c.email }}</a></div>
+              {% if c.phone %}<div class="text-muted">{{ c.phone }}</div>{% endif %}
+            </li>
+          {% empty %}
+            <li class="list-group-item text-danger">
+              No contact on file — there is nobody here to write to.
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    <div class="col-lg-8">
+      <div class="card mb-3">
+        <div class="card-header py-2 d-flex justify-content-between">
+          <strong>Service delivery on Connect</strong>
+          {% if visits %}<span class="text-muted small">{{ visits }} lifetime visits</span>{% endif %}
+        </div>
+        <div class="card-body p-0">
+          {% if opportunities %}
+            <table class="table table-sm mb-0 small">
+              <thead class="table-light"><tr><th>Opportunity</th><th>Country</th><th>Service</th><th class="text-end">Visits</th></tr></thead>
+              <tbody>
+                {% for o in opportunities %}
+                  <tr>
+                    <td>{{ o.name }}</td><td>{{ o.country }}</td><td>{{ o.service_slug }}</td>
+                    <td class="text-end">{{ o.lifetime_visit_count }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="p-3 small text-muted">
+              No Connect delivery recorded.
+              {% if not connect_slugs %}
+                This organisation has no Connect workspace attributed to it, so there is
+                nothing to join on — not necessarily that they have never delivered.
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header py-2"><strong>Application history</strong></div>
+        <div class="card-body p-0">
+          {% if responses %}
+            <div class="accordion accordion-flush" id="apps">
+              {% for r in responses %}
+                <div class="accordion-item">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed py-2 small" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#app{{ r.pk }}">
+                      <span class="me-2"><strong>{{ r.solicitation.title }}</strong></span>
+                      <span class="badge bg-light text-dark me-2">{{ r.solicitation.type_label }}</span>
+                      {% if r.submission_date %}<span class="text-muted">{{ r.submission_date|date:"j M Y" }}</span>{% endif %}
+                      {% if r.match_state != 'human' and r.match_state != 'unmatched' %}
+                        <span class="ms-2 text-muted" style="font-size:.85em">matched: {{ r.match_basis }}</span>
+                      {% endif %}
+                    </button>
+                  </h2>
+                  <div id="app{{ r.pk }}" class="accordion-collapse collapse" data-bs-parent="#apps">
+                    <div class="accordion-body small">
+                      {% if r.source_url %}
+                        <a class="d-inline-block mb-2" href="{{ r.source_url }}" target="_blank" rel="noopener noreferrer">
+                          Open the original response (row {{ r.source_row }})
+                        </a>
+                      {% endif %}
+                      <dl class="row mb-0">
+                        {% for question, answer in r.answer_pairs %}
+                          <dt class="col-sm-5 text-muted fw-normal">{{ question|truncatechars:90 }}</dt>
+                          <dd class="col-sm-7">{{ answer|linebreaksbr }}</dd>
+                        {% empty %}
+                          <dd class="col-12 text-muted">This submission recorded no answers.</dd>
+                        {% endfor %}
+                      </dl>
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="p-3 small text-muted">No applications recorded.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

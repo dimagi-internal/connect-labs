@@ -2,7 +2,7 @@
 
 A management command and not an MCP tool, which is how every other bootstrap
 in this codebase is reached -- `bootstrap_targeting`, `load_indicators`,
-`targeting_import`, `pulse_partner_import`, `seed_semantic_registry`,
+`targeting_import`, `marketplace_import`, `seed_semantic_registry`,
 `seed_campaign_demo`. Seeding is an engineer's deliberate act against one
 programme, not something to leave one mistaken tool call away from every MCP
 client.
