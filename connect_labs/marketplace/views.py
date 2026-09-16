@@ -101,6 +101,9 @@ def directory(request):
             "unmatched_count": SolicitationResponse.objects.filter(
                 match_state=SolicitationResponse.MATCH_UNMATCHED
             ).count(),
+            # A round labs cannot read is NOT a round with no applicants, and
+            # the difference has to be visible or the first reads as the second.
+            "unreadable_rounds": Solicitation.objects.exclude(sa_access_state="ok").order_by("title"),
             "selected": {
                 "country": country,
                 "sector": sector,
@@ -168,4 +171,17 @@ def unmatched(request):
         .select_related("solicitation")
         .order_by("solicitation__slug", "source_row")
     )
-    return render(request, "marketplace/unmatched.html", {"rows": rows})
+    from connect_labs.marketplace.directory import DIRECTORY_ID, RESPONSE_MAPPING_TAB
+
+    return render(
+        request,
+        "marketplace/unmatched.html",
+        {
+            "rows": rows,
+            "mapping_tab": RESPONSE_MAPPING_TAB,
+            "directory_url": f"https://docs.google.com/spreadsheets/d/{DIRECTORY_ID}/edit",
+            "decided_count": SolicitationResponse.objects.filter(
+                match_state__in=[SolicitationResponse.MATCH_HUMAN, SolicitationResponse.MATCH_NOT_LLO]
+            ).count(),
+        },
+    )

@@ -1,9 +1,13 @@
 # Connect Marketplace — org registry, EOI history, and directory
 
-**Status:** steps ① and ② implemented 2026-09-16 (see
-`docs/superpowers/plans/2026-09-16-marketplace-org-registry.md`). Steps ③–⑤
-pending — they are Plan B, written against the landed code. Outreach (phase 2)
-not started.
+**Status:** phase 1 SHIPPED 2026-09-16 — all five steps are live at
+`/labs/marketplace/`. Plan for steps ①② is
+`docs/superpowers/plans/2026-09-16-marketplace-org-registry.md`; steps ③–⑤ were
+executed directly against the landed code rather than planned separately.
+Outreach (phase 2) not started.
+
+**Known gap:** seven response sheets are not yet shared with the labs service
+account, so those rounds report `denied` and render as "not ingested".
 
 ## The problem
 

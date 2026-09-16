@@ -317,3 +317,133 @@ def parse_rounds(rows: list[list[str]]) -> tuple[list[DirectoryRound], list[str]
             )
         )
     return out, skipped
+
+
+# ======================================================================
+# Human verdicts on submissions labs refused to attribute.
+# ======================================================================
+
+RESPONSE_MAPPING_TAB = "EOI Response Mapping"
+FINDINGS_TAB = "Labs Findings"
+
+RESPONSE_MAPPING_HEADER = [
+    "Round Slug",
+    "Response Row",
+    "Organisation (exact name from the Organizations tab)",
+    "Verdict (link | not an LLO)",
+    "Why",
+    "Decided by",
+]
+
+VERDICT_LINK = "link"
+VERDICT_NOT_LLO = "not_an_llo"
+
+
+def parse_response_mapping(rows, known_names: set[str]) -> tuple[dict, list[str]]:
+    """(round slug, response row) -> (organisation name | None, verdict, why).
+
+    The counterpart to ``Connect Org Mapping``, for submissions rather than
+    slugs, and it follows the same rule: a verdict without a stated reason is
+    refused. An attribution nobody justified is a guess someone will later
+    trust, and here the cost is one organisation's application filed under
+    another organisation's name.
+
+    ``not an LLO`` is a first-class verdict, not an absence. Some submissions
+    are not organisations at all, and without a way to say so they would sit in
+    the review queue for ever, indistinguishable from work not yet done.
+    """
+    mapped: dict = {}
+    skipped: list[str] = []
+    for index, row in enumerate(rows[1:], start=2):
+        slug, raw_row = cell(row, 0), cell(row, 1)
+        target, raw_verdict, why = cell(row, 2), cell(row, 3), cell(row, 4)
+        if not slug and not raw_row:
+            continue
+        try:
+            source_row = int(raw_row)
+        except (TypeError, ValueError):
+            skipped.append(f"{RESPONSE_MAPPING_TAB} row {index}: {raw_row!r} is not a response row number")
+            continue
+
+        verdict = VERDICT_NOT_LLO if "not" in raw_verdict.strip().lower() else VERDICT_LINK
+        if not why:
+            skipped.append(f"{RESPONSE_MAPPING_TAB} row {index}: {slug}:{source_row} has no stated reason — refused")
+            continue
+        if verdict == VERDICT_LINK:
+            if not target:
+                skipped.append(f"{RESPONSE_MAPPING_TAB} row {index}: {slug}:{source_row} names no organisation")
+                continue
+            if target not in known_names:
+                skipped.append(f"{RESPONSE_MAPPING_TAB} row {index}: {target!r} is not on the {ORGANIZATIONS_TAB} tab")
+                continue
+        mapped[f"{slug}:{source_row}"] = (target if verdict == VERDICT_LINK else None, verdict, why)
+    return mapped, skipped
+
+
+def write_tab(spreadsheet_id: str, tab: str, values: list[list[str]]) -> None:
+    """Replace a tab's contents, creating the tab if it does not exist.
+
+    Only ever called for tabs labs owns outright (``Labs Findings``). A tab a
+    person maintains is never cleared — see ``update_cells`` for the narrow
+    in-place write used on the rounds tab.
+    """
+    import httpx
+    from google.auth.transport.requests import Request
+
+    from connect_labs.labs.synthetic.gdrive import _load_credentials
+
+    creds = _load_credentials()
+    if not creds.valid:
+        creds.refresh(Request())
+    headers = {"Authorization": f"Bearer {creds.token}", "Content-Type": "application/json"}
+    base = f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}"
+
+    meta = httpx.get(base, params={"fields": "sheets(properties(title))"}, headers=headers, timeout=60)
+    meta.raise_for_status()
+    titles = {s["properties"]["title"] for s in meta.json().get("sheets", [])}
+    if tab not in titles:
+        httpx.post(
+            f"{base}:batchUpdate",
+            headers=headers,
+            timeout=60,
+            json={"requests": [{"addSheet": {"properties": {"title": tab}}}]},
+        ).raise_for_status()
+
+    quoted = quote(tab, safe="")
+    httpx.post(f"{base}/values/{quoted}:clear", headers=headers, timeout=60, json={}).raise_for_status()
+    httpx.put(
+        f"{base}/values/{quoted}",
+        params={"valueInputOption": "RAW"},
+        headers=headers,
+        timeout=90,
+        json={"values": values},
+    ).raise_for_status()
+
+
+def update_cells(spreadsheet_id: str, updates: list[tuple[str, list[list[str]]]]) -> None:
+    """Write specific A1 ranges and nothing else.
+
+    The rounds tab is maintained by people. Labs writes exactly two columns on
+    it — the verified access state and when it was checked — so this takes
+    explicit ranges rather than replacing the tab, and a bug here can damage at
+    most the cells it was handed.
+    """
+    import httpx
+    from google.auth.transport.requests import Request
+
+    from connect_labs.labs.synthetic.gdrive import _load_credentials
+
+    if not updates:
+        return
+    creds = _load_credentials()
+    if not creds.valid:
+        creds.refresh(Request())
+    httpx.post(
+        f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values:batchUpdate",
+        headers={"Authorization": f"Bearer {creds.token}", "Content-Type": "application/json"},
+        timeout=90,
+        json={
+            "valueInputOption": "RAW",
+            "data": [{"range": rng, "values": vals} for rng, vals in updates],
+        },
+    ).raise_for_status()
