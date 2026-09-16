@@ -803,6 +803,61 @@ window.MopupAnalysis = (function () {
 
   let wardBoundariesData = { type: 'FeatureCollection', features: [] };
 
+  // Streets/Satellite toggle (#map-style-toggle) — mapboxgl.Map#setStyle
+  // swaps the ENTIRE style document, which wipes every source/layer this
+  // file added on top of it (ward boundary line, work-area polygons,
+  // building-point dots). reapplyMapLayers() re-adds all of that; it's the
+  // same "add ward boundary, then replay the last-known data" logic the
+  // initial 'load' handler already needed (a first data poll can land
+  // before Mapbox's own 'load' fires), just factored out so a style swap
+  // can reuse it via a one-shot 'style.load' listener instead of duplicating
+  // it.
+  const MAP_STYLES = {
+    streets: 'mapbox://styles/mapbox/light-v11',
+    satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
+  };
+  let currentMapStyle = 'streets';
+
+  function reapplyMapLayers() {
+    if (wardBoundariesData.features.length) {
+      window.PlanLayers.setSource(
+        map,
+        'mopup-ward-boundaries',
+        wardBoundariesData,
+      );
+      if (!map.getLayer('mopup-ward-boundary-line')) {
+        map.addLayer({
+          id: 'mopup-ward-boundary-line',
+          type: 'line',
+          source: 'mopup-ward-boundaries',
+          paint: {
+            'line-color': '#1f2937',
+            'line-width': 1.5,
+            'line-dasharray': [2, 1],
+          },
+        });
+      }
+    }
+    if (lastMapFeatures) renderMap(lastMapFeatures);
+  }
+
+  function setMapStyle(styleKey) {
+    if (!map || !MAP_STYLES[styleKey] || styleKey === currentMapStyle) return;
+    currentMapStyle = styleKey;
+    document.querySelectorAll('.map-style-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.style === styleKey);
+    });
+    map.once('style.load', reapplyMapLayers);
+    map.setStyle(MAP_STYLES[styleKey]);
+  }
+
+  function initMapStyleToggle() {
+    document.querySelectorAll('.map-style-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.style === currentMapStyle);
+      btn.addEventListener('click', () => setMapStyle(btn.dataset.style));
+    });
+  }
+
   function initMap(mapboxToken) {
     const el = $('analysis-map');
     if (!el || !window.mapboxgl || !mapboxToken) return;
@@ -810,7 +865,7 @@ window.MopupAnalysis = (function () {
     try {
       map = new mapboxgl.Map({
         container: 'analysis-map',
-        style: 'mapbox://styles/mapbox/light-v11',
+        style: MAP_STYLES[currentMapStyle],
         center: [0, 0],
         zoom: 1,
       });
@@ -826,28 +881,7 @@ window.MopupAnalysis = (function () {
     map.on('load', () => {
       mapReady = true;
       attachMapInteractivity();
-      if (wardBoundariesData.features.length) {
-        window.PlanLayers.setSource(
-          map,
-          'mopup-ward-boundaries',
-          wardBoundariesData,
-        );
-        map.addLayer({
-          id: 'mopup-ward-boundary-line',
-          type: 'line',
-          source: 'mopup-ward-boundaries',
-          paint: {
-            'line-color': '#1f2937',
-            'line-width': 1.5,
-            'line-dasharray': [2, 1],
-          },
-        });
-      }
-      // The first data poll can complete before Mapbox's own 'load' fires
-      // (e.g. a backgrounded tab throttles its render loop) — renderMap()
-      // would have already returned early in that race, so replay the
-      // last-known data now that the map can actually take layers.
-      if (lastMapFeatures) renderMap(lastMapFeatures);
+      reapplyMapLayers();
     });
   }
 
@@ -1192,6 +1226,7 @@ window.MopupAnalysis = (function () {
         '{"type":"FeatureCollection","features":[]}',
     );
     initMap(cfg.mapboxToken);
+    initMapStyleToggle();
     renderIndicatorRows();
     renderGlobalConfig();
     applyIndicatorRowStates(); // re-apply now that the real filter state is loaded
