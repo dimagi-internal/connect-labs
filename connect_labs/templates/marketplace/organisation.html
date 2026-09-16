@@ -10,7 +10,7 @@ refuses to open. <details> needs no JavaScript at all.
 {% block content %}
 <div class="max-w-screen-2xl mx-auto px-4 py-6">
 
-  <a href="{% url 'marketplace:directory' %}" class="text-sm text-gray-500 hover:text-gray-700">
+  <a href="{% url 'marketplace:network' %}" class="text-sm text-gray-500 hover:text-gray-700">
     <i class="fa-solid fa-arrow-left mr-1"></i> Directory
   </a>
 
@@ -49,7 +49,7 @@ refuses to open. <details> needs no JavaScript at all.
               {% if profile.website %}
                 <div><dt class="text-gray-500">Website</dt>
                   <dd><a href="{{ profile.website }}" target="_blank" rel="noopener noreferrer"
-                         class="text-indigo-700 hover:text-indigo-900 break-all">{{ profile.website|truncatechars:40 }}</a></dd>
+                         class="text-brand-indigo hover:text-brand-deep-purple break-all">{{ profile.website|truncatechars:40 }}</a></dd>
                 </div>
               {% endif %}
               {% if profile.joined_at %}
@@ -90,7 +90,7 @@ refuses to open. <details> needs no JavaScript at all.
                 {% endif %}
               </div>
               {% if c.role_title %}<div class="text-gray-500">{{ c.role_title }}</div>{% endif %}
-              <a href="mailto:{{ c.email }}" class="text-indigo-700 hover:text-indigo-900 break-all">{{ c.email }}</a>
+              <a href="mailto:{{ c.email }}" class="text-brand-indigo hover:text-brand-deep-purple break-all">{{ c.email }}</a>
               {% if c.phone %}<div class="text-gray-500">{{ c.phone }}</div>{% endif %}
             </li>
           {% empty %}
@@ -158,7 +158,7 @@ refuses to open. <details> needs no JavaScript at all.
                 <div class="px-6 pb-4 pt-1 bg-gray-50">
                   {% if r.source_url %}
                     <a href="{{ r.source_url }}" target="_blank" rel="noopener noreferrer"
-                       class="inline-block mb-3 text-sm text-indigo-700 hover:text-indigo-900">
+                       class="inline-block mb-3 text-sm text-brand-indigo hover:text-brand-deep-purple">
                       <i class="fa-solid fa-up-right-from-square mr-1"></i>
                       Open the original response (row {{ r.source_row }})
                     </a>
