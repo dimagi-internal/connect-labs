@@ -897,6 +897,51 @@ class TestFurtherSeriesRideTheSameRows:
         assert next(r for r in n["byLLO"] if r["llo"] == "GHI")["ind"]["N06"]["value"] == 1850.0
         assert n["byOpp"][0]["opp"] == 10017 and n["byOpp"][0]["llo"] == "GHI"
 
+    MONTHLY_ROWS = ROWS + [
+        {"scope": "month", "cohort_month": "2026-06-01", "n_cases": 20, "n06": 1800.0, "n06_denominator": 20},
+        {"scope": "month", "cohort_month": "2026-07-01", "n_cases": 20, "n06": 2000.0, "n06_denominator": 20},
+        {
+            "scope": "opportunity_month",
+            "opportunity_id": 10017,
+            "cohort_month": "2026-06-01",
+            "n_cases": 20,
+            "n06": 1800.0,
+            "n06_denominator": 20,
+        },
+        {
+            "scope": "opportunity_month",
+            "opportunity_id": 10017,
+            "cohort_month": "2026-07-01",
+            "n_cases": 20,
+            "n06": 2000.0,
+            "n06_denominator": 20,
+        },
+    ]
+
+    def _build_monthly(self, extra=None):
+        return snap.build(
+            spec=SPEC, rows=self.MONTHLY_ROWS, measures=[C16], deployment=DEPLOY, cases=[], extra_series=extra
+        )
+
+    def test_a_further_series_gets_its_own_monthly_and_per_scope_monthly(self):
+        """It used to get none: `monthlyByScope` was computed once, from the
+        primary catalogue. The benchmark store publishes per-period peer figures
+        from exactly that map, so a scorecard family could be benchmarked
+        point-in-time and never over time."""
+        n = self._build_monthly({"N": [N06]})["series"]["N"]
+        assert [p["month"] for p in n["monthly"]] == ["2026-06", "2026-07"]
+        assert n["monthlyByScope"]["opp:10017"], "the opportunity drill has no monthly for this series"
+
+    def test_the_further_series_monthly_carries_ITS_cells_not_the_headline_s(self):
+        """A monthly map keyed to the right family but graded with the wrong
+        catalogue would be the quiet failure here."""
+        payload = self._build_monthly({"N": [N06]})
+        n_points = payload["series"]["N"]["monthlyByScope"]["opp:10017"]
+        assert [p["ind"]["N06"]["value"] for p in n_points] == [1800.0, 2000.0]
+        assert all("C16" not in p["ind"] for p in n_points)
+        # ...and the headline series' own monthly is untouched by any of it.
+        assert all("N06" not in p["ind"] for p in payload["monthlyByScope"]["opp:10017"])
+
     def test_the_headline_series_is_not_polluted(self):
         payload = self._build({"N": [N06]})
         assert "N06" not in payload["programInd"]

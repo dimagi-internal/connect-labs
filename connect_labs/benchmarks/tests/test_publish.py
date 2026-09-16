@@ -205,7 +205,11 @@ def test_it_writes_point_and_series_values():
     assert points.count() == 2 * len(OPPS)
     assert series.count() == len(OPPS) * len(MONTHS)
     assert set(series.values_list("indicator_id", flat=True)) == {"C15"}
-    assert set(series.values_list("period", flat=True)) == set(MONTHS)
+    # Tenure offsets, not the calendar months the snapshot carried: every
+    # opportunity in this fixture starts in the same month, so its M0 is
+    # MONTHS[0] and its M1 is MONTHS[1]. See TestSeriesRunOnTenureNotCalendar
+    # for why the axis is re-based off the calendar.
+    assert set(series.values_list("period", flat=True)) == {f"M{i}" for i in range(len(MONTHS))}
 
 
 def test_the_published_values_are_the_graded_cells_own_values():
@@ -328,3 +332,88 @@ def test_a_failure_mid_publication_leaves_nothing_committed():
         _publish(_cohort(), snapshot=snapshot)
     assert BenchmarkPublication.objects.count() == 0
     assert BenchmarkValue.objects.count() == 0
+
+
+class TestSeriesRunOnTenureNotCalendar:
+    """A series period is months since THAT opportunity's own first month."""
+
+    @staticmethod
+    def _staggered_snapshot():
+        """Six opportunities, each starting a month after the last, three months
+        of data each. On a calendar axis they overlap barely; on a tenure axis
+        every one of them has an M0, M1 and M2."""
+        c = _catalog("C", ("C15",))
+        rows = []
+        for i, opp in enumerate(OPPS):
+            rows.append({"scope": "opportunity", "opportunity_id": opp, "n_cases": 100, **_columns(c, i)})
+            for j in range(3):
+                rows.append(
+                    {
+                        "scope": "opportunity_month",
+                        "opportunity_id": opp,
+                        # opp 0 starts 2026-01, opp 1 starts 2026-02, ...
+                        "cohort_month": f"2026-{i + j + 1:02d}-01",
+                        "n_cases": 100,
+                        **_columns(c, i + j),
+                    }
+                )
+        return semantic_snapshot.build(
+            spec={},
+            rows=rows,
+            measures=c,
+            deployment={"llo_map": {o: "LLO One" for o in OPPS}, "app_asks": {}, "asks_as": {}, "settings": {}},
+            as_of="2026-09-11",
+        )
+
+    def _publish(self):
+        cohort = BenchmarkCohort.objects.create(name="Staggered", organization_id="dimagi-kmc")
+        for opp in OPPS:
+            cohort.members.create(opportunity_id=opp)
+        publish_benchmark(
+            cohort,
+            snapshot=self._staggered_snapshot(),
+            source_workflow_id=1,
+            source_run_id=2,
+            registry_id=3,
+            as_of="2026-09-11",
+        )
+        return cohort
+
+    def test_periods_are_tenure_offsets_not_calendar_months(self):
+        cohort = self._publish()
+        periods = {
+            v.period for v in BenchmarkValue.objects.filter(publication=cohort.publications.first()) if v.period
+        }
+        assert periods, "no series was published at all"
+        assert all(p.startswith("M") for p in periods), f"a calendar month leaked into the periods: {periods}"
+
+    def test_no_calendar_month_is_recoverable_from_a_published_period(self):
+        """A period that named a real month would say when an opportunity began,
+        and a start date identifies it."""
+        cohort = self._publish()
+        periods = {
+            v.period for v in BenchmarkValue.objects.filter(publication=cohort.publications.first()) if v.period
+        }
+        assert not any("2026" in p for p in periods)
+
+    def test_staggered_starts_still_share_a_window(self):
+        """The point of re-basing. Every opportunity has three months of data, so
+        all three tenure periods clear R6 — where on a calendar axis the six
+        start months would have thinned the common window to nothing."""
+        cohort = self._publish()
+        periods = {
+            v.period for v in BenchmarkValue.objects.filter(publication=cohort.publications.first()) if v.period
+        }
+        assert periods == {"M0", "M1", "M2"}, periods
+
+    def test_a_peer_index_denotes_the_same_peer_in_every_period(self):
+        """What makes the points joinable into a line at all."""
+        cohort = self._publish()
+        vals = BenchmarkValue.objects.filter(publication=cohort.publications.first()).exclude(period=None)
+        by_period = {}
+        for v in vals:
+            by_period.setdefault(v.period, {})[v.peer_index] = v.opportunity_id
+        assert len(by_period) > 1
+        first = by_period["M0"]
+        for period, mapping in by_period.items():
+            assert mapping == first, f"peer_index changed meaning between M0 and {period}"

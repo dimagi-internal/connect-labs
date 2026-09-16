@@ -25,13 +25,15 @@ from connect_labs.labs.access.scopes import Caller, may_use
 def benchmarks_for_opportunity(request, opportunity_id: int) -> dict:
     """The latest publication of every cohort this opportunity belongs to.
 
-    The reading opportunity's own published row is excluded, so `peers` is
-    always the OTHER members -- see the comment on the query below.
+    The reading opportunity's own published rows are kept OUT of `peers` and
+    returned separately as `own` / `ownSeries` -- see the comment in the loop.
 
     Shape: {"as_of": ..., "cohorts": {cohort_id: {"name", "as_of"}},
             "indicators": {cohort_id: {series: {indicator_id: {
-        "peers": [{peer_index, value}, ...],
+        "peers": [{peer_index, value}, ...],           # the OTHER members
         "series": {period: [{peer_index, value}, ...]},
+        "own": value | None,                           # this opportunity's own
+        "ownSeries": {period: value},                  # published figures
     }}}}}
 
     Every figure comes from `BenchmarkValue.to_public()`, which is the only
@@ -57,24 +59,34 @@ def benchmarks_for_opportunity(request, opportunity_id: int) -> dict:
             continue
         as_of = max(as_of, publication.as_of) if as_of else publication.as_of
         indicators: dict[str, dict] = {}
-        # A reader never receives its OWN row back. Two reasons, and the second
+        # A reader's OWN rows never land in `peers`. Two reasons, and the second
         # is the one that bites: the report draws this opportunity as its own
-        # bar from its own LIVE figures, so leaving the published copy in the
-        # peer set draws it twice -- once at the published value, once at the
-        # current one -- and a 12-member cohort renders 13 bars. And a reader
-        # who can difference "the set including me" against "me" learns
-        # something about the remainder that the floors never budgeted for.
+        # bar, so leaving the published copy among the peers draws it twice --
+        # a 12-member cohort renders 13 bars. And a reader who can difference
+        # "the set including me" against "me" learns something about the
+        # remainder that the floors never budgeted for.
         #
         # `min_peers` was already reasoning this way: its own rule says that
         # below 3 "the reader is one of the contributors, so the one remaining
-        # bar is a named peer's exact value". Excluding self makes that
+        # bar is a named peer's exact value". Separating self makes that
         # arithmetic explicit rather than implied.
-        for row in BenchmarkValue.objects.filter(publication=publication).exclude(opportunity_id=opportunity_id):
+        #
+        # They are returned, though, as `own` / `ownSeries`. A trend chart has
+        # to draw its own line from the SAME publication as the peers' lines --
+        # the report's live figure is a different vintage, so a line built from
+        # it would not be comparable to the ones beside it.
+        for row in BenchmarkValue.objects.filter(publication=publication):
             public = row.to_public()
             entry = indicators.setdefault(public["series"], {}).setdefault(
                 public["indicator_id"],
-                {"peers": [], "series": {}},
+                {"peers": [], "series": {}, "own": None, "ownSeries": {}},
             )
+            if row.opportunity_id == opportunity_id:
+                if public["period"] is None:
+                    entry["own"] = public["value"]
+                else:
+                    entry["ownSeries"][public["period"]] = public["value"]
+                continue
             point = {"peer_index": public["peer_index"], "value": public["value"]}
             if public["period"] is None:
                 entry["peers"].append(point)

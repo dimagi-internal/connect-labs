@@ -177,8 +177,38 @@ def _point_observations(by_opp, indicator_id: str, members: set[int]) -> list[Pe
     return out
 
 
+def _months_since(start: str, month: str) -> int | None:
+    """Whole months from `start` to `month`, both `YYYY-MM`. None if unparsable."""
+    try:
+        sy, sm = int(start[:4]), int(start[5:7])
+        my, mm = int(month[:4]), int(month[5:7])
+    except (TypeError, ValueError, IndexError):
+        return None
+    return (my - sy) * 12 + (mm - sm)
+
+
 def _series_observations(monthly_by_scope, indicator_id: str, members: set[int]) -> dict[str, list[PeerObservation]]:
-    """`monthlyByScope["opp:<id>"]` -> `{period: observations}` for cohort members."""
+    """`monthlyByScope["opp:<id>"]` -> `{period: observations}` for cohort members.
+
+    The period is MONTHS SINCE THAT OPPORTUNITY'S OWN FIRST MONTH (`M0`, `M1`,
+    ...), not the calendar month. Two reasons, and they pull the same way.
+
+    It is the comparison people actually want: a cohort whose opportunities
+    started across seven months was, on a calendar axis, comparing somebody's
+    first month against somebody else's sixth.
+
+    And it is what makes the series publishable at all. R5 keeps a period only
+    if `min_peers` reached it and R6 then keeps only peers present in EVERY
+    period of that window -- so on a calendar axis, staggered start dates
+    collapsed the intersection to one or two months out of six. Re-based, every
+    opportunity has an M0, so the window is bounded by how long the SHORTEST
+    peer has been running rather than by when the LATEST one began.
+
+    It also closes a disclosure hole rather than trading against one. A line
+    that starts late on a calendar axis says when that opportunity began, and a
+    start date is identifying. Re-based, every line starts at M0 and none of
+    them says anything about when.
+    """
     by_period: dict[str, list[PeerObservation]] = {}
     for key, points in (monthly_by_scope or {}).items():
         if not str(key).startswith(OPP_SCOPE_PREFIX):
@@ -189,13 +219,20 @@ def _series_observations(monthly_by_scope, indicator_id: str, members: set[int])
             continue
         if opp not in members:
             continue
+        months = sorted({str(p.get("month")) for p in (points or []) if (p or {}).get("month")})
+        if not months:
+            continue
+        start = months[0]
         for point in points or []:
-            period = (point or {}).get("month")
-            if not period:
+            month = (point or {}).get("month")
+            if not month:
+                continue
+            offset = _months_since(start, str(month))
+            if offset is None or offset < 0:
                 continue
             observation = _observation(opp, (point.get("ind") or {}).get(indicator_id))
             if observation is not None:
-                by_period.setdefault(str(period), []).append(observation)
+                by_period.setdefault(f"M{offset}", []).append(observation)
     return by_period
 
 
