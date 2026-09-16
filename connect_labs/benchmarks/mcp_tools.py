@@ -20,6 +20,7 @@ the web one and only the web one had it.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, NoReturn
 
 from connect_labs.benchmarks.models import MIN_PEERS_FLOOR, BenchmarkCohort, BenchmarkCohortMember
@@ -30,6 +31,8 @@ from connect_labs.mcp.connect_token import require_connect_token
 from connect_labs.mcp.tool_registry import MCPToolError, register
 from connect_labs.workflow.data_access import WorkflowDataAccess
 from connect_labs.workflow.templates import create_workflow_from_template, get_template, resolve_snapshot_contract
+
+logger = logging.getLogger(__name__)
 
 
 def _raise_for_denial(reason: str | None, *, what: str | None = None) -> None:
@@ -91,6 +94,40 @@ def _require_organization_access(user, organization_id: str, what: str) -> tuple
     caller = Caller(user=user, access_token=token)
     _raise_for_denial(may_use(caller, organization_id=organization_id), what=what)
     return token, caller
+
+
+def _run_history(wda, workflow_id: int, state_key: str) -> list[dict]:
+    """Every completed run of `workflow_id`, oldest first, projected to `byOpp`.
+
+    A failure here costs the SERIES and nothing else, so it is logged and
+    swallowed rather than taking the publication down with it: the point values
+    are the publication's substance and they come from the snapshot already in
+    hand. A publication with no series is a visible, recoverable state; a
+    refused publication because a history read timed out is not.
+    """
+    out: list[dict] = []
+    try:
+        # The iteration is inside the guard, not just the call: `list_runs`
+        # resolves lazily, so the upstream failure surfaces on the first `for`.
+        for run in wda.list_runs(definition_id=workflow_id):
+            if not getattr(run, "is_completed", False):
+                continue
+            payload = ((run.snapshot or {}).get("state") or {}).get(state_key) or {}
+            by_opp = {}
+            for name, block in [("C", payload)] + sorted((payload.get("series") or {}).items()):
+                cells = {}
+                for entry in (block or {}).get("byOpp") or []:
+                    if entry.get("opp") is not None:
+                        cells[int(entry["opp"])] = entry.get("ind") or {}
+                if cells:
+                    by_opp[name] = cells
+            if by_opp:
+                out.append({"date": str(run.period_end or run.completed_at or "")[:10], "byOpp": by_opp})
+    except Exception:
+        logger.warning("benchmark publication could not read run history for workflow %s", workflow_id, exc_info=True)
+        return []
+    out.sort(key=lambda r: r["date"])
+    return out
 
 
 def _serialize_cohort(cohort: BenchmarkCohort) -> dict[str, Any]:
@@ -380,9 +417,16 @@ def benchmarks_publish(
                 "be dated, so there is nothing to publish.",
             )
 
+        # The SERIES comes from the workflow's completed runs, not from anything
+        # inside the one being published: a saved run is one point of a trend,
+        # each computed as of its own period end by the same builder, which is
+        # what the programme report's own trend charts are drawn from.
+        history = _run_history(wda, workflow_id, state_key)
+
         publication = publish_benchmark(
             cohort,
             snapshot=graded_payload,
+            history=history,
             source_workflow_id=workflow_id,
             source_run_id=run_id,
             registry_id=registry_id,

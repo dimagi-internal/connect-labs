@@ -188,67 +188,53 @@ def _point_observations(by_opp, indicator_id: str, members: set[int]) -> list[Pe
     return out
 
 
-def _months_since(start: str, month: str) -> int | None:
-    """Whole months from `start` to `month`, both `YYYY-MM`. None if unparsable."""
-    try:
-        sy, sm = int(start[:4]), int(start[5:7])
-        my, mm = int(month[:4]), int(month[5:7])
-    except (TypeError, ValueError, IndexError):
-        return None
-    return (my - sy) * 12 + (mm - sm)
+def _history_observations(history, series: str, indicator_id: str, members: set[int]) -> dict:
+    """`{period: observations}` from a workflow's SAVED RUNS, not from months.
 
+    A saved run is one point of a time series: each was computed as of its own
+    period end by the same builder, so the series of runs IS the trend, and it is
+    what the programme report's own trend charts are drawn from. That is the
+    axis a reader means by "how am I trending" -- not the cohort-month series
+    this used to publish, which is a different question (how did the babies
+    registered in month X fare) on a different axis.
 
-def _series_observations(monthly_by_scope, indicator_id: str, members: set[int]) -> dict[str, list[PeerObservation]]:
-    """`monthlyByScope["opp:<id>"]` -> `{period: observations}` for cohort members.
+    `history` is `[{"date": ..., "byOpp": {series: [...]}}]`, oldest first.
 
-    The period is MONTHS SINCE THAT OPPORTUNITY'S OWN FIRST MONTH (`M0`, `M1`,
-    ...), not the calendar month. Two reasons, and they pull the same way.
-
-    It is the comparison people actually want: a cohort whose opportunities
-    started across seven months was, on a calendar axis, comparing somebody's
-    first month against somebody else's sixth.
-
-    And it is what makes the series publishable at all. R5 keeps a period only
-    if `min_peers` reached it and R6 then keeps only peers present in EVERY
-    period of that window -- so on a calendar axis, staggered start dates
-    collapsed the intersection to one or two months out of six. Re-based, every
-    opportunity has an M0, so the window is bounded by how long the SHORTEST
-    peer has been running rather than by when the LATEST one began.
-
-    It also closes a disclosure hole rather than trading against one. A line
-    that starts late on a calendar axis says when that opportunity began, and a
-    start date is identifying. Re-based, every line starts at M0 and none of
-    them says anything about when.
+    The period is that OPPORTUNITY'S OWN Nth report (`R0`, `R1`, ...), not the
+    report date, for the same two reasons the point rules exist. Opportunities
+    join a programme at different times, so on a report-date axis a cohort
+    compares somebody's first report against somebody else's twentieth. And a
+    line that starts late on a dated axis says when that opportunity began,
+    which identifies it; re-based, every line starts at R0 and says nothing.
     """
-    by_period: dict[str, list[PeerObservation]] = {}
-    for key, points in (monthly_by_scope or {}).items():
-        if not str(key).startswith(OPP_SCOPE_PREFIX):
-            continue
-        try:
-            opp = int(str(key)[len(OPP_SCOPE_PREFIX) :])
-        except ValueError:
-            continue
-        if opp not in members:
-            continue
-        months = sorted({str(p.get("month")) for p in (points or []) if (p or {}).get("month")})
-        if not months:
-            continue
-        start = months[0]
-        for point in points or []:
-            month = (point or {}).get("month")
-            if not month:
+    per_opp: dict[int, list] = {}
+    for point in history or []:
+        for opp, cells in ((point or {}).get("byOpp") or {}).get(series, {}).items():
+            opp = int(opp)
+            if opp not in members:
                 continue
-            offset = _months_since(start, str(month))
-            if offset is None or offset < 0:
-                continue
-            observation = _observation(opp, (point.get("ind") or {}).get(indicator_id))
+            observation = _observation(opp, (cells or {}).get(indicator_id))
+            # Only a SCORING report advances this opportunity's index -- a run
+            # where it had too few cases to score is not its first report, and
+            # counting it would slide its whole line one place left of everyone
+            # whose first report scored.
             if observation is not None:
-                by_period.setdefault(f"M{offset}", []).append(observation)
+                per_opp.setdefault(opp, []).append(observation)
+    by_period: dict[str, list] = {}
+    for opp, observations in per_opp.items():
+        for i, observation in enumerate(observations):
+            by_period.setdefault(f"R{i}", []).append(observation)
     return by_period
 
 
-def _indicator_ids(by_opp, monthly_by_scope) -> set[str]:
-    """Every indicator this family actually carries, point or series."""
+def _indicator_ids(by_opp, monthly_by_scope, history=None, series: str | None = None) -> set[str]:
+    """Every indicator this family actually carries, point or series.
+
+    The history is scanned too, not just the snapshot: an indicator can be
+    absent from the run being published and present in earlier ones, and
+    iterating only the snapshot's keys would skip it silently -- zero rows, no
+    exception, no log.
+    """
     ids: set[str] = set()
     for entry in by_opp or []:
         ids |= {str(k) for k in ((entry or {}).get("ind") or {})}
@@ -257,16 +243,25 @@ def _indicator_ids(by_opp, monthly_by_scope) -> set[str]:
             continue
         for point in points or []:
             ids |= {str(k) for k in ((point or {}).get("ind") or {})}
+    for point in history or []:
+        for cells in ((point or {}).get("byOpp") or {}).get(series, {}).values():
+            ids |= {str(k) for k in (cells or {})}
     return ids
 
 
-def observations_from_snapshot(snapshot: dict, series: str, indicator_id: str, members: set[int]):
-    """`(point_observations, {period: observations})` for one indicator."""
-    for name, _measures, by_opp, monthly in _blocks(snapshot):
+def observations_from_snapshot(snapshot: dict, series: str, indicator_id: str, members: set[int], history=None):
+    """`(point_observations, {period: observations})` for one indicator.
+
+    The point comes from the snapshot being published; the series comes from the
+    workflow's saved runs, which is a different source on purpose -- see
+    `_history_observations`. With no history the indicator publishes a point and
+    no series rather than failing.
+    """
+    for name, _measures, by_opp, _monthly in _blocks(snapshot):
         if name == series:
             return (
                 _point_observations(by_opp, indicator_id, members),
-                _series_observations(monthly, indicator_id, members),
+                _history_observations(history, name, indicator_id, members),
             )
     return [], {}
 
@@ -282,8 +277,15 @@ def publish_benchmark(
     as_of: str,
     published_by: str = "",
     benchmarkable_indicator_ids: set[str] | None = None,
+    history=None,
 ) -> BenchmarkPublication:
     """Publish every benchmarkable indicator in `snapshot` for `cohort`.
+
+    `history` is the source workflow's completed runs, oldest first, as
+    `[{"date": ..., "byOpp": {series: {opp: cells}}}]`. The POINT values come
+    from `snapshot`; the SERIES comes from these, because a trend is the series
+    of saved reports rather than anything inside one of them. Omitted, every
+    indicator publishes a point and no series.
 
     `benchmarkable_indicator_ids` overrides the unit rule with an explicit
     allow-list, for a caller that has decided indicator by indicator. Omitted,
@@ -326,12 +328,12 @@ def publish_benchmark(
         )
         # Sorted so publication order is deterministic. The union of both scopes,
         # because an indicator can exist in only one of them.
-        for indicator_id in sorted(_indicator_ids(by_opp, monthly)):
+        for indicator_id in sorted(_indicator_ids(by_opp, monthly, history, series_name)):
             if indicator_id not in allowed:
                 withheld.append(f"{series_name}:{indicator_id}")
                 continue
             considered += 1
-            points, by_period = observations_from_snapshot(snapshot, series_name, indicator_id, members)
+            points, by_period = observations_from_snapshot(snapshot, series_name, indicator_id, members, history)
             observed += len(points) + sum(len(o) for o in by_period.values())
             for peer_index, value, opportunity_id in anonymise_point(
                 points, **thresholds, tie_salt=f"{publication.pk}:{series_name}:{indicator_id}"
@@ -348,7 +350,10 @@ def publish_benchmark(
                     )
                 )
             for period, points_for_period in anonymise_series(
-                by_period, **thresholds, tie_salt=f"{publication.pk}:{series_name}:{indicator_id}"
+                by_period,
+                **thresholds,
+                tie_salt=f"{publication.pk}:{series_name}:{indicator_id}",
+                require_complete=cohort.require_complete_series,
             ).items():
                 for peer_index, value, opportunity_id in points_for_period:
                     rows.append(
