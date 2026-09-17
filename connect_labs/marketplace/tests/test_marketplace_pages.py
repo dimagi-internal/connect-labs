@@ -4,6 +4,7 @@ All data invented. These cover the half of the product the first version
 lacked — the rounds — and the one join that makes it a marketplace rather than
 two lists: which applicants to a past round went on to deliver.
 """
+
 import datetime as dt
 
 import pytest

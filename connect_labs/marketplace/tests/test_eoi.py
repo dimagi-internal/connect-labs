@@ -1,4 +1,5 @@
 """Importing rounds and their submissions. All data invented."""
+
 import pytest
 from django.utils import timezone
 

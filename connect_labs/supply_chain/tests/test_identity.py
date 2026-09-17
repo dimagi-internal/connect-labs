@@ -83,9 +83,12 @@ class TestWhoIsAsking:
         cached with a TTL upstream, so a write is not a round trip."""
         user = object()
         access = SupplyDataAccess(program_id=PROGRAM, user=user, caller=SYSTEM)
-        with patch("connect_labs.labs.connect_tokens.get_valid_access_token", return_value="tok"), patch(
-            "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data",
-            return_value={"organizations": [{"id": 11}]},
+        with (
+            patch("connect_labs.labs.connect_tokens.get_valid_access_token", return_value="tok"),
+            patch(
+                "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data",
+                return_value={"organizations": [{"id": 11}]},
+            ),
         ):
             assert caller_org_ids(access) == {11}
 
@@ -123,8 +126,9 @@ class TestWhoIsAsking:
         read as "belongs to nothing" and get reported as a permission error."""
         user = object()
         access = SupplyDataAccess(program_id=PROGRAM, user=user, caller=SYSTEM)
-        with patch("connect_labs.labs.connect_tokens.get_valid_access_token", return_value="tok"), patch(
-            "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data", return_value=None
+        with (
+            patch("connect_labs.labs.connect_tokens.get_valid_access_token", return_value="tok"),
+            patch("connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data", return_value=None),
         ):
             assert caller_org_ids(access) is None
 
@@ -349,8 +353,9 @@ class TestRefusalsReachTheCaller:
         # Scoped directly: what is under test is the exception-to-status
         # mapping, not whether the middleware admits a labs-only programme.
         scoped = SupplyDataAccess(program_id=PROGRAM, user=user, caller=SYSTEM)
-        with patch("connect_labs.labs.context.get_org_data", return_value=org_data), patch(
-            "connect_labs.supply_chain.api_views._access", return_value=scoped
+        with (
+            patch("connect_labs.labs.context.get_org_data", return_value=org_data),
+            patch("connect_labs.supply_chain.api_views._access", return_value=scoped),
         ):
             response = client.post(
                 f"/supply/api/document_attach/?program_id={PROGRAM}",
@@ -423,9 +428,10 @@ class TestReviewFindings1791:
 
         access = SupplyDataAccess(program_id=PROGRAM, user=_Partner(), caller=SYSTEM)
         payload = {"data": {"kind": "other", "source": "we_recorded", "recorded_by_org_id": 999}}
-        with patch(
-            "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data", return_value=None
-        ), patch("connect_labs.labs.connect_tokens.get_valid_access_token", return_value="tok"):
+        with (
+            patch("connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data", return_value=None),
+            patch("connect_labs.labs.connect_tokens.get_valid_access_token", return_value="tok"),
+        ):
             with pytest.raises(IdentityUnresolved):
                 stamp_provenance(access, get_operation("document_attach"), payload)
 

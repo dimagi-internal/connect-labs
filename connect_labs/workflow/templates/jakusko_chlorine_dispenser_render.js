@@ -278,36 +278,36 @@ function WorkflowUI(props) {
     return p === 'Urgent action'
       ? pillClass.red
       : p === 'Follow up'
-      ? pillClass.yellow
-      : pillClass.green;
+        ? pillClass.yellow
+        : pillClass.green;
   }
   function visitPill(v) {
     return v === 'On time'
       ? pillClass.green
       : v === 'Delayed'
-      ? pillClass.yellow
-      : pillClass.red;
+        ? pillClass.yellow
+        : pillClass.red;
   }
   function functionalityPill(f) {
     return f === 'Functional'
       ? pillClass.green
       : f === 'Functional with issue'
-      ? pillClass.yellow
-      : pillClass.red;
+        ? pillClass.yellow
+        : pillClass.red;
   }
   function stockPill(s) {
     return s === 'Full'
       ? pillClass.green
       : s === 'Low'
-      ? pillClass.yellow
-      : pillClass.red;
+        ? pillClass.yellow
+        : pillClass.red;
   }
   function usagePill(u) {
     return u === 'High'
       ? pillClass.green
       : u === 'Mixed'
-      ? pillClass.yellow
-      : pillClass.red;
+        ? pillClass.yellow
+        : pillClass.red;
   }
 
   if (activeDetail) {

@@ -1,4 +1,5 @@
 """Tests for analysis_config form-field extraction helpers."""
+
 from django.test import Client
 
 from connect_labs.audit.analysis_config import (

@@ -2,6 +2,7 @@
 checks it before creating a session so a mid-run cancel can't orphan a session
 (the Celery revoke alone races session creation).
 """
+
 from django.test import override_settings
 
 from connect_labs.audit.data_access import is_audit_creation_cancelled, mark_audit_creation_cancelled

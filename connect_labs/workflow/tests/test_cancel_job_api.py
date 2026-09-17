@@ -8,6 +8,7 @@ run_workflow_job threads into job_config as "_task_id" for such handlers --
 using it (rather than the long-lived run_id) also means a later retry on the
 same run always gets a fresh key, so no stale flag can carry over.
 """
+
 from unittest.mock import MagicMock, patch
 
 import pytest

@@ -6,6 +6,7 @@ should be a no-op for healthy sessions, transparently refresh the token via
 the UserConnectToken refresh-token path when expired, and tear down Django
 auth when it can't.
 """
+
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 

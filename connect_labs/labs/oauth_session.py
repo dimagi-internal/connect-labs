@@ -15,6 +15,7 @@ or the user has no ``UserConnectToken`` at all, or no ``labs_oauth`` shape
 in their session — Django's auth is cleared too, so the UI never reports
 "logged in" when it can't actually talk to prod.
 """
+
 from __future__ import annotations
 
 import logging

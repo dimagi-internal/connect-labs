@@ -443,3 +443,15 @@ scripts/walkthroughs/**/scenes.json
 # Targeting snapshots are published to Drive and pinned by id, never committed —
 # a 46 MB binary is one `git add -A` away from the history.
 targeting-snapshot-*.zip
+
+# Design-canvas working files and the seeded canvas they produce. The canvas is a
+# ~2 MB editor payload with the design inlined, regenerated from the .dc.html
+# sources every time, and it is published to an Artifact rather than reviewed
+# here. 9 MB of it reached `git add -A` in one session and was stopped only by a
+# formatter hook noticing the file — the same way the comment above describes.
+/design/
+/*.dc.html
+# The seeded canvas itself is named after the design, so it cannot be matched by
+# name. No .html at the repo ROOT is source -- every real template lives under
+# templates/ or static/ -- so the whole level is ignored.
+/*.html

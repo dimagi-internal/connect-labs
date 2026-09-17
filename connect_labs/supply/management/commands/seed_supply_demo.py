@@ -3,6 +3,7 @@
 Thin wrapper: the world itself lives in :mod:`connect_labs.supply.demo`, so it
 can be seeded from a test or a shell without going through the CLI.
 """
+
 import os
 
 from django.core.management.base import BaseCommand

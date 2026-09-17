@@ -1,4 +1,5 @@
 """Fetch the current CommCare HQ user's identity for login + whitelisting."""
+
 from __future__ import annotations
 
 import logging

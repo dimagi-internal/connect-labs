@@ -7,6 +7,7 @@
    fresh seeds must produce byte-identical worker data, or screenshots, walkthroughs,
    and "the numbers moved" demos drift run-to-run.
 """
+
 from __future__ import annotations
 
 from io import StringIO

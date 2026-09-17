@@ -373,7 +373,7 @@ class LoadBoundariesStreamView(AdminRequiredMixin, BaseSSEStreamView):
     Single-country workflow: loads one country at a time for better UX.
     """
 
-    def stream_data(self, request) -> Generator[str, None, None]:
+    def stream_data(self, request) -> Generator[str]:
         """Stream boundary loading progress via SSE."""
         try:
             # Parse query parameters (single country workflow)
@@ -513,7 +513,7 @@ class UploadGeoPoDEStreamView(AdminRequiredMixin, BaseSSEStreamView):
     upload happens via regular POST and this view isn't used.
     """
 
-    def stream_data(self, request) -> Generator[str, None, None]:
+    def stream_data(self, request) -> Generator[str]:
         """Stream GeoPoDe loading progress via SSE."""
         # For file uploads, we can't use SSE directly since the file needs
         # to be uploaded first. The UploadGeoPoDEView handles this synchronously.

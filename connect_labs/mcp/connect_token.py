@@ -3,6 +3,7 @@
 Raises MCPToolError(PERMISSION_DENIED) — appropriate for the MCP client to see —
 rather than the lower-level ConnectTokenError.
 """
+
 from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
 
 from .tool_registry import MCPToolError

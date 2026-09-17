@@ -32,6 +32,7 @@ every sampled form, effectively unused in this app build). `dw_dosage_date_time`
 actually administered. Both are ordinary connect_csv path fields — no
 CommCare HQ connection, case data, or extra fetch beyond the two pipelines.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime, timezone

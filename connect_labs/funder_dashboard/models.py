@@ -4,6 +4,7 @@ Proxy models for funder_dashboard.
 FundRecord extends LocalLabsRecord with typed @property access
 to JSON data stored via the LabsRecord API. Cannot be .save()d locally.
 """
+
 from connect_labs.labs.models import LocalLabsRecord
 
 

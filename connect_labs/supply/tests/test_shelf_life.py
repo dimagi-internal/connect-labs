@@ -4,6 +4,7 @@ Detecting a loss and reporting a number is not managing it: a store officer
 cannot pick stock off a shelf without a batch number, and cannot move it
 without a destination that can actually consume it in time.
 """
+
 from datetime import date, timedelta
 
 import pytest

@@ -155,14 +155,14 @@ export function AIChat({
     agentType === 'solicitations'
       ? 'Solicitations AI'
       : agentType === 'workflow'
-      ? 'Workflow AI Editor'
-      : 'Pipeline AI Editor';
+        ? 'Workflow AI Editor'
+        : 'Pipeline AI Editor';
   const defaultPlaceholder =
     agentType === 'solicitations'
       ? 'Ask about solicitations...'
       : agentType === 'workflow'
-      ? 'Describe changes to make...'
-      : 'Ask about your pipeline...';
+        ? 'Describe changes to make...'
+        : 'Ask about your pipeline...';
   const defaultExamples =
     agentType === 'solicitations'
       ? [
@@ -171,12 +171,16 @@ export function AIChat({
           'Show responses for solicitation 42',
         ]
       : agentType === 'workflow'
-      ? [
-          'Add a new status called "On Hold"',
-          'Show pipeline data in the table',
-          'Add a chart',
-        ]
-      : ['Add a weight field', 'Change to aggregated mode', 'Show a histogram'];
+        ? [
+            'Add a new status called "On Hold"',
+            'Show pipeline data in the table',
+            'Add a chart',
+          ]
+        : [
+            'Add a weight field',
+            'Change to aggregated mode',
+            'Show a histogram',
+          ];
 
   const selectedModel = AVAILABLE_MODELS.find((m) => m.id === selectedModelId);
 

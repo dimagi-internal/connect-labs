@@ -4,6 +4,7 @@ The labs database holds real PulsePartner rows in production. Dropping the table
 without carrying them would lose every join date on the network growth curve —
 dates that are directory facts Connect has never held and cannot regenerate.
 """
+
 import pytest
 
 from connect_labs.labs.models import LabsOrg

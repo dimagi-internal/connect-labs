@@ -1,8 +1,8 @@
 """Write a snapshot of the targeting dataset, optionally straight to Drive.
 
-    make manage CMD="targeting_export"
-    make manage CMD="targeting_export --out /tmp/snap.zip"
-    make manage CMD="targeting_export --to-drive <folder_id>"
+make manage CMD="targeting_export"
+make manage CMD="targeting_export --out /tmp/snap.zip"
+make manage CMD="targeting_export --to-drive <folder_id>"
 """
 
 from __future__ import annotations

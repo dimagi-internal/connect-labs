@@ -3,6 +3,7 @@
 Deliberately self-contained: no labs fixtures, no labs test scaffolding
 (satellite-site convention — the suite must travel with the app).
 """
+
 import pytest
 from django.test import Client
 

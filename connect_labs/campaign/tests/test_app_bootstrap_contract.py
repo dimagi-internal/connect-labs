@@ -7,6 +7,7 @@ tag. Two things must hold for every role:
   2. the CSRF token is rendered into the page (the only transport, since this
      project uses CSRF_USE_SESSIONS and has no csrftoken cookie).
 """
+
 from __future__ import annotations
 
 import json

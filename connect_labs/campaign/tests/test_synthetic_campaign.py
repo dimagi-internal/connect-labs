@@ -6,6 +6,7 @@ geography. The tool reads workers via the Case API (CommCareProvider), so
 bootstrap_payload renders them without any local Worker ORM copy. These tests run
 at small scale against a factory-built NGA hierarchy.
 """
+
 from __future__ import annotations
 
 import pytest

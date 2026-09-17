@@ -13,6 +13,7 @@ Covers (priority order):
 
 Mocked-DA render tests (no DB), matching test_e2e_award_flow.py.
 """
+
 from unittest.mock import MagicMock, patch
 
 from django.test import RequestFactory

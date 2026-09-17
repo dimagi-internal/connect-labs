@@ -27,6 +27,7 @@ Exit codes:
   1 — at least one mismatch found
   2 — fetch error (bad token, network failure, etc.)
 """
+
 import ast
 import csv
 import io

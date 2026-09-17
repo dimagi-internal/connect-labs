@@ -32,7 +32,11 @@ from connect_labs.labs.presentation import is_present_mode
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.utils.feature_access import can_create_from_template, get_allowed_templates
 from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess, serialize_pipeline_row
-from connect_labs.workflow.templates import MULTI_OPTION_COERCERS, TEMPLATES, companion_links
+from connect_labs.workflow.templates import (
+    MULTI_OPTION_COERCERS,
+    TEMPLATES,
+    companion_links,
+)
 from connect_labs.workflow.templates import create_workflow_from_template as create_from_template
 from connect_labs.workflow.templates import (
     definition_supports_default_run,
@@ -5512,7 +5516,7 @@ class PipelineDataStreamView(BaseSSEStreamView):
     sees the generic "Pipeline stream connection lost" with no diagnostic.
     """
 
-    def stream_data(self, request) -> Generator[str, None, None]:
+    def stream_data(self, request) -> Generator[str]:
         from connect_labs.labs.analysis.pipeline import AnalysisPipeline
         from connect_labs.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, send_sse_event
 

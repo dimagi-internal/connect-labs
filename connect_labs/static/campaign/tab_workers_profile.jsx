@@ -41,8 +41,8 @@ function ProfileSub({ density }) {
           cur && ws.some((x) => x.id === cur)
             ? cur
             : ws.length
-            ? ws[0].id
-            : null,
+              ? ws[0].id
+              : null,
         );
       })
       .catch((e) => toast('Could not load workers: ' + e.message, 'danger'))
@@ -483,8 +483,8 @@ function VerificationHistory({ w }) {
                     e.result === 'Fail'
                       ? '#E13019'
                       : e.result === 'Pending'
-                      ? '#E8A317'
-                      : '#1E7B33',
+                        ? '#E8A317'
+                        : '#1E7B33',
                   marginTop: 3,
                 }}
               ></span>
@@ -515,8 +515,8 @@ function VerificationHistory({ w }) {
                 e.result === 'Fail'
                   ? 'danger'
                   : e.result === 'Pending'
-                  ? 'warning'
-                  : 'success'
+                    ? 'warning'
+                    : 'success'
               }
             >
               {e.result}
@@ -541,10 +541,10 @@ function AttendanceHistory({ w }) {
         i >= 16
           ? 'future'
           : worked
-          ? approved
-            ? 'present'
-            : 'unverified'
-          : 'absent',
+            ? approved
+              ? 'present'
+              : 'unverified'
+            : 'absent',
     });
   }
   const colors = {

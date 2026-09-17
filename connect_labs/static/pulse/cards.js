@@ -584,9 +584,8 @@
                 (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1),
             )
             .join(' ');
-          $(
-            'spark',
-          ).innerHTML = `<defs><linearGradient id="pulse-sg" x1="0" y1="0" x2="0" y2="1">
+          $('spark').innerHTML =
+            `<defs><linearGradient id="pulse-sg" x1="0" y1="0" x2="0" y2="1">
              <stop offset="0" stop-color="#bd8407" stop-opacity=".42"/>
              <stop offset="1" stop-color="#bd8407" stop-opacity="0"/></linearGradient></defs>
            <path d="${line} L300 62 L0 62 Z" fill="url(#pulse-sg)"/>

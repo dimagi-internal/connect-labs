@@ -1,4 +1,5 @@
 """Tests for funder_dashboard API views."""
+
 import json
 from unittest.mock import MagicMock, patch
 

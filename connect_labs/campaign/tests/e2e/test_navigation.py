@@ -4,6 +4,7 @@ Catches the failure mode unit tests can't: a verbatim-React tab that fails to tr
 or references a missing serializer key (blank/throwing UI). Built tabs assert real
 content (Reporting was built in Plan 5, Training Hub in Plan 6).
 """
+
 from __future__ import annotations
 
 import re

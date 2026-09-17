@@ -355,9 +355,7 @@ def preview_planning_gaps(
             ward_buildings = (
                 buildings_from_upload(uploaded_df, w["ward"], w["lga"], w["state"])
                 if mode == "upload"
-                else fetch_open_buildings_for_ward(ward_geom)
-                if mode == "open_buildings"
-                else None
+                else fetch_open_buildings_for_ward(ward_geom) if mode == "open_buildings" else None
             )
             features, points = planning_gap_features(
                 w["ward"],

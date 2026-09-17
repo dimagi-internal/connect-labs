@@ -11,6 +11,7 @@ UPDATE and DELETE at the database level. The only sanctioned bypass is the
 retention prune task, which uses pgtrigger.ignore() after verifying the day's
 S3 archive exists.
 """
+
 import uuid
 
 import pgtrigger
@@ -80,7 +81,7 @@ class AuditEvent(models.Model):
     user_email = models.CharField(max_length=254, blank=True, default="")
 
     # What
-    action = models.CharField(max_length=20, choices=Action.choices)
+    action = models.CharField(max_length=20, choices=Action)
     resource_type = models.CharField(max_length=100, blank=True, default="", db_index=True)
     resource_id = models.CharField(max_length=100, blank=True, default="")
     record_count = models.IntegerField(null=True, blank=True)
@@ -94,7 +95,7 @@ class AuditEvent(models.Model):
     labs_only = models.BooleanField(default=False)
 
     # Where / how
-    source = models.CharField(max_length=10, choices=Source.choices, default=Source.SYSTEM)
+    source = models.CharField(max_length=10, choices=Source, default=Source.SYSTEM)
     ip_address = models.CharField(max_length=45, blank=True, default="")
     user_agent = models.CharField(max_length=300, blank=True, default="")
     # Not always a bare UUID: MCP stamps "mcp:<tool_name>:<8 hex>" and Celery
@@ -107,7 +108,7 @@ class AuditEvent(models.Model):
     query_string = models.CharField(max_length=500, blank=True, default="")
 
     # Outcome
-    outcome = models.CharField(max_length=10, choices=Outcome.choices, default=Outcome.SUCCESS)
+    outcome = models.CharField(max_length=10, choices=Outcome, default=Outcome.SUCCESS)
     status_code = models.IntegerField(null=True, blank=True)
 
     # PHI-free structured extras (experiment name, endpoint, error code, ...)

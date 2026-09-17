@@ -2,6 +2,7 @@
 Debug OAuth flow — stubbed out after allauth removal during labs simplification.
 Labs uses its own OAuth flow (/labs/login/).
 """
+
 from django.core.management.base import BaseCommand
 
 

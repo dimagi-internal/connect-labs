@@ -2,6 +2,7 @@
 
 These tests are pure Python — no database required.
 """
+
 import json
 
 from connect_labs.solicitations.forms import ReviewForm, SolicitationForm, SolicitationResponseForm

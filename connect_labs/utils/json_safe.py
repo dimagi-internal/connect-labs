@@ -13,6 +13,7 @@ object literal or ``{{ ... |safe }}``) need no other change. Prefer Django's
 ``json_script`` template tag for new code; this helper exists for the inline
 ``|safe`` sinks that already ship.
 """
+
 from __future__ import annotations
 
 import json

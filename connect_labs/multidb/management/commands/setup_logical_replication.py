@@ -115,13 +115,11 @@ class Command(BaseCommand):
                     f"user={username} "
                     f"password={password}"
                 )
-                cursor.execute(
-                    f"""
+                cursor.execute(f"""
                     CREATE SUBSCRIPTION {SUBSCRIPTION_NAME}
                     CONNECTION '{primary_conn_info}'
                     PUBLICATION {PUBLICATION_NAME};
-                    """
-                )
+                    """)
                 self.stdout.write(self.style.SUCCESS(f"Subscription '{SUBSCRIPTION_NAME}' created successfully."))
             self.stdout.write("Granting select permissions to superset postgres user...")
             superset_user = "superset_readonly"

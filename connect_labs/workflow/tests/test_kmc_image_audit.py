@@ -79,9 +79,11 @@ def patched():
     is what lets an uncapped test assert it was never touched.
     """
     created = {}
-    with mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess") as wda_cls, mock.patch(
-        "connect_labs.audit.tasks.run_audit_creation"
-    ) as task, mock.patch("connect_labs.audit.data_access.AuditDataAccess") as ada_cls:
+    with (
+        mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess") as wda_cls,
+        mock.patch("connect_labs.audit.tasks.run_audit_creation") as task,
+        mock.patch("connect_labs.audit.data_access.AuditDataAccess") as ada_cls,
+    ):
         wda_cls.return_value.create_run.return_value = SimpleNamespace(id=4242)
         task.apply.return_value = _EagerResult()
         ada_cls.return_value.get_visit_ids_for_audit.side_effect = _selection([])

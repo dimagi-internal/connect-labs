@@ -107,9 +107,11 @@ class PulseIndexView(LoginRequiredMixin, View):
             )
             messages.success(
                 request,
-                "Link revoked — that URL now 404s, indistinguishably from one that never existed."
-                if n
-                else "That link was already revoked.",
+                (
+                    "Link revoked — that URL now 404s, indistinguishably from one that never existed."
+                    if n
+                    else "That link was already revoked."
+                ),
             )
 
         elif action == "partner_names":
@@ -120,9 +122,11 @@ class PulseIndexView(LoginRequiredMixin, View):
             if n:
                 messages.success(
                     request,
-                    "Link now names partner organisations."
-                    if show
-                    else "Partner names withheld on that link — it now shows descriptors instead.",
+                    (
+                        "Link now names partner organisations."
+                        if show
+                        else "Partner names withheld on that link — it now shows descriptors instead."
+                    ),
                 )
             else:
                 messages.error(request, "No live link with that token.")

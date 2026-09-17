@@ -7,6 +7,7 @@ re-raised a generic message, which the MCP transport then collapsed into
 is the first half of the fix; surfacing them in the JSON-RPC envelope is the
 second half (see test_transport_internal_error_envelope).
 """
+
 from unittest.mock import MagicMock, patch
 
 import httpx

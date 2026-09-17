@@ -735,7 +735,7 @@ class VisitInspectorStreamView(AdminRequiredMixin, AnalysisPipelineSSEMixin, Bas
     Uses the base SSE infrastructure to stream analysis pipeline events.
     """
 
-    def stream_data(self, request) -> Generator[str, None, None]:
+    def stream_data(self, request) -> Generator[str]:
         """Stream visit data loading progress via SSE."""
         try:
             # Check for context
@@ -1198,8 +1198,7 @@ class TaskManagerView(AdminRequiredMixin, TemplateView):
             # Query workflow runs that have active_job state
             # This gives us visibility into workflow-related tasks
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
+                cursor.execute("""
                     SELECT
                         id,
                         data->'state'->'active_job'->>'job_id' as task_id,
@@ -1214,8 +1213,7 @@ class TaskManagerView(AdminRequiredMixin, TemplateView):
                     WHERE data->'state'->'active_job'->>'job_id' IS NOT NULL
                     ORDER BY (data->'state'->'active_job'->>'started_at')::timestamp DESC NULLS LAST
                     LIMIT 50
-                    """
-                )
+                    """)
 
                 columns = [col[0] for col in cursor.description]
                 for row in cursor.fetchall():

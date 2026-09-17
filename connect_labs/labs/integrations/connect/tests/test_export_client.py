@@ -1,4 +1,5 @@
 """Tests for the v2 paginated JSON export client."""
+
 import pytest
 
 from connect_labs.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError

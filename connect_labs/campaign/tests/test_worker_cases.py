@@ -7,6 +7,7 @@ AdminBoundary rows. These tests pin: count + case shape, required property keys,
 the amount = days*rate invariant, valid geography refs + in-ward GPS, fraud
 clusters, and determinism.
 """
+
 from __future__ import annotations
 
 import pytest

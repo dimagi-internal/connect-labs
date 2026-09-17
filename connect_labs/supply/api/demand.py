@@ -5,6 +5,7 @@ distribution calendar; the centre reallocates against it and the signal
 resolves against the action that resolved it — so the decision and the evidence
 that prompted it end up as one record.
 """
+
 from datetime import date
 
 from django.http import JsonResponse

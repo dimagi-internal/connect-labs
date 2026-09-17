@@ -443,8 +443,8 @@ function CommandTab({ ctx }) {
                         r.ipc_phase >= 5
                           ? 'bad'
                           : r.ipc_phase >= 4
-                          ? 'warn'
-                          : 'muted'
+                            ? 'warn'
+                            : 'muted'
                       }
                     >
                       IPC {r.ipc_phase}
@@ -592,8 +592,8 @@ function CommandTab({ ctx }) {
                         r.weeks_of_cover < 2
                           ? 'bad'
                           : r.weeks_of_cover < 4
-                          ? 'warn'
-                          : 'good'
+                            ? 'warn'
+                            : 'good'
                       }
                     >
                       {r.weeks_of_cover}
@@ -949,8 +949,8 @@ function ReallocateModal({ ctx, exception, surplus, cover, onClose, nodes }) {
         a.sameCountry === b.sameCountry
           ? (b.rank || 0) - (a.rank || 0)
           : a.sameCountry
-          ? -1
-          : 1,
+            ? -1
+            : 1,
       );
 
   // Sources are nodes holding more than their own caseload can consume.

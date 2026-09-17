@@ -3,6 +3,7 @@ Base class for testing labs project URLs.
 Simple, fail-fast approach for debugging.
 Uses real OAuth token from oauth_cli to simulate localhost behavior.
 """
+
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.test import Client

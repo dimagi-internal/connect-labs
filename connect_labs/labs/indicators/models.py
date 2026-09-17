@@ -105,7 +105,7 @@ class IndicatorValue(models.Model):
     ci_low = models.FloatField(null=True, blank=True, help_text="Lower bound of the published uncertainty interval")
     ci_high = models.FloatField(null=True, blank=True, help_text="Upper bound of the published uncertainty interval")
 
-    source = models.CharField(max_length=20, choices=Source.choices, db_index=True)
+    source = models.CharField(max_length=20, choices=Source, db_index=True)
     source_ref = models.CharField(
         max_length=200,
         blank=True,
@@ -116,7 +116,7 @@ class IndicatorValue(models.Model):
         max_length=500,
         help_text="Where a reader can go to see this figure at its source",
     )
-    license_code = models.CharField(max_length=30, choices=License.choices, db_index=True)
+    license_code = models.CharField(max_length=30, choices=License, db_index=True)
     method = models.TextField(
         blank=True,
         help_text="For derived values, the formula and inputs used. Shown verbatim in the methodology panel.",
@@ -163,7 +163,7 @@ class IngestRun(models.Model):
     guessing from ``retrieved_at`` scattered across rows.
     """
 
-    source = models.CharField(max_length=20, choices=Source.choices, db_index=True)
+    source = models.CharField(max_length=20, choices=Source, db_index=True)
     indicator = models.CharField(max_length=40, blank=True, help_text="Blank when a loader writes several")
     started_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True, blank=True)

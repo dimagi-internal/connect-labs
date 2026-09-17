@@ -1,4 +1,5 @@
 """Tests for the self-service MCP token UI at /labs/mcp/tokens/."""
+
 from datetime import timedelta
 
 import pytest

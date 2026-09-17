@@ -4,6 +4,7 @@ create_token_browser:
     Browser-driven token creation for the labs-token-setup Claude Code skill.
     Consent page on GET, token creation + localhost redirect on POST.
 """
+
 from __future__ import annotations
 
 from datetime import datetime

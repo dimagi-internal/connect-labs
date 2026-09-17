@@ -1,4 +1,5 @@
 """Integration tests for SQLBackend.stream_raw_visits (v2 paginated JSON)."""
+
 import pytest
 from django.test import override_settings
 

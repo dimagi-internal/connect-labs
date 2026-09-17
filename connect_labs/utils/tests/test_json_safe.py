@@ -1,4 +1,5 @@
 """Tests for safe_json_for_script — inline-<script> XSS hardening."""
+
 import json
 
 from connect_labs.utils.json_safe import safe_json_for_script

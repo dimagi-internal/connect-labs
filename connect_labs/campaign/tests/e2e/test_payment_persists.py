@@ -5,6 +5,7 @@ CSRF_USE_SESSIONS bug (PR #662) hid from unit tests. It approves a known clean,
 not-yet-approved worker in the real UI and proves the new status survives a full page
 reload (i.e. it was persisted server-side, not just held in optimistic client state).
 """
+
 from __future__ import annotations
 
 import re

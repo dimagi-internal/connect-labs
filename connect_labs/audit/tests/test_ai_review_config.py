@@ -1,4 +1,5 @@
 """Tests for build_review_config (image_audits -> related_fields + ai_reviewers)."""
+
 from connect_labs.audit.ai_review_config import build_review_config
 
 

@@ -4,6 +4,7 @@ These roles are read-only by construction, and the government observer is
 scoped to a single country. Scoping is enforced server-side so the client is
 never trusted to filter another country's data out of view.
 """
+
 import json
 from datetime import timedelta
 

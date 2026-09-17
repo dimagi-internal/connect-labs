@@ -398,10 +398,10 @@ function KycReviewModal({
         s === 'verified'
           ? 'success'
           : s === 'rejected'
-          ? 'danger'
-          : s === 'submitted'
-          ? 'info'
-          : 'warning'
+            ? 'danger'
+            : s === 'submitted'
+              ? 'info'
+              : 'warning'
       }
     >
       {s[0].toUpperCase() + s.slice(1)}

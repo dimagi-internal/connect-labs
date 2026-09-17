@@ -1,4 +1,5 @@
 """JSON API endpoints for funder_dashboard."""
+
 import json
 import logging
 

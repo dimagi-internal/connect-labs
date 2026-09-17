@@ -11,6 +11,7 @@ resumable loader's ``last_id`` semantics) else its positional index (stable for
 static fixtures; full-refresh via ``next`` still works for id-less endpoints like
 ``completed_works``).
 """
+
 from rest_framework import serializers
 from rest_framework.pagination import BasePagination
 from rest_framework.response import Response

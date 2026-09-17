@@ -1,4 +1,5 @@
 """Tests for converting v2 export records into labs visit dicts."""
+
 from connect_labs.labs.analysis.backends.visit_record import SLIM_VISIT_KEYS, record_to_visit_dict
 
 

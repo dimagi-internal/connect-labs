@@ -4,6 +4,7 @@ Every fact here is invented. The rule these tests defend is that LabsOrg stays
 identity-only, so that when Connect grows an organisation model the migration is
 a repointed foreign key rather than a redesign.
 """
+
 import pytest
 from django.db import IntegrityError
 

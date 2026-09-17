@@ -213,9 +213,9 @@ class DeliveryUnit:
             visited=safe_bool(get_property_with_fallback(properties, "visited")),
             checked_in_date=get_property_with_fallback(properties, "checked_in_date"),
             checked_out_date=get_property_with_fallback(properties, "checked_out_date"),
-            last_modified_date=pd.to_datetime(case_data.get("last_modified"))
-            if case_data.get("last_modified")
-            else None,
+            last_modified_date=(
+                pd.to_datetime(case_data.get("last_modified")) if case_data.get("last_modified") else None
+            ),
             # Geometry
             wkt=get_property_with_fallback(properties, "wkt") or "",
             centroid=get_property_with_fallback(properties, "centroid"),

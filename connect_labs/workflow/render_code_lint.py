@@ -90,14 +90,12 @@ _UTILITY_TOKEN_RE = re.compile(r"^(?:[a-z][a-z0-9._-]*:)*-?[a-z][a-zA-Z0-9._-]*(
 # template would make this noise an author learns to skip, which costs exactly
 # the signal labs#1294 needs. Every one of those 19 is hyphen-free, and every
 # utility the issue measured as purged is not.
-_HYPHEN_FREE_UTILITIES = frozenset(
-    """
+_HYPHEN_FREE_UTILITIES = frozenset("""
     block inline flex grid contents hidden table isolate static fixed absolute relative sticky
     visible invisible collapse truncate italic underline overline uppercase lowercase capitalize
     border rounded shadow blur grayscale invert sepia transform transition resize container
     antialiased outline ring filter snap prose flex-1 grow shrink basis-0
-    """.split()
-)
+    """.split())
 
 
 def _is_judgeable(token: str) -> bool:

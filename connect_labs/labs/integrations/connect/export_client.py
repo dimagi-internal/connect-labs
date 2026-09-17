@@ -13,6 +13,7 @@ Usage:
         # Or materialize everything
         rows = client.fetch_all("/export/opportunity/42/user_data/")
 """
+
 import logging
 import re
 

@@ -1,4 +1,5 @@
 """Tests for the browser-driven MCP token-creation view."""
+
 import pytest
 from django.urls import reverse
 

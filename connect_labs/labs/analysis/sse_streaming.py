@@ -356,7 +356,7 @@ class BaseSSEStreamView(LoginRequiredMixin, View):
             stop_event.set()
             thread.join(timeout=2)
 
-    def stream_data(self, request) -> Generator[str, None, None]:
+    def stream_data(self, request) -> Generator[str]:
         """
         Generator that yields SSE events.
 
@@ -412,7 +412,7 @@ class AnalysisPipelineSSEMixin:
         pipeline_stream: Generator,
         send_sse_func: Callable[[str, dict | None, str | None], str] = send_sse_event,
         raise_on_error: bool = False,
-    ) -> Generator[str, None, None]:
+    ) -> Generator[str]:
         """
         Convert AnalysisPipeline stream events to SSE events.
 
@@ -561,7 +561,7 @@ class CeleryTaskStreamView(BaseSSEStreamView):
         # identical across every SSE and poll consumer.
         return build_task_progress(state, info)
 
-    def stream_data(self, request) -> Generator[str, None, None]:
+    def stream_data(self, request) -> Generator[str]:
         """
         Stream Celery task progress as SSE events.
 

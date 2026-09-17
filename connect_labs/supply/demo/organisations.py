@@ -4,6 +4,7 @@ demo personas who log in.
 Every supplier is written with ``update_or_create`` keyed on legal name, so
 re-running refreshes rather than duplicates.
 """
+
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model

@@ -9,6 +9,7 @@ they treated.
 Deterministic like the other two: it takes the shared PRNG so the world is
 identical on every run.
 """
+
 from datetime import date, timedelta
 from decimal import Decimal
 

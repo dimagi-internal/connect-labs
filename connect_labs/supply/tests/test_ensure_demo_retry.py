@@ -10,6 +10,7 @@ the first prod double-take.
 Loaded by path because the script lives outside the package (it is invoked as a
 subprocess by the canopy recorder, which has no Django).
 """
+
 import importlib.util
 import urllib.error
 from io import BytesIO

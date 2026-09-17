@@ -27,6 +27,7 @@ The derivation, end to end:
 * **weeks of cover** = stock on hand ÷ weekly burn.
 * **stockout date** = as-of date + weeks of cover.
 """
+
 from datetime import date, timedelta
 from decimal import Decimal
 

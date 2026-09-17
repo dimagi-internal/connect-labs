@@ -15,6 +15,7 @@ machinery surfaces messages naturally; HTTP/MCP callers map the same
 exception to their own protocol envelopes (HTTP 400 with ``message_dict``,
 MCP ``INVALID_SCHEMA``).
 """
+
 from __future__ import annotations
 
 from datetime import date

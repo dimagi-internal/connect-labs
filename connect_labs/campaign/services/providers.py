@@ -19,6 +19,7 @@ Select the active provider with the ``CAMPAIGN_DATA_PROVIDER`` setting:
 
 See issue #674 for the rollout plan.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

@@ -2,6 +2,7 @@
 
 Business rules live here; the API modules stay thin.
 """
+
 from datetime import date, timedelta
 
 from django.db import transaction

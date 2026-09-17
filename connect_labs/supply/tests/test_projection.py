@@ -4,6 +4,7 @@ Weeks of cover answers "what am I holding". This answers "when do I run dry",
 which is a different question the moment anything is on the road, and it is the
 one a pipeline call opens with.
 """
+
 from datetime import date, timedelta
 
 import pytest

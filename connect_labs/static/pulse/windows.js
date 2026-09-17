@@ -401,10 +401,10 @@
                          w.approval_rate == null
                            ? 0
                            : w.approval_rate < 0.5
-                           ? 2
-                           : w.approval_rate < 0.8
-                           ? 1
-                           : 0;
+                             ? 2
+                             : w.approval_rate < 0.8
+                               ? 1
+                               : 0;
                        return `<tr tabindex="0" data-w="${esc(w.worker)}">
                          <td class="rw-id">${esc(w.worker)}</td>
                          <td class="rw-num">${nf.format(w.works)}</td>

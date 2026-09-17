@@ -1,4 +1,5 @@
 """Human verdicts on submissions labs refused to attribute. All data invented."""
+
 from connect_labs.marketplace.directory import (
     RESPONSE_MAPPING_HEADER,
     VERDICT_LINK,

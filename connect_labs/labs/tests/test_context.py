@@ -1,6 +1,7 @@
 """
 Tests for labs context management.
 """
+
 import pytest
 from django.test import RequestFactory
 

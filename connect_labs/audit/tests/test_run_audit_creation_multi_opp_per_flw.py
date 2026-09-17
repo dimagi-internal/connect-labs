@@ -5,6 +5,7 @@ created via a single opp_id-scoped AuditDataAccess pinned to the first
 selected opportunity -- FLWs belonging to any other opportunity got sessions
 with no images (extract_images_for_visits' CommCare fetch only covers one
 opportunity) and were physically stored under the wrong opportunity's scope."""
+
 from unittest.mock import MagicMock
 
 from connect_labs.audit import tasks

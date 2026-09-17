@@ -7,6 +7,7 @@ client with a collecting transport, because the claim being made ("a user
 reaches Sentry even with ``send_default_pii=False``") is a claim about the
 serialized envelope, including everything the PII scrubber does to it.
 """
+
 import pytest
 
 from connect_labs.audit_trail.context import AuditContext, audit_context, reset_audit_context, set_audit_context

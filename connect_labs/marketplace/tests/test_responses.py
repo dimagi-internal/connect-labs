@@ -3,6 +3,7 @@
 All headers and values are invented, but each case reproduces a shape that
 actually occurs in the directory's response sheets.
 """
+
 import datetime as dt
 
 from connect_labs.marketplace.responses import build_questions, detect_columns, parse_submissions, parse_timestamp

@@ -4,6 +4,7 @@ Plain passthrough APIViews are dropped from the schema by drf-spectacular; the
 @extend_schema annotations + auth extension on the views keep them documented so
 an external consumer can read /api/docs/.
 """
+
 import pytest
 
 

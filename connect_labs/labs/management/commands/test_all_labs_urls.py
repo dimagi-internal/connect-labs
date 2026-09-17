@@ -2,6 +2,7 @@
 Management command to test all labs project URLs at once.
 Run with: python manage.py test_all_labs_urls
 """
+
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 

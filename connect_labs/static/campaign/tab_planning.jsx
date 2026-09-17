@@ -342,8 +342,8 @@ function PlanningTab({ density, role }) {
                         fill < 0.75
                           ? '#E13019'
                           : fill < 0.9
-                          ? '#E8A317'
-                          : '#1E7B33'
+                            ? '#E8A317'
+                            : '#1E7B33'
                       }
                     />
                   </Cell>
@@ -360,8 +360,8 @@ function PlanningTab({ density, role }) {
                         cov < 0.4
                           ? '#E13019'
                           : cov < 0.55
-                          ? '#E8A317'
-                          : '#1E7B33'
+                            ? '#E8A317'
+                            : '#1E7B33'
                       }
                     />
                   </Cell>
@@ -468,8 +468,8 @@ function PlanningTab({ density, role }) {
                         fill < 0.75
                           ? '#E13019'
                           : fill < 0.9
-                          ? '#E8A317'
-                          : '#1E7B33'
+                            ? '#E8A317'
+                            : '#1E7B33'
                       }
                     />
                   </Cell>
@@ -753,8 +753,8 @@ function PlanningTab({ density, role }) {
                         cov < 0.4
                           ? '#E13019'
                           : cov < 0.55
-                          ? '#E8A317'
-                          : '#1E7B33'
+                            ? '#E8A317'
+                            : '#1E7B33'
                       }
                     />
                   </Cell>

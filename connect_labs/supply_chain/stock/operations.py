@@ -435,12 +435,12 @@ def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_d
                 },
                 "reported_on": row["reported_on"].isoformat() if row["reported_on"] else None,
                 "reported_kind": row["reported_kind"],
-                "min_months_of_stock": str(row["min_months_of_stock"])
-                if row["min_months_of_stock"] is not None
-                else None,
-                "max_months_of_stock": str(row["max_months_of_stock"])
-                if row["max_months_of_stock"] is not None
-                else None,
+                "min_months_of_stock": (
+                    str(row["min_months_of_stock"]) if row["min_months_of_stock"] is not None else None
+                ),
+                "max_months_of_stock": (
+                    str(row["max_months_of_stock"]) if row["max_months_of_stock"] is not None else None
+                ),
                 **{
                     key: _plain(row[key])
                     for key in (
