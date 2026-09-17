@@ -94,6 +94,79 @@ def _fields_all_null(rows: list[dict], schema: dict | None) -> list[str]:
     return out
 
 
+def _fields_suspect(rows: list[dict], schema: dict | None) -> list[dict]:
+    """Fields whose numbers cannot be true but are not null, so
+    `_fields_all_null` is structurally blind to them.
+
+    `fields_all_null` only fires when a field extracted NOTHING. A field that
+    extracted the WRONG thing sails past it, and the two shapes that cost real
+    money both do (dimagi-internal/ace#2431, on labs opp 10065):
+
+    * a `count` that equals that row's `total_visits` on every row — the
+      signature of counting a value that is present on every visit, e.g. the
+      `{}` a JSONB column carries when there is nothing to report. A dashboard
+      then shows "137 holds" as 2,207 and reads as plausible.
+    * a field carrying a `filter_value` that matched nothing on any row. A
+      filter is declared because SOME rows are expected to match; zero
+      everywhere means the comparison never had a chance, not that the data is
+      clean.
+
+    Both are heuristics, so this is a diagnostic on a preview — reported, never
+    enforced. A genuinely all-flagged cohort trips the first; a filter that
+    legitimately has no matches in the sample trips the second. That is the
+    right trade for a signal whose absence let a wrong number reach a funder.
+    """
+    if not rows or not schema or not isinstance(schema, dict):
+        return []
+    fields = [f for f in (schema.get("fields") or []) if isinstance(f, dict) and f.get("name")]
+    if not fields:
+        return []
+
+    out: list[dict] = []
+    for f in fields:
+        name = f["name"]
+        values = [r.get(name) for r in rows if name in r]
+        if not values:
+            continue
+
+        if f.get("aggregation") == "count":
+            totals = [r.get("total_visits") for r in rows if name in r]
+            comparable = [
+                (v, t)
+                for v, t in zip(values, totals)
+                if isinstance(v, int) and isinstance(t, int) and not isinstance(v, bool) and t > 0
+            ]
+            if comparable and len(comparable) == len(values) and all(v == t for v, t in comparable):
+                out.append(
+                    {
+                        "name": name,
+                        "signal": "equals_row_count",
+                        "detail": (
+                            f"`{name}` equals that row's total_visits on all {len(values)} sampled rows. "
+                            "A count over a value that is present on every visit looks like this — "
+                            "check whether field.path names a column that is never empty (a JSONB "
+                            "column storing `{}` was the reported case)."
+                        ),
+                    }
+                )
+                continue
+
+        if f.get("filter_value") and (f.get("filter_path") or f.get("filter_paths")):
+            if all(v in (None, 0, "", [], {}) for v in values):
+                out.append(
+                    {
+                        "name": name,
+                        "signal": "filter_matched_nothing",
+                        "detail": (
+                            f"`{name}` declares filter_value={f['filter_value']!r} and matched "
+                            f"nothing on all {len(values)} sampled rows. Confirm the filter path "
+                            "and the exact stored spelling of the value."
+                        ),
+                    }
+                )
+    return out
+
+
 @register(
     name="pipeline_list",
     description=(
@@ -301,8 +374,11 @@ _PIPELINE_PREVIEW_MAX_ROWS = 200
         "row — the loudest signal that field.path is wrong. When you see a "
         "field flagged there, resolve the correct path with "
         "`get_form_json_paths` on the local `commcare_hq_mcp` server before "
-        "re-previewing. This is the iteration hot path: "
-        "read → tweak → preview → save."
+        "re-previewing. `fields_suspect` is its sibling for fields that "
+        "extracted the WRONG value rather than none: a count equal to the row "
+        "count, or a filter that matched nothing on any row. Neither is an "
+        "error — both are numbers to re-derive before publishing. "
+        "This is the iteration hot path: read → tweak → preview → save."
     ),
     input_schema={
         "type": "object",
@@ -470,6 +546,9 @@ def pipeline_preview(
         # saved schema otherwise) so the names match what the caller sent.
         exec_schema = schema_override if schema_override is not None else (definition.data or {}).get("schema")
         fields_all_null = _fields_all_null(merged_rows, exec_schema)
+        # The sibling signal for fields that extracted the WRONG thing rather
+        # than nothing — invisible to fields_all_null by construction.
+        fields_suspect = _fields_suspect(merged_rows, exec_schema)
 
         return {
             "pipeline_id": pipeline_id,
@@ -487,6 +566,14 @@ def pipeline_preview(
                 "re-preview with schema_override."
             )
             if fields_all_null
+            else None,
+            "fields_suspect": fields_suspect,
+            "fields_suspect_hint": (
+                "These fields returned values that are not null but cannot be right — a count "
+                "equal to the row count, or a filter that matched nothing anywhere. Re-check "
+                "field.path and filter_value against the real data before trusting the numbers."
+            )
+            if fields_suspect
             else None,
             "metadata": top_meta,
         }

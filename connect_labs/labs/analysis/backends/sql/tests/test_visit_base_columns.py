@@ -9,7 +9,7 @@ nowhere, so a dashboard could show *that* a visit was flagged but never *why*.
 """
 
 import pytest
-from django.db import connection
+from django.db import connection, models
 from django.utils import timezone
 
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
@@ -17,6 +17,7 @@ from connect_labs.labs.analysis.backends.sql.query_builder import build_visit_ex
 from connect_labs.labs.analysis.config import (
     _BASE_VISIT_COLUMNS,
     RAW_VISIT_BASE_COLUMNS,
+    RAW_VISIT_JSONB_BASE_COLUMNS,
     VISIT_PASSTHROUGH_COLUMNS,
     VISIT_SELECT_COLUMNS,
 )
@@ -37,6 +38,19 @@ class TestTheListsCannotDriftApart:
         Deriving the assertion from the model is what stops that recurring."""
         real = {f.column for f in RawVisitCache._meta.concrete_fields}
         assert RAW_VISIT_BASE_COLUMNS <= real, sorted(RAW_VISIT_BASE_COLUMNS - real)
+
+    def test_the_jsonb_subset_is_exactly_the_jsonfields_on_the_model(self):
+        """`RAW_VISIT_JSONB_BASE_COLUMNS` decides which columns get read as JSON
+        rather than cast with `::text`. A new JSONB base column that missed the
+        list would inherit the ace#2431 defect wholesale — an empty value
+        counted as present, and a filter that can never match — and, like the
+        original, would say nothing about it. Derived from the model so it
+        cannot be forgotten."""
+        jsonb = {f.column for f in RawVisitCache._meta.concrete_fields if isinstance(f, models.JSONField)}
+        assert RAW_VISIT_JSONB_BASE_COLUMNS == jsonb & RAW_VISIT_BASE_COLUMNS
+
+    def test_the_jsonb_subset_is_a_subset(self):
+        assert RAW_VISIT_JSONB_BASE_COLUMNS <= RAW_VISIT_BASE_COLUMNS
 
     def test_visit_datetime_is_gone(self):
         assert "visit_datetime" not in RAW_VISIT_BASE_COLUMNS

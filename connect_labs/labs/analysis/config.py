@@ -98,6 +98,29 @@ RAW_VISIT_BASE_COLUMNS = frozenset(
     }
 )
 
+# The JSONB subset of RAW_VISIT_BASE_COLUMNS. A field or filter naming one of
+# these has to read its LOGICAL value rather than its serialization, because
+# `::text` on a JSONB column is wrong in both directions: `{}` renders as the
+# two-character string `'{}'`, which is not empty, so a `count` counted every
+# unflagged visit; and a JSON string renders WITH its quotes, so a
+# `filter_value` a schema author wrote could never match. Both were silent --
+# the numbers were plausible and `fields_all_null` is NULL-only, so it saw
+# neither (dimagi-internal/ace#2431). `_jsonb_base_column_text_sql` is the
+# expression; this is the set it applies to.
+#
+# Kept as a literal and checked against the model by test rather than derived by
+# import, matching RAW_VISIT_BASE_COLUMNS above: `test_visit_base_columns`
+# asserts this is exactly the JSONField subset, so a new JSONB base column
+# cannot be added without landing here too.
+RAW_VISIT_JSONB_BASE_COLUMNS = frozenset(
+    {
+        "flag_reason",
+        "form_json",
+        "completed_work",
+        "images",
+    }
+)
+
 # The base columns `build_visit_extraction_query` puts in its SELECT, in order.
 # A visit-level pipeline can only render what this emits, so a column that is on
 # the model but missing here is stored-and-unreachable — which is exactly what
