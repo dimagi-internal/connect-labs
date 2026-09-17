@@ -2107,6 +2107,34 @@ function WorkflowRunner({
                     </div>
                   )}
                   <DynamicWorkflow
+                    // Remount, rather than re-render, the first time pipeline
+                    // data lands. DynamicWorkflow memoises the compiled
+                    // component on [babelLoaded, renderCode, onError] -- NOT on
+                    // `pipelines` -- so without this key it re-renders in place
+                    // when data arrives after an empty first render.
+                    //
+                    // Render code that early-returns (an "authorization
+                    // needed" or "no data" panel) BEFORE declaring the rest of
+                    // its hooks then runs a different number of hooks on the
+                    // second render, and React throws #310 -- the whole report
+                    // is replaced by "Error rendering workflow". Reproduced on
+                    // workflow 13005 on 2026-09-17 while prototyping the
+                    // fallback below; 13005 is not unusual in having that
+                    // shape.
+                    //
+                    // Costs nothing on the normal path: the runner shows its
+                    // own loading panel instead of the report while
+                    // pipelineLoadingStatus is set (unless a definition opts
+                    // into config.renderWhileLoading), so the report usually
+                    // mounts once, already holding data, and this key never
+                    // changes. It only flips for a definition that renders
+                    // while loading, or after the fallback recovers -- exactly
+                    // the cases that would otherwise break.
+                    key={
+                      Object.keys(pipelineData).length
+                        ? 'pipelines-loaded'
+                        : 'pipelines-empty'
+                    }
                     {...workflowProps}
                     renderCode={renderCode}
                     onError={handleRenderError}
