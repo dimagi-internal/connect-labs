@@ -146,9 +146,9 @@ def definition_supports_default_run(definition) -> bool:
     an enabled schedule, then fails with ValueError the first time it fires --
     a broken schedule that looks healthy until its first run.
     """
-    key = getattr(definition, "template_type", None) or ((getattr(definition, "data", None) or {}).get("config") or {}).get(
-        "templateType"
-    )
+    key = getattr(definition, "template_type", None) or (
+        (getattr(definition, "data", None) or {}).get("config") or {}
+    ).get("templateType")
     if not template_supports_default_run(key):
         return False
     gate = (TEMPLATES.get(key) or {}).get("default_run_config_gate")
