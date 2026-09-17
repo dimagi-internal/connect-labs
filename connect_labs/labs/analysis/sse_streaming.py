@@ -5,9 +5,9 @@ Provides reusable infrastructure for streaming analysis progress to the frontend
 Includes support for both AnalysisPipeline streaming and Celery task progress streaming.
 """
 
-import asyncio
 import json
 import logging
+import queue
 import threading
 import time
 from collections.abc import Callable, Generator
@@ -143,70 +143,57 @@ class BaseSSEStreamView(LoginRequiredMixin, View):
         # break the many existing subclasses whose stream_data signature
         # is just (self, request).
 
-        # ALWAYS the async wrapper, even with heartbeats off. Django's ASGI
-        # handler CONSUMES A SYNCHRONOUS ITERATOR IN FULL before it sends any of
-        # it (`ASGIHandler.send_response`, which warns "StreamingHttpResponse must
-        # consume synchronous iterators in order to serve them asynchronously"),
-        # so a sync generator here is not a stream at all -- it is a slow way to
-        # build one response body. Measured against a local uvicorn on the same
-        # generator: sync yielded all six events at 6.0s, async yielded them at
-        # 0.0/1.0/2.0/3.0/4.0/5.0s. On labs that silently cost every SSE view its
-        # progress -- an 41s cold pipeline read delivered its eleven progress
-        # events in one batch at 41s, which is indistinguishable from a page that
-        # is simply hanging, and is exactly what the events exist to prevent.
+        generator = self.stream_data(request)
+        if self.heartbeat_enabled:
+            generator = self._with_heartbeat(generator)
+
         response = StreamingHttpResponse(
-            self._astream(self.stream_data(request)),
+            generator,
             content_type="text/event-stream",
         )
         response["Cache-Control"] = "no-cache"
         response["X-Accel-Buffering"] = "no"  # Disable nginx buffering
         return response
 
-    async def _astream(self, generator, interval=None):
-        """Serve a sync generator as a real stream, with periodic heartbeats.
+    def _with_heartbeat(self, generator, interval=None):
+        """Wrap a generator with periodic SSE heartbeat comments.
 
-        Two jobs, and the first one is why this is `async`. See `get()`: Django
-        drains a synchronous iterator completely before sending a byte, so the
-        response body has to be an ASYNC iterator for any of it to reach the
-        client early. The generator itself stays synchronous -- subclasses write
-        plain `yield` code, and it runs on the producer thread below exactly as
-        it did before -- so nothing about database access or thread affinity
-        changes here.
+        Prevents ALB/browser timeouts during long-running blocking operations
+        (JSON pagination, data processing) by sending SSE comment lines every
+        ``interval`` seconds when the generator isn't yielding real data.
 
-        The second job is the heartbeat: SSE comment lines (``: heartbeat``)
-        every ``interval`` seconds of silence, which keep the connection alive
-        across a long blocking step without triggering `EventSource.onmessage`.
-        Set ``heartbeat_enabled = False`` on a subclass to stop emitting them;
-        the wrapper still applies, because it is what makes streaming work.
+        SSE comment format ``: heartbeat\\n\\n`` keeps the TCP connection
+        alive but does not trigger EventSource.onmessage on the frontend.
 
-        The queue is an `asyncio.Queue` fed with `call_soon_threadsafe`, not a
-        `queue.Queue` awaited in a worker: `asyncio.to_thread` would park a pool
-        thread per connection for the whole wait, and the default executor is
-        `min(32, cpu + 4)` -- five threads on the 1-vCPU web task, so a sixth
-        concurrent stream would have blocked on nothing at all.
+        Set ``heartbeat_enabled = False`` on a subclass to disable.
         """
         if interval is None:
             interval = self.heartbeat_interval
 
-        loop = asyncio.get_running_loop()
-        data_queue: asyncio.Queue = asyncio.Queue()
+        data_queue: queue.Queue = queue.Queue(maxsize=100)
         stop_event = threading.Event()
-
-        def _emit(item):
-            # The producer runs on a plain thread; this is the only safe way to
-            # hand it to the loop.
-            loop.call_soon_threadsafe(data_queue.put_nowait, item)
 
         def _producer():
             try:
                 for item in generator:
                     if stop_event.is_set():
                         break
-                    _emit(("data", item))
+                    while not stop_event.is_set():
+                        try:
+                            data_queue.put(("data", item), timeout=1)
+                            break
+                        except queue.Full:
+                            continue
             except Exception as e:  # noqa: BLE001
-                _emit(("error", e))
+                try:
+                    data_queue.put(("error", e), timeout=1)
+                except queue.Full:
+                    pass
             finally:
-                _emit(("done", None))
+                try:
+                    data_queue.put(("done", None), timeout=1)
+                except queue.Full:
+                    pass
                 try:
                     generator.close()
                 except (GeneratorExit, RuntimeError):
@@ -218,23 +205,19 @@ class BaseSSEStreamView(LoginRequiredMixin, View):
         try:
             while True:
                 try:
-                    msg_type, value = await asyncio.wait_for(data_queue.get(), timeout=interval)
-                except TimeoutError:
-                    # Nothing for `interval` seconds. The comment keeps the
-                    # connection warm without reaching onmessage.
-                    if self.heartbeat_enabled:
-                        yield ": heartbeat\n\n"
-                    continue
-                if msg_type == "data":
-                    yield value
-                elif msg_type == "done":
-                    break
-                elif msg_type == "error":
-                    raise value
+                    msg_type, value = data_queue.get(timeout=interval)
+                    if msg_type == "data":
+                        yield value
+                    elif msg_type == "done":
+                        break
+                    elif msg_type == "error":
+                        raise value
+                except queue.Empty:
+                    # No data for `interval` seconds — send SSE comment to keep alive
+                    yield ": heartbeat\n\n"
         finally:
-            # The producer is a daemon and may be parked in a blocking read, so
-            # this asks it to stop and does not wait on it from the event loop.
             stop_event.set()
+            thread.join(timeout=2)
 
     def stream_data(self, request) -> Generator[str, None, None]:
         """
