@@ -36,6 +36,11 @@ urlpatterns = [
         name="planning_gaps",
     ),
     path(
+        "program/<int:program_id>/run/<int:run_id>/erase_planning_gaps/",
+        views.MopupErasePlanningGapsView.as_view(),
+        name="erase_planning_gaps",
+    ),
+    path(
         "program/<int:program_id>/run/<int:run_id>/upload_buildings/",
         views.MopupUploadBuildingsView.as_view(),
         name="upload_buildings",

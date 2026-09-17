@@ -143,10 +143,11 @@ def summarize_candidates_by_ward(candidates: list[dict], all_rows: list[dict]) -
     candidates, and how many were flagged by 2+ indicators (§6c) — cheap
     since severity is already computed per candidate.
 
-    `total_hsd`/`total_ncf` mirror the NCF/inaccessible indicator's own
-    definition (`core.indicators._ncf_visit_total`: NCF + Inaccessible visits
-    counted together) so the ward summary's numbers are traceable back to
-    what the indicator itself is computing.
+    `total_hsd`/`total_ncf` mirror what the NCF and Inaccessible indicators
+    each check individually (`core.indicators._visit_presence_affected`), just
+    summed together here (NCF + Inaccessible visit counts) for one combined
+    "how many visits came back neither-of-the-above" column, so the ward
+    summary's numbers are traceable back to what those indicators compute.
 
     Every ward present in `all_rows` gets a row here, even one with zero
     candidates under the current thresholds — this is a survey of what was

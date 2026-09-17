@@ -433,6 +433,7 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         context["lock_url"] = reverse("mopup:lock", args=[program_id, run_id])
         context["create_plan_url"] = reverse("mopup:create_plan", args=[program_id, run_id])
         context["planning_gaps_url"] = reverse("mopup:planning_gaps", args=[program_id, run_id])
+        context["erase_planning_gaps_url"] = reverse("mopup:erase_planning_gaps", args=[program_id, run_id])
         context["upload_buildings_url"] = reverse("mopup:upload_buildings", args=[program_id, run_id])
         context["exclude_work_area_url"] = reverse("mopup:exclude_work_area", args=[program_id, run_id])
         context["planning_gap_config"] = run.planning_gap_config
@@ -449,7 +450,8 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         context["global_config"] = {**ind.DEFAULT_GLOBAL_CONFIG, **(run.thresholds.get("global_config") or {})}
         context["indicator_defs"] = [
             {"key": ind.EVC_SHORTFALL, "label": "EVC shortfall", "tier": 1},
-            {"key": ind.NCF_INACCESSIBLE, "label": "NCF / inaccessible", "tier": 1},
+            {"key": ind.NCF, "label": "NCF", "tier": 1},
+            {"key": ind.INACCESSIBLE, "label": "Inaccessible", "tier": 1},
             {"key": ind.DEWORMING, "label": "Deworming completion", "tier": 2},
             {"key": ind.MUAC, "label": "MUAC-recorded rate", "tier": 2},
             {"key": ind.VACCINATION, "label": "Vaccination-given rate", "tier": 2},
@@ -721,6 +723,47 @@ class MopupPlanningGapsView(LoginRequiredMixin, View):
         if resp is None:
             return JsonResponse(progress)
         return JsonResponse(resp)
+
+
+class MopupErasePlanningGapsView(LoginRequiredMixin, View):
+    """Step 2's "Erase planning gaps" action: deletes every planning-gap work
+    area this run has computed, without touching Step 1's own candidate set
+    or thresholds. Clears `planning_gap_features` (the work areas
+    themselves), `planning_gap_building_points` (their supporting building
+    dots on the map), and `planning_gap_warnings` (per-ward failures from
+    that same computation) — all three are downstream artifacts of the same
+    Step 2 Recompute, so stale points/warnings left behind after the
+    features are gone would be inconsistent with what's actually on the run.
+
+    Deliberately leaves `planning_gap_config` (the last-used mode/settings)
+    alone — this only clears the RESULT of a Step 2 run, not the reviewer's
+    form inputs, so hitting Recompute again after erasing starts from
+    whatever they had last configured rather than resetting the form too.
+
+    Same "no separate lock" shape as `MopupPlanningGapsView`: nothing else on
+    the run needs updating, and the caller (analysis.js) triggers a normal
+    Recompute right after a successful response to pick up the now-smaller
+    candidate/gap-candidate lists and ward summary, same as every other
+    Step 2 setting change."""
+
+    def post(self, request, program_id, run_id):
+        da = MopupRunDataAccess(program_id, request=request)
+        run = da.get_run(run_id)
+        if run is None:
+            return JsonResponse({"status": "error", "detail": "Run not found."}, status=404)
+        if run.status != STATUS_LOCKED:
+            return JsonResponse(
+                {"status": "error", "detail": "Lock the run before erasing planning gaps."}, status=400
+            )
+
+        da.update_run(
+            run,
+            planning_gap_features=[],
+            planning_gap_building_points=[],
+            planning_gap_warnings={},
+        )
+
+        return JsonResponse({"status": "ok"})
 
 
 _MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # the confirmed real sample was ~28MB

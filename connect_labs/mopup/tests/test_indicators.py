@@ -100,9 +100,10 @@ class TestWaNumeratorDenominator:
         wa = _wa("wa-1", approved_hsd_count=8, deworming_given=3)
         assert ind.wa_numerator_denominator(wa, ind.DEWORMING, {}) == (3, 8)
 
-    def test_ncf_raises_since_it_has_no_rate(self):
+    @pytest.mark.parametrize("key", [ind.NCF, ind.INACCESSIBLE])
+    def test_ncf_and_inaccessible_raise_since_they_have_no_rate(self, key):
         with pytest.raises(ValueError):
-            ind.wa_numerator_denominator(_wa("wa-1"), ind.NCF_INACCESSIBLE, {})
+            ind.wa_numerator_denominator(_wa("wa-1"), key, {})
 
 
 class TestWaRateDataQuality:
@@ -172,34 +173,59 @@ class TestBuildNeighborGraph:
         assert graph == {"a": [], "b": []}
 
 
-class TestNcfAffected:
-    def test_true_when_any_ncf_or_inaccessible_visit(self):
-        wa = _wa("a", building_count=10, approved_ncf_count=1, approved_inaccessible_count=0)
-        assert ind._ncf_affected(wa, {"min_building_count": 1}) is True
+class TestVisitPresenceAffected:
+    """`_visit_presence_affected` — NCF and Inaccessible were one combined
+    indicator until they were split into their own rows/counts; both share
+    this same presence-check shape, differing only in which visit-count
+    field each one reads."""
 
-    def test_false_when_neither(self):
+    @pytest.mark.parametrize(
+        "key,field",
+        [(ind.NCF, "approved_ncf_count"), (ind.INACCESSIBLE, "approved_inaccessible_count")],
+    )
+    def test_true_when_own_visit_type_present(self, key, field):
+        overrides = {"approved_ncf_count": 0, "approved_inaccessible_count": 0, field: 1}
+        wa = _wa("a", building_count=10, **overrides)
+        assert ind._visit_presence_affected(wa, key, {"min_building_count": 1}) is True
+
+    @pytest.mark.parametrize("key", [ind.NCF, ind.INACCESSIBLE])
+    def test_false_when_neither_visit_type_present(self, key):
         wa = _wa("a", building_count=10, approved_ncf_count=0, approved_inaccessible_count=0)
-        assert ind._ncf_affected(wa, {"min_building_count": 1}) is False
+        assert ind._visit_presence_affected(wa, key, {"min_building_count": 1}) is False
 
-    def test_none_when_gated_out_by_min_building_count(self):
-        wa = _wa("a", building_count=0, approved_ncf_count=1)
-        assert ind._ncf_affected(wa, {"min_building_count": 1}) is None
+    @pytest.mark.parametrize("key", [ind.NCF, ind.INACCESSIBLE])
+    def test_none_when_gated_out_by_min_building_count(self, key):
+        wa = _wa("a", building_count=0, approved_ncf_count=1, approved_inaccessible_count=1)
+        assert ind._visit_presence_affected(wa, key, {"min_building_count": 1}) is None
+
+    def test_ncf_and_inaccessible_are_mutually_exclusive_signals(self):
+        # The whole point of the split: an NCF-only visit trips NCF but not
+        # Inaccessible, and vice versa.
+        ncf_only = _wa("a", building_count=10, approved_ncf_count=1, approved_inaccessible_count=0)
+        assert ind._visit_presence_affected(ncf_only, ind.NCF, {"min_building_count": 1}) is True
+        assert ind._visit_presence_affected(ncf_only, ind.INACCESSIBLE, {"min_building_count": 1}) is False
+
+        inaccessible_only = _wa("a", building_count=10, approved_ncf_count=0, approved_inaccessible_count=1)
+        assert ind._visit_presence_affected(inaccessible_only, ind.NCF, {"min_building_count": 1}) is False
+        assert ind._visit_presence_affected(inaccessible_only, ind.INACCESSIBLE, {"min_building_count": 1}) is True
 
 
-class TestNcfNeighborAffectedCount:
-    def test_counts_only_affected_neighbors(self):
+class TestVisitPresenceNeighborCount:
+    def test_counts_only_affected_neighbors_of_the_same_visit_type(self):
         by_id = {
-            "b": _wa("b", building_count=10, approved_ncf_count=1, approved_inaccessible_count=0),  # affected
-            "c": _wa("c", building_count=10, approved_ncf_count=0, approved_inaccessible_count=0),  # not affected
+            "b": _wa("b", building_count=10, approved_ncf_count=1, approved_inaccessible_count=0),  # NCF-affected
+            "c": _wa(
+                "c", building_count=10, approved_ncf_count=0, approved_inaccessible_count=1
+            ),  # Inaccessible-affected, not NCF -- shouldn't count for NCF
             "d": _wa(
                 "d", building_count=0, approved_ncf_count=1, approved_inaccessible_count=0
             ),  # gated out, doesn't count
         }
-        count = ind.ncf_neighbor_affected_count(_wa("a"), ["b", "c", "d"], by_id, {"min_building_count": 1})
+        count = ind.visit_presence_neighbor_count(_wa("a"), ["b", "c", "d"], by_id, ind.NCF, {"min_building_count": 1})
         assert count == 1
 
     def test_missing_neighbor_id_ignored(self):
-        count = ind.ncf_neighbor_affected_count(_wa("a"), ["ghost"], {}, {"min_building_count": 1})
+        count = ind.visit_presence_neighbor_count(_wa("a"), ["ghost"], {}, ind.NCF, {"min_building_count": 1})
         assert count == 0
 
 
@@ -284,33 +310,46 @@ class TestEvaluateRunFloor:
         assert set(candidates[0]["triggered_indicators"]) == {ind.EVC_SHORTFALL, ind.DEWORMING}
         assert candidates[0]["severity_count"] == 2
 
-    def test_ncf_floor_is_presence_not_a_ratio(self):
-        was = [_wa("a", approved_ncf_count=1, approved_inaccessible_count=0)]
-        candidates = ind.evaluate_run(was, {ind.NCF_INACCESSIBLE: {"enabled": True}}, _no_filter())
+    @pytest.mark.parametrize(
+        "key,field",
+        [(ind.NCF, "approved_ncf_count"), (ind.INACCESSIBLE, "approved_inaccessible_count")],
+    )
+    def test_ncf_or_inaccessible_floor_is_presence_not_a_ratio(self, key, field):
+        overrides = {"approved_ncf_count": 0, "approved_inaccessible_count": 0, field: 1}
+        was = [_wa("a", **overrides)]
+        candidates = ind.evaluate_run(was, {key: {"enabled": True}}, _no_filter())
         assert len(candidates) == 1
-        assert candidates[0]["triggered_indicators"] == [ind.NCF_INACCESSIBLE]
+        assert candidates[0]["triggered_indicators"] == [key]
 
-    def test_ncf_not_flagged_when_no_ncf_or_inaccessible_visit(self):
+    @pytest.mark.parametrize("key", [ind.NCF, ind.INACCESSIBLE])
+    def test_ncf_or_inaccessible_not_flagged_when_no_matching_visit(self, key):
         was = [_wa("a", approved_ncf_count=0, approved_inaccessible_count=0)]
-        candidates = ind.evaluate_run(was, {ind.NCF_INACCESSIBLE: {"enabled": True}}, _no_filter())
+        candidates = ind.evaluate_run(was, {key: {"enabled": True}}, _no_filter())
         assert candidates == []
 
-    def test_ncf_detail_names_which_signal_fired(self):
+    def test_ncf_and_inaccessible_trigger_independently(self):
+        # A WA with only an Inaccessible visit trips the Inaccessible row,
+        # not NCF, even with both enabled -- confirms the split isn't just a
+        # relabeling of one shared signal.
+        was = [_wa("a", approved_ncf_count=0, approved_inaccessible_count=1)]
+        candidates = ind.evaluate_run(
+            was, {ind.NCF: {"enabled": True}, ind.INACCESSIBLE: {"enabled": True}}, _no_filter()
+        )
+        assert len(candidates) == 1
+        assert candidates[0]["triggered_indicators"] == [ind.INACCESSIBLE]
+
+    def test_ncf_detail_carries_own_affected(self):
         was = [_wa("a", approved_ncf_count=1, approved_inaccessible_count=0)]
-        candidates = ind.evaluate_run(was, {ind.NCF_INACCESSIBLE: {"enabled": True}}, _no_filter())
-        detail = candidates[0]["detail"][ind.NCF_INACCESSIBLE]
-        assert detail["own_ncf_form"] is True
-        assert detail["own_inaccessible_form"] is False
+        candidates = ind.evaluate_run(was, {ind.NCF: {"enabled": True}}, _no_filter())
+        assert candidates[0]["detail"][ind.NCF]["own_affected"] is True
 
     def test_ncf_corroboration_is_informational_when_filter_disabled(self):
         # With the filter off, NCF's own neighbor distance/count settings
         # still compute an informational "is this part of a cluster" signal,
         # but nothing is ever dropped on account of it.
         was = [_wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0)]
-        candidates = ind.evaluate_run(
-            was, {ind.NCF_INACCESSIBLE: {"enabled": True}}, _no_filter(min_affected_neighbors_ncf=1)
-        )
-        detail = candidates[0]["detail"][ind.NCF_INACCESSIBLE]
+        candidates = ind.evaluate_run(was, {ind.NCF: {"enabled": True}}, _no_filter(min_affected_neighbors_ncf=1))
+        detail = candidates[0]["detail"][ind.NCF]
         assert detail["affected_neighbor_count"] == 0
         assert detail["corroborated"] is False
         assert len(candidates) == 1  # still a candidate -- never gated on this
@@ -336,9 +375,10 @@ class TestEvaluateRunTier:
         candidates = ind.evaluate_run(was, {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5}}, _no_filter())
         assert candidates[0]["tier"] == 1
 
-    def test_ncf_only_is_tier_1(self):
-        was = [_wa("a", approved_ncf_count=1, approved_inaccessible_count=0)]
-        candidates = ind.evaluate_run(was, {ind.NCF_INACCESSIBLE: {"enabled": True}}, _no_filter())
+    @pytest.mark.parametrize("key", [ind.NCF, ind.INACCESSIBLE])
+    def test_ncf_or_inaccessible_only_is_tier_1(self, key):
+        was = [_wa("a")]
+        candidates = ind.evaluate_run(was, {key: {"enabled": True}}, _no_filter())
         assert candidates[0]["tier"] == 1
 
     def test_dq_only_is_tier_2(self):
@@ -406,13 +446,13 @@ class TestEvaluateRunClusterAwareFilter:
         assert candidates == []
 
     def test_ncf_is_dropped_when_isolated_and_filter_enabled(self):
-        # The filter now applies to NCF/inaccessible just like every other
-        # indicator -- "a" is the only WA (no neighbors at all), so it has
-        # nothing to corroborate it and gets dropped.
+        # The filter applies to NCF just like every other indicator -- "a"
+        # is the only WA (no neighbors at all), so it has nothing to
+        # corroborate it and gets dropped.
         was = [_wa("a", lat=12.0, lon=8.0, approved_ncf_count=1, approved_inaccessible_count=0)]
         candidates = ind.evaluate_run(
             was,
-            {ind.NCF_INACCESSIBLE: {"enabled": True}},
+            {ind.NCF: {"enabled": True}},
             {"cluster_aware_filter_enabled": True, "ncf_neighbor_distance_m": 200, "min_affected_neighbors_ncf": 1},
         )
         assert candidates == []
@@ -424,11 +464,11 @@ class TestEvaluateRunClusterAwareFilter:
         ]
         candidates = ind.evaluate_run(
             was,
-            {ind.NCF_INACCESSIBLE: {"enabled": True}},
+            {ind.NCF: {"enabled": True}},
             {"cluster_aware_filter_enabled": True, "ncf_neighbor_distance_m": 250, "min_affected_neighbors_ncf": 1},
         )
         assert {c["wa_id"] for c in candidates} == {"a", "b"}
-        detail = next(c for c in candidates if c["wa_id"] == "a")["detail"][ind.NCF_INACCESSIBLE]
+        detail = next(c for c in candidates if c["wa_id"] == "a")["detail"][ind.NCF]
         assert detail["corroborated"] is True
 
     def test_wa_with_ncf_and_uncorroborated_evc_is_dropped_when_neither_corroborates(self):
@@ -452,7 +492,7 @@ class TestEvaluateRunClusterAwareFilter:
         candidates = ind.evaluate_run(
             was,
             {
-                ind.NCF_INACCESSIBLE: {"enabled": True},
+                ind.NCF: {"enabled": True},
                 ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5},
             },
             {
@@ -494,7 +534,7 @@ class TestEvaluateRunClusterAwareFilter:
         candidates = ind.evaluate_run(
             was,
             {
-                ind.NCF_INACCESSIBLE: {"enabled": True},
+                ind.NCF: {"enabled": True},
                 ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.5},
             },
             {
@@ -506,8 +546,8 @@ class TestEvaluateRunClusterAwareFilter:
             },
         )
         a = next(c for c in candidates if c["wa_id"] == "a")
-        assert set(a["triggered_indicators"]) == {ind.NCF_INACCESSIBLE, ind.EVC_SHORTFALL}
-        assert a["detail"][ind.NCF_INACCESSIBLE]["corroborated"] is True
+        assert set(a["triggered_indicators"]) == {ind.NCF, ind.EVC_SHORTFALL}
+        assert a["detail"][ind.NCF]["corroborated"] is True
         assert a["detail"][ind.EVC_SHORTFALL]["corroborated"] is False
 
     def test_one_corroborating_indicator_keeps_the_whole_wa_unpruned(self):

@@ -27,8 +27,9 @@ window.MopupAnalysis = (function () {
   const INDICATOR_TOOLTIPS = {
     evc_shortfall:
       'How far the number of children actually served (approved Health Service Delivery visits) falls short of the expected number for this work area. A low ratio can mean the area was under-delivered — or that the expected-count estimate itself was too high for this specific cell. Only scored for work areas that have had at least one approved HSD visit — a work area with zero is excluded entirely (it’s already covered by NCF/inaccessible), not counted as a 0% rate.',
-    ncf_inaccessible_rate:
-      "The share of visits to this work area that came back 'No Children Found' or 'Inaccessible' instead of a completed service visit. A high rate can mean the area genuinely has few children — or that it was skipped.",
+    ncf: "This work area has at least one approved visit that came back 'No Children Found' instead of a completed service visit. A work area logs at most one NCF-or-Inaccessible visit ever, so this and Inaccessible are mutually exclusive.",
+    inaccessible:
+      "This work area has at least one approved visit that came back 'Inaccessible' instead of a completed service visit. A work area logs at most one NCF-or-Inaccessible visit ever, so this and NCF are mutually exclusive.",
     deworming:
       'Of children served here, the share who received deworming medication. A low rate can reflect real refusals or a medication stockout — or an FLW not actually administering it.',
     muac: 'Of children served here, the share who had a MUAC (mid-upper arm circumference) measurement recorded.',
@@ -47,20 +48,22 @@ window.MopupAnalysis = (function () {
   let severitySortDesc = true;
 
   // One flat table row per indicator (design mockup, 2026-09, refined per
-  // follow-up feedback) — EVC shortfall and NCF/inaccessible each get their
-  // own Neighbor distance/Min neighbor count cells; deworming/MUAC/
-  // vaccination share ONE merged cell (colspan=2, rowspan=3) holding both
+  // follow-up feedback) — EVC shortfall gets its own Neighbor distance/Min
+  // neighbor count cells; NCF/Inaccessible (split from one combined row into
+  // two, per later reviewer request) and deworming/MUAC/vaccination each
+  // share ONE merged cell (colspan=2, rowspan = group size) holding both
   // inputs side by side plus a caption underneath -- a single overlapping
-  // label rather than repeating "Applies to deworming, MUAC, vaccination"
-  // in two separate columns. A light-grey sub-row directly under EVC's own
-  // row, NCF's own row, and the deworming/MUAC/vaccination group each hold
-  // the settings that only apply to that indicator (or group) -- same
-  // font/size as the rest of the table, just a tinted background, so they
-  // read as part of the table rather than a separate muted aside. Each of
-  // the three groups (EVC + its sub-row, NCF + its sub-row, the trio + its
-  // trailing sub-row) gets a border box so its shared-settings relationship
-  // is visible at a glance.
+  // label rather than repeating "Applies to X, Y only" once per row in the
+  // group. A light-grey sub-row directly under EVC's own row, and under the
+  // LAST row of each of the other two groups, holds the settings that only
+  // apply to that indicator (or group) -- same font/size as the rest of the
+  // table, just a tinted background, so they read as part of the table
+  // rather than a separate muted aside. Each of the three groups (EVC + its
+  // sub-row, the NCF/Inaccessible pair + its trailing sub-row, the
+  // deworming/MUAC/vaccination trio + its trailing sub-row) gets a border
+  // box so its shared-settings relationship is visible at a glance.
   const TIER2_KEYS = ['deworming', 'muac', 'vaccination'];
+  const NCF_GROUP_KEYS = ['ncf', 'inaccessible'];
   const GROUP_BORDER = 'border-gray-300';
 
   function subRowHtml(key, innerHtml, extraTdClasses) {
@@ -71,10 +74,10 @@ window.MopupAnalysis = (function () {
       </tr>`;
   }
 
-  function neighborCellsHtml(def, rowDisabled, tier2State, topBorder) {
+  function neighborCellsHtml(def, rowDisabled, sharedGroupsState, topBorder) {
     if (TIER2_KEYS.includes(def.key)) {
-      if (tier2State.rendered) return '';
-      tier2State.rendered = true;
+      if (sharedGroupsState.tier2.rendered) return '';
+      sharedGroupsState.tier2.rendered = true;
       // Deliberately no .ind-neighbor-distance/.ind-neighbor-count classes
       // here -- this shared cell's disabled state is driven ONLY by the
       // global filter (handled separately below), never by any one of the
@@ -88,37 +91,48 @@ window.MopupAnalysis = (function () {
             <div class="text-[11px] text-gray-500 mt-1">Applies to deworming, MUAC, vaccination</div>
           </td>`;
     }
-    const distanceId =
-      def.key === 'evc_shortfall'
-        ? 'cfg-evc-neighbor-distance'
-        : 'cfg-ncf-neighbor-distance';
-    const countId =
-      def.key === 'evc_shortfall'
-        ? 'cfg-evc-min-neighbor-count'
-        : 'cfg-min-affected-neighbors-ncf';
+    if (NCF_GROUP_KEYS.includes(def.key)) {
+      if (sharedGroupsState.ncf.rendered) return '';
+      sharedGroupsState.ncf.rendered = true;
+      // Same shared-cell shape as the tier2 trio above, just for a pair --
+      // NCF and Inaccessible always use the same neighbor-distance/
+      // min-neighbor-count values (a WA logs at most one of the two visit
+      // types, so there's nothing to differentiate between them here).
+      return `
+          <td class="py-2 pr-2 align-middle border-t-2 ${GROUP_BORDER}" colspan="2" rowspan="2">
+            <div class="flex items-center gap-2">
+              <input type="number" id="cfg-ncf-neighbor-distance" class="base-input" style="width:5rem" min="1">
+              <input type="number" id="cfg-min-affected-neighbors-ncf" class="base-input" style="width:5rem" min="1">
+            </div>
+            <div class="text-[11px] text-gray-500 mt-1">Applies to NCF, Inaccessible</div>
+          </td>`;
+    }
     return `
           <td class="py-2 pr-2 ${
             topBorder || ''
-          }"><input type="number" id="${distanceId}" class="base-input ind-neighbor-distance" style="width:5rem" min="1" ${
+          }"><input type="number" id="cfg-evc-neighbor-distance" class="base-input ind-neighbor-distance" style="width:5rem" min="1" ${
             rowDisabled ? 'disabled' : ''
           }></td>
           <td class="py-2 pr-2 ${
             topBorder || ''
-          }"><input type="number" id="${countId}" class="base-input ind-neighbor-count" style="width:5rem" min="1" ${
+          }"><input type="number" id="cfg-evc-min-neighbor-count" class="base-input ind-neighbor-count" style="width:5rem" min="1" ${
             rowDisabled ? 'disabled' : ''
           }></td>`;
   }
 
   function renderIndicatorRows() {
     const tb = $('indicator-rows');
-    const tier2State = { rendered: false };
+    const sharedGroupsState = {
+      tier2: { rendered: false },
+      ncf: { rendered: false },
+    };
     const rows = [];
     indicatorDefs.forEach((def) => {
       const cfg = indicatorConfigs[def.key] || {
         enabled: true,
         threshold: 0.5,
       };
-      const isNcf = def.key === 'ncf_inaccessible_rate';
+      const isNcfGroup = NCF_GROUP_KEYS.includes(def.key);
       const isEvc = def.key === 'evc_shortfall';
       const isTier2 = TIER2_KEYS.includes(def.key);
       const rowDisabled = !cfg.enabled;
@@ -128,7 +142,7 @@ window.MopupAnalysis = (function () {
       // than "0.2". Rounded to 1 decimal place only to avoid floating-point
       // noise (e.g. 0.7 * 100 -> 69.99999999999999) on round-trip; real
       // precision beyond a tenth of a percent was never meaningful here.
-      const thresholdCell = isNcf
+      const thresholdCell = isNcfGroup
         ? `<span class="text-gray-400 italic">n/a</span>`
         : `<span class="inline-flex items-center gap-1">
             <input type="number" step="0.1" min="0" max="100" class="ind-threshold base-input" style="width:5.5rem" value="${
@@ -141,11 +155,12 @@ window.MopupAnalysis = (function () {
       // every cell of its first row, border-b on its trailing sub-row
       // below, and border-l/border-r on just the first/last cell of every
       // row in between -- same technique the ward-summary table already
-      // uses for its column groups. EVC and NCF are single-row groups (top
-      // row IS the only row); the deworming/MUAC/vaccination trio's top row
-      // is just "deworming".
-      const isGroupTop = isEvc || isNcf || (isTier2 && def.key === 'deworming');
-      const isGroupMember = isEvc || isNcf || isTier2;
+      // uses for its column groups. EVC is a single-row group (top row IS
+      // the only row); the NCF/Inaccessible pair's top row is "ncf", and the
+      // deworming/MUAC/vaccination trio's top row is "deworming".
+      const isGroupTop =
+        isEvc || def.key === 'ncf' || (isTier2 && def.key === 'deworming');
+      const isGroupMember = isEvc || isNcfGroup || isTier2;
       const topBorder = isGroupTop ? `border-t-2 ${GROUP_BORDER} ` : '';
       const leftBorder = isGroupMember ? `border-l-2 ${GROUP_BORDER} ` : '';
       const rightBorder = isGroupMember ? `border-r-2 ${GROUP_BORDER} ` : '';
@@ -164,7 +179,7 @@ window.MopupAnalysis = (function () {
           <td class="py-2 pr-2 ${midBorder}">${thresholdCell}</td>${neighborCellsHtml(
             def,
             rowDisabled,
-            tier2State,
+            sharedGroupsState,
             midBorder,
           )}
           <td class="py-2 pr-2 ind-trigger-count ${rightBorder}${topBorder}">—</td>
@@ -183,10 +198,10 @@ window.MopupAnalysis = (function () {
           ),
         );
       }
-      if (isNcf) {
+      if (def.key === 'inaccessible') {
         rows.push(
           subRowHtml(
-            'ncf_inaccessible_rate_settings',
+            'ncf_inaccessible_settings',
             `<span class="text-gray-600 mr-4">Applies to NCF/inaccessible only</span>
             <span class="inline-flex items-center gap-1">
               Min building count
@@ -274,11 +289,12 @@ window.MopupAnalysis = (function () {
   }
 
   // Two independent greying rules, applied together: a row's own "On"
-  // checkbox greys its Threshold + (for EVC/NCF) its own neighbor inputs;
-  // the global cluster-aware toggle greys EVERY neighbor distance/count
-  // input (including the shared deworming/MUAC/vaccination cell) regardless
-  // of individual row state. Re-run after any relevant checkbox changes,
-  // never on a full re-render, so in-progress edits/focus aren't lost.
+  // checkbox greys its Threshold + (for EVC) its own neighbor inputs; the
+  // global cluster-aware toggle greys EVERY neighbor distance/count input
+  // (including the shared NCF/Inaccessible and deworming/MUAC/vaccination
+  // cells) regardless of individual row state. Re-run after any relevant
+  // checkbox changes, never on a full re-render, so in-progress edits/focus
+  // aren't lost.
   function applyIndicatorRowStates() {
     const filterInput = $('cfg-cluster-filter-enabled');
     const filterOn = filterInput ? filterInput.checked : true;
@@ -297,6 +313,10 @@ window.MopupAnalysis = (function () {
     const tier2Count = $('cfg-tier2-min-neighbor-count');
     if (tier2Distance) tier2Distance.disabled = !filterOn;
     if (tier2Count) tier2Count.disabled = !filterOn;
+    const ncfDistance = $('cfg-ncf-neighbor-distance');
+    const ncfCount = $('cfg-min-affected-neighbors-ncf');
+    if (ncfDistance) ncfDistance.disabled = !filterOn;
+    if (ncfCount) ncfCount.disabled = !filterOn;
   }
 
   function renderGlobalConfig() {
@@ -407,7 +427,8 @@ window.MopupAnalysis = (function () {
 
   const INDICATOR_LABELS = {
     evc_shortfall: 'EVC shortfall',
-    ncf_inaccessible_rate: 'NCF / inaccessible',
+    ncf: 'NCF',
+    inaccessible: 'Inaccessible',
     deworming: 'Deworming completion',
     muac: 'MUAC-recorded rate',
     vaccination: 'Vaccination-given rate',
@@ -419,12 +440,8 @@ window.MopupAnalysis = (function () {
       .map((key) => {
         const label = INDICATOR_LABELS[key] || key;
         const detail = (c.detail || {})[key] || {};
-        if (key === 'ncf_inaccessible_rate') {
-          const signals = [];
-          if (detail.own_ncf_form) signals.push('NCF visit');
-          if (detail.own_inaccessible_form) signals.push('Inaccessible visit');
-          const signal = signals.join(' + ') || 'affected';
-          return esc(`${label} (affected — ${signal})`);
+        if (key === 'ncf' || key === 'inaccessible') {
+          return esc(`${label} (affected)`);
         }
         const rate = detail.rate;
         const num = detail.own_numerator;
@@ -483,7 +500,8 @@ window.MopupAnalysis = (function () {
 
   const INDICATOR_COLORS = {
     evc_shortfall: '#ef4444',
-    ncf_inaccessible_rate: '#f97316',
+    ncf: '#f97316',
+    inaccessible: '#ec4899',
     deworming: '#eab308',
     muac: '#8b5cf6',
     vaccination: '#06b6d4',
@@ -1124,6 +1142,7 @@ window.MopupAnalysis = (function () {
       showReady();
       lastCandidates = data.candidates || [];
       lastGapCandidates = data.gap_candidates || [];
+      $('erase-planning-gaps').disabled = lastGapCandidates.length === 0;
       $('live-count').textContent = data.candidate_count;
       renderWardSummary(data.ward_summary || [], data.gap_summary_by_ward);
       renderCandidates();
@@ -1244,11 +1263,14 @@ window.MopupAnalysis = (function () {
     return checked ? checked.value : 'overture';
   }
 
-  // Step 2's four modes show different controls: Overture's source/
-  // confidence pickers, the upload form, the Google Open Buildings
-  // direct-fetch confidence field, or (for "skip") none of the
-  // building-source config at all — there's nothing to configure when no
-  // new work areas will be added.
+  // Step 2's four modes show different controls: Overture's source picker,
+  // the upload form, or (for "skip") none of the building-source config at
+  // all — there's nothing to configure when no new work areas will be
+  // added. Every mode's own confidence field (Overture's/Open Buildings'
+  // always-populated sliders, upload's optional one) lives in the shared
+  // controls grid next to Min buildings per work area/Work-area size, not in
+  // its own mode-specific block — only one of the three is ever visible at
+  // once, so they share that same grid slot.
   function updateGapModeVisibility() {
     const mode = selectedGapMode();
     $('gap-mode-overture-controls').classList.toggle(
@@ -1256,15 +1278,15 @@ window.MopupAnalysis = (function () {
       mode !== 'overture',
     );
     $('gap-mode-upload-controls').classList.toggle('hidden', mode !== 'upload');
-    $('gap-mode-open-buildings-controls').classList.toggle(
+    $('gap-mode-shared-controls').classList.toggle('hidden', mode === 'skip');
+    $('gap-mode-overture-confidence-wrap').classList.toggle(
+      'hidden',
+      mode !== 'overture',
+    );
+    $('gap-mode-open-buildings-confidence-wrap').classList.toggle(
       'hidden',
       mode !== 'open_buildings',
     );
-    $('gap-mode-shared-controls').classList.toggle('hidden', mode === 'skip');
-    // Lives inside gap-mode-shared-controls (next to Min buildings per work
-    // area / Work-area size), but only means anything in upload mode -- no
-    // confidence-column concept for the automated sources, which have their
-    // own always-on confidence slider in gap-mode-overture-controls instead.
     $('gap-mode-upload-confidence-wrap').classList.toggle(
       'hidden',
       mode !== 'upload',
@@ -1363,6 +1385,39 @@ window.MopupAnalysis = (function () {
     }
   }
 
+  // Step 2's "Erase planning gaps" action: deletes every planning-gap work
+  // area this run has computed (MopupErasePlanningGapsView), independent of
+  // Step 1's own candidate set. A normal Recompute right after picks up the
+  // now-empty gap-candidate list, same pattern previewPlanningGaps already
+  // uses after a successful fetch.
+  async function erasePlanningGaps() {
+    if (lastGapCandidates.length === 0) return;
+    const confirmed = confirm(
+      `Delete all ${lastGapCandidates.length} planning-gap work area(s) for this run? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    $('erase-planning-gaps').disabled = true;
+    $('planning-gaps-status').textContent = 'Erasing planning gaps…';
+    try {
+      const resp = await fetch(CFG.erasePlanningGapsUrl, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': CFG.csrfToken },
+      });
+      const data = await resp.json();
+      if (data.status !== 'ok') {
+        $('planning-gaps-status').textContent =
+          data.detail || 'Failed to erase planning gaps.';
+        $('erase-planning-gaps').disabled = false;
+        return;
+      }
+      $('planning-gaps-status').textContent = 'Planning-gap work areas erased.';
+      pollOrEvaluate();
+    } catch (e) {
+      $('planning-gaps-status').textContent = 'Failed to erase planning gaps.';
+      $('erase-planning-gaps').disabled = false;
+    }
+  }
+
   // Step 2's "upload your own" mode: POSTs the file as multipart form data
   // (not JSON, unlike every other endpoint on this page) so Django's
   // request.FILES sees it. Stores the file server-side; Recompute (a
@@ -1436,6 +1491,7 @@ window.MopupAnalysis = (function () {
     $('lock-run').addEventListener('click', lockRun);
     $('create-plan').addEventListener('click', createPlan);
     $('planning-gaps-recompute').addEventListener('click', previewPlanningGaps);
+    $('erase-planning-gaps').addEventListener('click', erasePlanningGaps);
     document
       .querySelectorAll('.gap-mode-radio')
       .forEach((r) => r.addEventListener('change', updateGapModeVisibility));
