@@ -144,7 +144,7 @@ def in_segment(row, segment: str, delivering: set[str]) -> bool:
     if segment == "nocontact":
         return row.contact_count == 0
     if segment == "repeat":
-        return row.application_count > 1
+        return row.rounds_applied > 1
     return True
 
 
@@ -269,9 +269,20 @@ def round_applicants(round_: Solicitation, delivering: set[str]):
     responses = round_.responses.select_related("llo_entity", "llo_entity__marketplace_profile").order_by(
         "-submission_date", "source_row"
     )
+
+    # One row per ORGANISATION, not per submission. Four organisations sent the
+    # 2025 CHC form twice — the same body, days or months apart, under slightly
+    # different spellings of its own name — and listing each submission made
+    # them look like separate applicants. Unmatched submissions are never
+    # collapsed: two of them being the same organisation is exactly the
+    # question nobody has answered yet.
+    seen: dict[int, dict] = {}
     out = []
     for response in responses:
         org = response.llo_entity
+        if org is not None and org.pk in seen:
+            seen[org.pk]["submissions"] += 1
+            continue
         profile = getattr(org, "marketplace_profile", None) if org else None
         if response.match_state == SolicitationResponse.MATCH_UNMATCHED:
             outcome = "unresolved"
@@ -279,16 +290,17 @@ def round_applicants(round_: Solicitation, delivering: set[str]):
             outcome = "delivering"
         else:
             outcome = "never"
-        out.append(
-            {
-                "response": response,
-                "org": org,
-                "name": (org.name if org else response.org_name) or "(organisation name not given)",
-                "country": (profile.countries[0] if profile and profile.countries else response.country_as_submitted),
-                "flws": profile.flws_managed if profile else None,
-                "outcome": outcome,
-            }
-        )
+        row = {
+            "response": response,
+            "org": org,
+            "name": (org.name if org else response.org_name) or "(organisation name not given)",
+            "country": (profile.countries[0] if profile and profile.countries else response.country_as_submitted),
+            "outcome": outcome,
+            "submissions": 1,
+        }
+        if org is not None:
+            seen[org.pk] = row
+        out.append(row)
     return out
 
 
@@ -390,6 +402,10 @@ def all_rows_with_rounds():
         .annotate(
             contact_count=Count("contacts", distinct=True),
             application_count=Count("solicitation_responses", distinct=True),
+            # Distinct ROUNDS, not submissions. An organisation that sent the
+            # same round's form twice has not "come back for another round",
+            # which is what the segment below claims of it.
+            rounds_applied=Count("solicitation_responses__solicitation", distinct=True),
             last_applied=Max("solicitation_responses__submission_date"),
         )
         .order_by("name")
