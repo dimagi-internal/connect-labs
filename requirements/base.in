@@ -41,6 +41,11 @@ gunicorn[gevent]
 psycopg2-binary
 django-storages[boto3]
 django-anymail[amazon-ses]
+# Floor, not a pin: django-anymail 15 pulls in amazon-s3-encryption-client-python,
+# which caps cryptography below 49 and so drags it BACKWARDS from 50 to 48. A
+# security library does not move backwards to satisfy an email SDK. Remove this
+# once that cap lifts and anymail can move again.
+cryptography>=50
 
 # Labs
 # ------------------------------------------------------------------------------
