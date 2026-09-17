@@ -41,6 +41,9 @@ Fill in:
 
 After you save a new solicitation, Labs takes you directly to that solicitation's responses page so you can monitor for incoming submissions right away.
 
+**Programme tag:**
+Every solicitation now carries a programme tag drawn from Connect's standard programme names (for example, Kangaroo Mother Care, Child Health Campaign, Readers Distribution, Malaria). This tag appears on the marketplace home page, the solicitation page, and the organization page. When creating a solicitation, select the programme it belongs to so organizations can find it through the programme filters and so it is clearly distinguished from other rounds — for example, "CHC 2024 — Northern Nigeria" and "CHC 2025 — East & Southern Africa" appear as separate, clearly labelled rounds rather than both showing as "CHC".
+
 **AI-assisted criteria generation:**
 Click **Generate Criteria** and paste in text describing your program requirements, or upload a PDF. The AI will suggest a structured set of evaluation criteria and scoring weights. Review and adjust the suggestions before saving.
 
@@ -193,7 +196,21 @@ The Audit Trail page is available to Labs administrators only. If you need to re
 
 ### Finding Solicitations
 
-Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (Expression of Interest or Request for Proposals) to find relevant opportunities. Where a solicitation was created from micro-plans, the specific geographic areas on offer are shown on a map with ward boundaries drawn, as well as in a list, on the solicitation page. The map includes a legend showing intervention areas in green and comparison areas in blue.
+Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (Expression of Interest or Request for Proposals) to find relevant opportunities.
+
+**Filtering by programme:**
+The marketplace now offers two programme-based filters to help you find relevant opportunities:
+
+| Filter | What it shows |
+| ------ | ------------- |
+| **Has delivered** | Solicitations from programs your organization has completed delivery work on |
+| **Has applied for** | Solicitations from programs your organization has applied for, whether or not you were selected |
+
+Both filters use Connect's standard programme names — Kangaroo Mother Care, Child Health Campaign, Readers Distribution, Malaria, and so on — the same names you see everywhere else in Connect. The two filters are kept separate because an organization that has applied for a programme but never delivered it is often exactly who a new round is looking for.
+
+Every solicitation displays its programme tag on the marketplace home page, the solicitation page, and the organization page. Round titles include enough detail to tell similar rounds apart — for example, "CHC 2024 — Northern Nigeria" and "CHC 2025 — East & Southern Africa" appear as distinct entries.
+
+Where a solicitation was created from micro-plans, the specific geographic areas on offer are shown on a map with ward boundaries drawn, as well as in a list, on the solicitation page. The map includes a legend showing intervention areas in green and comparison areas in blue.
 
 Solicitations created for finished study programs clearly state their purpose — recruiting an independent survey firm to measure the program's outcomes — and display the number of coverage wards at a readable size.
 
@@ -212,34 +229,4 @@ Where the rubric was locked before the call was published, a **Rubric locked bef
 After you submit, the solicitation page updates to show a **Response submitted** confirmation state. The option to submit another response is no longer shown — this prevents accidental duplicate submissions.
 
 !!! info "Selecting coverage areas"
-Each plan is offered as a whole unit. Clicking any part of a plan's boundary on the map selects that entire plan — you cannot select only part of a plan. Selected plans are highlighted in a distinct colour on the map so it is easy to see at a glance what you have chosen. If a plan includes multiple wards or intervention and control areas, you take all of it. If you are unsure what a plan covers, read the solicitation description or contact the program team before submitting.
-
-!!! warning "Submissions are final"
-Responses cannot be edited after submission. Make sure your response is complete before submitting. If you need to make a correction, contact the program team directly.
-
-### Tracking Your Submission
-
-After submitting, you can view your response status:
-
-| Status           | Meaning                                |
-| ---------------- | -------------------------------------- |
-| **Submitted**    | Received and under consideration       |
-| **Under Review** | Reviewers are scoring your response    |
-| **Approved**     | Selected as the winner — award pending |
-| **Rejected**     | Not selected for this solicitation     |
-
----
-
-## Common Questions
-
-**Can I see other organizations' responses?**
-No — applicants cannot see each other's responses. Program managers see all responses.
-
-**What happens to my response if I'm not selected?**
-Your response remains in Labs for the program team's reference. It is not shared publicly.
-
-**Can I submit responses to multiple solicitations?**
-Yes — each solicitation is independent.
-
-**What is a "fund" in the context of an award?**
-Funds are optional tracking records in Labs that let program teams monitor disbursements after an award is made. They are not required to complete an award.
+Each plan is offered as a whole unit. Clicking any part of a plan's boundary on the
