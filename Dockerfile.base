@@ -9,7 +9,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Build Python wheels
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim-bookworm AS build-python
+FROM python:3.13-slim-bookworm AS build-python
 
 RUN apt-get update \
   && apt-get install -y \
@@ -29,7 +29,7 @@ RUN pip wheel --no-cache-dir --wheel-dir /wheels -r /requirements/base.txt
 # ---------------------------------------------------------------------------
 # Stage 2: Final base image
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim-bookworm
+FROM python:3.13-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1
 ENV DEBUG=0
