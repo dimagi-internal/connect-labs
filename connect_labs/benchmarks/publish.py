@@ -165,9 +165,27 @@ def resolve_benchmarkable_ids(measures) -> set[str]:
             allowed.add(ind)
         elif declared is False:
             allowed.discard(ind)
-        if str(m.get("kind")) in UNPUBLISHABLE_KINDS:
-            allowed.discard(ind)
-    return allowed
+    return allowed - count_indicator_ids(measures)
+
+
+def count_indicator_ids(measures) -> set[str]:
+    """The indicators in one frozen catalog whose value is a COUNT.
+
+    Removed from every allow-list, however that list was arrived at -- the
+    registry's declaration, the unit rule, or a caller's explicit override.
+    Opportunity sizes are visible on the programme report (100 .. 2,189 cases),
+    so an "anonymous" bar reading 1,692 IS that opportunity to anyone who has
+    seen that page.
+
+    `kind` comes off the numerator's type and is what finally tells a count from
+    a mean, which the unit never could: `unit: n` covers both `Registered cases`
+    and `Mean visits per case`.
+    """
+    return {
+        str(m.get("indicator"))
+        for m in measures or []
+        if m.get("indicator") and str(m.get("kind")) in UNPUBLISHABLE_KINDS
+    }
 
 
 def rate_shaped_indicator_ids(measures) -> set[str]:
@@ -374,6 +392,13 @@ def publish_benchmark(
             if benchmarkable_indicator_ids is not None
             else resolve_benchmarkable_ids(measures)
         )
+        # The count guard applies to the OVERRIDE too. It used to sit inside
+        # `resolve_benchmarkable_ids`, which an explicit allow-list skipped
+        # entirely -- so the one rule the whole design exists to enforce was
+        # switched off by the one argument whose purpose is to widen what gets
+        # published. A caller deciding indicator by indicator may add a mean;
+        # it may not add a case count.
+        allowed -= count_indicator_ids(measures)
         # Sorted so publication order is deterministic. The union of both scopes,
         # because an indicator can exist in only one of them.
         for indicator_id in sorted(_indicator_ids(by_opp, monthly, history, series_name)):

@@ -408,6 +408,19 @@ def benchmarks_cohort_delete(user, *, cohort_id: int) -> dict[str, Any]:
                 "description": "The workflow definition id the run belongs to.",
             },
             "run_id": {"type": "integer"},
+            "benchmarkable_indicator_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional. Publish exactly these indicators, instead of what the registry's "
+                    "`meta.benchmarkable` and the rate-shaped unit rule resolve to. For a caller "
+                    "who has decided indicator by indicator -- a one-off or exploratory "
+                    "publication that should not change a shared registry definition, which is a "
+                    "durable policy other reports inherit. A `kind: count` is still refused: "
+                    "widening what may be published must never become the way to publish an "
+                    "opportunity's size."
+                ),
+            },
             "opportunity_id": {
                 "type": "integer",
                 "description": "Scope for loading the run, if it is opportunity-owned.",
@@ -430,6 +443,7 @@ def benchmarks_publish(
     run_id: int,
     opportunity_id: int | None = None,
     program_id: int | None = None,
+    benchmarkable_indicator_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     try:
         cohort = BenchmarkCohort.objects.get(pk=cohort_id)
@@ -513,6 +527,9 @@ def benchmarks_publish(
             registry_id=registry_id,
             as_of=as_of,
             published_by=getattr(user, "username", "") or "",
+            benchmarkable_indicator_ids=(
+                {str(i) for i in benchmarkable_indicator_ids} if benchmarkable_indicator_ids else None
+            ),
         )
     finally:
         wda.close()
