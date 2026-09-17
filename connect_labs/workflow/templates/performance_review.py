@@ -345,6 +345,83 @@ SNAPSHOT_SCHEMA = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Headless cache warm
+# ---------------------------------------------------------------------------
+
+# Config gate. `performance_review` is a GENERIC template with many live
+# instances; only the ones that opt in here are schedulable, so adding this hook
+# does not hand every existing performance_review workflow a Schedule button that
+# would fail the moment it fired. Set it with
+# `workflow_update_definition(patch={"config": {"warm_pipeline_cache": True}})` --
+# config is patchable without a deploy.
+WARM_CACHE_CONFIG_KEY = "warm_pipeline_cache"
+
+
+def run_default(*, definition, access_token, request=None, hold_minutes=None, **_):
+    """Pre-fill every (opportunity, pipeline) cache slot this workflow reads.
+
+    Computes nothing and writes no run. The report still does all of its own
+    arithmetic in the browser exactly as before -- this only means the data is
+    already local when someone opens it, instead of that person waiting on a
+    cold fetch from Connect. Deliberately NOT a precomputed snapshot: the
+    figures live in live-edited render code, and a second server-side copy of
+    the same arithmetic would be free to drift from it silently.
+
+    Scheduling note: a hold is capped at MAX_HOLD_MINUTES (180) on purpose --
+    expiry is what re-reads a visit's status after review, so it cannot be held
+    indefinitely. A schedule slower than the hold therefore leaves the cache
+    cold for the remainder of each gap, which defeats the point; pair this with
+    an interval cadence of 3 hours or less (every 2 hours leaves margin for a
+    missed tick, since the ticker itself only runs periodically).
+
+    Returns ensure_visit_cache's own report: one entry per opportunity naming
+    what happened to each slot. A failing export is reported there rather than
+    raised, so one bad opportunity cannot cost the others.
+    """
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+    from connect_labs.workflow.visit_cache import MAX_HOLD_MINUTES, ensure_visit_cache
+
+    config = (definition.data or {}).get("config") or {}
+    if not config.get(WARM_CACHE_CONFIG_KEY):
+        raise ValueError(
+            f"Workflow {getattr(definition, 'id', '?')} has not opted into the pipeline-cache warm. "
+            f"Set config.{WARM_CACHE_CONFIG_KEY} = true to schedule it."
+        )
+
+    # MAX_HOLD_MINUTES, not DEFAULT_HOLD_MINUTES, is the right default HERE:
+    # run_scheduled_workflow calls run_default_for_definition without
+    # hold_minutes, so an explicit caller is the exception and the scheduler is
+    # the rule. Falling through to DEFAULT (90) while the docstring tells you to
+    # pair this with a <=3h cadence left the cache cold for half of every
+    # window -- a warm that looks configured and silently is not. A caller who
+    # does pass hold_minutes still wins, and the cap still applies.
+    hold = int(hold_minutes or MAX_HOLD_MINUTES)
+    hold = max(1, min(hold, MAX_HOLD_MINUTES))
+
+    if definition.program_id:
+        da = WorkflowDataAccess(access_token=access_token, program_id=definition.program_id)
+        scope = {"program_id": definition.program_id}
+    else:
+        da = WorkflowDataAccess(access_token=access_token, opportunity_id=definition.opportunity_id)
+        scope = {"opportunity_id": definition.opportunity_id}
+    try:
+        report = ensure_visit_cache(da, definition.id, hold_minutes=hold, **scope)
+    finally:
+        da.close()
+
+    # Surface per-opportunity failures the way run_scheduled_workflow expects:
+    # it reads "errors" off any template's return value and shows them as an
+    # amber note under the schedule's green OK, so a half-warmed cohort is
+    # visible instead of looking like a clean run.
+    errors = [
+        f"opportunity {entry.get('opportunity_id')}: {entry.get('error')}"
+        for entry in report.get("opportunities") or []
+        if entry.get("error")
+    ]
+    return {"warmed": report, "errors": errors}
+
+
 # Template export - this is what the registry imports
 TEMPLATE = {
     "key": "performance_review",
@@ -353,6 +430,20 @@ TEMPLATE = {
     "icon": "fa-clipboard-check",
     "color": "green",
     "multi_opp": True,
+    # Schedulable ONLY for instances that set config.warm_pipeline_cache -- see
+    # run_default and definition_supports_default_run.
+    #
+    # `run_default` is deliberately NOT a key here: the registry attaches the
+    # module-level function itself (templates/__init__.py, "if hasattr(module,
+    # 'run_default')"), which is why none of the four templates that already
+    # ship one list it either. Putting it in the literal also breaks
+    # _template_parser, which reads this dict statically and cannot resolve a
+    # bare function name -- CI caught exactly that.
+    #
+    # The gate is spelled out rather than referencing WARM_CACHE_CONFIG_KEY for
+    # the same reason: the literal has to be readable without executing it.
+    "supports_default_run": True,
+    "default_run_config_gate": "warm_pipeline_cache",
     # Run-shaped: opts in to the in_progress | completed lifecycle. Reference
     # implementation for the saved-runs framework — see WORKFLOW_REFERENCE.md
     # §"Saved-runs templates".

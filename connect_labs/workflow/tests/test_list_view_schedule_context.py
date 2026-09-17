@@ -34,8 +34,11 @@ def test_build_row_marks_schedulable_and_attaches_schedule():
 
     schedules_by_def = {42: WorkflowSchedule.objects.get(definition_id=42)}
     with mock.patch(
-        "connect_labs.workflow.views.template_supports_default_run",
-        side_effect=lambda t: t == "program_audit_creator",
+        "connect_labs.workflow.views.definition_supports_default_run",
+        # Takes the DEFINITION, not a template key: the list view asks whether
+        # this workflow can be default-run, which for a gated template like
+        # performance_review depends on its own config and not on its template.
+        side_effect=lambda d: getattr(d, "template_type", None) == "program_audit_creator",
     ):
         row = view._build_workflow_row(_fake_def(42, "program_audit_creator"), [], mock.Mock(), {}, schedules_by_def)
         row_other = view._build_workflow_row(_fake_def(7, "performance_review"), [], mock.Mock(), {}, schedules_by_def)
