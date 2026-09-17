@@ -977,6 +977,9 @@ function WorkflowRunner({
     let lastMessage: string | null = null;
     let lastMessageAt: number | null = null;
     let receivedAny = false;
+    // Set once the payload lands, so the onerror fallback below can tell a
+    // stream that failed from one that finished and then dropped its socket.
+    let gotPipelines = false;
     const startTs = Date.now();
 
     eventSource.onmessage = (event) => {
@@ -1054,6 +1057,7 @@ function WorkflowRunner({
 
         // Data complete - update state and allow render
         if (data.data?.pipelines) {
+          gotPipelines = true;
           setPipelineData(data.data.pipelines);
           setPipelineLoadingStatus(null);
           eventSource.close();
@@ -1097,8 +1101,53 @@ function WorkflowRunner({
       } else {
         detail = `Connection dropped after ${elapsedSec}s. Try reload.`;
       }
-      setError(detail);
       eventSource.close();
+
+      // The stream is the fast path, not the only one.
+      //
+      // Observed in production on 2026-09-17: the SSE endpoint emitted its
+      // first event ("Loading workflow configuration...", 75 bytes) and then
+      // the connection closed with NO error event -- so the worker died
+      // rather than raising, since an exception would have sent one. It
+      // reproduced on two unrelated workflows (13005 and 12898), i.e. it was
+      // the transport, not any one report. Meanwhile the NON-streaming
+      // endpoint serving the identical payload was measured healthy
+      // throughout: ~157 MB in 110-150s, every pipeline complete, repeatedly.
+      //
+      // Every workflow report was therefore unusable while its data sat one
+      // URL away. So a failed stream now retries over plain JSON before
+      // showing the user an error. `detail` is still reported if that fails
+      // too, so a genuine outage reads the same as it did before.
+      if (gotPipelines) return;
+      const directUrl = new URL(url.toString());
+      directUrl.pathname = directUrl.pathname.replace(/stream\/?$/, '');
+      setPipelineLoadingStatus(
+        'Live updates failed - loading the data directly instead. ' +
+          'This can take a few minutes on a large report; leave the tab open.',
+      );
+      fetch(directUrl.toString(), { credentials: 'same-origin' })
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+        .then((payload) => {
+          const pipelines = payload?.pipelines ?? payload;
+          if (
+            !pipelines ||
+            typeof pipelines !== 'object' ||
+            !Object.keys(pipelines).length
+          ) {
+            throw new Error('response carried no pipeline data');
+          }
+          setPipelineData(pipelines);
+          setPipelineLoadingStatus(null);
+        })
+        .catch((e) => {
+          setPipelineLoadingStatus(null);
+          setError(
+            `${detail} Loading directly also failed: ${e?.message || e}.`,
+          );
+        });
     };
 
     return () => eventSource.close();
