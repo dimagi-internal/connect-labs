@@ -24,7 +24,7 @@ def test_upsert_creates_schedule_for_schedulable_workflow(client, logged_in):
 
     with (
         mock.patch("connect_labs.workflow.views._resolve_schedule_scope", return_value=(1237, None)),
-        mock.patch("connect_labs.workflow.views.template_supports_default_run", return_value=True),
+        mock.patch("connect_labs.workflow.views.definition_supports_default_run", return_value=True),
         mock.patch("connect_labs.workflow.views.WorkflowDataAccess") as DA,
     ):
         # ``mock.Mock(name=...)`` is reserved — it names the mock, not a ``.name``
@@ -54,7 +54,7 @@ def test_upsert_rejects_non_schedulable(client, logged_in):
     session.save()
     with (
         mock.patch("connect_labs.workflow.views._resolve_schedule_scope", return_value=(1237, None)),
-        mock.patch("connect_labs.workflow.views.template_supports_default_run", return_value=False),
+        mock.patch("connect_labs.workflow.views.definition_supports_default_run", return_value=False),
         mock.patch("connect_labs.workflow.views.WorkflowDataAccess") as DA,
     ):
         definition = mock.Mock(id=42, template_type="performance_review")
@@ -77,7 +77,7 @@ def test_upsert_non_numeric_day_of_week_is_400(client, logged_in):
     session.save()
     with (
         mock.patch("connect_labs.workflow.views._resolve_schedule_scope", return_value=(1237, None)),
-        mock.patch("connect_labs.workflow.views.template_supports_default_run", return_value=True),
+        mock.patch("connect_labs.workflow.views.definition_supports_default_run", return_value=True),
         mock.patch("connect_labs.workflow.views.WorkflowDataAccess") as DA,
     ):
         definition = mock.Mock(id=42, template_type="program_audit_creator")
@@ -100,7 +100,7 @@ def test_upsert_non_object_json_body_is_400(client, logged_in):
     session.save()
     with (
         mock.patch("connect_labs.workflow.views._resolve_schedule_scope", return_value=(1237, None)),
-        mock.patch("connect_labs.workflow.views.template_supports_default_run", return_value=True),
+        mock.patch("connect_labs.workflow.views.definition_supports_default_run", return_value=True),
         mock.patch("connect_labs.workflow.views.WorkflowDataAccess"),
     ):
         url = reverse("labs:workflow:api_schedule_upsert", args=[42])
@@ -164,7 +164,7 @@ def _post_defaults(client, defaults, options=SCHED_OPTS, existing=None):
     session.save()
     with (
         mock.patch("connect_labs.workflow.views._resolve_schedule_scope", return_value=(1237, None)),
-        mock.patch("connect_labs.workflow.views.template_supports_default_run", return_value=True),
+        mock.patch("connect_labs.workflow.views.definition_supports_default_run", return_value=True),
         mock.patch("connect_labs.workflow.views.schedule_options_for_definition", return_value=options),
         mock.patch("connect_labs.workflow.views.WorkflowDataAccess") as DA,
     ):
@@ -259,7 +259,7 @@ def test_defaults_are_optional_and_absent_ones_write_nothing(client, logged_in):
     session.save()
     with (
         mock.patch("connect_labs.workflow.views._resolve_schedule_scope", return_value=(1237, None)),
-        mock.patch("connect_labs.workflow.views.template_supports_default_run", return_value=True),
+        mock.patch("connect_labs.workflow.views.definition_supports_default_run", return_value=True),
         mock.patch("connect_labs.workflow.views.schedule_options_for_definition", return_value=[]),
         mock.patch("connect_labs.workflow.views.WorkflowDataAccess") as DA,
     ):
@@ -294,7 +294,7 @@ def test_a_failed_config_write_does_not_create_a_schedule(client, logged_in):
     session.save()
     with (
         mock.patch("connect_labs.workflow.views._resolve_schedule_scope", return_value=(1237, None)),
-        mock.patch("connect_labs.workflow.views.template_supports_default_run", return_value=True),
+        mock.patch("connect_labs.workflow.views.definition_supports_default_run", return_value=True),
         mock.patch("connect_labs.workflow.views.schedule_options_for_definition", return_value=SCHED_OPTS),
         mock.patch("connect_labs.workflow.views.WorkflowDataAccess") as DA,
     ):
@@ -514,7 +514,7 @@ def test_an_upstream_write_failure_returns_json_not_an_html_500(client, logged_i
     session.save()
     with (
         mock.patch("connect_labs.workflow.views._resolve_schedule_scope", return_value=(1237, None)),
-        mock.patch("connect_labs.workflow.views.template_supports_default_run", return_value=True),
+        mock.patch("connect_labs.workflow.views.definition_supports_default_run", return_value=True),
         mock.patch("connect_labs.workflow.views.schedule_options_for_definition", return_value=SCHED_OPTS),
         mock.patch("connect_labs.workflow.views.WorkflowDataAccess") as DA,
     ):

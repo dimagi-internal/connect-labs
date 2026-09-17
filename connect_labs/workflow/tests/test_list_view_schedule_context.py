@@ -34,7 +34,7 @@ def test_build_row_marks_schedulable_and_attaches_schedule():
 
     schedules_by_def = {42: WorkflowSchedule.objects.get(definition_id=42)}
     with mock.patch(
-        "connect_labs.workflow.views.template_supports_default_run",
+        "connect_labs.workflow.views.definition_supports_default_run",
         side_effect=lambda t: t == "program_audit_creator",
     ):
         row = view._build_workflow_row(_fake_def(42, "program_audit_creator"), [], mock.Mock(), {}, schedules_by_def)

@@ -432,9 +432,18 @@ TEMPLATE = {
     "multi_opp": True,
     # Schedulable ONLY for instances that set config.warm_pipeline_cache -- see
     # run_default and definition_supports_default_run.
+    #
+    # `run_default` is deliberately NOT a key here: the registry attaches the
+    # module-level function itself (templates/__init__.py, "if hasattr(module,
+    # 'run_default')"), which is why none of the four templates that already
+    # ship one list it either. Putting it in the literal also breaks
+    # _template_parser, which reads this dict statically and cannot resolve a
+    # bare function name -- CI caught exactly that.
+    #
+    # The gate is spelled out rather than referencing WARM_CACHE_CONFIG_KEY for
+    # the same reason: the literal has to be readable without executing it.
     "supports_default_run": True,
-    "run_default": run_default,
-    "default_run_config_gate": WARM_CACHE_CONFIG_KEY,
+    "default_run_config_gate": "warm_pipeline_cache",
     # Run-shaped: opts in to the in_progress | completed lifecycle. Reference
     # implementation for the saved-runs framework — see WORKFLOW_REFERENCE.md
     # §"Saved-runs templates".
