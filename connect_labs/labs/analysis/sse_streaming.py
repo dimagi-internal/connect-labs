@@ -29,6 +29,17 @@ def _drain(iterator, size):
     The error is RETURNED rather than raised so the items produced before it can
     still be yielded -- a subclass that fails on row 900 of 1000 has already
     written 899 useful rows, and the SSE error event it yields is the 900th.
+
+    That is why BaseException is caught and not just Exception. Letting one
+    escape the executor means the future raises, the batch in hand is discarded,
+    and the client gets NOTHING -- not even the events already produced. The
+    wrapper this replaced delivered them, so catching only Exception here was a
+    regression against it, found by running both against a generator that
+    raises `CancelledError` after its first event: 0 events out of the new path,
+    1 out of the old.
+
+    `GeneratorExit` is re-raised: it does not come FROM the generator, it is the
+    consumer closing us, and swallowing it would make close() a no-op.
     """
     items = []
     for _ in range(size):
@@ -36,7 +47,9 @@ def _drain(iterator, size):
             items.append(next(iterator))
         except StopIteration:
             return items, True, None
-        except Exception as exc:  # noqa: BLE001 -- carried to the consumer intact
+        except GeneratorExit:
+            raise
+        except BaseException as exc:  # noqa: BLE001 -- carried to the consumer intact
             return items, True, exc
     return items, False, None
 
@@ -263,6 +276,18 @@ class BaseSSEStreamView(LoginRequiredMixin, View):
                 if error is not None:
                     # Raised in the CONSUMER, as the sync wrapper did. Whatever
                     # the generator produced before failing was yielded above.
+                    #
+                    # Logged as well as raised: a stream that ends early is
+                    # indistinguishable from one that ended normally from the
+                    # outside, and "the error event never arrived" is what made
+                    # #1888 take fifteen hours to diagnose.
+                    logger.warning(
+                        "SSE stream ended early: %s(%s) after %d event(s)",
+                        type(error).__name__,
+                        error,
+                        len(items),
+                        exc_info=error if isinstance(error, Exception) else None,
+                    )
                     raise error
                 if done:
                     return
