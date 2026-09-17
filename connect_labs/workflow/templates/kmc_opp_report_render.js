@@ -711,15 +711,22 @@ function WorkflowUI({
             );
           })}
         </div>
-        <div className="mt-1 flex justify-between text-[11px] text-gray-500">
-          <span>
+        {/* Two columns at half-width: the left label must wrap INSIDE its own
+            column and the reading must stay whole. Without `min-w-0` a flex
+            child refuses to shrink below its content, so the label overran the
+            value and the two printed on top of each other -- which is how a
+            paired card looks at 530px, not at full width where it was drawn. */}
+        <div className="mt-1 flex items-baseline justify-between gap-2 text-[11px] text-gray-500">
+          <span className="min-w-0">
             {values.length} anonymous peer{values.length === 1 ? '' : 's'}
             {ownNum === null ? '' : ' + this opportunity'}, low to high
           </span>
           {ownNum === null ? (
-            <span className="text-gray-400">this opportunity: no value</span>
+            <span className="shrink-0 whitespace-nowrap text-gray-400">
+              this opportunity: no value
+            </span>
           ) : (
-            <span className="text-indigo-700 font-semibold">
+            <span className="shrink-0 whitespace-nowrap text-indigo-700 font-semibold">
               this opportunity: {fmtValue(measure, ownNum)}
             </span>
           )}
@@ -897,17 +904,17 @@ function WorkflowUI({
               })
             : null}
         </svg>
-        <div className="mt-1 text-[11px] text-gray-500 flex justify-between gap-2">
-          <span>
+        <div className="mt-1 text-[11px] text-gray-500 flex items-baseline justify-between gap-2">
+          <span className="min-w-0">
             {peerCount} anonymous peer{peerCount === 1 ? '' : 's'} · reports
             since each one joined
           </span>
           {hasOwn ? (
-            <span className="text-indigo-700 font-semibold">
+            <span className="shrink-0 whitespace-nowrap text-indigo-700 font-semibold">
               this opportunity
             </span>
           ) : (
-            <span className="text-gray-400">
+            <span className="shrink-0 whitespace-nowrap text-gray-400">
               this opportunity: not in the window
             </span>
           )}
