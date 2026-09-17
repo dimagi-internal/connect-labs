@@ -131,7 +131,7 @@ def test_schedule_dict_carries_every_key_the_template_reads():
     schedules_by_def = {99: WorkflowSchedule.objects.get(definition_id=99)}
 
     with mock.patch(
-        "connect_labs.workflow.views.template_supports_default_run",
+        "connect_labs.workflow.views.definition_supports_default_run",
         side_effect=lambda t: True,
     ):
         row = view._build_workflow_row(_fake_def(99, "program_audit_creator"), [], mock.Mock(), {}, schedules_by_def)
@@ -171,7 +171,7 @@ def test_a_scheduled_card_renders_no_empty_x_data_value():
     view = WorkflowListView()
     schedules_by_def = {101: WorkflowSchedule.objects.get(definition_id=101)}
     with mock.patch(
-        "connect_labs.workflow.views.template_supports_default_run",
+        "connect_labs.workflow.views.definition_supports_default_run",
         side_effect=lambda t: True,
     ):
         row = view._build_workflow_row(_fake_def(101, "program_audit_creator"), [], mock.Mock(), {}, schedules_by_def)
