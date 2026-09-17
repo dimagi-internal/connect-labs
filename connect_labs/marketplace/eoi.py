@@ -111,8 +111,36 @@ def check_access(read_tab, *, write_back_to=None, spreadsheet_id=None) -> list[d
     return results
 
 
+def next_step_for(round_) -> str:
+    """The one action outstanding on this round, as a person would say it.
+
+    A status column tells you what is true; it does not tell you what to do
+    about it, and the two are not the same sentence. Somebody reading this tab
+    should be able to work down it without cross-referencing three other
+    columns to work out whose turn it is.
+
+    Derived, never typed: a hand-written to-do goes stale the moment the thing
+    it describes is done, and then reads as work outstanding forever.
+    """
+    if round_.sa_access_state == ACCESS_MISSING:
+        return "YOU: add the Response Sheet Link (column M) — the form has no responses sheet recorded"
+    if round_.sa_access_state == ACCESS_DENIED:
+        return f"YOU: share the response sheet with {_SA_EMAIL} (Viewer is enough)"
+    if not round_.delivery_type:
+        return "YOU: set the Connect Programme (column S) — see the EOI/RFP tab notes for the allowed values"
+    if not round_.last_ingested_at:
+        return "LABS: readable and tagged — will ingest on the next run"
+    return ""
+
+
+# The identity that has to be able to read each response sheet. Named here
+# rather than in the message so it cannot drift between the two places the
+# sheet and the docs say it.
+_SA_EMAIL = "connect-labs-sa@connect-labs.iam.gserviceaccount.com"
+
+
 def _write_access_columns(results, rounds, spreadsheet_id) -> None:
-    """Put the verified state in the two columns labs owns on the rounds tab.
+    """Put the verified state in the three columns labs owns on the rounds tab.
 
     Keyed on the row each round was parsed from, so a reordered sheet cannot
     write a verdict against the wrong round. A round whose row is unknown is
@@ -122,6 +150,7 @@ def _write_access_columns(results, rounds, spreadsheet_id) -> None:
 
     by_slug = {r.slug: r.source_row for r in rounds if r.source_row}
     stamp = timezone.now().strftime("%Y-%m-%d %H:%M UTC")
+    saved = {r.slug: r for r in Solicitation.objects.all()}
     updates = []
     for result in results:
         row = by_slug.get(result["slug"])
@@ -130,6 +159,10 @@ def _write_access_columns(results, rounds, spreadsheet_id) -> None:
         label = ACCESS_LABELS.get(result["state"], result["state"])
         # Columns P and Q: "Labs Access" and "Labs Access Checked".
         updates.append((f"'{directory.ROUNDS_TAB}'!P{row}:Q{row}", [[label, stamp]]))
+        round_ = saved.get(result["slug"])
+        if round_ is not None:
+            # Column T: "Next Step", derived from what was just verified.
+            updates.append((f"'{directory.ROUNDS_TAB}'!T{row}", [[next_step_for(round_)]]))
     directory.update_cells(spreadsheet_id, updates)
 
 
