@@ -9,6 +9,7 @@ import datetime as dt
 import pytest
 from django.urls import reverse
 
+from connect_labs.marketplace import queries
 from connect_labs.marketplace.models import OrgContact
 from connect_labs.marketplace.testing import make_partner
 from connect_labs.pulse.models import PulseEvent, PulseOpportunity
@@ -145,13 +146,13 @@ class TestRoundPage:
         client.force_login(user)
         body = client.get(reverse("marketplace:round", args=["chc-2025"])).content.decode()
         assert "Northlake Maternal Health Network" in body
-        assert "delivering" in body
+        assert "started after" in body
         assert "never activated" in body
 
     def test_counts_applicants_by_outcome(self, client, user, marketplace):
         client.force_login(user)
         response = client.get(reverse("marketplace:round", args=["chc-2025"]))
-        assert response.context["delivering_count"] == 1
+        assert response.context["after_count"] == 1
         assert response.context["never_count"] == 1
         assert response.context["unresolved_count"] == 1
 
@@ -308,3 +309,146 @@ class TestASubmissionIsNotAnApplicant:
         client.force_login(user)
         segments = {s["key"]: s["count"] for s in client.get(reverse("marketplace:network")).context["segments"]}
         assert segments["repeat"] == 1
+
+
+@pytest.mark.django_db
+class TestTheRoundPageDoesNotClaimCausation:
+    """ "Now delivering" counted every applicant delivering on Connect at all,
+    under a column headed "Since this round" — so an organisation that had been
+    delivering for a year before the round opened was presented as something
+    the round produced.
+    """
+
+    @pytest.fixture
+    def timed(self, db):
+        import datetime as dt
+
+        from connect_labs.pulse.models import PulseEvent, PulseOpportunity
+
+        early = make_partner("Early Bird Trust", "EBT", countries=["Kenya"])
+        late = make_partner("Latecomer Health", "LH", countries=["Kenya"])
+        round_ = Solicitation.objects.create(
+            slug="timed-2025",
+            title="Timed",
+            status="closed",
+            sa_access_state="ok",
+            application_deadline=dt.date(2025, 6, 1),
+        )
+        for i, (org, when) in enumerate(
+            (
+                (early, dt.datetime(2024, 3, 1, tzinfo=dt.timezone.utc)),
+                (late, dt.datetime(2025, 9, 1, tzinfo=dt.timezone.utc)),
+            )
+        ):
+            PulseOpportunity.objects.create(
+                opportunity_id=500 + i, name="Op", org_slug=org.slug, service_slug="chc", lifetime_visit_count=5
+            )
+            PulseEvent.objects.create(
+                connect_visit_id=500 + i,
+                opportunity_id=500 + i,
+                program_id=1,
+                org_slug=org.slug,
+                worker_hash="w",
+                field_ts=when,
+                sync_ts=when,
+                status="approved",
+            )
+            SolicitationResponse.objects.create(
+                solicitation=round_, llo_entity=org, source_row=2 + i, org_name=org.name, match_state="name"
+            )
+        queries.invalidate()
+        return round_
+
+    def test_an_organisation_already_delivering_is_not_credited_to_the_round(self, client, user, timed):
+        client.force_login(user)
+        context = client.get(reverse("marketplace:round", args=["timed-2025"])).context
+        outcomes = {a["name"]: a["outcome"] for a in context["applicants"]}
+        assert outcomes["Early Bird Trust"] == "before"
+        assert outcomes["Latecomer Health"] == "after"
+
+    def test_the_headline_counts_only_those_who_started_afterwards(self, client, user, timed):
+        client.force_login(user)
+        context = client.get(reverse("marketplace:round", args=["timed-2025"])).context
+        assert context["after_count"] == 1
+        assert context["before_count"] == 1
+
+    def test_the_page_says_it_is_comparing_dates_not_proving_cause(self, client, user, timed):
+        client.force_login(user)
+        body = client.get(reverse("marketplace:round", args=["timed-2025"])).content.decode()
+        assert "not that one caused the other" in body
+        assert "already delivering" in body
+
+    def test_needs_a_verdict_is_explained_where_it_is_read(self, client, user, timed):
+        client.force_login(user)
+        body = client.get(reverse("marketplace:round", args=["timed-2025"])).content.decode()
+        assert "could not be matched to any" in body
+
+
+@pytest.mark.django_db
+class TestTheSubmissionTrend:
+    @pytest.fixture
+    def spread(self, db):
+        import datetime as dt
+
+        org = make_partner("Trend Trust", "TT", countries=["Kenya"])
+        round_ = Solicitation.objects.create(slug="spread-2025", title="Spread", status="closed", sa_access_state="ok")
+        # Two bursts three months apart — the shape a total cannot show.
+        days = [dt.date(2025, 2, 3)] * 5 + [dt.date(2025, 2, 4)] * 2 + [dt.date(2025, 5, 12)] * 3
+        for i, day in enumerate(days):
+            SolicitationResponse.objects.create(
+                solicitation=round_,
+                llo_entity=org if i == 0 else None,
+                source_row=2 + i,
+                org_name=f"Applicant {i}",
+                match_state="name" if i == 0 else "unmatched",
+                submission_date=day,
+            )
+        return round_
+
+    def test_buckets_by_week_over_a_long_round(self, spread):
+        trend = queries.submission_trend(spread)
+        assert [b["days"] for b in trend] == [7] * len(trend)
+        assert sum(b["count"] for b in trend) == 10
+        assert trend[0]["count"] == 7  # the opening burst
+
+    def test_the_busiest_bucket_is_full_height(self, spread):
+        assert max(b["pct"] for b in queries.submission_trend(spread)) == 100.0
+
+    def test_a_short_round_buckets_by_day(self, db):
+        import datetime as dt
+
+        round_ = Solicitation.objects.create(slug="short-2025", title="Short", status="closed")
+        for i, day in enumerate((dt.date(2025, 3, 1), dt.date(2025, 3, 2), dt.date(2025, 3, 3))):
+            SolicitationResponse.objects.create(
+                solicitation=round_, source_row=2 + i, org_name=f"A{i}", match_state="unmatched", submission_date=day
+            )
+        assert [b["days"] for b in queries.submission_trend(round_)] == [1, 1, 1]
+
+    def test_a_round_with_one_submission_draws_nothing(self, db):
+        import datetime as dt
+
+        round_ = Solicitation.objects.create(slug="one-2025", title="One", status="closed")
+        SolicitationResponse.objects.create(
+            solicitation=round_,
+            source_row=2,
+            org_name="A",
+            match_state="unmatched",
+            submission_date=dt.date(2025, 3, 1),
+        )
+        assert queries.submission_trend(round_) == []
+
+    def test_the_page_draws_the_trend(self, client, user, spread):
+        client.force_login(user)
+        body = client.get(reverse("marketplace:round", args=["spread-2025"])).content.decode()
+        assert "When the submissions arrived" in body
+        assert "submissions from 3 Feb 2025" in body or "submission" in body
+
+
+@pytest.mark.django_db
+class TestTheRoundPageShowsNoInternalIdentifiers:
+    def test_the_slug_is_not_printed_at_the_reader(self, client, user, marketplace):
+        """`chc-2025` is how the URL addresses the round, not something to read."""
+        client.force_login(user)
+        body = client.get(reverse("marketplace:round", args=["chc-2025"])).content.decode()
+        head = body[: body.find("Who applied")]
+        assert ">chc-2025<" not in head
