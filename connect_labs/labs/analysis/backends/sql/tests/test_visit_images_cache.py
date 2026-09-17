@@ -75,7 +75,7 @@ class TestReadingPhotosFromAWarmSlot:
         # A real list, not a bare MagicMock: the shrink guard inspects what came
         # back, and a mock makes it retry -- which would read as "called twice".
         fresh = [_visit(1, [{"url": "photo"}]), _visit(2)]
-        with patch.object(SQLBackend, "_fetch_from_api", return_value=fresh) as from_api:
+        with patch.object(SQLBackend, "_fetch_raw_visits_uncached", return_value=fresh) as from_api:
             rows = backend.fetch_raw_visits(
                 opportunity_id=OPP,
                 access_token="t",
