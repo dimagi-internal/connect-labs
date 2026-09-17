@@ -736,16 +736,26 @@ function WorkflowUI({
   }
 
   // ── This opportunity against its peers, over time ─────────────────────────
-  // The x axis is TENURE, not the calendar: M0 is each opportunity's own first
-  // month. Published that way because a cohort whose opportunities started
-  // across seven months was otherwise comparing somebody's first month against
-  // somebody else's sixth -- and because a line that starts late on a calendar
-  // axis says when that opportunity began, which identifies it.
-  // `R3` is the opportunity's own fourth report. (`M3` was an earlier,
-  // cohort-month axis; still parsed so an older publication still charts.)
+  // The x axis is TENURE, not the calendar: `W7` is everybody's eighth week of
+  // delivering, counted from each opportunity's own first week of activity. A
+  // cohort whose members started sixteen months apart is otherwise comparing
+  // somebody's first week against somebody else's seventieth -- and a line
+  // placed on a calendar axis says when that opportunity began, which
+  // identifies it.
+  // Two older axes are still parsed so an existing publication keeps charting:
+  // `R3` was the opportunity's own fourth REPORT (which silently made a
+  // finished opportunity's repeated final figure look like its first weeks),
+  // and `M3` was a cohort-month axis before that.
   function periodNumber(p) {
-    var m = /^[RM](\d+)$/.exec(String(p || ''));
+    var m = /^[WRM](\d+)$/.exec(String(p || ''));
     return m ? Number(m[1]) : -1;
+  }
+
+  // "W7" -> "week 8": the axis is read by humans, and W7 invites an off-by-one.
+  function periodLabel(p) {
+    var n = periodNumber(p);
+    if (n < 0) return String(p || '');
+    return /^W/.test(String(p)) ? 'week ' + (n + 1) : String(p);
   }
 
   function PeerTrend(props) {
@@ -862,7 +872,7 @@ function WorkflowUI({
                 fontSize="7"
                 fill="#9ca3af"
               >
-                {p}
+                {periodLabel(p)}
               </text>
             );
           })}
@@ -898,7 +908,9 @@ function WorkflowUI({
                     stroke="#fff"
                     strokeWidth="1"
                   >
-                    <title>{periods[i] + ': ' + fmtValue(measure, v)}</title>
+                    <title>
+                      {periodLabel(periods[i]) + ': ' + fmtValue(measure, v)}
+                    </title>
                   </circle>
                 );
               })
@@ -906,8 +918,8 @@ function WorkflowUI({
         </svg>
         <div className="mt-1 text-[11px] text-gray-500 flex items-baseline justify-between gap-2">
           <span className="min-w-0">
-            {peerCount} anonymous peer{peerCount === 1 ? '' : 's'} · reports
-            since each one joined
+            {peerCount} anonymous peer{peerCount === 1 ? '' : 's'} · each one's
+            own weeks of delivering
           </span>
           {hasOwn ? (
             <span className="shrink-0 whitespace-nowrap text-indigo-700 font-semibold">
@@ -1042,8 +1054,9 @@ function WorkflowUI({
           against its peers today, and how it got there. Peers are anonymous and
           re-sorted per indicator, so a bar cannot be followed from one chart to
           the next. This opportunity is the blue bar and the blue line; a trend
-          runs across each opportunity's own first reports, so a cohort whose
-          members joined at different times still lines up.
+          runs on each opportunity's own weeks of delivering — week 1 is week 1
+          for everybody — so a cohort whose members started months apart is
+          compared like with like.
         </div>
         {blocks}
       </div>
