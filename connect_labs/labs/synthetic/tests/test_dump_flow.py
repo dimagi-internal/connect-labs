@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -65,9 +66,24 @@ def _fake_fetch(data_by_key):
 
 
 def _collect_events(resp):
-    """Parse SSE body into a list of JSON event dicts."""
+    """Parse SSE body into a list of JSON event dicts.
+
+    `streaming_content` is an ASYNC iterator for any view built on
+    `BaseSSEStreamView` (#1899): that is what makes Django stream the body
+    instead of draining it with `sync_to_async(list)` and sending one batch at
+    the end. Both shapes are handled so this helper does not pin the transport.
+    """
+    if hasattr(resp.streaming_content, "__aiter__"):
+
+        async def drain():
+            return [chunk async for chunk in resp.streaming_content]
+
+        chunks = asyncio.run(drain())
+    else:
+        chunks = list(resp.streaming_content)
+
     events = []
-    for chunk in resp.streaming_content:
+    for chunk in chunks:
         for line in chunk.decode().splitlines():
             line = line.strip()
             if line.startswith("data: "):
