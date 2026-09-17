@@ -78,7 +78,7 @@ jobs:
         id: py
         uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.13'
       # Run pre-commit directly (instead of pre-commit/action@v3.0.0, which pins the
       # deprecated actions/cache@v3 → Node 20 warning) with a current cache action.
       #
@@ -327,7 +327,7 @@ jobs:
         id: py
         uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.13'
           cache: pip
           # The real requirement files, not requirements-dev.txt — that is a
           # three-line wrapper that just includes these two and has never changed,
@@ -344,10 +344,10 @@ jobs:
       # venv's scripts hard-code absolute paths, which is fine here because the
       # workspace path is identical on every runner.
       #
-      # The key carries the RESOLVED interpreter version, not the '3.11' we
+      # The key carries the RESOLVED interpreter version, not the '3.13' we
       # asked for. The venv's python is a symlink into the runner's toolcache
-      # (/opt/hostedtoolcache/Python/3.11.<patch>/x64), so the day setup-python
-      # moves to the next patch release, a cache keyed on '3.11' restores a venv
+      # (/opt/hostedtoolcache/Python/3.13.<patch>/x64), so the day setup-python
+      # moves to the next patch release, a cache keyed on '3.13' restores a venv
       # whose interpreter no longer exists -- and every run fails on
       # "No such file or directory" until someone works out that the fix is to
       # bump a cache key.
