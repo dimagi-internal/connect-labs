@@ -129,7 +129,7 @@ def anonymise_series(
     EVERY period of it -- so no series starts late, ends early or has a hole.
     `require_complete=False` drops R6 alone (R1 and R5 still hold), which a
     cohort may choose when complete lines would leave it with no series at all;
-    see the comment at R6 for why the tenure axis makes that defensible.
+    see the comment at R6 for exactly what that costs on a tenure axis.
 
     A single ordering is computed ONCE for the whole series (by each surviving
     peer's mean value across the in-window periods, tie-broken the same way as
@@ -158,11 +158,21 @@ def anonymise_series(
     # cohort -- members join at different times, so the intersection of "in
     # every period" collapses to whoever has been running longest.
     #
-    # What makes relaxing it defensible is the AXIS. Periods are that
-    # opportunity's own Nth report, so an incomplete line says "this one has
-    # fewer reports than the longest-running peer", not when it joined or on
-    # what date anything happened. R5 still holds per period, so no period is
-    # published that too few peers reached.
+    # The AXIS is what decides how much relaxing it costs, and it is worth being
+    # exact. A period is a TENURE WEEK -- that opportunity's own Nth week of
+    # delivering -- so no period names a date, whichever way this is set.
+    #
+    # With R6 ON every surviving line spans the same window, so no line's extent
+    # says anything about the peer it belongs to. With R6 OFF a line's extent is
+    # that peer's tenure, and for a peer still delivering (whose last point is
+    # near the publication's as-of date) tenure dates its start to within a week.
+    # That is a real disclosure, it is why ON is the default, and it is why a
+    # cohort of real delivery partners should leave it on. OFF is for a cohort
+    # that would otherwise have no series at all -- members join at different
+    # times, so the intersection collapses to whoever has run longest.
+    #
+    # R5 still holds per period either way, so no period is published that too
+    # few peers reached.
     per_period_ids = [{o.opportunity_id for o in eligible_by_period[p]} for p in window]
     complete = set.intersection(*per_period_ids) if require_complete else set.union(*per_period_ids)
     if len(complete) < min_peers:  # R1, re-checked after R6 thins the set
