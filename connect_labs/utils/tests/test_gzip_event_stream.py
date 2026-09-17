@@ -1,9 +1,22 @@
-"""Gzip must skip `text/event-stream`, and here is what happens when it doesn't.
+"""Gzip must skip `text/event-stream`.
 
-Django's GZipMiddleware is installed only in `labs_aws`, so the one environment
-that compresses is the one nobody tests against. That gap cost a live break:
-#1902 made SSE bodies async, every SSE view on labs started delivering exactly
-one event, and CI was green throughout.
+Two reasons, and only one of them is still a defect.
+
+WAS: on Django 5.2, a streaming body was compressed one way when sync
+(`compress_sequence`, one gzip stream) and another when async
+(`compress_string` PER CHUNK, a separate gzip member each). Browsers stop at
+the end of the first member, so when #1902 made SSE bodies async every SSE view
+on labs began delivering exactly one event. Django 6.0 fixed it --
+`acompress_sequence` -- and `test_stock_django_...` below pins that, so a
+regression or a downgrade is caught rather than rediscovered in production.
+
+IS: an event stream exists to deliver each event the moment it happens, and
+compression trades that for a ratio nobody asked for. That reason does not
+expire with a Django version, which is why this middleware stays.
+
+Worth keeping in view: GZipMiddleware is installed only in `labs_aws`, so the
+one environment that compresses is the one nobody tests against. CI was green
+throughout the break.
 """
 
 import asyncio
@@ -50,21 +63,26 @@ def _first_gzip_member(payload):
     return zlib.decompressobj(zlib.MAX_WBITS | 16).decompress(payload)
 
 
-def test_stock_django_truncates_an_async_event_stream_to_its_first_event():
-    """The defect, demonstrated — not asserted from the changelog.
+def test_stock_django_compresses_an_async_stream_as_one_gzip_stream():
+    """Pins the upstream fix we now rely on, by driving stock Django.
 
-    If a future Django makes the async path a single gzip stream, this test
-    fails and the subclass can go.
+    On 5.2 the first member held ONE event and a browser read no further, which
+    is how every SSE view on labs came to deliver a single event. 6.0 compresses
+    an async body with `acompress_sequence`, so the whole thing is one member.
+
+    Asserted rather than assumed: if this ever goes back to a member per chunk,
+    the middleware beside it stops being a latency preference and becomes
+    load-bearing again, and whoever is here should know that from a red test.
     """
     response = GZipMiddleware(lambda r: None).process_response(_request(), _sse_response())
     assert response.headers.get("Content-Encoding") == "gzip", "Django stopped compressing this"
 
     payload = _body(response)
-    assert _first_gzip_member(payload) == EVENTS[0].encode(), (
-        "the first gzip member no longer holds exactly one event; the truncation "
-        "this middleware exists to avoid may have changed shape"
+    assert _first_gzip_member(payload) == "".join(EVENTS).encode(), (
+        "stock Django split an async stream across gzip members again — a browser "
+        "reads only the first one, so every SSE view would truncate (5.2 behaviour, "
+        "fixed in 6.0, see #1904)"
     )
-    # Every event IS in there — as separate members, which a browser will not read.
     assert gzip.decompress(payload) == "".join(EVENTS).encode()
 
 

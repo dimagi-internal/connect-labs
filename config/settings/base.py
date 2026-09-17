@@ -131,6 +131,10 @@ DJANGO_APPS = [
     "django.contrib.humanize",  # Handy template tags
     "django.contrib.admin",
     "django.contrib.gis",
+    # Required from Django 6.0: a model using ArrayField (or any other
+    # postgres-only field) is a system-check ERROR without it — postgres.E005.
+    # It was working on 5.2 only because nothing checked.
+    "django.contrib.postgres",
     "django.forms",
 ]
 THIRD_PARTY_APPS = [

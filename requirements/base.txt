@@ -126,7 +126,7 @@ distro==1.9.0
     #   google-genai
     #   groq
     #   openai
-django==5.2.17
+django==6.0.8
     # via
     #   -r requirements/base.in
     #   crispy-tailwind
@@ -149,7 +149,7 @@ django==5.2.17
     #   drf-spectacular
 django-anymail[amazon-ses]==14.0
     # via -r requirements/base.in
-django-autocomplete-light==3.12.1
+django-autocomplete-light==5.0.0
     # via -r requirements/base.in
 django-celery-beat==2.9.0
     # via -r requirements/base.in
@@ -173,11 +173,11 @@ django-pghistory==3.9.2
     # via -r requirements/base.in
 django-pgtrigger==4.17.0
     # via django-pghistory
-django-redis==6.0.0
+django-redis==7.0.0
     # via -r requirements/base.in
 django-storages[boto3]==1.14.6
     # via -r requirements/base.in
-django-tables2==2.8.0
+django-tables2==3.0.1
     # via -r requirements/base.in
 django-timezone-field==7.2.1
     # via django-celery-beat
