@@ -850,34 +850,38 @@ window.MopupAnalysis = (function () {
         map.getCanvas().style.cursor = '';
         hoverPopup.remove();
       });
-      map.on('click', layerId, (e) => {
-        if (!e.features.length) return;
-        const props = e.features[0].properties;
-        // Both real work areas and Step 2's planning-gap cells are
-        // selectable/excludable -- uploaded-building dots (their own
-        // source, not one of these two) are the only thing NOT clickable
-        // here, same as they get no hover tooltip above.
-        if (props.source !== 'existing_wa' && props.source !== 'planning_gap') {
-          return;
-        }
-        const oe = e.originalEvent || {};
-        toggleOrSelectWorkArea(
-          props.wa_id,
-          oe.shiftKey || oe.metaKey || oe.ctrlKey,
-        );
-      });
     });
 
-    // A click that hit no work-area feature at all (empty map background)
-    // clears the current selection -- checked via a fresh query rather than
-    // a flag set by the layer-specific handlers above, since those and this
-    // plain click handler all fire for the same click event regardless of
-    // registration order.
+    // ONE click handler across both layers (queried once via
+    // queryRenderedFeatures), not a separate map.on('click', layerId, ...)
+    // per layer -- a point that matches both wa-fill (the polygon) and
+    // wa-fill-dot (its own centroid, which sits INSIDE that same polygon,
+    // so the two commonly overlap at intermediate zoom before the dot fades
+    // out) would otherwise fire the toggle logic twice for one physical
+    // click, silently canceling a shift-click's add/remove back to a no-op.
+    // Also handles the empty-background case (deselect all) in the same
+    // pass, since it's the same "what's under this point" query either way.
     map.on('click', (e) => {
       const hitLayers = layerIds.filter((id) => map.getLayer(id));
       if (!hitLayers.length) return;
       const hits = map.queryRenderedFeatures(e.point, { layers: hitLayers });
-      if (!hits.length) deselectAllWorkAreas();
+      if (!hits.length) {
+        deselectAllWorkAreas();
+        return;
+      }
+      const props = hits[0].properties;
+      // Both real work areas and Step 2's planning-gap cells are
+      // selectable/excludable -- uploaded-building dots (their own source,
+      // not one of these two) are the only thing NOT clickable here, same
+      // as they get no hover tooltip above.
+      if (props.source !== 'existing_wa' && props.source !== 'planning_gap') {
+        return;
+      }
+      const oe = e.originalEvent || {};
+      toggleOrSelectWorkArea(
+        props.wa_id,
+        oe.shiftKey || oe.metaKey || oe.ctrlKey,
+      );
     });
   }
 
