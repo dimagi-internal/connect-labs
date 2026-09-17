@@ -1011,6 +1011,18 @@ window.MopupAnalysis = (function () {
     } catch (e) {
       return; // headless / no WebGL
     }
+    // This map has no use for either gesture, and both default-enabled
+    // Mapbox handlers are bound to the SAME modifier keys the multi-select
+    // click handler reads (shift/ctrl/cmd) to decide additive-vs-replace --
+    // boxZoom (shift+drag) and dragRotate (ctrl/cmd+drag) intercept a
+    // modifier-held mousedown for their own gesture detection and suppress
+    // the normal 'click' event entirely once they do, before it ever
+    // reaches attachMapInteractivity's handler. Disabling both guarantees a
+    // shift/ctrl/cmd-click always reaches the multi-select toggle instead
+    // of silently being swallowed as a (too-small-to-matter) box-zoom or
+    // rotate attempt.
+    map.boxZoom.disable();
+    map.dragRotate.disable();
     // General safeguard beyond the one-shot showReady() resize — covers a
     // browser-window resize, and any other layout shift of the container
     // after construction.
