@@ -7,7 +7,7 @@
 # For local development without pre-built images, the defaults fall back
 # to plain images — but you'll need to install deps separately.
 
-ARG BASE_IMAGE=python:3.11-slim-bookworm
+ARG BASE_IMAGE=python:3.13-slim-bookworm
 ARG NODE_IMAGE=node:20-bookworm
 
 # ---------------------------------------------------------------------------
