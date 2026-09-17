@@ -540,8 +540,8 @@ window.MopupAnalysis = (function () {
       geometry.type === 'Polygon'
         ? geometry.coordinates
         : geometry.type === 'MultiPolygon'
-        ? geometry.coordinates.flat()
-        : [];
+          ? geometry.coordinates.flat()
+          : [];
     rings.forEach((ring) =>
       ring.forEach(([lon, lat]) => {
         if (lon < bbox[0]) bbox[0] = lon;
@@ -584,8 +584,8 @@ window.MopupAnalysis = (function () {
             f.properties.source === 'planning_gap'
               ? GAP_FILL_COLOR
               : f.properties.included
-              ? INDICATOR_COLORS[f.properties.first_indicator] || '#3b82f6'
-              : '#9ca3af';
+                ? INDICATOR_COLORS[f.properties.first_indicator] || '#3b82f6'
+                : '#9ca3af';
           return {
             ...f,
             properties: {
@@ -770,9 +770,8 @@ window.MopupAnalysis = (function () {
           ? `Selected work area: ${waId} (${ward}) — also highlighted below`
           : `Selected work area: ${waId} — also highlighted below`;
       } else {
-        $(
-          'map-selection-label',
-        ).textContent = `${n} work areas selected — also highlighted below`;
+        $('map-selection-label').textContent =
+          `${n} work areas selected — also highlighted below`;
       }
     }
     highlightCandidateRow(selectedWaIds);
@@ -1148,9 +1147,8 @@ window.MopupAnalysis = (function () {
       renderCandidates();
       renderIndicatorCounts(data.per_indicator_counts);
       renderMap(data.map_features);
-      $(
-        'status',
-      ).textContent = `${data.total_work_areas} work area(s) evaluated.`;
+      $('status').textContent =
+        `${data.total_work_areas} work area(s) evaluated.`;
     } catch (e) {
       showLoadingError('Failed to load data.');
     }
@@ -1182,9 +1180,8 @@ window.MopupAnalysis = (function () {
           data.detail || data.message || 'Failed to lock.';
         return;
       }
-      $(
-        'status',
-      ).textContent = `Locked ${data.locked_count} candidate work area(s).`;
+      $('status').textContent =
+        `Locked ${data.locked_count} candidate work area(s).`;
       $('lock-run').disabled = true;
       $('lock-run').textContent = `Locked (${data.locked_count} WAs)`;
       $('create-plan').disabled = false;
@@ -1304,8 +1301,8 @@ window.MopupAnalysis = (function () {
       mode === 'upload'
         ? $('gap-cfg-upload-min-confidence')
         : mode === 'open_buildings'
-        ? $('gap-cfg-open-buildings-min-confidence')
-        : $('gap-cfg-min-confidence');
+          ? $('gap-cfg-open-buildings-min-confidence')
+          : $('gap-cfg-min-confidence');
     const confidenceValue = parseFloat(confidenceInput.value);
     return {
       mode,
@@ -1447,9 +1444,8 @@ window.MopupAnalysis = (function () {
           data.detail || 'Failed to upload file.';
         return;
       }
-      $(
-        'gap-upload-status',
-      ).textContent = `Uploaded: ${data.filename} (${data.matched_rows} row(s) matched this run's ward(s))`;
+      $('gap-upload-status').textContent =
+        `Uploaded: ${data.filename} (${data.matched_rows} row(s) matched this run's ward(s))`;
     } catch (e) {
       $('gap-upload-button').disabled = false;
       $('gap-upload-status').textContent = 'Failed to upload file.';

@@ -50,6 +50,7 @@ already know about is fitted to them.  Firing counts are evidence about NOISE
 (how often it would page when nothing was wrong); they are only evidence about
 DETECTION for incidents independently established as real.
 """
+
 from __future__ import annotations
 
 import argparse

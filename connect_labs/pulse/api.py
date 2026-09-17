@@ -358,9 +358,9 @@ def _scope_for(sc):
         # A programme is one programme; a partner may run several. Counting the
         # distinct programmes in scope keeps the header honest under either
         # filter and under both at once.
-        "programs": 1
-        if sc["program"] is not None
-        else opps.exclude(program_id=None).values("program_id").distinct().count(),
+        "programs": (
+            1 if sc["program"] is not None else opps.exclude(program_id=None).values("program_id").distinct().count()
+        ),
         "orgs": opps.exclude(org_slug="").values("org_slug").distinct().count(),
     }
 

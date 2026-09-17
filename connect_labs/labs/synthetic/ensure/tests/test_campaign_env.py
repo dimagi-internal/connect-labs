@@ -1,5 +1,6 @@
 """The campaign-utility-tool env realizes a national synthetic campaign via the
 standard ensure engine (synthetic_env_ensure path)."""
+
 from __future__ import annotations
 
 import pytest

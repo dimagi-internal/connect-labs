@@ -5,6 +5,7 @@ logs a caller in as a procurement admin without a password is only defensible
 because it refuses outside DEBUG. That refusal is asserted here rather than
 assumed from a settings file.
 """
+
 import pytest
 
 pytestmark = pytest.mark.django_db

@@ -5,6 +5,7 @@ confirms the show/hide layer (`perms.js` via `app.jsx`'s ROLE_DISPLAY bridge) ac
 hides admin-only nav from non-admins in a live browser — the layer whose drift the
 contract test (test_rbac_contract.py) guards.
 """
+
 from __future__ import annotations
 
 import re

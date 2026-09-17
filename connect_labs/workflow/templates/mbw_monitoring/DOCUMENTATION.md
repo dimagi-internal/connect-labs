@@ -1061,7 +1061,6 @@ The view matches the definition name against registered templates and updates th
 ```json
 { "template_key": "mbw_monitoring" }
 
-
 // Optional, auto-detected from name
 ```
 

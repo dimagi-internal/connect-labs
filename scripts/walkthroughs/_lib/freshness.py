@@ -74,8 +74,7 @@ def served_render_code(page) -> str | None:
     via Django's ``json_script`` as ``<script id="workflow-data">``. Returns
     None if the blob isn't present (e.g. an error page or the run picker).
     """
-    return page.evaluate(
-        """() => {
+    return page.evaluate("""() => {
             const el = document.getElementById('workflow-data');
             if (!el) return null;
             try {
@@ -84,8 +83,7 @@ def served_render_code(page) -> str | None:
             } catch (e) {
                 return null;
             }
-        }"""
-    )
+        }""")
 
 
 def served_render_code_from_html(html: str) -> str | None:

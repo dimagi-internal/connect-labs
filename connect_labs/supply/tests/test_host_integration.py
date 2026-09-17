@@ -5,6 +5,7 @@ lesson): any upstream OAuth-session middleware in the host project must skip
 this app's path prefix, or host auth reconciliation will destroy supply
 sessions.
 """
+
 import pytest
 from django.test import Client
 

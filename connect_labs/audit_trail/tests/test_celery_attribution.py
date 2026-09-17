@@ -5,6 +5,7 @@ person's behalf used to land in the audit trail — and in Sentry — with no
 actor at all. ``before_task_publish`` stamps the acting identity onto the
 message; ``task_prerun`` reads it back into the audit context.
 """
+
 import pytest
 
 from connect_labs.audit_trail import service

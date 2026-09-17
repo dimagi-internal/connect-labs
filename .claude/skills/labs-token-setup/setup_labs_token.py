@@ -17,6 +17,7 @@ Usage:
 Example:
     python setup_labs_token.py https://labs.connect.dimagi.com
 """
+
 from __future__ import annotations
 
 import secrets

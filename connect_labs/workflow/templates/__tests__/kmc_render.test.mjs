@@ -236,7 +236,7 @@ function checks(file, src, ast) {
 
     // Transitive closure: which helpers end up touching a root fact.
     const touches = new Set(ROOTS);
-    for (let changed = true; changed; ) {
+    for (let changed = true; changed;) {
       changed = false;
       for (const [name, seen] of refs) {
         if (touches.has(name)) continue;

@@ -23,6 +23,7 @@ building_count, indicator #2's denominator). This is a NEW pipeline, not a
 reuse of the weekly report's hsd_visits pipeline -- that one is live under the
 shipped weekly report and doesn't need these fields.
 """
+
 from __future__ import annotations
 
 PIPELINE_SCHEMAS = [

@@ -12,6 +12,7 @@
   object exists in S3. Uses pgtrigger.ignore — the single sanctioned bypass
   of the append-only trigger.
 """
+
 import gzip
 import hashlib
 import json

@@ -8,6 +8,7 @@ Run:
     pytest connect_labs/funder_dashboard/tests/e2e/test_fund_flow.py \
         --ds=config.settings.local -o "addopts=" -v
 """
+
 import time
 
 import pytest

@@ -271,8 +271,8 @@ function UnboughtRequirement({ gap }) {
                       d.ipc_phase >= 5
                         ? 'bad'
                         : d.ipc_phase >= 4
-                        ? 'warn'
-                        : 'muted'
+                          ? 'warn'
+                          : 'muted'
                     }
                   >
                     IPC {d.ipc_phase}

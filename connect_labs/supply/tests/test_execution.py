@@ -5,6 +5,7 @@ machine API, they can also key in through the portal**, producing the same
 shipment, the same events and the same derived state — only the recorded
 source tier differs, so hand-entered data is never disguised as a system feed.
 """
+
 import json
 from datetime import timedelta
 

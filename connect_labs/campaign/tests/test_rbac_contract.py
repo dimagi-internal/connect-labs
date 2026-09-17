@@ -11,6 +11,7 @@ fails CI instead of shipping a wrong UI.
 If `connect_labs/campaign/` migrates out, this test travels with it; the only
 coupling is the relative path to the static `perms.js`.
 """
+
 from __future__ import annotations
 
 import json

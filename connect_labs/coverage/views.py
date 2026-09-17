@@ -175,7 +175,7 @@ class CoverageMapStreamView(LoginRequiredMixin, View):
         response["X-Accel-Buffering"] = "no"
         return response
 
-    def _stream_coverage_data(self, request) -> Generator[str, None, None]:
+    def _stream_coverage_data(self, request) -> Generator[str]:
         """Generator that yields SSE events as coverage data loads."""
 
         def send_sse(message: str, data: dict | None = None, error: str | None = None) -> str:

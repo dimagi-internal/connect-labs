@@ -255,7 +255,7 @@ class CHCNutritionStreamView(LoginRequiredMixin, View):
         response["X-Accel-Buffering"] = "no"  # Disable nginx buffering
         return response
 
-    def _stream_analysis(self, request, labs_context: dict, opportunity_id: int) -> Generator[str, None, None]:
+    def _stream_analysis(self, request, labs_context: dict, opportunity_id: int) -> Generator[str]:
         """Stream analysis progress via SSE, delegating to the shared pipeline."""
 
         def send_sse(message: str, data: dict | None = None) -> str:

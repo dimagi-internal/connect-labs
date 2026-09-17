@@ -3,6 +3,7 @@
 Tokens are shown once at mint time and stored only as a SHA-256 hash. A short
 prefix is kept in the clear so a supplier can recognise which token is which.
 """
+
 import hashlib
 import secrets
 

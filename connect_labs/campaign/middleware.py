@@ -4,6 +4,7 @@
 Mirrors labs/oauth_session.py but is scoped to this app and its own session
 key. Plan 1 has no refresh-token store, so an expired token => logout.
 """
+
 from __future__ import annotations
 
 import logging

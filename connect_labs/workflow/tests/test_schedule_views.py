@@ -372,12 +372,12 @@ def test_the_dialog_renders_choices_and_prefills_saved_values():
     )
     options = schedule_options_for_definition(definition)
 
-    fragment = Template(
-        """{% for opt in workflow.schedule_options %}{{ opt.label }}|
+    fragment = Template("""{% for opt in workflow.schedule_options %}{{ opt.label }}|
         {% if opt.type == 'multi_int' %}{% for c in opt.choices %}
         chk:{{ c.value }}:{{ c.label }}:"(scheduleDefaults['{{ opt.key|escapejs }}'] || []).includes({{ c.value }})"
-        {% endfor %}{% else %}num:{{ opt.min }}-{{ opt.max }}{% endif %}{% endfor %}"""
-    ).render(Context({"workflow": {"schedule_options": options}}))
+        {% endfor %}{% else %}num:{{ opt.min }}-{{ opt.max }}{% endif %}{% endfor %}""").render(
+        Context({"workflow": {"schedule_options": options}})
+    )
 
     assert "Opportunities to audit|" in fragment
     assert "chk:1487:PIPN (V3)" in fragment

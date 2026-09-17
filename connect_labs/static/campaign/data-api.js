@@ -62,8 +62,8 @@
         status: approved
           ? 'approved'
           : w.pay === 'rejected'
-          ? 'rejected'
-          : 'pending',
+            ? 'rejected'
+            : 'pending',
         flag:
           rng() < 0.08
             ? rng() < 0.5

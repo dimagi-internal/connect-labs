@@ -12,6 +12,7 @@ which is why "cartons delivered" cannot answer a government's question and
 "children treated" is usually just cartons divided by a constant. Everything
 here exists to turn those into coverage and outcome.
 """
+
 from django.db import models
 
 from .execution import Shipment, ShipmentLine, SupplyNode

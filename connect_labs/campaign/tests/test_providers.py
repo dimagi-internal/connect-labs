@@ -6,6 +6,7 @@ project space uses the CommCareProvider, which reads workers as cases through th
 API (served in-app from WorkerCase for a synthetic domain). These tests pin provider
 selection, the synthetic ORM read, and that the CommCareProvider reads worker cases.
 """
+
 from __future__ import annotations
 
 import pytest

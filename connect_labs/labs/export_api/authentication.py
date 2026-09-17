@@ -3,6 +3,7 @@
 Reuses the MCP Personal Access Token machinery: an external consumer (Scout)
 sends ``Authorization: Bearer <pat>`` exactly as it would against the MCP server.
 """
+
 from drf_spectacular.extensions import OpenApiAuthenticationExtension
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed

@@ -1,6 +1,7 @@
 """
 Labs Dashboard Prototype URLs
 """
+
 from django.urls import path
 
 from connect_labs.labs.dashboards import views

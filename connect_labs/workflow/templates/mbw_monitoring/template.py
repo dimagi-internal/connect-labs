@@ -809,7 +809,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
 
     var sortIcon = function(sortState, col) {
         if (sortState.col !== col) return '';
-        return sortState.dir === 'asc' ? ' \u25B2' : ' \u25BC';
+        return sortState.dir === 'asc' ? ' \u25b2' : ' \u25bc';
     };
 
     var pctColor = function(val, goodThreshold, badThreshold) {
@@ -1113,7 +1113,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
             return (
                 <th className={'px-4 py-2 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 select-none' + (align === 'center' ? ' text-center' : ' text-left')}
                     onClick={function() { setSelSort({ col: col, dir: active && selSort.dir === 'asc' ? 'desc' : 'asc' }); }}>
-                    {label} {active ? (selSort.dir === 'asc' ? '\u25B2' : '\u25BC') : ''}
+                    {label} {active ? (selSort.dir === 'asc' ? '\u25b2' : '\u25bc') : ''}
                 </th>
             );
         };
@@ -2156,7 +2156,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                         (sseComplete && !snapshotSaving
                             ? 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100'
                             : 'text-gray-400 bg-gray-50 border-gray-200 cursor-not-allowed')}>
-                        {'\u21BB'} Refresh Data
+                        {'\u21bb'} Refresh Data
                     </button>
                     )}
                 </div>

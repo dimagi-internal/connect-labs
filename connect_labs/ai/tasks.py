@@ -1,6 +1,7 @@
 """
 Celery tasks for Pydantic AI demo.
 """
+
 import asyncio
 import json
 import logging

@@ -23,11 +23,9 @@ _FILES = (
 
 
 class _Drive(Protocol):
-    def create_folder(self, name: str, parent_id: str) -> str:
-        ...
+    def create_folder(self, name: str, parent_id: str) -> str: ...
 
-    def upload_file(self, folder_id: str, filename: str, content: bytes) -> str:
-        ...
+    def upload_file(self, folder_id: str, filename: str, content: bytes) -> str: ...
 
 
 @dataclass(frozen=True)

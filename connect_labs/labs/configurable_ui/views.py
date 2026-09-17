@@ -42,7 +42,7 @@ class GenericTimelineDataStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView)
     config_module = None  # Override in subclass
     pipeline_config = None  # Override in subclass - the AnalysisPipelineConfig
 
-    def stream_data(self, request, child_id) -> Generator[str, None, None]:
+    def stream_data(self, request, child_id) -> Generator[str]:
         """Stream timeline data loading progress via SSE."""
         import logging
         from copy import deepcopy

@@ -867,8 +867,8 @@ function WorkflowUI({
           {pma
             ? 'postmenstrual age (' + Math.floor(gaDays / 7) + 'w at birth)'
             : props.dob
-            ? 'days since birth'
-            : 'days since first weighing'}
+              ? 'days since birth'
+              : 'days since first weighing'}
         </text>
         <polyline
           fill="none"
@@ -1467,12 +1467,13 @@ function WorkflowUI({
       c13 !== null
         ? c13
         : first &&
-          earlyLast &&
-          earlyLast !== first &&
-          first.y > 0 &&
-          earlyLast.x > first.x
-        ? (earlyLast.y - first.y) / ((first.y / 1000) * (earlyLast.x - first.x))
-        : null;
+            earlyLast &&
+            earlyLast !== first &&
+            first.y > 0 &&
+            earlyLast.x > first.x
+          ? (earlyLast.y - first.y) /
+            ((first.y / 1000) * (earlyLast.x - first.x))
+          : null;
     var gain =
       first && weighed.length > 1
         ? weighed[weighed.length - 1].y - first.y
@@ -1538,10 +1539,10 @@ function WorkflowUI({
         p.vel < 0 && p.x <= 7
           ? 'bg-amber-100 text-amber-800'
           : p.vel < 0 || p.vel > 50
-          ? 'bg-red-100 text-red-800'
-          : p.vel >= 10
-          ? 'bg-green-100 text-green-800'
-          : 'bg-gray-100 text-gray-600';
+            ? 'bg-red-100 text-red-800'
+            : p.vel >= 10
+              ? 'bg-green-100 text-green-800'
+              : 'bg-gray-100 text-gray-600';
       return (
         <span
           className={'px-1.5 py-0.5 rounded text-[10px] font-semibold ' + cls}
@@ -1710,8 +1711,8 @@ function WorkflowUI({
                     {visitState.status === 'error'
                       ? 'Could not load weighings — reload the page.'
                       : weighingsLoaded
-                      ? 'No weighings recorded.'
-                      : 'Loading…'}
+                        ? 'No weighings recorded.'
+                        : 'Loading…'}
                   </div>
                 )}
               </div>
@@ -1733,12 +1734,12 @@ function WorkflowUI({
                   {c13 !== null
                     ? 'C13 · target 15'
                     : first && earlyLast && earlyLast !== first
-                    ? 'days ' +
-                      first.x +
-                      '–' +
-                      earlyLast.x +
-                      ' · not yet graded'
-                    : 'needs two weighings'}
+                      ? 'days ' +
+                        first.x +
+                        '–' +
+                        earlyLast.x +
+                        ' · not yet graded'
+                      : 'needs two weighings'}
                 </div>
               </div>
               <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">

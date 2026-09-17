@@ -4,6 +4,7 @@
 already collects at EOI — regions served, capacity and lead time — and used to
 discard. Every assertion here is that question, asked of the registry.
 """
+
 from datetime import date, timedelta
 
 import pytest

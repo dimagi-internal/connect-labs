@@ -5,6 +5,7 @@ React actually transpiles, mounts, fetches the bootstrap, and paints real data â
 that the auth gate redirects anonymous users. Excluded from the default suite (the
 dir is in pyproject `--ignore`); run with the command in conftest.py.
 """
+
 from __future__ import annotations
 
 import re

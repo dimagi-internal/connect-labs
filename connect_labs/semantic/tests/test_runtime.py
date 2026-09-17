@@ -87,8 +87,7 @@ def fixture_visits(db):
 
     with connection.cursor() as cur:
         cur.execute("DROP TABLE IF EXISTS rt_fixture_visits")
-        cur.execute(
-            """
+        cur.execute("""
             CREATE TABLE rt_fixture_visits (
                 baby_case_id text, visit_date timestamp, weight_g double precision,
                 child_alive_no boolean, danger_sign_yes boolean, referred_yes boolean,
@@ -99,8 +98,7 @@ def fixture_visits(db):
                 reg_date timestamp, hospital_discharge_date timestamp,
                 opportunity_id int, username text
             )
-            """
-        )
+            """)
         rows = [
             # b1: registered + started, weighed across the growth window, survives.
             ("b1", 0, 1500.0, "Registration"),

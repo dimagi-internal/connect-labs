@@ -16,6 +16,7 @@ one ``bulk_create`` per table — inside that test's own transaction, so the
 rollback still cleans up and a test that does not ask still sees an empty
 database. Same rows, same primary keys, ~30 queries instead of ~4,250.
 """
+
 import copy
 from contextlib import contextmanager
 

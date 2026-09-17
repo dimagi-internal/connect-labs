@@ -7,6 +7,7 @@ outbound HTTP, so the demo can't accidentally move money — and (2) leave a gre
 skipped placeholder per seam that should turn into a real integration test when the
 external system is wired. Grep `pytest.mark.stub` to find the whole frontier.
 """
+
 from __future__ import annotations
 
 from unittest.mock import patch

@@ -4,6 +4,7 @@ Surfaces the self-hosted Umami stats inside labs so viewers ride labs' own
 Connect OAuth — no second login. The Umami admin UI at /umami/ remains for
 deep exploration and configuration.
 """
+
 import logging
 import time
 from datetime import timedelta
@@ -78,9 +79,9 @@ class AnalyticsDashboardView(AdminRequiredMixin, TemplateView):
         )
 
         if not umami_api.is_configured():
-            context[
-                "analytics_error"
-            ] = "Umami is not configured (UMAMI_HOST_URL / UMAMI_WEBSITE_ID / UMAMI_ADMIN_PASSWORD)."
+            context["analytics_error"] = (
+                "Umami is not configured (UMAMI_HOST_URL / UMAMI_WEBSITE_ID / UMAMI_ADMIN_PASSWORD)."
+            )
             return context
 
         now = timezone.now()

@@ -1,4 +1,5 @@
 """Wiring test: run_audit_creation translates image_audits via build_review_config."""
+
 from connect_labs.audit.ai_review_config import build_review_config
 
 

@@ -1,4 +1,5 @@
 """Tests for SQLCacheManager's day-of-week audit filter."""
+
 from datetime import date
 
 import pytest

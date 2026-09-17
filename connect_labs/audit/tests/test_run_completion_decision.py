@@ -1,6 +1,7 @@
 """A workflow run backed by audit sessions should complete only when EVERY
 linked session is completed (an audit run can span more than one session).
 """
+
 from connect_labs.audit.data_access import all_sessions_completed
 
 

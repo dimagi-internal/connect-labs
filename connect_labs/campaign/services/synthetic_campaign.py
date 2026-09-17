@@ -16,6 +16,7 @@ will read live instead.
 Entry point: :func:`build_synthetic_campaign`. National scale = all loaded states;
 ``states_limit`` caps it for a smaller (or test) run.
 """
+
 from __future__ import annotations
 
 import datetime

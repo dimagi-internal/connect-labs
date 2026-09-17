@@ -17,6 +17,7 @@ Run (excluded from the default suite — the dir is in pyproject `--ignore`):
     GEOS_LIBRARY_PATH=/opt/homebrew/lib/libgeos_c.dylib \
     pytest connect_labs/campaign/tests/e2e/ -o "addopts=" -p no:randomly -v
 """
+
 from __future__ import annotations
 
 import os

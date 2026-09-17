@@ -4,6 +4,7 @@ Usage:
     python manage.py mcp_create_token --user alice --name my-laptop
     python manage.py mcp_create_token --user alice --name ci --ttl-days 30
 """
+
 from django.core.management.base import BaseCommand, CommandError
 
 from connect_labs.mcp.models import MCPAccessToken

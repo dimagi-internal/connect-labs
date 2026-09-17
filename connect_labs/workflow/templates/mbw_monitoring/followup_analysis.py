@@ -1211,9 +1211,9 @@ def compute_flw_performance_by_status(
                 "total_cases_eligible_at_registration": total_eligible,
                 "total_cases_still_eligible": still_eligible,
                 "pct_still_eligible": round(still_eligible / total_eligible * 100) if total_eligible > 0 else 0,
-                "pct_missed_1_or_less_visits": round(missed_1_or_less / total_eligible * 100)
-                if total_eligible > 0
-                else 0,
+                "pct_missed_1_or_less_visits": (
+                    round(missed_1_or_less / total_eligible * 100) if total_eligible > 0 else 0
+                ),
                 **milestone_results,
             }
         )

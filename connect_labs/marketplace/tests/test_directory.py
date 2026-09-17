@@ -4,6 +4,7 @@ Parsing is separated from fetching so it can be tested without a network or a
 service account: every test here hands ``parse_*`` the rows a fetch would have
 returned. All names and addresses are invented.
 """
+
 from connect_labs.marketplace.directory import parse_contacts, parse_dates, parse_mapping, parse_organizations
 
 ORG_HEADER = [

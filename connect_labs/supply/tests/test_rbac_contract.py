@@ -3,6 +3,7 @@
 Campaign's equivalent test caught two real drifts; the same technique is used
 here — parse the JS object literal and compare it to the Python dict.
 """
+
 import json
 import re
 from pathlib import Path

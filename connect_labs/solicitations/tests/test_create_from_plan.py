@@ -10,6 +10,7 @@ Both build_plan_snapshot and ProgramPlanDataAccess are monkeypatched:
 - ProgramPlanDataAccess is constructed inside _snapshot_from_query; patch it via its
   module so the real constructor (which requires OAuth) is never called.
 """
+
 import json
 from unittest.mock import MagicMock
 

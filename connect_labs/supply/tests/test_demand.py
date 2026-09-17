@@ -3,6 +3,7 @@
 Everything here is a claim one of the four OES narratives makes out loud. If a
 test in this file fails, a scene is lying.
 """
+
 import json
 from datetime import date
 from decimal import Decimal

@@ -1,4 +1,5 @@
 """Shared helpers for the supply JSON API."""
+
 import json
 from functools import wraps
 

@@ -1250,8 +1250,8 @@
       workers.length === 0
         ? '—'
         : workers.length === 1
-        ? esc(workers[0])
-        : `${workers.length} workers`;
+          ? esc(workers[0])
+          : `${workers.length} workers`;
     const collapsed = collapsedGroups.has(name);
     const selInGroup = items.reduce(
       (n, w) => n + (selected.has(w.id) ? 1 : 0),
@@ -1624,9 +1624,8 @@
         const groups = new Set(
           (data.work_areas || []).map((w) => w.work_area_group),
         );
-        $(
-          'status',
-        ).textContent = `Re-grouped into ${groups.size} groups in ${dt}s.`;
+        $('status').textContent =
+          `Re-grouped into ${groups.size} groups in ${dt}s.`;
         // Switch the map color dimension to Group so the new layout is
         // immediately visible. setColorDim also re-renders sidebar + table.
         setColorDim('group');
@@ -1680,9 +1679,8 @@
             .map((w) => w.opportunity_access)
             .filter(Boolean),
         );
-        $(
-          'status',
-        ).textContent = `Assigned to ${assigned.size} CHWs in ${dt}s.`;
+        $('status').textContent =
+          `Assigned to ${assigned.size} CHWs in ${dt}s.`;
         // Switch the map color dimension to Worker so the new assignment is visible.
         setColorDim('worker');
         render(data);
@@ -1723,9 +1721,8 @@
     // that here so we can warn rather than let the upload fail downstream.
     if (resp.headers.get('X-Microplan-Connect-Ready') === 'false') {
       const missing = resp.headers.get('X-Microplan-Missing') || 'LGA/State';
-      $(
-        'status',
-      ).textContent = `Downloaded — but Connect needs ${missing}. Set ${missing} on the plan, then re-download before importing.`;
+      $('status').textContent =
+        `Downloaded — but Connect needs ${missing}. Set ${missing} on the plan, then re-download before importing.`;
     } else {
       $('status').textContent = 'Downloaded Connect-ready CSV.';
     }
@@ -2155,9 +2152,8 @@
             data.detail || 'Regenerate failed.';
           return;
         }
-        $(
-          'apply-area-status',
-        ).textContent = `Regenerated ${data.work_areas.length} work areas.`;
+        $('apply-area-status').textContent =
+          `Regenerated ${data.work_areas.length} work areas.`;
         if (draw) draw.deleteAll();
         circleAreas = [];
         refreshAreaStats();
@@ -2863,12 +2859,12 @@
         d.kind === 'boundary'
           ? 'bnd:' + d.id
           : d.kind === 'draw'
-          ? 'draw:' + d.id
-          : d.kind === 'circle'
-          ? 'circle:' + d.idx
-          : d.kind === 'upload'
-          ? 'upload:' + d.idx
-          : 'area_' + (i + 1);
+            ? 'draw:' + d.id
+            : d.kind === 'circle'
+              ? 'circle:' + d.idx
+              : d.kind === 'upload'
+                ? 'upload:' + d.idx
+                : 'area_' + (i + 1);
     });
     return out;
   }
@@ -3062,8 +3058,8 @@
           created && AREA_TARGETS[aid] != null
             ? Math.round(AREA_TARGETS[aid])
             : u5 != null
-            ? Math.round(u5)
-            : '';
+              ? Math.round(u5)
+              : '';
         const val = aid in manualTargets ? manualTargets[aid] : base;
         // Avg U5/WA tracks the SAME value driving the calc (manual edit / saved
         // target / source U5) — not always the raw source U5 — so it moves with
@@ -3429,9 +3425,8 @@
           p.maxRoof || '∞'
         }m² / isolated`,
       });
-    $(
-      'filter-status',
-    ).textContent = `Excluded ${toExclude.length}, re-included ${toInclude.length}.`;
+    $('filter-status').textContent =
+      `Excluded ${toExclude.length}, re-included ${toInclude.length}.`;
   }
 
   // Summarise the coverage preview's exclusion + visit stats under the controls.

@@ -441,7 +441,7 @@ class AnalysisPipeline:
         tolerance_pct: int = 100,
         pipeline_id: int | None = None,
         accept_low_count: bool = False,
-    ) -> Generator[tuple[str, Any], None, None]:
+    ) -> Generator[tuple[str, Any]]:
         """
         Consume stream_raw_visits events and yield SSE pipeline events.
 
@@ -503,7 +503,7 @@ class AnalysisPipeline:
         config: AnalysisPipelineConfig,
         opportunity_id: int | None = None,
         force_refresh: bool = False,
-    ) -> Generator[tuple[str, Any], None, None]:
+    ) -> Generator[tuple[str, Any]]:
         """
         Stream analysis pipeline with progress events.
 
@@ -538,7 +538,7 @@ class AnalysisPipeline:
         config: AnalysisPipelineConfig,
         opportunity_id: int | None = None,
         force_refresh: bool = False,
-    ) -> Generator[tuple[str, Any], None, None]:
+    ) -> Generator[tuple[str, Any]]:
         """Implementation behind `stream_analysis` — see that method for the
         public contract. Split out only so the wrapper above can attach
         `_raw_fetch_anomaly` to every result path in one place.

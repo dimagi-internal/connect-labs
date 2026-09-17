@@ -7,6 +7,7 @@ seeding dev boundaries; in labs it runs against the real GeoPoDe geography.
 
     manage.py measure_campaign_scale --seed-boundaries --scales 1000,5000,25000,50000
 """
+
 from __future__ import annotations
 
 import json

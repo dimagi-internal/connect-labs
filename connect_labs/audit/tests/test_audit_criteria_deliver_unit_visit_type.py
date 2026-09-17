@@ -1,4 +1,5 @@
 """Tests for the Deliver Unit Type / Visit Type audit creation filters."""
+
 from connect_labs.audit.data_access import AuditCriteria, filter_visits_for_audit
 
 

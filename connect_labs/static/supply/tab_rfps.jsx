@@ -133,8 +133,8 @@ function RFPsTab({ ctx }) {
                     {r.status === 'draft'
                       ? 'Edit lots'
                       : r.lots.some((l) => !l.awarded_org)
-                      ? 'Compare & award'
-                      : 'View bids'}
+                        ? 'Compare & award'
+                        : 'View bids'}
                   </button>
                   {canManage && r.status === 'draft' ? (
                     <button

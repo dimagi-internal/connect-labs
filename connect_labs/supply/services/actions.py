@@ -12,6 +12,7 @@ number. A decision that puts a consignment on the map is the same kind of fact
 as the consignments already on it, and the exception resolves because the
 situation changed.
 """
+
 from datetime import timedelta
 
 from django.contrib.gis.geos import LineString

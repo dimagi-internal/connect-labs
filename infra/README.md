@@ -446,8 +446,8 @@ register-scalable-target` plus two target-tracking policies:
   MINIMUM, not a tuned policy.
 
   **What is and is not logged.** `aws application-autoscaling
-  describe-scaling-activities --service-namespace ecs --resource-id
-  service/labs-jj-cluster/labs-jj-web` is the per-action record (cause, start and
+describe-scaling-activities --service-namespace ecs --resource-id
+service/labs-jj-cluster/labs-jj-web` is the per-action record (cause, start and
   end time) and the right read for "did it scale, how often, for how long".
   CloudTrail's 90-day event history corroborates it through the scaler's
   `UpdateService` calls -- note there is **no CloudTrail trail** in this account,

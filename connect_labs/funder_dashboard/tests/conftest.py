@@ -2,6 +2,7 @@
 
 Proxy model tests are pure Python and don't need a database.
 """
+
 import pytest
 
 

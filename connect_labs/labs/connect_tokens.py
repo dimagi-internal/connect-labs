@@ -3,6 +3,7 @@
 The MCP server (and future background jobs) call get_valid_access_token(user)
 to receive a current access_token, refreshing automatically if expired.
 """
+
 from __future__ import annotations
 
 import logging

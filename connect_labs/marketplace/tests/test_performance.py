@@ -8,6 +8,7 @@ flaky.
 
 All data invented.
 """
+
 import datetime as dt
 
 import pytest

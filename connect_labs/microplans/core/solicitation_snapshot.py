@@ -5,6 +5,7 @@ The single seam between microplans and solicitations: solicitations imports
 plain JSON-able data the solicitation stores in its own ``data`` (frozen by
 design — no live re-read, see the design spec).
 """
+
 from __future__ import annotations
 
 

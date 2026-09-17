@@ -6,6 +6,7 @@ but targets CommCare HQ instead of Connect.
 
 Saves token to: ~/.commcare-connect/commcare_token.json
 """
+
 from pathlib import Path
 
 from django.conf import settings

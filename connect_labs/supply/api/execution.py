@@ -1,4 +1,5 @@
 """Session-authenticated execution endpoints (supplier ops + staff oversight)."""
+
 from django.db.models import Q
 from django.http import JsonResponse
 

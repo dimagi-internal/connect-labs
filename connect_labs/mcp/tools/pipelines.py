@@ -560,21 +560,25 @@ def pipeline_preview(
             "per_opp_metadata": per_opp_metadata,
             "fields_all_null": fields_all_null,
             "fields_all_null_hint": (
-                "These custom fields extracted null for every row. Usually means "
-                "field.path is wrong — use `get_form_json_paths` on the local "
-                "`commcare_hq_mcp` server to look up the real JSON path, then "
-                "re-preview with schema_override."
-            )
-            if fields_all_null
-            else None,
+                (
+                    "These custom fields extracted null for every row. Usually means "
+                    "field.path is wrong — use `get_form_json_paths` on the local "
+                    "`commcare_hq_mcp` server to look up the real JSON path, then "
+                    "re-preview with schema_override."
+                )
+                if fields_all_null
+                else None
+            ),
             "fields_suspect": fields_suspect,
             "fields_suspect_hint": (
-                "These fields returned values that are not null but cannot be right — a count "
-                "equal to the row count, or a filter that matched nothing anywhere. Re-check "
-                "field.path and filter_value against the real data before trusting the numbers."
-            )
-            if fields_suspect
-            else None,
+                (
+                    "These fields returned values that are not null but cannot be right — a count "
+                    "equal to the row count, or a filter that matched nothing anywhere. Re-check "
+                    "field.path and filter_value against the real data before trusting the numbers."
+                )
+                if fields_suspect
+                else None
+            ),
             "metadata": top_meta,
         }
     finally:

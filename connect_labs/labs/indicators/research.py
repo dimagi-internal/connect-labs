@@ -156,9 +156,11 @@ def _check_measure(spec: dict) -> CheckResult:
         holds=not mismatched,
         expected=expected,
         actual=actual,
-        detail=""
-        if not mismatched
-        else "; ".join(f"{k}: note said {v[0]!r}, now {v[1]!r}" for k, v in mismatched.items()),
+        detail=(
+            ""
+            if not mismatched
+            else "; ".join(f"{k}: note said {v[0]!r}, now {v[1]!r}" for k, v in mismatched.items())
+        ),
     )
 
 

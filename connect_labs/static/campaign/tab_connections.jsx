@@ -606,8 +606,8 @@ function ConnConfigModal({ conn, onClose, onSave }) {
           f.auth === 'Basic Authentication'
             ? 'Username'
             : f.auth === 'Bearer Token'
-            ? 'Bearer token'
-            : 'API key'
+              ? 'Bearer token'
+              : 'API key'
         }
       >
         <TextInput

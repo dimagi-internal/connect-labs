@@ -4,6 +4,7 @@ These run in-app on labs (direct DB access; the real GeoPoDe NGA boundaries are
 already loaded), so a national synthetic campaign can be built without an AWS/ECS
 one-off task.
 """
+
 from typing import Any
 
 from ..tool_registry import MCPToolError, register

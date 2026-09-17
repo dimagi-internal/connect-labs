@@ -25,6 +25,7 @@ UI history:
 All Playwright primitives + the cursor overlay live in
 ``scripts/walkthroughs/_lib/``; this file is just the scene sequence.
 """
+
 from __future__ import annotations
 
 import sys

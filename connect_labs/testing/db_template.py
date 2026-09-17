@@ -41,6 +41,7 @@ database.
   Fine on a CI runner, which owns its Postgres; not fine on a laptop running
   several worktrees at once.
 """
+
 import os
 
 # How long a worker will wait for whichever one is building the template.

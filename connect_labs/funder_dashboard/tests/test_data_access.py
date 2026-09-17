@@ -2,6 +2,7 @@
 
 All tests mock LabsRecordAPIClient to avoid real API calls.
 """
+
 from unittest.mock import MagicMock, patch
 
 import pytest

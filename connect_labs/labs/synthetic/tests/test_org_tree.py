@@ -1,4 +1,5 @@
 """Unit tests for the shared synthetic org/program derivation primitives."""
+
 from connect_labs.labs.synthetic import org_tree
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
 

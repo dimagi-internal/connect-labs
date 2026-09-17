@@ -9,6 +9,7 @@ Flushing happens in the response phase of ``__call__``, which runs OUTSIDE the
 view's ATOMIC_REQUESTS transaction — audit rows survive request rollbacks and
 carry the final status code.
 """
+
 import uuid
 
 from connect_labs.audit_trail import service

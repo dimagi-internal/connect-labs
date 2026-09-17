@@ -5,6 +5,7 @@ only while it holds a live qualification in one of the RFP's categories. The
 registry is what gates access to solicitations — that is the whole point of the
 two-stage EOI → RFP model.
 """
+
 from datetime import date
 
 from django.db import transaction

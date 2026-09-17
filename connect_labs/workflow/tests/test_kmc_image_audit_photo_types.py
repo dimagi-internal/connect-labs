@@ -62,9 +62,10 @@ class _EagerResult:
 
 @pytest.fixture
 def patched():
-    with mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess") as wda_cls, mock.patch(
-        "connect_labs.audit.tasks.run_audit_creation"
-    ) as task:
+    with (
+        mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess") as wda_cls,
+        mock.patch("connect_labs.audit.tasks.run_audit_creation") as task,
+    ):
         wda_cls.return_value.create_run.return_value = SimpleNamespace(id=4242)
         task.apply.return_value = _EagerResult()
         yield {"wda": wda_cls, "task": task}

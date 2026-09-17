@@ -3,6 +3,7 @@
 ``import_directory`` takes the four tabs' rows as lists, so every behaviour
 below is tested without a service account. All data is invented.
 """
+
 import pytest
 
 from connect_labs.labs.models import LabsOrg

@@ -4,6 +4,7 @@ Coverage says what ARRIVED against what is needed. This says what was BOUGHT
 against what is needed, and the difference matters: no reallocation can close a
 gap in cartons nobody purchased.
 """
+
 from datetime import date
 
 import pytest

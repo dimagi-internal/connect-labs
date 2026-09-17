@@ -154,8 +154,8 @@ function WorkflowUI({
       locType === 'mothers_home'
         ? row.visit_location_has_prev_home_gps
         : locType === 'health_facility'
-        ? row.visit_location_has_prev_health_facility_gps
-        : null;
+          ? row.visit_location_has_prev_health_facility_gps
+          : null;
 
     if (hasPrevGps === 'no') return 'NA';
     if (row.gps_visit_verification_matches === 'no') return 'Fail';

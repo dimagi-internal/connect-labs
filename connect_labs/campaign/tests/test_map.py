@@ -1,4 +1,5 @@
 """Map-data endpoint tests (Reporting 'View map')."""
+
 from __future__ import annotations
 
 import pytest
