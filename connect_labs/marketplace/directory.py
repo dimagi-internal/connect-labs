@@ -21,6 +21,8 @@ import re
 from dataclasses import dataclass, field
 from urllib.parse import quote
 
+from connect_labs.marketplace.countries import parse_cell as parse_countries
+
 DIRECTORY_ID = "19sqU7xpSb_0VX6H_QZK2dcRz0RvXiQ1En9kvSZkEiY8"
 
 ORGANIZATIONS_TAB = "Organizations"
@@ -40,8 +42,8 @@ class DirectoryOrg:
     has_used_connect: bool | None = None
     year_established: int | None = None
     team_size: int | None = None
-    flws_managed: int | None = None
     countries: list[str] = field(default_factory=list)
+    unresolved_countries: list[str] = field(default_factory=list)
     regions: list[str] = field(default_factory=list)
     website: str = ""
     office_address: str = ""
@@ -116,21 +118,6 @@ def _bool_or_none(raw: str) -> bool | None:
     return None
 
 
-def _split_countries(raw: str) -> list[str]:
-    """Split a country cell without breaking names that contain a comma.
-
-    Several ISO names contain one — "Congo, the Democratic Republic of the" —
-    and splitting it leaves "Congo", which is the OTHER Congo. The sheet quotes
-    such names, so a quoted cell is taken whole.
-    """
-    value = (raw or "").strip()
-    if not value:
-        return []
-    if value.startswith('"') and value.endswith('"'):
-        return [value.strip('"').strip()]
-    return [part.strip() for part in value.split(",") if part.strip()]
-
-
 def _split_list(raw: str) -> list[str]:
     return [part.strip() for part in re.split(r"[;,]", raw or "") if part.strip()]
 
@@ -143,6 +130,7 @@ def parse_organizations(rows: list[list[str]]) -> list[DirectoryOrg]:
         if not name or name in seen:
             continue
         seen.add(name)
+        countries, unresolved = parse_countries(cell(row, 6))
         out.append(
             DirectoryOrg(
                 name=name,
@@ -150,8 +138,8 @@ def parse_organizations(rows: list[list[str]]) -> list[DirectoryOrg]:
                 has_used_connect=_bool_or_none(cell(row, 2)),
                 year_established=_int_or_none(cell(row, 3)),
                 team_size=_int_or_none(cell(row, 4)),
-                flws_managed=_int_or_none(cell(row, 5)),
-                countries=_split_countries(cell(row, 6)),
+                countries=countries,
+                unresolved_countries=unresolved,
                 regions=_split_list(cell(row, 7)),
                 website=cell(row, 9),
                 office_address=cell(row, 10),

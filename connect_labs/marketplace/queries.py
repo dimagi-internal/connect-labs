@@ -240,7 +240,16 @@ def rounds_with_counts():
     """Every round, with how many applications and organisations it drew."""
     return Solicitation.objects.annotate(
         applications=Count("responses", distinct=True),
-        organisations=Count("responses__llo_entity_id", distinct=True),
+        # Identified organisations PLUS the submissions nobody could attribute.
+        # `COUNT(DISTINCT llo_entity_id)` ignores NULLs, so on its own it drops
+        # every applicant awaiting a verdict — the French Readers round showed
+        # "4 organisations" over a list of five, one of which was simply not
+        # matched yet. An unattributed submission is still an applicant; what
+        # is unknown is WHICH one, and the verdict count next to it says so.
+        # Each is counted separately because assuming two of them are the same
+        # organisation is precisely the judgement being deferred.
+        organisations=Count("responses__llo_entity_id", distinct=True)
+        + Count("responses", filter=Q(responses__llo_entity__isnull=True), distinct=True),
         unresolved=Count(
             "responses",
             filter=Q(responses__match_state=SolicitationResponse.MATCH_UNMATCHED),

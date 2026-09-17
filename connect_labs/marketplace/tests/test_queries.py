@@ -17,7 +17,6 @@ def network(db):
         "Northlake Maternal Health Network",
         "NMHN",
         countries=["Uganda"],
-        flws_managed=120,
         lat=0.34,
         lon=32.58,
         country_iso3="UGA",
@@ -51,7 +50,6 @@ def network(db):
         "Serrano Child Nutrition Foundation",
         "SCNF",
         countries=["Malawi"],
-        flws_managed=15,
         lat=-13.3,
         lon=34.3,
         country_iso3="MWI",
@@ -135,10 +133,26 @@ class TestRounds:
         assert [r.slug for r in queries.closed_rounds()] == ["chc-2025"]
 
     def test_a_round_counts_applications_and_distinct_organisations(self, network):
+        """Three submissions: two from identified organisations and one nobody
+        could attribute. That is three applicants, not two — an unattributed
+        submission is still an organisation, and the unresolved count says
+        which of them we cannot yet name."""
         got = queries.rounds_with_counts().get(slug="chc-2025")
         assert got.applications == 3
-        assert got.organisations == 2
+        assert got.organisations == 3
         assert got.unresolved == 1
+
+    def test_two_submissions_from_one_organisation_are_one_organisation(self, network):
+        """The count must not follow submissions upward either."""
+        from connect_labs.solicitations.local_models import SolicitationResponse
+
+        live = network["live"]
+        SolicitationResponse.objects.create(
+            solicitation=network["round"], llo_entity=live, source_row=9, org_name=live.name, match_state="name"
+        )
+        got = queries.rounds_with_counts().get(slug="chc-2025")
+        assert got.applications == 4
+        assert got.organisations == 3
 
     def test_applicants_carry_what_became_of_them(self, network):
         delivering = queries.delivering_names()

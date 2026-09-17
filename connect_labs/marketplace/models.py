@@ -31,7 +31,6 @@ class OrgProfile(models.Model):
     has_used_connect = models.BooleanField(null=True, blank=True)
     year_established = models.IntegerField(null=True, blank=True)
     team_size = models.IntegerField(null=True, blank=True)
-    flws_managed = models.IntegerField(null=True, blank=True)
 
     countries = models.JSONField(default=list, blank=True)
     regions = models.JSONField(default=list, blank=True)

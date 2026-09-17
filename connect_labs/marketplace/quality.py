@@ -25,7 +25,6 @@ from connect_labs.marketplace.directory import CONTACTS_TAB, ORGANIZATIONS_TAB, 
 NUMBER_COLUMNS = {
     3: "Year of Establishment",
     4: "Org Team Size",
-    5: "No. of FLWs Managed",
 }
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -89,6 +88,21 @@ def audit(org_rows, contact_rows, orgs, contacts, skipped) -> list[Finding]:
             )
         else:
             first_seen[key] = index
+
+    # Country names ISO 3166 does not recognise. The importer drops these
+    # rather than guessing, so without a finding an organisation silently loses
+    # a country it operates in — and the filter silently stops offering it.
+    for org in orgs:
+        for value in org.unresolved_countries:
+            findings.append(
+                Finding(
+                    "unknown_country",
+                    org.source_row,
+                    ORGANIZATIONS_TAB,
+                    f"Countries of Operation contains {value!r}, which is not a country ISO 3166 knows — "
+                    "it is not stored, and this organisation is missing from that country's filter",
+                )
+            )
 
     # Organisations missing the things the directory exists to carry.
     with_contacts = {c.org_name for c in contacts}
