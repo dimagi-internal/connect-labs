@@ -40,7 +40,7 @@
           <td class="px-4 py-3 font-medium">{{ s.definition_name|default:"Workflow" }} <span class="text-gray-400">#{{ s.definition_id }}</span></td>
           <td class="px-4 py-3">{% if s.opportunity_id %}Opp {{ s.opportunity_id }}{% else %}Program {{ s.program_id }}{% endif %}</td>
           <td class="px-4 py-3">{{ s.owner.username }}</td>
-          <td class="px-4 py-3">{{ s.get_cadence_display }} &middot; {{ s.hour }}:00</td>
+          <td class="px-4 py-3">{% if s.interval_hours %}Every {{ s.interval_hours }}h from {{ s.hour }}:00{% else %}{{ s.get_cadence_display }} &middot; {{ s.hour }}:00{% endif %}</td>
           <td class="px-4 py-3">{{ s.next_run_at|date:"Y-m-d H:i"|default:"—" }}</td>
           <td class="px-4 py-3">{{ s.last_run_at|date:"Y-m-d H:i"|default:"—" }}</td>
           <td class="px-4 py-3">

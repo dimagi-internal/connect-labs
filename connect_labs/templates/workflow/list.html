@@ -818,11 +818,13 @@
                     hour: {{ workflow.schedule.hour|default_if_none:6 }},
                     day_of_week: {{ workflow.schedule.day_of_week|default_if_none:0 }},
                     day_of_month: {{ workflow.schedule.day_of_month|default_if_none:1 }},
+                    interval_hours: {{ workflow.schedule.interval_hours|default_if_none:6 }},
                     {% else %}
                     cadence: 'weekly',
                     hour: 6,
                     day_of_week: 0,
                     day_of_month: 1,
+                    interval_hours: 6,
                     {% endif %}
                 },
                 // Template-declared run settings (see template_schedule_options), seeded
@@ -849,6 +851,7 @@
                     // Both weekly and biweekly send a day; the endpoint rejects either without one.
                     if (f.cadence === 'weekly' || f.cadence === 'biweekly') body.day_of_week = Number(f.day_of_week);
                     if (f.cadence === 'monthly') body.day_of_month = Number(f.day_of_month);
+                    if (f.cadence === 'interval') body.interval_hours = Number(f.interval_hours);
                     try {
                         const response = await fetch('{% url 'labs:workflow:api_schedule_upsert' workflow.definition.id %}', {
                             method: 'POST',
@@ -1510,6 +1513,7 @@
                     <label class="block text-sm font-medium mb-1">Cadence</label>
                     <select x-model="scheduleForm.cadence" class="w-full border rounded px-3 py-2 mb-3">
                         <option value="daily">Daily</option>
+                        <option value="interval">Every N hours</option>
                         <option value="weekdays">Weekdays (Mon&ndash;Fri)</option>
                         <option value="weekly">Weekly</option>
                         <option value="biweekly">Every 2 weeks</option>
@@ -1522,6 +1526,28 @@
                     Left gated on 'weekly' alone, a biweekly schedule would offer no day at
                     all and post whatever value happened to be in the form.
                     {% endcomment %}
+                    {% comment %}
+                    Interval needs its own picker: the gap between fires. Only divisors of
+                    24 are offered because compute_next_run anchors the grid to the day and
+                    keeps no schedule history, so a non-divisor would leave a short gap at
+                    each midnight. `hour` stays meaningful - it anchors the grid, e.g. hour=2
+                    with a 6-hour gap fires 02/08/14/20 UTC.
+                    {% endcomment %}
+                    <template x-if="scheduleForm.cadence === 'interval'">
+                        <div class="mb-3">
+                            <label class="block text-sm font-medium mb-1">Hours between runs</label>
+                            <select x-model="scheduleForm.interval_hours" class="w-full border rounded px-3 py-2">
+                                <option value="1">Every hour</option>
+                                <option value="2">Every 2 hours</option>
+                                <option value="3">Every 3 hours</option>
+                                <option value="4">Every 4 hours</option>
+                                <option value="6">Every 6 hours</option>
+                                <option value="8">Every 8 hours</option>
+                                <option value="12">Every 12 hours</option>
+                            </select>
+                        </div>
+                    </template>
+
                     <template x-if="scheduleForm.cadence === 'weekly' || scheduleForm.cadence === 'biweekly'">
                         <div class="mb-3">
                             <label class="block text-sm font-medium mb-1">Day of week</label>
