@@ -36,8 +36,16 @@
 
       <div class="flex gap-8 shrink-0">
         <div>
-          <div class="text-[25px] font-semibold text-gray-900 tabular-nums">{{ round.applications }}</div>
-          <div class="text-[11px] text-gray-400 tracking-wide">APPLICANTS</div>
+          <div class="text-[25px] font-semibold text-gray-900 tabular-nums">{{ round.organisations }}</div>
+          <div class="text-[11px] text-gray-400 tracking-wide">ORGANISATIONS</div>
+          {% if round.applications != round.organisations %}
+            {% comment %}
+            Shown only when the two differ. Some organisations sent the form
+            more than once — counting submissions as applicants overstated this
+            round by 14.
+            {% endcomment %}
+            <div class="text-[11px] text-gray-400 mt-0.5">from {{ round.applications }} submissions</div>
+          {% endif %}
         </div>
         <div>
           <div class="text-[25px] font-semibold text-green-700 tabular-nums">{{ delivering_count }}</div>
@@ -71,7 +79,7 @@
           <tr>
             <th class="px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organisation</th>
             <th class="px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Country</th>
-            <th class="px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">FLWs</th>
+            <th class="px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Submitted</th>
             <th class="px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Since this round</th>
           </tr>
         </thead>
@@ -92,7 +100,13 @@
                 </div>
               </td>
               <td class="px-5 py-3 text-[12.5px] text-gray-600">{{ a.country|default:"—"|truncatechars:30 }}</td>
-              <td class="px-5 py-3 text-[12.5px] text-gray-600 text-right tabular-nums">{% if a.flws %}{{ a.flws }}{% else %}—{% endif %}</td>
+              <td class="px-5 py-3 text-[12.5px] text-gray-500 text-right tabular-nums">
+                {% if a.submissions > 1 %}
+                  <span title="This organisation submitted the form {{ a.submissions }} times">{{ a.submissions }}×</span>
+                {% else %}
+                  <span class="text-gray-300">—</span>
+                {% endif %}
+              </td>
               <td class="px-5 py-3 text-right">
                 {% if a.outcome == 'delivering' %}
                   <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-green-100 text-green-800">
