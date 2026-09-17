@@ -231,3 +231,82 @@ class TestNetworkFiltering:
         client.force_login(user)
         body = client.get(reverse("marketplace:network")).content.decode()
         assert "Child Health Campaign" in body
+
+
+@pytest.mark.django_db
+class TestASubmissionIsNotAnApplicant:
+    """The 2025 CHC round drew 104 submissions from 90 organisations — four of
+    them sent the form twice, days or months apart, under slightly different
+    spellings of their own name. Counting submissions as applicants overstated
+    the round, and listing each one made one body look like two.
+    """
+
+    @pytest.fixture
+    def twice(self, db):
+        org = make_partner("Munafa Federation", "MF", countries=["Sierra Leone"])
+        other = make_partner("Lakeside Trust", "LT", countries=["Kenya"])
+        round_ = Solicitation.objects.create(
+            slug="chc-2025", title="CHC 2025", status="closed", sa_access_state="ok", delivery_type="chc"
+        )
+        for row, date in ((99, dt.date(2025, 5, 22)), (100, dt.date(2025, 5, 22))):
+            SolicitationResponse.objects.create(
+                solicitation=round_,
+                llo_entity=org,
+                source_row=row,
+                org_name="MUNAFA-M'PATIE FEDERATION",
+                match_state="name",
+                submission_date=date,
+            )
+        SolicitationResponse.objects.create(
+            solicitation=round_, llo_entity=other, source_row=101, org_name=other.name, match_state="name"
+        )
+        return {"org": org, "round": round_}
+
+    def test_the_headline_counts_organisations_not_submissions(self, client, user, twice):
+        client.force_login(user)
+        round_ = client.get(reverse("marketplace:round", args=["chc-2025"])).context["round"]
+        assert round_.organisations == 2
+        assert round_.applications == 3
+
+    def test_an_organisation_appears_once_however_often_it_submitted(self, client, user, twice):
+        client.force_login(user)
+        applicants = client.get(reverse("marketplace:round", args=["chc-2025"])).context["applicants"]
+        assert [a["name"] for a in applicants].count("Munafa Federation") == 1
+        assert len(applicants) == 2
+
+    def test_the_row_says_how_many_times_it_submitted(self, client, user, twice):
+        """Collapsed, not hidden — a duplicate submission is worth knowing about."""
+        client.force_login(user)
+        applicants = client.get(reverse("marketplace:round", args=["chc-2025"])).context["applicants"]
+        by_name = {a["name"]: a for a in applicants}
+        assert by_name["Munafa Federation"]["submissions"] == 2
+        assert by_name["Lakeside Trust"]["submissions"] == 1
+
+    def test_unmatched_submissions_are_never_collapsed_together(self, client, user, twice):
+        """Whether two unattributed submissions are the same organisation is the
+        open question, so merging them would answer it by assumption."""
+        for row in (102, 103):
+            SolicitationResponse.objects.create(
+                solicitation=twice["round"], source_row=row, org_name="Someone Else", match_state="unmatched"
+            )
+        client.force_login(user)
+        applicants = client.get(reverse("marketplace:round", args=["chc-2025"])).context["applicants"]
+        assert sum(1 for a in applicants if a["outcome"] == "unresolved") == 2
+
+    def test_submitting_twice_to_one_round_is_not_coming_back_for_another(self, client, user, twice):
+        """The segment's own words are "Came back for another round". An
+        organisation that sent one round's form twice has not done that."""
+        client.force_login(user)
+        segments = {s["key"]: s["count"] for s in client.get(reverse("marketplace:network")).context["segments"]}
+        assert segments["repeat"] == 0
+
+    def test_applying_to_a_second_round_does_count(self, client, user, twice):
+        second = Solicitation.objects.create(
+            slug="rutf-2026", title="RUTF", status="closed", delivery_type="nutrition"
+        )
+        SolicitationResponse.objects.create(
+            solicitation=second, llo_entity=twice["org"], source_row=2, org_name="Munafa", match_state="name"
+        )
+        client.force_login(user)
+        segments = {s["key"]: s["count"] for s in client.get(reverse("marketplace:network")).context["segments"]}
+        assert segments["repeat"] == 1
