@@ -171,3 +171,22 @@ class TestJoinDateStamping:
         import_directory(ORGS, CONTACTS, DATES, MAPPING)
         harbourside = LabsOrg.objects.get(name="Harbourside Health Initiative")
         assert harbourside.marketplace_profile.joined_at.isoformat() == "2025-03-04"
+
+
+class TestTheBeatPullsEverythingTheSheetOwns:
+    def test_the_daily_import_includes_the_rounds(self, monkeypatch):
+        """The rounds tab carries decisions only the directory team can make —
+        a round's Connect programme, its response sheet link. Pulling
+        organisations daily but leaving rounds behind a flag meant either
+        correction could sit unread in the sheet indefinitely.
+        """
+        from connect_labs.pulse import tasks
+
+        called = {}
+        monkeypatch.setattr(
+            "django.core.management.call_command",
+            lambda name, **kwargs: called.update({"name": name} | kwargs),
+        )
+        tasks.import_partner_directory()
+
+        assert called == {"name": "marketplace_import", "eoi": True}
