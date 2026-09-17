@@ -24,7 +24,7 @@ from django.shortcuts import get_object_or_404, render
 
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import queries
-from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
+from connect_labs.solicitations.local_models import SolicitationResponse
 
 
 def _filtered(request, exclude=None):
@@ -109,14 +109,13 @@ def network(request):
     counts = queries.segment_counts(state["scope"], delivering)
 
     slugs_by_name = queries.workspace_slugs_by_org_name()
+    rounds_by_org = queries.rounds_by_org(rows)
     listed = [
         {
             "org": org,
             "profile": getattr(org, "marketplace_profile", None),
             "delivering": org.name in delivering,
-            "rounds": list(
-                Solicitation.objects.filter(responses__llo_entity=org).distinct().order_by("-published_on")[:3]
-            ),
+            "rounds": rounds_by_org.get(org.pk, []),
             "workspaces": len(slugs_by_name.get(org.name, ())),
         }
         for org in rows
