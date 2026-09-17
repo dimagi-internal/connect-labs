@@ -75,18 +75,18 @@ def network(db):
 @pytest.mark.django_db
 class TestSegments:
     def test_bench_and_delivering_partition_the_network(self, network):
-        rows = list(queries.org_rows())
+        rows = list(queries.all_rows_with_rounds())
         delivering = queries.delivering_names()
         counts = queries.segment_counts(rows, delivering)
         assert counts["delivering"] + counts["bench"] == counts["all"] == 2
 
     def test_no_contact_counts_only_the_unreachable(self, network):
-        counts = queries.segment_counts(queries.org_rows(), queries.delivering_names())
+        counts = queries.segment_counts(queries.all_rows_with_rounds(), queries.delivering_names())
         assert counts["nocontact"] == 1
 
     def test_a_count_never_promises_more_than_the_list_shows(self, network):
         """Counted over the same rows the list renders, so the two cannot drift."""
-        rows = list(queries.org_rows())
+        rows = list(queries.all_rows_with_rounds())
         delivering = queries.delivering_names()
         counts = queries.segment_counts(rows, delivering)
         for key, _, _ in queries.SEGMENTS:
@@ -97,17 +97,17 @@ class TestSegments:
 @pytest.mark.django_db
 class TestFacets:
     def test_counts_every_country_and_sector_in_scope(self, network):
-        facets = queries.facet_counts(queries.org_rows(), queries.delivering_names())
+        facets = queries.facet_counts(queries.all_rows_with_rounds(), queries.delivering_names())
         assert {f["value"] for f in facets["countries"]} == {"Uganda", "Malawi"}
         assert {f["value"] for f in facets["sectors"]} == {"Health", "Nutrition"}
 
     def test_counts_organisations_per_round_not_applications(self, network):
         """Three applications, two organisations — the facet answers the second."""
-        facets = queries.facet_counts(queries.org_rows(), queries.delivering_names())
+        facets = queries.facet_counts(queries.all_rows_with_rounds(), queries.delivering_names())
         assert facets["rounds"][0]["count"] == 2
 
     def test_facets_narrow_with_the_rows_given(self, network):
-        rows = [r for r in queries.org_rows() if r.name.startswith("Serrano")]
+        rows = [r for r in queries.all_rows_with_rounds() if r.name.startswith("Serrano")]
         facets = queries.facet_counts(rows, queries.delivering_names())
         assert {f["value"] for f in facets["countries"]} == {"Malawi"}
 
@@ -140,23 +140,27 @@ class TestRounds:
 @pytest.mark.django_db
 class TestMapPoints:
     def test_every_located_organisation_becomes_a_point(self, network):
-        points = queries.map_points(queries.org_rows(), queries.delivering_names())
+        points = queries.map_points(queries.all_rows_with_rounds(), queries.delivering_names())
         assert len(points) == 2
 
     def test_precision_travels_with_the_point(self, network):
         """A town matched in an address is a pin; a country is a whole country.
         A map that hides the difference draws a rooftop from a country name."""
-        by_name = {p["name"]: p for p in queries.map_points(queries.org_rows(), queries.delivering_names())}
+        by_name = {
+            p["name"]: p for p in queries.map_points(queries.all_rows_with_rounds(), queries.delivering_names())
+        }
         assert by_name["Northlake Maternal Health Network"]["precision"] == "city"
         assert by_name["Serrano Child Nutrition Foundation"]["precision"] == "country"
 
     def test_an_unlocated_organisation_is_omitted_not_placed_at_zero(self, network):
         nowhere = make_partner("Unplaced Trust", "UT")
-        rows = [r for r in queries.org_rows() if r.pk == nowhere.pk]
+        rows = [r for r in queries.all_rows_with_rounds() if r.pk == nowhere.pk]
         assert queries.map_points(rows, set()) == []
 
     def test_points_carry_the_delivering_flag_the_globe_colours_by(self, network):
-        by_name = {p["name"]: p for p in queries.map_points(queries.org_rows(), queries.delivering_names())}
+        by_name = {
+            p["name"]: p for p in queries.map_points(queries.all_rows_with_rounds(), queries.delivering_names())
+        }
         assert by_name["Northlake Maternal Health Network"]["delivering"] is True
         assert by_name["Serrano Child Nutrition Foundation"]["delivering"] is False
 

@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 
@@ -27,58 +26,58 @@ from connect_labs.marketplace import queries
 from connect_labs.solicitations.local_models import SolicitationResponse
 
 
-def _filtered(request, exclude=None):
-    """The organisations in scope, plus the controls that put them there.
+def _controls(request) -> dict:
+    """The filter controls as the person set them."""
+    return {
+        "q": request.GET.get("q", "").strip(),
+        "countries": [v for v in request.GET.getlist("country") if v.strip()],
+        "sectors": [v for v in request.GET.getlist("sector") if v.strip()],
+        "applied": [v for v in request.GET.getlist("applied") if v.strip()],
+        "segment": request.GET.get("segment", "all").strip() or "all",
+    }
 
-    One place, because the list, the counts, the facets and the globe must all
-    be looking at the same set — a count that disagrees with the list is worse
-    than no count at all.
 
-    `exclude` drops ONE facet's own filter while keeping every other. That is
-    how a faceted rail has to count: if choosing Uganda also removed Malawi
-    from the country list, a second country could never be added, and the
-    multi-select the rail exists for would be unreachable through the UI.
+def _population(request) -> dict:
+    """Everything the network page needs, from one fetch.
+
+    The page filters the same population five ways — the list, each of the
+    three facet dimensions, and the globe — and re-querying for each was four
+    round-trips plus three aggregates to draw one page. At a few hundred
+    organisations the whole population is smaller than a page of most tables,
+    so it is fetched once here and sliced in memory.
+
+    `scope_excluding` is what makes a faceted rail work: each dimension is
+    counted with its OWN filter dropped and every other applied, otherwise
+    choosing Uganda removes Malawi from the country list and a second value can
+    never be added.
     """
-    rows = queries.org_rows()
-
-    query = request.GET.get("q", "").strip()
-    # Facets are multi-select. Picking two countries should widen the answer,
-    # not replace it — that is the whole reason a rail beats a dropdown.
-    countries = [v for v in request.GET.getlist("country") if v.strip()]
-    sectors = [v for v in request.GET.getlist("sector") if v.strip()]
-    applied = [v for v in request.GET.getlist("applied") if v.strip()]
-    segment = request.GET.get("segment", "all").strip() or "all"
-
-    if query:
-        rows = rows.filter(Q(name__icontains=query) | Q(short_name__icontains=query))
-    if countries and exclude != "country":
-        match = Q()
-        for value in countries:
-            match |= Q(marketplace_profile__countries__icontains=value)
-        rows = rows.filter(match)
-    if sectors and exclude != "sector":
-        match = Q()
-        for value in sectors:
-            match |= Q(marketplace_profile__sectors__icontains=value)
-        rows = rows.filter(match)
-    if applied and exclude != "applied":
-        rows = rows.filter(solicitation_responses__solicitation__slug__in=applied)
-
-    scope = list(rows.distinct())
+    selected = _controls(request)
+    everyone = queries.all_rows_with_rounds()
     delivering = queries.delivering_names()
-    shown = [r for r in scope if queries.in_segment(r, segment, delivering)]
+
+    def scope_excluding(dimension=None):
+        return [
+            org
+            for org in everyone
+            if queries.matches(
+                org,
+                query=selected["q"],
+                countries=() if dimension == "country" else selected["countries"],
+                sectors=() if dimension == "sector" else selected["sectors"],
+                applied=() if dimension == "applied" else selected["applied"],
+            )
+        ]
+
+    scope = scope_excluding()
+    shown = [org for org in scope if queries.in_segment(org, selected["segment"], delivering)]
 
     return {
         "rows": shown,
         "scope": scope,
+        "scope_excluding": scope_excluding,
+        "everyone": everyone,
         "delivering": delivering,
-        "selected": {
-            "q": query,
-            "countries": countries,
-            "sectors": sectors,
-            "applied": applied,
-            "segment": segment,
-        },
+        "selected": selected,
     }
 
 
@@ -103,19 +102,18 @@ def home(request):
 @login_required
 def network(request):
     """The organisations, filterable, with the globe showing what is in scope."""
-    state = _filtered(request)
+    state = _population(request)
     rows = state["rows"]
     delivering = state["delivering"]
     counts = queries.segment_counts(state["scope"], delivering)
 
     slugs_by_name = queries.workspace_slugs_by_org_name()
-    rounds_by_org = queries.rounds_by_org(rows)
     listed = [
         {
             "org": org,
             "profile": getattr(org, "marketplace_profile", None),
             "delivering": org.name in delivering,
-            "rounds": rounds_by_org.get(org.pk, []),
+            "rounds": queries.rounds_of(org),
             "workspaces": len(slugs_by_name.get(org.name, ())),
         }
         for org in rows
@@ -140,22 +138,16 @@ def network(request):
             "segments": segments,
             "rail": queries.facet_rail(
                 {
-                    "countries": queries.facet_counts(_filtered(request, exclude="country")["scope"], delivering)[
-                        "countries"
-                    ],
-                    "sectors": queries.facet_counts(_filtered(request, exclude="sector")["scope"], delivering)[
-                        "sectors"
-                    ],
-                    "rounds": queries.facet_counts(_filtered(request, exclude="applied")["scope"], delivering)[
-                        "rounds"
-                    ],
+                    "countries": queries.facet_counts(state["scope_excluding"]("country"), delivering)["countries"],
+                    "sectors": queries.facet_counts(state["scope_excluding"]("sector"), delivering)["sectors"],
+                    "rounds": queries.facet_counts(state["scope_excluding"]("applied"), delivering)["rounds"],
                 },
                 state["selected"],
                 request.GET,
             ),
             "selected": state["selected"],
             "shown": len(rows),
-            "total": LabsOrg.objects.count(),
+            "total": len(state["everyone"]),
             "why": next((s["why"] for s in segments if s["selected"]), ""),
             "any_facet": bool(
                 state["selected"]["countries"] or state["selected"]["sectors"] or state["selected"]["applied"]
@@ -173,7 +165,7 @@ def network_points(request):
     Its own endpoint rather than markup, so changing a filter moves the map
     without reloading the page or re-rendering every row.
     """
-    state = _filtered(request)
+    state = _population(request)
     return JsonResponse({"points": queries.map_points(state["rows"], state["delivering"])})
 
 
