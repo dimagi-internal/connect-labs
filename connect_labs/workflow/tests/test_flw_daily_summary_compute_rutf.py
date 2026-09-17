@@ -8,53 +8,9 @@ def _row(form_display_name, entity_id, status="approved", **overrides):
         "status": status,
         "rutf_enrollment": None,
         "muac_photo": None,
-        "household_children_count": None,
     }
     row.update(overrides)
     return row
-
-
-def test_households_registered_dedupes_distinct_entities():
-    rows = [
-        _row("Register a New Family", "hh-a", household_children_count="2"),
-        _row("Register a New Family", "hh-b", household_children_count="1"),
-        _row("Register a New Family", "hh-a", household_children_count="2"),  # duplicate submission -- deduped
-    ]
-    result = compute_flw_daily_summary_rutf(rows)
-    assert result["total_households_registered"] == 2
-
-
-def test_registration_rows_with_no_entity_id_are_skipped_for_households():
-    rows = [
-        _row("Register a New Family", None, household_children_count="3"),
-        _row("Register a New Family", "hh-a", household_children_count="2"),
-    ]
-    result = compute_flw_daily_summary_rutf(rows)
-    assert result["total_households_registered"] == 1
-
-
-def test_children_registered_sums_household_children_count_across_all_submissions():
-    # Unlike households (deduped by entity_id), children_registered sums the
-    # declared under-5 count from every approved Register a New Family
-    # submission that day, including a duplicate-entity_id submission (e.g. an
-    # update to the same household still reports real children that day).
-    rows = [
-        _row("Register a New Family", "hh-a", household_children_count="3"),
-        _row("Register a New Family", "hh-b", household_children_count="1"),
-        _row("Register a New Family", "hh-a", household_children_count="2"),
-    ]
-    result = compute_flw_daily_summary_rutf(rows)
-    assert result["total_children_registered"] == 6
-
-
-def test_children_registered_handles_missing_or_unparseable_count():
-    rows = [
-        _row("Register a New Family", "hh-a", household_children_count=None),
-        _row("Register a New Family", "hh-b", household_children_count="not-a-number"),
-        _row("Register a New Family", "hh-c", household_children_count="2"),
-    ]
-    result = compute_flw_daily_summary_rutf(rows)
-    assert result["total_children_registered"] == 2
 
 
 def test_children_screened_counts_every_screening_submission_not_deduped():
@@ -91,35 +47,50 @@ def test_muac_measured_counts_screening_rows_with_a_photo():
     assert result["total_children_muac_measured"] == 2
 
 
-def test_total_visits_counts_every_status_but_sam_followup_visits_only_approved():
+def test_total_visits_sums_screening_and_visit_form_any_status_but_sam_followup_visits_only_approved_visit_form():
     rows = [
         _row("Visit Form", "child-a", status="approved"),
         _row("Visit Form", "child-b", status="pending"),
         _row("Visit Form", "child-c", status="over_limit"),
-        _row("Screening ", "child-d", rutf_enrollment="yes"),  # different form -- excluded
+        _row("Screening ", "child-d", status="approved", rutf_enrollment="yes"),
+        _row("Screening ", "child-e", status="pending", rutf_enrollment="yes"),
     ]
     result = compute_flw_daily_summary_rutf(rows)
-    assert result["total_visits"] == 3
+    assert result["total_visits"] == 5
     assert result["total_sam_followup_visits"] == 1
 
 
-def test_non_approved_registration_and_screening_rows_are_excluded():
+def test_a_screening_only_day_is_not_reported_as_zero_visits():
+    # Regression: total_visits used to only count "Visit Form", so a real,
+    # fully active day (all screenings, no follow-ups yet) misreported as 0.
     rows = [
-        _row("Register a New Family", "hh-a", status="pending", household_children_count="4"),
+        _row("Screening ", "child-a", rutf_enrollment="yes"),
+        _row("Screening ", "child-b", rutf_enrollment="no"),
+        _row("Screening ", "child-c", rutf_enrollment="yes"),
+        _row("Screening ", "child-d", rutf_enrollment="no"),
+        _row("Screening ", "child-e", rutf_enrollment="yes"),
+        _row("Screening ", "child-f", rutf_enrollment="no"),
+    ]
+    result = compute_flw_daily_summary_rutf(rows)
+    assert result["total_visits"] == 6
+    assert result["total_children_screened"] == 6
+    assert result["total_sam_followup_visits"] == 0
+
+
+def test_non_approved_screening_rows_are_excluded_from_screened_and_sam():
+    rows = [
         _row("Screening ", "child-a", status="pending", rutf_enrollment="yes"),
     ]
     result = compute_flw_daily_summary_rutf(rows)
-    assert result["total_households_registered"] == 0
-    assert result["total_children_registered"] == 0
     assert result["total_children_screened"] == 0
     assert result["total_sam_children_registered"] == 0
+    # Still contributes to total_visits (any status, real FLW activity that day).
+    assert result["total_visits"] == 1
 
 
 def test_empty_rows_produce_all_zero_indicators():
     result = compute_flw_daily_summary_rutf([])
     assert result == {
-        "total_households_registered": 0,
-        "total_children_registered": 0,
         "total_children_screened": 0,
         "total_sam_children_registered": 0,
         "total_children_muac_measured": 0,
@@ -130,8 +101,6 @@ def test_empty_rows_produce_all_zero_indicators():
 
 def test_indicators_are_computed_independently_across_forms():
     rows = [
-        _row("Register a New Family", "hh-a", household_children_count="2"),
-        _row("Register a New Family", "hh-b", household_children_count="3"),
         _row("Screening ", "child-a", rutf_enrollment="yes", muac_photo="a.jpg"),
         _row("Screening ", None, rutf_enrollment="no"),
         _row("Visit Form", "child-c", status="approved"),
@@ -139,10 +108,8 @@ def test_indicators_are_computed_independently_across_forms():
         _row("Visit Form", "child-e", status="rejected"),
     ]
     result = compute_flw_daily_summary_rutf(rows)
-    assert result["total_households_registered"] == 2
-    assert result["total_children_registered"] == 5
     assert result["total_children_screened"] == 2
     assert result["total_sam_children_registered"] == 1
     assert result["total_children_muac_measured"] == 1
-    assert result["total_visits"] == 3
+    assert result["total_visits"] == 5  # 2 screening + 3 visit form, any status
     assert result["total_sam_followup_visits"] == 2
