@@ -820,13 +820,21 @@ class MopupUploadBuildingsView(LoginRequiredMixin, View):
 
 
 class MopupExcludeWorkAreaView(LoginRequiredMixin, View):
-    """The map view's "Not include" action (item 4): manually excludes (or
-    re-includes) one work area OR one planning-gap cell from this run's
-    candidate set, regardless of what the indicator thresholds would
-    otherwise flag. Works identically for both since `wa_id` here is
-    whatever the map/table already used to identify the row — a real
+    """The map view's "Exclude WAs" action (item 4): manually excludes (or
+    re-includes) one or more work areas AND/OR planning-gap cells from this
+    run's candidate set, regardless of what the indicator thresholds would
+    otherwise flag. Works identically for both since each id in `wa_ids` is
+    whatever the map/table already used to identify that row — a real
     CommCare wa_id, or a gap cell's own `"{area_id}-gap-{cluster}"` id — and
     `run.excluded_wa_ids` doesn't distinguish between the two shapes.
+
+    Takes a LIST (`wa_ids`), not one id at a time, specifically so the map's
+    multi-select (shift/cmd/ctrl-click several, then one "Exclude WAs" click)
+    is a single `update_run` call, not N of them — `update_run` re-uploads the
+    run's entire JSON blob to Connect's production LabsRecord API (see
+    `MopupCandidatesView`'s own docstring for why that's expensive), so
+    looping this endpoint N times would reintroduce exactly the anti-pattern
+    already fixed there.
 
     Persists onto `run.excluded_wa_ids` and returns immediately — it does
     NOT itself re-evaluate/return updated candidates/ward_summary/map_features.
@@ -848,16 +856,16 @@ class MopupExcludeWorkAreaView(LoginRequiredMixin, View):
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        wa_id = payload.get("wa_id")
-        if not wa_id:
-            return JsonResponse({"status": "error", "detail": "wa_id is required."}, status=400)
+        wa_ids = payload.get("wa_ids")
+        if not wa_ids or not isinstance(wa_ids, list):
+            return JsonResponse({"status": "error", "detail": "wa_ids (a non-empty list) is required."}, status=400)
         excluded = bool(payload.get("excluded", True))
 
         current = set(run.excluded_wa_ids)
         if excluded:
-            current.add(wa_id)
+            current.update(wa_ids)
         else:
-            current.discard(wa_id)
+            current.difference_update(wa_ids)
         da.update_run(run, excluded_wa_ids=sorted(current))
 
         return JsonResponse({"status": "ok", "excluded_wa_ids": sorted(current)})

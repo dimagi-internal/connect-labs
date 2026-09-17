@@ -472,7 +472,7 @@ window.MopupAnalysis = (function () {
     // after excluding a work area) replaces every <tr> wholesale -- re-apply
     // whatever's currently selected via the map rather than losing the
     // highlight on the next unrelated setting change.
-    highlightCandidateRow(selectedWaId);
+    highlightCandidateRow(selectedWaIds);
   }
 
   // ---------------------------------------------------------------------
@@ -691,38 +691,94 @@ window.MopupAnalysis = (function () {
   }
 
   let lastMapFeatures = null;
-  let selectedWaId = null;
+  // Multi-select: a Set of wa_ids (real work areas AND/OR Step 2 gap-fill
+  // cells, both share one id-space -- see MopupExcludeWorkAreaView). Mirrors
+  // the exact interaction convention microplans/review.js already
+  // established for its own map (plain click replaces the selection,
+  // shift/cmd/ctrl-click toggles membership) and the same Mapbox
+  // feature-state mechanism (plan_layers.js's fill-opacity paint already
+  // reacts to feature-state.sel per feature) -- ported here rather than
+  // inventing a different pattern for a second map in the same app.
+  let selectedWaIds = new Set();
 
-  // Highlights the candidate/gap-fill table row for `waId` (null clears any
-  // highlight) -- called both right after a map click and after every
-  // renderCandidates() re-render, so the highlight survives an unrelated
-  // Recompute rather than only showing until the next setting change wipes
-  // the table's innerHTML. Deliberately does NOT scroll the row into view
-  // (tried that first; per user feedback, selecting a work area on the map
-  // shouldn't also jump the page around) -- the highlight alone is enough
-  // to find it if the row's already on screen.
-  function highlightCandidateRow(waId) {
+  // Highlights the candidate/gap-fill table row for every id in `waIds` --
+  // called both right after a map click and after every renderCandidates()
+  // re-render, so the highlight survives an unrelated Recompute rather than
+  // only showing until the next setting change wipes the table's innerHTML.
+  // Deliberately does NOT scroll the row into view (tried that first; per
+  // user feedback, selecting a work area on the map shouldn't also jump the
+  // page around) -- the highlight alone is enough to find it if the row's
+  // already on screen.
+  function highlightCandidateRow(waIds) {
     document
       .querySelectorAll('#candidate-rows tr[data-wa-id]')
       .forEach((tr) => {
-        tr.classList.toggle(
-          'bg-yellow-100',
-          waId != null && tr.dataset.waId === waId,
-        );
+        tr.classList.toggle('bg-yellow-100', waIds.has(tr.dataset.waId));
       });
   }
 
-  function selectWorkArea(waId, ward) {
-    selectedWaId = waId;
-    $('map-selection-label').textContent = `${waId} (${ward})`;
-    $('map-selection-bar').classList.remove('hidden');
-    highlightCandidateRow(waId);
+  // Applies the current selection to every rendered WA/gap-fill feature's
+  // Mapbox feature-state (source 'wa', the id PlanLayers.workAreas promotes
+  // features by) -- re-applied on every renderMap() call rather than
+  // assumed to survive a source setData() refresh, same defensive pattern
+  // microplans/review.js's own setSelState() uses.
+  function applySelectionFeatureState(styledFeatureCollection) {
+    if (!map || !mapReady) return;
+    (styledFeatureCollection?.features || []).forEach((f) => {
+      const waId = f.properties.wa_id;
+      if (waId == null) return;
+      map.setFeatureState(
+        { source: 'wa', id: waId },
+        { sel: selectedWaIds.has(waId) },
+      );
+    });
   }
 
-  function deselectWorkArea() {
-    selectedWaId = null;
-    $('map-selection-bar').classList.add('hidden');
-    highlightCandidateRow(null);
+  // Shared by every selection change: syncs the selection bar, the
+  // candidate-table highlight, and the map's own feature-state.
+  function refreshSelectionUI() {
+    const n = selectedWaIds.size;
+    if (n === 0) {
+      $('map-selection-bar').classList.add('hidden');
+    } else {
+      $('map-selection-bar').classList.remove('hidden');
+      if (n === 1) {
+        const waId = [...selectedWaIds][0];
+        const feature = (lastMapFeatures?.features || []).find(
+          (f) => f.properties.wa_id === waId,
+        );
+        const ward = feature?.properties?.ward;
+        $('map-selection-label').textContent = ward
+          ? `Selected work area: ${waId} (${ward}) — also highlighted below`
+          : `Selected work area: ${waId} — also highlighted below`;
+      } else {
+        $(
+          'map-selection-label',
+        ).textContent = `${n} work areas selected — also highlighted below`;
+      }
+    }
+    highlightCandidateRow(selectedWaIds);
+    if (lastMapFeatures) {
+      applySelectionFeatureState(styleMapFeatures(lastMapFeatures));
+    }
+  }
+
+  // additive: shift/cmd/ctrl-click toggles this one id in/out of the
+  // current selection; a plain click replaces the whole selection with just
+  // this one (same convention as microplans/review.js).
+  function toggleOrSelectWorkArea(waId, additive) {
+    if (additive) {
+      if (selectedWaIds.has(waId)) selectedWaIds.delete(waId);
+      else selectedWaIds.add(waId);
+    } else {
+      selectedWaIds = new Set([waId]);
+    }
+    refreshSelectionUI();
+  }
+
+  function deselectAllWorkAreas() {
+    selectedWaIds = new Set();
+    refreshSelectionUI();
   }
 
   // Excludes/re-includes are relative to EVC (expected visit count), not
@@ -804,7 +860,11 @@ window.MopupAnalysis = (function () {
         if (props.source !== 'existing_wa' && props.source !== 'planning_gap') {
           return;
         }
-        selectWorkArea(props.wa_id, props.ward);
+        const oe = e.originalEvent || {};
+        toggleOrSelectWorkArea(
+          props.wa_id,
+          oe.shiftKey || oe.metaKey || oe.ctrlKey,
+        );
       });
     });
 
@@ -817,12 +877,12 @@ window.MopupAnalysis = (function () {
       const hitLayers = layerIds.filter((id) => map.getLayer(id));
       if (!hitLayers.length) return;
       const hits = map.queryRenderedFeatures(e.point, { layers: hitLayers });
-      if (!hits.length) deselectWorkArea();
+      if (!hits.length) deselectAllWorkAreas();
     });
   }
 
-  async function excludeSelectedWorkArea() {
-    if (!selectedWaId) return;
+  async function excludeSelectedWorkAreas() {
+    if (selectedWaIds.size === 0) return;
     const button = $('map-exclude-button');
     button.disabled = true;
     try {
@@ -832,14 +892,17 @@ window.MopupAnalysis = (function () {
           'Content-Type': 'application/json',
           'X-CSRFToken': CFG.csrfToken,
         },
-        body: JSON.stringify({ wa_id: selectedWaId, excluded: true }),
+        body: JSON.stringify({
+          wa_ids: [...selectedWaIds],
+          excluded: true,
+        }),
       });
       const data = await resp.json();
       if (!resp.ok || data.status !== 'ok') {
-        alert(data.detail || 'Failed to exclude this work area.');
+        alert(data.detail || 'Failed to exclude the selected work area(s).');
         return;
       }
-      deselectWorkArea();
+      deselectAllWorkAreas();
       // Reuses the normal Recompute path -- the server-side exclusion
       // filter (_apply_exclusions) is applied there, so this one fetch
       // already re-renders the candidate table/ward summary/map correctly;
@@ -855,6 +918,7 @@ window.MopupAnalysis = (function () {
     if (!map || !mapReady) return;
     const styled = styleMapFeatures(rawMapFeatures);
     window.PlanLayers.workAreas(map, { data: styled, promoteId: 'wa_id' });
+    applySelectionFeatureState(styled);
     renderBuildingPoints(buildingPointFeatures(rawMapFeatures));
     renderMapLegend(rawMapFeatures);
     if (!mapBoundsFitted) {
@@ -1361,7 +1425,7 @@ window.MopupAnalysis = (function () {
       .forEach((r) => r.addEventListener('change', updateGapModeVisibility));
     updateGapModeVisibility();
     $('gap-upload-button').addEventListener('click', uploadBuildingsFile);
-    $('map-exclude-button').addEventListener('click', excludeSelectedWorkArea);
+    $('map-exclude-button').addEventListener('click', excludeSelectedWorkAreas);
     initTooltips();
     showLoadingPanel(
       'Loading work-area, visit, and geometry data for this opportunity…',
