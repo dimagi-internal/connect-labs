@@ -57,7 +57,6 @@ refuses to open. <details> needs no JavaScript at all.
               {% if profile.regions %}<div><dt class="text-gray-500">Regions</dt><dd class="text-gray-900">{{ profile.regions|join:", " }}</dd></div>{% endif %}
               {% if profile.year_established %}<div><dt class="text-gray-500">Established</dt><dd class="text-gray-900">{{ profile.year_established }}</dd></div>{% endif %}
               {% if profile.team_size %}<div><dt class="text-gray-500">Team size</dt><dd class="text-gray-900">{{ profile.team_size }}</dd></div>{% endif %}
-              {% if profile.flws_managed %}<div><dt class="text-gray-500">FLWs managed</dt><dd class="text-gray-900">{{ profile.flws_managed }}</dd></div>{% endif %}
               {% if profile.website %}
                 <div><dt class="text-gray-500">Website</dt>
                   <dd><a href="{{ profile.website }}" target="_blank" rel="noopener noreferrer"

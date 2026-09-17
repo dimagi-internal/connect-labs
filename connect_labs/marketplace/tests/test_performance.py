@@ -29,7 +29,6 @@ def _org(i, round_):
         f"Organisation {i:03d}",
         f"O{i:03d}",
         countries=["Nigeria" if i % 2 else "Kenya"],
-        flws_managed=i,
         lat=9.0 + i / 100,
         lon=7.0 + i / 100,
         country_iso3="NGA",

@@ -37,7 +37,6 @@ PROFILE_FIELDS = (
     "has_used_connect",
     "year_established",
     "team_size",
-    "flws_managed",
     "countries",
     "regions",
     "website",
