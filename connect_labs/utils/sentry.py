@@ -37,6 +37,7 @@ Everything here is best-effort by contract — a bug in enrichment must never
 swallow the error being reported, so each step is independently guarded and
 falls back to sending the event unchanged.
 """
+
 from __future__ import annotations
 
 import logging

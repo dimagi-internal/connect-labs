@@ -1,4 +1,5 @@
 """Template filters for JSON serialization."""
+
 import json
 
 from django import template

@@ -4,6 +4,7 @@ Management command to test coverage data loading.
 This replicates the same loading process as the web UI but can be run from CLI.
 Uses the same AnalysisPipeline pathway that the UI views use.
 """
+
 import logging
 from datetime import datetime, timedelta
 from unittest.mock import Mock

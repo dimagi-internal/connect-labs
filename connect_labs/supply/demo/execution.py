@@ -7,6 +7,7 @@ The event history is deliberately spread across ingestion tiers, mirroring the
 real capability gradient: the Kano plant emits EPCIS, despatches arrive as
 despatch advices, and the Port Sudan corridor arrives as sparse check-ins.
 """
+
 from datetime import datetime, time, timedelta
 
 from django.contrib.gis.geos import LineString, Point

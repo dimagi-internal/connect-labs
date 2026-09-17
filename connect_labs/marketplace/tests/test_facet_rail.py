@@ -4,6 +4,7 @@ All data invented. The point of a rail over a dropdown is that you can see how
 big a filter is without opening it, and that picking two values widens the
 answer rather than replacing it.
 """
+
 import pytest
 from django.http import QueryDict
 from django.urls import reverse

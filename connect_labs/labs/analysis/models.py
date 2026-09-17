@@ -364,12 +364,16 @@ class FLWAnalysisResult(AnalysisResult):
                         pending_visits=row_data.get("pending_visits", 0),
                         rejected_visits=row_data.get("rejected_visits", 0),
                         flagged_visits=row_data.get("flagged_visits", 0),
-                        first_visit_date=date.fromisoformat(row_data["first_visit_date"])
-                        if row_data.get("first_visit_date")
-                        else None,
-                        last_visit_date=date.fromisoformat(row_data["last_visit_date"])
-                        if row_data.get("last_visit_date")
-                        else None,
+                        first_visit_date=(
+                            date.fromisoformat(row_data["first_visit_date"])
+                            if row_data.get("first_visit_date")
+                            else None
+                        ),
+                        last_visit_date=(
+                            date.fromisoformat(row_data["last_visit_date"])
+                            if row_data.get("last_visit_date")
+                            else None
+                        ),
                         dates_active=[date.fromisoformat(d) for d in row_data.get("dates_active", [])],
                         custom_fields={
                             k: v
@@ -541,12 +545,16 @@ class EntityAnalysisResult(AnalysisResult):
                         entity_name=row_data.get("entity_name", "") or "",
                         username=row_data.get("username", "") or "",
                         total_visits=row_data.get("total_visits", 0),
-                        first_visit_date=date.fromisoformat(row_data["first_visit_date"])
-                        if row_data.get("first_visit_date")
-                        else None,
-                        last_visit_date=date.fromisoformat(row_data["last_visit_date"])
-                        if row_data.get("last_visit_date")
-                        else None,
+                        first_visit_date=(
+                            date.fromisoformat(row_data["first_visit_date"])
+                            if row_data.get("first_visit_date")
+                            else None
+                        ),
+                        last_visit_date=(
+                            date.fromisoformat(row_data["last_visit_date"])
+                            if row_data.get("last_visit_date")
+                            else None
+                        ),
                         custom_fields={k: v for k, v in row_data.items() if k not in _STD_FIELDS},
                     )
                 )
@@ -719,9 +727,9 @@ class VisitAnalysisResult(AnalysisResult):
                         id=row_data.get("id", ""),
                         user_id=row_data.get("user_id"),
                         username=row_data.get("username", ""),
-                        visit_date=datetime.fromisoformat(row_data["visit_date"])
-                        if row_data.get("visit_date")
-                        else None,
+                        visit_date=(
+                            datetime.fromisoformat(row_data["visit_date"]) if row_data.get("visit_date") else None
+                        ),
                         status=row_data.get("status", ""),
                         flagged=row_data.get("flagged", False),
                         latitude=row_data.get("latitude"),

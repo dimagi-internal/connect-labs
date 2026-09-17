@@ -3,6 +3,7 @@
 Tools register themselves at import time. Each tool is a callable with a
 JSON-schema for its parameters and a human-readable description.
 """
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any

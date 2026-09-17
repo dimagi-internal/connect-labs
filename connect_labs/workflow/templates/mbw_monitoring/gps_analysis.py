@@ -407,9 +407,9 @@ def build_result_from_analyzed_visits(
                 visits_with_gps=sum(1 for v in flw_visits if v.gps),
                 flagged_visits=sum(1 for v in flw_visits if v.is_flagged),
                 unique_cases=len({v.case_id for v in flw_visits if v.case_id}),
-                avg_case_distance_km=meters_to_km(sum(case_distances) / len(case_distances))
-                if case_distances
-                else None,
+                avg_case_distance_km=(
+                    meters_to_km(sum(case_distances) / len(case_distances)) if case_distances else None
+                ),
                 max_case_distance_km=meters_to_km(max(case_distances)) if case_distances else None,
                 cases_with_revisits=cases_with_revisits,
                 trailing_7_days=trailing_7,
@@ -499,9 +499,9 @@ def analyze_gps_metrics(
                 visits_with_gps=sum(1 for v in flw_visits if v.gps),
                 flagged_visits=sum(1 for v in flw_visits if v.is_flagged),
                 unique_cases=len({v.case_id for v in flw_visits if v.case_id}),
-                avg_case_distance_km=meters_to_km(sum(case_distances) / len(case_distances))
-                if case_distances
-                else None,
+                avg_case_distance_km=(
+                    meters_to_km(sum(case_distances) / len(case_distances)) if case_distances else None
+                ),
                 max_case_distance_km=meters_to_km(max(case_distances)) if case_distances else None,
                 cases_with_revisits=cases_with_revisits,
                 trailing_7_days=trailing_7,

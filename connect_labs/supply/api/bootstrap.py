@@ -3,6 +3,7 @@
 The SPA holds no client-side store: after any mutation it re-fetches this
 endpoint. Server state is the only state.
 """
+
 from django.db import models
 from django.http import JsonResponse
 from django.utils import timezone

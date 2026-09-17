@@ -463,8 +463,8 @@ function DataTable({
                   {col.total
                     ? col.total(rows)
                     : i === 0
-                    ? totalsLabel || 'Total'
-                    : null}
+                      ? totalsLabel || 'Total'
+                      : null}
                 </td>
               ))}
             </tr>

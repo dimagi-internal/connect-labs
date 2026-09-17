@@ -281,8 +281,8 @@ function MicroplanDrawer({ mp, role, onClose, onEdit }) {
                           rf < 0.75
                             ? '#E13019'
                             : rf < 0.9
-                            ? '#E8A317'
-                            : '#1E7B33'
+                              ? '#E8A317'
+                              : '#1E7B33'
                         }
                       />
                     </Cell>

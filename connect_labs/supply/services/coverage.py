@@ -10,6 +10,7 @@ The same rows feed the government view (per district, scoped to one country)
 and the funder view (rolled up per country), so the two cannot report different
 coverage for the same geography.
 """
+
 from datetime import date
 
 from django.db.models import F, Sum

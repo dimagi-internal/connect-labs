@@ -6,6 +6,7 @@ the top-level payload keys exactly but only a *subset* of worker keys — so a r
 worker field would slip through. This freezes the EXACT worker + planning row key
 sets; any add/remove fails until the golden is updated in lockstep with the JSX.
 """
+
 from __future__ import annotations
 
 import pytest

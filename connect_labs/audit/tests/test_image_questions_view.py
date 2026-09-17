@@ -1,4 +1,5 @@
 """Tests for OpportunityImageTypesAPIView (v2 paginated JSON image type discovery)."""
+
 import time
 
 import pytest

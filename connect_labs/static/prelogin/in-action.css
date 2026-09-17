@@ -24,8 +24,9 @@
   --on-dark-muted: rgba(255, 255, 255, 0.55);
   --grad-text: linear-gradient(90deg, #1a1f3a 0%, #2a368a 55%, #3a4fa0 100%);
   --grad-text-on-dark: linear-gradient(90deg, #ffffff 0%, #c0ceee 100%);
-  --sans: 'Work Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue',
-    Arial, sans-serif;
+  --sans:
+    'Work Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial,
+    sans-serif;
   --mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
   --radius: 14px;
   --radius-lg: 22px;
@@ -222,10 +223,8 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-image: linear-gradient(
-      rgba(142, 161, 255, 0.06) 1px,
-      transparent 1px
-    ),
+  background-image:
+    linear-gradient(rgba(142, 161, 255, 0.06) 1px, transparent 1px),
     linear-gradient(90deg, rgba(142, 161, 255, 0.06) 1px, transparent 1px);
   background-size: 64px 64px;
 }
@@ -807,7 +806,8 @@
   height: clamp(206px, 23vw, 296px);
   /* A soft light behind the mark, over the brand gradient, so the screen has
      some depth rather than reading as a flat swatch. */
-  background: radial-gradient(
+  background:
+    radial-gradient(
       58% 62% at 50% 46%,
       rgba(255, 255, 255, 0.16) 0,
       rgba(255, 255, 255, 0) 68%
@@ -1759,7 +1759,8 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(
+  background:
+    radial-gradient(
       80% 70% at 92% 6%,
       rgba(142, 161, 255, 0.4),
       transparent 62%

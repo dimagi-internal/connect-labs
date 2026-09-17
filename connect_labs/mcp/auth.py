@@ -3,6 +3,7 @@
 Accepts `Authorization: Bearer <raw_token>`. Populates request.mcp_user on
 success; returns 401 with a JSON body on failure.
 """
+
 from django.http import JsonResponse
 
 from .models import MCPAccessToken

@@ -443,7 +443,7 @@ class SQLBackend:
         pipeline_id: int | None = None,
         user=None,
         accept_low_count: bool = False,
-    ) -> Generator[tuple[str, Any], None, None]:
+    ) -> Generator[tuple[str, Any]]:
         """
         Stream raw visit data with progress events using v2 paginated JSON.
 
@@ -546,7 +546,7 @@ class SQLBackend:
         accept_low_count: bool,
         pipeline_id: int | None,
         include_images: bool = False,
-    ) -> Generator[tuple[str, Any], None, None]:
+    ) -> Generator[tuple[str, Any]]:
         """The actual pagination + cache write. Split out of ``stream_raw_visits`` so the
         single-flight guard can wrap it without re-indenting the retry/anomaly logic.
 
@@ -1086,9 +1086,9 @@ class SQLBackend:
                 id=str(cached_row.visit_id),
                 user_id=None,
                 username=cached_row.username,
-                visit_date=datetime.combine(cached_row.visit_date, datetime.min.time())
-                if cached_row.visit_date
-                else None,
+                visit_date=(
+                    datetime.combine(cached_row.visit_date, datetime.min.time()) if cached_row.visit_date else None
+                ),
                 status=cached_row.status,
                 flagged=cached_row.flagged,
                 latitude=latitude,
@@ -1306,14 +1306,18 @@ class SQLBackend:
                 "visit_id": row.id,
                 "username": row.username,
                 # Handle both date and datetime objects
-                "visit_date": row.visit_date.date()
-                if row.visit_date and hasattr(row.visit_date, "date") and callable(row.visit_date.date)
-                else row.visit_date,
+                "visit_date": (
+                    row.visit_date.date()
+                    if row.visit_date and hasattr(row.visit_date, "date") and callable(row.visit_date.date)
+                    else row.visit_date
+                ),
                 "status": row.status,
                 "flagged": row.flagged,
-                "location": row.location
-                if hasattr(row, "location")
-                else (f"{row.latitude} {row.longitude}" if row.latitude and row.longitude else ""),
+                "location": (
+                    row.location
+                    if hasattr(row, "location")
+                    else (f"{row.latitude} {row.longitude}" if row.latitude and row.longitude else "")
+                ),
                 "deliver_unit": row.deliver_unit_name,
                 "deliver_unit_id": row.deliver_unit_id,
                 "entity_id": row.entity_id,

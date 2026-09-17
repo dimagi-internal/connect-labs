@@ -65,6 +65,7 @@ so unlike #1-9 above there's no need to backfill them into older runs:
     doesn't contribute a ward. Added 2026-09-02 for report 13003's Ward
     column and filter. The other piece needing a CommCare HQ token.
 """
+
 from __future__ import annotations
 
 PIPELINE_SCHEMAS = [

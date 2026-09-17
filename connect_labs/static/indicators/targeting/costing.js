@@ -59,17 +59,17 @@
     detail.textContent = empty
       ? 'Nothing is selected at this threshold, so there is nothing to price.'
       : none
-      ? // The label is used verbatim: lowercasing one that already carries a
-        // colon ("Unreached: ITN use, under-5s") reads like a typo.
-        d.basis.measure_label +
-        ' is not counted anywhere in this selection, so it cannot be priced ' +
-        d.basis.label +
-        '.'
-      : util.fmtFull(d.units) +
-        ' ' +
-        d.basis.noun_plural +
-        ' — ' +
-        d.basis.measure_label;
+        ? // The label is used verbatim: lowercasing one that already carries a
+          // colon ("Unreached: ITN use, under-5s") reads like a typo.
+          d.basis.measure_label +
+          ' is not counted anywhere in this selection, so it cannot be priced ' +
+          d.basis.label +
+          '.'
+        : util.fmtFull(d.units) +
+          ' ' +
+          d.basis.noun_plural +
+          ' — ' +
+          d.basis.measure_label;
     var notes = [];
     // "A floor" promises a number that is at least partly there. When nothing
     // is, saying so is the whole message.

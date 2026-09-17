@@ -341,10 +341,10 @@ def _attach_render_code_warning(result: dict, jsx: str) -> dict:
     return result
 
 
-from connect_labs.workflow.templates import companion_links  # noqa: E402
-from connect_labs.workflow.templates import (  # noqa: E402
+from connect_labs.workflow.templates import (  # noqa: E402  # isort: skip
     create_workflow_from_template as _create_workflow_from_template,
 )
+from connect_labs.workflow.templates import companion_links  # noqa: E402
 
 _DEFINITION_PATCH_ALLOWED = {
     "name",

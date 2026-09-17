@@ -12,6 +12,7 @@ each time -- cheap enough to guard permanently instead.
 
 Single quotes inside these comments are always safe; double quotes are not.
 """
+
 import json
 import re
 from html.parser import HTMLParser

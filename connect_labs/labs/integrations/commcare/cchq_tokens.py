@@ -6,6 +6,7 @@ commands) call get_valid_cchq_access_token(user) to receive a current
 access_token, refreshing automatically if expired, with no request/session
 involved.
 """
+
 from __future__ import annotations
 
 import logging

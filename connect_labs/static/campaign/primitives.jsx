@@ -670,8 +670,8 @@ function Row({ children, onClick, selected, style = {} }) {
         background: selected
           ? 'var(--accent-soft)'
           : h && onClick
-          ? C.surface
-          : '#fff',
+            ? C.surface
+            : '#fff',
         cursor: onClick ? 'pointer' : 'default',
         transition: 'background .1s',
         ...style,
@@ -907,14 +907,14 @@ function ToastProvider({ children }) {
             t.tone === 'success'
               ? 'check-circle'
               : t.tone === 'danger'
-              ? 'exclamation-circle'
-              : 'info-circle';
+                ? 'exclamation-circle'
+                : 'info-circle';
           const col =
             t.tone === 'success'
               ? '#1E7B33'
               : t.tone === 'danger'
-              ? '#E13019'
-              : 'var(--accent)';
+                ? '#E13019'
+                : 'var(--accent)';
           return (
             <div
               key={t.id}

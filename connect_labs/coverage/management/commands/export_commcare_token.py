@@ -3,6 +3,7 @@ Export CommCare OAuth token from Django session to CLI token file.
 
 This allows the test_coverage_load command to use your web session's CommCare OAuth token.
 """
+
 import json
 from pathlib import Path
 

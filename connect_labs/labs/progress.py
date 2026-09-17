@@ -32,8 +32,7 @@ logger = logging.getLogger(__name__)
 class ProgressCallback(Protocol):
     """Sync callback invoked as work advances. May be called from a worker thread."""
 
-    def __call__(self, progress: float, total: float | None = None, message: str | None = None) -> None:
-        ...
+    def __call__(self, progress: float, total: float | None = None, message: str | None = None) -> None: ...
 
 
 def NULL_PROGRESS(progress: float, total: float | None = None, message: str | None = None) -> None:

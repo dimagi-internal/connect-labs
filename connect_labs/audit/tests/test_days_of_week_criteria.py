@@ -1,4 +1,5 @@
 """Tests for the day-of-week audit creation filter (AuditCriteria.days_of_week)."""
+
 from connect_labs.audit.data_access import AuditCriteria, filter_visits_for_audit
 
 

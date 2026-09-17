@@ -8,6 +8,7 @@ via ``manage.py load_geopode_from_drive --iso NGA`` and shared with microplans.
 
 Admin levels: 0=country, 1=state, 2=LGA, 3=ward.
 """
+
 from __future__ import annotations
 
 import random

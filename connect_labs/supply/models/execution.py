@@ -4,6 +4,7 @@ Award is the decision; :class:`Contract` is the container that carries it out.
 Shipment state is DERIVED from the append-only :class:`SupplyEvent` log and is
 never set by hand, so the ingestion feed remains the single source of truth.
 """
+
 from django.contrib.gis.db import models as gis_models
 from django.db import models
 from django.utils import timezone

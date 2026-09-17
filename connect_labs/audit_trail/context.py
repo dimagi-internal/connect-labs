@@ -19,6 +19,7 @@ into ThreadPoolExecutor workers — events recorded from hand-rolled thread
 pools fall back to unattributed immediate writes, which is acceptable
 best-effort behavior.
 """
+
 from __future__ import annotations
 
 import contextvars

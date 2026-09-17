@@ -282,8 +282,8 @@ function GovTab({ ctx }) {
                       r.ipc_phase >= 5
                         ? 'bad'
                         : r.ipc_phase >= 4
-                        ? 'warn'
-                        : 'info'
+                          ? 'warn'
+                          : 'info'
                     }
                   >
                     IPC {r.ipc_phase}

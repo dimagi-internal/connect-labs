@@ -5,6 +5,7 @@ WorkerCase (the CommCare-owned store), NOT a tool-local copy. These tests drive 
 real write endpoints against a synthetic-domain campaign and assert the case is
 updated (and the fraud guard still holds), with no Worker ORM rows involved.
 """
+
 from __future__ import annotations
 
 import json

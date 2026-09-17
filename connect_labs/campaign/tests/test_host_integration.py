@@ -13,6 +13,7 @@ OAuth-session middleware MUST skip `/campaign/`* — plus verify the campaign
 middleware is itself a good citizen. The lesson survives even after migration when
 labs is gone.
 """
+
 from __future__ import annotations
 
 import pytest

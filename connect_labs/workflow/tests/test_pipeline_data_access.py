@@ -1,4 +1,5 @@
 """Tests for PipelineDataAccess.execute_pipeline and AnalysisPipeline access_token path."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest

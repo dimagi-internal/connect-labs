@@ -6,6 +6,7 @@ of {"id", ...} dicts (tasks.py). The cancel cleanup used to read a "session_ids"
 key that the task never writes, so it deleted nothing and orphaned the session
 (surfacing as a stray In-Progress session on the workflow run).
 """
+
 from connect_labs.audit.data_access import _created_session_ids
 
 

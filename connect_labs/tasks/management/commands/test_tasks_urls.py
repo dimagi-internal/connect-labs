@@ -2,6 +2,7 @@
 Management command to test all tasks URLs.
 Run with: python manage.py test_tasks_urls
 """
+
 from connect_labs.labs.management.commands.base_labs_url_test import BaseLabsURLTest
 
 

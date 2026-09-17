@@ -6,6 +6,7 @@ capability tiers, plus a pull endpoint whose payload matches what webhooks
 would push — push/pull parity is how a real visibility platform lets a partner
 reconcile.
 """
+
 import json
 from functools import wraps
 

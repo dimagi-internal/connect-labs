@@ -1,4 +1,5 @@
 """Binding submissions to organisations. All data invented."""
+
 import pytest
 
 from connect_labs.labs.models import LabsOrg

@@ -1,4 +1,5 @@
 """Bootstrap campaign-selection tests (which campaign the tool shows)."""
+
 from __future__ import annotations
 
 import pytest

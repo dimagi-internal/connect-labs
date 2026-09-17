@@ -3,6 +3,7 @@
 The filter renders author-supplied free text (``description`` / ``scope_of_work``)
 that is shown to other labs users, so its output must be sanitized against XSS.
 """
+
 from connect_labs.solicitations.templatetags.markdown_filters import render_markdown
 
 

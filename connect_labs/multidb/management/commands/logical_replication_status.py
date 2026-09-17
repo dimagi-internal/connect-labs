@@ -96,14 +96,12 @@ class Command(BaseCommand):
         self.stdout.write("\nChecking replication delay...")
 
         with default_conn.cursor() as cursor:
-            cursor.execute(
-                """
+            cursor.execute("""
                 SELECT
                     client_addr, sent_lsn, write_lsn, flush_lsn, replay_lsn,
                     pg_wal_lsn_diff(sent_lsn, replay_lsn) AS replication_delay_bytes
                 FROM pg_stat_replication;
-            """
-            )
+            """)
             replication_status = cursor.fetchall()
 
         if replication_status:

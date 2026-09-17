@@ -22,7 +22,7 @@ class UserSyntheticExportClient:
 
     def paginate(
         self, endpoint: str, params: dict | None = None, *, partial_ok: bool = False
-    ) -> Generator[list[dict[str, Any]], None, None]:
+    ) -> Generator[list[dict[str, Any]]]:
         # `partial_ok` accepted for signature parity with ExportAPIClient — see
         # SyntheticExportClient.paginate.
         key = SyntheticExportClient._endpoint_key(endpoint)

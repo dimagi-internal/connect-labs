@@ -323,8 +323,8 @@
                 ),
               )
             : meta.threshold_default !== undefined
-            ? meta.threshold_default
-            : window.TG.defaultThreshold;
+              ? meta.threshold_default
+              : window.TG.defaultThreshold;
         S.thresholdFor = S.indicator;
         T.controls.applyThresholdScale();
         document.getElementById('tg-threshold').value = S.threshold;

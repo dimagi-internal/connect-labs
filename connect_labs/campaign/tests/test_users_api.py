@@ -8,6 +8,7 @@ PR #668. Each test adapts the brief's assertions to the fixture conventions:
 - Target users are created via CampaignUserFactory (not the seeded dataset) so
   tests can control exactly which user objects exist.
 """
+
 from __future__ import annotations
 
 import json

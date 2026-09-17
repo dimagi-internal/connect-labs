@@ -5,6 +5,7 @@ the hardest corridors a phone call and a form are all there is. Events recorded
 here carry ``source_tier`` ``checkin`` or ``portal`` so hand-entered data is
 never presented as a system feed.
 """
+
 from django.utils import timezone  # noqa: F401
 
 from ... import gs1

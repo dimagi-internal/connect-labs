@@ -5,6 +5,7 @@ DESADV, expressed as JSON. That shape is what any commodity EDI translation
 layer produces, and it is also what the supplier portal's despatch form posts,
 so an integrated supplier and a hand-keying one travel the same code path.
 """
+
 from django.db import transaction
 from django.utils import timezone
 

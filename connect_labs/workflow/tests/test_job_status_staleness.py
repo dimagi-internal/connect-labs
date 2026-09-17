@@ -9,6 +9,7 @@ healthy one -- read as dead. active_job_age_seconds now prefers a heartbeat
 means "no progress in JOB_STALE_SECONDS", not "running longer than
 JOB_STALE_SECONDS total".
 """
+
 from datetime import datetime, timedelta
 from unittest import mock
 

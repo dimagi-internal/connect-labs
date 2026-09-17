@@ -4,6 +4,7 @@ Auth is plain Django sessions over the shared ``users.User`` table — no OAuth,
 no custom middleware. Suppliers self-register (open registration); staff
 accounts are seeded only.
 """
+
 from django import forms
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth import login as auth_login

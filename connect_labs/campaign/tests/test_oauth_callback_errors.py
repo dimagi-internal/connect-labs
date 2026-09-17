@@ -5,6 +5,7 @@ the failure branches that turn external problems into friendly errors WITHOUT
 creating a session — important because a half-failed login that still logs the user
 in would be a security hole.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -70,8 +71,9 @@ def test_identity_failure_returns_403_no_session(client):
     from connect_labs.campaign.auth.identity import IdentityError
 
     _prime_pkce(client)
-    with patch("connect_labs.campaign.auth.oauth_views.httpx.Client") as Client, patch(
-        "connect_labs.campaign.auth.oauth_views.fetch_identity", side_effect=IdentityError("nope")
+    with (
+        patch("connect_labs.campaign.auth.oauth_views.httpx.Client") as Client,
+        patch("connect_labs.campaign.auth.oauth_views.fetch_identity", side_effect=IdentityError("nope")),
     ):
         Client.return_value.__enter__.return_value.post.return_value = _token_resp()
         resp = _callback(client)
@@ -84,8 +86,9 @@ def test_identity_failure_returns_403_no_session(client):
 def test_identity_without_username_returns_403(client):
     _prime_pkce(client)
     ident = {"username": "", "email": "x@dimagi.com", "name": "X", "domains": []}
-    with patch("connect_labs.campaign.auth.oauth_views.httpx.Client") as Client, patch(
-        "connect_labs.campaign.auth.oauth_views.fetch_identity", return_value=ident
+    with (
+        patch("connect_labs.campaign.auth.oauth_views.httpx.Client") as Client,
+        patch("connect_labs.campaign.auth.oauth_views.fetch_identity", return_value=ident),
     ):
         Client.return_value.__enter__.return_value.post.return_value = _token_resp()
         resp = _callback(client)
@@ -107,8 +110,9 @@ def test_inactive_whitelist_row_is_hard_denied(client):
     )
     _prime_pkce(client)
     ident = {"username": "x@other.org", "email": "x@other.org", "name": "X", "domains": []}
-    with patch("connect_labs.campaign.auth.oauth_views.httpx.Client") as Client, patch(
-        "connect_labs.campaign.auth.oauth_views.fetch_identity", return_value=ident
+    with (
+        patch("connect_labs.campaign.auth.oauth_views.httpx.Client") as Client,
+        patch("connect_labs.campaign.auth.oauth_views.fetch_identity", return_value=ident),
     ):
         Client.return_value.__enter__.return_value.post.return_value = _token_resp()
         resp = _callback(client)

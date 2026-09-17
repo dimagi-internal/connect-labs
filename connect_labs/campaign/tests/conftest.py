@@ -7,6 +7,7 @@ mutation test. Django's plain test client disables CSRF, which is exactly why th
 until a real browser hit it. New write tests must use `csrf_client` + the rendered
 `<meta name="csrf-token">` token so that class of bug can never regress silently.
 """
+
 from __future__ import annotations
 
 import pytest

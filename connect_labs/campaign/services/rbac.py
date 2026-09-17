@@ -3,6 +3,7 @@
 Single source of truth for permissions. The React `perms.js` mirrors this
 matrix for show/hide only; the server is the real gate.
 """
+
 from __future__ import annotations
 
 ROLES = [

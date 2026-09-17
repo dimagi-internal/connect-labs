@@ -1,4 +1,5 @@
 """Dev boundary-seeder tests (local scale stand-in for the real GeoPoDe data)."""
+
 from __future__ import annotations
 
 import pytest

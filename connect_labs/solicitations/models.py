@@ -13,6 +13,7 @@ no programme to scope a prod write by. Those are real local tables in
 are deliberately identical to the proxies', so this codebase has one EOI
 vocabulary rather than two.
 """
+
 from datetime import datetime
 
 from connect_labs.labs.models import LocalLabsRecord

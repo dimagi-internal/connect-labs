@@ -107,7 +107,6 @@ if env("SECONDARY_DATABASE_URL", default=None):
     DATABASE_ROUTERS = ["connect_labs.multidb.db_router.ConnectDatabaseRouter"]
 
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
 # URLS
@@ -362,7 +361,7 @@ EMAIL_SUBJECT_PREFIX = env(
 # ADMIN
 # ------------------------------------------------------------------------------
 ADMIN_URL = env("DJANGO_ADMIN_URL", default="admin/")
-ADMINS = [("""Dimagi""", "dimagi@commcare-connect.org")]
+ADMINS = ["dimagi@commcare-connect.org"]
 MANAGERS = ADMINS
 
 # LOGGING

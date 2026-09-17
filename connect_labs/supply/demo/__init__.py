@@ -9,6 +9,7 @@ Three modules, split by what changes for what reason:
 
 The management command is a thin wrapper over :func:`seed_demo_world`.
 """
+
 import random
 
 from django.db import transaction

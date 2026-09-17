@@ -557,8 +557,8 @@
       meta.textContent = p.delivering
         ? 'delivering since ' + p.since
         : p.joined
-        ? 'joined ' + p.joined
-        : '';
+          ? 'joined ' + p.joined
+          : '';
       row.appendChild(meta);
 
       var go = document.createElement('td');

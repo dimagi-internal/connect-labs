@@ -6,6 +6,7 @@ out of connect-labs, this module travels with it and keeps working. For a full,
 prototype-shaped dataset use `services.seed.seed_campaign`; use these factories
 when a test needs a small, hand-shaped graph (one campaign, a worker or two).
 """
+
 from __future__ import annotations
 
 from factory import Faker, Sequence, SubFactory

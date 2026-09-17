@@ -36,16 +36,14 @@ TOWNS_JS = Path(__file__).parent.parent / "static" / "pulse" / "towns.js"
 
 # Address words that are never a town. Without this "Center", "Office" and
 # "Road" match real towns somewhere and scatter partners across the map.
-_STOP = frozenset(
-    """
+_STOP = frozenset("""
     po box bp street road avenue ave rd st close crescent lane drive way plot
     house no number floor suite office building complex centre center estate
     district state province region county ward village town city area zone
     opposite behind near beside along junction roundabout market church mosque
     school hospital clinic secretariat headquarters hq main new old upper lower
     north south east west central federal republic democratic united
-    """.split()
-)
+    """.split())
 
 _WORD = re.compile(r"[A-Za-zÀ-ÿ']{3,}")
 

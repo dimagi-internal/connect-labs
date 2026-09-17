@@ -1049,8 +1049,8 @@ function ChcMetricDetail(props) {
                           (isFlagged
                             ? 'bg-red-100 text-red-800 font-semibold'
                             : isNA
-                            ? 'text-gray-400'
-                            : ''),
+                              ? 'text-gray-400'
+                              : ''),
                       },
                       isNA ? 'N/A' : fmtMetricVal(obj),
                     );
@@ -1549,10 +1549,10 @@ function ChcFLWLongitudinal(props) {
                           cs.metricFlags === 0
                             ? ''
                             : cs.metricFlags === 1
-                            ? 'bg-amber-50'
-                            : cs.metricFlags === 2
-                            ? 'bg-amber-100'
-                            : 'bg-amber-200';
+                              ? 'bg-amber-50'
+                              : cs.metricFlags === 2
+                                ? 'bg-amber-100'
+                                : 'bg-amber-200';
                         return ce(
                           'td',
                           {

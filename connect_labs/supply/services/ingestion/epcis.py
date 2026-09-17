@@ -4,6 +4,7 @@ The ISO/IEC 19987 visibility-event format, as JSON-LD. This is what a supplier
 with a real traceability system already emits, so we accept their documents
 rather than asking them to reshape anything.
 """
+
 from ... import gs1  # noqa: F401  (kept for identifier helpers used by callers)
 from ...models import SupplyEvent
 from ..org_actions import ActionError

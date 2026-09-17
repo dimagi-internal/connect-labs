@@ -1,4 +1,5 @@
 """Tests for the labs-local LabsRecord storage backend + API client dispatch."""
+
 from __future__ import annotations
 
 import pytest

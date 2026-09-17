@@ -8,6 +8,7 @@ different times — but they remain one Django app, so every model is re-exporte
 here and ``from connect_labs.supply.models import X`` keeps working regardless
 of which third X lives in.
 """
+
 from .demand import (
     MUAC_MAM_MAX_MM,
     MUAC_RECOVERED_MIN_MM,

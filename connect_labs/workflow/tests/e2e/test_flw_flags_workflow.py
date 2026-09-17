@@ -73,9 +73,9 @@ class TestKMCFLWFlagsWorkflow:
         console_errors = []
         page.on(
             "console",
-            lambda msg: console_errors.append(f"[{msg.type}] {msg.text}")
-            if msg.type in ("error", "warning")
-            else None,
+            lambda msg: (
+                console_errors.append(f"[{msg.type}] {msg.text}") if msg.type in ("error", "warning") else None
+            ),
         )
 
         # Wait for Babel transpilation and WorkflowUI to mount.

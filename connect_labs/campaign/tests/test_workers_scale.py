@@ -1,4 +1,5 @@
 """Scale cliff-fix tests: server SUMMARY + capped bootstrap + paginated endpoint."""
+
 from __future__ import annotations
 
 import pytest

@@ -27,6 +27,7 @@ persona's password on every run, so a caller that can reseed can already choose
 it. Passing ``password`` means a render needs no pre-shared secret at all — it
 reseeds, then signs in with what it just set.
 """
+
 import contextlib
 import json
 import os

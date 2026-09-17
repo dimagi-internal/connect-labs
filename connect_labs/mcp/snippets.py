@@ -4,6 +4,7 @@ Single source of truth for the ~/.claude/mcp.json shape that gets shown to
 users after token creation — used by both the management command and the
 self-service token UI.
 """
+
 from __future__ import annotations
 
 DEFAULT_SERVER_URL = "https://labs.connect.dimagi.com/mcp/"

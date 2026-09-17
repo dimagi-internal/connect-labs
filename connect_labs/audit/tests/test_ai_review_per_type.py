@@ -1,4 +1,5 @@
 """Tests for per-image-type agent resolution in _run_ai_review_on_sessions."""
+
 import pytest
 from django.test import override_settings
 

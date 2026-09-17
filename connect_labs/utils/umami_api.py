@@ -8,6 +8,7 @@ UMAMI_ADMIN_PASSWORD); the JWT is cached in Redis and refreshed on 401.
 All calls raise UmamiAPIError on failure — callers render a degraded page,
 never a 500.
 """
+
 import logging
 
 import httpx

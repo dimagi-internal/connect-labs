@@ -9,6 +9,7 @@ hides the synthetic-vs-prod dispatch for Connect:
 
 Making "go real" a per-domain fact, not a code change.
 """
+
 from __future__ import annotations
 
 from connect_labs.campaign.services import commcare_cases_backend

@@ -1,5 +1,6 @@
 """Query-string capture + page_view events — the per-user session
 reconstruction layer."""
+
 import pytest
 from django.http import HttpResponse, JsonResponse
 

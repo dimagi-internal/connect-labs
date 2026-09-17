@@ -35,6 +35,7 @@ config.source_definition_id (set on the instance after creation, since
 Workflow 1's id is only known once it exists) points at Workflow 1's
 definition id -- same two-step dance flw_audit_trend_dashboard.py uses.
 """
+
 from __future__ import annotations
 
 DEFINITION = {

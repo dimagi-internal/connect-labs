@@ -13,6 +13,7 @@ All Playwright primitives + the PAR snapshot walker + the grid cell
 clicker live in ``scripts/walkthroughs/_lib/``; this file is just the
 scene sequence.
 """
+
 from __future__ import annotations
 
 import sys
@@ -142,13 +143,11 @@ def main() -> None:
         # want to click here for the drill-through scenario. PR #289
         # added the state-aware flip via view.auditsFor(); pre-#289 builds
         # rendered the lowercase "View audit" button.
-        page.evaluate(
-            """() => {
+        page.evaluate("""() => {
                 const flagged = Array.from(document.querySelectorAll('tr'))
                     .find(tr => tr.textContent.includes('View Audit'));
                 if (flagged) flagged.scrollIntoView({behavior: 'smooth', block: 'center'});
-            }"""
-        )
+            }""")
         view_audit = page.locator("text=View Audit").first
         if view_audit.count() > 0:
             box = view_audit.bounding_box()

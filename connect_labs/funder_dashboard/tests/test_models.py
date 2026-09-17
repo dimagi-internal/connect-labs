@@ -1,4 +1,5 @@
 """Tests for FundRecord proxy model."""
+
 from connect_labs.funder_dashboard.models import FundRecord
 
 

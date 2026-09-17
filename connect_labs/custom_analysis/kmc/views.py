@@ -84,7 +84,7 @@ class KMCTimelineDataStreamView(GenericTimelineDataStreamView):
 class KMCChildListStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
     """SSE streaming endpoint for loading KMC child list with progress - uses reusable mixin."""
 
-    def stream_data(self, request) -> Generator[str, None, None]:
+    def stream_data(self, request) -> Generator[str]:
         """Stream child list data loading progress via SSE."""
         try:
             # Check for context (from labs context or query params)

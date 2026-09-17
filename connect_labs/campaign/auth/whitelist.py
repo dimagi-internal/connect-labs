@@ -1,4 +1,5 @@
 """Decide whether a CommCare identity may sign in, and with what role."""
+
 from __future__ import annotations
 
 from django.conf import settings

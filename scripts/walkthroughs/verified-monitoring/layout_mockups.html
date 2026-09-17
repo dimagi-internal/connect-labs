@@ -18,8 +18,8 @@
         --green: #059669;
         --slate: #94a3b8;
         --bg: #f5f5f4;
-        --shadow: 0 1px 2px rgba(16, 24, 40, 0.06),
-          0 1px 3px rgba(16, 24, 40, 0.04);
+        --shadow:
+          0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.04);
         --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
       }
       * {
@@ -445,11 +445,11 @@
     </div>
     <div class="wrap">
       <div class="switch">
-        <button class="on" onclick="setLayout('a',this)">
+        <button class="on" onclick="setLayout('a', this)">
           A · Headline + map, tabs for detail
         </button>
-        <button onclick="setLayout('b',this)">B · Two-pane, sticky map</button>
-        <button onclick="setLayout('c',this)">C · Headline + accordion</button>
+        <button onclick="setLayout('b', this)">B · Two-pane, sticky map</button>
+        <button onclick="setLayout('c', this)">C · Headline + accordion</button>
       </div>
 
       <!-- ============ OVERVIEW (pinned, shared by all) ============ -->
@@ -878,8 +878,8 @@
                 ? '#4f46e5'
                 : '#94a3b8'
               : s % 4
-              ? '#94a3b8'
-              : '#4f46e5';
+                ? '#94a3b8'
+                : '#4f46e5';
             o += `<circle cx="${(cx + rr * Math.cos(a)).toFixed(0)}" cy="${(
               cy +
               rr * Math.sin(a)

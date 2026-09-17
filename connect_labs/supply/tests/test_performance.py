@@ -3,6 +3,7 @@
 Every assertion here is a claim the bid-comparison screen makes to a
 procurement officer who may have to defend declining a cheaper bid.
 """
+
 from datetime import timedelta
 from decimal import Decimal
 

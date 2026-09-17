@@ -1,4 +1,5 @@
 """Unit tests for build_plan_snapshot — no DB, fed a fake data-access object."""
+
 import pytest
 
 from connect_labs.microplans.core.solicitation_snapshot import build_plan_snapshot

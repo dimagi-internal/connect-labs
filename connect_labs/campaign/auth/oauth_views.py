@@ -3,6 +3,7 @@
 Unlike labs' secondary CommCare connection, the callback here also fetches
 identity, checks the whitelist, creates/updates a Django user, and logs them in.
 """
+
 from __future__ import annotations
 
 import hashlib

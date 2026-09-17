@@ -338,9 +338,7 @@ def load_country(iso: str, *, levels=(0, 1, 2), year: int = YEAR, only: set[str]
         weighting = (
             "population-weighted (population recovered from MAP's own incidence count and rate)"
             if weights is not None and not layer.is_count
-            else "area-weighted"
-            if not layer.is_count
-            else "summed"
+            else "area-weighted" if not layer.is_count else "summed"
         )
         for unit in units:
             value = zonal(raster, shapes[unit.id], is_count=layer.is_count, weights=weights)

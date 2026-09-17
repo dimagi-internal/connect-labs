@@ -6,6 +6,7 @@ Funds use experiment=funder_slug and are scoped by program_id for ACL.
 
 Type constant: type="fund"
 """
+
 import logging
 
 from django.http import HttpRequest

@@ -1,4 +1,5 @@
 """Verifies labs_oauth_callback persists a UserConnectToken row on successful login."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest

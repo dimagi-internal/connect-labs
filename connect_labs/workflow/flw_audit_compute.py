@@ -14,6 +14,7 @@ pipeline schema — see the template file for the exact FieldComputation paths):
     normalized_lat, normalized_lon, time_start, time_end,
     all_service_del_checks, dw_meds_delivery_status, received_any_vaccine
 """
+
 from __future__ import annotations
 
 import math

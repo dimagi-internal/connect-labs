@@ -104,8 +104,9 @@ def test_load_user_visible_prs_adds_marketing_category():
     prs_file = _write_prs_file([pr])
     marketing_files = ["connect_labs/prelogin/views.py"]
     try:
-        with patch("weekly_changelog.fetch_pr_files", return_value=marketing_files), patch.dict(
-            os.environ, {"GITHUB_REPOSITORY": "dimagi-internal/connect-labs"}
+        with (
+            patch("weekly_changelog.fetch_pr_files", return_value=marketing_files),
+            patch.dict(os.environ, {"GITHUB_REPOSITORY": "dimagi-internal/connect-labs"}),
         ):
             result = load_user_visible_prs(prs_file)
     finally:
@@ -119,8 +120,9 @@ def test_load_user_visible_prs_adds_app_category():
     prs_file = _write_prs_file([pr])
     app_files = ["connect_labs/workflow/views.py"]
     try:
-        with patch("weekly_changelog.fetch_pr_files", return_value=app_files), patch.dict(
-            os.environ, {"GITHUB_REPOSITORY": "dimagi-internal/connect-labs"}
+        with (
+            patch("weekly_changelog.fetch_pr_files", return_value=app_files),
+            patch.dict(os.environ, {"GITHUB_REPOSITORY": "dimagi-internal/connect-labs"}),
         ):
             result = load_user_visible_prs(prs_file)
     finally:
@@ -132,8 +134,9 @@ def test_load_user_visible_prs_skips_empty_product_description():
     pr = dict(PR_TEMPLATE, number=12, body="## Product Description\n\n")
     prs_file = _write_prs_file([pr])
     try:
-        with patch("weekly_changelog.fetch_pr_files", return_value=[]), patch.dict(
-            os.environ, {"GITHUB_REPOSITORY": "dimagi-internal/connect-labs"}
+        with (
+            patch("weekly_changelog.fetch_pr_files", return_value=[]),
+            patch.dict(os.environ, {"GITHUB_REPOSITORY": "dimagi-internal/connect-labs"}),
         ):
             result = load_user_visible_prs(prs_file)
     finally:

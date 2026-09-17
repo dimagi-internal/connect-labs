@@ -691,10 +691,11 @@ def test_a_detail_page_for_something_that_is_not_here_is_a_404(client, sophie, u
     link checker and an uptime monitor that the page is fine, and that is the
     one thing it is not.
     """
-    with patch("connect_labs.supply_chain.views.has_program_context", return_value=True), patch(
-        "connect_labs.supply_chain.procurement.views.has_program_context", return_value=True
-    ), patch("connect_labs.supply_chain.views.call_operation", return_value=None), patch(
-        "connect_labs.supply_chain.procurement.views.call_operation", return_value=None
+    with (
+        patch("connect_labs.supply_chain.views.has_program_context", return_value=True),
+        patch("connect_labs.supply_chain.procurement.views.has_program_context", return_value=True),
+        patch("connect_labs.supply_chain.views.call_operation", return_value=None),
+        patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=None),
     ):
         response = client.get(reverse(url_name, args=args))
 

@@ -34,9 +34,10 @@ def registry():
 def _create(dao, key, **kw):
     registry_access = MagicMock()
     registry_access.create_registry.return_value = MagicMock(id=7777)
-    with patch("connect_labs.workflow.data_access.PipelineDataAccess", return_value=_pipeline_access()), patch(
-        "connect_labs.workflow.data_access.SemanticRegistryDataAccess", return_value=registry_access
-    ) as ctor:
+    with (
+        patch("connect_labs.workflow.data_access.PipelineDataAccess", return_value=_pipeline_access()),
+        patch("connect_labs.workflow.data_access.SemanticRegistryDataAccess", return_value=registry_access) as ctor,
+    ):
         definition, _render, _pipeline = create_workflow_from_template(dao, key, request=None, **kw)
     return definition, registry_access, ctor
 
