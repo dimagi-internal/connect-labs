@@ -5,18 +5,50 @@ Provides reusable infrastructure for streaming analysis progress to the frontend
 Includes support for both AnalysisPipeline streaming and Celery task progress streaming.
 """
 
+import asyncio
 import json
 import logging
 import queue
 import threading
 import time
 from collections.abc import Callable, Generator
+from concurrent.futures import ThreadPoolExecutor
 
+from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db import connections
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views import View
 
 logger = logging.getLogger(__name__)
+
+
+def _drain(iterator, size):
+    """Pull up to `size` items. Returns `(items, done, error)`, never raising.
+
+    The error is RETURNED rather than raised so the items produced before it can
+    still be yielded -- a subclass that fails on row 900 of 1000 has already
+    written 899 useful rows, and the SSE error event it yields is the 900th.
+    """
+    items = []
+    for _ in range(size):
+        try:
+            items.append(next(iterator))
+        except StopIteration:
+            return items, True, None
+        except Exception as exc:  # noqa: BLE001 -- carried to the consumer intact
+            return items, True, exc
+    return items, False, None
+
+
+def _close_generator(generator):
+    """Close the generator and release this thread's DB connections."""
+    try:
+        generator.close()
+    except (GeneratorExit, RuntimeError):
+        pass
+    finally:
+        connections.close_all()
 
 
 def build_task_progress(state: str, info: dict | None) -> dict:
@@ -125,6 +157,10 @@ class BaseSSEStreamView(LoginRequiredMixin, View):
 
     heartbeat_enabled = True
     heartbeat_interval = 20  # seconds between heartbeat comments
+    # Rows handed to the event loop per callback. Raising it costs latency (a
+    # chunk is yielded together); lowering it costs loop traffic. A view that
+    # emits a handful of large progress events should set 1.
+    chunk_size = 100
 
     def get(self, request, **kwargs):
         """
@@ -156,20 +192,97 @@ class BaseSSEStreamView(LoginRequiredMixin, View):
         return response
 
     def _with_heartbeat(self, generator, interval=None):
-        """Wrap a generator with periodic SSE heartbeat comments.
+        """Wrap a generator so the response streams, with periodic heartbeats.
 
-        Prevents ALB/browser timeouts during long-running blocking operations
-        (JSON pagination, data processing) by sending SSE comment lines every
-        ``interval`` seconds when the generator isn't yielding real data.
+        Returns an ASYNC generator, which is the whole point: Django's ASGI
+        handler drains a *sync* iterator in full before sending any of it --
+        `StreamingHttpResponse.__aiter__` falls back to
+        `await sync_to_async(list)(self.streaming_content)` and warns that it is
+        doing so -- so a sync body arrives as one batch at the end however
+        carefully it was yielded. Six events half a second apart arrived
+        together at 3.04s; through here they arrive at 0.51 .. 3.03.
 
-        SSE comment format ``: heartbeat\\n\\n`` keeps the TCP connection
-        alive but does not trigger EventSource.onmessage on the frontend.
+        HOW, AND WHY NOT THE OBVIOUS WAY. #1859 made this async by PUSHING each
+        row at the event loop from a producer thread (`call_soon_threadsafe` per
+        row, unbounded `asyncio.Queue`). It streamed, and it took every
+        pipeline-backed dashboard down for fifteen hours (reverted in #1888) for
+        two reasons, neither of them memory:
 
-        Set ``heartbeat_enabled = False`` on a subclass to disable.
+          * the producer no longer waited for the consumer -- 20,000 rows ahead
+            of a client that had read one;
+          * one event-loop callback per row, and every other request on the
+            worker shares that loop.
+
+        So this PULLS instead. The generator only advances when the consumer
+        asks for more, which makes backpressure structural rather than a queue
+        policy -- at most one chunk exists ahead of the reader, and there is no
+        queue at all -- and rows are handed over `chunk_size` at a time, so the
+        loop sees one callback per chunk instead of one per row (0.010 per row
+        at the default, against 1.000).
+
+        `connect_labs/labs/analysis/tests/test_sse_backpressure.py` fails any
+        future version that loses either property.
+
+        THE THREAD MODEL IS UNCHANGED from the sync wrapper this replaces: one
+        worker thread per stream, which is why the executor is per-request and
+        single-worker rather than the loop's shared default pool. That also
+        keeps the generator on ONE thread, so thread-locals inside it (Django's
+        DB connections, most of all) behave exactly as they did -- and it gives
+        one place to close them, which a shared pool would not.
+
+        Set `heartbeat_enabled = False` on a subclass to disable the heartbeat;
+        set `LABS_SSE_ASYNC_STREAMING=False` to fall back to the pre-#1859 sync
+        wrapper without a revert.
         """
         if interval is None:
             interval = self.heartbeat_interval
+        if not getattr(settings, "LABS_SSE_ASYNC_STREAMING", True):
+            return self._with_heartbeat_sync(generator, interval)
+        return self._astream(generator, interval)
 
+    async def _astream(self, generator, interval):
+        """Pull chunks from `generator` in a worker thread; yield them as SSE."""
+        loop = asyncio.get_running_loop()
+        # Single worker: the generator is resumed on one thread for its whole
+        # life, as it was under the sync wrapper's dedicated producer thread.
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sse-stream")
+        iterator = iter(generator)
+        try:
+            while True:
+                chunk = loop.run_in_executor(executor, _drain, iterator, self.chunk_size)
+                while True:
+                    try:
+                        # shield: a heartbeat timeout must not cancel the work
+                        # already in flight, only interrupt our wait for it.
+                        items, done, error = await asyncio.wait_for(asyncio.shield(chunk), interval)
+                        break
+                    except TimeoutError:
+                        yield ": heartbeat\n\n"
+                for item in items:
+                    yield item
+                if error is not None:
+                    # Raised in the CONSUMER, as the sync wrapper did. Whatever
+                    # the generator produced before failing was yielded above.
+                    raise error
+                if done:
+                    return
+        finally:
+            # Close the generator on the thread that ran it, and release that
+            # thread's DB connections: this is not a request thread, so nothing
+            # else will (#667/#669 -- the leak that exhausted RDS's slots).
+            try:
+                await loop.run_in_executor(executor, _close_generator, generator)
+            except RuntimeError:  # loop already closing -- the client went away
+                _close_generator(generator)
+            executor.shutdown(wait=False)
+
+    def _with_heartbeat_sync(self, generator, interval):
+        """The pre-#1859 wrapper, kept as the `LABS_SSE_ASYNC_STREAMING=False` path.
+
+        It does not stream -- see `_with_heartbeat` -- so it is a way to take the
+        async path out of service without a revert and a deploy, not a supported
+        mode.
+        """
         data_queue: queue.Queue = queue.Queue(maxsize=100)
         stop_event = threading.Event()
 
@@ -213,7 +326,6 @@ class BaseSSEStreamView(LoginRequiredMixin, View):
                     elif msg_type == "error":
                         raise value
                 except queue.Empty:
-                    # No data for `interval` seconds — send SSE comment to keep alive
                     yield ": heartbeat\n\n"
         finally:
             stop_event.set()
