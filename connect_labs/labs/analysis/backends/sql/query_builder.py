@@ -15,6 +15,7 @@ from django.db import connection
 
 from connect_labs.labs.analysis.config import (
     RAW_VISIT_BASE_COLUMNS,
+    RAW_VISIT_JSONB_BASE_COLUMNS,
     VISIT_SELECT_COLUMNS,
     AnalysisPipelineConfig,
     FieldComputation,
@@ -321,6 +322,73 @@ def _visit_passthrough_select(column: str) -> str:
     return column
 
 
+def _jsonb_base_column_text_sql(column: str) -> str:
+    """Text of a JSONB base column's LOGICAL value, NULL when it holds nothing.
+
+    `NULLIF(col::text, '')` — what a base column compiled to before — is wrong
+    on a JSONB column in both directions, and silently:
+
+    * `{}` serializes to the two-character string `'{}'`, which is not empty, so
+      `COUNT` counted every visit whose `flag_reason` was the empty default.
+      Measured on labs opp 10065: a `count` over `flag_reason` returned each
+      worker's `total_visits` (235 / 315 / 260) where the truth was 17 / 9 / 11.
+    * a JSON string serializes WITH its quotes, so
+      `TRIM(col) = 'response_pattern_outlier'` could never match a row holding
+      `"response_pattern_outlier"`.
+
+    `#>> '{}'` extracts the value at the empty path: for a scalar the unquoted
+    value, for an object or array the canonical serialization, and for JSON
+    `null` a SQL NULL. Emptiness is then the union of what a form path has
+    always reported as absent — SQL NULL, JSON null, an empty text value —
+    plus `{}` and `[]`, which is how "nothing here" is actually stored in these
+    columns.
+
+    Where emptiness stops is a decision, not an accident: a zero-length object
+    or array is ABSENT, while `0`, `false` and `""`-inside-a-container are
+    values and stay PRESENT. Treating a zero-valued scalar as an absence would
+    be the same class of silent wrongness pointing the other way.
+
+    See dimagi-internal/ace#2431.
+    """
+    return (
+        "NULLIF(CASE"
+        f" WHEN jsonb_typeof({column}) = 'object' AND {column} = '{{}}'::jsonb THEN NULL"
+        f" WHEN jsonb_typeof({column}) = 'array' AND jsonb_array_length({column}) = 0 THEN NULL"
+        f" ELSE {column} #>> '{{}}'"
+        " END, '')"
+    )
+
+
+def _base_column_text_sql(column: str) -> str:
+    """Text of a base column on labs_raw_visit_cache, JSONB-aware.
+
+    Non-JSONB columns keep the exact `NULLIF(col::text, '')` they have always
+    emitted — this is the shared expression behind every dashboard field, so
+    only the JSONB subset changes shape.
+    """
+    if column in RAW_VISIT_JSONB_BASE_COLUMNS:
+        return _jsonb_base_column_text_sql(column)
+    return f"NULLIF({column}::text, '')"
+
+
+def _filter_path_to_sql(path: str, column: str = "form_json") -> str:
+    """Value SQL for a singular `filter_path`.
+
+    The plural `filter_paths` form resolves through `_paths_to_coalesce_sql`,
+    which has special-cased base columns since #1198. The singular form did not:
+    it compiled every name against form_json, so `filter_path: "status"`
+    compared `form_json->>'status'` — always NULL — and zeroed every row instead
+    of filtering them. `_entity_stage_filters_where`'s docstring already
+    described that defect; ace#2431 hit it through `flag_reason`, where it read
+    as "the filter matches nothing" on every row.
+
+    A path that is not a base column emits exactly what it did before.
+    """
+    if column == "form_json" and path in RAW_VISIT_BASE_COLUMNS:
+        return _base_column_text_sql(path)
+    return _jsonb_path_to_sql(path, column)
+
+
 def _paths_to_coalesce_sql(paths: list[str], column: str = "form_json") -> str:
     """Convert multiple paths to a COALESCE expression.
 
@@ -333,6 +401,9 @@ def _paths_to_coalesce_sql(paths: list[str], column: str = "form_json") -> str:
     name `flag_reason` and silently extract NULL, since every path was compiled
     to `form_json->'...'` unconditionally (#1198). Only applies to the default
     form_json column, so join-scoped lookups are unaffected.
+
+    A base column that is JSONB gets `_jsonb_base_column_text_sql` rather than a
+    `::text` cast (ace#2431); every other path is unchanged.
     """
     if not paths:
         return "NULL"
@@ -340,7 +411,7 @@ def _paths_to_coalesce_sql(paths: list[str], column: str = "form_json") -> str:
     sql_paths = []
     for p in paths:
         if column == "form_json" and p in RAW_VISIT_BASE_COLUMNS:
-            sql_paths.append(f"NULLIF({p}::text, '')")
+            sql_paths.append(_base_column_text_sql(p))
         else:
             sql_paths.append(f"NULLIF({_jsonb_path_to_sql(p, column)}, '')")
     return f"COALESCE({', '.join(sql_paths)})"
@@ -775,7 +846,7 @@ def _aggregation_to_sql(
         if filter_paths:
             filter_sql = _paths_to_coalesce_sql(filter_paths)
         else:
-            filter_sql = _jsonb_path_to_sql(filter_path)
+            filter_sql = _filter_path_to_sql(filter_path)
         # TRIM the extracted value before comparison — production form data
         # often has trailing whitespace (e.g., MBW form_name = "ANC Visit "
         # with a trailing space). v1 always strips before comparing; without
@@ -1001,7 +1072,7 @@ def _pre_aggregated_field_sql(
         if field.filter_paths:
             inner_filter_sql = _paths_to_coalesce_sql(field.filter_paths)
         else:
-            inner_filter_sql = _jsonb_path_to_sql(field.filter_path)
+            inner_filter_sql = _filter_path_to_sql(field.filter_path)
         if field.filter_op == "eq":
             inner_where_clauses.append(f"TRIM({inner_filter_sql}) = '{_sql_str(field.filter_value)}'")
         elif field.filter_op == "contains_word":
@@ -1202,7 +1273,7 @@ def _build_per_mother_cte(
             if f.filter_paths:
                 filter_sql = _paths_to_coalesce_sql(f.filter_paths, column="sub.form_json")
             else:
-                filter_sql = _jsonb_path_to_sql(f.filter_path, "sub.form_json")
+                filter_sql = _filter_path_to_sql(f.filter_path, "sub.form_json")
             if f.filter_op == "eq":
                 filter_clause = (
                     f" FILTER (WHERE TRIM({filter_sql}) = '{_sql_str(f.filter_value)}'"
@@ -1486,13 +1557,13 @@ def _entity_stage_filters_where(config: AnalysisPipelineConfig) -> list[str]:
     and has no equivalent breakout, so a pipeline needing e.g. "approved visits
     only" had no way to restrict the row set before GROUP BY.
 
-    Per-field `filter_path`/`filter_value` (see `_aggregation_to_sql`) cannot
-    fill this gap either: it always resolves through `_jsonb_path_to_sql`
-    against `form_json`, which does not special-case `RAW_VISIT_BASE_COLUMNS`
-    the way value-extraction (`_paths_to_coalesce_sql`) does -- so
-    `filter_path="status"` silently looks up a nonexistent `form_json->>'status'`
-    instead of the real `status` column, and would zero out every row rather
-    than filter them.
+    Per-field `filter_path`/`filter_value` (see `_aggregation_to_sql`) is a
+    per-field FILTER clause, not a row restriction, so it cannot fill this gap
+    either. It also used to resolve every name through `_jsonb_path_to_sql`
+    against `form_json` -- so `filter_path="status"` looked up a nonexistent
+    `form_json->>'status'` and zeroed every row rather than filtering them.
+    That half is fixed (`_filter_path_to_sql`, ace#2431); the row-restriction
+    gap this function closes is not affected either way.
 
     This mirrors the status/flagged/date_from/date_to handling already proven
     correct in `build_visit_extraction_query` (same filter keys, same SQL
