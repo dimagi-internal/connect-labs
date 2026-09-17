@@ -117,7 +117,7 @@ class TestToggleLinks:
 
     def test_the_rail_builder_needs_no_request(self, network):
         """Built from a QueryDict so it is testable without a view."""
-        facets = queries.facet_counts(queries.org_rows(), set())
+        facets = queries.facet_counts(queries.all_rows_with_rounds(), set())
         rail = queries.facet_rail(facets, {"countries": [], "sectors": [], "applied": []}, QueryDict(""))
         assert {s["param"] for s in rail} == {"country", "sector", "applied"}
 

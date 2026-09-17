@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import time
 
-from django.db.models import Count, Max, Q
+from django.db.models import Count, Max, Prefetch, Q
 
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace.models import OrgProfile
@@ -95,19 +95,6 @@ def workspace_slugs_by_org_name() -> dict[str, set[str]]:
     return out
 
 
-def org_rows():
-    """Every organisation, annotated with what the directory shows."""
-    return (
-        LabsOrg.objects.select_related("marketplace_profile")
-        .annotate(
-            contact_count=Count("contacts", distinct=True),
-            application_count=Count("solicitation_responses", distinct=True),
-            last_applied=Max("solicitation_responses__submission_date"),
-        )
-        .order_by("name")
-    )
-
-
 def in_segment(row, segment: str, delivering: set[str]) -> bool:
     """Whether one annotated organisation belongs to a segment."""
     if segment == "delivering":
@@ -150,12 +137,18 @@ def facet_counts(rows, delivering: set[str]) -> dict[str, list[dict]]:
         for sector in profile.sectors or []:
             sectors[sector] = sectors.get(sector, 0) + 1
 
-    ids = [r.pk for r in rows]
-    rounds = (
-        Solicitation.objects.filter(responses__llo_entity_id__in=ids)
-        .annotate(orgs=Count("responses__llo_entity_id", distinct=True))
-        .order_by("-orgs")
-        .values("slug", "title", "orgs")
+    # From the prefetch rather than a fresh aggregate: the caller has already
+    # fetched every organisation with its responses, and asking the database to
+    # recount what is in memory is three more round-trips per page.
+    per_round: dict[str, dict] = {}
+    for row in rows:
+        for response in row.solicitation_responses.all():
+            round_ = response.solicitation
+            entry = per_round.setdefault(round_.slug, {"slug": round_.slug, "title": round_.title, "orgs": set()})
+            entry["orgs"].add(row.pk)
+    rounds = sorted(
+        ({"slug": e["slug"], "title": e["title"], "orgs": len(e["orgs"])} for e in per_round.values()),
+        key=lambda e: (-e["orgs"], e["title"]),
     )
 
     def ranked(counts: dict[str, int]) -> list[dict]:
@@ -320,28 +313,74 @@ def facet_rail(facets: dict, selected: dict, querydict) -> list[dict]:
     return out
 
 
-def rounds_by_org(orgs) -> dict[int, list]:
-    """org id -> up to three rounds it answered, in ONE query.
+def all_rows_with_rounds():
+    """Every organisation, its profile and its rounds, in ONE trip.
 
-    This was a query per row. At 240 organisations that is 240 round-trips to
-    render one page, which is the difference between a page that feels instant
-    and one people notice.
+    The network page filters the same population five ways — the list, each of
+    the three facet dimensions, and the globe. Re-running the query for each is
+    five round-trips for one page, and at a few hundred organisations the whole
+    population is smaller than a single page of most tables. So it is fetched
+    once and sliced in Python, which turns four queries and three aggregates
+    into one query and some list comprehensions.
+
+    If this registry ever reaches the tens of thousands, this is the decision to
+    revisit: the fix then is to push filtering back into SQL and paginate, not
+    to fetch more rows into memory.
     """
-    ids = [o.pk for o in orgs]
-    if not ids:
-        return {}
-
-    pairs = (
-        SolicitationResponse.objects.filter(llo_entity_id__in=ids)
-        .select_related("solicitation")
-        .order_by("llo_entity_id", "-solicitation__published_on")
-        .values_list("llo_entity_id", "solicitation__slug", "solicitation__title")
+    responses = SolicitationResponse.objects.select_related("solicitation").order_by("-solicitation__published_on")
+    return list(
+        LabsOrg.objects.select_related("marketplace_profile")
+        .prefetch_related(Prefetch("solicitation_responses", queryset=responses))
+        .annotate(
+            contact_count=Count("contacts", distinct=True),
+            application_count=Count("solicitation_responses", distinct=True),
+            last_applied=Max("solicitation_responses__submission_date"),
+        )
+        .order_by("name")
     )
 
-    out: dict[int, list] = {}
-    for org_id, slug, title in pairs:
-        seen = out.setdefault(org_id, [])
-        if len(seen) >= 3 or any(r["slug"] == slug for r in seen):
+
+def rounds_of(org) -> list[dict]:
+    """The rounds one prefetched organisation answered, newest first, capped.
+
+    Reads the prefetch rather than querying, so the row loop costs nothing.
+    """
+    out: list[dict] = []
+    for response in org.solicitation_responses.all():
+        round_ = response.solicitation
+        if any(r["slug"] == round_.slug for r in out):
             continue
-        seen.append({"slug": slug, "title": title})
+        out.append({"slug": round_.slug, "title": round_.title})
+        if len(out) >= 3:
+            break
     return out
+
+
+def round_slugs_of(org) -> set[str]:
+    """Every round slug this organisation answered — for the 'applied to' filter."""
+    return {r.solicitation.slug for r in org.solicitation_responses.all()}
+
+
+def matches(org, *, query="", countries=(), sectors=(), applied=()) -> bool:
+    """Whether one organisation survives the facet filters.
+
+    Values WITHIN a dimension are an OR and dimensions are an AND, because that
+    is what "Uganda or Malawi, and Health" means to the person ticking them.
+    """
+    profile = getattr(org, "marketplace_profile", None)
+
+    if query:
+        needle = query.lower()
+        if needle not in org.name.lower() and needle not in (org.short_name or "").lower():
+            return False
+    if countries:
+        have = [c.lower() for c in ((profile.countries if profile else None) or [])]
+        if not any(any(v.lower() in c for c in have) for v in countries):
+            return False
+    if sectors:
+        have = [s.lower() for s in ((profile.sectors if profile else None) or [])]
+        if not any(any(v.lower() in s for s in have) for v in sectors):
+            return False
+    if applied and not (round_slugs_of(org) & set(applied)):
+        return False
+    return True
