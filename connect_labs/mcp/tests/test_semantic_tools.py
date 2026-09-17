@@ -13,8 +13,10 @@ in-process through `call_tool`.
 
 from __future__ import annotations
 
+import copy
 import json
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,6 +25,7 @@ from django.utils import timezone
 from connect_labs.labs.models import UserConnectToken
 from connect_labs.mcp.models import MCPAccessToken
 from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.tool_registry import MCPToolError
 from connect_labs.semantic.seed import registry_payload
 from connect_labs.users.models import User
 
@@ -140,3 +143,112 @@ def test_an_unknown_indicator_is_still_a_clean_not_found(auth_user, kmc_record):
 
     assert data["result"]["isError"] is True
     assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+class TestSetIndicatorMeta:
+    """A one-key registry edit must not require round-tripping the whole
+    indicators document — tens of thousands of tokens each way for a one-word
+    change, every byte a chance to corrupt a live registry by transcription."""
+
+    @staticmethod
+    def _doc():
+        return {
+            "cube": "kmc_case",
+            "version": 1,
+            "measures": [
+                {
+                    "name": "c13",
+                    "type": "number",
+                    "title": "Growth",
+                    "sql": "{c13_numerator}",
+                    "meta": {"indicator": "C13", "unit": "g/kg/d", "category": "Program quality"},
+                },
+                {"name": "c13_numerator", "type": "avg", "sql": "{CUBE}.early_g_per_kg_day"},
+                {
+                    "name": "c15",
+                    "type": "number",
+                    "title": "LTFU",
+                    "sql": "{c15_numerator}",
+                    "meta": {"indicator": "C15", "unit": "%", "category": "Performance"},
+                },
+                {"name": "c15_numerator", "type": "count"},
+            ],
+        }
+
+    def _patched(self, monkeypatch, patches):
+        from connect_labs.mcp.tools import semantic as tools
+
+        captured = {}
+        record = SimpleNamespace(
+            indicators_doc=self._doc(),
+            version=3,
+            id=1,
+            name="r",
+            description="",
+            properties_doc={},
+            deployment={},
+            is_shared=True,
+        )
+
+        class _Access:
+            def get_registry(self, rid):
+                return record
+
+            def update_registry(self, rid, indicators=None, **kw):
+                captured["indicators"] = indicators
+                return SimpleNamespace(**{**record.__dict__, "indicators_doc": indicators, "version": 4})
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(tools, "_access", lambda *a, **k: _Access())
+        monkeypatch.setattr(tools, "_summary", lambda r: {"id": 1})
+        out = tools.semantic_registry_set_indicator_meta(user=None, registry_id=1, patches=patches)
+        return out, captured["indicators"]
+
+    def _meta(self, doc, indicator):
+        return next(m["meta"] for m in doc["measures"] if (m.get("meta") or {}).get("indicator") == indicator)
+
+    def test_it_sets_the_key_and_touches_nothing_else(self, monkeypatch):
+        _, doc = self._patched(monkeypatch, {"C13": {"benchmarkable": True}})
+        assert self._meta(doc, "C13")["benchmarkable"] is True
+        # every other key on the same indicator survives...
+        assert self._meta(doc, "C13")["unit"] == "g/kg/d"
+        # ...and so does every other indicator, untouched.
+        assert self._meta(doc, "C15") == {"indicator": "C15", "unit": "%", "category": "Performance"}
+        assert len(doc["measures"]) == 4
+
+    def test_a_null_removes_a_key(self, monkeypatch):
+        _, doc = self._patched(monkeypatch, {"C13": {"unit": None}})
+        assert "unit" not in self._meta(doc, "C13")
+
+    def test_an_unknown_indicator_is_refused_not_created(self, monkeypatch):
+        """A typo in an indicator id would otherwise write a meta block that
+        nothing reads, and report success."""
+        with pytest.raises(MCPToolError) as exc:
+            self._patched(monkeypatch, {"C99": {"benchmarkable": True}})
+        assert exc.value.code == "NOT_FOUND"
+        assert "C99" in str(exc.value)
+
+    def test_it_does_not_mutate_the_record_it_read(self, monkeypatch):
+        """The patch is applied to a COPY. Mutating the loaded record in place
+        would leave a half-applied edit behind if validation then rejected it."""
+        from connect_labs.mcp.tools import semantic as tools
+
+        record = SimpleNamespace(indicators_doc=self._doc(), version=3)
+        original = copy.deepcopy(record.indicators_doc)
+
+        class _Access:
+            def get_registry(self, rid):
+                return record
+
+            def update_registry(self, rid, indicators=None, **kw):
+                return SimpleNamespace(indicators_doc=indicators, version=4)
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(tools, "_access", lambda *a, **k: _Access())
+        monkeypatch.setattr(tools, "_summary", lambda r: {"id": 1})
+        tools.semantic_registry_set_indicator_meta(user=None, registry_id=1, patches={"C13": {"benchmarkable": True}})
+        assert record.indicators_doc == original, "the record it read was mutated in place"
