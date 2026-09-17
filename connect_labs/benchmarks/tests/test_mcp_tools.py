@@ -895,3 +895,59 @@ def test_cohort_delete_refuses_a_cohort_in_another_organisation(monkeypatch):
         benchmarks_cohort_delete(user=_user(), cohort_id=theirs.pk)
     assert exc.value.code == "PERMISSION_DENIED"
     assert BenchmarkCohort.objects.filter(pk=theirs.pk).exists()
+
+
+def _publish_capturing(monkeypatch, **extra):
+    """Drive `benchmarks_publish` with a stubbed publisher and return what it
+    was handed."""
+    from connect_labs.benchmarks import mcp_tools
+    from connect_labs.benchmarks.tests.test_publish import OPPS, SNAPSHOT
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+
+    user = _user()
+    cohort = _publishable_cohort(monkeypatch, user)
+    seen = {}
+
+    class _Pub:
+        pk = 1
+        as_of = "2026-09-11"
+        withheld_indicator_ids = []
+
+        class values:
+            @staticmethod
+            def count():
+                return 0
+
+    def _fake_publish(cohort_arg, **kw):
+        seen.update(kw)
+        _Pub.cohort = cohort_arg
+        return _Pub
+
+    monkeypatch.setattr(mcp_tools, "publish_benchmark", _fake_publish)
+    monkeypatch.setattr(
+        WorkflowDataAccess,
+        "get_run",
+        lambda self, run_id, **kw: _StubRun(
+            is_completed=True, period_end="2026-09-11", snapshot=_wrapped_snapshot(SNAPSHOT)
+        ),
+    )
+    monkeypatch.setattr(WorkflowDataAccess, "get_definition", lambda self, definition_id: None)
+    monkeypatch.setattr(WorkflowDataAccess, "list_runs", lambda self, definition_id: [])
+
+    mcp_tools.benchmarks_publish(
+        user=user, cohort_id=cohort["id"], workflow_id=WORKFLOW_ID, run_id=1, opportunity_id=OPPS[0], **extra
+    )
+    return seen
+
+
+def test_publish_passes_an_explicit_allow_list_through(monkeypatch):
+    """The override has to REACH `publish_benchmark`. Accepted and dropped, it
+    publishes the wrong set and reports success."""
+    seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids=["C13"])
+    assert seen["benchmarkable_indicator_ids"] == {"C13"}
+
+
+def test_publish_without_the_override_passes_none_not_an_empty_set(monkeypatch):
+    """An empty set would publish NOTHING while reading as "no override"."""
+    seen = _publish_capturing(monkeypatch)
+    assert seen["benchmarkable_indicator_ids"] is None
