@@ -18,6 +18,7 @@ import time
 from django.db.models import Count, Max, Prefetch, Q
 
 from connect_labs.labs.models import LabsOrg
+from connect_labs.marketplace import programmes
 from connect_labs.marketplace.models import OrgProfile
 from connect_labs.solicitations.local_models import ACCESS_OK, Solicitation, SolicitationResponse
 
@@ -40,14 +41,21 @@ SEGMENTS = [
 # registry and for the same reason: the underlying answer changes when the
 # poller ingests, not between two queries in one request.
 _CACHE_TTL_SECONDS = 60
-_cache: dict = {"delivering": None, "workspaces": None, "loaded_at": 0.0}
+# Everything cached for the TTL, keyed by the function that fills it.
+_CACHED = ("delivering", "workspaces", "delivered")
+_cache: dict = dict.fromkeys(_CACHED) | {"loaded_at": 0.0}
 
 
 def invalidate() -> None:
-    """Drop the cache. Called after an import, and by tests that seed delivery."""
+    """Drop the cache. Called after an import, and by tests that seed delivery.
+
+    Clears by iterating `_CACHED` rather than naming each entry: an earlier
+    version listed them by hand, and adding a fourth left it uncleared, which
+    surfaced as a test that passed alone and failed in the suite — the cache
+    from the previous test answering this one.
+    """
+    _cache.update(dict.fromkeys(_CACHED))
     _cache["loaded_at"] = 0.0
-    _cache["delivering"] = None
-    _cache["workspaces"] = None
 
 
 def _fresh() -> bool:
@@ -95,6 +103,38 @@ def workspace_slugs_by_org_name() -> dict[str, set[str]]:
     return out
 
 
+def delivered_programmes_by_org_name() -> dict[str, set[str]]:
+    """Organisation name -> the Connect delivery types it has actually run.
+
+    Read off the pulse spine, which carries Connect's own `delivery_type` on
+    every opportunity. This is the honest half of the programme filter: not
+    what an organisation says it does, but what it has been paid to do.
+    """
+    from connect_labs.pulse.models import PulseOpportunity
+
+    if _fresh() and _cache["delivered"] is not None:
+        return _cache["delivered"]
+
+    by_slug: dict[str, set[str]] = {}
+    for slug, service in (
+        PulseOpportunity.objects.exclude(org_slug="").exclude(service_slug="").values_list("org_slug", "service_slug")
+    ):
+        # `other` is Connect's unclassified bucket, not a programme. Offering
+        # it in the filter would put 264 opportunities behind a label that
+        # means "we do not know what this is".
+        if programmes.is_programme(service):
+            by_slug.setdefault(slug, set()).add(service)
+
+    out: dict[str, set[str]] = {}
+    for name, slugs in workspace_slugs_by_org_name().items():
+        services = set().union(*(by_slug.get(s, set()) for s in slugs)) if slugs else set()
+        if services:
+            out[name] = services
+    _cache["delivered"] = out
+    _cache["loaded_at"] = _cache["loaded_at"] or time.monotonic()
+    return out
+
+
 def in_segment(row, segment: str, delivering: set[str]) -> bool:
     """Whether one annotated organisation belongs to a segment."""
     if segment == "delivering":
@@ -119,23 +159,25 @@ def segment_counts(rows, delivering: set[str]) -> dict[str, int]:
 
 
 def facet_counts(rows, delivering: set[str]) -> dict[str, list[dict]]:
-    """Countries, sectors and rounds with the number of organisations in each.
+    """Countries, programmes and rounds with the number of organisations in each.
 
     The point of a facet count is that you see the size of a filter before you
     spend a click on it, so these are computed over the rows currently in
     scope rather than over the whole registry.
     """
     rows = list(rows)
+    delivered_by_name = delivered_programmes_by_org_name()
     countries: dict[str, int] = {}
-    sectors: dict[str, int] = {}
+    delivered: dict[str, int] = {}
+    applied: dict[str, int] = {}
     for row in rows:
         profile = getattr(row, "marketplace_profile", None)
-        if profile is None:
-            continue
-        for country in profile.countries or []:
+        for country in (profile.countries if profile else None) or []:
             countries[country] = countries.get(country, 0) + 1
-        for sector in profile.sectors or []:
-            sectors[sector] = sectors.get(sector, 0) + 1
+        for slug in delivered_by_name.get(row.name, ()):  # noqa: SIM118
+            delivered[slug] = delivered.get(slug, 0) + 1
+        for slug in applied_programmes_of(row):
+            applied[slug] = applied.get(slug, 0) + 1
 
     # From the prefetch rather than a fresh aggregate: the caller has already
     # fetched every organisation with its responses, and asking the database to
@@ -156,9 +198,19 @@ def facet_counts(rows, delivering: set[str]) -> dict[str, list[dict]]:
             {"value": value, "count": count} for value, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
         ]
 
+    def ranked_programmes(counts: dict[str, int]) -> list[dict]:
+        # Labelled here rather than in the template: the slug is what the URL
+        # carries and the label is what a person reads, and only this module
+        # knows that `programmes.label` is where the second comes from.
+        return [
+            {"value": slug, "label": programmes.label(slug), "count": count}
+            for slug, count in sorted(counts.items(), key=lambda kv: (-kv[1], programmes.label(kv[0])))
+        ]
+
     return {
         "countries": ranked(countries),
-        "sectors": ranked(sectors),
+        "delivered": ranked_programmes(delivered),
+        "applied": ranked_programmes(applied),
         "rounds": [{"value": r["slug"], "label": r["title"], "count": r["orgs"]} for r in rounds],
     }
 
@@ -285,10 +337,14 @@ def facet_rail(facets: dict, selected: dict, querydict) -> list[dict]:
     because a checked value's link must REMOVE it, which is not something a
     template can express.
     """
+    # Two programme dimensions rather than one, because they answer different
+    # questions and the gap between them is the interesting one: an
+    # organisation that has APPLIED to a programme it has never DELIVERED is
+    # exactly who a round is looking for.
     sections = [
         ("country", "Country", facets["countries"], selected["countries"], None),
-        ("sector", "Sector", facets["sectors"], selected["sectors"], None),
-        ("applied", "Applied to", facets["rounds"], selected["applied"], "label"),
+        ("delivered", "Has delivered", facets["delivered"], selected["delivered"], "label"),
+        ("applied", "Has applied for", facets["applied"], selected["applied"], "label"),
     ]
 
     out = []
@@ -340,32 +396,31 @@ def all_rows_with_rounds():
     )
 
 
-def rounds_of(org) -> list[dict]:
-    """The rounds one prefetched organisation answered, newest first, capped.
+def applied_programmes_of(org) -> set[str]:
+    """The delivery types this organisation has applied to work on.
 
-    Reads the prefetch rather than querying, so the row loop costs nothing.
+    Reads the prefetch. An untagged round contributes nothing rather than an
+    empty-string facet — "we have not decided what programme this round is" is
+    not a programme anybody can filter on.
     """
-    out: list[dict] = []
-    for response in org.solicitation_responses.all():
-        round_ = response.solicitation
-        if any(r["slug"] == round_.slug for r in out):
-            continue
-        out.append({"slug": round_.slug, "title": round_.title})
-        if len(out) >= 3:
-            break
-    return out
+    return {
+        r.solicitation.delivery_type
+        for r in org.solicitation_responses.all()
+        if programmes.is_programme(r.solicitation.delivery_type)
+    }
 
 
-def round_slugs_of(org) -> set[str]:
-    """Every round slug this organisation answered — for the 'applied to' filter."""
-    return {r.solicitation.slug for r in org.solicitation_responses.all()}
-
-
-def matches(org, *, query="", countries=(), sectors=(), applied=()) -> bool:
+def matches(org, *, query="", countries=(), delivered=(), applied=(), delivered_by_name=None) -> bool:
     """Whether one organisation survives the facet filters.
 
     Values WITHIN a dimension are an OR and dimensions are an AND, because that
-    is what "Uganda or Malawi, and Health" means to the person ticking them.
+    is what "Uganda or Malawi, and delivers KMC" means to the person ticking
+    them.
+
+    Country stays a substring match because the sheet's country cell is free
+    text ("Congo, the Democratic Republic of the"). Programmes are matched
+    exactly: they are Connect's own slugs, not prose, and a substring rule over
+    a controlled vocabulary only invents false positives.
     """
     profile = getattr(org, "marketplace_profile", None)
 
@@ -377,10 +432,10 @@ def matches(org, *, query="", countries=(), sectors=(), applied=()) -> bool:
         have = [c.lower() for c in ((profile.countries if profile else None) or [])]
         if not any(any(v.lower() in c for c in have) for v in countries):
             return False
-    if sectors:
-        have = [s.lower() for s in ((profile.sectors if profile else None) or [])]
-        if not any(any(v.lower() in s for s in have) for v in sectors):
+    if delivered:
+        by_name = delivered_programmes_by_org_name() if delivered_by_name is None else delivered_by_name
+        if not (by_name.get(org.name, set()) & set(delivered)):
             return False
-    if applied and not (round_slugs_of(org) & set(applied)):
+    if applied and not (applied_programmes_of(org) & set(applied)):
         return False
     return True

@@ -64,6 +64,7 @@ def upsert_rounds(rounds) -> dict:
             "response_tab": row.response_tab,
             "column_map": row.column_map,
             "notes": row.notes,
+            "delivery_type": row.delivery_type,
         }
         for name in DATE_FIELDS:
             defaults[name] = _date(getattr(row, name))

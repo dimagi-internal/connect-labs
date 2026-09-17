@@ -40,7 +40,6 @@ PROFILE_FIELDS = (
     "flws_managed",
     "countries",
     "regions",
-    "sectors",
     "website",
     "office_address",
     "notes",
