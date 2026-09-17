@@ -13,6 +13,8 @@ directory can never disagree with the wall display about who is live.
 
 from __future__ import annotations
 
+import time
+
 from django.db.models import Count, Max, Q
 
 from connect_labs.labs.models import LabsOrg
@@ -31,11 +33,42 @@ SEGMENTS = [
 ]
 
 
+# Delivery and workspace resolution both read the pulse spine -- PulseEvent is
+# millions of rows -- and both are asked for repeatedly while rendering one
+# page: the list, each facet dimension's counts, and the globe all need them.
+# So they are cached for a minute, exactly as `partner_names` caches the
+# registry and for the same reason: the underlying answer changes when the
+# poller ingests, not between two queries in one request.
+_CACHE_TTL_SECONDS = 60
+_cache: dict = {"delivering": None, "workspaces": None, "loaded_at": 0.0}
+
+
+def invalidate() -> None:
+    """Drop the cache. Called after an import, and by tests that seed delivery."""
+    _cache["loaded_at"] = 0.0
+    _cache["delivering"] = None
+    _cache["workspaces"] = None
+
+
+def _fresh() -> bool:
+    return bool(_cache["loaded_at"]) and (time.monotonic() - _cache["loaded_at"]) < _CACHE_TTL_SECONDS
+
+
 def delivering_names() -> set[str]:
-    """Organisation names with at least one verified service on Connect."""
+    """Organisation names with at least one verified service on Connect.
+
+    Cached: this aggregates over the whole pulse spine, and one page render
+    asks for it four times over.
+    """
+    if _fresh() and _cache["delivering"] is not None:
+        return _cache["delivering"]
+
     from connect_labs.pulse.network_api import first_service_by_partner
 
-    return set(first_service_by_partner())
+    names = set(first_service_by_partner())
+    _cache["delivering"] = names
+    _cache["loaded_at"] = time.monotonic()
+    return names
 
 
 def workspace_slugs_by_org_name() -> dict[str, set[str]]:
@@ -48,12 +81,17 @@ def workspace_slugs_by_org_name() -> dict[str, set[str]]:
     from connect_labs.pulse.models import PulseOpportunity
     from connect_labs.pulse.partner_names import resolve as resolve_partner
 
+    if _fresh() and _cache["workspaces"] is not None:
+        return _cache["workspaces"]
+
     out: dict[str, set[str]] = {}
     slugs = PulseOpportunity.objects.exclude(org_slug="").values_list("org_slug", flat=True).distinct()
     for slug in slugs:
         parent = resolve_partner(slug)["parent"]
         if parent:
             out.setdefault(parent, set()).add(slug)
+    _cache["workspaces"] = out
+    _cache["loaded_at"] = _cache["loaded_at"] or time.monotonic()
     return out
 
 
@@ -279,4 +317,31 @@ def facet_rail(facets: dict, selected: dict, querydict) -> list[dict]:
                 }
             )
         out.append({"param": param, "title": title, "rows": rows, "chosen": len(chosen)})
+    return out
+
+
+def rounds_by_org(orgs) -> dict[int, list]:
+    """org id -> up to three rounds it answered, in ONE query.
+
+    This was a query per row. At 240 organisations that is 240 round-trips to
+    render one page, which is the difference between a page that feels instant
+    and one people notice.
+    """
+    ids = [o.pk for o in orgs]
+    if not ids:
+        return {}
+
+    pairs = (
+        SolicitationResponse.objects.filter(llo_entity_id__in=ids)
+        .select_related("solicitation")
+        .order_by("llo_entity_id", "-solicitation__published_on")
+        .values_list("llo_entity_id", "solicitation__slug", "solicitation__title")
+    )
+
+    out: dict[int, list] = {}
+    for org_id, slug, title in pairs:
+        seen = out.setdefault(org_id, [])
+        if len(seen) >= 3 or any(r["slug"] == slug for r in seen):
+            continue
+        seen.append({"slug": slug, "title": title})
     return out
