@@ -49,28 +49,11 @@ brand-deep-purple #16006d, brand-indigo #3843d0, brand-sky #8ea1ff.
         Browse the network
         <i class="fa-solid fa-arrow-right text-xs"></i>
       </a>
-      {% if unmatched_count %}
-        <a href="{% url 'marketplace:unmatched' %}"
-           class="inline-flex items-center gap-2 px-4 py-2 border border-brand-sky/40 text-brand-sky text-sm font-medium rounded-lg hover:bg-white/5 transition">
-          {{ unmatched_count }} awaiting a verdict
-        </a>
-      {% endif %}
     </div>
   </div>
 </div>
 
 <div class="max-w-screen-2xl mx-auto px-10 py-7">
-
-  {% if unreadable %}
-    <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-900 mb-7">
-      <strong>{{ unreadable|length }} round{{ unreadable|length|pluralize }} could not be read.</strong>
-      Their applications are missing from every figure above — this is not the same as
-      those rounds having had no applicants.
-      <div class="mt-1 text-amber-800">
-        {% for r in unreadable %}{{ r.title }} ({{ r.get_sa_access_state_display }}){% if not forloop.last %} · {% endif %}{% endfor %}
-      </div>
-    </div>
-  {% endif %}
 
   {% if open_rounds %}
     <div class="flex items-baseline justify-between mb-4">
@@ -124,7 +107,6 @@ brand-deep-purple #16006d, brand-indigo #3843d0, brand-sky #8ea1ff.
           <th class="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Where</th>
           <th class="px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Applicants</th>
           <th class="px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organisations</th>
-          <th class="px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Read</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
@@ -147,16 +129,10 @@ brand-deep-purple #16006d, brand-indigo #3843d0, brand-sky #8ea1ff.
             <td class="px-5 py-3 text-[12.5px] text-gray-600">{{ r.target_countries|default:"—"|truncatechars:52 }}</td>
             <td class="px-5 py-3 text-[13px] text-gray-900 text-right tabular-nums font-medium">{{ r.applications }}</td>
             <td class="px-5 py-3 text-[13px] text-gray-600 text-right tabular-nums">{{ r.organisations }}</td>
-            <td class="px-5 py-3 text-right">
-              {% if r.sa_access_state == 'ok' %}
-                <span class="text-[11.5px] text-gray-400">yes</span>
-              {% else %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800">not ingested</span>
-              {% endif %}
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="7" class="px-5 py-12 text-center text-sm text-gray-500">No rounds recorded yet.</td></tr>
+          <tr><td colspan="6" class="px-5 py-12 text-center text-sm text-gray-500">No rounds recorded yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -106,17 +106,6 @@ different thing that happens to plot dots.
         {% if why %}<span class="text-[12.5px] text-gray-500">· {{ why }}</span>{% endif %}
       </div>
 
-      {% if unreadable %}
-        <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-900 mb-4">
-          <strong>{{ unreadable|length }} round{{ unreadable|length|pluralize }} could not be read.</strong>
-          Their applications are missing from every organisation below — this is not the
-          same as those rounds having had no applicants.
-          <div class="mt-1 text-amber-800">
-            {% for r in unreadable %}{{ r.title }} ({{ r.get_sa_access_state_display }}){% if not forloop.last %} · {% endif %}{% endfor %}
-          </div>
-        </div>
-      {% endif %}
-
       <div class="rounded-lg overflow-hidden border border-brand-border-light mb-4 relative bg-brand-deep-purple" style="height: 320px;">
         <div id="mk-globe" class="w-full h-full"
              data-points-url="{% url 'marketplace:network_points' %}?{{ request.GET.urlencode }}"></div>

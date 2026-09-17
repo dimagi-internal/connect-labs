@@ -60,13 +60,6 @@
       </div>
     </div>
 
-    {% if round.sa_access_state != 'ok' %}
-      <div class="mt-5 pt-4 border-t border-gray-100 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-900">
-        <strong>This round has not been ingested.</strong>
-        {{ round.get_sa_access_state_display }} — so an empty applicant list here means
-        labs could not read the responses, not that nobody applied.
-      </div>
-    {% endif %}
   </div>
 
   {% if trend %}
