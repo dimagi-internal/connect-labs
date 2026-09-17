@@ -29,7 +29,7 @@ plugins = ["django_coverage_plugin"]
 # ==== black ====
 [tool.black]
 line-length = 119
-target-version = ['py311']
+target-version = ['py313']
 
 
 # ==== isort ====
