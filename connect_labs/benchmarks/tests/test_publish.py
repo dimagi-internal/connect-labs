@@ -503,3 +503,32 @@ def test_a_declared_indicator_reaches_the_PUBLISHER_not_just_the_helper():
     published = set(BenchmarkValue.objects.filter(publication=pub).values_list("indicator_id", flat=True))
     assert "C13" in published, "the registry's declaration did not survive the publisher"
     assert "C01" not in published, "a case count was published"
+
+
+class TestTheCountGuardSurvivesAnExplicitOverride:
+    """`benchmarkable_indicator_ids` exists so a caller can decide indicator by
+    indicator. It must not become the way to publish case counts — the one thing
+    the disclosure design exists to prevent."""
+
+    def test_an_override_naming_a_count_does_not_publish_it(self):
+        pub = _publish(
+            _cohort(),
+            snapshot=build_snapshot(c_ids=("C01", "C15")),
+            history=_history(indicator_ids=("C01", "C15")),
+            benchmarkable_indicator_ids={"C01", "C15"},
+        )
+        published = set(BenchmarkValue.objects.filter(publication=pub).values_list("indicator_id", flat=True))
+        assert "C01" not in published, "an explicit override published a case count"
+        assert "C15" in published, "the override did not widen anything at all"
+
+    def test_an_override_can_still_add_a_non_rate(self):
+        """The whole point of the override: publish a mean the unit rule missed,
+        without editing a shared registry."""
+        pub = _publish(
+            _cohort(),
+            snapshot=build_snapshot(c_ids=("C13", "C15")),
+            history=_history(indicator_ids=("C13",)),
+            benchmarkable_indicator_ids={"C13"},
+        )
+        published = set(BenchmarkValue.objects.filter(publication=pub).values_list("indicator_id", flat=True))
+        assert "C13" in published
