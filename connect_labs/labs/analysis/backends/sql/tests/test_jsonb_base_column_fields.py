@@ -329,7 +329,7 @@ class TestTheSqlForEverythingElseIsUnchanged:
     def test_a_mixed_coalesce_changes_only_the_jsonb_leg(self):
         sql = _paths_to_coalesce_sql(["form.a", "status", "flag_reason"])
         assert sql.startswith("COALESCE(NULLIF(form_json->'form'->>'a', ''), NULLIF(status::text, ''), ")
-        assert "jsonb_typeof(flag_reason)" in sql
+        assert "flag_reason #>> '{}'" in sql
 
     def test_the_whole_aggregation_query_for_a_form_field_is_unchanged(self):
         """Belt and braces: the full emitted query for an ordinary dashboard
@@ -338,9 +338,19 @@ class TestTheSqlForEverythingElseIsUnchanged:
             _config(41020, [{"name": "muac_cm", "path": "form.muac", "aggregation": "avg"}]),
             opportunity_id=41020,
         )
-        assert "jsonb_typeof" not in sql
         assert "#>>" not in sql
+        assert "::jsonb" not in sql
         assert "COALESCE(NULLIF(form_json->'form'->>'muac', ''))" in sql
+
+    def test_the_emptiness_test_cannot_raise_on_any_input(self):
+        """`jsonb_array_length` RAISES on a non-array and Postgres may evaluate
+        a guarding `AND` in either order, so an object reaching an array-length
+        call would turn a wrong number into a failed query across every
+        dashboard. jsonb equality is total; keep it that way."""
+        sql = _jsonb_base_column_text_sql("flag_reason")
+        assert "jsonb_array_length" not in sql
+        assert "jsonb_typeof" not in sql
+        assert "flag_reason IN ('{}'::jsonb, '[]'::jsonb)" in sql
 
     def test_a_form_path_filter_is_byte_identical(self):
         """The singular `filter_path` branch now routes through

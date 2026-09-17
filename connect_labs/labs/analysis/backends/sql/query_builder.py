@@ -348,15 +348,16 @@ def _jsonb_base_column_text_sql(column: str) -> str:
     values and stay PRESENT. Treating a zero-valued scalar as an absence would
     be the same class of silent wrongness pointing the other way.
 
+    The emptiness test is jsonb equality against the two literals rather than
+    `jsonb_typeof(...) = 'array' AND jsonb_array_length(...) = 0`, which would
+    be a worse bug than the one being fixed: `jsonb_array_length` RAISES on a
+    non-array, and Postgres does not guarantee that the `AND` guarding it is
+    evaluated first — the planner may reorder. Equality is total over jsonb and
+    cannot raise on any input, so there is no ordering to get right.
+
     See dimagi-internal/ace#2431.
     """
-    return (
-        "NULLIF(CASE"
-        f" WHEN jsonb_typeof({column}) = 'object' AND {column} = '{{}}'::jsonb THEN NULL"
-        f" WHEN jsonb_typeof({column}) = 'array' AND jsonb_array_length({column}) = 0 THEN NULL"
-        f" ELSE {column} #>> '{{}}'"
-        " END, '')"
-    )
+    return f"NULLIF(CASE WHEN {column} IN ('{{}}'::jsonb, '[]'::jsonb) THEN NULL ELSE {column} #>> '{{}}' END, '')"
 
 
 def _base_column_text_sql(column: str) -> str:
