@@ -43,14 +43,39 @@ from connect_labs.mopup.core.work_areas import fetch_connect_implementation_area
 logger = logging.getLogger(__name__)
 
 
+def _merged_indicator_configs(raw: dict | None) -> dict:
+    """Every CURRENT indicator key (`ind.DEFAULT_INDICATOR_CONFIGS`), each
+    defaulted then overridden per-key by whatever `raw` (a payload's or a
+    run's saved `indicator_configs`) provides for that same key — never a
+    whole-dict swap, and never a key `raw` supplies but today's indicator set
+    doesn't recognize.
+
+    Real bug, caught live against run 20923 right after the NCF/inaccessible
+    split (#1899) shipped: `MopupAnalysisView`'s old `saved or default`
+    fallback (no merge) meant a run saved before the split still had
+    `ncf_inaccessible_rate` as one whole key in its persisted
+    `indicator_configs`, with no `threshold` field (that indicator never had
+    one). `evaluate_run` now treats any key it doesn't recognize as
+    presence-only (`NCF`/`INACCESSIBLE`) as a RATE indicator and reads
+    `ind_cfg["threshold"]` unconditionally — a `KeyError` on that stale key,
+    500ing the very first Recompute on every pre-existing run, every time,
+    until its saved thresholds happened to get overwritten. Filtering to only
+    `DEFAULT_INDICATOR_CONFIGS`' keys here means a legacy save can never
+    reintroduce a since-removed/renamed key, and any current key it's silent
+    on (like `ncf`/`inaccessible` for a run that predates them) just gets
+    today's default — the same self-healing `global_config` already got via
+    its own `{**DEFAULT, **saved}` merge one level up, just done per-key
+    instead of whole-dict since a per-key shape actually changed here."""
+    raw = raw or {}
+    return {key: {**ind.DEFAULT_INDICATOR_CONFIGS[key], **raw.get(key, {})} for key in ind.DEFAULT_INDICATOR_CONFIGS}
+
+
 def _resolve_thresholds(run, payload: dict) -> tuple[dict, dict]:
     """Given a request payload, the run's saved thresholds, and the built-in
     defaults, resolve which indicator/global config to evaluate with — in
     that priority order."""
-    indicator_configs = (
-        payload.get("indicator_configs")
-        or run.thresholds.get("indicator_configs")
-        or dict(ind.DEFAULT_INDICATOR_CONFIGS)
+    indicator_configs = _merged_indicator_configs(
+        payload.get("indicator_configs") or run.thresholds.get("indicator_configs")
     )
     global_config = (
         payload.get("global_config") or run.thresholds.get("global_config") or dict(ind.DEFAULT_GLOBAL_CONFIG)
@@ -439,14 +464,17 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         context["planning_gap_config"] = run.planning_gap_config
         context["uploaded_buildings_filename"] = run.uploaded_buildings_filename
         context["uploaded_buildings_row_count"] = run.uploaded_buildings_row_count
-        context["indicator_configs"] = run.thresholds.get("indicator_configs") or ind.DEFAULT_INDICATOR_CONFIGS
         # Merge, not replace: a run whose thresholds were saved before a
         # global_config key was introduced (every run predating this schema)
         # would otherwise render that setting's input blank instead of its
         # default, and Recompute would then collect that blank as 0/false —
-        # silently different from what a fresh run gets. evaluate_run already
-        # self-heals this for the CALCULATION (same merge pattern), but nothing
-        # upstream did it for what the template actually renders into the form.
+        # silently different from what a fresh run gets. `_resolve_thresholds`
+        # already self-heals this for the CALCULATION (same merge pattern),
+        # but nothing upstream did it for what the template actually renders
+        # into the form. `indicator_configs` needs the same treatment
+        # per-key, not just per-whole-dict (see `_merged_indicator_configs`'s
+        # docstring for the real 500 this caused before this fix).
+        context["indicator_configs"] = _merged_indicator_configs(run.thresholds.get("indicator_configs"))
         context["global_config"] = {**ind.DEFAULT_GLOBAL_CONFIG, **(run.thresholds.get("global_config") or {})}
         context["indicator_defs"] = [
             {"key": ind.EVC_SHORTFALL, "label": "EVC shortfall", "tier": 1},
