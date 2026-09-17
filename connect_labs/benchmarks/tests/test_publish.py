@@ -10,6 +10,8 @@ match the publisher, which is how a publisher that read `series[x]["opportunity"
 rows against every real run.
 """
 
+import datetime as dt
+
 import pytest
 
 from connect_labs.benchmarks import publish as publish_module
@@ -108,19 +110,22 @@ def _cohort(members=OPPS):
     return cohort
 
 
-def _history(indicator_ids=("C15",), series="C", opps=OPPS, reports=2, first_report=None):
+def _history(indicator_ids=("C15",), series="C", opps=OPPS, reports=2, first_report=None, dates=None):
     """The source workflow's completed runs, oldest first — where a SERIES now
-    comes from. `first_report` maps an opportunity to the index of its first
-    report, so a test can stagger when opportunities joined."""
+    comes from. Reports are taken at SHARED CALENDAR DATES, as the real ones are.
+
+    `first_report` maps an opportunity to the index of the first report it
+    appears in. `dates` overrides the report dates outright."""
     first_report = first_report or {}
+    dates = dates or [f"2026-0{r + 1}-28" for r in range(reports)]
     out = []
-    for r in range(reports):
+    for r, date in enumerate(dates):
         by_opp = {}
         for i, opp in enumerate(opps):
             if r < first_report.get(opp, 0):
                 continue  # this opportunity had not joined yet
             by_opp[opp] = {ind: {"id": ind, "value": 40.0 + i + r, "n": 100, "band": "green"} for ind in indicator_ids}
-        out.append({"date": f"2026-0{r + 1}-28", "byOpp": {series: by_opp}})
+        out.append({"date": date, "byOpp": {series: by_opp}})
     return out
 
 
@@ -222,8 +227,10 @@ def test_it_writes_point_and_series_values():
     assert points.count() == 2 * len(OPPS)
     assert series.count() == len(OPPS) * 2
     assert set(series.values_list("indicator_id", flat=True)) == {"C15"}
-    # Each opportunity's OWN Nth report, not the report date.
-    assert set(series.values_list("period", flat=True)) == {"R0", "R1"}
+    # Each opportunity's own WEEK OF DELIVERING, not the report date and not
+    # the report's ordinal. Every opportunity in the fixture starts 2026-01-01,
+    # so the reports of 2026-01-28 and 2026-02-28 are its weeks 3 and 8.
+    assert set(series.values_list("period", flat=True)) == {"W3", "W8"}
 
 
 def test_the_published_values_are_the_graded_cells_own_values():
@@ -348,8 +355,9 @@ def test_a_failure_mid_publication_leaves_nothing_committed():
     assert BenchmarkValue.objects.count() == 0
 
 
-class TestSeriesRunOnTheOpportunitysOwnReports:
-    """A series period is that opportunity's own Nth report, not the report date."""
+class TestSeriesRunOnEachOpportunitysOwnTenure:
+    """A series period is a TENURE WEEK — that opportunity's own Nth week of
+    delivering — not the report date and not the report's ordinal."""
 
     def _publish_staggered(self):
         """Six opportunities joining at different points across six reports."""
@@ -357,11 +365,11 @@ class TestSeriesRunOnTheOpportunitysOwnReports:
         first = {opp: i for i, opp in enumerate(OPPS)}
         return _publish(cohort, history=_history(reports=6, first_report=first)), first
 
-    def test_periods_are_report_offsets_not_dates(self):
+    def test_periods_are_tenure_weeks_not_dates(self):
         pub, _ = self._publish_staggered()
         periods = {v.period for v in BenchmarkValue.objects.filter(publication=pub) if v.period}
         assert periods, "no series was published at all"
-        assert all(p.startswith("R") for p in periods), f"a report date leaked into the periods: {periods}"
+        assert all(p.startswith("W") for p in periods), f"a report date leaked into the periods: {periods}"
 
     def test_no_date_is_recoverable_from_a_published_period(self):
         """A period naming a real date would say when an opportunity joined, and
@@ -377,10 +385,106 @@ class TestSeriesRunOnTheOpportunitysOwnReports:
         for v in BenchmarkValue.objects.filter(publication=pub).exclude(period=None):
             by_period.setdefault(v.period, {})[v.peer_index] = v.opportunity_id
         assert len(by_period) > 1
-        first_map = by_period["R0"]
+        first = by_period[sorted(by_period, key=lambda p: int(p[1:]))[0]]
         for period, mapping in by_period.items():
             for idx, opp in mapping.items():
-                assert first_map.get(idx) == opp, f"peer_index {idx} changed meaning between R0 and {period}"
+                assert first.get(idx) == opp, f"peer_index {idx} changed meaning at {period}"
+
+    def test_two_opportunities_that_started_months_apart_meet_at_the_same_week(self):
+        """The whole point of the axis: two DIFFERENT report dates land on the
+        same period, because that is the same week of delivering for each."""
+        snapshot = build_snapshot()
+        early, late = OPPS[:3], OPPS[3:]
+        snapshot["weekly"] = {f"opp:{o}": [{"week": "2026-01-05"}] for o in early}
+        snapshot["weekly"].update({f"opp:{o}": [{"week": "2026-03-02"}] for o in late})
+        snapshot["monthlyByScope"] = {}  # weekly is the precise origin; drop the fallback
+        pub = _publish(_cohort(), snapshot=snapshot, history=_history(dates=["2026-01-12", "2026-03-09"]))
+        weeks = {}
+        for v in BenchmarkValue.objects.filter(publication=pub, indicator_id="C15").exclude(period=None):
+            weeks.setdefault(v.period, set()).add(v.opportunity_id)
+        # Each group reached week 1 on a different date: the January starters at
+        # the 12 Jan report, the March starters at the 9 Mar one. Both are W1.
+        assert set(weeks) == {"W1"}, f"tenure did not align the two groups: {weeks}"
+        assert weeks["W1"] == set(OPPS)
+        # And the 9 Mar report is week 9 for the January starters — three peers,
+        # below min_peers, so R5 withholds it rather than publishing a thin period.
+        assert "W9" not in weeks
+
+    def test_a_finished_opportunitys_repeated_figure_is_not_drawn_as_its_first_weeks(self):
+        """THE DEFECT THIS AXIS EXISTS FOR. An opportunity that stopped
+        delivering before the reporting window still scores in every report,
+        repeating its final figure. Indexed on reports, those repeats were
+        placed at R0, R1, R2 — the same x as a live opportunity's first three
+        weeks — which is how three dead opportunities came to be drawn as flat
+        lines along the whole axis of a live one."""
+        cohort = _cohort()
+        # Every opportunity starts 2026-01-01 in the fixture; report a year on.
+        pub = _publish(cohort, history=_history(dates=["2027-01-04", "2027-01-11", "2027-01-18"]))
+        periods = {v.period for v in BenchmarkValue.objects.filter(publication=pub) if v.period}
+        assert periods, "nothing published"
+        assert min(int(p[1:]) for p in periods) > 40, f"a year-old report was placed near week 0: {periods}"
+
+    def test_a_report_older_than_the_opportunity_is_dropped_not_negative(self):
+        """It is not that opportunity's week -1; it is nothing."""
+        cohort = _cohort()
+        pub = _publish(cohort, history=_history(dates=["2025-06-30", "2026-01-28", "2026-02-28"]))
+        periods = {v.period for v in BenchmarkValue.objects.filter(publication=pub) if v.period}
+        assert periods == {"W3", "W8"}, f"a pre-start report survived: {periods}"
+
+    def test_two_reports_in_one_tenure_week_keep_the_later_one(self):
+        """A hand-saved run beside a rebuilt one. Both kept would give one peer
+        two points at one x, sharing a peer_index.
+
+        The history here is deliberately NOT in date order, which is the only
+        arrangement that tells "the later report wins" apart from "whichever was
+        seen last wins" — a dict assignment does the second for free."""
+        cohort = _cohort()
+        # Report 0 is 28 Jan (values 40+i), report 1 is 26 Jan (values 41+i).
+        # Both are week 3; the 28th is the later one, so 40+i must survive.
+        pub = _publish(cohort, history=_history(dates=["2026-01-28", "2026-01-26", "2026-02-28"]))
+        rows = BenchmarkValue.objects.filter(publication=pub, indicator_id="C15").exclude(period=None)
+        seen = set()
+        for row in rows:
+            key = (row.period, row.opportunity_id)
+            assert key not in seen, f"{row.opportunity_id} contributed twice to {row.period}"
+            seen.add(key)
+        week3 = set(rows.filter(period="W3").values_list("value", flat=True))
+        assert week3 == {40.0 + i for i in range(len(OPPS))}, f"the earlier report won week 3: {sorted(week3)}"
+
+    def test_an_opportunity_with_no_recorded_activity_contributes_no_series(self):
+        """Fail closed: there is no honest origin to place it on, and inventing
+        one would put it at week 0 beside genuinely new peers."""
+        snapshot = build_snapshot()
+        snapshot["weekly"] = {}
+        snapshot["monthlyByScope"] = {}
+        assert publish_module.opportunity_starts(snapshot) == {}
+        pub = _publish(_cohort(), snapshot=snapshot)
+        assert not BenchmarkValue.objects.filter(publication=pub).exclude(period=None).exists()
+        assert BenchmarkValue.objects.filter(publication=pub, period=None).exists(), "the points went too"
+
+
+class TestTheTenureOriginIsTheOpportunitysOwnFirstActivity:
+    """Not the first report it scored in — see `opportunity_starts`."""
+
+    def test_the_weekly_scope_gives_week_precision(self):
+        snapshot = {"weekly": {"opp:500": [{"week": "2026-03-16"}, {"week": "2026-03-09"}]}}
+        assert publish_module.opportunity_starts(snapshot) == {500: dt.date(2026, 3, 9)}
+
+    def test_the_monthly_scope_is_the_fallback_when_a_run_carried_no_visits(self):
+        snapshot = {"monthlyByScope": {"opp:500": [{"month": "2026-02"}, {"month": "2026-05"}]}}
+        assert publish_module.opportunity_starts(snapshot) == {500: dt.date(2026, 2, 1)}
+
+    def test_whichever_scope_reaches_further_back_wins(self):
+        snapshot = {
+            "weekly": {"opp:500": [{"week": "2026-03-09"}]},
+            "monthlyByScope": {"opp:500": [{"month": "2026-01"}]},
+        }
+        assert publish_module.opportunity_starts(snapshot) == {500: dt.date(2026, 1, 1)}
+
+    def test_non_opportunity_scopes_are_ignored(self):
+        """`all` and `llo:` sit in the same dicts and are not opportunities."""
+        snapshot = {"weekly": {"all": [{"week": "2020-01-06"}], "llo:One": [{"week": "2020-01-06"}]}}
+        assert publish_module.opportunity_starts(snapshot) == {}
 
 
 class TestAScorecardFamilyCanBeTrendedToo:
@@ -391,7 +495,7 @@ class TestAScorecardFamilyCanBeTrendedToo:
         pub = _publish(_cohort(), history=_history(indicator_ids=("N08",), series="N", reports=3))
         series = BenchmarkValue.objects.filter(publication=pub, series="N").exclude(period=None)
         assert series.exists(), "the scorecard family published points but no series"
-        assert set(series.values_list("period", flat=True)) == {"R0", "R1", "R2"}
+        assert set(series.values_list("period", flat=True)) == {"W3", "W8", "W12"}
 
     def test_no_history_means_points_and_no_series(self):
         """Degrade, never fail."""
@@ -420,10 +524,10 @@ class TestRelaxingR6:
         latest = OPPS[-1]  # joined at the last report, so it has one point
         assert not BenchmarkValue.objects.filter(publication=pub, opportunity_id=latest).exclude(period=None).exists()
 
-    def test_off_a_late_joiner_contributes_from_its_own_R0(self):
+    def test_off_a_late_joiner_contributes_at_the_weeks_it_has(self):
         pub = self._publish(False)
         rows = BenchmarkValue.objects.filter(publication=pub, opportunity_id=OPPS[-1]).exclude(period=None)
-        assert {r.period for r in rows} == {"R0"}, "the late joiner still did not contribute"
+        assert {r.period for r in rows}, "the late joiner still did not contribute"
 
     def test_off_does_not_publish_a_period_too_few_peers_reached(self):
         """R5 still holds — relaxing R6 must not smuggle a thin period through."""

@@ -26,6 +26,7 @@ be graded against one set of definitions and filtered against another.
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 
 from django.db import transaction
@@ -254,7 +255,56 @@ def _point_observations(by_opp, indicator_id: str, members: set[int]) -> list[Pe
     return out
 
 
-def _history_observations(history, series: str, indicator_id: str, members: set[int]) -> dict:
+def _as_date(value):
+    """An ISO date at the front of `value`, or None. Month strings count as their 1st."""
+    text = str(value or "")[:10]
+    if len(text) == 7:  # "2026-01" -- a month is its first day
+        text += "-01"
+    try:
+        return dt.date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def opportunity_starts(snapshot) -> dict[int, dt.date]:
+    """Each opportunity's OWN first recorded activity, the origin of the tenure axis.
+
+    The earliest date the snapshot records anything for that opportunity, taken
+    across both per-opportunity scopes it carries -- `weekly` (ISO weeks of
+    visits and registrations, which gives week precision) and `monthlyByScope`
+    (cohort months, which gives month precision and is the fallback when a run
+    was built without visit rows). The minimum of the two, so whichever reaches
+    further back wins.
+
+    It is deliberately NOT "the first report in which this opportunity scored".
+    An opportunity that finished delivering before the reporting window opened
+    scores in every report in that window, all of them repeating its final
+    figure -- and indexing on reports placed those repeats at R0, R1, R2, as if
+    they were its first three weeks. That is how three dead opportunities came
+    to be drawn as flat lines along the whole axis of a live one.
+    """
+    starts: dict[int, dt.date] = {}
+
+    def offer(key, day):
+        if day is None or not str(key).startswith(OPP_SCOPE_PREFIX):
+            return
+        try:
+            opp = int(str(key)[len(OPP_SCOPE_PREFIX) :])
+        except (TypeError, ValueError):
+            return
+        if opp not in starts or day < starts[opp]:
+            starts[opp] = day
+
+    for key, rows in ((snapshot or {}).get("weekly") or {}).items():
+        for row in rows or []:
+            offer(key, _as_date((row or {}).get("week")))
+    for key, rows in ((snapshot or {}).get("monthlyByScope") or {}).items():
+        for row in rows or []:
+            offer(key, _as_date((row or {}).get("month")))
+    return starts
+
+
+def _history_observations(history, series: str, indicator_id: str, members: set[int], starts: dict) -> dict:
     """`{period: observations}` from a workflow's SAVED RUNS, not from months.
 
     A saved run is one point of a time series: each was computed as of its own
@@ -266,30 +316,48 @@ def _history_observations(history, series: str, indicator_id: str, members: set[
 
     `history` is `[{"date": ..., "byOpp": {series: [...]}}]`, oldest first.
 
-    The period is that OPPORTUNITY'S OWN Nth report (`R0`, `R1`, ...), not the
-    report date, for the same two reasons the point rules exist. Opportunities
-    join a programme at different times, so on a report-date axis a cohort
-    compares somebody's first report against somebody else's twentieth. And a
-    line that starts late on a dated axis says when that opportunity began,
-    which identifies it; re-based, every line starts at R0 and says nothing.
+    THE PERIOD IS TENURE: `W0`, `W1`, ... are whole weeks between that
+    opportunity's own first recorded activity and the report's date. So `W7` is
+    everybody's eighth week of delivering, and a cohort whose members started
+    months apart is compared like with like.
+
+    Reports are taken at shared CALENDAR dates, which is why the re-basing has
+    to happen here rather than being read off the report index. Two consequences
+    follow and both are handled: a report older than an opportunity's first
+    activity is not that opportunity's week -1, it is nothing, and is dropped;
+    and where two reports land in one tenure week (a hand-saved run beside a
+    rebuilt one), the LATER report wins, the same rule `_run_history` applies
+    per report period.
+
+    An opportunity the snapshot records no activity for cannot be placed on this
+    axis at all and contributes no series. That is fail-closed and deliberate --
+    the alternative is inventing an origin -- but it is silent in the data, so
+    the caller logs how many were dropped.
     """
-    per_opp: dict[int, list] = {}
+    # (opportunity, tenure week) -> (report date, observation). Latest wins, so a
+    # peer contributes at most ONE point per period: two would share a
+    # peer_index and draw two points on one line at one x.
+    chosen: dict[tuple[int, int], tuple[dt.date, PeerObservation]] = {}
     for point in history or []:
+        date = _as_date((point or {}).get("date"))
+        if date is None:
+            continue
         for opp, cells in ((point or {}).get("byOpp") or {}).get(series, {}).items():
             opp = int(opp)
             if opp not in members:
                 continue
+            start = starts.get(opp)
+            if start is None or date < start:
+                continue
             observation = _observation(opp, (cells or {}).get(indicator_id))
-            # Only a SCORING report advances this opportunity's index -- a run
-            # where it had too few cases to score is not its first report, and
-            # counting it would slide its whole line one place left of everyone
-            # whose first report scored.
-            if observation is not None:
-                per_opp.setdefault(opp, []).append(observation)
+            if observation is None:
+                continue
+            key = (opp, (date - start).days // 7)
+            if key not in chosen or date >= chosen[key][0]:
+                chosen[key] = (date, observation)
     by_period: dict[str, list] = {}
-    for opp, observations in per_opp.items():
-        for i, observation in enumerate(observations):
-            by_period.setdefault(f"R{i}", []).append(observation)
+    for (_opp, week), (_date, observation) in chosen.items():
+        by_period.setdefault(f"W{week}", []).append(observation)
     return by_period
 
 
@@ -315,19 +383,28 @@ def _indicator_ids(by_opp, monthly_by_scope, history=None, series: str | None = 
     return ids
 
 
-def observations_from_snapshot(snapshot: dict, series: str, indicator_id: str, members: set[int], history=None):
+def observations_from_snapshot(
+    snapshot: dict, series: str, indicator_id: str, members: set[int], history=None, starts=None
+):
     """`(point_observations, {period: observations})` for one indicator.
 
     The point comes from the snapshot being published; the series comes from the
     workflow's saved runs, which is a different source on purpose -- see
     `_history_observations`. With no history the indicator publishes a point and
     no series rather than failing.
+
+    `starts` is the tenure origin per opportunity. It is derived from the
+    snapshot when omitted, which is right for a single call and wasteful inside
+    a publication -- so `publish_benchmark` computes it once and passes it for
+    all ~37 indicators.
     """
+    if starts is None:
+        starts = opportunity_starts(snapshot)
     for name, _measures, by_opp, _monthly in _blocks(snapshot):
         if name == series:
             return (
                 _point_observations(by_opp, indicator_id, members),
-                _history_observations(history, name, indicator_id, members),
+                _history_observations(history, name, indicator_id, members, starts),
             )
     return [], {}
 
@@ -381,6 +458,17 @@ def publish_benchmark(
     )
     members = cohort.opportunity_ids
     thresholds = {"min_peers": cohort.min_peers, "min_denominator": cohort.min_denominator}
+    # Computed once for the whole publication, not per indicator.
+    starts = opportunity_starts(snapshot)
+    unplaceable = sorted(members - set(starts)) if history else []
+    if unplaceable:
+        logger.warning(
+            "benchmark publication %s can place no tenure origin for %d cohort member(s) %s -- "
+            "they contribute points but no series",
+            publication.pk,
+            len(unplaceable),
+            unplaceable,
+        )
 
     rows: list[BenchmarkValue] = []
     withheld: list[str] = []
@@ -406,7 +494,9 @@ def publish_benchmark(
                 withheld.append(f"{series_name}:{indicator_id}")
                 continue
             considered += 1
-            points, by_period = observations_from_snapshot(snapshot, series_name, indicator_id, members, history)
+            points, by_period = observations_from_snapshot(
+                snapshot, series_name, indicator_id, members, history, starts
+            )
             observed += len(points) + sum(len(o) for o in by_period.values())
             for peer_index, value, opportunity_id in anonymise_point(
                 points, **thresholds, tie_salt=f"{publication.pk}:{series_name}:{indicator_id}"
