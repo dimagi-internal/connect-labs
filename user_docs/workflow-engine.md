@@ -173,14 +173,9 @@ Where a comparison would not be meaningful, the report says so clearly rather th
 - A worker with no dated case cannot be placed in a start-month cohort and is told so.
 - Reports that were saved before this feature was introduced carry no cohort information; those reports display an explanatory message rather than an empty panel that could be mistaken for "this worker has no peers".
 
+!!! note "Trend chart labels no longer cut off at the edges"
+    Previously, the label at the last point on a peer trend chart — for example, "week 42" — could be clipped by the edge of the card, showing only part of the text (such as "week 4"). Labels at both ends of the chart are now fully visible.
+
 ### KMC Opportunity Report
 
-The **KMC Opportunity Report** gives a single delivery opportunity a three-part view of its own performance and how it compares with its peers.
-
-#### What the report shows
-
-**1. Opportunity scorecard**
-The same indicator columns as the KMC Programme Metrics report, calculated for this opportunity alone. This is a quick summary of where the opportunity stands overall.
-
-**2. Field worker breakdown**
-One row per field worker, one column per indicator, colour-banded so you can see at
+The **KMC Opportunity Report** gives a single delivery opportunity a three-part view of its own performance and how it compares with its
