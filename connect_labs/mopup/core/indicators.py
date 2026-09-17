@@ -32,17 +32,24 @@ layers are responsible for populating these — this module only computes):
 
 Every rate the three data-quality metrics compute shares `approved_hsd_count`
 as its denominator; EVC shortfall's denominator is `expected_visit_count`.
-NCF/inaccessible has no rate/threshold at all (see below) — a work area only
-ever logs ONE NCF-or-Inaccessible visit, never a mix and never more than one
-(confirmed: NCF can only be filled in once, and any HSD visit makes NCF
-impossible thereafter), so "was this WA ever affected" is the natural signal.
+NCF and Inaccessible each have no rate/threshold at all (see below) — a work
+area only ever logs ONE NCF-or-Inaccessible visit, never a mix and never more
+than one (confirmed: NCF can only be filled in once, and any HSD visit makes
+NCF impossible thereafter), so "was this WA ever affected by THAT specific
+visit type" is the natural signal for each. They started life as one combined
+indicator ("NCF/inaccessible") and were later split into their own rows/counts
+per reviewer request, while continuing to share the same neighbor-distance/
+min-neighbor-count/min-building-count settings (see `_VISIT_PRESENCE_INDICATORS`)
+since the underlying mutual-exclusivity and corroboration mechanics are
+identical either way.
 
 Two-tier structure (per the revision doc): Tier 1 ("did we find/register
-children at all" — EVC shortfall, NCF/inaccessible) generally outranks Tier 2
+children at all" — EVC shortfall, NCF, Inaccessible) generally outranks Tier 2
 ("for children we did find, did they get complete services" — deworming,
-MUAC, vaccination), since a work area can never be BOTH NCF and Tier-2-flagged
-(Tier 2 rates are only computable once a WA has escaped NCF). EVC shortfall is
-the one indicator that can co-occur with NCF, or occur alone.
+MUAC, vaccination), since a work area can never be BOTH NCF-or-Inaccessible
+and Tier-2-flagged (Tier 2 rates are only computable once a WA has escaped
+NCF/Inaccessible). EVC shortfall is the one indicator that can co-occur with
+either of them, or occur alone.
 
 Candidacy floor: "This WA only" is now unconditional — any work area whose own
 rate/presence breaches its own threshold on any enabled indicator is a
@@ -51,11 +58,12 @@ now a single, optional, spatial-only, post-hoc FILTER (not a per-indicator
 candidacy gate) that can shorten an already-built candidate list: it keeps a
 candidate if it has enough spatially-nearby neighbors that are THEMSELVES
 floor-flagged on the same indicator, for at least one of its triggered
-indicators — applied uniformly to every indicator, NCF/inaccessible included
-(its "flagged" neighbor signal is presence, per `_ncf_affected`, rather than a
-rate breach, but the same keep-if-any-triggered-indicator-corroborates rule
-applies). When the filter is OFF, every indicator's count — NCF/inaccessible's
-included — is simply the raw count of floor-triggered work areas, unfiltered.
+indicators — applied uniformly to every indicator, NCF/Inaccessible included
+(their "flagged" neighbor signal is presence, per `_visit_presence_affected`,
+rather than a rate breach, but the same keep-if-any-triggered-indicator-
+corroborates rule applies). When the filter is OFF, every indicator's count —
+NCF/Inaccessible's included — is simply the raw count of floor-triggered work
+areas, unfiltered.
 
 The "Whole-FLW average" comparison scope, and the FLW-scoped variant of
 Cluster-aware (used previously by the three data-quality indicators), have
@@ -75,23 +83,30 @@ import math
 # ---------------------------------------------------------------------------
 
 EVC_SHORTFALL = "evc_shortfall"
-NCF_INACCESSIBLE = "ncf_inaccessible_rate"
+NCF = "ncf"
+INACCESSIBLE = "inaccessible"
 DEWORMING = "deworming"
 MUAC = "muac"
 VACCINATION = "vaccination"
 
-ALL_INDICATORS = [EVC_SHORTFALL, NCF_INACCESSIBLE, DEWORMING, MUAC, VACCINATION]
+ALL_INDICATORS = [EVC_SHORTFALL, NCF, INACCESSIBLE, DEWORMING, MUAC, VACCINATION]
 
 # Candidate provenance discriminator (Phase 3's carry-forward hand-off keys
 # off this): every candidate `evaluate_run` produces today comes from a
 # flagged EXISTING work area.
 SOURCE_EXISTING_WA = "existing_wa"
 
-TIER_1_INDICATORS = {EVC_SHORTFALL, NCF_INACCESSIBLE}
+TIER_1_INDICATORS = {EVC_SHORTFALL, NCF, INACCESSIBLE}
 TIER_2_INDICATORS = {DEWORMING, MUAC, VACCINATION}
 
-# "below" = flagged when the rate is BELOW threshold (a shortfall). NCF/
-# inaccessible has no threshold/direction — see _ncf_affected.
+# NCF and Inaccessible were one combined indicator until this split -- a WA
+# logs at most one such visit ever (see module docstring), so they remain
+# mutually exclusive, but reviewers wanted the "which one" broken out into
+# its own row/count rather than folded into a single "affected" bucket.
+_VISIT_PRESENCE_INDICATORS = {NCF: "approved_ncf_count", INACCESSIBLE: "approved_inaccessible_count"}
+
+# "below" = flagged when the rate is BELOW threshold (a shortfall). NCF and
+# Inaccessible have no threshold/direction — see _visit_presence_affected.
 _DIRECTION = {
     EVC_SHORTFALL: "below",
     DEWORMING: "below",
@@ -118,9 +133,9 @@ def _dq_given_count(wa: dict, indicator_key: str) -> int:
 
 def wa_numerator_denominator(wa: dict, indicator_key: str, global_config: dict) -> tuple[float, float] | None:
     """This WA's own (numerator, denominator) for a rate-based `indicator_key`
-    (EVC shortfall or a data-quality indicator — NOT NCF/inaccessible, which
-    has no rate; use `_ncf_affected` for that), or `None` if the indicator
-    doesn't apply / isn't trustworthy for this WA (gated out)."""
+    (EVC shortfall or a data-quality indicator — NOT NCF/Inaccessible, which
+    have no rate; use `_visit_presence_affected` for those), or `None` if the
+    indicator doesn't apply / isn't trustworthy for this WA (gated out)."""
     if indicator_key == EVC_SHORTFALL:
         if wa.get("expected_visit_count", 0) < global_config.get("min_evc_floor", 0):
             return None
@@ -154,7 +169,7 @@ def wa_numerator_denominator(wa: dict, indicator_key: str, global_config: dict) 
             return None
         return _dq_given_count(wa, indicator_key), hsd_count
 
-    raise ValueError(f"{indicator_key!r} has no rate — use _ncf_affected for NCF/inaccessible")
+    raise ValueError(f"{indicator_key!r} has no rate — use _visit_presence_affected for NCF/Inaccessible")
 
 
 def wa_rate(wa: dict, indicator_key: str, global_config: dict) -> float | None:
@@ -173,20 +188,17 @@ def is_flagged(rate: float | None, threshold: float, indicator_key: str) -> bool
     return rate < threshold if direction == "below" else rate > threshold
 
 
-def _ncf_visit_total(wa: dict) -> int:
-    return wa.get("approved_ncf_count", 0) + wa.get("approved_inaccessible_count", 0)
-
-
-def _ncf_affected(wa: dict, global_config: dict) -> bool | None:
-    """Does this WA have any NCF-or-Inaccessible visit at all? `None` if
-    gated out by `min_building_count` — never a guess. This is the
-    unconditional candidacy floor for NCF/inaccessible: no threshold, no
-    rate — presence/absence is the signal (a WA logs at most one such visit
-    ever)."""
+def _visit_presence_affected(wa: dict, indicator_key: str, global_config: dict) -> bool | None:
+    """Does this WA have an approved visit of `indicator_key`'s own type (NCF
+    or Inaccessible)? `None` if gated out by `min_building_count` — never a
+    guess. This is the unconditional candidacy floor for NCF/Inaccessible: no
+    threshold, no rate — presence/absence of THAT specific visit type is the
+    signal (a WA logs at most one NCF-or-Inaccessible visit ever, so it can
+    trigger at most one of these two indicators)."""
     min_buildings = global_config.get("min_building_count", 1)
     if wa.get("building_count", 0) < min_buildings:
         return None
-    return _ncf_visit_total(wa) > 0
+    return wa.get(_VISIT_PRESENCE_INDICATORS[indicator_key], 0) > 0
 
 
 # ---------------------------------------------------------------------------
@@ -220,18 +232,21 @@ def build_neighbor_graph(work_areas: list[dict], distance_m: float) -> dict[str,
     return graph
 
 
-def ncf_neighbor_affected_count(wa: dict, neighbor_ids: list[str], by_id: dict[str, dict], global_config: dict) -> int:
-    """How many of `wa`'s spatial neighbors are themselves NCF/inaccessible
-    -affected (per `_ncf_affected`). A gated-out neighbor (`None`) simply
-    doesn't count either way. This is NCF/inaccessible's corroboration signal
-    for the cluster-aware filter (same role `flagged_neighbor_count` plays for
-    every other indicator) — also exposed for the candidate-detail display."""
+def visit_presence_neighbor_count(
+    wa: dict, neighbor_ids: list[str], by_id: dict[str, dict], indicator_key: str, global_config: dict
+) -> int:
+    """How many of `wa`'s spatial neighbors are themselves affected (per
+    `_visit_presence_affected`) by the SAME visit type (`indicator_key`: NCF
+    or Inaccessible). A gated-out neighbor (`None`) simply doesn't count
+    either way. This is NCF/Inaccessible's corroboration signal for the
+    cluster-aware filter (same role `flagged_neighbor_count` plays for every
+    other indicator) — also exposed for the candidate-detail display."""
     count = 0
     for nid in neighbor_ids:
         neighbor = by_id.get(nid)
         if neighbor is None:
             continue
-        if _ncf_affected(neighbor, global_config) is True:
+        if _visit_presence_affected(neighbor, indicator_key, global_config) is True:
             count += 1
     return count
 
@@ -247,8 +262,8 @@ def flagged_neighbor_count(
     """How many of `wa`'s spatial neighbors are THEMSELVES floor-flagged
     (own rate breaches `threshold`) on `indicator_key` — the unified
     cluster-aware corroboration signal for EVC shortfall and the three
-    data-quality indicators (same mechanism NCF/inaccessible already used via
-    `ncf_neighbor_affected_count`, generalized to rate-based indicators)."""
+    data-quality indicators (same mechanism NCF/Inaccessible already use via
+    `visit_presence_neighbor_count`, generalized to rate-based indicators)."""
     count = 0
     for nid in neighbor_ids:
         neighbor = by_id.get(nid)
@@ -284,20 +299,23 @@ DEFAULT_GLOBAL_CONFIG = {
 }
 
 # Starting-point thresholds — every one of these is meant to be reviewer-
-# tunable in the UI. NCF/inaccessible has no threshold (see module docstring).
+# tunable in the UI. NCF and Inaccessible have no threshold (see module
+# docstring).
 DEFAULT_INDICATOR_CONFIGS = {
     EVC_SHORTFALL: {"enabled": True, "threshold": 0.5},
-    NCF_INACCESSIBLE: {"enabled": True},
+    NCF: {"enabled": True},
+    INACCESSIBLE: {"enabled": True},
     DEWORMING: {"enabled": True, "threshold": 0.7},
     MUAC: {"enabled": True, "threshold": 0.7},
     VACCINATION: {"enabled": True, "threshold": 0.7},
 }
 
 # Which global-config keys hold each indicator's own neighbor distance/count,
-# for the cluster-aware filter. NCF isn't listed here — its own equivalent
-# settings (`ncf_neighbor_distance_m`/`min_affected_neighbors_ncf`) are read
-# directly in evaluate_run's NCF branch instead, since its corroboration
-# signal (presence, via `ncf_neighbor_affected_count`) isn't the generic
+# for the cluster-aware filter. NCF/Inaccessible aren't listed here — their
+# shared settings (`ncf_neighbor_distance_m`/`min_affected_neighbors_ncf`,
+# same values applying to both) are read directly in evaluate_run's
+# NCF/Inaccessible branch instead, since their corroboration signal
+# (presence, via `visit_presence_neighbor_count`) isn't the generic
 # rate-threshold one `flagged_neighbor_count` computes for every other
 # indicator.
 _TIER2_NEIGHBOR_SETTINGS = ("tier2_neighbor_distance_m", "tier2_min_neighbor_count")
@@ -320,7 +338,7 @@ def evaluate_run(
     severity count, and a tier (1 if any Tier-1 indicator triggered, else 2).
 
     `indicator_configs`: {indicator_key: {"enabled": bool, "threshold": float}}
-    — `threshold` is ignored/optional for NCF_INACCESSIBLE. Only keys present
+    — `threshold` is ignored/optional for NCF and INACCESSIBLE. Only keys present
     AND enabled are evaluated; a disabled/absent indicator never contributes.
 
     Candidacy is now an unconditional per-WA floor (see module docstring) —
@@ -363,15 +381,13 @@ def evaluate_run(
             if not ind_cfg.get("enabled"):
                 continue
 
-            if indicator_key == NCF_INACCESSIBLE:
-                own_affected = _ncf_affected(wa, config)
+            if indicator_key in _VISIT_PRESENCE_INDICATORS:
+                own_affected = _visit_presence_affected(wa, indicator_key, config)
                 flagged = own_affected is True
                 neighbor_ids = _graph_for(config["ncf_neighbor_distance_m"]).get(wa["wa_id"], [])
-                neighbor_count = ncf_neighbor_affected_count(wa, neighbor_ids, by_id, config)
+                neighbor_count = visit_presence_neighbor_count(wa, neighbor_ids, by_id, indicator_key, config)
                 detail[indicator_key] = {
                     "own_affected": own_affected,
-                    "own_ncf_form": wa.get("approved_ncf_count", 0) > 0,
-                    "own_inaccessible_form": wa.get("approved_inaccessible_count", 0) > 0,
                     # Same corroboration signal every other indicator uses —
                     # decides survival below when the cluster-aware filter is
                     # enabled, and is purely informational (never drops
