@@ -4635,6 +4635,7 @@ def schedule_upsert_api(request, definition_id):
     view. Only workflows whose template supports default-run may be scheduled.
     """
     from connect_labs.labs.models import WorkflowSchedule
+    from connect_labs.workflow.schedules import INTERVAL_HOURS_CHOICES
 
     access_token = request.session.get("labs_oauth", {}).get("access_token")
     if not access_token:
@@ -4664,6 +4665,7 @@ def schedule_upsert_api(request, definition_id):
 
     day_of_week = body.get("day_of_week")
     day_of_month = body.get("day_of_month")
+    interval_hours = None
     # Biweekly is weekly-with-a-skip: it needs the same day_of_week, and rejecting it
     # here would let a schedule save with day_of_week None, which compute_next_run then
     # uses in arithmetic.
@@ -4684,6 +4686,26 @@ def schedule_upsert_api(request, definition_id):
         if not 1 <= day_of_month <= 28:
             return JsonResponse({"error": "monthly cadence needs day_of_month 1-28"}, status=400)
         day_of_week = None
+    elif cadence == WorkflowSchedule.CADENCE_INTERVAL:
+        # `hour` is already validated 0-23 above and is the anchor within the
+        # daily grid; interval_hours is the gap. Restricted to divisors of 24 so
+        # every fire time stays derivable from the clock alone -- see
+        # schedules.INTERVAL_HOURS_CHOICES for why a non-divisor cannot work
+        # with a stateless compute_next_run.
+        try:
+            interval_hours = int(body.get("interval_hours"))
+        except (TypeError, ValueError):
+            return JsonResponse(
+                {"error": f"interval cadence needs interval_hours, one of {list(INTERVAL_HOURS_CHOICES)}"},
+                status=400,
+            )
+        if interval_hours not in INTERVAL_HOURS_CHOICES:
+            return JsonResponse(
+                {"error": f"interval_hours must be one of {list(INTERVAL_HOURS_CHOICES)}"},
+                status=400,
+            )
+        day_of_week = None
+        day_of_month = None
     else:
         day_of_week = None
         day_of_month = None
@@ -4732,6 +4754,7 @@ def schedule_upsert_api(request, definition_id):
             "hour": hour,
             "day_of_week": day_of_week,
             "day_of_month": day_of_month,
+            "interval_hours": interval_hours,
             "enabled": True,
             "last_status": None,
             "last_error": "",
@@ -4745,6 +4768,7 @@ def schedule_upsert_api(request, definition_id):
             "hour": sched.hour,
             "day_of_week": sched.day_of_week,
             "day_of_month": sched.day_of_month,
+            "interval_hours": sched.interval_hours,
             "enabled": sched.enabled,
             "next_run_at": sched.next_run_at.isoformat() if sched.next_run_at else None,
         }

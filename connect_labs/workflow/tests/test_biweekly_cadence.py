@@ -42,8 +42,12 @@ class TestItIsOfferedAtAll:
         assert (BIWEEKLY, "Every 2 weeks") in CADENCE_CHOICES
 
     def test_it_did_not_displace_the_existing_cadences(self):
+        # "interval" was added after this test was written (sub-daily schedules);
+        # it sits next to "daily" as the other non-calendar cadence. The point of
+        # the assertion is unchanged: adding a cadence must not reorder or drop
+        # the ones already offered.
         keys = [c[0] for c in CADENCE_CHOICES]
-        assert keys == ["daily", "weekdays", "weekly", "biweekly", "monthly"]
+        assert keys == ["daily", "interval", "weekdays", "weekly", "biweekly", "monthly"]
 
     def test_the_stored_choices_match_the_scheduler_choices(self):
         """The model and the scheduler keep separate lists; if they drift, a cadence can
