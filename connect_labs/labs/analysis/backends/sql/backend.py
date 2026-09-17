@@ -166,9 +166,24 @@ def _flw_data_to_rows(config: AnalysisPipelineConfig, flw_data: list[dict]) -> l
 
 
 def _model_to_visit_dict(row, skip_form_json=False) -> dict:
-    """Convert RawVisitCache model instance to visit dict."""
+    """Convert RawVisitCache model instance to visit dict.
+
+    ``xform_id`` is DERIVED here rather than stored, exactly as
+    ``record_to_visit_dict`` derives it (``form_json["id"]``, cleared in slim mode
+    because the form body is not loaded). RawVisitCache has no column for it.
+
+    Before this it was simply absent from a cache-read dict, so the SAME visit came
+    back with ``xform_id`` on a cache MISS and without the key at all on a cache
+    HIT. ``audit.link_helpers`` builds the HQ form URL from it via ``.get()``, so a
+    hit produced ``None`` and ``build_hq_form_url`` returned an empty string --
+    the link silently vanished, and only on the reads that were fast. Deriving it
+    makes the two paths agree, which matters more now that a miss also answers
+    from the cache rather than from the API response it happened to be holding.
+    """
+    form_json = row.form_json if isinstance(row.form_json, dict) else {}
     return {
         "id": row.visit_id,
+        "xform_id": None if skip_form_json else (form_json.get("id") or None),
         "opportunity_id": row.opportunity_id,
         "username": row.username,
         "deliver_unit": row.deliver_unit,
@@ -298,14 +313,26 @@ class SQLBackend:
         logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, fetching from API")
 
         # One walk at a time per slot (#1361). force_refresh is an explicit
-        # "go and get it", so it is never handed stale rows. include_images is
-        # excluded too: the lendable rows may be the image-less variant this
-        # caller already rejected a few lines above.
-        if not force_refresh and not include_images:
+        # "go and get it", so it is never handed stale rows.
+        #
+        # include_images used to be excluded here as well, on the reasoning that
+        # the lendable rows may be the image-less variant this caller already
+        # rejected a few lines above. That reasoning is about LENDING, and it is
+        # correct about lending — but being unable to lend was making it skip the
+        # LOCK too, so image walks ran with no concurrency guard at all. They are
+        # the most expensive walk there is (whole opportunity, form_json AND photo
+        # payloads), which made the unguarded case the worst one. The lock is now
+        # always taken; whether there is anything to lend is decided separately,
+        # inside _lend_cache_during_peer_rebuild.
+        if not force_refresh:
             with claim_raw_rebuild(opportunity_id, pipeline_id) as is_leader:
                 if not is_leader:
                     lent = self._lend_cache_during_peer_rebuild(
-                        cache_manager, opportunity_id, pipeline_id, skip_form_json=skip_form_json
+                        cache_manager,
+                        opportunity_id,
+                        pipeline_id,
+                        skip_form_json=skip_form_json,
+                        require_images=include_images,
                     )
                     if lent is not None:
                         self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
@@ -333,6 +360,7 @@ class SQLBackend:
                     pipeline_id=pipeline_id,
                     filter_visit_ids=filter_visit_ids,
                     skip_form_json=skip_form_json,
+                    expected_visit_count=expected_visit_count,
                 )
 
         return self._fetch_raw_visits_uncached(
@@ -345,6 +373,7 @@ class SQLBackend:
             pipeline_id=pipeline_id,
             filter_visit_ids=filter_visit_ids,
             skip_form_json=skip_form_json,
+            expected_visit_count=expected_visit_count,
         )
 
     def _fetch_raw_visits_uncached(
@@ -359,86 +388,50 @@ class SQLBackend:
         pipeline_id: int | None,
         filter_visit_ids,
         skip_form_json: bool,
+        expected_visit_count: int | None = None,
     ) -> list[dict]:
-        """The actual fetch + cache write. Split out of ``fetch_raw_visits`` so the
-        single-flight guard can wrap it without re-indenting the retry/anomaly logic."""
-        # Guard against a fetch that comes back suspiciously smaller than what's
-        # already cached (see RAW_CACHE_SHRINK_THRESHOLD_PCT) -- retry a couple
-        # times before trusting it. `prior_count` is 0 for a first-ever fetch,
-        # which always skips the guard (nothing to compare against yet). Uses
-        # the TTL-ignoring count: we got here because the cache is a "miss",
-        # which for the common case (natural TTL expiry, not force_refresh)
-        # means the rows we're about to replace are already expired -- the
-        # TTL-filtered count would read 0 and defeat the whole guard.
-        prior_count = cache_manager.get_raw_visit_count_ignoring_ttl()
-        threshold = prior_count * RAW_CACHE_SHRINK_THRESHOLD_PCT / 100
-        visit_dicts: list[dict] = []
-        for attempt in range(1, RAW_CACHE_MAX_ATTEMPTS + 1):
-            visit_dicts = self._fetch_from_api(opportunity_id, access_token, include_images=include_images, user=user)
-            if prior_count == 0 or accept_low_count or len(visit_dicts) >= threshold:
-                break
-            logger.warning(
-                f"[SQL] Raw fetch for opp {opportunity_id} pipeline {pipeline_id} returned "
-                f"{len(visit_dicts)} rows, below {threshold:.0f} ({RAW_CACHE_SHRINK_THRESHOLD_PCT}% of "
-                f"previously-cached {prior_count}) on attempt {attempt}/{RAW_CACHE_MAX_ATTEMPTS}"
-            )
+        """Fill the slot with the BOUNDED writer, then read back only what was asked for.
 
-        if prior_count > 0 and not accept_low_count and len(visit_dicts) < threshold:
-            logger.error(
-                f"[SQL] Raw fetch for opp {opportunity_id} pipeline {pipeline_id} stayed low "
-                f"({len(visit_dicts)} vs previously {prior_count}) after {RAW_CACHE_MAX_ATTEMPTS} attempts "
-                "-- keeping previous cache and flagging the anomaly instead of overwriting it"
-            )
-            sentry_sdk.capture_message(
-                f"Raw visit fetch anomaly: opp {opportunity_id} pipeline {pipeline_id} "
-                f"got {len(visit_dicts)} rows vs {prior_count} previously cached",
-                level="warning",
-            )
-            cache_manager.extend_raw_cache_ttl(minutes=RAW_CACHE_ANOMALY_TTL_MINUTES)
-            self.last_raw_fetch_anomaly = {
-                "previous_count": prior_count,
-                "attempted_count": len(visit_dicts),
-                "threshold_pct": RAW_CACHE_SHRINK_THRESHOLD_PCT,
-            }
-            # Keep surfacing this on later cache-HIT reads too -- otherwise the
-            # extend_raw_cache_ttl() call above makes the old rows look like an
-            # ordinary valid cache again, and the very next request (a reload,
-            # a different tab) would silently drop the flag. See
-            # get_pending_raw_fetch_anomaly's docstring.
-            cache_manager.set_pending_raw_fetch_anomaly(
-                self.last_raw_fetch_anomaly, minutes=RAW_CACHE_ANOMALY_TTL_MINUTES
-            )
-            low_fetch_dicts = visit_dicts
-            visit_dicts = self._load_from_cache(cache_manager, skip_form_json=False, filter_visit_ids=None)
-            if not visit_dicts:
-                # The old cache we were protecting vanished from under us
-                # (e.g. a concurrent invalidation raced this guard) -- serving
-                # nothing would be worse than serving the low-but-real fetch
-                # we already have. The anomaly flag above still applies.
-                visit_dicts = low_fetch_dicts
-        else:
-            # Store full data to SQL cache, recording whether photos were asked for.
-            visit_count = len(visit_dicts)
-            cache_manager.store_raw_visits(visit_dicts, visit_count, images_fetched=include_images)
-            cache_manager.clear_pending_raw_fetch_anomaly()
-            logger.info(f"[SQL] Stored {visit_count} visits to RawVisitCache")
+        This used to paginate the whole export into one list and hand it to
+        ``store_raw_visits``, so a request for a single visit by id materialised
+        every visit in the opportunity — with ``form_json``, and with images. At
+        ~35 KB a visit (``AuditDataAccess.fetch_visits_slim``: ~350 MB per 10k with
+        ``form_json``, ~20 MB without) a ~30k-visit opportunity is **~1.05 GB
+        resident per walk** on a 4096 MB task, which is what OOM-killed the web
+        tier through September. ``_stream_raw_visits_uncached`` holds one page
+        (``DEFAULT_PAGE_SIZE``), so the same walk is ~87 MB.
 
-        # Apply filters for return value
-        # Normalize to strings for comparison — visit_id is CharField in cache
-        # but record_to_visit_dict returns int IDs, and callers may pass either type.
-        #
-        # `is not None`, NOT truthiness: an EMPTY set means "none of them", and
-        # treating it as "no filter" returns the whole opportunity. See
-        # _load_from_cache for the measured cost of that confusion.
-        if filter_visit_ids is not None:
-            str_filter = {str(vid) for vid in filter_visit_ids}
-            visit_dicts = [v for v in visit_dicts if str(v.get("id")) in str_filter]
+        The read side was always capable of this: ``_load_from_cache`` pushes both
+        ``filter_visit_ids`` and ``skip_form_json`` into the query, and the old
+        implementation already called it on its own anomaly branch. What was
+        missing was only that the FILL and the READ were the same pass.
 
-        if skip_form_json:
-            for v in visit_dicts:
-                v["form_json"] = {}
+        The streaming writer carries the identical shrink-guard, retry and anomaly
+        semantics — per-attempt sentinel, ``store_raw_visits_abort`` between
+        attempts, ``last_raw_fetch_anomaly`` set on exhaustion — so nothing about
+        the guard moves here. One corner does change, and deliberately: when a
+        fetch stays low for all ``RAW_CACHE_MAX_ATTEMPTS`` **and** the old cache it
+        was protecting has concurrently vanished, this now returns no rows where
+        the list version returned the low-but-real fetch it happened to be holding.
+        Keeping that would mean keeping the whole export resident for a
+        doubly-exceptional case, and ``stream_raw_visits`` has behaved this way on
+        the pipeline path since #1551.
+        """
+        for _event in self._stream_raw_visits_uncached(
+            opportunity_id,
+            access_token,
+            cache_manager,
+            expected_visit_count=expected_visit_count,
+            user=user,
+            accept_low_count=accept_low_count,
+            pipeline_id=pipeline_id,
+            include_images=include_images,
+        ):
+            # progress / complete / cached events have no consumer on this path;
+            # the rows are read back out of Postgres below.
+            pass
 
-        return visit_dicts
+        return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
 
     def stream_raw_visits(
         self,
@@ -552,14 +545,23 @@ class SQLBackend:
         user,
         accept_low_count: bool,
         pipeline_id: int | None,
+        include_images: bool = False,
     ) -> Generator[tuple[str, Any], None, None]:
         """The actual pagination + cache write. Split out of ``stream_raw_visits`` so the
-        single-flight guard can wrap it without re-indenting the retry/anomaly logic."""
+        single-flight guard can wrap it without re-indenting the retry/anomaly logic.
+
+        ``include_images`` asks Connect for photo payloads AND records on the slot
+        that it did, which is what ``slot_has_image_data`` reads back. Both halves
+        matter: a slot filled without the flag answers "does this visit have a
+        photo" with "the cache cannot say", and every image request then
+        re-downloads the whole opportunity.
+        """
         from connect_labs.labs.analysis.backends.visit_record import record_to_visit_dict
         from connect_labs.labs.integrations.connect.export_client import ExportAPIError
         from connect_labs.labs.integrations.connect.factory import get_export_client
 
         endpoint = f"/export/opportunity/{opportunity_id}/user_visits/"
+        params = {"images": "true"} if include_images else None
         # See the matching comment in fetch_raw_visits: must ignore TTL, since
         # reaching this "miss" branch on the common (non-force_refresh) path
         # means the existing rows are already expired.
@@ -572,7 +574,7 @@ class SQLBackend:
             # attempt gets its own sentinel (store_raw_visits_start), so a
             # retry never touches the previous attempt's (already-aborted)
             # rows or the still-valid old cache.
-            cache_manager.store_raw_visits_start(expected_visit_count or 0)
+            cache_manager.store_raw_visits_start(expected_visit_count or 0, images_fetched=include_images)
 
             rows_so_far = 0
 
@@ -583,7 +585,7 @@ class SQLBackend:
                     timeout=180.0,
                     user=user,
                 ) as client:
-                    for page in client.paginate(endpoint):
+                    for page in client.paginate(endpoint, params=params):
                         # Convert v2 records to visit dicts (with form_json)
                         batch = [record_to_visit_dict(record, opportunity_id) for record in page]
                         if not batch:
@@ -620,7 +622,12 @@ class SQLBackend:
                 f"rows, below {threshold:.0f} ({RAW_CACHE_SHRINK_THRESHOLD_PCT}% of previously-cached "
                 f"{prior_count}) on attempt {attempt}/{RAW_CACHE_MAX_ATTEMPTS} -- discarding and retrying"
             )
-            cache_manager.store_raw_visits_abort()
+            if attempt < RAW_CACHE_MAX_ATTEMPTS:
+                cache_manager.store_raw_visits_abort()
+            # The LAST attempt's rows are deliberately left un-aborted until the
+            # block below has looked at whether the old cache still exists. If it
+            # vanished there is nothing left to protect, and these rows — low, but
+            # real — are better than nothing. See there.
 
         # Exhausted every attempt and it's still low: never finalized over the
         # old cache, so it's untouched. Keep serving it, push its TTL out a
@@ -647,12 +654,22 @@ class SQLBackend:
         old_count = cache_manager.get_raw_visit_count()
         if not old_count:
             # The old cache we were protecting vanished from under us (e.g. a
-            # concurrent invalidation raced this guard) -- serving nothing
-            # would be worse than serving the low-but-real data we already
-            # streamed. Those rows were never finalized, so they are not
-            # readable as a count; report what we actually streamed. The
-            # anomaly flag above still applies.
+            # concurrent invalidation raced this guard). Serving nothing would be
+            # exactly the failure this guard exists to prevent, and there is now
+            # nothing left for it to protect -- so PROMOTE the last attempt's
+            # rows instead of discarding them. They are low, but real, and
+            # finalizing them overwrites nothing.
+            #
+            # This used to report `rows_so_far` as the count while those rows had
+            # already been aborted, so the number described data no reader could
+            # see. `fetch_raw_visits` shares this path now and must return actual
+            # rows, which made the gap load-bearing rather than cosmetic.
+            cache_manager.store_raw_visits_finalize(rows_so_far)
             old_count = rows_so_far
+        else:
+            # The old cache is intact and is what we serve, so the low attempt's
+            # rows are discarded as every earlier attempt's were.
+            cache_manager.store_raw_visits_abort()
         yield ("cached", old_count)
 
     def has_valid_raw_cache(
@@ -788,13 +805,27 @@ class SQLBackend:
         return bool(visible)
 
     def _lend_cache_during_peer_rebuild(
-        self, cache_manager, opportunity_id, pipeline_id, *, skip_form_json, count_only: bool = False
+        self,
+        cache_manager,
+        opportunity_id,
+        pipeline_id,
+        *,
+        skip_form_json,
+        count_only: bool = False,
+        require_images: bool = False,
     ):
         """Serve the existing rows because another connection is already rebuilding.
 
         Returns the loaded dicts, or None when there is nothing to lend — a
         first-ever fetch has no prior rows, and serving nothing would be far worse
         than briefly duplicating a walk, so the caller falls through and rebuilds.
+
+        ``require_images`` refuses to lend a slot that was filled WITHOUT images to
+        a caller that needs them: those rows cannot answer "does this visit have a
+        photo", which is the whole question the image reader is asking. Declining
+        to lend is not the same as declining to lock — the caller stays inside
+        ``claim_raw_rebuild`` and simply does the walk, so at most one image walk
+        runs per slot instead of one per request.
 
         ``count_only=True`` returns the ROW COUNT (an int) instead, still None when
         there is nothing to lend. The streaming caller only ever takes ``len()`` of
@@ -809,6 +840,15 @@ class SQLBackend:
             logger.info(
                 "[SingleFlight] opp %s pipeline %s is being rebuilt elsewhere but has no prior "
                 "rows to lend — rebuilding anyway",
+                opportunity_id,
+                pipeline_id,
+            )
+            return None
+
+        if require_images and not cache_manager.slot_has_image_data():
+            logger.info(
+                "[SingleFlight] opp %s pipeline %s is being rebuilt elsewhere but its rows carry "
+                "no image data — rebuilding anyway (still under the lock)",
                 opportunity_id,
                 pipeline_id,
             )
@@ -898,42 +938,6 @@ class SQLBackend:
             f" (filtered={filter_visit_ids is not None}, slim={skip_form_json}){origin}"
         )
         return visits
-
-    def _fetch_from_api(
-        self,
-        opportunity_id: int,
-        access_token: str,
-        include_images: bool = False,
-        user=None,
-    ) -> list[dict]:
-        """Fetch all user visits from Connect v2 export API as a list of visit dicts.
-
-        Memory note: each page is bounded at DEFAULT_PAGE_SIZE records.
-        Total memory peaks at the full visit count, same as the previous CSV path,
-        but without the additional pandas DataFrame copy.
-        """
-        from connect_labs.labs.analysis.backends.visit_record import record_to_visit_dict
-        from connect_labs.labs.integrations.connect.export_client import ExportAPIError
-        from connect_labs.labs.integrations.connect.factory import get_export_client
-
-        endpoint = f"/export/opportunity/{opportunity_id}/user_visits/"
-        params = {"images": "true"} if include_images else None
-
-        try:
-            with get_export_client(
-                opportunity_id=opportunity_id,
-                access_token=access_token,
-                timeout=180.0,
-                user=user,
-            ) as client:
-                visits: list[dict] = []
-                for page in client.paginate(endpoint, params=params):
-                    visits.extend(record_to_visit_dict(record, opportunity_id) for record in page)
-                return visits
-        except ExportAPIError as e:
-            logger.error(f"[SQL] Export API failure for opp {opportunity_id}: {e}")
-            sentry_sdk.capture_exception(e)
-            raise RuntimeError(f"Connect export API error: {e}") from e
 
     # -------------------------------------------------------------------------
     # Analysis Results Layer
