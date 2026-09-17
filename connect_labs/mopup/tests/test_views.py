@@ -1024,6 +1024,11 @@ def test_candidates_excludes_manually_excluded_gap_cells(client, django_user_mod
 
 
 def test_candidates_persists_thresholds_used(client, django_user_model, monkeypatch):
+    # A partial payload (as a reviewer's browser might send before every
+    # indicator has been touched) is persisted FULLY merged against
+    # DEFAULT_INDICATOR_CONFIGS, not verbatim -- persisting an incomplete
+    # dict is exactly what let a stale/renamed indicator key crash
+    # evaluate_run on a later reload (see _merged_indicator_configs).
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
     run = _seed_run(runs)
@@ -1036,7 +1041,66 @@ def test_candidates_persists_thresholds_used(client, django_user_model, monkeypa
         data=json.dumps({"indicator_configs": custom_configs}),
         content_type="application/json",
     )
-    assert runs[1].thresholds["indicator_configs"] == custom_configs
+    expected = dict(ind.DEFAULT_INDICATOR_CONFIGS)
+    expected[ind.EVC_SHORTFALL] = {"enabled": True, "threshold": 0.4}
+    assert runs[1].thresholds["indicator_configs"] == expected
+
+
+def test_candidates_survives_a_run_saved_under_the_old_combined_ncf_indicator_key(
+    client, django_user_model, monkeypatch
+):
+    """Real bug, caught live on run 20923 right after the NCF/inaccessible
+    split (#1899) shipped: a run recomputed before the split has
+    `ncf_inaccessible_rate` (no "threshold" field -- that indicator never had
+    one) as a whole key in its saved `indicator_configs`. Before
+    `_merged_indicator_configs`, that stale key was carried through verbatim
+    into `evaluate_run`, which now treats any key it doesn't recognize as
+    presence-only as a RATE indicator and reads `ind_cfg["threshold"]`
+    unconditionally -- a KeyError, 500ing every Recompute on every
+    pre-existing run. This is the exact payload shape the browser sent on
+    that run's first `pollOrEvaluate()` after the split deployed."""
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(
+        runs,
+        thresholds={
+            "indicator_configs": {
+                "evc_shortfall": {"enabled": True, "threshold": 0.5},
+                "ncf_inaccessible_rate": {"enabled": True},  # the old, now-unrecognized combined key
+                "deworming": {"enabled": True, "threshold": 0.7},
+                "muac": {"enabled": True, "threshold": 0.7},
+                "vaccination": {"enabled": True, "threshold": 0.7},
+            }
+        },
+    )
+    _mock_ready_data(monkeypatch, run, [])
+
+    resp = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps(
+            {
+                "indicator_configs": {
+                    "evc_shortfall": {"enabled": True, "threshold": 0.5},
+                    "ncf_inaccessible_rate": {"enabled": True},
+                    "deworming": {"enabled": True, "threshold": 0.7},
+                    "muac": {"enabled": True, "threshold": 0.7},
+                    "vaccination": {"enabled": True, "threshold": 0.7},
+                }
+            }
+        ),
+        content_type="application/json",
+    )
+
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "ok"
+    # The stale key is dropped, not evaluated -- NCF/Inaccessible fall back
+    # to today's defaults (enabled) instead of crashing or vanishing.
+    from connect_labs.mopup.core import indicators as ind
+
+    assert ind.NCF in body["per_indicator_counts"]
+    assert ind.INACCESSIBLE in body["per_indicator_counts"]
+    assert "ncf_inaccessible_rate" not in runs[1].thresholds["indicator_configs"]
 
 
 def test_candidates_skips_the_write_when_thresholds_are_unchanged(client, django_user_model, monkeypatch):
@@ -1188,6 +1252,32 @@ def test_analysis_view_fills_in_missing_global_config_keys_with_defaults(client,
     assert b'"min_hsd_visits_floor": 9' in resp.content  # saved value preserved
     default_filter = str(ind.DEFAULT_GLOBAL_CONFIG["cluster_aware_filter_enabled"]).lower().encode()
     assert b'"cluster_aware_filter_enabled": ' + default_filter in resp.content  # missing key defaulted
+
+
+def test_analysis_view_fills_in_missing_indicator_config_keys_and_drops_stale_ones(
+    client, django_user_model, monkeypatch
+):
+    # A run saved before the NCF/inaccessible split (#1899) only has the old
+    # combined key -- the new ones (ncf/inaccessible) must still render with
+    # their default (not blank/missing), and the stale combined key must not
+    # be echoed back into the page (it would round-trip into a 500 on the
+    # first Recompute -- see _merged_indicator_configs and
+    # test_candidates_survives_a_run_saved_under_the_old_combined_ncf_indicator_key).
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    from connect_labs.mopup.core import indicators as ind
+
+    legacy_configs = {
+        "evc_shortfall": {"enabled": True, "threshold": 0.42},
+        "ncf_inaccessible_rate": {"enabled": True},
+    }
+    _seed_run(runs, thresholds={"indicator_configs": legacy_configs})
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200
+    assert b"0.42" in resp.content  # saved override for a still-current key preserved
+    assert b"ncf_inaccessible_rate" not in resp.content  # stale key dropped, not echoed
+    default_ncf_enabled = str(ind.DEFAULT_INDICATOR_CONFIGS[ind.NCF]["enabled"]).lower().encode()
+    assert b'"ncf": {"enabled": ' + default_ncf_enabled + b"}" in resp.content  # missing key defaulted
 
 
 def test_analysis_view_falls_back_to_defaults_when_no_thresholds_saved(client, django_user_model, monkeypatch):
