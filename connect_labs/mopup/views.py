@@ -538,8 +538,19 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
 class MopupCandidatesView(LoginRequiredMixin, View):
     """Phase 2's live recompute: evaluate the run's scoped work areas against
     the given (or run-saved, or default) indicator/global config and return
-    candidates + a per-ward summary. Every POST also persists the thresholds
-    used onto the run, so reopening it resumes where the reviewer left off.
+    candidates + a per-ward summary. A POST only persists the thresholds
+    used onto the run when they actually changed, so reopening it resumes
+    where the reviewer left off — skipped when they match what's already
+    stored (see the comparison below) since `update_run` re-uploads the
+    run's ENTIRE JSON blob to Connect's production LabsRecord API (there's
+    no partial-field write at that layer), not just the changed key.
+    Confirmed live: this run's own `planning_gap_features`/
+    `planning_gap_building_points` alone (regularly hundreds of features/
+    thousands of points once Step 2 has run) make that a genuinely
+    non-trivial payload to re-send on every call — real cost for something
+    that's a no-op the majority of the time a "Recompute" happens, e.g. the
+    auto-recompute triggered right after excluding a work area on the map,
+    which never touches thresholds at all.
 
     The expensive data pull happens at most once per run (see
     `_rows_or_progress`) — while it's still running, this returns a
@@ -568,7 +579,9 @@ class MopupCandidatesView(LoginRequiredMixin, View):
         indicator_configs, global_config = _resolve_thresholds(run, payload)
         candidates = _apply_exclusions(ind.evaluate_run(rows, indicator_configs, global_config), run)
         ward_summary = summarize_candidates_by_ward(candidates, rows)
-        da.update_run(run, thresholds={"indicator_configs": indicator_configs, "global_config": global_config})
+        new_thresholds = {"indicator_configs": indicator_configs, "global_config": global_config}
+        if new_thresholds != run.thresholds:
+            da.update_run(run, thresholds=new_thresholds)
 
         # Per-indicator breakdown of the union candidate count above — how
         # many work areas each individual indicator flagged, recomputed every
