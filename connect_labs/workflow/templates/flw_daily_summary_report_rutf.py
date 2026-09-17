@@ -3,32 +3,41 @@
 
 Sibling of flw_daily_summary_report.py (Program 217's CHC version) for a
 different app/case model. RUTF has no work-area/ward concept at all (no
-CommCare HQ token needed here, unlike the CHC version) -- but it DOES have a
-households-vs-children split and a MUAC/visit-count concept, computed from a
+CommCare HQ token needed here, unlike the CHC version) -- it has a
+screening/SAM-enrollment/MUAC/visit-count concept instead, computed from a
 single "visits" connect_csv pipeline (any status -- approved-only subsets are
 derived in Python, mirroring Program 217's hsd_visits/approved_visits split
 from one fetch instead of two):
 
-    1. total_households_registered   ("Register a New Family" form, distinct households)
-    2. total_children_registered     ("Register a New Family" form, summed under_five_children_count)
-    3. total_children_screened       ("Screening " form, every submission)
-    4. total_sam_children_registered ("Screening " form, rutf_enrollment=yes)
-    5. total_children_muac_measured  ("Screening " form, MUAC photo captured)
-    6. total_visits                  ("Visit Form" submissions, any status)
-    7. total_sam_followup_visits     ("Visit Form" submissions, approved only)
+    1. total_children_screened       ("Screening " form, every submission)
+    2. total_sam_children_registered ("Screening " form, rutf_enrollment=yes)
+    3. total_children_muac_measured  ("Screening " form, MUAC photo captured)
+    4. total_visits                  ("Screening " + "Visit Form" submissions, any status)
+    5. total_sam_followup_visits     ("Visit Form" submissions, approved only)
 
 See connect_labs/workflow/flw_daily_summary_compute_rutf.py for the pure
 computation, and that module's docstring for exactly how these fields were
-derived from the RUTF app's own question list (Household Management ->
-Register a New Family, Initial Screening -> Screening). #1/#2 are currently
-verified-correct-but-silent-zero: as of 2026-09-16, no "Register a New Family"
-submission has ever appeared in Connect's own visit data for the live
-opportunity (2230), even after a full, forced, non-stale cache refresh that
-DID surface 113 real "Screening " visits Labs had been missing (a separate,
-now-fixed staleness bug -- see the cache note below). So #1/#2 reading 0 is
-not (as of this writing) a sign either calculation is wrong; it is Connect
-not creating a "visit" for that specific form at all, for a reason outside
-this pipeline. #3-7 are unaffected and read real numbers.
+derived from the RUTF app's own question list (Initial Screening -> Screening).
+
+**"Register a New Family" (households/children registered) was dropped
+entirely on 2026-09-17**, after confirming it can never be populated through
+Connect: as of 2026-09-16, no "Register a New Family" submission had ever
+appeared in Connect's own visit data for the live opportunity (2230), even
+after a full, forced, non-stale cache refresh that DID surface 113 real
+"Screening " visits Labs had been missing (a separate, now-fixed staleness
+bug -- see the cache note below). That gap is on Connect's side, outside
+Labs/this pipeline, and per product decision this data is only ever pulled
+through Connect (never CCHQ) -- so the two indicators were permanently
+silently-zero and were removed rather than kept as dead rows. See
+flw_daily_summary_compute_rutf.py's docstring for how to re-add them if
+Connect ever starts creating visits for that form.
+
+``total_visits`` was ALSO fixed the same day: it used to count only "Visit
+Form" (follow-up) submissions, so a day where an FLW did nothing but
+screenings -- a fully active day -- read as 0 visits. It now sums "Screening "
+and "Visit Form" submissions together (any status), matching what Program
+217's total_health_service_delivery_visits actually represents: every
+service-delivery contact with a child that day, not just follow-ups.
 
 CACHE STALENESS, separate from the above: this template's numbers can only
 ever be as fresh as WorkflowDataAccess.get_pipeline_data's underlying raw
@@ -66,9 +75,9 @@ PIPELINE_SCHEMAS = [
         "name": "Visits (RUTF Daily Summary)",
         "description": (
             "Every form submission on the deliver unit, ANY status, with the fields the RUTF FLW "
-            "Daily Summary Report needs: household/child registrations, SAM enrollments, MUAC "
-            "photos, and follow-up visits. Status filtering is done in Python per indicator, "
-            "mirroring Program 217's hsd_visits/approved_visits split but from one fetch."
+            "Daily Summary Report needs: screenings, SAM enrollments, MUAC photos, and follow-up "
+            "visits. Status filtering is done in Python per indicator, mirroring Program 217's "
+            "hsd_visits/approved_visits split but from one fetch."
         ),
         "schema": {
             "data_source": {"type": "connect_csv"},
@@ -91,12 +100,8 @@ PIPELINE_SCHEMAS = [
                     "path": "entity_id",
                     "aggregation": "first",
                     "description": "The CommCare case this visit is against -- a raw column on the visit "
-                    "cache itself (not a form.* path). For 'Register a New Family' this is the HOUSEHOLD "
-                    "case (that module's deliver-unit case type), NOT a child -- that form registers a "
-                    "household and, via an internal repeat group, one or more children in a single "
-                    "submission, so distinct entity_id counts households, not children. For 'Screening ', "
-                    "this is the CHILD case; null when the child was screened OUT (rutf_enrollment=no), "
-                    "since no case is opened in that case.",
+                    "cache itself (not a form.* path). For 'Screening ', this is the CHILD case; null when "
+                    "the child was screened OUT (rutf_enrollment=no), since no case is opened in that case.",
                 },
                 {
                     "name": "rutf_enrollment",
@@ -113,16 +118,6 @@ PIPELINE_SCHEMAS = [
                     "initial visit). Non-empty means a photo was taken. The follow-up Visit Form captures "
                     "MUAC again at a different nested path -- not read here; scoped to Screening-time MUAC.",
                 },
-                {
-                    "name": "household_children_count",
-                    "path": "form.household_form.under_five_children_count",
-                    "aggregation": "first",
-                    "description": "Set on the Register a New Family form only -- the FLW's own answer to "
-                    "'How many children in this family are between 6 months and 5 years of age?', saved to "
-                    "the household case. Summed (not deduped) across a day's household registrations to get "
-                    "total_children_registered, since a single submission's repeat group can register "
-                    "several children that this pipeline's one-row-per-form model can't otherwise count.",
-                },
             ],
         },
     },
@@ -132,8 +127,8 @@ DEFINITION = {
     "name": "FLW Daily Summary Report (RUTF)",
     "description": (
         "Program 263 (RUTF - NG - Program 1 - Sept 26) daily per-FLW service-delivery summary -- "
-        "computed automatically every day. Plain counts only (households/children registered, SAM "
-        "enrollment, MUAC captured, visits, SAM follow-up visits) -- no fraud/data-quality "
+        "computed automatically every day. Plain counts only (screening, SAM enrollment, MUAC "
+        "captured, visits, SAM follow-up visits) -- no fraud/data-quality "
         "thresholds, no interactive review (no statuses to assign)."
     ),
     "version": 1,
@@ -190,8 +185,6 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
                     <thead className="bg-gray-50">
                         <tr>
                             <th className="px-3 py-2 text-left font-semibold">FLW</th>
-                            <th className="px-3 py-2 text-right font-semibold">Households Registered</th>
-                            <th className="px-3 py-2 text-right font-semibold">Children Registered</th>
                             <th className="px-3 py-2 text-right font-semibold">Children Screened</th>
                             <th className="px-3 py-2 text-right font-semibold">SAM Children Registered</th>
                             <th className="px-3 py-2 text-right font-semibold">MUAC Measured</th>
@@ -211,8 +204,6 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
                                             </span>
                                         )}
                                     </td>
-                                    <td className="px-3 py-2 text-right">{f.total_households_registered}</td>
-                                    <td className="px-3 py-2 text-right">{f.total_children_registered}</td>
                                     <td className="px-3 py-2 text-right">{f.total_children_screened}</td>
                                     <td className="px-3 py-2 text-right">{f.total_sam_children_registered}</td>
                                     <td className="px-3 py-2 text-right">{f.total_children_muac_measured}</td>
@@ -381,8 +372,8 @@ TEMPLATE = {
     "name": "FLW Daily Summary Report (RUTF)",
     "description": (
         "Program 263 (RUTF - NG - Program 1 - Sept 26) daily per-FLW service-delivery summary -- "
-        "computed automatically every day. Plain counts only (households/children registered, SAM "
-        "enrollment, MUAC captured, visits, SAM follow-up visits) -- no fraud/data-quality "
+        "computed automatically every day. Plain counts only (screening, SAM enrollment, MUAC "
+        "captured, visits, SAM follow-up visits) -- no fraud/data-quality "
         "thresholds, no interactive review (no statuses to assign)."
     ),
     "icon": "fa-clipboard-list",
