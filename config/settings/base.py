@@ -257,6 +257,15 @@ MIDDLEWARE.insert(0, "connect_labs.utils.request_telemetry.RequestTelemetryMiddl
 TELEMETRY_SAMPLE_RATE = env.float("TELEMETRY_SAMPLE_RATE", default=0.0)
 TELEMETRY_SAMPLE_PATH_PREFIX = env("TELEMETRY_SAMPLE_PATH_PREFIX", default="")
 
+# SSE bodies are served as ASYNC iterators, so a stream is actually a stream:
+# Django drains a SYNC iterator in full before sending any of it, so every labs
+# SSE view delivered its whole body in one batch at the end. Set False to fall
+# back to that pre-#1859 sync wrapper -- a kill switch that does not need a
+# revert and a code deploy, which is what the first attempt at this needed
+# (#1859 -> #1888). Pin it in deploy/task-definitions/*.json if you set it:
+# env vars are wiped on deploy.
+LABS_SSE_ASYNC_STREAMING = env.bool("LABS_SSE_ASYNC_STREAMING", default=True)
+
 # STATIC
 # ------------------------------------------------------------------------------
 STATIC_ROOT = str(BASE_DIR / "staticfiles")

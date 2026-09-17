@@ -44,6 +44,8 @@ import asyncio
 import threading
 import time
 
+import pytest
+
 from connect_labs.labs.analysis.sse_streaming import BaseSSEStreamView
 
 # The wrapper's own bound. Not imported, on purpose: a test that reads the
@@ -57,6 +59,41 @@ DECLARED_MAXSIZE = 100
 # happens to be slow.
 RUNAWAY_THRESHOLD = 500
 TOTAL_ITEMS = 5000
+
+
+# --- driving a stream that may be sync OR async -----------------------------
+# The wrapper is an async generator now (#1899) and was a sync one before. Every
+# assertion in this file is about a COST, which both shapes have, so the file
+# drives either rather than pinning the shape it happened to be written against.
+
+
+def _is_async(stream):
+    return hasattr(stream, "__anext__")
+
+
+def _first(stream):
+    """The first event, leaving the stream open and the producer running."""
+    if _is_async(stream):
+        return asyncio.get_event_loop().run_until_complete(stream.__anext__())
+    return next(stream)
+
+
+def _consume(stream):
+    """Every event, whatever the shape."""
+    if _is_async(stream):
+
+        async def drain():
+            return [item async for item in stream]
+
+        return asyncio.run(drain())
+    return list(stream)
+
+
+def _close(stream):
+    if _is_async(stream):
+        asyncio.get_event_loop().run_until_complete(stream.aclose())
+    else:
+        stream.close()
 
 
 class _View(BaseSSEStreamView):
@@ -84,17 +121,25 @@ def test_producer_stops_when_the_consumer_stops_reading():
     counter = {"produced": 0}
     produced_enough = threading.Event()
     view = _View()
-    stream = view._with_heartbeat(_counting_generator(counter, produced_enough), interval=0.05)
 
-    # Pull exactly one event, which starts the producer thread, then stop reading.
-    first = next(stream)
-    assert first == "data: item-0\n\n"
+    async def drive():
+        stream = view._with_heartbeat(_counting_generator(counter, produced_enough), interval=0.05)
+        # Pull exactly one event, which starts the producer, then stop reading.
+        first = await stream.__anext__() if _is_async(stream) else next(stream)
+        assert first == "data: item-0\n\n"
+        # Wait up to 3s, returning early if the bound is already visibly broken.
+        # `to_thread`, not `Event.wait`: a blocking wait on this thread would
+        # also stop an ASYNC producer, and the test would pass by paralysing
+        # the thing it is measuring.
+        await asyncio.wait_for(asyncio.to_thread(produced_enough.wait, 3.0), 5.0)
+        produced = counter["produced"]
+        if _is_async(stream):
+            await stream.aclose()
+        else:
+            stream.close()
+        return produced
 
-    # Wait up to 3s, returning early if the bound is already visibly broken.
-    produced_enough.wait(timeout=3.0)
-
-    produced = counter["produced"]
-    stream.close()
+    produced = asyncio.run(drive())
 
     assert produced < RUNAWAY_THRESHOLD, (
         f"producer ran {produced} items ahead of a consumer that read ONE. "
@@ -114,7 +159,7 @@ def test_a_reading_consumer_still_gets_every_event_in_order():
         # .close() on whatever it was handed, which a list_iterator does not have.
         yield from expected
 
-    got = [chunk for chunk in view._with_heartbeat(_source(), interval=5) if chunk != ": heartbeat\n\n"]
+    got = [chunk for chunk in _consume(view._with_heartbeat(_source(), interval=5)) if chunk != ": heartbeat\n\n"]
     assert got == expected
 
 
@@ -133,25 +178,43 @@ def test_an_exception_from_the_generator_reaches_the_consumer():
         raise boom
 
     view = _View()
-    stream = view._with_heartbeat(_raises(), interval=5)
-    assert next(stream) == "data: first\n\n"
-    try:
-        next(stream)
-    except RuntimeError as exc:
-        assert exc is boom
-    else:  # pragma: no cover - the assertion below reports it
-        raise AssertionError("the generator's exception never reached the consumer")
+
+    async def drive():
+        stream = view._with_heartbeat(_raises(), interval=5)
+        if _is_async(stream):
+            assert await stream.__anext__() == "data: first\n\n"
+            with pytest.raises(RuntimeError) as caught:
+                await stream.__anext__()
+        else:
+            assert next(stream) == "data: first\n\n"
+            with pytest.raises(RuntimeError) as caught:
+                next(stream)
+        assert caught.value is boom
+
+    asyncio.run(drive())
 
 
 def test_the_wrapper_terminates_promptly_once_the_consumer_closes():
-    """A stalled producer must not outlive the response — it holds the queue."""
+    """A stalled producer must not outlive the response.
+
+    A browser closing a dashboard tab mid-read is the ordinary case, not the
+    edge one, and one leaked worker thread per abandoned stream is a slow leak
+    on a 1-vCPU task.
+    """
     counter = {"produced": 0}
     produced_enough = threading.Event()
     view = _View()
     before = threading.active_count()
-    stream = view._with_heartbeat(_counting_generator(counter, produced_enough), interval=0.05)
-    next(stream)
-    stream.close()
+
+    async def drive():
+        stream = view._with_heartbeat(_counting_generator(counter, produced_enough), interval=0.05)
+        await stream.__anext__() if _is_async(stream) else next(stream)
+        if _is_async(stream):
+            await stream.aclose()
+        else:
+            stream.close()
+
+    asyncio.run(drive())
 
     deadline = time.monotonic() + 5.0
     while threading.active_count() > before and time.monotonic() < deadline:
@@ -165,21 +228,6 @@ def test_the_wrapper_terminates_promptly_once_the_consumer_closes():
 # A chunked pull at chunk=100 measures 0.01; #1859's push measures 1.0. Anything
 # under this bound is a design that hands over batches, whatever its shape.
 MAX_LOOP_CALLBACKS_PER_ROW = 0.1
-
-
-def _consume(stream):
-    """Iterate `stream` whether it is a sync or an async generator.
-
-    Written for both on purpose: the sync wrapper is what ships today, and the
-    whole point of this file is to still apply after someone makes it async.
-    """
-    if hasattr(stream, "__anext__"):
-
-        async def drain():
-            return [item async for item in stream]
-
-        return asyncio.run(drain())
-    return list(stream)
 
 
 def test_the_wrapper_does_not_schedule_an_event_loop_callback_per_row():
@@ -208,9 +256,14 @@ def test_the_wrapper_does_not_schedule_an_event_loop_callback_per_row():
         loop.call_soon_threadsafe = counting
         try:
             stream = view._with_heartbeat((f"data: item-{i}\n\n" for i in range(rows)), interval=5)
-            # A sync generator consumed inside the coroutine blocks this loop,
-            # which is fine: we are counting schedules, not measuring latency.
-            return len(_consume(stream))
+            # Drained inline rather than through `_consume`, which starts its
+            # own loop: nesting one inside this coroutine leaves the drain
+            # never awaited and counts nothing.
+            if _is_async(stream):
+                return len([item async for item in stream])
+            # A sync generator consumed here blocks this loop, which is fine:
+            # we are counting schedules, not measuring latency.
+            return len(list(stream))
         finally:
             loop.call_soon_threadsafe = original
 
