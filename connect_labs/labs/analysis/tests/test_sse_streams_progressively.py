@@ -154,3 +154,61 @@ def test_the_worker_thread_does_not_leave_a_db_connection_open():
         "the stream's worker thread still holds a DB connection after the response ended. "
         "Nothing else will close it -- this is not a request thread (#667/#669)."
     )
+
+
+def test_events_already_produced_survive_a_BaseException():
+    """Losing the batch in hand is worse than the failure that caused it.
+
+    `_drain` runs in a worker thread. If an exception escapes it, the future
+    raises, the items already pulled are discarded, and the client gets nothing
+    -- not even the events produced before the failure. Catching only
+    `Exception` did exactly that, which was a regression against the wrapper
+    this replaced: run both against a generator that raises `CancelledError`
+    after its first event and the old one delivered that event while the new
+    one delivered none.
+
+    `CancelledError` is the realistic case rather than a contrived one: it is a
+    BaseException in 3.8+, and a stream is exactly where cancellation lands.
+    """
+    delivered = []
+
+    def one_then_cancelled():
+        yield "data: first\n\n"
+        raise asyncio.CancelledError()
+
+    async def drive():
+        stream = _View()._with_heartbeat(one_then_cancelled(), interval=5)
+        with pytest.raises(asyncio.CancelledError):
+            async for item in stream:
+                delivered.append(item)
+
+    asyncio.run(drive())
+    assert delivered == ["data: first\n\n"], (
+        "the event produced before the failure was dropped: a BaseException "
+        "escaping the worker discards the whole batch in hand"
+    )
+
+
+def test_a_close_from_the_consumer_is_not_swallowed_as_an_error():
+    """`GeneratorExit` is the consumer closing us, not the generator failing.
+
+    Caught and reported as an error it would make close() a no-op, and the
+    worker thread would keep pulling from a stream nobody is reading.
+    """
+    closed = {"yes": False}
+
+    def source():
+        try:
+            for i in range(10_000):
+                yield f"data: {i}\n\n"
+        except GeneratorExit:
+            closed["yes"] = True
+            raise
+
+    async def drive():
+        stream = _View()._with_heartbeat(source(), interval=5)
+        await stream.__anext__()
+        await stream.aclose()
+
+    asyncio.run(drive())
+    assert closed["yes"], "the generator was never told the consumer had gone"
