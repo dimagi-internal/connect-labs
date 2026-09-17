@@ -857,18 +857,17 @@ function WorkflowUI({
             );
           })}
           {periods.map(function (p, i) {
-            if (
-              i &&
-              i !== periods.length - 1 &&
-              i !== Math.floor((periods.length - 1) / 2)
-            )
-              return null;
+            var last = periods.length - 1;
+            if (i && i !== last && i !== Math.floor(last / 2)) return null;
+            // The end ticks are anchored INWARD. Centred on the first and last
+            // point they hang half a label over each edge of the plot, and the
+            // card clips it -- "week 42" was rendering as "week 4".
             return (
               <text
                 key={p}
                 x={x(i)}
                 y={H - 6}
-                textAnchor="middle"
+                textAnchor={i === 0 ? 'start' : i === last ? 'end' : 'middle'}
                 fontSize="7"
                 fill="#9ca3af"
               >
