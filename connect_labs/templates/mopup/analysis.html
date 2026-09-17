@@ -203,11 +203,17 @@
   </section>
 
   <section id="planning-gaps-section" class="border border-gray-200 rounded p-4 space-y-3 {% if run.status != "locked" %}hidden{% endif %}">
-    <h2 class="text-lg font-semibold text-gray-900">Step 2 — Planning gaps <span class="info-icon" tabindex="0" data-tip="For each locked ward, finds buildings never covered by any existing work area and grids them into new candidate work areas. Only fetches/reads building data the first time you hit Recompute below.">ⓘ</span></h2>
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-gray-900">Step 2 — Planning gaps <span class="info-icon" tabindex="0" data-tip="For each locked ward, finds buildings never covered by any existing work area and grids them into new candidate work areas. Only fetches/reads building data the first time you hit Recompute below.">ⓘ</span></h2>
+      <div class="flex items-center gap-2">
+        <button type="button" id="erase-planning-gaps" class="button outline-style" disabled>Erase planning gaps</button>
+        <button type="button" id="planning-gaps-recompute" class="button outline-style">Recompute</button>
+      </div>
+    </div>
 
     <div class="space-y-1">
       <span class="text-gray-600">New work areas for uncovered buildings</span>
-      <div class="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+      <div class="grid grid-cols-2 gap-x-10 gap-y-1 text-sm">
         <label class="flex items-center gap-1"><input type="radio" name="gap-mode" class="gap-mode-radio" value="skip" {% if planning_gap_config.mode == "skip" %}checked{% endif %}> Skip — don't add any new work areas</label>
         <label class="flex items-center gap-1"><input type="radio" name="gap-mode" class="gap-mode-radio" value="overture" {% if planning_gap_config.mode != "skip" and planning_gap_config.mode != "upload" and planning_gap_config.mode != "open_buildings" %}checked{% endif %}> Use Overture / OpenStreetMap / Microsoft building data</label>
         <label class="flex items-center gap-1"><input type="radio" name="gap-mode" class="gap-mode-radio" value="upload" {% if planning_gap_config.mode == "upload" %}checked{% endif %}> Upload my own building data</label>
@@ -215,19 +221,13 @@
       </div>
     </div>
 
-    <div id="gap-mode-overture-controls" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+    <div id="gap-mode-overture-controls" class="space-y-1 text-sm">
+      <span class="text-gray-600">Building source</span>
       <div class="space-y-1">
-        <span class="text-gray-600">Building source</span>
-        <div class="space-y-1">
-          <label class="flex items-center gap-1"><input type="checkbox" class="gap-src-cb" value="Google Open Buildings" checked> Google Open Buildings</label>
-          <label class="flex items-center gap-1"><input type="checkbox" class="gap-src-cb" value="OpenStreetMap"> OpenStreetMap</label>
-          <label class="flex items-center gap-1"><input type="checkbox" class="gap-src-cb" value="Microsoft ML Buildings"> Microsoft ML Buildings</label>
-        </div>
+        <label class="flex items-center gap-1"><input type="checkbox" class="gap-src-cb" value="Google Open Buildings" checked> Google Open Buildings</label>
+        <label class="flex items-center gap-1"><input type="checkbox" class="gap-src-cb" value="OpenStreetMap"> OpenStreetMap</label>
+        <label class="flex items-center gap-1"><input type="checkbox" class="gap-src-cb" value="Microsoft ML Buildings"> Microsoft ML Buildings</label>
       </div>
-      <label class="space-y-1">
-        <span class="text-gray-600">Min Google confidence <span class="info-icon" tabindex="0" data-tip="Drops Google Open Buildings footprints below this confidence score (0-1). Only applies to that source.">ⓘ</span></span>
-        <input type="number" id="gap-cfg-min-confidence" class="base-input" min="0" max="1" step="0.05" value="0.6">
-      </label>
     </div>
 
     <div id="gap-mode-upload-controls" class="space-y-2 text-sm">
@@ -237,13 +237,6 @@
       </label>
       <button type="button" id="gap-upload-button" class="button outline-style">Upload</button>
       <p id="gap-upload-status" class="text-xs text-gray-500">{% if uploaded_buildings_filename %}Uploaded: {{ uploaded_buildings_filename }} ({{ uploaded_buildings_row_count }} row(s) matched this run's ward(s)){% endif %}</p>
-    </div>
-
-    <div id="gap-mode-open-buildings-controls" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-      <label class="space-y-1">
-        <span class="text-gray-600">Min confidence <span class="info-icon" tabindex="0" data-tip="Drops Google Open Buildings (direct-fetch) footprints below this confidence score (0-1).">ⓘ</span></span>
-        <input type="number" id="gap-cfg-open-buildings-min-confidence" class="base-input" min="0" max="1" step="0.05" value="0.6">
-      </label>
     </div>
 
     <div id="gap-mode-shared-controls" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -258,13 +251,20 @@
           <option value="100" selected>100m</option>
         </select>
       </label>
+      <label id="gap-mode-overture-confidence-wrap" class="space-y-1">
+        <span class="text-gray-600">Min Google confidence <span class="info-icon" tabindex="0" data-tip="Drops Google Open Buildings footprints below this confidence score (0-1). Only applies to that source.">ⓘ</span></span>
+        <input type="number" id="gap-cfg-min-confidence" class="base-input" min="0" max="1" step="0.05" value="0.6">
+      </label>
+      <label id="gap-mode-open-buildings-confidence-wrap" class="space-y-1">
+        <span class="text-gray-600">Min confidence <span class="info-icon" tabindex="0" data-tip="Drops Google Open Buildings (direct-fetch) footprints below this confidence score (0-1).">ⓘ</span></span>
+        <input type="number" id="gap-cfg-open-buildings-min-confidence" class="base-input" min="0" max="1" step="0.05" value="0.6">
+      </label>
       <label id="gap-mode-upload-confidence-wrap" class="space-y-1">
         <span class="text-gray-600">Min confidence (optional) <span class="info-icon" tabindex="0" data-tip="Only meaningful if your uploaded file has its own confidence column (0-1) -- drops rows below this score before they're gridded into new work areas or shown on the map. Leave blank to keep every uploaded building regardless of confidence.">ⓘ</span></span>
         <input type="number" id="gap-cfg-upload-min-confidence" class="base-input" min="0" max="1" step="0.05" placeholder="none">
       </label>
     </div>
 
-    <button type="button" id="planning-gaps-recompute" class="button outline-style">Recompute</button>
     <p id="planning-gaps-status" class="text-xs text-gray-500"></p>
   </section>
 
@@ -292,6 +292,7 @@
     lockUrl: "{{ lock_url }}",
     createPlanUrl: "{{ create_plan_url }}",
     planningGapsUrl: "{{ planning_gaps_url }}",
+    erasePlanningGapsUrl: "{{ erase_planning_gaps_url }}",
     uploadBuildingsUrl: "{{ upload_buildings_url }}",
     excludeWorkAreaUrl: "{{ exclude_work_area_url }}",
     csrfToken: "{{ csrf_token }}",

@@ -2004,3 +2004,45 @@ def test_upload_buildings_over_row_cap_is_rejected(client, django_user_model, mo
     )
     assert resp.status_code == 400
     assert "over the 0" in resp.json()["detail"]
+
+
+def test_erase_planning_gaps_requires_login(client):
+    resp = client.post(reverse("mopup:erase_planning_gaps", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_erase_planning_gaps_requires_locked_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)  # status is STATUS_ANALYSIS, not locked
+    resp = client.post(reverse("mopup:erase_planning_gaps", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 400
+    assert "Lock the run" in resp.json()["detail"]
+
+
+def test_erase_planning_gaps_clears_features_points_and_warnings(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    run.data["planning_gap_features"] = [{"type": "Feature", "properties": {"wa_id": "gap-1"}}]
+    run.data["planning_gap_building_points"] = [{"lat": 1.0, "lon": 2.0}]
+    run.data["planning_gap_warnings"] = {"Some Ward": "fetch failed"}
+    run.data["planning_gap_config"] = {"mode": "overture"}
+
+    resp = client.post(reverse("mopup:erase_planning_gaps", kwargs={"program_id": 217, "run_id": 1}))
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+    assert runs[1].planning_gap_features == []
+    assert runs[1].planning_gap_building_points == []
+    assert runs[1].planning_gap_warnings == {}
+    # The last-used mode/settings are deliberately left alone -- this only
+    # erases the RESULT of a Step 2 run, not the reviewer's form inputs.
+    assert runs[1].planning_gap_config == {"mode": "overture"}
+
+
+def test_erase_planning_gaps_returns_404_for_missing_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_run_da(monkeypatch)
+    resp = client.post(reverse("mopup:erase_planning_gaps", kwargs={"program_id": 217, "run_id": 999}))
+    assert resp.status_code == 404
