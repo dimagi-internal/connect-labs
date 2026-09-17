@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('labs', '0021_computed_cache_pipeline_id'),
+        ('labs', '0023_labsorg'),
     ]
 
     operations = [
