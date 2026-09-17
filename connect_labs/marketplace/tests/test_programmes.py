@@ -132,3 +132,41 @@ class TestWaterIsAKnownProgramme:
         fetched = next(o for o in queries.all_rows_with_rounds() if o.pk == org.pk)
         assert queries.applied_programmes_of(fetched) == {"water"}
         assert queries.delivered_programmes_by_org_name().get("Riverbank Water Trust") is None
+
+
+class TestEveryLiveProgrammeHasAName:
+    """Three real delivery types ran with no label and rendered as TMS,
+    CONVERSATION and CHOLERA. The fallback to capitals is deliberate — a code
+    is visibly a code — but it is a prompt to go and ask, not a destination.
+    """
+
+    def test_the_last_three_unnamed_types_are_named(self):
+        assert programmes.label("tms") == "Turmeric Market Survey"
+        assert programmes.label("conversation") == "Low-resource languages"
+        assert programmes.label("cholera") == "Cholera"
+
+    def test_every_delivery_type_seen_in_production_has_a_name(self):
+        """The 15 slugs `PulseProgram.delivery_type` actually carried on
+        2026-09-17. A new one appearing is not a failure — it renders as a code
+        and this test then says whose name is missing."""
+        live = {
+            "chc",
+            "malaria",
+            "interview",
+            "nutrition",
+            "ecd",
+            "ace",
+            "hhs",
+            "kmc",
+            "readers",
+            "ivp",
+            "wellme",
+            "mbw",
+            "cholera",
+            "tms",
+            "conversation",
+        }
+        # Membership, not shape: ACE's real name IS its slug in capitals, so
+        # comparing against `.upper()` calls a named programme unnamed.
+        unnamed = live - programmes.known_slugs()
+        assert unnamed == set(), f"these production delivery types have no name: {sorted(unnamed)}"

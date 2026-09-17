@@ -119,6 +119,17 @@ SERVICE_LABELS.update(
         # this is a NEW type, so it may carry no Connect opportunities yet and
         # show only on the "applied for" side until it does.
         "water": "Water",
+        # The last three real delivery types that had no name and rendered as
+        # TMS, CONVERSATION and CHOLERA — codes above correct numbers, which is
+        # the state this table exists to make visible rather than paper over.
+        # All three confirmed by Jonathan, 2026-09-17.
+        #
+        # `tms` surveys turmeric on sale for lead contamination; the label is
+        # what the acronym stands for, because "lead" alone reads as the verb.
+        "tms": "Turmeric Market Survey",
+        # `conversation` collects speech in languages with little written data.
+        "conversation": "Low-resource languages",
+        "cholera": "Cholera",
         # Our own tooling's programmes rather than field delivery. Named as it
         # is because that is what it is called; it should stop appearing here
         # once those programmes are cleaned up on the Connect side.
