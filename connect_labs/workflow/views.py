@@ -381,6 +381,15 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
                 "hour": sched.hour,
                 "day_of_week": sched.day_of_week,
                 "day_of_month": sched.day_of_month,
+                # Required by list.html's per-card x-data. A key missing here does not
+                # render as empty -- Django returns string_if_invalid AND SKIPS the
+                # filter, so `|default_if_none:6` never runs and the card emits
+                # `interval_hours: ,`. That is a syntax error in the x-data object
+                # literal, which kills Alpine for the whole card: the title is an
+                # `x-text` inside a `<template x-if>` and simply does not render, and
+                # neither do Create Run, Copy or Share. Only SCHEDULED cards were hit,
+                # because the {% else %} branch hardcodes a literal.
+                "interval_hours": sched.interval_hours,
                 "enabled": sched.enabled,
                 "last_status": sched.last_status,
             }
