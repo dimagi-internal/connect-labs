@@ -202,10 +202,17 @@ MIDDLEWARE.insert(_auth_idx + 3, "connect_labs.campaign.middleware.CampaignOAuth
 
 # Gzip-compress responses on the way out — the microplans footprints endpoint
 # ships ~1 MB of GeoJSON polygon coords per ward that compresses 80–90%, but
-# every JSON endpoint benefits. GZipMiddleware sits at the top of the stack so
-# it sees the fully-rendered body. Labs doesn't reflect secrets in response
-# bodies, so BREACH-class attacks aren't a concern here.
-MIDDLEWARE.insert(0, "django.middleware.gzip.GZipMiddleware")
+# every JSON endpoint benefits. It sits at the top of the stack so it sees the
+# fully-rendered body. Labs doesn't reflect secrets in response bodies, so
+# BREACH-class attacks aren't a concern here.
+#
+# NOT Django's own: an event stream must not be compressed, and Django's
+# compresses an ASYNC streaming body one gzip member PER CHUNK, which browsers
+# read as "the response ended after the first event". See the subclass.
+#
+# This is also the only place gzip is installed, so it is the only place that
+# behaviour exists: local and CI run without it.
+MIDDLEWARE.insert(0, "connect_labs.utils.gzip.GZipExceptEventStreamMiddleware")
 
 # CommCare OAuth configuration
 COMMCARE_HQ_URL = env("COMMCARE_HQ_URL", default="https://www.commcarehq.org")
