@@ -63,6 +63,13 @@ class Solicitation(models.Model):
     questions = models.JSONField(default=list, blank=True)
     evaluation_criteria = models.JSONField(default=list, blank=True)
 
+    # Connect's own `delivery_type` — the same vocabulary the pulse spine tags
+    # every opportunity with, so "applied to a malaria round" and "delivered
+    # malaria" are the same word and can be compared. Blank means nobody has
+    # decided yet; `PROGRAMME_NONE` means a human decided it is not a delivery
+    # programme at all (a matching grant is a funding instrument, not a service).
+    delivery_type = models.CharField(max_length=48, blank=True, default="")
+
     # --- provenance: alongside, never inside ---
     published_on = models.DateField(null=True, blank=True)
     decision_on = models.DateField(null=True, blank=True)
@@ -86,6 +93,18 @@ class Solicitation(models.Model):
 
     class Meta:
         ordering = ["-published_on", "title"]
+
+    @property
+    def programme_label(self) -> str:
+        """Connect's name for the programme this round is for, or "" if untagged.
+
+        A property rather than a stored string: the tag is the slug, and the
+        name for a slug is one decision held in one place. Imported lazily so
+        that solicitations keeps no import-time dependency on marketplace.
+        """
+        from connect_labs.marketplace.programmes import label
+
+        return label(self.delivery_type) if self.delivery_type else ""
 
     def __str__(self) -> str:
         return f"{self.title} ({self.get_solicitation_type_display()})"

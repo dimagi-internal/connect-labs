@@ -17,7 +17,6 @@ def network(db):
         "Northlake Maternal Health Network",
         "NMHN",
         countries=["Uganda"],
-        sectors=["Health"],
         flws_managed=120,
         lat=0.34,
         lon=32.58,
@@ -31,6 +30,7 @@ def network(db):
         name="Northlake delivery",
         org_slug="northlake-maternal-health-network",
         country="UG",
+        service_slug="kmc",
         lifetime_visit_count=900,
     )
     PulseEvent.objects.create(
@@ -51,7 +51,6 @@ def network(db):
         "Serrano Child Nutrition Foundation",
         "SCNF",
         countries=["Malawi"],
-        sectors=["Nutrition"],
         flws_managed=15,
         lat=-13.3,
         lon=34.3,
@@ -59,7 +58,9 @@ def network(db):
         location_precision="country",
     )
 
-    round_ = Solicitation.objects.create(slug="chc-2025", title="CHC", status="closed", sa_access_state="ok")
+    round_ = Solicitation.objects.create(
+        slug="chc-2025", title="CHC", status="closed", sa_access_state="ok", delivery_type="chc"
+    )
     SolicitationResponse.objects.create(
         solicitation=round_, llo_entity=live, source_row=2, org_name=live.name, match_state="email"
     )
@@ -96,10 +97,24 @@ class TestSegments:
 
 @pytest.mark.django_db
 class TestFacets:
-    def test_counts_every_country_and_sector_in_scope(self, network):
+    def test_counts_every_country_in_scope(self, network):
         facets = queries.facet_counts(queries.all_rows_with_rounds(), queries.delivering_names())
         assert {f["value"] for f in facets["countries"]} == {"Uganda", "Malawi"}
-        assert {f["value"] for f in facets["sectors"]} == {"Health", "Nutrition"}
+
+    def test_delivered_and_applied_are_counted_separately(self, network):
+        """The two programme facets answer different questions. One organisation
+        has delivered KMC; both applied to a CHC round; nobody has delivered CHC.
+        Collapsing them would claim two CHC deliverers that do not exist.
+        """
+        facets = queries.facet_counts(queries.all_rows_with_rounds(), queries.delivering_names())
+        assert facets["delivered"] == [{"value": "kmc", "label": "Kangaroo Mother Care", "count": 1}]
+        assert facets["applied"] == [{"value": "chc", "label": "Child Health Campaign", "count": 2}]
+
+    def test_an_untagged_round_contributes_no_programme(self, network):
+        """A round nobody has tagged yet must not become a blank facet row."""
+        Solicitation.objects.filter(slug="chc-2025").update(delivery_type="")
+        facets = queries.facet_counts(queries.all_rows_with_rounds(), queries.delivering_names())
+        assert facets["applied"] == []
 
     def test_counts_organisations_per_round_not_applications(self, network):
         """Three applications, two organisations — the facet answers the second."""

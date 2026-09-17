@@ -35,7 +35,6 @@ class OrgProfile(models.Model):
 
     countries = models.JSONField(default=list, blank=True)
     regions = models.JSONField(default=list, blank=True)
-    sectors = models.JSONField(default=list, blank=True)
 
     website = models.CharField(max_length=500, blank=True, default="")
     office_address = models.TextField(blank=True, default="")

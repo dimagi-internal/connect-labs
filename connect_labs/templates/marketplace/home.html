@@ -85,8 +85,11 @@ brand-deep-purple #16006d, brand-indigo #3843d0, brand-sky #8ea1ff.
       {% for r in open_rounds %}
         <a href="{% url 'marketplace:round' r.slug %}"
            class="bg-white border border-brand-border-light rounded-lg p-[18px] flex flex-col gap-3 border-t-[3px] border-t-brand-indigo hover:shadow-md transition">
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold tracking-wider bg-green-100 text-green-800">OPEN</span>
+            {% if r.programme_label %}
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold tracking-wide bg-indigo-50 text-brand-indigo">{{ r.programme_label }}</span>
+            {% endif %}
             <span class="text-[11.5px] text-gray-500">{{ r.type_label }}</span>
           </div>
           <div class="text-base font-semibold text-brand-deep-purple leading-snug">{{ r.title }}</div>
@@ -116,6 +119,7 @@ brand-deep-purple #16006d, brand-indigo #3843d0, brand-sky #8ea1ff.
       <thead class="bg-gray-50">
         <tr>
           <th class="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Round</th>
+          <th class="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Programme</th>
           <th class="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Closed</th>
           <th class="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Where</th>
           <th class="px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Applicants</th>
@@ -132,6 +136,13 @@ brand-deep-purple #16006d, brand-indigo #3843d0, brand-sky #8ea1ff.
                 <span class="text-[13.5px] font-medium text-brand-deep-purple">{{ r.title }}</span>
               </a>
             </td>
+            <td class="px-5 py-3 whitespace-nowrap">
+              {% if r.programme_label %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11.5px] font-medium bg-indigo-50 text-brand-indigo">{{ r.programme_label }}</span>
+              {% else %}
+                <span class="text-[11.5px] text-gray-300" title="No Connect delivery type recorded on the EOI/RFP tab">untagged</span>
+              {% endif %}
+            </td>
             <td class="px-5 py-3 text-[12.5px] text-gray-600 whitespace-nowrap">{% if r.application_deadline %}{{ r.application_deadline|date:"M Y" }}{% else %}Rolling{% endif %}</td>
             <td class="px-5 py-3 text-[12.5px] text-gray-600">{{ r.target_countries|default:"—"|truncatechars:52 }}</td>
             <td class="px-5 py-3 text-[13px] text-gray-900 text-right tabular-nums font-medium">{{ r.applications }}</td>
@@ -145,7 +156,7 @@ brand-deep-purple #16006d, brand-indigo #3843d0, brand-sky #8ea1ff.
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="px-5 py-12 text-center text-sm text-gray-500">No rounds recorded yet.</td></tr>
+          <tr><td colspan="7" class="px-5 py-12 text-center text-sm text-gray-500">No rounds recorded yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

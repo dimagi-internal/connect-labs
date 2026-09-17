@@ -20,11 +20,13 @@ def user(db, django_user_model):
 
 @pytest.fixture
 def network(db):
-    ug = make_partner("Northlake Maternal Health Network", "NMHN", countries=["Uganda"], sectors=["Health"])
-    mw = make_partner("Serrano Child Nutrition Foundation", "SCNF", countries=["Malawi"], sectors=["Nutrition"])
-    ke = make_partner("Fenwick Community Trust", "FCT", countries=["Kenya"], sectors=["Health", "WASH"])
+    ug = make_partner("Northlake Maternal Health Network", "NMHN", countries=["Uganda"], delivers=["kmc"])
+    mw = make_partner("Serrano Child Nutrition Foundation", "SCNF", countries=["Malawi"])
+    ke = make_partner("Fenwick Community Trust", "FCT", countries=["Kenya"], delivers=["kmc", "readers"])
 
-    chc = Solicitation.objects.create(slug="chc-2025", title="CHC", status="closed", sa_access_state="ok")
+    chc = Solicitation.objects.create(
+        slug="chc-2025", title="CHC", status="closed", sa_access_state="ok", delivery_type="chc"
+    )
     for i, org in enumerate([ug, ke], start=2):
         SolicitationResponse.objects.create(
             solicitation=chc, llo_entity=org, source_row=i, org_name=org.name, match_state="name"
@@ -44,19 +46,34 @@ class TestTheRail:
         countries = {r["label"]: r["count"] for r in rail["country"]["rows"]}
         assert countries == {"Uganda": 1, "Malawi": 1, "Kenya": 1}
 
-    def test_a_round_facet_is_labelled_by_title_not_slug(self, client, user, network):
+    def test_a_programme_facet_is_labelled_not_slugged(self, client, user, network):
+        """The URL carries Connect's slug; the person reads Connect's name for it."""
         client.force_login(user)
         rail = {s["param"]: s for s in client.get(reverse("marketplace:network")).context["rail"]}
-        assert rail["applied"]["rows"][0]["label"] == "CHC"
-        assert rail["applied"]["rows"][0]["value"] == "chc-2025"
+        assert rail["applied"]["rows"][0] | {"url": ""} == {
+            "value": "chc",
+            "label": "Child Health Campaign",
+            "count": 2,
+            "selected": False,
+            "url": "",
+        }
+        delivered = {r["label"]: r["count"] for r in rail["delivered"]["rows"]}
+        assert delivered == {"Kangaroo Mother Care": 2, "Readers Distribution": 1}
+
+    def test_delivered_and_applied_are_different_questions(self, client, user, network):
+        """Fenwick has DELIVERED readers and APPLIED to a CHC round. A rail that
+        merged the two would offer "Readers" as something it had applied for."""
+        client.force_login(user)
+        by_delivered = _names(client.get(reverse("marketplace:network"), {"delivered": "readers"}))
+        by_applied = _names(client.get(reverse("marketplace:network"), {"applied": "readers"}))
+        assert by_delivered == {"Fenwick Community Trust"}
+        assert by_applied == set()
 
     def test_counts_narrow_with_the_filters_already_applied(self, client, user, network):
         """A facet count answers 'how many would this add to what I have',
         which means counting over the rows in scope, not the whole registry."""
         client.force_login(user)
-        rail = {
-            s["param"]: s for s in client.get(reverse("marketplace:network"), {"applied": "chc-2025"}).context["rail"]
-        }
+        rail = {s["param"]: s for s in client.get(reverse("marketplace:network"), {"applied": "chc"}).context["rail"]}
         countries = {r["label"] for r in rail["country"]["rows"]}
         assert countries == {"Uganda", "Kenya"}
 
@@ -71,7 +88,9 @@ class TestFacetsCombine:
 
     def test_different_facets_narrow_each_other(self, client, user, network):
         client.force_login(user)
-        response = client.get(reverse("marketplace:network"), {"country": ["Uganda", "Kenya"], "sector": ["WASH"]})
+        response = client.get(
+            reverse("marketplace:network"), {"country": ["Uganda", "Kenya"], "delivered": ["readers"]}
+        )
         assert _names(response) == {"Fenwick Community Trust"}
 
     def test_a_segment_still_applies_on_top_of_the_facets(self, client, user, network):
@@ -107,19 +126,19 @@ class TestToggleLinks:
         be worse than no facet at all."""
         client.force_login(user)
         response = client.get(
-            reverse("marketplace:network"), {"segment": "bench", "sector": "Health", "country": "Kenya"}
+            reverse("marketplace:network"), {"segment": "bench", "delivered": "kmc", "country": "Kenya"}
         )
         rail = {s["param"]: s for s in response.context["rail"]}
         row = next(r for r in rail["country"]["rows"] if r["label"] == "Uganda")
         assert "segment=bench" in row["url"]
-        assert "sector=Health" in row["url"]
+        assert "delivered=kmc" in row["url"]
         assert "country=Kenya" in row["url"]  # the one already chosen survives
 
     def test_the_rail_builder_needs_no_request(self, network):
         """Built from a QueryDict so it is testable without a view."""
         facets = queries.facet_counts(queries.all_rows_with_rounds(), set())
-        rail = queries.facet_rail(facets, {"countries": [], "sectors": [], "applied": []}, QueryDict(""))
-        assert {s["param"] for s in rail} == {"country", "sector", "applied"}
+        rail = queries.facet_rail(facets, {"countries": [], "delivered": [], "applied": []}, QueryDict(""))
+        assert {s["param"] for s in rail} == {"country", "delivered", "applied"}
 
 
 @pytest.mark.django_db
@@ -149,6 +168,6 @@ class TestASecondValueStaysReachable:
         """Excluding a facet's own filter must not exclude everyone else's."""
         client.force_login(user)
         rail = {
-            s["param"]: s for s in client.get(reverse("marketplace:network"), {"sector": "Nutrition"}).context["rail"]
+            s["param"]: s for s in client.get(reverse("marketplace:network"), {"delivered": "readers"}).context["rail"]
         }
-        assert {r["label"] for r in rail["country"]["rows"]} == {"Malawi"}
+        assert {r["label"] for r in rail["country"]["rows"]} == {"Kenya"}

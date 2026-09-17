@@ -38,7 +38,7 @@ different thing that happens to plot dots.
   {# Segments are the jobs people come to do; the rail refines within one. #}
   <form method="get" id="mk-segments">
     {% for value in selected.countries %}<input type="hidden" name="country" value="{{ value }}">{% endfor %}
-    {% for value in selected.sectors %}<input type="hidden" name="sector" value="{{ value }}">{% endfor %}
+    {% for value in selected.delivered %}<input type="hidden" name="delivered" value="{{ value }}">{% endfor %}
     {% for value in selected.applied %}<input type="hidden" name="applied" value="{{ value }}">{% endfor %}
     <input type="hidden" name="q" value="{{ selected.q }}">
     <div class="flex flex-wrap gap-2 mb-4">
@@ -68,7 +68,7 @@ different thing that happens to plot dots.
       <form method="get" class="px-4 py-3 border-b border-gray-100">
         <input type="hidden" name="segment" value="{{ selected.segment }}">
         {% for value in selected.countries %}<input type="hidden" name="country" value="{{ value }}">{% endfor %}
-        {% for value in selected.sectors %}<input type="hidden" name="sector" value="{{ value }}">{% endfor %}
+        {% for value in selected.delivered %}<input type="hidden" name="delivered" value="{{ value }}">{% endfor %}
         {% for value in selected.applied %}<input type="hidden" name="applied" value="{{ value }}">{% endfor %}
         <div class="flex items-center gap-2 bg-white border border-brand-border-light rounded-lg px-2.5 h-9">
           <i class="fa-solid fa-magnifying-glass text-gray-400 text-xs"></i>
@@ -129,7 +129,7 @@ different thing that happens to plot dots.
 
       <div class="flex flex-col gap-2.5">
         {% for row in listed %}
-          <div class="bg-white border border-brand-border-light rounded-lg px-[18px] py-4 grid grid-cols-1 lg:grid-cols-[2.5fr_1.5fr_0.7fr_1.9fr] gap-4 items-center hover:shadow-sm transition">
+          <div class="bg-white border border-brand-border-light rounded-lg px-[18px] py-4 grid grid-cols-1 lg:grid-cols-[2.4fr_1.3fr_2.6fr] gap-4 items-center hover:shadow-sm transition">
 
             <div class="flex items-center gap-3 min-w-0">
               <span class="w-9 h-9 rounded-lg inline-flex items-center justify-center text-xs font-semibold shrink-0
@@ -138,35 +138,43 @@ different thing that happens to plot dots.
               </span>
               <div class="flex flex-col gap-0.5 min-w-0">
                 <a href="{% url 'marketplace:organisation' row.org.slug %}" class="text-sm font-medium text-brand-deep-purple hover:text-brand-indigo truncate">{{ row.org.name }}</a>
-                <span class="text-[11.5px] text-gray-400 truncate">{% if row.profile %}{{ row.profile.sectors|join:", "|default:"—" }}{% endif %}</span>
+                <span class="text-[11.5px] text-gray-400 truncate">{{ row.org.short_name|default:"" }}</span>
               </div>
             </div>
 
-            <div class="flex flex-col gap-0.5 min-w-0">
-              <span class="text-[12.5px] text-gray-600 truncate">{% if row.profile %}{{ row.profile.countries|join:", "|default:"—" }}{% endif %}</span>
-              {% if row.org.contact_count %}
-                <span class="text-[11.5px] text-gray-400">{{ row.org.contact_count }} contact{{ row.org.contact_count|pluralize }}</span>
-              {% else %}
-                <span class="text-[11.5px] text-brand-sunset font-medium">no contact on file</span>
-              {% endif %}
+            <div class="flex flex-col gap-1 min-w-0 items-start">
+              <span class="text-[12.5px] text-gray-600 truncate w-full">{% if row.profile %}{{ row.profile.countries|join:", "|default:"—" }}{% endif %}</span>
+              <div class="flex items-center gap-2 flex-wrap">
+                {% if row.delivering %}
+                  <span class="inline-flex items-center text-[11px] font-medium text-green-700">
+                    <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>delivering
+                  </span>
+                {% else %}
+                  <span class="text-[11px] font-medium text-amber-700">bench</span>
+                {% endif %}
+                {% if row.org.contact_count %}
+                  <span class="text-[11px] text-gray-400">· {{ row.org.contact_count }} contact{{ row.org.contact_count|pluralize }}</span>
+                {% else %}
+                  <span class="text-[11px] text-brand-sunset font-medium">· no contact</span>
+                {% endif %}
+              </div>
             </div>
 
-            <div class="text-right">
-              <div class="text-[15px] font-semibold text-gray-900 tabular-nums">{% if row.profile.flws_managed %}{{ row.profile.flws_managed }}{% else %}<span class="text-gray-300">—</span>{% endif %}</div>
-              <div class="text-[10.5px] text-gray-400 tracking-wide">FLWS</div>
-            </div>
-
+            {% comment %}
+            Delivered and applied are visually distinct on purpose: a solid
+            chip is work this organisation has actually done, an outlined one
+            is work it has asked for. The gap between the two columns is the
+            thing you are scanning for.
+            {% endcomment %}
             <div class="flex items-center gap-1.5 justify-start lg:justify-end flex-wrap">
-              {% for r in row.rounds %}
-                <a href="{% url 'marketplace:round' r.slug %}"
-                   class="text-[11px] font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-indigo-50 hover:text-brand-indigo whitespace-nowrap">{{ r.title }}</a>
+              {% for p in row.delivered %}
+                <span class="text-[11px] font-medium px-2 py-0.5 rounded bg-green-100 text-green-800 whitespace-nowrap" title="Has delivered {{ p.label }} on Connect">{{ p.label }}</span>
               {% endfor %}
-              {% if row.delivering %}
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-green-100 text-green-800 whitespace-nowrap">
-                  <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>delivering
-                </span>
-              {% else %}
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-amber-50 text-amber-800 whitespace-nowrap">bench</span>
+              {% for p in row.applied %}
+                <span class="text-[11px] font-medium px-2 py-0.5 rounded border border-brand-border-light text-gray-500 whitespace-nowrap" title="Applied to a {{ p.label }} round">{{ p.label }}</span>
+              {% endfor %}
+              {% if not row.delivered and not row.applied %}
+                <span class="text-[11.5px] text-gray-300">no programme on file</span>
               {% endif %}
             </div>
           </div>

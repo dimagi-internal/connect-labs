@@ -40,9 +40,21 @@ refuses to open. <details> needs no JavaScript at all.
         <div class="px-6 py-4">
           {% if profile %}
             <dl class="space-y-3 text-sm">
+              {% if delivered_programmes or applied_programmes %}
+                <div>
+                  <dt class="text-gray-500">Programmes</dt>
+                  <dd class="flex flex-wrap gap-1.5 mt-1">
+                    {% for p in delivered_programmes %}
+                      <span class="text-[11.5px] font-medium px-2 py-0.5 rounded bg-green-100 text-green-800" title="Delivered on Connect">{{ p.label }}</span>
+                    {% endfor %}
+                    {% for p in applied_programmes %}
+                      <span class="text-[11.5px] font-medium px-2 py-0.5 rounded border border-brand-border-light text-gray-500" title="Applied for, not yet delivered">{{ p.label }}</span>
+                    {% endfor %}
+                  </dd>
+                </div>
+              {% endif %}
               {% if profile.countries %}<div><dt class="text-gray-500">Countries</dt><dd class="text-gray-900">{{ profile.countries|join:", " }}</dd></div>{% endif %}
               {% if profile.regions %}<div><dt class="text-gray-500">Regions</dt><dd class="text-gray-900">{{ profile.regions|join:", " }}</dd></div>{% endif %}
-              {% if profile.sectors %}<div><dt class="text-gray-500">Sectors</dt><dd class="text-gray-900">{{ profile.sectors|join:", " }}</dd></div>{% endif %}
               {% if profile.year_established %}<div><dt class="text-gray-500">Established</dt><dd class="text-gray-900">{{ profile.year_established }}</dd></div>{% endif %}
               {% if profile.team_size %}<div><dt class="text-gray-500">Team size</dt><dd class="text-gray-900">{{ profile.team_size }}</dd></div>{% endif %}
               {% if profile.flws_managed %}<div><dt class="text-gray-500">FLWs managed</dt><dd class="text-gray-900">{{ profile.flws_managed }}</dd></div>{% endif %}

@@ -26,7 +26,6 @@ def marketplace(db):
         "Northlake Maternal Health Network",
         "NMHN",
         countries=["Uganda"],
-        sectors=["Health"],
         flws_managed=120,
         lat=0.34,
         lon=32.58,
@@ -60,7 +59,6 @@ def marketplace(db):
         "Serrano Child Nutrition Foundation",
         "SCNF",
         countries=["Malawi"],
-        sectors=["Nutrition"],
         flws_managed=15,
         lat=-13.3,
         lon=34.3,
@@ -72,6 +70,7 @@ def marketplace(db):
         slug="chc-2025",
         title="Community Health Campaign",
         solicitation_type="eoi",
+        delivery_type="chc",
         status="closed",
         sa_access_state="ok",
         target_countries="Kenya, Uganda",
@@ -217,16 +216,18 @@ class TestNetworkFiltering:
         client.force_login(user)
         rail = {s["param"]: s for s in client.get(reverse("marketplace:network")).context["rail"]}
         countries = {r["label"]: r["count"] for r in rail["country"]["rows"]}
-        rounds = {r["label"]: r["count"] for r in rail["applied"]["rows"]}
+        applied = {r["label"]: r["count"] for r in rail["applied"]["rows"]}
         assert countries["Uganda"] == 1
-        assert rounds["Community Health Campaign"] == 2
+        assert applied["Child Health Campaign"] == 2
 
-    def test_filtering_by_round_narrows_the_list(self, client, user, marketplace):
+    def test_filtering_by_programme_narrows_the_list(self, client, user, marketplace):
         client.force_login(user)
-        response = client.get(reverse("marketplace:network"), {"applied": "matching-grant-2026"})
+        response = client.get(reverse("marketplace:network"), {"applied": "kmc"})
         assert response.context["shown"] == 0
 
-    def test_each_row_carries_the_rounds_it_answered(self, client, user, marketplace):
+    def test_each_row_carries_the_programmes_behind_its_applications(self, client, user, marketplace):
+        """The list answers "what does this organisation work on" in Connect's
+        own vocabulary, rather than listing round titles a reader has to decode."""
         client.force_login(user)
         body = client.get(reverse("marketplace:network")).content.decode()
-        assert "Community Health Campaign" in body
+        assert "Child Health Campaign" in body

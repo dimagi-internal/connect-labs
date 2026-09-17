@@ -10,13 +10,15 @@ from connect_labs.solicitations.local_models import Solicitation, SolicitationRe
 @pytest.fixture
 def registry(db):
     delivering = LabsOrg.objects.create(slug="fenwick", name="Fenwick Trust", short_name="FT")
-    OrgProfile.objects.create(org=delivering, countries=["Kenya"], sectors=["Health"], flws_managed=80)
+    OrgProfile.objects.create(org=delivering, countries=["Kenya"], flws_managed=80)
     OrgContact.objects.create(org=delivering, email="a@example.invalid", full_name="A Person")
 
     bench = LabsOrg.objects.create(slug="harbourside", name="Harbourside Health Initiative")
-    OrgProfile.objects.create(org=bench, countries=["Nigeria"], sectors=["Nutrition"])
+    OrgProfile.objects.create(org=bench, countries=["Nigeria"])
 
-    round_ = Solicitation.objects.create(slug="demo-2026", title="Demo round", solicitation_type="eoi")
+    round_ = Solicitation.objects.create(
+        slug="demo-2026", title="Demo round", solicitation_type="eoi", delivery_type="chc"
+    )
     SolicitationResponse.objects.create(
         solicitation=round_,
         llo_entity=delivering,
@@ -75,9 +77,9 @@ class TestDirectory:
         assert "Harbourside" in body
         assert "Fenwick Trust</a>" not in body
 
-    def test_filters_by_the_round_an_organisation_applied_to(self, client, user, registry):
+    def test_filters_by_the_programme_an_organisation_applied_for(self, client, user, registry):
         client.force_login(user)
-        body = client.get(reverse("marketplace:network"), {"applied": "demo-2026"}).content.decode()
+        body = client.get(reverse("marketplace:network"), {"applied": "chc"}).content.decode()
         assert "Fenwick Trust" in body
         assert "Harbourside" not in body
 
