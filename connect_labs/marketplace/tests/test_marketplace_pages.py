@@ -8,6 +8,7 @@ import datetime as dt
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from connect_labs.marketplace import queries
 from connect_labs.marketplace.models import OrgContact
@@ -129,13 +130,18 @@ class TestHome:
         assert "Matching Grant Pilot" in body
         assert "Community Health Campaign" in body
 
-    def test_a_round_that_was_never_read_is_marked_not_ingested(self, client, user, marketplace):
-        """'Nobody applied' and 'we could not open the sheet' must not look alike."""
+    def test_the_home_page_carries_no_operational_warnings(self, client, user, marketplace):
+        """This is the page the marketplace is shown from. Ingest state, the
+        verdict queue and read/unread are all our plumbing — a visitor cannot
+        act on any of them, and a banner about them is the loudest thing on the
+        page. The truth about an unread round has to survive somewhere, and
+        that somewhere is the round's own applicant list; see the round page
+        test below."""
         Solicitation.objects.create(slug="blocked", title="Blocked round", status="closed", sa_access_state="denied")
         client.force_login(user)
         body = client.get(reverse("marketplace:home")).content.decode()
-        assert "not ingested" in body
-        assert "could not be read" in body
+        for noise in ("not ingested", "could not be read", "awaiting a verdict"):
+            assert noise not in body, noise
 
 
 @pytest.mark.django_db
@@ -169,10 +175,22 @@ class TestRoundPage:
         assert reverse("marketplace:unmatched") in body
 
     def test_an_unread_round_says_so_rather_than_looking_unpopular(self, client, user, marketplace):
+        """The banner is gone from every page, but this claim cannot go with
+        it: an empty applicant list means "nobody applied" unless the page says
+        otherwise, and for these rounds that would be false."""
         Solicitation.objects.create(slug="blocked", title="Blocked", status="closed", sa_access_state="denied")
         client.force_login(user)
         body = client.get(reverse("marketplace:round", args=["blocked"])).content.decode()
-        assert "has not been ingested" in body
+        assert "never been read" in body
+
+    def test_a_round_that_was_read_and_drew_nobody_says_that_instead(self, client, user, marketplace):
+        """The other half of the same distinction."""
+        Solicitation.objects.create(
+            slug="quiet", title="Quiet", status="closed", sa_access_state="ok", last_ingested_at=timezone.now()
+        )
+        client.force_login(user)
+        body = client.get(reverse("marketplace:round", args=["quiet"])).content.decode()
+        assert "No applications recorded" in body
 
     def test_an_unknown_round_is_a_404(self, client, user, marketplace):
         client.force_login(user)
@@ -392,8 +410,12 @@ class TestTheSubmissionTrend:
 
         org = make_partner("Trend Trust", "TT", countries=["Kenya"])
         round_ = Solicitation.objects.create(slug="spread-2025", title="Spread", status="closed", sa_access_state="ok")
+
         # Two bursts three months apart — the shape a total cannot show.
-        days = [dt.date(2025, 2, 3)] * 5 + [dt.date(2025, 2, 4)] * 2 + [dt.date(2025, 5, 12)] * 3
+        def at(y, m, d):
+            return dt.datetime(y, m, d, 9, tzinfo=dt.timezone.utc)
+
+        days = [at(2025, 2, 3)] * 5 + [at(2025, 2, 4)] * 2 + [at(2025, 5, 12)] * 3
         for i, day in enumerate(days):
             SolicitationResponse.objects.create(
                 solicitation=round_,
@@ -418,7 +440,8 @@ class TestTheSubmissionTrend:
         import datetime as dt
 
         round_ = Solicitation.objects.create(slug="short-2025", title="Short", status="closed")
-        for i, day in enumerate((dt.date(2025, 3, 1), dt.date(2025, 3, 2), dt.date(2025, 3, 3))):
+        march = [dt.datetime(2025, 3, d, 9, tzinfo=dt.timezone.utc) for d in (1, 2, 3)]
+        for i, day in enumerate(march):
             SolicitationResponse.objects.create(
                 solicitation=round_, source_row=2 + i, org_name=f"A{i}", match_state="unmatched", submission_date=day
             )

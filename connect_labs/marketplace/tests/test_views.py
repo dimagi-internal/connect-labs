@@ -83,11 +83,13 @@ class TestDirectory:
         assert "Fenwick Trust" in body
         assert "Harbourside" not in body
 
-    def test_the_marketplace_home_surfaces_the_queue(self, client, user, registry):
-        """The queue is a marketplace-level obligation, not a directory filter."""
+    def test_the_verdict_queue_is_reachable_without_being_advertised(self, client, user, registry):
+        """It is our obligation, not the visitor's. The page still exists and
+        still lists everything awaiting a decision; the home page just does not
+        lead with a count of our own unfinished work."""
         client.force_login(user)
-        body = client.get(reverse("marketplace:home")).content.decode()
-        assert "awaiting a verdict" in body
+        assert "awaiting a verdict" not in client.get(reverse("marketplace:home")).content.decode()
+        assert client.get(reverse("marketplace:unmatched")).status_code == 200
 
 
 @pytest.mark.django_db
@@ -218,14 +220,12 @@ class TestTheQueueIsActionable:
 
 @pytest.mark.django_db
 class TestUnreadableRoundsAreVisible:
-    def test_the_directory_says_when_a_round_could_not_be_read(self, client, user, registry):
-        """ "No applicants" and "we could not open the sheet" look identical
-        unless the page says so."""
+    def test_the_network_page_does_not_warn_about_ingest(self, client, user, registry):
+        """Which sheets we could open is not a fact about the network."""
         Solicitation.objects.filter(slug="demo-2026").update(sa_access_state="denied")
         client.force_login(user)
         body = client.get(reverse("marketplace:network")).content.decode()
-        assert "could not be read" in body
-        assert "having had no applicants" in body
+        assert "could not be read" not in body
 
     def test_says_nothing_when_every_round_is_readable(self, client, user, registry):
         Solicitation.objects.filter(slug="demo-2026").update(sa_access_state="ok")
