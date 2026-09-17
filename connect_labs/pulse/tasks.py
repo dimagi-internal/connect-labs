@@ -495,7 +495,14 @@ def import_partner_directory():
     It also removes the bootstrap problem: a fresh environment names nobody
     until this has run once, which is safe — partners render as slugs — but
     looks broken. On beat, it heals itself.
+
+    `eoi=True` because the rounds tab is edited by the same people and carries
+    decisions only they can make — which Connect programme a round is for, and
+    the response sheet's link. Pulling organisations daily but leaving rounds
+    to whoever remembers a flag meant a correction to either could sit in the
+    sheet indefinitely. It also keeps the access and next-step columns, which
+    labs writes from a real read, from going stale.
     """
     from django.core.management import call_command
 
-    call_command("marketplace_import")
+    call_command("marketplace_import", eoi=True)
