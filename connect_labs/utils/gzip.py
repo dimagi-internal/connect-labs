@@ -10,13 +10,15 @@ class GZipExceptEventStreamMiddleware(GZipMiddleware):
 
     Compressing an event stream is wrong twice over.
 
-    THE SHARP EDGE. Django compresses a streaming body one way when it is sync
-    and another when it is async. Sync gets `compress_sequence()` -- ONE gzip
-    stream across every chunk. Async gets `compress_string()` PER CHUNK, so
-    every chunk is a complete, independent gzip member. Multi-member gzip is
-    legal and some decoders read it, but a browser stops at the end of the
-    first member: the client sees event 1, concludes the response is finished,
-    and the server goes on producing into a connection nobody is reading.
+    THE SHARP EDGE, now blunted -- kept because it explains the shape of this
+    file. On Django 5.2 a streaming body was compressed one way when sync
+    (`compress_sequence()`, ONE gzip stream) and another when async
+    (`compress_string()` PER CHUNK, a complete independent gzip member each).
+    Multi-member gzip is legal and some decoders read it, but a browser stops at
+    the end of the first member: the client saw event 1, concluded the response
+    was finished, and the server went on producing into a connection nobody was
+    reading. **Django 6.0 fixed this** with `acompress_sequence`, and the test
+    beside this pins the fix so a regression is caught rather than rediscovered.
 
     That is exactly what happened when #1902 made SSE bodies async. Every SSE
     view on labs delivered precisely one event -- `pipeline-rows/stream` 2
@@ -25,9 +27,9 @@ class GZipExceptEventStreamMiddleware(GZipMiddleware):
     locally because GZipMiddleware is installed only in `labs_aws`, so the one
     environment that compresses is the one environment nobody tests against.
 
-    THE DULL EDGE, which stands on its own: an event stream exists to deliver
-    each event the moment it happens, and compression trades that for a ratio
-    nobody asked for. Even fixed, gzipping SSE would be a poor trade.
+    THE DULL EDGE is why this middleware survives the fix: an event stream
+    exists to deliver each event the moment it happens, and compression trades
+    that for a ratio nobody asked for.
 
     Everything else still compresses -- the microplans footprint endpoint ships
     ~1 MB of GeoJSON that gzips 80-90%, which is why the middleware is here.
