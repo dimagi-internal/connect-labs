@@ -724,6 +724,115 @@ def test_pipeline_preview_clean_response_has_no_null_hint(mock_pda_cls, client, 
     assert content["fields_all_null_hint"] is None
 
 
+# --- pipeline_preview fields_suspect diagnostic ----------------------------
+#
+# The sibling of fields_all_null, for the class it is structurally blind to: a
+# field that extracted the WRONG value rather than none. dimagi-internal/ace#2431
+# -- a `count` over the JSONB column `flag_reason` returned each worker's
+# total_visits (235 / 315 / 260) where the truth was 17 / 9 / 11, and a filter on
+# the same column matched zero rows. Both were non-null, so fields_all_null was
+# empty in every case and a reviewer had no way to know the number was the row
+# count.
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_flags_a_count_equal_to_the_row_count(mock_pda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(
+        data={"schema": {"fields": [{"name": "held_for_review", "path": "flag_reason", "aggregation": "count"}]}},
+    )
+    mock_pda_cls.return_value.execute_pipeline.return_value = {
+        "rows": [
+            {"username": "a", "total_visits": 235, "held_for_review": 235},
+            {"username": "b", "total_visits": 315, "held_for_review": 315},
+        ],
+        "metadata": {"row_count": 2},
+    }
+    data = _call_tool(client, raw, "pipeline_preview", {"pipeline_id": 1, "opportunity_id": 100})
+    content = data["result"]["structuredContent"]
+
+    assert content["fields_all_null"] == [], "the defect is invisible to the NULL-only signal"
+    assert [f["name"] for f in content["fields_suspect"]] == ["held_for_review"]
+    assert content["fields_suspect"][0]["signal"] == "equals_row_count"
+    assert content["fields_suspect_hint"] is not None
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_flags_a_filter_that_matched_nothing_anywhere(mock_pda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(
+        data={
+            "schema": {
+                "fields": [
+                    {
+                        "name": "outlier_holds",
+                        "path": "flag_reason",
+                        "aggregation": "count",
+                        "filter_path": "flag_reason",
+                        "filter_value": "response_pattern_outlier",
+                    }
+                ]
+            }
+        },
+    )
+    mock_pda_cls.return_value.execute_pipeline.return_value = {
+        "rows": [
+            {"username": "a", "total_visits": 235, "outlier_holds": 0},
+            {"username": "b", "total_visits": 315, "outlier_holds": 0},
+        ],
+        "metadata": {"row_count": 2},
+    }
+    data = _call_tool(client, raw, "pipeline_preview", {"pipeline_id": 1, "opportunity_id": 100})
+    content = data["result"]["structuredContent"]
+
+    assert content["fields_all_null"] == [], "zero is not null"
+    assert [f["signal"] for f in content["fields_suspect"]] == ["filter_matched_nothing"]
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_leaves_a_healthy_count_alone(mock_pda_cls, client, auth_user):
+    """A count that differs from total_visits on any row is not the signature,
+    and a healthy response stays lean -- this is a report, not a gate, so a
+    false positive costs a reader's attention on every preview."""
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(
+        data={"schema": {"fields": [{"name": "held_for_review", "path": "flag_reason", "aggregation": "count"}]}},
+    )
+    mock_pda_cls.return_value.execute_pipeline.return_value = {
+        "rows": [
+            {"username": "a", "total_visits": 235, "held_for_review": 235},
+            {"username": "b", "total_visits": 315, "held_for_review": 9},
+        ],
+        "metadata": {"row_count": 2},
+    }
+    data = _call_tool(client, raw, "pipeline_preview", {"pipeline_id": 1, "opportunity_id": 100})
+    content = data["result"]["structuredContent"]
+
+    assert content["fields_suspect"] == []
+    assert content["fields_suspect_hint"] is None
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_does_not_flag_an_empty_opportunity(mock_pda_cls, client, auth_user):
+    """total_visits = 0 makes "count equals the row count" trivially true for
+    every field. An opportunity with no visits is not a defect."""
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(
+        data={"schema": {"fields": [{"name": "held_for_review", "path": "flag_reason", "aggregation": "count"}]}},
+    )
+    mock_pda_cls.return_value.execute_pipeline.return_value = {
+        "rows": [{"username": "a", "total_visits": 0, "held_for_review": 0}],
+        "metadata": {"row_count": 1},
+    }
+    data = _call_tool(client, raw, "pipeline_preview", {"pipeline_id": 1, "opportunity_id": 100})
+
+    assert data["result"]["structuredContent"]["fields_suspect"] == []
+
+
 # =============================================================================
 # Regression: pipeline_preview must not crash on cchq_forms pipelines
 # =============================================================================
