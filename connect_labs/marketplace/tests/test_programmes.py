@@ -104,3 +104,31 @@ class TestThePagesShowTheTags:
         # an absence passes just as happily when the whole row stops rendering.
         assert "Kangaroo Mother Care" in body
         assert "FLWS" not in body
+
+
+class TestWaterIsAKnownProgramme:
+    """Chlorine dispensers needed a programme and Connect had none that fitted.
+    `water` was added deliberately rather than the round being tagged `cholera`,
+    which was the nearest guess and would have been wrong.
+    """
+
+    def test_water_reads_as_a_name_not_a_code(self):
+        assert programmes.label("water") == "Water"
+
+    def test_water_is_a_real_programme_so_it_can_be_filtered_on(self):
+        assert programmes.is_programme("water")
+        assert programmes.chips(["water"]) == [{"slug": "water", "label": "Water"}]
+
+    def test_a_new_type_with_no_opportunities_yet_still_works_on_the_applied_side(self, db):
+        """`water` is new, so pulse may carry no opportunities under it for a
+        while. The round's tag must not depend on delivery having happened."""
+        org = make_partner("Riverbank Water Trust", "RWT", countries=["Nigeria"])
+        round_ = Solicitation.objects.create(
+            slug="chlorine-2025", title="Chlorine 2025", status="closed", delivery_type="water"
+        )
+        SolicitationResponse.objects.create(
+            solicitation=round_, llo_entity=org, source_row=2, org_name=org.name, match_state="name"
+        )
+        fetched = next(o for o in queries.all_rows_with_rounds() if o.pk == org.pk)
+        assert queries.applied_programmes_of(fetched) == {"water"}
+        assert queries.delivered_programmes_by_org_name().get("Riverbank Water Trust") is None

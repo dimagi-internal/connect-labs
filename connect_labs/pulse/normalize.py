@@ -114,6 +114,11 @@ SERVICE_LABELS.update(
         "wellme": "Worker Wellbeing",
         "nutrition": "Nutrition",
         "interview": "Interviews",
+        # Chlorine dispensers and the rest of safe-water delivery. Confirmed by
+        # Jonathan 2026-09-17 when the 2025 Chlorine EOI needed a programme:
+        # this is a NEW type, so it may carry no Connect opportunities yet and
+        # show only on the "applied for" side until it does.
+        "water": "Water",
         # Our own tooling's programmes rather than field delivery. Named as it
         # is because that is what it is called; it should stop appearing here
         # once those programmes are cleaned up on the Connect side.
