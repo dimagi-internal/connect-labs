@@ -372,14 +372,15 @@ def run_default(*, definition, access_token, request=None, hold_minutes=None, **
     expiry is what re-reads a visit's status after review, so it cannot be held
     indefinitely. A schedule slower than the hold therefore leaves the cache
     cold for the remainder of each gap, which defeats the point; pair this with
-    an interval cadence of 3 hours or less.
+    an interval cadence of 3 hours or less (every 2 hours leaves margin for a
+    missed tick, since the ticker itself only runs periodically).
 
     Returns ensure_visit_cache's own report: one entry per opportunity naming
     what happened to each slot. A failing export is reported there rather than
     raised, so one bad opportunity cannot cost the others.
     """
     from connect_labs.workflow.data_access import WorkflowDataAccess
-    from connect_labs.workflow.visit_cache import DEFAULT_HOLD_MINUTES, MAX_HOLD_MINUTES, ensure_visit_cache
+    from connect_labs.workflow.visit_cache import MAX_HOLD_MINUTES, ensure_visit_cache
 
     config = (definition.data or {}).get("config") or {}
     if not config.get(WARM_CACHE_CONFIG_KEY):
@@ -388,7 +389,14 @@ def run_default(*, definition, access_token, request=None, hold_minutes=None, **
             f"Set config.{WARM_CACHE_CONFIG_KEY} = true to schedule it."
         )
 
-    hold = int(hold_minutes or DEFAULT_HOLD_MINUTES)
+    # MAX_HOLD_MINUTES, not DEFAULT_HOLD_MINUTES, is the right default HERE:
+    # run_scheduled_workflow calls run_default_for_definition without
+    # hold_minutes, so an explicit caller is the exception and the scheduler is
+    # the rule. Falling through to DEFAULT (90) while the docstring tells you to
+    # pair this with a <=3h cadence left the cache cold for half of every
+    # window -- a warm that looks configured and silently is not. A caller who
+    # does pass hold_minutes still wins, and the cap still applies.
+    hold = int(hold_minutes or MAX_HOLD_MINUTES)
     hold = max(1, min(hold, MAX_HOLD_MINUTES))
 
     if definition.program_id:

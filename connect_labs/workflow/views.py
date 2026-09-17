@@ -35,10 +35,9 @@ from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAc
 from connect_labs.workflow.templates import MULTI_OPTION_COERCERS, TEMPLATES, companion_links
 from connect_labs.workflow.templates import create_workflow_from_template as create_from_template
 from connect_labs.workflow.templates import (
+    definition_supports_default_run,
     schedule_options_for_definition,
     template_groups,
-    definition_supports_default_run,
-    template_supports_default_run,
     with_inherited_config_flags,
 )
 from connect_labs.workflow.templates.weekly_dual_track_audit import CLASSIFIER_KEYS
