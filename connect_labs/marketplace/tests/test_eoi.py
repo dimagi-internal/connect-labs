@@ -1,7 +1,9 @@
 """Importing rounds and their submissions. All data invented."""
 import pytest
+from django.utils import timezone
 
 from connect_labs.labs.models import LabsOrg
+from connect_labs.marketplace import eoi
 from connect_labs.marketplace.directory import parse_rounds
 from connect_labs.marketplace.eoi import check_access, ingest_round, upsert_rounds
 from connect_labs.marketplace.models import OrgContact
@@ -231,8 +233,15 @@ class TestHumanVerdictsCloseTheLoop:
 
 @pytest.mark.django_db
 class TestAccessWriteBack:
-    """Labs writes the access columns because a hand-maintained one goes stale
-    the moment a sheet is moved — and it writes ONLY those two cells."""
+    """Labs writes the access and next-step columns because a hand-maintained
+    one goes stale the moment a sheet is moved — and it writes ONLY those.
+
+    The rest of the tab belongs to people. This is the guard on that: it caught
+    the next-step column the first time it was added, which is what it is for.
+    """
+
+    # Every cell labs is allowed to touch on the rounds tab.
+    OWNED = ("!P2:Q2", "!T2")
 
     def test_writes_the_verified_state_against_the_round_s_own_row(self, round_):
         from connect_labs.marketplace import directory
@@ -243,11 +252,11 @@ class TestAccessWriteBack:
         rounds, _ = parse_rounds(ROUND_ROWS)
         check_access(lambda sid, tab: [["Timestamp"]], write_back_to=rounds, spreadsheet_id="sheet-id")
 
-        assert len(written) == 1
-        rng, values = written[0]
-        assert rng.endswith("!P2:Q2"), rng
-        assert "OK" in values[0][0]
-        assert values[0][1]
+        by_range = {rng.split("!")[1]: values for rng, values in written}
+        assert set(by_range) == {"P2:Q2", "T2"}
+        state, stamp = by_range["P2:Q2"][0]
+        assert "OK" in state
+        assert stamp
 
     def test_touches_no_other_column(self, round_):
         from connect_labs.marketplace import directory
@@ -257,9 +266,8 @@ class TestAccessWriteBack:
         rounds, _ = parse_rounds(ROUND_ROWS)
         check_access(lambda sid, tab: [["Timestamp"]], write_back_to=rounds, spreadsheet_id="sheet-id")
 
-        for rng, values in written:
-            assert ":Q" in rng and "!P" in rng, f"labs wrote outside its two columns: {rng}"
-            assert len(values[0]) == 2
+        for rng, _values in written:
+            assert any(rng.endswith(owned) for owned in self.OWNED), f"labs wrote outside its own columns: {rng}"
 
     def test_a_round_whose_row_is_unknown_is_skipped_not_guessed(self, round_):
         from connect_labs.marketplace import directory
@@ -271,3 +279,52 @@ class TestAccessWriteBack:
             r.source_row = None
         check_access(lambda sid, tab: [["Timestamp"]], write_back_to=rounds, spreadsheet_id="sheet-id")
         assert written == []
+
+
+@pytest.mark.django_db
+class TestTheNextStepColumnSaysWhoseTurnItIs:
+    """A status column says what is true. It does not say what to do about it,
+    and somebody working down this tab should not have to cross-reference three
+    other columns to find out whose turn it is.
+    """
+
+    def _round(self, **kwargs):
+        defaults = {
+            "slug": "r1",
+            "title": "R1",
+            "response_spreadsheet_id": "sheet1",
+            "sa_access_state": ACCESS_OK,
+            "delivery_type": "kmc",
+            "last_ingested_at": timezone.now(),
+        }
+        return Solicitation.objects.create(**(defaults | kwargs))
+
+    def test_no_response_sheet_asks_for_the_link(self):
+        step = eoi.next_step_for(self._round(sa_access_state=ACCESS_MISSING, response_spreadsheet_id=""))
+        assert step.startswith("YOU:")
+        assert "Response Sheet Link" in step
+
+    def test_no_access_names_the_account_to_share_with(self):
+        """The whole blocker is that nobody knows which address to add."""
+        step = eoi.next_step_for(self._round(sa_access_state=ACCESS_DENIED))
+        assert "connect-labs-sa@connect-labs.iam.gserviceaccount.com" in step
+
+    def test_a_readable_but_untagged_round_asks_for_the_programme(self):
+        step = eoi.next_step_for(self._round(delivery_type=""))
+        assert "Connect Programme" in step
+
+    def test_access_is_asked_for_before_the_tag(self):
+        """Both are outstanding, but one blocks ingest and the other does not.
+        Listing two actions in one cell makes neither get done."""
+        step = eoi.next_step_for(self._round(sa_access_state=ACCESS_DENIED, delivery_type=""))
+        assert "share the response sheet" in step
+        assert "Connect Programme" not in step
+
+    def test_a_round_that_is_done_says_nothing(self):
+        """An empty cell is the signal that there is nothing to do. A permanent
+        "complete" note would make the column noise to scan past."""
+        assert eoi.next_step_for(self._round()) == ""
+
+    def test_a_readable_tagged_round_not_yet_ingested_is_labs_turn(self):
+        step = eoi.next_step_for(self._round(last_ingested_at=None))
+        assert step.startswith("LABS:")

@@ -2,7 +2,7 @@
 
 The directory is the master organisation list. ``pulse_partner_import`` read two
 of its columns to put names on Connect slugs; this reads all of it, because the
-rest — contacts, sectors, scale, application history — is the part nobody could
+rest — contacts, scale, application history — is the part nobody could
 query, and is most of why the sheet exists.
 
 Fetching and parsing are separated deliberately. Parsing is where every real bug
@@ -43,7 +43,6 @@ class DirectoryOrg:
     flws_managed: int | None = None
     countries: list[str] = field(default_factory=list)
     regions: list[str] = field(default_factory=list)
-    sectors: list[str] = field(default_factory=list)
     website: str = ""
     office_address: str = ""
     notes: str = ""
@@ -154,7 +153,6 @@ def parse_organizations(rows: list[list[str]]) -> list[DirectoryOrg]:
                 flws_managed=_int_or_none(cell(row, 5)),
                 countries=_split_countries(cell(row, 6)),
                 regions=_split_list(cell(row, 7)),
-                sectors=_split_list(cell(row, 8)),
                 website=cell(row, 9),
                 office_address=cell(row, 10),
                 notes=cell(row, 13),
@@ -252,6 +250,7 @@ class DirectoryRound:
     response_tab: str = ""
     column_map: dict = field(default_factory=dict)
     notes: str = ""
+    delivery_type: str = ""
     source_row: int | None = None
 
 
@@ -313,6 +312,10 @@ def parse_rounds(rows: list[list[str]]) -> tuple[list[DirectoryRound], list[str]
                 response_tab=cell(row, 13),
                 column_map=column_map,
                 notes=cell(row, 17),
+                # Column S. Connect's own delivery_type, decided by a human —
+                # the sheet is the master, so labs reads this rather than
+                # guessing a programme from the round's title.
+                delivery_type=cell(row, 18).strip().lower(),
                 source_row=index,
             )
         )

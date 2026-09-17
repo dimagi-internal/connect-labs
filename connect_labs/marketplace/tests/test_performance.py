@@ -29,7 +29,6 @@ def _org(i, round_):
         f"Organisation {i:03d}",
         f"O{i:03d}",
         countries=["Nigeria" if i % 2 else "Kenya"],
-        sectors=["Health"],
         flws_managed=i,
         lat=9.0 + i / 100,
         lon=7.0 + i / 100,
@@ -49,8 +48,12 @@ def _org(i, round_):
 @pytest.fixture
 def many(db):
     """Enough organisations that a per-row query is visible in the count."""
-    round_ = Solicitation.objects.create(slug="chc-2025", title="CHC", status="closed", sa_access_state="ok")
-    other = Solicitation.objects.create(slug="rutf", title="RUTF", status="closed", sa_access_state="ok")
+    round_ = Solicitation.objects.create(
+        slug="chc-2025", title="CHC", status="closed", sa_access_state="ok", delivery_type="chc"
+    )
+    other = Solicitation.objects.create(
+        slug="rutf", title="RUTF", status="closed", sa_access_state="ok", delivery_type="nutrition"
+    )
     orgs = [_org(i, round_) for i in range(25)]
     for i, org in enumerate(orgs[:10]):
         SolicitationResponse.objects.create(
@@ -96,24 +99,29 @@ class TestTheRowLoopDoesNotQueryPerRow:
             "something in the row loop is querying per organisation"
         )
 
-    def test_every_listed_organisation_still_carries_its_rounds(self, client, user, many):
-        """Batching must not cost the feature it was batching."""
+    def test_every_listed_organisation_still_carries_its_programmes(self, client, user, many):
+        """Batching must not cost the feature it was batching: the programme
+        chips come off the same prefetch the query count depends on."""
         client.force_login(user)
         listed = client.get(reverse("marketplace:network")).context["listed"]
         first = next(row for row in listed if row["org"].name == "Organisation 000")
-        assert {r["title"] for r in first["rounds"]} == {"CHC", "RUTF"}
+        assert {p["label"] for p in first["applied"]} == {"Child Health Campaign", "Nutrition"}
 
-    def test_at_most_three_rounds_per_row(self, client, user, many):
-        org = make_partner("Busy Organisation", "BO", countries=["Kenya"], sectors=["Health"])
-        for i in range(5):
-            round_ = Solicitation.objects.create(slug=f"round-{i}", title=f"Round {i}", status="closed")
+    def test_a_programme_appears_once_however_many_rounds_carried_it(self, client, user, many):
+        """Three KMC rounds are one KMC chip. Repeating the tag per round would
+        make a prolific applicant look like it works on more than it does."""
+        org = make_partner("Busy Organisation", "BO", countries=["Kenya"])
+        for i in range(3):
+            round_ = Solicitation.objects.create(
+                slug=f"kmc-{i}", title=f"KMC {i}", status="closed", delivery_type="kmc"
+            )
             SolicitationResponse.objects.create(
                 solicitation=round_, llo_entity=org, source_row=1, org_name=org.name, match_state="name"
             )
         client.force_login(user)
         listed = client.get(reverse("marketplace:network")).context["listed"]
         busy = next(row for row in listed if row["org"].name == "Busy Organisation")
-        assert len(busy["rounds"]) == 3
+        assert [p["label"] for p in busy["applied"]] == ["Kangaroo Mother Care"]
 
 
 def _count_queries(client, params=None):
@@ -194,7 +202,7 @@ class TestTheRegistryIsFetchedOnce:
         client.force_login(user)
         _count_queries(client)  # warm the caches, as a second click would find them
         plain = _count_queries(client)
-        filtered = _count_queries(client, {"country": "Nigeria", "sector": "Health"})
+        filtered = _count_queries(client, {"country": "Nigeria", "applied": "chc"})
 
         assert plain > 0, "measured nothing"
         assert filtered <= plain, f"filtering cost {filtered} queries against {plain} unfiltered"

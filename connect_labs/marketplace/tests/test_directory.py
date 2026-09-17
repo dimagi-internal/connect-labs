@@ -58,7 +58,6 @@ class TestParseOrganizations:
         assert org.flws_managed == 250
         assert org.countries == ["Nigeria"]
         assert org.regions == ["Kano", "Jigawa"]
-        assert org.sectors == ["Health", "Nutrition"]
         assert org.website == "https://example.invalid"
         assert org.msa_link == "https://msa.invalid"
         assert org.source_row == 2

@@ -22,7 +22,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.marketplace import queries
+from connect_labs.marketplace import programmes, queries
 from connect_labs.solicitations.local_models import SolicitationResponse
 
 
@@ -31,7 +31,7 @@ def _controls(request) -> dict:
     return {
         "q": request.GET.get("q", "").strip(),
         "countries": [v for v in request.GET.getlist("country") if v.strip()],
-        "sectors": [v for v in request.GET.getlist("sector") if v.strip()],
+        "delivered": [v for v in request.GET.getlist("delivered") if v.strip()],
         "applied": [v for v in request.GET.getlist("applied") if v.strip()],
         "segment": request.GET.get("segment", "all").strip() or "all",
     }
@@ -54,6 +54,7 @@ def _population(request) -> dict:
     selected = _controls(request)
     everyone = queries.all_rows_with_rounds()
     delivering = queries.delivering_names()
+    delivered_by_name = queries.delivered_programmes_by_org_name()
 
     def scope_excluding(dimension=None):
         return [
@@ -63,8 +64,9 @@ def _population(request) -> dict:
                 org,
                 query=selected["q"],
                 countries=() if dimension == "country" else selected["countries"],
-                sectors=() if dimension == "sector" else selected["sectors"],
+                delivered=() if dimension == "delivered" else selected["delivered"],
                 applied=() if dimension == "applied" else selected["applied"],
+                delivered_by_name=delivered_by_name,
             )
         ]
 
@@ -77,6 +79,7 @@ def _population(request) -> dict:
         "scope_excluding": scope_excluding,
         "everyone": everyone,
         "delivering": delivering,
+        "delivered_by_name": delivered_by_name,
         "selected": selected,
     }
 
@@ -107,14 +110,19 @@ def network(request):
     delivering = state["delivering"]
     counts = queries.segment_counts(state["scope"], delivering)
 
-    slugs_by_name = queries.workspace_slugs_by_org_name()
+    delivered_by_name = state["delivered_by_name"]
     listed = [
         {
             "org": org,
             "profile": getattr(org, "marketplace_profile", None),
             "delivering": org.name in delivering,
-            "rounds": queries.rounds_of(org),
-            "workspaces": len(slugs_by_name.get(org.name, ())),
+            # What this organisation has run, and what it has asked to run.
+            # The FLW count that used to sit here was self-reported on a form
+            # and written as "20-100 FLWs", "Medium" and "50-80 sampling sites
+            # capacity" as often as a number, so it could be displayed but
+            # never compared or sorted.
+            "delivered": programmes.chips(delivered_by_name.get(org.name, ())),
+            "applied": programmes.chips(queries.applied_programmes_of(org)),
         }
         for org in rows
     ]
@@ -139,8 +147,8 @@ def network(request):
             "rail": queries.facet_rail(
                 {
                     "countries": queries.facet_counts(state["scope_excluding"]("country"), delivering)["countries"],
-                    "sectors": queries.facet_counts(state["scope_excluding"]("sector"), delivering)["sectors"],
-                    "rounds": queries.facet_counts(state["scope_excluding"]("applied"), delivering)["rounds"],
+                    "delivered": queries.facet_counts(state["scope_excluding"]("delivered"), delivering)["delivered"],
+                    "applied": queries.facet_counts(state["scope_excluding"]("applied"), delivering)["applied"],
                 },
                 state["selected"],
                 request.GET,
@@ -150,7 +158,7 @@ def network(request):
             "total": len(state["everyone"]),
             "why": next((s["why"] for s in segments if s["selected"]), ""),
             "any_facet": bool(
-                state["selected"]["countries"] or state["selected"]["sectors"] or state["selected"]["applied"]
+                state["selected"]["countries"] or state["selected"]["delivered"] or state["selected"]["applied"]
             ),
             "mapbox_token": getattr(settings, "MAPBOX_TOKEN", "") or "",
             "unreadable": queries.unreadable_rounds(),
@@ -246,6 +254,15 @@ def organisation(request, slug):
             "connect_slugs": org.connect_slugs.all(),
             "opportunities": opportunities,
             "delivering": org.name in queries.delivering_names(),
+            # Delivered comes off the opportunities already fetched above, so
+            # the panel and the badge cannot disagree about what this
+            # organisation runs.
+            "delivered_programmes": programmes.chips(o.service_slug for o in opportunities),
+            "applied_programmes": programmes.chips(
+                r.solicitation.delivery_type
+                for r in responses
+                if programmes.is_programme(r.solicitation.delivery_type)
+            ),
             "visits": sum(o.lifetime_visit_count for o in opportunities),
         },
     )
