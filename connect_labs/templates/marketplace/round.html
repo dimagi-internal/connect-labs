@@ -21,7 +21,6 @@
           {% else %}
             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold tracking-wider bg-gray-100 text-gray-600 border border-brand-border-light">CLOSED</span>
           {% endif %}
-          <span class="text-xs text-gray-400">{{ round.slug }}</span>
         </div>
         <div class="flex items-center gap-2.5 flex-wrap">
           <span class="text-2xl font-semibold text-brand-deep-purple">{{ round.title }}</span>
@@ -48,8 +47,11 @@
           {% endif %}
         </div>
         <div>
-          <div class="text-[25px] font-semibold text-green-700 tabular-nums">{{ delivering_count }}</div>
-          <div class="text-[11px] text-gray-400 tracking-wide">NOW DELIVERING</div>
+          <div class="text-[25px] font-semibold text-green-700 tabular-nums">{{ after_count }}</div>
+          <div class="text-[11px] text-gray-400 tracking-wide">STARTED AFTER</div>
+          {% if before_count %}
+            <div class="text-[11px] text-gray-400 mt-0.5">{{ before_count }} already delivering</div>
+          {% endif %}
         </div>
         <div>
           <div class="text-[25px] font-semibold {% if unresolved_count %}text-brand-sunset{% else %}text-gray-300{% endif %} tabular-nums">{{ unresolved_count }}</div>
@@ -67,11 +69,42 @@
     {% endif %}
   </div>
 
+  {% if trend %}
+    {% comment %}
+    Server-rendered bars rather than a chart library: it is one series with no
+    interaction, and the round page loads no JavaScript at all today. Heights
+    are percentages of the busiest bucket, so the shape survives any column
+    width.
+    {% endcomment %}
+    <div class="bg-white border border-brand-border-light rounded-lg px-6 py-[18px] mb-4.5">
+      <div class="flex items-baseline justify-between mb-3">
+        <span class="text-sm font-semibold text-brand-deep-purple">When the submissions arrived</span>
+        <span class="text-[11.5px] text-gray-400">
+          {{ trend.0.start|date:"j M Y" }} – {{ span_end|date:"j M Y" }}
+        </span>
+      </div>
+      <div class="flex items-end gap-[3px]" style="height: 76px;">
+        {% for bucket in trend %}
+          <div class="flex-1 rounded-t-sm {% if bucket.count %}bg-brand-indigo/70{% else %}bg-gray-100{% endif %}"
+               style="height: {% if bucket.count %}{{ bucket.pct }}%{% else %}2px{% endif %}; min-height: 2px;"
+               title="{{ bucket.count }} submission{{ bucket.count|pluralize }} from {{ bucket.start|date:'j M Y' }}"></div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
   <div class="grid grid-cols-1 xl:grid-cols-[1fr_296px] gap-4.5 items-start">
 
     <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
       <div class="px-5 py-3.5 border-b border-brand-border-light">
         <span class="text-sm font-semibold text-brand-deep-purple">Who applied</span>
+        <div class="text-[11.5px] text-gray-500 mt-1 leading-relaxed">
+          <strong class="font-medium">Delivery on Connect</strong> compares each organisation's first verified
+          service with{% if since %} {{ since|date:"j M Y" }}, when this round closed{% else %} this round{% endif %} —
+          it reports which came first, not that one caused the other.
+          <strong class="font-medium">Needs a verdict</strong> means the submission could not be matched to any
+          organisation in the directory, so a person has to say who sent it.
+        </div>
       </div>
 
       <table class="min-w-full divide-y divide-gray-200">
@@ -79,8 +112,7 @@
           <tr>
             <th class="px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organisation</th>
             <th class="px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Country</th>
-            <th class="px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Submitted</th>
-            <th class="px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Since this round</th>
+            <th class="px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Delivery on Connect</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -89,29 +121,31 @@
               <td class="px-5 py-3">
                 <div class="flex items-center gap-2.5">
                   <span class="w-6.5 h-6.5 w-[26px] h-[26px] rounded-md inline-flex items-center justify-center text-[10px] font-semibold shrink-0
-                               {% if a.outcome == 'delivering' %}bg-green-100 text-green-800{% else %}bg-gray-100 text-gray-500{% endif %}">
+                               {% if a.outcome == 'after' %}bg-green-100 text-green-800{% else %}bg-gray-100 text-gray-500{% endif %}">
                     {{ a.name|slice:":2"|upper }}
                   </span>
                   {% if a.org %}
+                  <div class="flex flex-col">
                     <a href="{% url 'marketplace:organisation' a.org.slug %}" class="text-[13.5px] font-medium text-brand-deep-purple hover:text-brand-indigo">{{ a.name }}</a>
+                    {% if a.submissions > 1 %}
+                      <span class="text-[11px] text-gray-400">submitted {{ a.submissions }} times</span>
+                    {% endif %}
+                  </div>
                   {% else %}
                     <span class="text-[13.5px] text-gray-500 italic">{{ a.name }}</span>
                   {% endif %}
                 </div>
               </td>
               <td class="px-5 py-3 text-[12.5px] text-gray-600">{{ a.country|default:"—"|truncatechars:30 }}</td>
-              <td class="px-5 py-3 text-[12.5px] text-gray-500 text-right tabular-nums">
-                {% if a.submissions > 1 %}
-                  <span title="This organisation submitted the form {{ a.submissions }} times">{{ a.submissions }}×</span>
-                {% else %}
-                  <span class="text-gray-300">—</span>
-                {% endif %}
-              </td>
               <td class="px-5 py-3 text-right">
-                {% if a.outcome == 'delivering' %}
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-green-100 text-green-800">
-                    <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>delivering
+                {% if a.outcome == 'after' %}
+                  <span title="First verified service on Connect came after this round{% if since %}, which closed {{ since|date:'j M Y' }}{% endif %}"
+                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-green-100 text-green-800">
+                    <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>started after
                   </span>
+                {% elif a.outcome == 'before' %}
+                  <span title="Already delivering on Connect before this round — it cannot have started because of it"
+                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-gray-100 text-gray-600">already delivering</span>
                 {% elif a.outcome == 'never' %}
                   <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-amber-50 text-amber-800">never activated</span>
                 {% else %}
@@ -120,7 +154,7 @@
               </td>
             </tr>
           {% empty %}
-            <tr><td colspan="4" class="px-5 py-12 text-center text-sm text-gray-500">
+            <tr><td colspan="3" class="px-5 py-12 text-center text-sm text-gray-500">
               {% if round.was_ingested %}No applications recorded for this round.{% else %}This round has never been read.{% endif %}
             </td></tr>
           {% endfor %}

@@ -13,6 +13,7 @@ directory can never disagree with the wall display about who is live.
 
 from __future__ import annotations
 
+import datetime
 import time
 
 from django.db.models import Count, Max, Prefetch, Q
@@ -42,7 +43,7 @@ SEGMENTS = [
 # poller ingests, not between two queries in one request.
 _CACHE_TTL_SECONDS = 60
 # Everything cached for the TTL, keyed by the function that fills it.
-_CACHED = ("delivering", "workspaces", "delivered")
+_CACHED = ("delivering", "workspaces", "delivered", "first_service")
 _cache: dict = dict.fromkeys(_CACHED) | {"loaded_at": 0.0}
 
 
@@ -77,6 +78,24 @@ def delivering_names() -> set[str]:
     _cache["delivering"] = names
     _cache["loaded_at"] = time.monotonic()
     return names
+
+
+def first_service_by_org_name() -> dict:
+    """Organisation name -> the date it first delivered a verified service.
+
+    The date, not just the fact, because "is delivering" and "started
+    delivering because of this round" are different claims and only the second
+    is interesting on a round page.
+    """
+    if _fresh() and _cache["first_service"] is not None:
+        return _cache["first_service"]
+
+    from connect_labs.pulse.network_api import first_service_by_partner
+
+    out = dict(first_service_by_partner())
+    _cache["first_service"] = out
+    _cache["loaded_at"] = _cache["loaded_at"] or time.monotonic()
+    return out
 
 
 def workspace_slugs_by_org_name() -> dict[str, set[str]]:
@@ -268,13 +287,30 @@ def closed_rounds():
     return rounds_with_counts().exclude(status="active").order_by("-applications")
 
 
-def round_applicants(round_: Solicitation, delivering: set[str]):
+def round_since(round_: Solicitation):
+    """The date after which delivery could plausibly have come FROM this round.
+
+    The decision date if there is one, else the deadline, else publication.
+    """
+    return round_.decision_on or round_.application_deadline or round_.published_on
+
+
+def round_applicants(round_: Solicitation, first_service: dict):
     """Who applied to a round, and what became of them.
 
-    The outcome column is the join this whole project exists to make: an EOI
-    answered in 2025 and a first delivered service in 2026 live in two systems
-    that have never been able to see each other.
+    The outcome is the join this whole project exists to make: an EOI answered
+    in 2025 and a first delivered service in 2026 live in two systems that have
+    never been able to see each other.
+
+    It reports the ORDER of those two events and nothing stronger. An
+    organisation already delivering when the round opened did not start because
+    of it, and saying only "delivering" of both invites exactly that reading —
+    which was the state of this page until someone asked what it meant. One
+    that first delivered afterwards is consistent with having won, and that is
+    as much as two dates can tell you: this round is not the only thing that
+    happened to these organisations.
     """
+    since = round_since(round_)
     responses = round_.responses.select_related("llo_entity", "llo_entity__marketplace_profile").order_by(
         "-submission_date", "source_row"
     )
@@ -293,24 +329,77 @@ def round_applicants(round_: Solicitation, delivering: set[str]):
             seen[org.pk]["submissions"] += 1
             continue
         profile = getattr(org, "marketplace_profile", None) if org else None
+        started = first_service.get(org.name) if org is not None else None
         if response.match_state == SolicitationResponse.MATCH_UNMATCHED:
             outcome = "unresolved"
-        elif org is not None and org.name in delivering:
-            outcome = "delivering"
-        else:
+        elif started is None:
             outcome = "never"
+        elif since is None or _as_date(started) >= since:
+            outcome = "after"
+        else:
+            outcome = "before"
         row = {
             "response": response,
             "org": org,
             "name": (org.name if org else response.org_name) or "(organisation name not given)",
             "country": (profile.countries[0] if profile and profile.countries else response.country_as_submitted),
             "outcome": outcome,
+            "started": started,
             "submissions": 1,
         }
         if org is not None:
             seen[org.pk] = row
         out.append(row)
     return out
+
+
+def _as_date(value):
+    return value.date() if hasattr(value, "date") else value
+
+
+def submission_trend(round_: Solicitation, buckets: int = 26) -> list[dict]:
+    """When this round's submissions actually arrived.
+
+    A round reads as one event and is not: the 2025 CHC round took submissions
+    from February to September. The shape of that — a burst on announcement, a
+    tail, a second burst when somebody re-shared it — is the thing a total
+    cannot show.
+
+    Bucketed by week, or by day when the whole round ran inside three weeks,
+    because thirty bars of one submission each says less than seven of four.
+    """
+    dates = sorted(
+        _as_date(r.submission_date) for r in round_.responses.all() if r.submission_date is not None  # noqa: SIM118
+    )
+    if len(dates) < 2:
+        return []
+
+    first, last = dates[0], dates[-1]
+    span = (last - first).days
+    step = 1 if span <= 21 else 7
+    edges = []
+    cursor = first
+    while cursor <= last and len(edges) < 400:
+        edges.append(cursor)
+        cursor += datetime.timedelta(days=step)
+
+    counts = [0] * len(edges)
+    for value in dates:
+        index = min((value - first).days // step, len(edges) - 1)
+        counts[index] += 1
+
+    peak = max(counts) or 1
+    return [
+        {
+            "start": edge,
+            "count": count,
+            # Percentage rather than pixels: the bar is drawn by the template
+            # and has to survive whatever width the column ends up being.
+            "pct": round(count * 100 / peak, 1),
+            "days": step,
+        }
+        for edge, count in zip(edges, counts)
+    ]
 
 
 def unreadable_rounds():

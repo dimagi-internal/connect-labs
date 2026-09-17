@@ -155,9 +155,9 @@ class TestRounds:
         assert got.organisations == 3
 
     def test_applicants_carry_what_became_of_them(self, network):
-        delivering = queries.delivering_names()
-        outcomes = {a["name"]: a["outcome"] for a in queries.round_applicants(network["round"], delivering)}
-        assert outcomes["Northlake Maternal Health Network"] == "delivering"
+        first = queries.first_service_by_org_name()
+        outcomes = {a["name"]: a["outcome"] for a in queries.round_applicants(network["round"], first)}
+        assert outcomes["Northlake Maternal Health Network"] == "after"
         assert outcomes["Serrano Child Nutrition Foundation"] == "never"
         assert outcomes["Someone Else"] == "unresolved"
 

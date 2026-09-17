@@ -16,6 +16,8 @@ view of it.
 
 from __future__ import annotations
 
+import datetime
+
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
@@ -196,14 +198,23 @@ def rounds(request):
 def round_detail(request, slug):
     """One round: who answered it, what it asked, and what became of them."""
     round_ = get_object_or_404(queries.rounds_with_counts(), slug=slug)
-    applicants = queries.round_applicants(round_, queries.delivering_names())
+    applicants = queries.round_applicants(round_, queries.first_service_by_org_name())
+    trend = queries.submission_trend(round_)
     return render(
         request,
         "marketplace/round.html",
         {
             "round": round_,
             "applicants": applicants,
-            "delivering_count": sum(1 for a in applicants if a["outcome"] == "delivering"),
+            "trend": trend,
+            "span_end": trend[-1]["start"] + datetime.timedelta(days=trend[-1]["days"] - 1) if trend else None,
+            "since": queries.round_since(round_),
+            # Split deliberately: "started after this round" is the number
+            # somebody wants when they ask what a round produced, and lumping
+            # it together with organisations that were already delivering
+            # answers a different question while looking like that one.
+            "after_count": sum(1 for a in applicants if a["outcome"] == "after"),
+            "before_count": sum(1 for a in applicants if a["outcome"] == "before"),
             "never_count": sum(1 for a in applicants if a["outcome"] == "never"),
             "unresolved_count": sum(1 for a in applicants if a["outcome"] == "unresolved"),
             "questions": (round_.questions or [])[:8],
