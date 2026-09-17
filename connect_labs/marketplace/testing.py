@@ -33,4 +33,9 @@ def make_partner(name: str, short: str = "", **profile_fields) -> LabsOrg:
     # `resolve()` — and a test that passes alone but fails in a suite is worse
     # than one that fails. `marketplace_import` does exactly this after a run.
     invalidate_partner_cache()
+    # Delivery and workspace resolution are cached too, and a partner created
+    # after that cache warmed would not be seen as delivering.
+    from connect_labs.marketplace import queries
+
+    queries.invalidate()
     return org
