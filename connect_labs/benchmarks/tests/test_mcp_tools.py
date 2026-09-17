@@ -951,3 +951,41 @@ def test_publish_without_the_override_passes_none_not_an_empty_set(monkeypatch):
     """An empty set would publish NOTHING while reading as "no override"."""
     seen = _publish_capturing(monkeypatch)
     assert seen["benchmarkable_indicator_ids"] is None
+
+
+class TestAStringifiedAllowListIsCoercedNotIterated:
+    """An array can arrive as a JSON string. Iterating one yields its
+    CHARACTERS, and for an allow-list that is catastrophic-but-quiet: every
+    character becomes a 'permitted indicator', no real indicator matches, and
+    the publisher withholds EVERYTHING while reporting a snapshot that carries
+    no benchmarkable indicator — blaming the data for an argument-shape bug.
+    Seen for real against the live KMC cohort."""
+
+    def test_a_json_string_becomes_the_list_it_spells(self, monkeypatch):
+        seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids='["C13", "C15"]')
+        assert seen["benchmarkable_indicator_ids"] == {"C13", "C15"}
+
+    def test_a_comma_separated_string_works_too(self, monkeypatch):
+        seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids="C13, C15")
+        assert seen["benchmarkable_indicator_ids"] == {"C13", "C15"}
+
+    def test_a_real_list_is_unchanged(self, monkeypatch):
+        seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids=["C13"])
+        assert seen["benchmarkable_indicator_ids"] == {"C13"}
+
+    def test_a_bare_string_never_degrades_into_its_characters(self, monkeypatch):
+        """The failure this exists to prevent: 'C13' must not become
+        {'C', '1', '3'}."""
+        seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids="C13")
+        assert seen["benchmarkable_indicator_ids"] == {"C13"}
+
+    def test_a_shape_that_is_not_a_list_is_refused(self, monkeypatch):
+        from connect_labs.benchmarks.mcp_tools import _as_id_list
+
+        with pytest.raises(MCPToolError) as exc:
+            _as_id_list({"C13": True}, "benchmarkable_indicator_ids")
+        assert exc.value.code == "INVALID_SCHEMA"
+
+    def test_empty_means_no_override_not_an_empty_allow_list(self, monkeypatch):
+        seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids="")
+        assert seen["benchmarkable_indicator_ids"] is None

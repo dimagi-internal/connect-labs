@@ -20,6 +20,7 @@ the web one and only the web one had it.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, NoReturn
 
@@ -94,6 +95,35 @@ def _require_organization_access(user, organization_id: str, what: str) -> tuple
     caller = Caller(user=user, access_token=token)
     _raise_for_denial(may_use(caller, organization_id=organization_id), what=what)
     return token, caller
+
+
+def _as_id_list(value, argument: str) -> list[str] | None:
+    """A list argument that may arrive as a JSON string, coerced or refused.
+
+    MCP clients differ on whether they coerce against the declared schema, so an
+    array can land here as `'["C13"]'`. Iterating that yields its CHARACTERS,
+    and for an allow-list the result is catastrophic-but-quiet: every character
+    is a "permitted indicator", no real indicator matches, and the publisher
+    withholds everything while reporting a snapshot that "carries no
+    benchmarkable indicator" -- blaming the data for an argument-shape problem.
+
+    So: parse a string, and refuse anything that is not a list of ids rather
+    than degrading into a character set.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            parsed = [part.strip() for part in text.split(",") if part.strip()]
+        value = parsed
+    if isinstance(value, str) or not isinstance(value, (list, tuple, set)):
+        raise MCPToolError("INVALID_SCHEMA", f"{argument} must be a list of indicator ids, got {value!r}.")
+    return [str(v) for v in value]
 
 
 def _run_history(wda, workflow_id: int, state_key: str) -> list[dict]:
@@ -450,6 +480,7 @@ def benchmarks_publish(
     except BenchmarkCohort.DoesNotExist as exc:
         raise MCPToolError("NOT_FOUND", f"Benchmark cohort {cohort_id} not found.") from exc
 
+    explicit_ids = _as_id_list(benchmarkable_indicator_ids, "benchmarkable_indicator_ids")
     token, _ = _require_organization_access(user, cohort.organization_id, f"owns cohort {cohort_id}")
 
     wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
@@ -527,9 +558,7 @@ def benchmarks_publish(
             registry_id=registry_id,
             as_of=as_of,
             published_by=getattr(user, "username", "") or "",
-            benchmarkable_indicator_ids=(
-                {str(i) for i in benchmarkable_indicator_ids} if benchmarkable_indicator_ids else None
-            ),
+            benchmarkable_indicator_ids=(set(explicit_ids) if explicit_ids else None),
         )
     finally:
         wda.close()
