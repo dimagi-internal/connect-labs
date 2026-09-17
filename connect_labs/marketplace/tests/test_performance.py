@@ -116,14 +116,21 @@ class TestTheRowLoopDoesNotQueryPerRow:
         assert len(busy["rounds"]) == 3
 
 
-def _count_queries(client):
+def _count_queries(client, params=None):
+    """How many queries one network render costs.
+
+    Count BEFORE resetting: `CaptureQueriesContext.__len__` reads back out of
+    `connection.queries`, so clearing that list first makes every measurement
+    zero and every comparison between two of them vacuously true.
+    """
     from django.db import connection, reset_queries
     from django.test.utils import CaptureQueriesContext
 
     with CaptureQueriesContext(connection) as ctx:
-        client.get(reverse("marketplace:network"))
+        client.get(reverse("marketplace:network"), params or {})
+    count = len(ctx)
     reset_queries()
-    return len(ctx)
+    return count
 
 
 @pytest.mark.django_db
@@ -152,3 +159,42 @@ class TestTheSpineIsReadOnce:
         queries.delivering_names()
         queries.invalidate()
         assert queries.delivering_names() is not None
+
+
+@pytest.mark.django_db
+class TestTheRegistryIsFetchedOnce:
+    """The rail asks the same population four questions — the list plus one per
+    facet dimension, each with its own filter dropped. Asking the database each
+    time was four scans of the registry to draw one page.
+    """
+
+    def test_one_render_reads_the_organisations_table_once(self, client, user, many):
+        client.force_login(user)
+        queries.invalidate()
+
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as ctx:
+            client.get(reverse("marketplace:network"))
+
+        # The page's own population — the annotated fetch that carries each
+        # organisation's profile. (`partner_names` reads the same table for a
+        # different question, name resolution, and has its own cache.)
+        scans = [
+            q
+            for q in ctx.captured_queries
+            if 'FROM "labs_labsorg"' in q["sql"] and "marketplace_orgprofile" in q["sql"]
+        ]
+        assert len(scans) == 1, f"the registry was scanned {len(scans)} times for one render"
+
+    def test_the_filtered_page_costs_no_more_than_the_unfiltered_one(self, client, user, many):
+        """Filtering in memory means a filter click is the same page, not a
+        second set of queries — which is what made clicking one feel slow."""
+        client.force_login(user)
+        _count_queries(client)  # warm the caches, as a second click would find them
+        plain = _count_queries(client)
+        filtered = _count_queries(client, {"country": "Nigeria", "sector": "Health"})
+
+        assert plain > 0, "measured nothing"
+        assert filtered <= plain, f"filtering cost {filtered} queries against {plain} unfiltered"
