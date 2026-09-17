@@ -407,7 +407,7 @@ class DumpStreamView(BaseSSEStreamView):
     browser sees the failure reason before the stream closes.
     """
 
-    def stream_data(self, request) -> Generator[str, None, None]:
+    def stream_data(self, request) -> Generator[str]:
         try:
             labs_context = getattr(request, "labs_context", None) or {}
             opp_id = labs_context.get("opportunity_id")

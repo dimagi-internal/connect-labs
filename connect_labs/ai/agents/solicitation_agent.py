@@ -3,6 +3,7 @@ Solicitation AI agent for creating, managing, and querying solicitations.
 
 Used by both the in-app AI chat panel and the Celery task runner.
 """
+
 import logging
 from dataclasses import dataclass
 

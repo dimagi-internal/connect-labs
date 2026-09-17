@@ -1,4 +1,5 @@
 """Report export tests (the 'Export data' button + custom-report builder)."""
+
 from __future__ import annotations
 
 import pytest

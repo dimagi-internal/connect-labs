@@ -5,6 +5,7 @@ unsynced activity row shows a "Sync" button; syncing one removes its button. We 
 the count of Sync buttons drops by one and stays dropped after a full reload — i.e. the
 `synced` flag was written server-side, not just toggled in client state.
 """
+
 from __future__ import annotations
 
 import re

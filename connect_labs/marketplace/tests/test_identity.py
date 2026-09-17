@@ -3,6 +3,7 @@
 The importer runs daily. If a name produced a different slug on the second run,
 every organisation would be duplicated, so determinism here is not a nicety.
 """
+
 import pytest
 
 from connect_labs.labs.models import LabsOrg

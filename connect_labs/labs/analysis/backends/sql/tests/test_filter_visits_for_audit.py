@@ -1,4 +1,5 @@
 """Tests for SQLCacheManager's deliver-unit-type/visit-status audit filters."""
+
 import pytest
 
 from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager

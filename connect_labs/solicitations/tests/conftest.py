@@ -3,6 +3,7 @@
 The proxy model tests are pure Python and don't need a database.
 Override the autouse fixtures that trigger DB setup.
 """
+
 import pytest
 
 

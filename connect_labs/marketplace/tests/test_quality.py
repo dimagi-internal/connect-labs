@@ -3,6 +3,7 @@
 Every finding must carry a row number: "some numbers did not parse" is not
 actionable, "row 14, Org Team Size, '50+'" is. All data invented.
 """
+
 from connect_labs.marketplace.directory import parse_contacts, parse_organizations
 from connect_labs.marketplace.quality import audit
 

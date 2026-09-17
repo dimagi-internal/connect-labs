@@ -11,6 +11,7 @@ inaccurate (the gateway accepted the request and never answered) and, since it
 costs a full client timeout of wall clock per image, the single most important
 failure to be able to name.
 """
+
 import httpx
 import pytest
 from django.test import override_settings

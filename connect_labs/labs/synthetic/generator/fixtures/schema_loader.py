@@ -36,8 +36,7 @@ class FormSchema:
 
 
 class _HqApi(Protocol):
-    def get_form_json_paths(self, app_id: str, form_xmlns: str) -> dict[str, Any]:
-        ...
+    def get_form_json_paths(self, app_id: str, form_xmlns: str) -> dict[str, Any]: ...
 
 
 # HQ's question types. Anything missing here falls back to "text", which is not a

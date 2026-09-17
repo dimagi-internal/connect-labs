@@ -134,8 +134,8 @@ function TrainingHub({ role }) {
       s === 'published'
         ? 'Content published'
         : s === 'archived'
-        ? 'Content archived'
-        : 'Saved as draft',
+          ? 'Content archived'
+          : 'Saved as draft',
     );
   };
 

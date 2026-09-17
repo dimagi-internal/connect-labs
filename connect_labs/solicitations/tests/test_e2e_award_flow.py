@@ -9,6 +9,7 @@ Uses Django's test client with mocked LabsRecordAPIClient.
 Run:
     pytest connect_labs/solicitations/tests/test_e2e_award_flow.py -v
 """
+
 from unittest.mock import MagicMock, patch
 
 from django.test import RequestFactory

@@ -5,6 +5,7 @@ no API plumbing. Every write path (UI form view, HTTP API, MCP tool) routes
 through SolicitationsDataAccess.create_solicitation which calls this
 validator, so these tests are the contract for what all three paths accept.
 """
+
 import pytest
 from django.core.exceptions import ValidationError
 

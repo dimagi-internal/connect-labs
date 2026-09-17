@@ -429,7 +429,7 @@ class CompletedTask(XFormBaseModel):
     duration = models.DurationField()
     xform_id = models.CharField(max_length=50, null=True)
     status = models.CharField(
-        choices=CompletedTaskStatus.choices,
+        choices=CompletedTaskStatus,
         default=CompletedTaskStatus.ASSIGNED,
         max_length=50,
     )
@@ -592,7 +592,7 @@ class PaymentInvoice(models.Model):
     title = models.CharField(max_length=255, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
     date_of_expense = models.DateField(null=True, blank=True)
-    status = models.CharField(choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=50)
+    status = models.CharField(choices=InvoiceStatus, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=50)
     archived_date = models.DateTimeField(null=True, blank=True)
     invoice_ticket_link = models.URLField(null=True, blank=True)
 
@@ -651,9 +651,7 @@ class CompletedWorkStatus(models.TextChoices):
 class CompletedWork(models.Model):
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
     payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.DO_NOTHING)
-    status = models.CharField(
-        max_length=50, choices=CompletedWorkStatus.choices, default=CompletedWorkStatus.incomplete
-    )
+    status = models.CharField(max_length=50, choices=CompletedWorkStatus, default=CompletedWorkStatus.incomplete)
     last_modified = models.DateTimeField(auto_now=True)
     entity_id = models.CharField(max_length=255, null=True, blank=True)
     entity_name = models.CharField(max_length=255, null=True, blank=True)
@@ -821,9 +819,7 @@ class UserVisit(XFormBaseModel):
     entity_id = models.CharField(max_length=255, null=True, blank=True)
     entity_name = models.CharField(max_length=255, null=True, blank=True)
     visit_date = models.DateTimeField()
-    status = models.CharField(
-        max_length=50, choices=VisitValidationStatus.choices, default=VisitValidationStatus.pending
-    )
+    status = models.CharField(max_length=50, choices=VisitValidationStatus, default=VisitValidationStatus.pending)
     form_json = models.JSONField()
     reason = models.CharField(max_length=300, null=True, blank=True)
     location = models.CharField(max_length=255, null=True)
@@ -831,9 +827,7 @@ class UserVisit(XFormBaseModel):
     flag_reason = models.JSONField(null=True, blank=True)
     completed_work = models.ForeignKey(CompletedWork, on_delete=models.DO_NOTHING, null=True, blank=True)
     status_modified_date = models.DateTimeField(null=True)
-    review_status = models.CharField(
-        max_length=50, choices=VisitReviewStatus.choices, default=VisitReviewStatus.pending
-    )
+    review_status = models.CharField(max_length=50, choices=VisitReviewStatus, default=VisitReviewStatus.pending)
     review_created_on = models.DateTimeField(blank=True, null=True)
     justification = models.CharField(max_length=300, null=True, blank=True)
     date_created = models.DateTimeField(auto_now_add=True)
@@ -969,7 +963,7 @@ class UserInvite(models.Model):
     phone_number = models.CharField(max_length=15)
     opportunity_access = models.OneToOneField(OpportunityAccess, on_delete=models.CASCADE, null=True, blank=True)
     message_sid = models.CharField(max_length=50, null=True, blank=True)
-    status = models.CharField(max_length=50, choices=UserInviteStatus.choices, default=UserInviteStatus.invited)
+    status = models.CharField(max_length=50, choices=UserInviteStatus, default=UserInviteStatus.invited)
     notification_date = models.DateTimeField(null=True)
 
 

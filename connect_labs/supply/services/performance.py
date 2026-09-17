@@ -19,6 +19,7 @@ Everything here is derived from the append-only event log and the milestone
 rail, so a performance figure is reconstructable from the same rows the rest of
 the product argues from. Nothing is stored.
 """
+
 from datetime import date
 
 from ..models import Discrepancy, Milestone

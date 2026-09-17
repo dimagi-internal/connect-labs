@@ -16,6 +16,7 @@ disappears.
 It also sets the GDAL/GEOS paths Django's GIS stack needs on macOS, where the
 Homebrew prefix is not where the loader looks.
 """
+
 from __future__ import annotations
 
 import os

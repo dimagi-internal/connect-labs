@@ -165,9 +165,8 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
     createTaskWithOCS: async (
       params: CreateTaskWithOCSParams,
     ): Promise<TaskWithOCSResult> => {
-      const taskResult = await createActionHandlers(csrfToken).createTask(
-        params,
-      );
+      const taskResult =
+        await createActionHandlers(csrfToken).createTask(params);
       if (!taskResult.success || !taskResult.task_id) {
         return taskResult;
       }
@@ -751,16 +750,16 @@ function WorkflowRunner({
       Object.keys(initialData.pipeline_data).length > 0
       ? null
       : // No pipelines configured?
-      !initialData.definition.pipeline_sources?.length
-      ? null
-      : // A finished run carries its own; nothing to wait for. Nor does a page
-      // that fetches its own rows (config.noPipelineStream).
-      snapshotCarriesPipelines ||
-        (definition?.config as Record<string, unknown> | undefined)
-          ?.noPipelineStream
-      ? null
-      : // Need to load
-        'Connecting...',
+        !initialData.definition.pipeline_sources?.length
+        ? null
+        : // A finished run carries its own; nothing to wait for. Nor does a page
+          // that fetches its own rows (config.noPipelineStream).
+          snapshotCarriesPipelines ||
+            (definition?.config as Record<string, unknown> | undefined)
+              ?.noPipelineStream
+          ? null
+          : // Need to load
+            'Connecting...',
   );
   // Opt-in per definition (`config.renderWhileLoading`): a drill-style page
   // whose headline comes from a saved report should not sit behind the
@@ -1196,8 +1195,7 @@ function WorkflowRunner({
   // This allows users to close the browser and return later while the Celery task continues
   useEffect(() => {
     const activeJob = initialData.instance.state?.active_job as
-      | ActiveJobState
-      | undefined;
+      ActiveJobState | undefined;
 
     // Only reconnect if there's a running job with a task ID
     if (activeJob?.status !== 'running' || !activeJob?.job_id) {
@@ -1692,7 +1690,7 @@ function WorkflowRunner({
           pipelineData,
         state: (snapshot.state as WorkflowState) ?? instanceState,
         isCompleted,
-        asOf: isCompleted ? inst.completed_at ?? null : null,
+        asOf: isCompleted ? (inst.completed_at ?? null) : null,
         complete: completeFn,
         flags: flagsList,
         flagsFor,

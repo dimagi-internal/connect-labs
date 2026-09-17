@@ -332,7 +332,7 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
     Frontend receives one combined payload for all three tabs.
     """
 
-    def stream_data(self, request) -> Generator[str, None, None]:
+    def stream_data(self, request) -> Generator[str]:
         """Stream all dashboard data via SSE."""
         try:
             labs_context = getattr(request, "labs_context", {})

@@ -53,16 +53,13 @@ kpi_config:
 coaching_arcs: []
 """
 
-_YAML_WITH_TEMPORAL = (
-    VALID_MANIFEST_YAML
-    + """
+_YAML_WITH_TEMPORAL = VALID_MANIFEST_YAML + """
 temporal:
   day_of_week: [1, 1, 1, 1, 1, 0.2, 0.1]
   hour_of_day: [0,0,0,0,0,0,0,1,2,3,4,5,6,5,4,3,2,1,0,0,0,0,0,0]
 flag_reason_distribution:
   "GPS outside service area": 1.0
 """
-)
 
 
 def test_manifest_parses_valid_yaml():
@@ -164,9 +161,7 @@ def test_manifest_rejects_end_before_start():
 
 def test_manifest_rejects_coaching_arc_with_unknown_flw_id():
     base = "\n".join(line for line in VALID_MANIFEST_YAML.splitlines() if line.strip() != "coaching_arcs: []")
-    bad = (
-        base
-        + """
+    bad = base + """
 coaching_arcs:
   - flw_id: not_a_real_persona
     week_triggered: 2
@@ -175,7 +170,6 @@ coaching_arcs:
     transcript:
       - { role: bot, text: hi, ts: 2026-02-15T09:00:00 }
 """
-    )
     with pytest.raises(ManifestValidationError):
         Manifest.from_yaml(bad)
 
@@ -205,9 +199,7 @@ kpi_config:
 
 
 def test_manifest_with_tasks():
-    yaml_str = (
-        _MINIMAL_YAML_HEADER
-        + """
+    yaml_str = _MINIMAL_YAML_HEADER + """
 tasks:
   - flw_id: a
     title: Follow up on flagged visits
@@ -215,7 +207,6 @@ tasks:
     status: completed
     created_week: 2
 """
-    )
     m = Manifest.from_yaml(yaml_str)
     assert len(m.tasks) == 1
     assert m.tasks[0].flw_id == "a"
@@ -229,15 +220,12 @@ def test_manifest_tasks_default_empty():
 
 
 def test_manifest_with_image_config():
-    yaml_str = (
-        _MINIMAL_YAML_HEADER
-        + """
+    yaml_str = _MINIMAL_YAML_HEADER + """
 image_config:
   question_path: form.muac_group.muac_photo
   stock_image_count: 15
   probability: 0.85
 """
-    )
     m = Manifest.from_yaml(yaml_str)
     assert m.image_config is not None
     assert m.image_config.probability == 0.85
@@ -245,9 +233,7 @@ image_config:
 
 
 def test_manifest_task_validates_flw_ref():
-    yaml_str = (
-        _MINIMAL_YAML_HEADER
-        + """
+    yaml_str = _MINIMAL_YAML_HEADER + """
 tasks:
   - flw_id: unknown_flw
     title: Should fail
@@ -255,7 +241,6 @@ tasks:
     status: pending
     created_week: 1
 """
-    )
     with pytest.raises(ManifestValidationError):
         Manifest.from_yaml(yaml_str)
 

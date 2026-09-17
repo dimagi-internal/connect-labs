@@ -8,6 +8,7 @@ single-role `test_rbac_reporting_user_cannot_write`.
 Uses the plain (CSRF-disabled) client deliberately: this isolates the RBAC decision.
 CSRF transport is covered separately in `test_workers_api.test_csrf_round_trip_*`.
 """
+
 from __future__ import annotations
 
 import json

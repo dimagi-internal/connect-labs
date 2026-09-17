@@ -851,12 +851,8 @@ Jobs are long-running backend computations (e.g., MBW monitoring analysis).
 // Start a job
 var result = await actions.startJob(instance.id, {
   job_type: 'mbw_monitoring',
-  params: {
-    /* job-specific parameters */
-  },
-  records: [
-    /* optional data records */
-  ],
+  params: {/* job-specific parameters */},
+  records: [/* optional data records */],
 });
 // Returns: { success: boolean, task_id?: string, error?: string }
 

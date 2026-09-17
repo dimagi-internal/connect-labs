@@ -3,6 +3,7 @@ Template tags and filters for labs context management.
 
 Provides helpers to work with context URL parameters in templates.
 """
+
 from django import template
 from django.utils.http import urlencode
 

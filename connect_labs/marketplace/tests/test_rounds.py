@@ -1,4 +1,5 @@
 """Parsing the restructured EOI/RFP tab. All values invented."""
+
 from connect_labs.marketplace.directory import parse_rounds
 
 HEADER = [

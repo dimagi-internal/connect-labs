@@ -11,6 +11,7 @@ Pure functions that turn a user's ordered audit events into a navigable
 No DB access here — the view fetches, this shapes. Kept separate for
 unit-testability.
 """
+
 from __future__ import annotations
 
 from datetime import timedelta

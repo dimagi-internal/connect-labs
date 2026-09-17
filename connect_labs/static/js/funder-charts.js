@@ -366,8 +366,8 @@ function renderKPIs(visits, payments, container) {
       (budgetPct >= 90
         ? 'bg-red-500'
         : budgetPct >= 70
-        ? 'bg-amber-500'
-        : 'bg-green-500') +
+          ? 'bg-amber-500'
+          : 'bg-green-500') +
       '" style="width: ' +
       budgetPct +
       '%"></div></div>' +

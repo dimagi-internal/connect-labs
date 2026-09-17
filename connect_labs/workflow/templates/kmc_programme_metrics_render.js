@@ -409,8 +409,8 @@ function WorkflowUI({
           ? d.early_g_per_kg_day < PLAUSIBLE_LO
             ? 'slow'
             : d.early_g_per_kg_day > PLAUSIBLE_HI
-            ? 'fast'
-            : 'plausible'
+              ? 'fast'
+              : 'plausible'
           : null;
         d.first_weight_g = ws.length ? Math.round(ws[0].w) : null;
         d.last_weight_g = ws.length ? Math.round(ws[ws.length - 1].w) : null;
@@ -705,12 +705,12 @@ function WorkflowUI({
       m.unit === '%'
         ? (100 * v).toFixed(1) + '%'
         : m.unit === 'g'
-        ? nCount(v)
-        : m.unit === 'wks'
-        ? String(Math.round(v * 10) / 10)
-        : c.id === 'N07'
-        ? v.toFixed(1)
-        : nCount(v);
+          ? nCount(v)
+          : m.unit === 'wks'
+            ? String(Math.round(v * 10) / 10)
+            : c.id === 'N07'
+              ? v.toFixed(1)
+              : nCount(v);
     if (e.band === 'notcredible')
       return (
         <span
@@ -888,8 +888,8 @@ function WorkflowUI({
   var trendKey = oppFilter
     ? 'opp:' + oppFilter
     : selLLO
-    ? 'llo:' + selLLO
-    : 'all';
+      ? 'llo:' + selLLO
+      : 'all';
   var weekly = React.useMemo(
     function () {
       var w = (P.weekly && P.weekly[trendKey]) || [];
@@ -1360,10 +1360,10 @@ function WorkflowUI({
                         onPick(i.id);
                       }
                     : withDefinitions
-                    ? function () {
-                        toggleDef(i.id);
-                      }
-                    : undefined
+                      ? function () {
+                          toggleDef(i.id);
+                        }
+                      : undefined
                 }
               >
                 <td className="px-3 py-2 font-mono text-xs text-gray-500">
@@ -1511,13 +1511,13 @@ function WorkflowUI({
   var scopeInd = scopeOppRow
     ? scopeOppRow.ind
     : scopeLLO
-    ? scopeLLO.ind
-    : programInd;
+      ? scopeLLO.ind
+      : programInd;
   var scopeName = scopeOppRow
     ? oppLabel(oppFilter)
     : scopeLLO
-    ? scopeLLO.llo
-    : 'Programme';
+      ? scopeLLO.llo
+      : 'Programme';
 
   // Workers per organisation, for the table's row meta. byFLW is keyed by
   // (opportunity, username); an organisation is the union over its opps.
@@ -1655,8 +1655,8 @@ function WorkflowUI({
               selLLO || oppFilter
                 ? 'two-sided'
                 : mortalityCredible.llos && mortalityCredible.llos.length
-                ? mortalityCredible.llos.join(' + ') + ' only'
-                : 'no credible recorder';
+                  ? mortalityCredible.llos.join(' + ') + ' only'
+                  : 'no credible recorder';
           if (t.id === 'C02')
             sub =
               (tileId(t) === 'N03' ? 'two or more visits' : 'one follow-up') +
@@ -1916,10 +1916,10 @@ function WorkflowUI({
         last.e.band === 'red'
           ? '#dc2626'
           : last.e.band === 'yellow'
-          ? '#d97706'
-          : last.e.band === 'green'
-          ? '#15803d'
-          : '#4f46e5';
+            ? '#d97706'
+            : last.e.band === 'green'
+              ? '#15803d'
+              : '#4f46e5';
       body = (
         <svg
           viewBox={'0 0 ' + W + ' ' + H}
@@ -2635,8 +2635,8 @@ function WorkflowUI({
             {cohortDim === 'start_month'
               ? ' — no dated case, so there is no month they started.'
               : cohortDim === 'caseload'
-              ? ' — too few workers on this run to band caseloads at all.'
-              : '.'}{' '}
+                ? ' — too few workers on this run to band caseloads at all.'
+                : '.'}{' '}
             They are left out rather than pooled with everyone else unplaceable.
           </div>
         ) : peers.length < MIN_COHORT ? (

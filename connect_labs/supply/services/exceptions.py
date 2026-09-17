@@ -16,6 +16,7 @@ behind it, and not otherwise.
 Each row also carries its ``derivation``, because a severity ranking nobody can
 reconstruct is a severity ranking nobody will act against.
 """
+
 from datetime import date, timedelta
 
 from .. import gs1

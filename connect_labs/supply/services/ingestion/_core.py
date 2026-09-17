@@ -8,6 +8,7 @@ same state the same way.
 Capture is idempotent on ``external_id``: delivery is at-least-once, so a
 repeat is normal traffic rather than an error.
 """
+
 from datetime import datetime
 from datetime import timezone as dt_timezone
 

@@ -3,6 +3,7 @@
 The EPCIS payloads here follow the shapes in the official GS1 EPCIS 2.0
 examples, so a supplier conformant to the standard would be accepted as-is.
 """
+
 import json
 from datetime import timedelta
 

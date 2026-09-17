@@ -642,10 +642,10 @@ function WorkflowUI(props) {
     selSurv && sbMap[selSurv]
       ? selSurv
       : bcIds.length
-      ? bcIds.reduce(function (a, b) {
-          return _t3(b) < _t3(a) ? b : a;
-        }, bcIds[0])
-      : null;
+        ? bcIds.reduce(function (a, b) {
+            return _t3(b) < _t3(a) ? b : a;
+          }, bcIds[0])
+        : null;
 
   // scorecard quality metrics: what each checks + the library detail key, so a
   // clicked cell can open a relevant info panel below the table.
@@ -710,8 +710,8 @@ function WorkflowUI(props) {
       val == null
         ? '—'
         : key === 'duplicates'
-        ? val + ' dup'
-        : Number(val).toFixed(1) + '%';
+          ? val + ' dup'
+          : Number(val).toFixed(1) + '%';
 
     function flagged(r) {
       if (key === 'evidence') return r.recv && r.photo !== true;
@@ -1752,10 +1752,10 @@ function WorkflowUI(props) {
             background: on
               ? '#eef2ff'
               : isAgg
-              ? '#f8fafc'
-              : fl
-              ? '#fff1f2'
-              : 'transparent',
+                ? '#f8fafc'
+                : fl
+                  ? '#fff1f2'
+                  : 'transparent',
             // The selection accent (blue) and the flagged STATUS RAIL (rose) are
             // distinct signals, so they must not collide on the same left edge.
             // Blue inset stays for "selected"; the flagged row's rose rail is
@@ -1889,8 +1889,8 @@ function WorkflowUI(props) {
                   boxShadow: selCell
                     ? 'inset 0 0 0 1.5px ' + INDIGO
                     : isOffender
-                    ? 'inset 0 0 0 1.5px ' + ROSE
-                    : 'none',
+                      ? 'inset 0 0 0 1.5px ' + ROSE
+                      : 'none',
                 })}
               >
                 {cellTxt(row, c)}
@@ -2229,24 +2229,24 @@ function WorkflowUI(props) {
             ? 'far faster'
             : 'faster'
           : strong
-          ? 'far slower'
-          : 'slower';
+            ? 'far slower'
+            : 'slower';
       if (kind === 'uniformity')
         return z > 0
           ? strong
             ? 'far more uniform'
             : 'more uniform'
           : strong
-          ? 'far more varied'
-          : 'more varied';
+            ? 'far more varied'
+            : 'more varied';
       // yes-rate
       return z > 0
         ? strong
           ? 'far higher'
           : 'higher'
         : strong
-        ? 'far lower'
-        : 'lower';
+          ? 'far lower'
+          : 'lower';
     }
     // one compact row per signal: PLAIN READ · value · lens · z-chip
     function cell(rawVal, z, valTxt, dom, kind) {
@@ -2451,8 +2451,8 @@ function WorkflowUI(props) {
                     background: on
                       ? '#eef2ff'
                       : band === 'red'
-                      ? '#fff1f2'
-                      : 'transparent',
+                        ? '#fff1f2'
+                        : 'transparent',
                     boxShadow: on ? 'inset 3px 0 0 ' + INDIGO : 'none',
                   }}
                 >
@@ -2533,8 +2533,8 @@ function WorkflowUI(props) {
                       background: on
                         ? '#eef2ff'
                         : band === 'red'
-                        ? '#fff1f2'
-                        : '#fff',
+                          ? '#fff1f2'
+                          : '#fff',
                       boxShadow: '-6px 0 6px -6px rgba(16,24,40,0.12)',
                     })}
                   >

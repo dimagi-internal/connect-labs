@@ -12,8 +12,8 @@
   --oes-warn: #b45309;
   --oes-danger: #b91c1c;
   --oes-radius: 10px;
-  --oes-shadow: 0 1px 2px rgba(16, 34, 28, 0.06),
-    0 8px 24px rgba(16, 34, 28, 0.06);
+  --oes-shadow:
+    0 1px 2px rgba(16, 34, 28, 0.06), 0 8px 24px rgba(16, 34, 28, 0.06);
 
   /* ---- Semantic status, separate from the brand -----------------------
      The brand green was doing double duty as "this is OES" and "this is

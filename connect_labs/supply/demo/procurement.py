@@ -4,6 +4,7 @@ The writing itself lives next door — :mod:`.organisations` for who exists,
 :mod:`.solicitations` for what they bid on — so this module stays a readable
 statement of the order things happen in.
 """
+
 from django.db import transaction
 
 from ..models import (

@@ -6,6 +6,7 @@ place names + polygons instead of inventing them. These tests build a tiny
 GeoPoDe-shaped hierarchy via factory rows (the full NGA set is Drive-loaded, not
 in the repo) and pin enumeration + in-polygon GPS placement.
 """
+
 from __future__ import annotations
 
 import random

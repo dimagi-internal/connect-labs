@@ -4,6 +4,7 @@ The lifecycle here is EOI round -> submission -> review -> qualification, then
 RFP -> lot -> bid -> award. Award is the immutable decision record; everything
 that happens afterwards lives in :mod:`.execution`.
 """
+
 from django.conf import settings
 from django.db import models
 
@@ -126,7 +127,7 @@ class Qualification(models.Model):
         REVOKED = "revoked"
 
     org = models.ForeignKey(SupplierOrg, on_delete=models.CASCADE, related_name="qualifications")
-    category = models.CharField(max_length=32, choices=Category.choices)
+    category = models.CharField(max_length=32, choices=Category)
     source_submission = models.ForeignKey(EOISubmission, null=True, on_delete=models.SET_NULL, related_name="+")
     granted_at = models.DateField()
     expires_at = models.DateField()
@@ -174,7 +175,7 @@ class RFP(models.Model):
 
 class Lot(models.Model):
     rfp = models.ForeignKey(RFP, on_delete=models.CASCADE, related_name="lots")
-    category = models.CharField(max_length=32, choices=Category.choices)
+    category = models.CharField(max_length=32, choices=Category)
     description = models.TextField()
     quantity = models.DecimalField(max_digits=12, decimal_places=2)
     unit = models.CharField(max_length=32, default="cartons")  # cartons | MT | truck-months | pallet-months

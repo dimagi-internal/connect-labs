@@ -1,4 +1,5 @@
 """Tests for AIAgentsListAPIView config_fields surfacing."""
+
 import time
 
 import pytest

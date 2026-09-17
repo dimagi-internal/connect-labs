@@ -824,8 +824,8 @@ function PaymentDrawer({
                       d.status === 'approved'
                         ? 'success'
                         : d.status === 'rejected'
-                        ? 'danger'
-                        : 'warning'
+                          ? 'danger'
+                          : 'warning'
                     }
                     dot
                   >

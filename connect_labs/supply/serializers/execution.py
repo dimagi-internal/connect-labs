@@ -5,6 +5,7 @@ emits the route as a coordinate list for the flow map to animate, and
 ``contract_dict`` reports obligated, disbursed and delivered as three separate
 figures so no consumer can accidentally collapse them into one.
 """
+
 from .. import gs1
 from .procurement import lot_dict  # noqa: F401  (execution rows reference lots)
 

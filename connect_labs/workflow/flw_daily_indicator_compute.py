@@ -25,6 +25,7 @@ e.g. what counts as a "large" household — not how suspicious a value has to
 be to flag someone) and intentionally live here, the same way
 flw_audit_compute.py bakes in its own near-duplicate radii.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict

@@ -5,6 +5,7 @@ execution afterwards, demand underneath both. Everything is re-exported, so
 callers keep importing ``from connect_labs.supply.serializers import x``
 without caring which third x belongs to.
 """
+
 from .demand import (
     caseload_dict,
     child_outcome_dict,

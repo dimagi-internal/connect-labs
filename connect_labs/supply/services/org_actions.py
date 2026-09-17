@@ -1,4 +1,5 @@
 """Supplier org profile + certification mutations."""
+
 from datetime import date
 
 from ..models import Certification

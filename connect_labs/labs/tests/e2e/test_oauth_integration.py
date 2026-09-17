@@ -6,6 +6,7 @@ Setup: python manage.py get_cli_token
 Tests use the saved token from ~/.commcare-connect/token.json
 and load credentials from .env (same as real CLI).
 """
+
 import pytest
 from django.conf import settings
 

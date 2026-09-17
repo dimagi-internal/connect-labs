@@ -3,6 +3,7 @@ Session store for AI demo message history.
 
 Uses Redis (via django cache) to store message history per session.
 """
+
 import json
 import logging
 from datetime import datetime, timezone

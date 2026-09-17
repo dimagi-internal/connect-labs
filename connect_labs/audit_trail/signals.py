@@ -4,6 +4,7 @@ Connected in AuditTrailConfig.ready(). Login/logout fire inside a request
 (the OAuth callback calls django.contrib.auth.login), so the middleware's
 buffered context supplies IP/user-agent/request-id attribution.
 """
+
 from celery.signals import before_task_publish, task_postrun, task_prerun
 from django.contrib.auth.signals import user_logged_in, user_logged_out, user_login_failed
 from django.dispatch import receiver

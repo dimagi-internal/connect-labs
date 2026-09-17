@@ -17,6 +17,7 @@ It logs in ONLY personas the demo seed created, by exact email, and never
 creates a user. There is no path here to an account the seed did not already
 make.
 """
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth import login as auth_login

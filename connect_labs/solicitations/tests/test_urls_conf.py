@@ -3,6 +3,7 @@
 This avoids loading the full project urlconf which requires
 optional dependencies like django_weasyprint.
 """
+
 from django.urls import include, path
 
 urlpatterns = [

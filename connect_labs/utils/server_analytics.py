@@ -6,6 +6,7 @@ client-side tracker in static/js/labs-analytics.js.
 
 PHI rule: event names and data carry opaque identifiers only.
 """
+
 import logging
 from urllib.parse import urlparse
 

@@ -9,6 +9,7 @@ driven by worker COUNT, not polygon detail — the bootstrap serializes workers,
 ward geometry), so this is purely a local stand-in. NEVER run it where the real
 GeoPoDe data is loaded.
 """
+
 from __future__ import annotations
 
 from django.contrib.gis.geos import GEOSGeometry

@@ -5,6 +5,7 @@ Scope: ``labs_only=True`` synthetic opps (IDs >= 10_000), gated by
 ``SyntheticExportClient`` / ``FixtureStore`` — these views only authenticate,
 authorize, paginate, and shape the response.
 """
+
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, inline_serializer
 from rest_framework import serializers, status

@@ -26,6 +26,7 @@ config.source_definition_id (set on the instance after creation, since the
 source workflow's id is only known once it exists) points at Workflow 1's
 definition id.
 """
+
 from __future__ import annotations
 
 DEFINITION = {

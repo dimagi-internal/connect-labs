@@ -8,6 +8,7 @@ Authenticated with a labs MCP PAT: already self-service, already how every other
 programmatic labs operation authenticates, and — unlike supply's own ApiToken —
 living outside the tables this deletes, so it survives its own reseed.
 """
+
 import pytest
 
 from connect_labs.mcp.models import MCPAccessToken

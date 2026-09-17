@@ -41,10 +41,10 @@ function SupplierHome({ ctx }) {
               daysToDeadline === null
                 ? undefined
                 : daysToDeadline <= 7
-                ? 'critical'
-                : daysToDeadline <= 21
-                ? 'at-risk'
-                : 'ok',
+                  ? 'critical'
+                  : daysToDeadline <= 21
+                    ? 'at-risk'
+                    : 'ok',
             hint:
               daysToDeadline === null
                 ? 'nothing open to bid on'

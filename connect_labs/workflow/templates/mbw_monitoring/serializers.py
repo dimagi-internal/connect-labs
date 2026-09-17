@@ -37,16 +37,18 @@ def serialize_visit(visit: VisitWithGPS) -> dict:
         "entity_name": visit.entity_name,
         "form_name": visit.form_name,
         "visit_date": visit.visit_date.isoformat() if visit.visit_date else None,
-        "gps": {
-            "latitude": visit.gps.latitude,
-            "longitude": visit.gps.longitude,
-            "accuracy": visit.gps.accuracy,
-        }
-        if visit.gps
-        else None,
-        "distance_from_prev_km": round(visit.distance_from_prev_case_visit / 1000, 2)
-        if visit.distance_from_prev_case_visit
-        else None,
+        "gps": (
+            {
+                "latitude": visit.gps.latitude,
+                "longitude": visit.gps.longitude,
+                "accuracy": visit.gps.accuracy,
+            }
+            if visit.gps
+            else None
+        ),
+        "distance_from_prev_km": (
+            round(visit.distance_from_prev_case_visit / 1000, 2) if visit.distance_from_prev_case_visit else None
+        ),
         "is_flagged": visit.is_flagged,
         "flag_reason": visit.flag_reason,
     }

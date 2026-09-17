@@ -6,6 +6,7 @@ are served HERE from ``WorkerCase`` — shaped as CommCare Case API v2 JSON — 
 of going over HTTP to CommCare HQ. The campaign code calls the Case API the same
 way for synthetic and real domains; this is the transparent short-circuit.
 """
+
 from __future__ import annotations
 
 from connect_labs.campaign.models import Campaign, SyntheticCommCareDomain, WorkerCase

@@ -7,6 +7,7 @@ returns records that are almost the right shape — this module normalizes
 field defaults, extracts `xform_id` from `form_json`, and (optionally)
 strips `form_json` for memory-efficient slim mode.
 """
+
 from typing import Any
 
 # All keys in a labs visit dict, in canonical order.

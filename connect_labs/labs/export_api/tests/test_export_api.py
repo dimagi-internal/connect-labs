@@ -5,6 +5,7 @@ production-shaped pagination envelope, single-object endpoints, and the
 conditionally-present app_structure endpoint — all against an in-memory fake of
 the Drive-backed FixtureStore so no network is involved.
 """
+
 import json
 from urllib.parse import urlsplit
 

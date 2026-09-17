@@ -12,6 +12,7 @@ written to two sinks:
 
 Do not put PHI in ``metadata`` — identifiers only.
 """
+
 from __future__ import annotations
 
 import functools

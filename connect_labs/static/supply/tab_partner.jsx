@@ -49,10 +49,10 @@ function PartnerTab({ ctx }) {
     worstWeeks === null
       ? undefined
       : worstWeeks < 2
-      ? 'critical'
-      : worstWeeks < 4
-      ? 'at-risk'
-      : 'ok';
+        ? 'critical'
+        : worstWeeks < 4
+          ? 'at-risk'
+          : 'ok';
 
   return (
     <Page
@@ -147,8 +147,8 @@ function PartnerTab({ ctx }) {
                       c.weeks_of_cover < 2
                         ? 'bad'
                         : c.weeks_of_cover < 4
-                        ? 'warn'
-                        : 'good'
+                          ? 'warn'
+                          : 'good'
                     }
                   >
                     {c.weeks_of_cover}

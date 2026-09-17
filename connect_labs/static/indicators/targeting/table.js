@@ -285,8 +285,8 @@
     var burdenTotal = burdenIsOrs()
       ? data.totals.ors_gap_children
       : data.totals.gap !== null && data.totals.gap !== undefined
-      ? data.totals.gap
-      : data.totals.expected_deaths;
+        ? data.totals.gap
+        : data.totals.expected_deaths;
     document.getElementById('tg-deaths').textContent = util.fmt(burdenTotal);
     document.getElementById('tg-burden-label').textContent = burdenLabel();
 

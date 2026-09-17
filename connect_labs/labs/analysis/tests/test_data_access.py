@@ -1,4 +1,5 @@
 """Tests for analysis/data_access.py FLW fetching."""
+
 import pytest
 from django.core.cache import cache
 

@@ -9,6 +9,7 @@ Nothing failed. The tests passed, against the developer's own data.
 That is not a failure any other test can report -- they all pass either way --
 so it is asserted here directly.
 """
+
 import pytest
 from django.conf import settings
 from django.db import connection

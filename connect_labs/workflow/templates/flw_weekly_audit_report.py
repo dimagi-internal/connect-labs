@@ -24,6 +24,7 @@ use started_time per user instruction). No CommCare HQ pipeline is needed:
 every field this report needs (MUAC, GPS, timing, demographics) is already
 mirrored into Connect's UserVisit.form_json for this form.
 """
+
 from __future__ import annotations
 
 PIPELINE_SCHEMAS = [

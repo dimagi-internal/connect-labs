@@ -38,8 +38,9 @@ def test_callback_reuses_existing_user_by_email(client):
     existing = User.objects.create(username="connectid-xyz", email="ace@dimagi-ai.com", name="ACE")
     _prime_pkce(client)
     ident = {"username": "ace@dimagi-ai.com", "email": "ace@dimagi-ai.com", "name": "ACE Bot", "domains": []}
-    with patch("connect_labs.campaign.auth.oauth_views.httpx.Client") as Client, patch(
-        "connect_labs.campaign.auth.oauth_views.fetch_identity", return_value=ident
+    with (
+        patch("connect_labs.campaign.auth.oauth_views.httpx.Client") as Client,
+        patch("connect_labs.campaign.auth.oauth_views.fetch_identity", return_value=ident),
     ):
         Client.return_value.__enter__.return_value.post.return_value = _token_resp()
         resp = client.get(reverse("campaign:oauth_callback"), {"code": "C", "state": "STATE"})
@@ -70,8 +71,9 @@ def test_initiate_redirects_to_commcare(client):
 def test_callback_provisions_dimagi_admin(client):
     _prime_pkce(client)
     ident = {"username": "a@dimagi.com", "email": "a@dimagi.com", "name": "A", "domains": []}
-    with patch("connect_labs.campaign.auth.oauth_views.httpx.Client") as Client, patch(
-        "connect_labs.campaign.auth.oauth_views.fetch_identity", return_value=ident
+    with (
+        patch("connect_labs.campaign.auth.oauth_views.httpx.Client") as Client,
+        patch("connect_labs.campaign.auth.oauth_views.fetch_identity", return_value=ident),
     ):
         Client.return_value.__enter__.return_value.post.return_value = _token_resp()
         resp = client.get(reverse("campaign:oauth_callback"), {"code": "C", "state": "STATE"})
@@ -92,8 +94,9 @@ def test_callback_provisions_dimagi_admin(client):
 def test_callback_denies_unlisted_user(client):
     _prime_pkce(client)
     ident = {"username": "x@other.org", "email": "x@other.org", "name": "X", "domains": []}
-    with patch("connect_labs.campaign.auth.oauth_views.httpx.Client") as Client, patch(
-        "connect_labs.campaign.auth.oauth_views.fetch_identity", return_value=ident
+    with (
+        patch("connect_labs.campaign.auth.oauth_views.httpx.Client") as Client,
+        patch("connect_labs.campaign.auth.oauth_views.fetch_identity", return_value=ident),
     ):
         Client.return_value.__enter__.return_value.post.return_value = _token_resp()
         resp = client.get(reverse("campaign:oauth_callback"), {"code": "C", "state": "STATE"})

@@ -189,7 +189,7 @@ class FundPipelineDataView(BaseSSEStreamView):
 
     login_url = "/labs/login/"
 
-    def stream_data(self, request) -> Generator[str, None, None]:
+    def stream_data(self, request) -> Generator[str]:
         """Stream pipeline data for each allocation with an opportunity_id."""
         pk = self.kwargs["pk"]
 

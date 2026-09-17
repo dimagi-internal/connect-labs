@@ -206,11 +206,13 @@ def supply_base(
             Evidence(
                 kind=_quote_kind(quote),
                 detail=(
-                    f"{quote.as_quoted_currency} {quote.as_quoted_amount} "
-                    f"{(quote.as_quoted_unit or '').replace('_', ' ')}"
-                ).strip()
-                if quote.as_quoted_amount is not None
-                else "quote recorded, no price on it",
+                    (
+                        f"{quote.as_quoted_currency} {quote.as_quoted_amount} "
+                        f"{(quote.as_quoted_unit or '').replace('_', ' ')}"
+                    ).strip()
+                    if quote.as_quoted_amount is not None
+                    else "quote recorded, no price on it"
+                ),
                 on=quote.received_on,
                 quote_id=quote.pk,
                 round_id=quote.round_id,

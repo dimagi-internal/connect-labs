@@ -403,8 +403,8 @@ function RoleMatrix() {
     label === 'Full Access'
       ? 'success'
       : label === 'No Access'
-      ? 'neutral'
-      : 'info';
+        ? 'neutral'
+        : 'info';
   return (
     <Card padding={0}>
       <div

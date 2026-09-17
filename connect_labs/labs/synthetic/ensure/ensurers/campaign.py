@@ -8,6 +8,7 @@ synthetic CommCare project space through the Case API. Reuses
 campaign DDD demo into the right state the same canonical way the PAR env does for
 its workflow runs: in-app, HTTP-free, durable, via ``synthetic_env_ensure``.
 """
+
 from __future__ import annotations
 
 

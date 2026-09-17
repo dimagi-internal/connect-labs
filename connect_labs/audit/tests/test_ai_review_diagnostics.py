@@ -11,6 +11,7 @@ success in the logs:
   cause, so telling a saturated gateway apart from a dead one meant querying
   per-agent log lines that carry no session or blob id to join against.
 """
+
 import logging
 
 import pytest

@@ -1159,13 +1159,13 @@
           const action = !ok
             ? ''
             : inPlan
-            ? '<span class="text-[11px] text-emerald-600 whitespace-nowrap">✓ added</span>'
-            : '<button type="button" class="mp-ab-addbnd text-[11px] font-medium px-2 py-0.5 rounded ' +
-              'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50" ' +
-              `data-bid="${esc(r.boundary_id)}" data-name="${esc(r.name)}" ` +
-              `data-pop="${
-                r.population != null ? esc(r.population) : ''
-              }">Add boundary</button>`;
+              ? '<span class="text-[11px] text-emerald-600 whitespace-nowrap">✓ added</span>'
+              : '<button type="button" class="mp-ab-addbnd text-[11px] font-medium px-2 py-0.5 rounded ' +
+                'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50" ' +
+                `data-bid="${esc(r.boundary_id)}" data-name="${esc(r.name)}" ` +
+                `data-pop="${
+                  r.population != null ? esc(r.population) : ''
+                }">Add boundary</button>`;
           let matchCell;
           if (isErr)
             matchCell = `<td data-col="match" class="px-1.5 py-1 text-[11px] text-red-500">${esc(

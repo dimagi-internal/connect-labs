@@ -5,6 +5,7 @@ one closed, one live and mid-flight, and one fully awarded per corridor.
 The mix is deliberate: every status a reviewer or bidder can encounter appears
 somewhere in the seeded world.
 """
+
 from datetime import date, timedelta
 
 from django.utils import timezone
@@ -138,9 +139,11 @@ def _commitments(categories, rng, country="NG"):
             "capacity": (
                 f"{rng.randrange(8, 42) * 1000:,} cartons/month"
                 if cat in ("rutf", "therapeutic_milk")
-                else f"{rng.randrange(6, 30)} vehicles"
-                if cat == "transport"
-                else f"{rng.randrange(1, 9) * 1000:,} pallet positions"
+                else (
+                    f"{rng.randrange(6, 30)} vehicles"
+                    if cat == "transport"
+                    else f"{rng.randrange(1, 9) * 1000:,} pallet positions"
+                )
             ),
             "regions": _REGIONS_BY_COUNTRY.get((country or "").upper(), country or "NG"),
             "lead_time_days": rng.choice([14, 21, 28, 35]),
