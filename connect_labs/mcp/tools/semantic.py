@@ -12,6 +12,7 @@ this registry safe" WITHOUT saving it, so a wrong edit costs a round trip instea
 of a broken dashboard.
 """
 
+import copy
 import logging
 
 from connect_labs.semantic.explain import UnknownIndicator, english, explain
@@ -247,6 +248,93 @@ def semantic_registry_update(
     finally:
         access.close()
     return {**_summary(record), "_version_before": before.version, "_version_after": record.version}
+
+
+@register(
+    name="semantic_registry_set_indicator_meta",
+    description=(
+        "Set one or more `meta` keys on named indicators, leaving every other measure, every "
+        "other key and the other two documents exactly as they are. "
+        "`semantic_registry_update` replaces a whole document, so changing a single key means "
+        "round-tripping the entire indicators doc through the caller -- tens of thousands of "
+        "tokens each way for a one-word edit, and every byte of it a chance to corrupt a live "
+        "registry by transcription. This is the surgical alternative. "
+        "Validation still runs against the MERGED registry, so a patch that breaks an indicator "
+        "is refused, and a definition change still bumps the version. "
+        "`patches` is {indicator_id: {meta_key: value}}; a null value REMOVES the key. Refuses "
+        "an indicator the registry does not define, rather than silently creating one -- a typo "
+        "in an indicator id would otherwise write a meta block nothing reads."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "registry_id": {"type": "integer"},
+            "patches": {
+                "type": "object",
+                "description": 'e.g. {"C13": {"benchmarkable": true}}',
+            },
+            "opportunity_id": {"type": "integer"},
+            "program_id": {"type": "integer"},
+            "organization_id": {"type": "integer"},
+        },
+        "required": ["registry_id", "patches"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def semantic_registry_set_indicator_meta(
+    user,
+    registry_id: int,
+    patches: dict,
+    opportunity_id=None,
+    program_id=None,
+    organization_id=None,
+):
+    access = _access(user, opportunity_id, program_id, organization_id)
+    try:
+        before = access.get_registry(registry_id)
+        if before is None:
+            raise MCPToolError("NOT_FOUND", f"No semantic registry with id {registry_id}")
+
+        doc = copy.deepcopy(before.indicators_doc)
+        measures = doc.get("measures") or []
+        by_indicator = {}
+        for measure in measures:
+            indicator = ((measure.get("meta") or {}).get("indicator") or "").strip()
+            if indicator:
+                by_indicator[indicator] = measure
+
+        unknown = sorted(set(patches) - set(by_indicator))
+        if unknown:
+            raise MCPToolError(
+                "NOT_FOUND",
+                f"registry {registry_id} defines no indicator(s): {', '.join(unknown)}. "
+                f"It defines: {', '.join(sorted(by_indicator))}",
+            )
+
+        applied = {}
+        for indicator, keys in patches.items():
+            if not isinstance(keys, dict):
+                raise MCPToolError("INVALID_SCHEMA", f"patches[{indicator!r}] must be an object of meta keys")
+            meta = by_indicator[indicator].setdefault("meta", {})
+            for key, value in keys.items():
+                if value is None:
+                    meta.pop(key, None)
+                else:
+                    meta[key] = value
+            applied[indicator] = dict(keys)
+
+        record = access.update_registry(registry_id, indicators=doc)
+    except RegistryInvalid as exc:
+        raise MCPToolError("INVALID_SCHEMA", "registry rejected:\n  " + "\n  ".join(exc.errors)) from exc
+    finally:
+        access.close()
+    return {
+        **_summary(record),
+        "applied": applied,
+        "_version_before": before.version,
+        "_version_after": record.version,
+    }
 
 
 def _indicator_index(record) -> list[dict]:
