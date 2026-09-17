@@ -872,7 +872,7 @@ def test_candidates_excludes_manually_excluded_work_areas(client, django_user_mo
 def test_exclude_work_area_requires_login(client):
     resp = client.post(
         reverse("mopup:exclude_work_area", kwargs={"program_id": 217, "run_id": 1}),
-        data=json.dumps({"wa_id": "wa-1"}),
+        data=json.dumps({"wa_ids": ["wa-1"]}),
         content_type="application/json",
     )
     assert resp.status_code in (302, 401, 403)
@@ -885,7 +885,7 @@ def test_exclude_work_area_adds_to_excluded_list(client, django_user_model, monk
 
     resp = client.post(
         reverse("mopup:exclude_work_area", kwargs={"program_id": 217, "run_id": 1}),
-        data=json.dumps({"wa_id": "wa-1", "excluded": True}),
+        data=json.dumps({"wa_ids": ["wa-1"], "excluded": True}),
         content_type="application/json",
     )
     body = resp.json()
@@ -902,7 +902,7 @@ def test_exclude_work_area_can_re_include(client, django_user_model, monkeypatch
 
     resp = client.post(
         reverse("mopup:exclude_work_area", kwargs={"program_id": 217, "run_id": 1}),
-        data=json.dumps({"wa_id": "wa-1", "excluded": False}),
+        data=json.dumps({"wa_ids": ["wa-1"], "excluded": False}),
         content_type="application/json",
     )
     body = resp.json()
@@ -919,6 +919,37 @@ def test_exclude_work_area_requires_wa_id(client, django_user_model, monkeypatch
         content_type="application/json",
     )
     assert resp.status_code == 400
+
+
+def test_exclude_work_area_batches_multiple_ids_into_one_write(client, django_user_model, monkeypatch):
+    # The map's multi-select ("shift/cmd/ctrl-click several, one 'Exclude WAs'
+    # click") must be ONE update_run call, not N -- update_run re-uploads the
+    # run's entire JSON blob to Connect's production API (see #1890), so a
+    # per-id loop here would reintroduce exactly that cost N times over.
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)
+
+    import connect_labs.mopup.views as views_module
+
+    calls = []
+    original_update_run = views_module.MopupRunDataAccess.update_run
+
+    def spy_update_run(self, run, **field_updates):
+        calls.append(field_updates)
+        return original_update_run(self, run, **field_updates)
+
+    monkeypatch.setattr(views_module.MopupRunDataAccess, "update_run", spy_update_run)
+
+    resp = client.post(
+        reverse("mopup:exclude_work_area", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"wa_ids": ["wa-1", "wa-2", "wa-3"], "excluded": True}),
+        content_type="application/json",
+    )
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["excluded_wa_ids"] == ["wa-1", "wa-2", "wa-3"]
+    assert len(calls) == 1
 
 
 def test_candidates_includes_gap_candidates_already_stored_on_the_run(client, django_user_model, monkeypatch):
