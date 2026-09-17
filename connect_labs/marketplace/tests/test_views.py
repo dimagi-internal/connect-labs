@@ -10,7 +10,7 @@ from connect_labs.solicitations.local_models import Solicitation, SolicitationRe
 @pytest.fixture
 def registry(db):
     delivering = LabsOrg.objects.create(slug="fenwick", name="Fenwick Trust", short_name="FT")
-    OrgProfile.objects.create(org=delivering, countries=["Kenya"], flws_managed=80)
+    OrgProfile.objects.create(org=delivering, countries=["Kenya"])
     OrgContact.objects.create(org=delivering, email="a@example.invalid", full_name="A Person")
 
     bench = LabsOrg.objects.create(slug="harbourside", name="Harbourside Health Initiative")

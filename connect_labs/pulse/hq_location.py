@@ -112,6 +112,8 @@ def country_to_iso3(name: str) -> str | None:
         "moldova": "MDA",
         "russia": "RUS",
         "vietnam": "VNM",
+        # ISO renamed this one in 2022; the sheet still says the old name.
+        "turkey": "TUR",
     }
     return aliases.get(folded)
 

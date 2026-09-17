@@ -81,7 +81,6 @@ class TestImportDirectory:
         assert stats["organisations"] == 2
 
         org = LabsOrg.objects.get(name="Harbourside Health Initiative")
-        assert org.marketplace_profile.flws_managed == 250
         assert org.marketplace_profile.joined_at.isoformat() == "2025-03-04"
         assert org.marketplace_profile.joined_basis == "EOI submission"
         assert org.contacts.get(is_main_poc=True).email == "a@example.invalid"

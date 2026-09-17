@@ -55,7 +55,6 @@ class TestParseOrganizations:
         assert org.has_used_connect is True
         assert org.year_established == 2011
         assert org.team_size == 40
-        assert org.flws_managed == 250
         assert org.countries == ["Nigeria"]
         assert org.regions == ["Kano", "Jigawa"]
         assert org.website == "https://example.invalid"
@@ -64,10 +63,50 @@ class TestParseOrganizations:
 
     def test_a_country_name_containing_a_comma_is_not_split(self):
         """ "Congo, the Democratic Republic of the" splits into "Congo", which
-        resolves to the OTHER Congo. The quoted whole is one country."""
-        rows = [ORG_HEADER, ["Fenwick Trust", "", "", "", "", "", '"Congo, the Democratic Republic of the"']]
+        resolves to the OTHER Congo. Quoted or not, the whole is one country."""
+        for cell_value in (
+            '"Congo, the Democratic Republic of the"',
+            "Congo, the Democratic Republic of the",
+            "DRC",
+        ):
+            rows = [ORG_HEADER, ["Fenwick Trust", "", "", "", "", "", cell_value]]
+            [org] = parse_organizations(rows)
+            assert org.countries == ["Congo, Democratic Republic of the"], cell_value
+            assert org.unresolved_countries == []
+
+    def test_a_quoted_country_inside_a_list_survives(self):
+        """The case the old rule could not reach: it took a cell whole only when
+        the WHOLE cell was quoted, so a quoted name inside a list broke apart
+        and produced a phantom "Congo" in the country filter."""
+        rows = [
+            ORG_HEADER,
+            ["Solina", "", "", "", "", "", 'Nigeria, Chad, Niger, "Congo, the Democratic Republic of the"'],
+        ]
         [org] = parse_organizations(rows)
-        assert org.countries == ["Congo, the Democratic Republic of the"]
+        assert org.countries == ["Nigeria", "Chad", "Niger", "Congo, Democratic Republic of the"]
+
+    def test_two_spellings_of_one_country_become_one_country(self):
+        """The filter had four entries for the DRC. ISO 3166 has one."""
+        rows = [
+            ORG_HEADER,
+            ["A", "", "", "", "", "", "DRC"],
+            ["B", "", "", "", "", "", '"Congo, the Democratic Republic of the"'],
+            ["C", "", "", "", "", "", "DR Congo"],
+        ]
+        assert {c for org in parse_organizations(rows) for c in org.countries} == {"Congo, Democratic Republic of the"}
+
+    def test_a_missing_comma_between_two_countries_is_read_as_two(self):
+        """The sheet really says "Pakistan Turkey". Accepted only because BOTH
+        halves are exact ISO names — a looser rule would split "Sierra Leone"."""
+        rows = [ORG_HEADER, ["D-8", "", "", "", "", "", "Nigeria, Malaysia, Pakistan Turkey"]]
+        [org] = parse_organizations(rows)
+        assert org.countries == ["Nigeria", "Malaysia", "Pakistan", "Türkiye"]
+
+    def test_a_country_nobody_can_identify_is_reported_not_invented(self):
+        rows = [ORG_HEADER, ["Fenwick Trust", "", "", "", "", "", "Nigeria, Atlantis"]]
+        [org] = parse_organizations(rows)
+        assert org.countries == ["Nigeria"]
+        assert org.unresolved_countries == ["Atlantis"]
 
     def test_skips_blank_and_duplicate_names(self):
         rows = [ORG_HEADER, ["Fenwick Trust"], [""], ["Fenwick Trust"], ["   "]]
@@ -78,7 +117,6 @@ class TestParseOrganizations:
         rows = [ORG_HEADER, ["Fenwick Trust", "", "", "circa 2010", "", "50+"]]
         [org] = parse_organizations(rows)
         assert org.year_established is None
-        assert org.flws_managed is None
 
     def test_has_used_connect_is_tri_state(self):
         rows = [ORG_HEADER, ["A", "", "Yes"], ["B", "", "No"], ["C", "", ""]]

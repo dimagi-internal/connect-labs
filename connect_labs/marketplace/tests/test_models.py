@@ -22,7 +22,6 @@ class TestOrgProfile:
             org=org,
             has_used_connect=True,
             year_established=2011,
-            flws_managed=250,
             countries=["NG", "KE"],
             website="https://example.invalid",
         )
@@ -30,7 +29,7 @@ class TestOrgProfile:
         assert org.marketplace_profile == profile
         # The constraint that makes this whole design migratable: directory
         # facts hang off the profile, never off LabsOrg itself.
-        assert not hasattr(org, "flws_managed")
+        assert not hasattr(org, "countries")
 
     def test_is_one_to_one(self, org):
         OrgProfile.objects.create(org=org)
