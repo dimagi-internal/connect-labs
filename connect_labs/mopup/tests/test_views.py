@@ -1008,6 +1008,45 @@ def test_candidates_persists_thresholds_used(client, django_user_model, monkeypa
     assert runs[1].thresholds["indicator_configs"] == custom_configs
 
 
+def test_candidates_skips_the_write_when_thresholds_are_unchanged(client, django_user_model, monkeypatch):
+    # update_run re-uploads the run's entire JSON blob to Connect's
+    # production LabsRecord API (no partial-field write at that layer) --
+    # confirmed live as a real cost once a run has Step 2 data
+    # (planning_gap_features/planning_gap_building_points can be hundreds/
+    # thousands of entries). The auto-recompute triggered right after
+    # excluding a work area on the map never touches thresholds at all, so
+    # that call should skip this write entirely.
+    from connect_labs.mopup.core import indicators as ind
+
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    saved_thresholds = {
+        "indicator_configs": dict(ind.DEFAULT_INDICATOR_CONFIGS),
+        "global_config": dict(ind.DEFAULT_GLOBAL_CONFIG),
+    }
+    run = _seed_run(runs, thresholds=saved_thresholds)
+    _mock_ready_data(monkeypatch, run, [])
+
+    import connect_labs.mopup.views as views_module
+
+    calls = []
+    original_update_run = views_module.MopupRunDataAccess.update_run
+
+    def spy_update_run(self, run, **field_updates):
+        calls.append(field_updates)
+        return original_update_run(self, run, **field_updates)
+
+    monkeypatch.setattr(views_module.MopupRunDataAccess, "update_run", spy_update_run)
+
+    resp = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({}),  # no override -- resolves to the same saved_thresholds
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    assert calls == []  # no write at all -- thresholds matched what was already stored
+
+
 def test_candidates_dispatches_a_fetch_task_when_none_exists(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
