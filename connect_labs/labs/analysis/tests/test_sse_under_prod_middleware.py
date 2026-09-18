@@ -8,7 +8,10 @@ member, browsers stopped reading after the first one, and every SSE view on labs
 delivered exactly ONE event. CI was green the whole time.
 
 So these tests assemble the response the way the prod stack does and assert the
-property a browser depends on: the body a client receives carries every event.
+property a browser depends on: the body a client receives carries every event --
+now that those bodies are compressed again, which is the other half of the story
+(#1904 stopped compressing them, at 4.8x on a 30 MB read, to stop the
+truncation).
 
 They are deliberately about the WIRE, not about a view's logic. Any SSE view is
 welcome here; what is being defended is the pipeline underneath all of them.
@@ -23,7 +26,7 @@ from django.http import StreamingHttpResponse
 from django.test import RequestFactory
 
 from connect_labs.labs.analysis.sse_streaming import stream_sse
-from connect_labs.utils.gzip import GZipExceptEventStreamMiddleware
+from connect_labs.utils.gzip import StreamingAwareGZipMiddleware
 
 EVENTS = [f'data: {{"i": {i}}}\n\n' for i in range(50)]
 
@@ -36,7 +39,7 @@ def _prod_middleware_stack(response):
     """What labs_aws wraps a response in, as far as the body is concerned."""
     request = RequestFactory().get("/labs/anything/stream/")
     request.META["HTTP_ACCEPT_ENCODING"] = "gzip, deflate, br"
-    return GZipExceptEventStreamMiddleware(lambda r: None).process_response(request, response)
+    return StreamingAwareGZipMiddleware(lambda r: None).process_response(request, response)
 
 
 def _drain(response):
@@ -70,14 +73,21 @@ def test_every_event_reaches_the_client_through_the_prod_stack(chunk_size):
     assert received == "".join(EVENTS)
 
 
-def test_the_stack_does_not_compress_an_event_stream():
-    """The guarantee the test above rests on. If this ever flips, the assertion
-    above starts depending on Django's multi-member behaviour instead of on our
-    own middleware, and would pass for the wrong reason."""
+def test_the_stack_compresses_an_event_stream_without_breaking_it():
+    """Compressed AND complete, which is the pair that has been hard to hold.
+
+    This asserted the opposite for a day: the fix for #1902's truncation was to
+    stop compressing event streams at all, and that threw away 4.8x on a 30.6 MB
+    pipeline read. The middleware compresses them again and flushes on a time
+    bound; see connect_labs/utils/tests/test_gzip_event_stream.py for the
+    latency half, which is what makes compressing them safe.
+    """
     response = _prod_middleware_stack(
         StreamingHttpResponse(stream_sse(_sync_source(), interval=30, chunk_size=1), content_type="text/event-stream")
     )
-    assert "Content-Encoding" not in response.headers
+    assert response.headers.get("Content-Encoding") == "gzip"
+    received = _what_a_browser_reads(response, _drain(response)).decode()
+    assert received == "".join(EVENTS), "compressed, but a browser cannot read all of it"
 
 
 def test_the_check_can_actually_fail():
