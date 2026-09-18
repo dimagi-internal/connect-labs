@@ -107,10 +107,16 @@ jobs:
   # These checks are cheap and catch the whole class: a file that does not parse and
   # a name that does not resolve.
   #
-  # Deliberately NOT `npm test`: context_picker.test.mjs has been failing on main
-  # ("workflow shows opps only (pathFilters)") and nothing ran it, so turning the
-  # whole suite on here would block every PR on an unrelated pre-existing failure.
-  # Widen this once that is green.
+  # Now `npm test`, the whole suite. This used to run one file, because
+  # context_picker.test.mjs was failing on main and turning everything on would
+  # have blocked every PR on an unrelated failure -- with a note saying "widen
+  # this once that is green". It is green, so this is that widening.
+  #
+  # What the narrow version cost: 9 of the 10 JS test files never ran anywhere.
+  # Two were failing, and in both cases the TEST was stale rather than the code
+  # -- funder-charts against an `approved` filter added two weeks after it was
+  # written (April), context_picker against a deliberate #907 behaviour change.
+  # A test nobody runs does not hold a line; it just looks like one.
   render-tests:
     runs-on: ubuntu-latest
     steps:
@@ -122,26 +128,28 @@ jobs:
         with:
           node-version: '20'
 
-      # Just the parser, not the project's dependency tree. `npm ci` cannot run
-      # here: package-lock.json is already out of sync with package.json on main
-      # ("Missing: jiti@2.7.0 from lock file"), which predates this job and is not
-      # this job's to fix. Installing the one package the check imports keeps the
-      # check honest and independent of that.
-      # 20s of this 30s job was re-downloading the same two packages.
-      - name: Cache the JSX parser
+      # The whole dependency tree now, because this job runs the whole JS suite.
+      # It used to install just the JSX parser, because package-lock.json really
+      # was out of sync with package.json ("Missing: jiti@2.7.0") -- that note
+      # was accurate, and the lock is fixed in this same change rather than
+      # worked around again.
+      #
+      # REGENERATE THE LOCK UNDER NODE 20, which is what this job runs. npm 11
+      # (current on a dev Mac) accepts the old lock and writes a new one that
+      # npm 10 still rejects, so a local `npm ci` proves nothing about CI:
+      #   docker run --rm -v "$PWD:/w" -w /w node:20 npm install --package-lock-only
+      - name: Cache node_modules
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: jsx-parser-${{ runner.os }}-node20-babel7-v1
+          key: npm-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
 
-      - name: Install the JSX parser
-        run: |
-          if [ ! -d node_modules/@babel/preset-react ]; then
-            npm install --no-save --no-audit --no-fund @babel/core@^7 @babel/preset-react@^7
-          fi
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
 
-      - name: Check the workflow render templates
-        run: node --test connect_labs/workflow/templates/__tests__/kmc_render.test.mjs
+      # vitest (7 files) + the node --test files, which is what `npm test` is.
+      - name: Run the JavaScript tests
+        run: npm test
 
   # Build the deployable image WHILE the tests run, so the deploy that follows
   # the merge finds it already in ECR and skips its own ~100s build (the build
