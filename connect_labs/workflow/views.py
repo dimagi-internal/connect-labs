@@ -19,7 +19,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse, StreamingHttpResponse
 from django.utils import timezone as dj_timezone
 from django.views import View
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.views.generic import TemplateView
 
 from connect_labs.audit.data_access import AuditDataAccess
@@ -4640,12 +4640,18 @@ def _clean_schedule_defaults(raw, options):
 
 
 @login_required
-@require_POST
+@require_http_methods(["GET", "POST"])
 def schedule_upsert_api(request, definition_id):
-    """Create or update the current user's schedule for this workflow + context.
+    """GET the schedule's status, or create/update the current user's schedule.
 
     Scope (opportunity vs program) is taken from labs_context, matching the list
     view. Only workflows whose template supports default-run may be scheduled.
+
+    GET exists so a report can tell its readers when its data was last synced.
+    That fact lived only in this row and on the admin page, so render code had
+    no way to reach it -- a report whose cache is warmed every two hours could
+    only show when the viewer's own browser last pulled, which on any device
+    that had not triggered a pull itself understated freshness by hours.
     """
     from connect_labs.labs.models import WorkflowSchedule
     from connect_labs.workflow.schedules import INTERVAL_HOURS_CHOICES
@@ -4657,6 +4663,30 @@ def schedule_upsert_api(request, definition_id):
     opportunity_id, program_id = _resolve_schedule_scope(request)
     if not opportunity_id and not program_id:
         return JsonResponse({"error": "opportunity_id or program_id required in context"}, status=400)
+
+    if request.method == "GET":
+        # Deliberately NOT filtered to request.user. A schedule belongs to
+        # whoever created it, but the cache it warms is shared by every viewer,
+        # so the honest answer to "when was this data last synced" is the most
+        # recent run of ANY schedule on this definition and scope -- which is
+        # what the admin page shows, and what every reader should see alike.
+        rows = WorkflowSchedule.objects.filter(definition_id=definition_id)
+        rows = rows.filter(opportunity_id=opportunity_id) if opportunity_id else rows.filter(program_id=program_id)
+        sched = rows.exclude(last_run_at=None).order_by("-last_run_at").first() or rows.first()
+        if sched is None:
+            return JsonResponse({"schedule": None})
+        return JsonResponse(
+            {
+                "schedule": {
+                    "cadence": sched.cadence,
+                    "interval_hours": sched.interval_hours,
+                    "enabled": sched.enabled,
+                    "last_run_at": sched.last_run_at.isoformat() if sched.last_run_at else None,
+                    "next_run_at": sched.next_run_at.isoformat() if sched.next_run_at else None,
+                    "last_status": sched.last_status,
+                }
+            }
+        )
 
     try:
         body = json.loads(request.body or "{}")
